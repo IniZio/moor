@@ -9,7 +9,6 @@ use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -40,7 +39,6 @@ fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, Sess
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(pane),
         holder: moor_core::config::AgentHolder::Hc,
-        warnings: Vec::new(),
     };
     (Arc::new(s), session)
 }
@@ -57,7 +55,6 @@ fn steer(
         s.clone(),
         Arc::new(Claude),
         clock.clone(),
-        offline_release(),
     );
     let out = agent.steer(session, what, DEADLINE);
     (out, clock.instant() - start)
@@ -249,7 +246,6 @@ fn each_wait_comes_before_the_submit_key_and_before_the_re_read() {
         s,
         Arc::new(Claude),
         clock.clone(),
-        offline_release(),
     );
     agent.steer(&session, &text("go"), DEADLINE).unwrap();
     let at = clock.at.lock().unwrap();
@@ -395,14 +391,12 @@ fn a_text_steer_reaches_a_pty_pane() {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(pane.clone()),
         holder: moor_core::config::AgentHolder::Hc,
-        warnings: Vec::new(),
     };
     let agent = BoxAgent::new(
         Arc::new(FakeDriver::new()),
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        offline_release(),
     );
     agent
         .steer(&session, &text("hello from mcp"), DEADLINE)

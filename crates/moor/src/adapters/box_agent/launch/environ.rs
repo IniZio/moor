@@ -1,14 +1,15 @@
 //! The Box user, read from the environment of a process on the Box.
 
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::StepDone;
+use moor_core::seam::driver::{DriverError, StepDone};
 
-use super::install::StepResult;
 use super::{fail, Failure};
 
 /// The Box user's home, and whether that user is root, read from the environment of a process on
 /// the Box.
-pub(super) fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
+pub(super) fn box_user(
+    peeked: Option<Result<StepDone, DriverError>>,
+) -> Result<(BoxPath, bool), Failure> {
     let text = match peeked {
         Some(Ok(StepDone::Peeked(Some(text)))) => text,
         Some(Err(e)) => return Err(fail("home", &e)),

@@ -1,4 +1,4 @@
-//! A launch without a missing `gh` costs two Box calls after the connect lookup.
+//! A launch costs two Box calls after the connect lookup.
 
 use std::sync::Arc;
 
@@ -10,8 +10,6 @@ use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::fake::ready_release;
-use crate::adapters::box_agent::gh_release::GhRelease;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -28,10 +26,7 @@ fn exited(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
 
 fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    let d = Arc::new(
-        d.peek_text("box-1", &environ, ENVIRON)
-            .run_stdout("Linux x86_64"),
-    );
+    let d = Arc::new(d.peek_text("box-1", &environ, ENVIRON));
     d.acquire(&AcquireReq {
         pool_machine: None,
         provider: ProviderId::new("fake"),
@@ -68,7 +63,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 box_port: 4567,
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),
-                forge: false,
                 egress_port: 4568,
                 hosts: Vec::new(),
             })
@@ -78,13 +72,12 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
     }
 }
 
-fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>, release: Arc<GhRelease>) -> BoxAgent {
+fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
     BoxAgent::new(
         d.clone(),
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        release,
     )
 }
 
@@ -94,10 +87,10 @@ struct Run {
     out: Result<(), EngineError>,
 }
 
-fn launch(proxy: bool, check_codes: &[i32], release: Arc<GhRelease>) -> Run {
+fn launch(proxy: bool, check_codes: &[i32]) -> Run {
     let d = driver(FakeDriver::new().exec_results(exited(check_codes)));
     let s = Arc::new(FakeSurface::new());
-    let out = agent(&d, &s, release).launch(&req(&s, proxy)).map(|_| ());
+    let out = agent(&d, &s).launch(&req(&s, proxy)).map(|_| ());
     Run { d, s, out }
 }
 
@@ -115,7 +108,7 @@ fn assert_connect_argv_reused(d: &FakeDriver) {
 
 #[test]
 fn a_warm_proxy_launch_makes_two_batch_calls_after_the_connect_lookup() {
-    let run = launch(true, &[0, 0], ready_release());
+    let run = launch(true, &[0, 0]);
     run.out.unwrap();
     assert_eq!(box_calls(&run.d), ["connect_argv", "batch", "batch"]);
     assert_eq!(run.d.batch_connects().len(), 2);
@@ -124,7 +117,7 @@ fn a_warm_proxy_launch_makes_two_batch_calls_after_the_connect_lookup() {
 
 #[test]
 fn a_launch_without_a_proxy_makes_two_batch_calls_after_the_connect_lookup() {
-    let run = launch(false, &[], ready_release());
+    let run = launch(false, &[]);
     run.out.unwrap();
     assert_eq!(box_calls(&run.d), ["connect_argv", "batch", "batch"]);
     assert_connect_argv_reused(&run.d);
@@ -142,7 +135,7 @@ fn agent_failure(run: Run) -> String {
 
 #[test]
 fn a_missing_agent_refuses_a_proxy_launch_before_anything_is_uploaded() {
-    let run = launch(true, &[1], ready_release());
+    let run = launch(true, &[1]);
     assert_eq!(
         box_calls(&run.d),
         ["connect_argv", "batch", "batch", "exec"]
@@ -156,7 +149,7 @@ fn a_missing_agent_refuses_a_proxy_launch_before_anything_is_uploaded() {
 
 #[test]
 fn a_missing_agent_refuses_a_launch_without_a_proxy_before_anything_is_uploaded() {
-    let run = launch(false, &[127], ready_release());
+    let run = launch(false, &[127]);
     assert_eq!(
         box_calls(&run.d),
         ["connect_argv", "batch", "batch", "exec"]
@@ -167,7 +160,7 @@ fn a_missing_agent_refuses_a_launch_without_a_proxy_before_anything_is_uploaded(
 
 #[test]
 fn the_agent_check_names_the_program_and_the_launch_path() {
-    let run = launch(false, &[], ready_release());
+    let run = launch(false, &[]);
     run.out.unwrap();
     let execs = run.d.execs();
     let script = execs
@@ -183,7 +176,7 @@ fn the_agent_check_names_the_program_and_the_launch_path() {
 
 #[test]
 fn a_launch_with_no_environ_reports_the_home_step() {
-    let d = Arc::new(FakeDriver::new().run_stdout("Linux x86_64"));
+    let d = Arc::new(FakeDriver::new());
     d.acquire(&AcquireReq {
         pool_machine: None,
         provider: ProviderId::new("fake"),
@@ -195,12 +188,10 @@ fn a_launch_with_no_environ_reports_the_home_step() {
     })
     .unwrap();
     let s = Arc::new(FakeSurface::new());
-    let out = agent(&d, &s, ready_release()).launch(&req(&s, true));
+    let out = agent(&d, &s).launch(&req(&s, true));
     let got = match out {
         Err(EngineError::Failed { step, message }) => format!("{step}: {message}"),
         other => format!("unexpected {other:?}"),
     };
     assert_eq!(got, "home: the Box has no process environment");
 }
-
-mod gh;

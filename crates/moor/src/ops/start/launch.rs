@@ -14,7 +14,7 @@ use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{BoxId, StartReq, Warning};
+use moor_core::{BoxId, StartReq};
 
 use super::profile_env;
 use crate::cx::Cx;
@@ -185,15 +185,9 @@ pub(super) fn begin(
         cx.engine().launch(launch)
     });
     match launched {
-        Ok(mut session) => {
+        Ok(session) => {
             for lease in leases {
                 store.hold_lease(lease)?;
-            }
-            for warning in std::mem::take(&mut session.warnings) {
-                cx.warn(Warning {
-                    code: warning.code,
-                    message: warning.message,
-                });
             }
             record_session(cx, store, row, launch, session)
         }

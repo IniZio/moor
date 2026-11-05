@@ -1,6 +1,5 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
-use moor_core::config::proxy::{ResolvedRule, GITHUB_SECRET};
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_adapter::ProxyAddr;
@@ -63,7 +62,6 @@ pub(crate) fn proxy(
         user,
     };
     let rule_env = box_env(&spec.rules);
-    let forge = forge_routed(&spec.rules);
     let service = cx.config().machines.service.iter().map(|s| s.host.clone());
     let hosts = spec
         .rules
@@ -77,7 +75,6 @@ pub(crate) fn proxy(
         egress_port: ep.egress_port,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
-        forge,
         hosts,
     };
     Ok(BoxProxy { addr, rule_env })
@@ -99,11 +96,6 @@ fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String>
         .map(|r| r.others.into_iter().map(|l| l.repo).collect())
         .unwrap_or_default();
     Ok((user, others))
-}
-
-/// Whether a rule sends GitHub through the Proxy with the user's GitHub secret.
-fn forge_routed(rules: &[ResolvedRule]) -> bool {
-    rules.iter().any(|r| r.credential == GITHUB_SECRET)
 }
 
 /// The variable names the `provider`'s platform puts in the Box that moor removes.

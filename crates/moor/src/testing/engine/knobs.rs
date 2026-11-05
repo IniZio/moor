@@ -1,23 +1,12 @@
-//! What a test scripts on the fake engine for `gh` delivery and transcripts.
+//! What a test scripts on the fake engine for transcripts.
 
 use std::sync::Arc;
 
-use moor_core::seam::engine::{EngineError, LaunchNotice};
+use moor_core::seam::engine::EngineError;
 
 use super::FakeEngine;
 
 impl FakeEngine {
-    /// The `forge` of each delivery of `gh` asked so far.
-    pub(crate) fn gh_deliveries(&self) -> Vec<bool> {
-        self.st().gh_deliveries.clone()
-    }
-
-    /// The next delivery of `gh` fails with `notice`.
-    pub(crate) fn gh_notice(self, notice: LaunchNotice) -> Self {
-        self.st().gh_notice = Some(notice);
-        self
-    }
-
     /// Every transcript request writes `text` to its destination.
     pub(crate) fn transcript_text(self, text: &str) -> Self {
         self.st().transcript_text = Some(text.to_owned());

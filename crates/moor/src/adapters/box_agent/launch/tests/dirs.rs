@@ -10,7 +10,6 @@ use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::fake::ready_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -20,10 +19,7 @@ const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 
 fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    let d = Arc::new(
-        d.peek_text("box-1", &environ, ENVIRON)
-            .run_stdout("Linux x86_64"),
-    );
+    let d = Arc::new(d.peek_text("box-1", &environ, ENVIRON));
     d.acquire(&AcquireReq {
         pool_machine: None,
         provider: ProviderId::new("fake"),
@@ -66,7 +62,6 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        ready_release(),
     )
 }
 

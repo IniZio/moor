@@ -8,7 +8,7 @@ use moor_core::exec_env::ExecEnv;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec};
-use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 
@@ -19,7 +19,6 @@ use self::script::script;
 use self::script::{script_path, script_stripping};
 use self::steps::Plan;
 use super::agent_env;
-use super::gh_release::GhRelease;
 use super::proxy_env;
 
 /// Where the brief lands, relative to the Box workdir.
@@ -31,14 +30,8 @@ const STATUS_OSC_FILE: &str = ".moor/status-osc";
 const SCRIPT_FILE: &str = "agent.sh";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
-/// Time allowed for checking and installing the pinned `gh` on the Box.
-const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
-
-/// The Box's operating system and architecture, read when the launch has a forge Proxy.
-type Platform = Option<Result<(String, String), Failure>>;
-
-/// The pane a launch opened, and its notices.
-type Delivered = (PaneRef, Vec<LaunchNotice>);
+/// Time allowed for one batch of launch steps.
+const BATCH_DEADLINE: Duration = Duration::from_secs(300);
 
 /// A failed step and why.
 struct Failure {
@@ -63,12 +56,12 @@ pub(super) fn launch(
     surface: &dyn Surface,
     profile: &dyn AgentAdapter,
     req: &LaunchReq,
-    (release, kind): (&GhRelease, AgentHolder),
+    kind: AgentHolder,
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle)
         .map_err(|e| failed(fail("connect", &e)))?;
-    let ((home, root), platform) = open_box(driver, req, &connect).map_err(failed)?;
+    let (home, root) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
         mcp: req.mcp.clone(),
         model: req.model.clone(),
@@ -78,7 +71,6 @@ pub(super) fn launch(
             egress_port: p.egress_port,
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
-            forge: p.forge,
             hosts: p.hosts.clone(),
         }),
         home,
@@ -95,18 +87,16 @@ pub(super) fn launch(
         ctx: &ctx,
         cred: &cred,
         tmp: &tmp,
-        release,
         holder: holder::holder(kind),
         root,
     };
-    match launch.deliver(&connect, platform) {
-        Ok((pane, warnings)) => Ok(SessionRef {
+    match launch.deliver(&connect) {
+        Ok(pane) => Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
             pane: Some(pane),
             holder: kind,
-            warnings,
         }),
         Err(mut f) => {
             if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
@@ -141,25 +131,17 @@ pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath)
     dirs_in(&home_in(&text).map_err(failed)?, req).map_err(failed)
 }
 
-/// Looks the Box user up, and reads the Box platform when the launch has a forge Proxy, in one batch.
+/// Looks the Box user up.
 fn open_box(
     driver: &dyn Driver,
     req: &LaunchReq,
     connect: &[String],
-) -> Result<((BoxPath, bool), Platform), Failure> {
+) -> Result<(BoxPath, bool), Failure> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
-    let mut steps = vec![BoxStep::Peek(environ)];
-    let forge = req.proxy.as_ref().is_some_and(|p| p.forge);
-    if forge {
-        steps.push(install::platform_step(&req.dir_names().0));
-    }
-    let deadline = Deadline(INSTALL_DEADLINE);
-    let mut done = driver
-        .batch(&req.handle, connect, &steps, deadline)
-        .into_iter();
-    let user = box_user(done.next())?;
-    let platform = forge.then(|| install::parse_platform(done.next()));
-    Ok((user, platform))
+    let steps = [BoxStep::Peek(environ)];
+    let deadline = Deadline(BATCH_DEADLINE);
+    let done = driver.batch(&req.handle, connect, &steps, deadline);
+    box_user(done.into_iter().next())
 }
 
 /// What one launch works with.
@@ -178,8 +160,6 @@ struct Launch<'a> {
     cred: &'a BoxPath,
     /// The agent's own temp directory on the Box.
     tmp: &'a BoxPath,
-    /// Fetches the pinned `gh` for a Box that lacks it.
-    release: &'a GhRelease,
     /// Holds the agent's terminal on the Box.
     holder: &'a Holder,
     /// The Box user is root.
@@ -236,13 +216,13 @@ impl Launch<'_> {
     }
 
     /// Puts the files in the Box and opens the tab.
-    fn deliver(&self, connect: &[String], platform: Platform) -> Result<Delivered, Failure> {
+    fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
         let Self {
             surface, ctx, req, ..
         } = self;
         let mut plan = Plan::default();
-        let planned = self.plan(platform, &mut plan);
-        let warnings = self.execute(connect, &plan)?;
+        let planned = self.plan(&mut plan);
+        self.execute(connect, &plan)?;
         planned?;
         let script = script_path(self.cred).map_err(|e| fail("script", &e))?;
         let line = detach::pane_line(self.holder, connect, ctx.workdir.as_str(), script.as_str())
@@ -256,7 +236,6 @@ impl Launch<'_> {
                     env: Vec::new(),
                 },
             )
-            .map(|pane| (pane, warnings))
             .map_err(|e| fail("pane", &e))
     }
 }
@@ -285,9 +264,7 @@ fn remove_cred(
 
 pub(super) mod detach;
 mod environ;
-pub(super) mod gh;
 pub(super) mod holder;
-mod install;
 mod script;
 mod steps;
 

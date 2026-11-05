@@ -24,7 +24,6 @@ use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::{GhRelease, UreqFetch};
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
@@ -266,10 +265,6 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         Arc::clone(&surface),
         Arc::new(Claude),
         Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::new(GhRelease::new(
-            Arc::new(UreqFetch),
-            env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
-        )),
     )
     .holding(config.agent.holder());
     let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone())?;

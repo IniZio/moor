@@ -38,7 +38,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          commands. The network is open. When HTTPS_PROXY is set, it is a local proxy \
          that sends only the hosts that need moor's credentials through the moor Proxy and \
          every other host direct; do not unset or bypass it. GitHub access works for this Box's \
-         repo through gh and git as configured. Requests outside what the proxy rules allow go \
+         repo through git, and through gh when gh is on the PATH. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
          Write only in the working directory, your own tool state and the tools you install. \
          If a tool the work needs is missing, install it, then say which tool it was. \
@@ -111,14 +111,15 @@ fn project_facts(b: &BriefInput, out: &mut String) {
     }
 }
 
-/// How to show artifacts on a pull request; the limits are gh's own.
-const ATTACH: &str = "To show a published file on a pull request, attach it with gh: \
+/// How to open a pull request and show artifacts on it; the limits are gh's own.
+const ATTACH: &str = "When gh is on the PATH, attach a published file to a pull request with \
     `gh pr create --attach .moor/artifacts/<name>` or \
     `gh pr edit <number> --attach .moor/artifacts/<name>`. Write \
     `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces \
     it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and \
     webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 \
-    files. An upload cannot be deleted.\n";
+    files. An upload cannot be deleted. When gh is not on the PATH, push the branch with git \
+    and say you could not open the pull request.\n";
 
 #[cfg(test)]
 mod tests {
@@ -188,7 +189,7 @@ mod tests {
 
     #[test]
     fn says_how_to_attach_artifacts_to_a_pull_request_right_after_publishing() {
-        let attach = "To show a published file on a pull request, attach it with gh: `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted.\n";
+        let attach = "When gh is on the PATH, attach a published file to a pull request with `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted. When gh is not on the PATH, push the branch with git and say you could not open the pull request.\n";
         let out = render(&input(None));
         assert!(
             out.contains(&format!("in your final message.\n\n{attach}")),

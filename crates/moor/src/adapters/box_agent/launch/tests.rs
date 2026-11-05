@@ -14,7 +14,6 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::fake::ready_release;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::box_name;
@@ -31,10 +30,7 @@ fn environ_path() -> BoxPath {
 }
 
 fn driver(d: FakeDriver) -> Arc<FakeDriver> {
-    let d = Arc::new(
-        d.peek_text("box-1", &environ_path(), ENVIRON)
-            .run_stdout("Linux x86_64"),
-    );
+    let d = Arc::new(d.peek_text("box-1", &environ_path(), ENVIRON));
     d.acquire(&AcquireReq {
         pool_machine: None,
         provider: ProviderId::new("fake"),
@@ -81,7 +77,6 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        ready_release(),
     )
 }
 
@@ -418,7 +413,6 @@ fn proxy_addr() -> ProxyAddr {
         box_port: 4567,
         ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),
-        forge: false,
         egress_port: 4568,
         hosts: Vec::new(),
     }

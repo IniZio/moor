@@ -11,7 +11,6 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{decode, stream_script, ARCHIVE, STREAM_CAP, TOO_LARGE};
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -39,7 +38,6 @@ fn session() -> SessionRef {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: None,
         holder: moor_core::config::AgentHolder::Hc,
-        warnings: Vec::new(),
     }
 }
 
@@ -49,7 +47,6 @@ fn run(d: &Arc<FakeDriver>, dest: &Path) -> Result<(), EngineError> {
         Arc::new(FakeSurface::new()),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        offline_release(),
     )
     .transcript(&session(), dest)
 }

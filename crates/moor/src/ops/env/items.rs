@@ -43,10 +43,6 @@ pub(crate) fn assemble(
         source: s.size.source,
         ..plain(EnvKind::Box, "size", s.size.value.as_str())
     });
-    items.push(EnvItem {
-        delivery: Some("proxy".to_owned()),
-        ..plain(EnvKind::Box, "gh", "proxy shim (pr create|view|list)")
-    });
     if let Some(d) = &s.dotfiles {
         items.push(dotfiles_item(cx, d));
     }
