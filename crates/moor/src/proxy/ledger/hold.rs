@@ -13,14 +13,14 @@ use crate::store::{Store, TunnelWant};
 pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
     let missing = |reason: String| Hold::Missing { box_id, reason };
     let Ok(claim) = store.claimed_machine(box_id) else {
-        return missing("the Box's machine could not be read".to_owned());
+        return missing("the Box's machine could not be read; try again later".to_owned());
     };
     let Some(claim) = claim else {
         if let Ok(Some(name)) = store.removed_machine(box_id) {
             return missing(format!("machine {name} was removed"));
         }
         return missing(
-            "this Box has no machine: its repo's .moor.yaml asks for none, or none was free when it started"
+            "this Box has no machine yet; call the machine_claim tool to take a slot on one of your user's machines"
                 .to_owned(),
         );
     };
@@ -42,9 +42,11 @@ pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
     };
     if awake {
         missing(format!(
-            "machine {name} has no free slot yet; this Box takes one as soon as another Box frees it"
+            "machine {name} has no free slot yet; this Box takes one as soon as another Box frees it, so try again later"
         ))
     } else {
-        missing(format!("machine {name} is released while this Box sleeps"))
+        missing(format!(
+            "machine {name} is released while this Box sleeps; try again later"
+        ))
     }
 }

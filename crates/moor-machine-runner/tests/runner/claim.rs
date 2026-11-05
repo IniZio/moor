@@ -158,7 +158,7 @@ fn both_tools_answer_while_the_box_holds_no_machine_and_others_stay_refused() {
     let err = rig
         .call_with("machine_info", json!({}), &MISSING)
         .unwrap_err();
-    assert_eq!(err, "this Box holds no machine. Try again later.");
+    assert_eq!(err, "this Box holds no machine.");
     rig.call_with("machine_claim", json!({}), &MISSING).unwrap();
     assert_eq!(seen(&rig)[0]["op"], "release");
 }

@@ -274,9 +274,12 @@ fn missing_reason(w: &World) -> String {
 }
 
 #[test]
-fn a_box_without_a_claim_is_told_its_repo_asks_for_none() {
+fn a_box_without_a_claim_is_told_to_call_machine_claim() {
     let w = World::new([]);
-    assert!(missing_reason(&w).starts_with("this Box has no machine: "));
+    assert_eq!(
+        missing_reason(&w),
+        "this Box has no machine yet; call the machine_claim tool to take a slot on one of your user's machines"
+    );
 }
 
 #[test]
@@ -291,13 +294,13 @@ fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
     assert!(run.tick().is_none());
     assert_eq!(
         missing_reason(&w),
-        "machine mini is released while this Box sleeps"
+        "machine mini is released while this Box sleeps; try again later"
     );
 
     w.store.request_tunnel(w.id, TunnelWant::Up).unwrap();
     assert_eq!(
         missing_reason(&w),
-        "machine mini has no free slot yet; this Box takes one as soon as another Box frees it"
+        "machine mini has no free slot yet; this Box takes one as soon as another Box frees it, so try again later"
     );
 }
 

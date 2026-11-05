@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use crate::rig::Rig;
 
 const REASON: &str =
-    "machine mac has no free slot yet; this Box takes one as soon as another Box frees it";
+    "machine mac has no free slot yet; this Box takes one as soon as another Box frees it, so try again later";
 const MISSING: [(&str, &str); 2] = [("X-Moor-Box", "7"), ("X-Moor-Machine-Missing", REASON)];
 
 /// A runner with a prepare hook and a relay, both of which leave a mark on the machine.
@@ -49,7 +49,7 @@ fn every_call_answers_the_reason_as_a_tool_error_and_touches_nothing() {
         assert_eq!(reply["result"]["isError"], true, "{tool}: {reply}");
         assert_eq!(
             reply["result"]["content"][0]["text"],
-            format!("{REASON}. Try again later."),
+            format!("{REASON}."),
             "{tool}"
         );
     }

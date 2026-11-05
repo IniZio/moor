@@ -254,9 +254,10 @@ Enrolling a name again replaces that machine and its key. Names match
 `[a-z][a-z0-9_-]*`, 64 bytes at most. Labels match `[a-z0-9][a-z0-9-]*`, 32
 bytes at most. A machine has at most 16 labels, which moor stores sorted and
 without repeats. moor stores only the machine's public key. The machine dials
-out to moor, so it needs no open port. A Box gets a machine only through the
-repo's `machine.labels` in [`.moor.yaml`](#mooryaml). See
-[Enrolling a machine](machines.md#enrolling-a-machine).
+out to moor, so it needs no open port. A Box gets a machine only by claiming one
+with the `machine_claim` tool, and the repo's `machine.labels` in
+[`.moor.yaml`](#mooryaml) are the labels that claim asks for by default. See
+[Claiming a machine](machines.md#claiming-a-machine).
 
 ### Personal nodes
 

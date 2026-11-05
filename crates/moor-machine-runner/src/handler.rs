@@ -50,10 +50,9 @@ impl ServerHandler for Runner {
     ) -> Result<CallToolResponse, ErrorData> {
         let claims = Runner::claim_router();
         if let Some(reason) = missing(&context)?.filter(|_| !claims.has_route(&request.name)) {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "{reason}. Try again later."
-            ))])
-            .into());
+            return Ok(
+                CallToolResult::error(vec![ContentBlock::text(format!("{reason}."))]).into(),
+            );
         }
         let router = Self::tool_router() + claims;
         if router.has_route(&request.name) || self.relays.is_empty() {

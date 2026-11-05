@@ -104,7 +104,7 @@ fn machine_route(deps: &Deps<'_>) -> Option<MachineRoute> {
     let held = Arc::new(move || {
         ledger.hold().unwrap_or_else(|e| Hold::Missing {
             box_id: ledger.box_id(),
-            reason: format!("the Box's machine could not be read: {e}"),
+            reason: format!("the Box's machine could not be read: {e}; try again later"),
         })
     });
     Some(MachineRoute { service, held })
