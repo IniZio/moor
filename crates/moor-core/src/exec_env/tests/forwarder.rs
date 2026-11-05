@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use moor_testkit::FakeEgress;
 use rustix::process::{kill_process, Pid, Signal};
 
-use super::super::egress::{forwarder, EGRESS_FAILED, FORWARDER, FORWARDER_LOST};
+use super::super::egress::{forwarder, EGRESS_FAILED, FORWARDER};
 
 /// Tools the line calls that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
@@ -106,12 +106,11 @@ impl Drop for FakeBox {
 }
 
 #[test]
-fn without_a_config_nothing_starts_and_the_controller_is_told() {
+fn without_a_config_nothing_starts() {
     let b = FakeBox::new();
     let (ok, err) = b.run();
     assert!(ok, "{err}");
     assert_eq!(b.starts(), 0);
-    assert!(err.lines().any(|l| l == FORWARDER_LOST), "{err}");
 }
 
 #[test]
@@ -123,7 +122,6 @@ fn a_delivered_forwarder_starts_once_on_its_port() {
     let (ok, err) = b.run();
     assert!(ok, "{err}");
     assert_eq!(b.starts(), 1, "a running forwarder is kept");
-    assert!(!err.contains(FORWARDER_LOST), "{err}");
     let log = std::fs::read_to_string(b.home.join("fake.log")).unwrap();
     assert!(
         log.contains(&format!("--config {}", b.path(".json").display())),

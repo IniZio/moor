@@ -16,12 +16,6 @@ pub(super) const EGRESS_SHELL_VARS: &str =
 /// a replacement waiting to be swapped in has `.new`, and it writes `.pid` and `.log` beside it.
 pub const FORWARDER: &str = ".moor/egress-forward";
 
-/// The whole stderr line the prelude prints when the forwarder has no config for its port.
-///
-/// The driver strips it from the exec's stderr, and the controller delivers the forwarder again
-/// before the Box's next exec.
-pub const FORWARDER_LOST: &str = "moor-egress-forwarder-config-missing";
-
 /// The Box directory, under the Box user's home, that holds the files below; each is shell text
 /// that expands on the Box.
 const DIR: &str = "$HOME/.moor";
@@ -217,13 +211,13 @@ fn assemble(
 
 /// Shell, run under the egress lock, that keeps the egress forwarder listening on `port` when its
 /// config names that port, as it does once the controller delivered it. A delivered `.new`
-/// binary replaces the running one. Without such a config it prints [`FORWARDER_LOST`].
+/// binary replaces the running one. Otherwise it does nothing.
 pub(super) fn forwarder(port: u16) -> String {
     let fw = format!("$HOME/{FORWARDER}");
     let up = format!("grep -q ' 0100007F:{port:04X} 00000000:0000 0A' /proc/net/tcp 2>/dev/null");
     let old_runs = "moor_st=$(sed -n 's/.*) \\(.\\) .*/\\1/p' \"/proc/$moor_pid/stat\" 2>/dev/null) && [ -n \"$moor_st\" ] && [ \"$moor_st\" != Z ]";
     format!(
-        "moor_fw=\"{fw}\"; if grep -qF '\"listen\":\"127.0.0.1:{port}\"' \"$moor_fw.json\" 2>/dev/null; then moor_pid=$(cat \"$moor_fw.pid\" 2>/dev/null); moor_ours=; [ -n \"$moor_pid\" ] && [ \"$(cat \"/proc/$moor_pid/comm\" 2>/dev/null)\" = egress-forward ] && moor_ours=1; if [ -f \"$moor_fw.new\" ]; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; mv -f \"$moor_fw.new\" \"$moor_fw\" || {}; moor_ours=; fi; if [ -z \"$moor_ours\" ]; then if {up}; then {}; fi; ( setsid \"$moor_fw\" --config \"$moor_fw.json\" </dev/null >\"$moor_fw.log\" 2>&1 9>&- & echo $! >\"$moor_fw.pid\" ); moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; else echo '{FORWARDER_LOST}' >&2; fi",
+        "moor_fw=\"{fw}\"; if grep -qF '\"listen\":\"127.0.0.1:{port}\"' \"$moor_fw.json\" 2>/dev/null; then moor_pid=$(cat \"$moor_fw.pid\" 2>/dev/null); moor_ours=; [ -n \"$moor_pid\" ] && [ \"$(cat \"/proc/$moor_pid/comm\" 2>/dev/null)\" = egress-forward ] && moor_ours=1; if [ -f \"$moor_fw.new\" ]; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; mv -f \"$moor_fw.new\" \"$moor_fw\" || {}; moor_ours=; fi; if [ -z \"$moor_ours\" ]; then if {up}; then {}; fi; ( setsid \"$moor_fw\" --config \"$moor_fw.json\" </dev/null >\"$moor_fw.log\" 2>&1 9>&- & echo $! >\"$moor_fw.pid\" ); moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; fi",
         stop("the old egress forwarder $moor_pid did not exit after TERM"),
         stop(&format!("the new egress forwarder could not be moved to {fw}")),
         stop(&format!("port {port} is taken by another process")),

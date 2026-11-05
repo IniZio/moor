@@ -12,7 +12,6 @@ use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Piped, Pipes, ProcError, ProcSpec, Stdin, Tool};
 
 use super::exec::{env_file, while_touching};
-use super::lost::Strip;
 use super::peek::ssh_target;
 use super::{link, touch, Crabbox, DIAL_WITHIN};
 
@@ -85,16 +84,14 @@ pub(super) fn run(
         }
         gone
     };
-    let mut stderr = Strip::new(stderr);
     let pipes = Pipes {
         stdin,
         stdout: &mut Watched(stdout, &failed),
-        stderr: &mut Watched(&mut stderr, &failed),
+        stderr: &mut Watched(stderr, &failed),
         stop: &left,
     };
     let _ = touch::send_detached(cb, handle);
     let ended = while_touching(cb, handle, || cb.proc.run_piped(&proc, pipes));
-    stderr.finish(handle);
     match ended {
         Ok(Piped {
             code: Some(code),

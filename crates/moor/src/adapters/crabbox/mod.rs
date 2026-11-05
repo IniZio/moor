@@ -12,7 +12,6 @@ mod exec;
 mod handle;
 mod lease;
 mod link;
-mod lost;
 mod mirror;
 mod parse;
 mod peek;
@@ -337,10 +336,6 @@ impl Driver for Crabbox {
 
     fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         link::refresh(self, handle)
-    }
-
-    fn forwarder_lost(&self, handle: &BoxHandle) -> bool {
-        lost::take(handle)
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
