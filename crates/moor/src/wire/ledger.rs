@@ -75,8 +75,8 @@ mod tests {
         drop(store.reserve(id, &FakeRng::default(), Duration::from_secs(30)));
         store.set_proxy_key(id, b"k", LEDGER).unwrap();
         let vault = Vault::load(&test_vault_key(dir.path())).unwrap();
-        let env = Env::from_pairs([("MOOR_STATE_DIR", dir.path().to_str().unwrap())])
-            .sharing(store);
+        let env =
+            Env::from_pairs([("MOOR_STATE_DIR", dir.path().to_str().unwrap())]).sharing(store);
         let (ours, theirs) = UnixStream::pair().unwrap();
         let served = std::thread::spawn(move || serve_ledger((&env, &vault), None, theirs));
         let hello = Hello::Box {

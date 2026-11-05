@@ -210,7 +210,10 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
             .unwrap(),
         Some(r.id)
     );
-    assert!(r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }
 
 #[test]
@@ -240,7 +243,10 @@ fn a_new_egress_key_delivers_a_token_under_it() {
     let config: serde_json::Value = serde_json::from_slice(&written[3].1).unwrap();
     let sent = config.get("token").unwrap().as_str().unwrap();
     assert!(token::verify(other, sent.as_bytes()), "under the new key");
-    assert!(!r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(!r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }
 
 #[test]
@@ -255,9 +261,15 @@ fn a_failed_write_leaves_the_token_undelivered_for_the_next_exec() {
         ..r
     };
     assert!(r.deliver(&tunneled(), &Rig::endpoint()).is_err());
-    assert!(!r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(!r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
     assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
-    assert!(r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }
 
 #[test]
@@ -277,7 +289,10 @@ fn a_missing_binary_is_named_and_nothing_is_minted() {
         .deliver_from(&tunneled(), &Rig::endpoint(), gone)
         .unwrap_err();
     assert!(err.contains("/nonexistent/moor-egress-forward"), "{err}");
-    assert!(!r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(!r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }
 
 #[test]
@@ -306,7 +321,10 @@ fn a_mark_lost_to_another_controllers_mint_is_tried_again() {
     };
     super::mint_until_marked(&r.store, KEY, r.id, other).unwrap();
     assert_eq!(writes.get(), 2);
-    assert!(r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }
 
 #[test]
@@ -321,5 +339,8 @@ fn every_mark_lost_fails_the_delivery() {
     let err = super::mint_until_marked(&r.store, KEY, r.id, other).unwrap_err();
     assert!(err.contains("another controller replaced"), "{err}");
     assert_eq!(writes.get(), super::MINT_TRIES);
-    assert!(!r.store.egress_token_delivered(r.id, token::key_id(KEY)).unwrap());
+    assert!(!r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
 }

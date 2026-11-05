@@ -159,7 +159,10 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         Listen::Tcp(_) => None,
     };
     while !stop.load(Ordering::Acquire) {
-        if socket.as_ref().is_some_and(|(path, bound)| inode(path) != *bound) {
+        if socket
+            .as_ref()
+            .is_some_and(|(path, bound)| inode(path) != *bound)
+        {
             say(format_args!("its socket is gone or another Proxy's now"));
             break;
         }

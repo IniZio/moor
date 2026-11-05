@@ -573,6 +573,9 @@ fn fencing_a_supervisor_ends_its_lease_and_key_once() {
     assert!(store.fence_supervisor(id).unwrap());
     assert!(!store.heartbeat(id, "A").unwrap(), "its lease is gone");
     assert!(!store.proxy_key_is(id, b"k").unwrap(), "its key is gone");
-    assert!(!store.fence_supervisor(id).unwrap(), "nothing left to fence");
+    assert!(
+        !store.fence_supervisor(id).unwrap(),
+        "nothing left to fence"
+    );
     assert!(store.proxy(id).unwrap().is_some(), "the row stays");
 }

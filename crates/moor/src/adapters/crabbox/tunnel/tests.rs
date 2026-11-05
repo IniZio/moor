@@ -245,3 +245,39 @@ fn other_tunnel_failures_are_not_retried() {
         assert_eq!(clock.now(), Ts::from_millis(0));
     }
 }
+
+/// A process leading its own group whose argv holds `--reverse <forward>`, as a tunnel a
+/// controller killed without draining leaves.
+fn left_behind(forward: &str) -> moor_testkit::ChildGuard {
+    use std::os::unix::process::CommandExt as _;
+    moor_testkit::ChildGuard::new(
+        std::process::Command::new("sh")
+            .args([
+                "-c",
+                "while :; do sleep 0.1; done",
+                "sh",
+                "--reverse",
+                forward,
+            ])
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    )
+}
+
+#[test]
+fn a_tunnel_left_on_the_same_port_and_socket_is_ended_and_no_other() {
+    let socket = format!("/tmp/moor-orphan-{}/egress.sock", std::process::id());
+    let mut ours = left_behind(&format!("41001:{socket}"));
+    let mut other = left_behind(&format!("41002:{socket}"));
+    super::end_orphans(
+        "--reverse",
+        std::ffi::OsStr::new(&format!("41001:{socket}")),
+    );
+    let status = ours.wait().unwrap();
+    assert!(!status.success(), "it was ended: {status}");
+    assert!(
+        other.try_wait().unwrap().is_none(),
+        "another port is left alone"
+    );
+}

@@ -23,10 +23,11 @@ const BACKOFF: [Duration; 6] = [
 /// Time allowed to free the Box port from a session left behind by an earlier tunnel.
 const CLEAR_DEADLINE: Duration = Duration::from_secs(45);
 
-/// Shell run in the Box with the port as `$1`: ends each `sshd-session` that holds the loopback
-/// listener on it, which an earlier tunnel's ssh can leave behind after it was killed. It reads
-/// `/proc`, since a Box image need not have `ss`.
-const CLEAR_SCRIPT: &str = r#"p=$(printf ':%04X' "$1"); ino=$(awk -v p="$p" 'substr($2, length($2) - 4) == p && $4 == "0A" {print $10}' /proc/net/tcp 2>/dev/null); [ -n "$ino" ] || exit 0; for f in /proc/[0-9]*/fd/*; do [ "$(readlink "$f" 2>/dev/null)" = "socket:[$ino]" ] || continue; pid=${f#/proc/}; pid=${pid%%/*}; [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = sshd-session ] && kill "$pid" 2>/dev/null; done; exit 0"#;
+/// Shell run in the Box with the port as `$1`: ends each ssh session process (`sshd-session`
+/// from OpenSSH 9.8, `sshd` before) that holds the loopback listener on it, IPv4 or IPv6, which
+/// an earlier tunnel's ssh can leave behind after it was killed. It reads `/proc`, since a Box
+/// image need not have `ss`.
+const CLEAR_SCRIPT: &str = r#"p=$(printf ':%04X' "$1"); ino=$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk -v p="$p" 'substr($2, length($2) - 4) == p && $4 == "0A" {printf " %s", $10}'); [ -n "$ino" ] || exit 0; for f in /proc/[0-9]*/fd/*; do l=$(readlink "$f" 2>/dev/null) || continue; case "$l" in "socket:["*"]") ;; *) continue ;; esac; i=${l#socket:[}; i=${i%]}; case "$ino " in *" $i "*) ;; *) continue ;; esac; pid=${f#/proc/}; pid=${pid%%/*}; case "$(cat "/proc/$pid/comm" 2>/dev/null)" in sshd | sshd-session) kill "$pid" 2>/dev/null ;; esac; done; exit 0"#;
 
 impl Kept {
     /// Opens the tunnel when it is down and its next try is due; why it is down after. The
@@ -118,5 +119,75 @@ impl Kept {
                 self.box_port
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read as _;
+    use std::net::{Ipv6Addr, TcpListener};
+    use std::time::Duration;
+
+    use super::CLEAR_SCRIPT;
+
+    /// Names the port [`hold_ipv6_port`] listens on in a child process.
+    const HOLD: &str = "MOOR_TEST_HOLD_IPV6";
+
+    #[test]
+    fn hold_ipv6_port() {
+        let Some(port) = std::env::var_os(HOLD) else {
+            return;
+        };
+        let port: u16 = port.to_str().unwrap().parse().unwrap();
+        let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, port)).unwrap();
+        print!("listening");
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        drop(listener.accept());
+    }
+
+    #[test]
+    fn a_session_process_of_an_older_openssh_holding_the_port_over_ipv6_is_ended() {
+        if std::env::var_os(HOLD).is_some() {
+            return;
+        }
+        let Ok(free) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)) else {
+            eprintln!("no IPv6 loopback here; nothing to check");
+            return;
+        };
+        let port = free.local_addr().unwrap().port();
+        drop(free);
+        let dir = tempfile::tempdir().unwrap();
+        let named = dir.path().join("sshd");
+        std::os::unix::fs::symlink(std::env::current_exe().unwrap(), &named).unwrap();
+        let mut held = moor_testkit::ChildGuard::new(
+            std::process::Command::new(&named)
+                .args(["--exact", "proxy::keeper::tunnel::tests::hold_ipv6_port"])
+                .arg("--nocapture")
+                .env(HOLD, port.to_string())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut out = held.stdout.take().unwrap();
+        let mut said = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !said.ends_with(b"listening") && out.read(&mut byte).unwrap() == 1 {
+            said.push(byte[0]);
+        }
+        assert!(
+            said.ends_with(b"listening"),
+            "{}",
+            String::from_utf8_lossy(&said)
+        );
+        let cleared = std::process::Command::new("sh")
+            .args(["-c", CLEAR_SCRIPT, "sh", &port.to_string()])
+            .status()
+            .unwrap();
+        assert!(cleared.success());
+        let ended = (0..100).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            held.try_wait().unwrap().is_some()
+        });
+        assert!(ended, "the process holding the port was ended");
     }
 }

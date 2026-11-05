@@ -395,6 +395,7 @@ fn an_ended_keeper_finishes_its_open_before_end_returns_and_keeps_nothing() {
     gate.release.send(()).unwrap();
     ended.recv_timeout(Duration::from_secs(5)).unwrap();
     tick.join().unwrap();
+    drop(gate);
     assert_eq!(
         w.driver.tunnels().len(),
         w.driver.dropped_tunnels().len(),
