@@ -257,6 +257,12 @@ impl Server {
         self.shared.boxes.tracked()
     }
 
+    /// Where each running Box engine takes its tunnels.
+    #[cfg(test)]
+    pub(crate) fn engines(&self) -> Vec<SocketAddr> {
+        self.shared.boxes.engines()
+    }
+
     /// How many Boxes have a running proxy.
     #[cfg(test)]
     pub(crate) fn serving(&self) -> usize {
