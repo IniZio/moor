@@ -248,6 +248,13 @@ impl Cx {
         &self.config
     }
 
+    /// This context with `floor` as the shortest gap a workflow's cron may have.
+    #[cfg(test)]
+    pub(crate) fn with_workflow_floor(mut self, floor: std::time::Duration) -> Self {
+        let env = std::mem::take(&mut self.env).with_workflow_min_interval(floor);
+        Self { env, ..self }
+    }
+
     /// Host environment snapshot.
     pub(crate) const fn env(&self) -> &Env {
         &self.env

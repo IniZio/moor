@@ -34,11 +34,16 @@ mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
+mod cmd;
 mod user;
+mod workflow;
 pub use user::{
     ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
     ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
     WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+};
+pub use workflow::{
+    WorkflowAddReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq, WorkflowRunsReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -150,6 +155,16 @@ pub enum Request {
     WebhookList(AsReq),
     /// Remove one of the caller's user's webhooks.
     WebhookRemove(WebhookRemoveReq),
+    /// Add or replace one of the caller's user's workflows.
+    WorkflowAdd(WorkflowAddReq),
+    /// List the caller's user's workflows with their next due time and last runs.
+    WorkflowList(AsReq),
+    /// Remove one of the caller's user's workflows and its runs.
+    WorkflowRemove(WorkflowRemoveReq),
+    /// Enable or disable one of the caller's user's workflows.
+    WorkflowSetEnabled(WorkflowEnableReq),
+    /// The changes to the caller's user's workflow runs after a cursor, oldest first.
+    WorkflowRuns(WorkflowRunsReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),
@@ -187,82 +202,6 @@ pub enum Request {
     As(ActAsReq),
     /// Print version information.
     Version {},
-}
-
-impl Request {
-    /// The command name; equals the serde tag.
-    #[must_use]
-    #[expect(clippy::too_many_lines, reason = "one arm per request")]
-    pub const fn cmd(&self) -> &'static str {
-        match self {
-            Self::Start(_) => "start",
-            Self::StartNeeds(_) => "start-needs",
-            Self::Run(_) => "run",
-            Self::Wait(_) => "wait",
-            Self::WaitEvents(_) => "wait-events",
-            Self::Steer(_) => "steer",
-            Self::EndSession(_) => "end-session",
-            Self::OpenSession(_) => "open-session",
-            Self::OpenHostSession(_) => "open-host-session",
-            Self::UpdateHostSession(_) => "update-host-session",
-            Self::EndHostSession(_) => "end-host-session",
-            Self::BindSession(_) => "bind-session",
-            Self::SessionBinding(_) => "session-binding",
-            Self::ShowSession(_) => "show-session",
-            Self::Sessions(_) => "sessions",
-            Self::Show(_) => "show",
-            Self::Inspect(_) => "inspect",
-            Self::Close(_) => "close",
-            Self::Cp(_) => "cp",
-            Self::BoxMirror(_) => "box-mirror",
-            Self::BoxPut(_) => "box-put",
-            Self::Open(_) => "open",
-            Self::Sleep(_) => "sleep",
-            Self::Wake(_) => "wake",
-            Self::Retry(_) => "retry",
-            Self::CloseFailed(_) => "close-failed",
-            Self::Connect(_) => "connect",
-            Self::Attach(_) => "attach",
-            Self::Exec(_) => "exec",
-            Self::Gate(_) => "gate",
-            Self::Env(_) => "env",
-            Self::Artifacts(_) => "artifacts",
-            Self::ArtifactRead(_) => "artifact-read",
-            Self::Whoami(_) => "whoami",
-            Self::Enroll(_) => "enroll",
-            Self::SecretSet(_) => "secret-set",
-            Self::SecretDelete(_) => "secret-delete",
-            Self::SecretNames(_) => "secret-names",
-            Self::McpAdd(_) => "mcp-add",
-            Self::McpRemove(_) => "mcp-remove",
-            Self::McpList(_) => "mcp-list",
-            Self::ProfileSet(_) => "profile-set",
-            Self::ProfileShow(_) => "profile-show",
-            Self::ProfileRemove(_) => "profile-remove",
-            Self::WebhookAdd(_) => "webhook-add",
-            Self::WebhookSetupShow(_) => "webhook-setup-show",
-            Self::WebhookSetupFinish(_) => "webhook-setup-finish",
-            Self::WebhookList(_) => "webhook-list",
-            Self::WebhookRemove(_) => "webhook-remove",
-            Self::McpOAuthFinish(_) => "mcp-oauth-finish",
-            Self::MachineRemove(_) => "machine-remove",
-            Self::MachineEnroll(_) => "machine-enroll",
-            Self::MachineList(_) => "machine-list",
-            Self::NodeList(_) => "node-list",
-            Self::ProviderReady(_) => "provider-ready",
-            Self::MachineStatus(_) => "machine-status",
-            Self::MachineKeys {} => "machine-keys",
-            Self::MachineLinks(_) => "machine-links",
-            Self::MachineHold(_) => "machine-hold",
-            Self::ProxyLease(_) => "proxy-lease",
-            Self::WebhookClaim(_) => "webhook-claim",
-            Self::WebhookReport(_) => "webhook-report",
-            Self::ProxyRelease(_) => "proxy-release",
-            Self::ProxyStatus(_) => "proxy-status",
-            Self::As(_) => "as",
-            Self::Version {} => "version",
-        }
-    }
 }
 
 /// Arguments of `start`.

@@ -15,6 +15,7 @@ mod machine;
 pub(crate) mod mcp;
 mod profile;
 mod webhook;
+mod workflow;
 
 /// Run `cmd` as `who`.
 #[expect(clippy::too_many_lines, reason = "one arm per user command")]
@@ -84,6 +85,7 @@ pub(crate) fn run(
         }
         UserCmd::WebhookList => webhook::list(store, enrolled(store, who)?),
         UserCmd::WebhookRemove { id } => webhook::remove(store, enrolled(store, who)?, *id),
+        UserCmd::Workflow(cmd) => workflow::run(cx, store, enrolled(store, who)?, cmd),
         UserCmd::McpOAuthFinish { .. } => mcp::oauth::finish(cx, vault, enrolled(store, who)?, cmd),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
         UserCmd::ProfileSet { source } => profile::set(store, enrolled(store, who)?, source),

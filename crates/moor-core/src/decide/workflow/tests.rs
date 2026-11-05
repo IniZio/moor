@@ -36,6 +36,7 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         prompt: "go".to_owned(),
         state,
         timeout: TimeoutMinutes::DEFAULT,
+        origin: None,
         created_at: ts(0),
         updated_at: ts(0),
     }

@@ -46,3 +46,34 @@ fn invalid_test_now_is_a_usage_error() {
     assert_eq!(err.kind, moor_core::ErrorKind::Usage);
     assert!(err.error.to_string().contains("MOOR_TEST_NOW"));
 }
+
+#[test]
+fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
+    use moor_core::request::{UserCmd, WorkflowAddReq, WorkflowCmd};
+    use moor_core::user::Caller;
+
+    let req = WorkflowAddReq {
+        identity: None,
+        name: "n".to_owned(),
+        cron: "0 9 * * *".to_owned(),
+        timezone: "UTC".to_owned(),
+        repos: vec!["o/n".to_owned()],
+        prompt: "p".to_owned(),
+        timeout_minutes: None,
+        origin_key: Some("k".to_owned()),
+    };
+    let add = UserCmd::Workflow(WorkflowCmd::Add {
+        req: req.clone(),
+        origin_front: Some("forged".to_owned()),
+    });
+    let with = |front: Option<&str>| {
+        UserCmd::Workflow(WorkflowCmd::Add {
+            req: req.clone(),
+            origin_front: front.map(str::to_owned),
+        })
+    };
+    let got = |c: Caller| super::with_origin(&add, &Ok(c));
+    assert_eq!(got(Caller::Front("slack".to_owned())), with(Some("slack")));
+    assert_eq!(got(Caller::Operator(1000)), with(None));
+    assert_eq!(got(Caller::Local(1000)), with(None));
+}

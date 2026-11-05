@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, StartReq};
+use super::{Request, WorkflowCmd};
 use crate::name::ProfileSource;
 use crate::user::{Email, Identity, SecretName};
 
+mod identity;
 mod mcp;
 mod secret_value;
 mod webhook;
@@ -143,6 +144,8 @@ pub enum UserCmd {
     ProfileShow,
     /// Clear the caller's user's agent profile repo.
     ProfileRemove,
+    /// A workflow request.
+    Workflow(WorkflowCmd),
     /// Add a webhook for the caller's user.
     WebhookAdd {
         /// The `https://` URL each event is posted to.
@@ -247,6 +250,7 @@ impl UserCmd {
             Self::ProxyLease => "proxy-lease",
             Self::ProxyRelease { .. } => "proxy-release",
             Self::ProxyStatus => "proxy-status",
+            Self::Workflow(c) => c.cmd(),
         }
     }
 }
@@ -328,7 +332,10 @@ impl Request {
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
             Self::ProxyRelease(r) => (r.identity, UserCmd::ProxyRelease { token: r.token }),
             Self::ProxyStatus(r) => (r.identity, UserCmd::ProxyStatus),
-            other => return Err(Box::new(other)),
+            other => match super::workflow::split(other) {
+                Ok((identity, cmd)) => (identity, UserCmd::Workflow(cmd)),
+                Err(other) => return Err(other),
+            },
         })
     }
 
@@ -352,41 +359,6 @@ impl Request {
                 acting.identity
             )),
             _ => Ok((Some(acting.identity), inner)),
-        }
-    }
-
-    /// The identity this request's own field asserts.
-    const fn own_identity(&self) -> Option<&Identity> {
-        match self {
-            Self::Start(StartReq { identity, .. })
-            | Self::StartNeeds(StartNeedsReq { identity, .. })
-            | Self::Whoami(AsReq { identity })
-            | Self::Enroll(EnrollReq { identity, .. })
-            | Self::SecretNames(AsReq { identity })
-            | Self::McpList(AsReq { identity })
-            | Self::ProfileShow(AsReq { identity })
-            | Self::ProfileRemove(AsReq { identity })
-            | Self::WebhookList(AsReq { identity })
-            | Self::WebhookAdd(WebhookAddReq { identity, .. })
-            | Self::WebhookRemove(WebhookRemoveReq { identity, .. })
-            | Self::WebhookSetupShow(WebhookSetupShowReq { identity, .. })
-            | Self::WebhookSetupFinish(WebhookSetupFinishReq { identity, .. })
-            | Self::ProfileSet(ProfileSetReq { identity, .. })
-            | Self::MachineList(AsReq { identity })
-            | Self::NodeList(AsReq { identity })
-            | Self::ProviderReady(AsReq { identity })
-            | Self::MachineRemove(MachineRemoveReq { identity, .. })
-            | Self::MachineStatus(MachineStatusReq { identity, .. })
-            | Self::MachineEnroll(MachineEnrollReq { identity, .. })
-            | Self::McpAdd(McpAddReq { identity, .. })
-            | Self::McpRemove(McpRemoveReq { identity, .. })
-            | Self::McpOAuthFinish(McpOAuthFinishReq { identity, .. })
-            | Self::ProxyLease(AsReq { identity })
-            | Self::ProxyStatus(AsReq { identity })
-            | Self::ProxyRelease(ProxyReleaseReq { identity, .. })
-            | Self::SecretSet(SecretSetReq { identity, .. })
-            | Self::SecretDelete(SecretDeleteReq { identity, .. }) => identity.as_ref(),
-            _ => None,
         }
     }
 }

@@ -5,12 +5,13 @@ use std::time::Duration;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::workflow::{
-    TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName, WorkflowSchedule,
-    WorkflowState,
+    TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName, WorkflowOrigin,
+    WorkflowSchedule, WorkflowState,
 };
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
+mod changes;
 mod runs;
 
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension as _};
@@ -42,10 +43,14 @@ struct WorkflowRow {
     created_at: i64,
     /// `updated_at`.
     updated_at: i64,
+    /// `origin_front`.
+    origin_front: Option<String>,
+    /// `origin_key`.
+    origin_key: Option<String>,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 12] = [
+const WORKFLOW_COLS: [Workflows; 14] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -58,6 +63,8 @@ const WORKFLOW_COLS: [Workflows; 12] = [
     Workflows::TimeoutMinutes,
     Workflows::CreatedAt,
     Workflows::UpdatedAt,
+    Workflows::OriginFront,
+    Workflows::OriginKey,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -80,6 +87,8 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         timeout_minutes: r.get(9)?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
+        origin_front: r.get(12)?,
+        origin_key: r.get(13)?,
     })
 }
 
@@ -110,16 +119,16 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
             },
         ),
         timeout,
+        origin: row.origin_front.map(|front| WorkflowOrigin {
+            front,
+            key: row.origin_key,
+        }),
         created_at: Ts::from_millis(row.created_at),
         updated_at: Ts::from_millis(row.updated_at),
     })
 }
 
 /// Inserts `def` as `owner`'s workflow and returns its id.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the owner-facing commands are not wired yet")
-)]
 fn insert_workflow(
     conn: &dyn Db,
     owner: UserId,
@@ -141,6 +150,8 @@ fn insert_workflow(
                 Workflows::TimeoutMinutes,
                 Workflows::CreatedAt,
                 Workflows::UpdatedAt,
+                Workflows::OriginFront,
+                Workflows::OriginKey,
             ])
             .values_panic([
                 owner.get().into(),
@@ -153,6 +164,8 @@ fn insert_workflow(
                 i64::from(def.timeout.minutes()).into(),
                 now.into(),
                 now.into(),
+                def.origin.as_ref().map(|o| o.front.as_str()).into(),
+                def.origin.as_ref().and_then(|o| o.key.as_deref()).into(),
             ])
             .returning_col(Workflows::Id),
         |r| r.get(0),
@@ -164,10 +177,6 @@ impl Store {
     /// returns its id. A replaced workflow keeps its id, its runs and its creation time; it
     /// counts as enabled since now unless it was enabled already. Enabling it clears the reason
     /// the controller disabled it for; storing it disabled leaves that reason.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn put_workflow(
         &self,
         owner: UserId,
@@ -205,6 +214,14 @@ impl Store {
                     .value(Workflows::DisabledReason, reason)
                     .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
                     .value(Workflows::UpdatedAt, now)
+                    .value(
+                        Workflows::OriginFront,
+                        def.origin.as_ref().map(|o| o.front.as_str()),
+                    )
+                    .value(
+                        Workflows::OriginKey,
+                        def.origin.as_ref().and_then(|o| o.key.as_deref()),
+                    )
                     .and_where(Expr::col(Workflows::Id).eq(id)),
             )?;
             id
@@ -217,10 +234,6 @@ impl Store {
     }
 
     /// `owner`'s workflow `name`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn workflow(
         &self,
         owner: UserId,
@@ -241,10 +254,6 @@ impl Store {
     }
 
     /// `owner`'s workflows, by name.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn workflows(&self, owner: UserId) -> Result<Vec<Workflow>, StoreError> {
         let reader = self.reader()?;
         let rows = reader.rows(
@@ -288,10 +297,6 @@ impl Store {
     }
 
     /// Deletes `owner`'s workflow `name` with its runs; true when there was one.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn delete_workflow(
         &self,
         owner: UserId,
@@ -309,10 +314,6 @@ impl Store {
     /// Enables or disables `owner`'s workflow `name`; true when there is one. Enabling counts
     /// from now unless it was enabled already, and clears the reason the controller disabled it
     /// for. Disabling leaves that reason.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn set_workflow_enabled(
         &self,
         owner: UserId,
@@ -347,15 +348,17 @@ impl Store {
         reason: &str,
     ) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
-        let changed = self.writer().run(
-            Query::update()
-                .table(Workflows::Table)
-                .value(Workflows::EnabledAt, Option::<i64>::None)
-                .value(Workflows::DisabledReason, reason)
-                .value(Workflows::UpdatedAt, now)
-                .and_where(Expr::col(Workflows::Id).eq(id.get()))
-                .and_where(Expr::col(Workflows::EnabledAt).is_not_null()),
-        )?;
-        Ok(changed == 1)
+        self.numbered(|tx, seq| {
+            Ok(tx.run(
+                Query::update()
+                    .table(Workflows::Table)
+                    .value(Workflows::EnabledAt, Option::<i64>::None)
+                    .value(Workflows::DisabledReason, reason)
+                    .value(Workflows::ChangeSeq, seq)
+                    .value(Workflows::UpdatedAt, now)
+                    .and_where(Expr::col(Workflows::Id).eq(id.get()))
+                    .and_where(Expr::col(Workflows::EnabledAt).is_not_null()),
+            )?)
+        })
     }
 }

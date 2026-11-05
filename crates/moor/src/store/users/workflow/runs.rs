@@ -25,7 +25,7 @@ const SKIPPED_OVERLAP: &str = "skipped_overlap";
 const REFUSED: &str = "refused";
 
 /// A `workflow_runs` row as read: repo, due time, box, outcome, detail, end, recorded time.
-type RunRow = (
+pub(super) type RunRow = (
     String,
     i64,
     Option<i64>,
@@ -36,7 +36,7 @@ type RunRow = (
 );
 
 /// The columns of a `workflow_runs` row, in the order [`read_run`] reads them.
-const RUN_COLS: [WorkflowRuns; 7] = [
+pub(super) const RUN_COLS: [WorkflowRuns; 7] = [
     WorkflowRuns::Repo,
     WorkflowRuns::DueAt,
     WorkflowRuns::Box,
@@ -47,7 +47,7 @@ const RUN_COLS: [WorkflowRuns; 7] = [
 ];
 
 /// Reads one `workflow_runs` row.
-fn read_run(r: &db::Row) -> Result<RunRow, db::Error> {
+pub(super) fn read_run(r: &db::Row) -> Result<RunRow, db::Error> {
     Ok((
         r.get(0)?,
         r.get(1)?,
@@ -60,7 +60,7 @@ fn read_run(r: &db::Row) -> Result<RunRow, db::Error> {
 }
 
 /// The run a stored row holds; an outcome whose box, detail or end do not fit it is corrupt.
-fn run_of(workflow: WorkflowId, row: RunRow) -> Result<WorkflowRun, StoreError> {
+pub(super) fn run_of(workflow: WorkflowId, row: RunRow) -> Result<WorkflowRun, StoreError> {
     let (repo, due_at, box_id, outcome, detail, ended_at, recorded_at) = row;
     let box_id = box_id.map(BoxId::new);
     let ended_at = ended_at.map(Ts::from_millis);
@@ -115,32 +115,35 @@ impl Store {
     /// already have one, so a firing repeated after a crash records once.
     pub(crate) fn record_workflow_run(&self, run: &WorkflowRun) -> Result<bool, StoreError> {
         let (outcome, box_id, detail, ended_at) = outcome_cols(&run.outcome);
-        let added = self.writer().run(
-            Query::insert()
-                .into_table(WorkflowRuns::Table)
-                .columns([
-                    WorkflowRuns::Workflow,
-                    WorkflowRuns::Repo,
-                    WorkflowRuns::DueAt,
-                    WorkflowRuns::Box,
-                    WorkflowRuns::Outcome,
-                    WorkflowRuns::Detail,
-                    WorkflowRuns::EndedAt,
-                    WorkflowRuns::RecordedAt,
-                ])
-                .values_panic([
-                    run.workflow.get().into(),
-                    run.repo.to_string().into(),
-                    run.due_at.as_millis().into(),
-                    box_id.into(),
-                    outcome.into(),
-                    detail.into(),
-                    ended_at.into(),
-                    run.recorded_at.as_millis().into(),
-                ])
-                .on_conflict(OnConflict::new().do_nothing().to_owned()),
-        )?;
-        Ok(added == 1)
+        self.numbered(|tx, seq| {
+            Ok(tx.run(
+                Query::insert()
+                    .into_table(WorkflowRuns::Table)
+                    .columns([
+                        WorkflowRuns::Workflow,
+                        WorkflowRuns::Repo,
+                        WorkflowRuns::DueAt,
+                        WorkflowRuns::Box,
+                        WorkflowRuns::Outcome,
+                        WorkflowRuns::Detail,
+                        WorkflowRuns::EndedAt,
+                        WorkflowRuns::RecordedAt,
+                        WorkflowRuns::Seq,
+                    ])
+                    .values_panic([
+                        run.workflow.get().into(),
+                        run.repo.to_string().into(),
+                        run.due_at.as_millis().into(),
+                        box_id.into(),
+                        outcome.into(),
+                        detail.into(),
+                        ended_at.into(),
+                        run.recorded_at.as_millis().into(),
+                        seq.into(),
+                    ])
+                    .on_conflict(OnConflict::new().do_nothing().to_owned()),
+            )?)
+        })
     }
 
     /// Ends the started run of `workflow` and `repo` due at `due_at`, at `at`. False, with
@@ -156,17 +159,19 @@ impl Store {
             RunEnd::Finished => FINISHED,
             RunEnd::TimedOut => TIMED_OUT,
         };
-        let changed = self.writer().run(
-            Query::update()
-                .table(WorkflowRuns::Table)
-                .value(WorkflowRuns::Outcome, outcome)
-                .value(WorkflowRuns::EndedAt, at.as_millis())
-                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
-                .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED)),
-        )?;
-        Ok(changed == 1)
+        self.numbered(|tx, seq| {
+            Ok(tx.run(
+                Query::update()
+                    .table(WorkflowRuns::Table)
+                    .value(WorkflowRuns::Outcome, outcome)
+                    .value(WorkflowRuns::EndedAt, at.as_millis())
+                    .value(WorkflowRuns::Seq, seq)
+                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                    .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED)),
+            )?)
+        })
     }
 
     /// Turns the started run of `workflow` and `repo` due at `due_at` into a refusal with
@@ -290,18 +295,20 @@ impl Store {
         outcome: &WorkflowOutcome,
     ) -> Result<bool, StoreError> {
         let (name, box_id, detail, _) = outcome_cols(outcome);
-        let changed = self.writer().run(
-            Query::update()
-                .table(WorkflowRuns::Table)
-                .value(WorkflowRuns::Outcome, name)
-                .value(WorkflowRuns::Box, box_id)
-                .value(WorkflowRuns::Detail, detail)
-                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
-                .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTING)),
-        )?;
-        Ok(changed == 1)
+        self.numbered(|tx, seq| {
+            Ok(tx.run(
+                Query::update()
+                    .table(WorkflowRuns::Table)
+                    .value(WorkflowRuns::Outcome, name)
+                    .value(WorkflowRuns::Box, box_id)
+                    .value(WorkflowRuns::Detail, detail)
+                    .value(WorkflowRuns::Seq, seq)
+                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                    .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTING)),
+            )?)
+        })
     }
 
     /// Every claimed run whose Box was not yet recorded, of any workflow.
@@ -337,10 +344,6 @@ impl Store {
     }
 
     /// The latest run of each repo of `workflow` that has one, by due time.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the owner-facing commands are not wired yet")
-    )]
     pub(crate) fn last_workflow_runs(
         &self,
         workflow: WorkflowId,

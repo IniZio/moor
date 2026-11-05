@@ -128,6 +128,16 @@ pub enum WorkflowState {
     },
 }
 
+/// The front that created a workflow and the key it finds the workflow's runs by. Core never
+/// reads either one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowOrigin {
+    /// The namespace of the front socket that sent the request.
+    pub front: String,
+    /// The front's own key, if it sent one.
+    pub key: Option<String>,
+}
+
 /// A workflow as its owner wrote it, before the store gives it an id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDef {
@@ -143,6 +153,8 @@ pub struct WorkflowDef {
     pub enabled: bool,
     /// How long a started run may take.
     pub timeout: TimeoutMinutes,
+    /// The front that created it, if one did.
+    pub origin: Option<WorkflowOrigin>,
 }
 
 impl WorkflowDef {
@@ -176,6 +188,7 @@ impl WorkflowDef {
             prompt: prompt.to_owned(),
             enabled,
             timeout,
+            origin: None,
         })
     }
 }
@@ -199,6 +212,8 @@ pub struct Workflow {
     pub state: WorkflowState,
     /// How long a started run may take.
     pub timeout: TimeoutMinutes,
+    /// The front that created it, if one did.
+    pub origin: Option<WorkflowOrigin>,
     /// When it was created.
     pub created_at: Ts,
     /// When it was last changed.
@@ -283,3 +298,28 @@ mod tests;
 
 pub use box_name::box_name;
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
+
+/// One entry of a user's change stream, ordered by `seq` across runs and workflows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowChange {
+    /// The position in the stream, rising with every change.
+    pub seq: i64,
+    /// The workflow's name.
+    pub workflow: WorkflowName,
+    /// The front that created the workflow, if one did.
+    pub origin: Option<WorkflowOrigin>,
+    /// What changed.
+    pub what: ChangeKind,
+}
+
+/// What a [`WorkflowChange`] reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangeKind {
+    /// A run was recorded or moved to its next outcome.
+    Run(WorkflowRun),
+    /// The controller disabled the workflow for this reason.
+    Disabled {
+        /// Why.
+        reason: String,
+    },
+}
