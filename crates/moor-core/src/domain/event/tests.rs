@@ -303,6 +303,16 @@ fn all_events() -> Vec<Event> {
             reason: s("provider_unsupported"),
             detail: s("provider p keeps no cache volumes"),
         }),
+        Event::NodeDisk(NodeDiskEvent::NodeDiskLow {
+            node: s("hv"),
+            free_mib: 9_000,
+            total_mib: 409_600,
+        }),
+        Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered {
+            node: s("hv"),
+            free_mib: 200_000,
+            total_mib: 409_600,
+        }),
     ]
 }
 
@@ -401,6 +411,8 @@ const fn event_index(e: &Event) -> usize {
         Event::Stall(StallEvent::AgentStalled { .. }) => 74,
         Event::Stall(StallEvent::AgentResumed { .. }) => 75,
         Event::Timing(TimingEvent::CacheCold { .. }) => 76,
+        Event::NodeDisk(NodeDiskEvent::NodeDiskLow { .. }) => 77,
+        Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered { .. }) => 78,
     }
 }
 
@@ -408,7 +420,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 77);
+    assert_eq!(all.len(), 79);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -573,28 +585,6 @@ fn artifact_published_kind_and_payload() {
 }
 
 mod kinds;
-
-#[test]
-fn profile_events_serialize_flat() {
-    let resolved = Event::Profile(ProfileEvent::ProfileResolved {
-        repo: crate::name::ForgeRepo::new("o", "p"),
-        sha: "abc".to_owned(),
-    });
-    assert_eq!(
-        serde_json::to_string(&resolved).unwrap(),
-        r#"{"kind":"profile_resolved","repo":"o/p","sha":"abc"}"#
-    );
-    assert_eq!(resolved.kind(), "profile_resolved");
-    let failed = Event::Profile(ProfileEvent::ProfileFailed {
-        step: ProfileStep::Fetch,
-        detail: "d".to_owned(),
-    });
-    assert_eq!(
-        serde_json::to_string(&failed).unwrap(),
-        r#"{"kind":"profile_failed","step":"fetch","detail":"d"}"#
-    );
-    assert_eq!(
-        failed.payload(),
-        serde_json::json!({"step":"fetch","detail":"d"})
-    );
-}
+mod proxy;
+mod relaunch;
+mod timing;

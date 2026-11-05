@@ -15,11 +15,13 @@ use crate::token::Fail;
 const PREFIX: &str = "moor://box/";
 
 /// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 10] = [
+const WORTH: [&str; 12] = [
     "idled",
     "needs_input",
     "agent_stalled",
     "agent_resumed",
+    "node_disk_low",
+    "node_disk_recovered",
     "setup_failed",
     "session_failed",
     "launch_timed_out",
@@ -329,12 +331,15 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(|t| t.chars().take(SAID).collect::<String>());
-    let line = quiet_line(name, kind, event.get("payload")).unwrap_or_else(|| {
-        said.map_or_else(
-            || format!("moor: box {name} {kind}"),
-            |said| format!("moor: box {name} {kind}: {said}"),
-        )
-    });
+    let payload = event.get("payload");
+    let line = quiet_line(name, kind, payload)
+        .or_else(|| disk_line(name, kind, payload))
+        .unwrap_or_else(|| {
+            said.map_or_else(
+                || format!("moor: box {name} {kind}"),
+                |said| format!("moor: box {name} {kind}: {said}"),
+            )
+        });
     Some((key, line, kind == "closed"))
 }
 
@@ -352,4 +357,18 @@ fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String>
         "agent_resumed" => Some(format!("moor: box {name} resumed after {mins} min")),
         _ => None,
     }
+}
+
+/// The line for a node's disk running low or coming back; none for other kinds.
+fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
+    if !matches!(kind, "node_disk_low" | "node_disk_recovered") {
+        return None;
+    }
+    let payload = payload?;
+    let node = payload.get("node")?.as_str()?;
+    let free = payload.get("free_mib")?.as_u64()? / 1024;
+    let total = payload.get("total_mib")?.as_u64()? / 1024;
+    Some(format!(
+        "moor: box {name} {kind}: {node} has {free} GiB free of {total} GiB"
+    ))
 }

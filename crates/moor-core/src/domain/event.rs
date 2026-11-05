@@ -371,13 +371,16 @@ pub enum Event {
     /// The agent stalled, or reported again after it had.
     #[serde(untagged)]
     Stall(StallEvent),
+    /// The disk of the node the Box is on ran low, or came back.
+    #[serde(untagged)]
+    NodeDisk(NodeDiskEvent),
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),
 }
 pub use boxes::box_events;
 pub use checked::CheckedCred;
-pub use kind::{StallEvent, ASSERTED_KINDS, EVENT_KINDS};
+pub use kind::{NodeDiskEvent, StallEvent, ASSERTED_KINDS, EVENT_KINDS};
 pub use machine::MachineEvent;
 pub use post_clone::{PostCloneStep, TimingEvent};
 pub use profile::{ProfileEvent, ProfileStep};
@@ -389,12 +392,6 @@ mod kind;
 mod machine;
 mod post_clone;
 mod profile;
-#[cfg(test)]
-mod proxy_tests;
-#[cfg(test)]
-mod relaunch_tests;
 mod steps;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod timing_tests;

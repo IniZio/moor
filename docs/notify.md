@@ -78,8 +78,9 @@ egress proxy set, the proxy looks up the host, so the proxy must refuse such
 addresses. Pass `--allow-private` to a front you run yourself to post to a
 local receiver; the front logs a warning when it starts.
 
-The usual events are these; a webhook can name others that the controller
-stores:
+A webhook that names no events gets the ones in this table. It keeps the list it
+was added with, so a webhook added earlier gets a newly listed kind only when
+removed and added again. A webhook can name others that the controller stores:
 
 | Kind | When |
 | --- | --- |
@@ -90,6 +91,8 @@ stores:
 | `relaunch_capped` | The agent ended too often, so moor does not start it again. |
 | `box_failed` | The machine for the Box could not be made. |
 | `agent_stalled` | The agent reported busy, then sent no report for 10 minutes while no `moor run` was in flight. Sent once per stall. |
+| `node_disk_low` | The disk of a node the owner has a Box on fell below the free space moor keeps for another Box. Sent once per owner per crossing, on one Box, with `node`, `free_mib` and `total_mib` in `data`. See [nodes](nodes.md#disk). |
+| `node_disk_recovered` | That node's free disk climbed back past its floor and margin. |
 
 Add `relaunched` to hear about each automatic restart of the agent, or
 `closed` and `asleep` for those changes. A `closed` event's `data` has `from`,

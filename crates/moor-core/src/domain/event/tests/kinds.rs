@@ -180,3 +180,44 @@ fn stall_events_carry_their_own_kind() {
     assert_eq!(resumed.kind(), "agent_resumed");
     assert_eq!(resumed.payload(), serde_json::json!({"quiet_secs": 900}));
 }
+
+#[test]
+fn node_disk_events_carry_their_own_kind() {
+    let low = Event::NodeDisk(NodeDiskEvent::NodeDiskLow {
+        node: "hv".to_owned(),
+        free_mib: 9_000,
+        total_mib: 409_600,
+    });
+    assert_eq!(low.kind(), "node_disk_low");
+    assert_eq!(
+        low.payload(),
+        serde_json::json!({"node": "hv", "free_mib": 9_000, "total_mib": 409_600})
+    );
+    let json = serde_json::to_string(&low).unwrap();
+    assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), low);
+}
+
+#[test]
+fn profile_events_serialize_flat() {
+    let resolved = Event::Profile(ProfileEvent::ProfileResolved {
+        repo: crate::name::ForgeRepo::new("o", "p"),
+        sha: "abc".to_owned(),
+    });
+    assert_eq!(
+        serde_json::to_string(&resolved).unwrap(),
+        r#"{"kind":"profile_resolved","repo":"o/p","sha":"abc"}"#
+    );
+    assert_eq!(resolved.kind(), "profile_resolved");
+    let failed = Event::Profile(ProfileEvent::ProfileFailed {
+        step: ProfileStep::Fetch,
+        detail: "d".to_owned(),
+    });
+    assert_eq!(
+        serde_json::to_string(&failed).unwrap(),
+        r#"{"kind":"profile_failed","step":"fetch","detail":"d"}"#
+    );
+    assert_eq!(
+        failed.payload(),
+        serde_json::json!({"step":"fetch","detail":"d"})
+    );
+}

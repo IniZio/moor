@@ -18,6 +18,7 @@ fn reading(at: i64, available_mib: u64, some: u32, full: u32) -> Reading {
         available_mib,
         psi_some_centi: Some(some),
         psi_full_centi: Some(full),
+        disk_low: false,
     }
 }
 

@@ -249,6 +249,24 @@ pub enum ExtraEvent {
         /// Whole seconds the agent had been quiet.
         quiet_secs: u64,
     },
+    /// The disk of the node the Box runs on fell below what it keeps for another Box.
+    NodeDiskLow {
+        /// The node.
+        node: String,
+        /// Free MiB.
+        free_mib: u64,
+        /// The filesystem's size in MiB.
+        total_mib: u64,
+    },
+    /// The disk of the node the Box runs on climbed back past its floor and margin.
+    NodeDiskRecovered {
+        /// The node.
+        node: String,
+        /// Free MiB.
+        free_mib: u64,
+        /// The filesystem's size in MiB.
+        total_mib: u64,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.

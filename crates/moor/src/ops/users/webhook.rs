@@ -18,9 +18,9 @@ use crate::error::CommandError;
 use crate::store::{webhook_key_name, Store};
 use crate::vault::Vault;
 
-/// The event kinds a webhook gets when it names none: a turn ended, or a Box or its agent
-/// stopped in a way someone must look at.
-const DEFAULT_EVENTS: [&str; 9] = [
+/// The event kinds a webhook gets when it names none: a turn ended, a Box or its agent stopped in
+/// a way someone must look at, or the disk under its Boxes ran low or came back.
+const DEFAULT_EVENTS: [&str; 11] = [
     "idled",
     "needs_input",
     "closed",
@@ -30,6 +30,8 @@ const DEFAULT_EVENTS: [&str; 9] = [
     "relaunch_capped",
     "box_failed",
     "agent_stalled",
+    "node_disk_low",
+    "node_disk_recovered",
 ];
 
 /// Most webhooks one user may hold.

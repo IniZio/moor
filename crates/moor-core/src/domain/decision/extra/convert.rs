@@ -1,7 +1,7 @@
 //! Conversion of a decision's events to stored events.
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, ProfileEvent, StallEvent, TimingEvent};
+use crate::domain::event::{Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent};
 
 impl From<ExtraEvent> for Event {
     #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
@@ -131,6 +131,24 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentResumed { quiet_secs } => {
                 Self::Stall(StallEvent::AgentResumed { quiet_secs })
             }
+            ExtraEvent::NodeDiskLow {
+                node,
+                free_mib,
+                total_mib,
+            } => Self::NodeDisk(NodeDiskEvent::NodeDiskLow {
+                node,
+                free_mib,
+                total_mib,
+            }),
+            ExtraEvent::NodeDiskRecovered {
+                node,
+                free_mib,
+                total_mib,
+            } => Self::NodeDisk(NodeDiskEvent::NodeDiskRecovered {
+                node,
+                free_mib,
+                total_mib,
+            }),
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
             }

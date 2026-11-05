@@ -3,15 +3,16 @@
 
 use std::time::Duration;
 
+use moor_core::decide::disk::{judge, Change, Report, State};
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
 use moor_core::decide::pressure::{
     relieve, sustained, working, Candidate, Cooldown, Demand, Reading,
 };
-use moor_core::decide::schedule::{Node, Shortfall};
+use moor_core::decide::schedule::{Memory, Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::name::BoxId;
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::name::{BoxId, NodeName};
 use moor_core::seam::driver::SleepOutcome;
 
 use crate::cx::Cx;
@@ -133,8 +134,14 @@ pub(crate) fn on_report(
     if p.readings.last().is_some_and(|r| r.at >= reading.at) {
         return Ok(());
     }
-    p.readings.push(reading);
     let now = now(cx);
+    let (reading, change) = judge_disk(&memory, p.readings.last(), reading, now);
+    p.readings.push(reading);
+    if let Some(change) = change {
+        tell_disk(store, &node.name, change)?;
+        // Saved now, so a suspension failing below does not repeat the alert on every report.
+        store.set_pressure(&node.name, &p)?;
+    }
     let reserve = memory.reserve();
     p.high_since = sustained(&p.readings, reserve).then(|| p.high_since.unwrap_or(now));
     let mut boxes = Vec::new();
@@ -171,6 +178,63 @@ pub(crate) fn on_report(
         }
     }
     store.set_pressure(&node.name, &p)?;
+    Ok(())
+}
+
+/// `reading` marked with whether the node's disk is low after it, and the crossing it made.
+fn judge_disk(
+    memory: &Memory,
+    last: Option<&Reading>,
+    reading: Reading,
+    now: i64,
+) -> (Reading, Option<Change>) {
+    let was = if last.is_some_and(|r| r.disk_low) {
+        State::Low
+    } else {
+        State::Ok
+    };
+    let (disk, change) = judge(
+        was,
+        Report {
+            at: reading.at,
+            free_mib: memory.disk_free_mib,
+            total_mib: memory.disk_total_mib,
+        },
+        now,
+    );
+    let reading = Reading {
+        disk_low: disk == State::Low,
+        ..reading
+    };
+    (reading, change)
+}
+
+/// Records `change` of `node`'s disk once for each owner with a Box there, so each hears through
+/// the webhooks and streams that already carry Box events. Nothing else happens to the Boxes.
+fn tell_disk(store: &Store, node: &NodeName, change: Change) -> Result<(), CommandError> {
+    let ids = store.one_live_per_owner_on(node)?;
+    let node = node.to_string();
+    for id in ids {
+        let event = match change {
+            Change::WentLow {
+                free_mib,
+                total_mib,
+            } => ExtraEvent::NodeDiskLow {
+                node: node.clone(),
+                free_mib,
+                total_mib,
+            },
+            Change::Recovered {
+                free_mib,
+                total_mib,
+            } => ExtraEvent::NodeDiskRecovered {
+                node: node.clone(),
+                free_mib,
+                total_mib,
+            },
+        };
+        store.apply(Decision::new(id).event(event))?;
+    }
     Ok(())
 }
 
