@@ -7,6 +7,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::user::{SecretName, UserId};
+use moor_core::BoxId;
 use moor_core::Secret;
 use serde::de::DeserializeOwned;
 use zeroize::Zeroizing;
@@ -168,5 +169,27 @@ impl FrontsLedger {
             name: name.clone(),
         })?;
         Ok(bytes.map(Secret::new))
+    }
+}
+
+/// The shared egress Proxy's token lookups.
+pub(crate) struct EgressLedger(Ledger);
+
+impl EgressLedger {
+    /// The ledger on `socket`, presenting `key`.
+    pub(crate) fn at(socket: PathBuf, key: String) -> Self {
+        let hello = Hello::Egress {
+            v: LEDGER,
+            key,
+            box_id: None,
+        };
+        Self(Ledger::new(socket, &hello))
+    }
+
+    /// The open Box whose egress token hashes to `token_hash`.
+    pub(crate) fn token_box(&self, token_hash: &str) -> Result<Option<BoxId>, LedgerError> {
+        self.0.call(&Call::TokenBox {
+            token_hash: token_hash.to_owned(),
+        })
     }
 }

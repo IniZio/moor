@@ -8,7 +8,10 @@ use std::path::Path;
 
 use moor_core::seam::proxy_host::{ProxyEndpoint, ProxyHostError, ProxySpec};
 
-use super::{fail, store_failed};
+use moor_core::Secret;
+
+use super::key::mint_key;
+use super::{fail, io_failed, store_failed};
 use crate::store::{ProxyRow, Store};
 
 /// Records `spec` as what the Box's Proxy starts from.
@@ -18,7 +21,8 @@ pub(super) fn record(store: &Store, spec: &ProxySpec, log: &Path) -> Result<(), 
         .map_err(|e| store_failed(&e, log))
 }
 
-/// The endpoint a ready row describes, with the CA its supervisor serves with.
+/// The endpoint a ready row describes, with the CA its supervisor serves with and, when the row
+/// had none, a fresh egress token for the Box.
 pub(super) fn ready_endpoint(
     store: &Store,
     row: &ProxyRow,
@@ -28,10 +32,15 @@ pub(super) fn ready_endpoint(
         .proxy_ca(row.box_id)
         .map_err(|e| store_failed(&e, log))?
         .ok_or_else(|| fail("the ready proxy has no CA", log))?;
+    let token = mint_key().map_err(|e| io_failed(&e, log))?;
+    let minted = store
+        .set_egress_token(row.box_id, token.as_bytes())
+        .map_err(|e| store_failed(&e, log))?;
     Ok(ProxyEndpoint {
         box_port: row.box_port,
         egress_port: row.egress_port,
         ca_pem: ca.cert_pem,
+        egress_token: minted.then(|| Secret::new(token.as_bytes().to_vec())),
     })
 }
 

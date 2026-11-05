@@ -49,6 +49,34 @@ pub(super) fn answer(
     }
 }
 
+/// The reply to `call` from the shared egress Proxy for `box_id`: only the reads a request makes
+/// and its audit, never the lease, tunnel or machine.
+pub(super) fn for_egress(
+    (store, vault): (&Store, &Vault),
+    box_id: BoxId,
+    call: Call,
+) -> Zeroizing<String> {
+    match call {
+        Call::View
+        | Call::Spec
+        | Call::Ca
+        | Call::Secret { .. }
+        | Call::OpenLimit { .. }
+        | Call::RecordEvent { .. } => lease_and_tunnel((store, vault), box_id, call),
+        _ => encode(&Err::<(), _>(Fault::Refused(
+            "the egress Proxy only reads a Box and records its audit".to_owned(),
+        ))),
+    }
+}
+
+/// The open Box whose egress token hashes to `token_hash`; none once it closes.
+pub(super) fn token_box(store: &Store, token_hash: &str) -> Result<Option<BoxId>, StoreError> {
+    let Some(box_id) = store.egress_token_box(token_hash)? else {
+        return Ok(None);
+    };
+    Ok(view(store, box_id)?.filter(|v| v.open).map(|_| box_id))
+}
+
 /// The reply to a call about the proxy row, its lease, its tunnel or its audit.
 fn lease_and_tunnel((s, vault): (&Store, &Vault), box_id: BoxId, call: Call) -> Zeroizing<String> {
     match call {

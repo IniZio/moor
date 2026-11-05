@@ -22,7 +22,11 @@ use crate::testing::cx::{put_secret, test_vault_key};
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
+mod egress;
 mod start;
+
+/// The shared egress Proxy's key in every served test ledger.
+pub(crate) const EGRESS_KEY: &str = "egress-key";
 
 /// A ledger served on a thread, as the controller serves it; dropping it ends the listener
 /// and every connection, as a controller that exits does.
@@ -65,6 +69,7 @@ pub(crate) fn serve_on(
             std::thread::spawn(move || {
                 let keys = Keys {
                     fronts: fronts.as_deref(),
+                    egress: Some(EGRESS_KEY),
                 };
                 let read = BufReader::new(stream.try_clone().unwrap());
                 serve((&store, &vault), &keys, read, stream);
@@ -158,7 +163,7 @@ pub(super) struct World {
     pub(super) vault: Arc<Vault>,
     clock: Arc<FakeClock>,
     ann: UserId,
-    socket: PathBuf,
+    pub(super) socket: PathBuf,
 }
 
 pub(super) fn world() -> World {
@@ -182,7 +187,7 @@ pub(super) fn world() -> World {
 }
 
 impl World {
-    fn serve(&self) -> Served {
+    pub(super) fn serve(&self) -> Served {
         serve_on(
             &self.socket,
             self.store.clone(),

@@ -218,6 +218,21 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 }
 
 #[test]
+fn only_the_first_ensure_mints_the_boxs_egress_token() {
+    let f = fx();
+    let first = f.sup.ensure(&f.spec()).unwrap();
+    let second = f.sup.ensure(&f.spec()).unwrap();
+    let token = first.egress_token.expect("the first start mints a token");
+    assert!(second.egress_token.is_none(), "the Box keeps its token");
+    let hash = crate::store::token_hash(token.expose());
+    let store = f.sup.store().unwrap();
+    assert_eq!(
+        store.egress_token_box(&hash).unwrap(),
+        Some(f.spec().box_id)
+    );
+}
+
+#[test]
 fn a_supervisor_that_never_gets_ready_fails_with_the_log_tail() {
     let f = bare();
     hang_after_logging(&f, 25);

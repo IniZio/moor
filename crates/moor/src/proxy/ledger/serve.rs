@@ -5,6 +5,7 @@ use std::io::{BufRead, Write};
 use moor_core::user::{SecretName, UserId};
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq as _;
 use zeroize::Zeroizing;
 
 use super::{Call, Fault, Hello, LEDGER};
@@ -19,6 +20,8 @@ mod start;
 pub(crate) struct Keys<'a> {
     /// The front Proxy's key; none when no front Proxy runs.
     pub(crate) fronts: Option<&'a str>,
+    /// The shared egress Proxy's key; none while the shared Proxy is off.
+    pub(crate) egress: Option<&'a str>,
 }
 
 /// Whom a connection's hello proved it speaks for.
@@ -27,6 +30,8 @@ enum Bound {
     Box(moor_core::BoxId, Zeroizing<String>),
     /// The front Proxy.
     Fronts,
+    /// The shared egress Proxy, for one Box or for token lookups.
+    Egress(Option<moor_core::BoxId>),
 }
 
 /// Serves one connection until EOF or a failed write.
@@ -105,6 +110,16 @@ fn hello(store: &Store, keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
             }
             Ok(Bound::Fronts)
         }
+        Hello::Egress { v, key, box_id } => {
+            speaks(v)?;
+            let want = keys
+                .egress
+                .ok_or_else(|| Fault::Refused("the shared egress Proxy is off".to_owned()))?;
+            if !same(want, &key) {
+                return Err(Fault::Refused("not the egress Proxy's key".to_owned()));
+            }
+            Ok(Bound::Egress(box_id))
+        }
     }
 }
 
@@ -118,9 +133,12 @@ fn speaks(v: u32) -> Result<(), Fault> {
     )))
 }
 
-/// Whether two keys match; their digests are compared, so timing says nothing of the key.
+/// Whether two keys match; their digests are compared in constant time, so timing says nothing
+/// of the key.
 fn same(want: &str, got: &str) -> bool {
-    Sha256::digest(want.as_bytes()) == Sha256::digest(got.as_bytes())
+    Sha256::digest(want.as_bytes())
+        .ct_eq(&Sha256::digest(got.as_bytes()))
+        .into()
 }
 
 /// The reply to `line`, a call by `bound`.
@@ -137,8 +155,15 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
             encode(&front_secret((store, vault), &front, user, &name))
         }
         (Bound::Box(box_id, key), call) => boxes::answer((store, vault), (*box_id, key), call),
+        (Bound::Egress(None), Call::TokenBox { token_hash }) => {
+            encode(&boxes::token_box(store, &token_hash).map_err(Fault::from))
+        }
+        (Bound::Egress(Some(box_id)), call) => boxes::for_egress((store, vault), *box_id, call),
         (Bound::Fronts, _) => encode(&Err::<(), _>(Fault::Refused(
             "the front Proxy makes no Box call".to_owned(),
+        ))),
+        (Bound::Egress(None), _) => encode(&Err::<(), _>(Fault::Refused(
+            "a token lookup connection makes no Box call".to_owned(),
         ))),
     }
 }
