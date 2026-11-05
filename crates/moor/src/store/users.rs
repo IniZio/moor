@@ -15,6 +15,7 @@ mod mcp;
 pub(super) mod mcp_oauth;
 mod profile;
 pub(super) mod webhook;
+mod workflow;
 
 /// The user `identity` is linked to, on any connection.
 fn user_of_in(conn: &dyn Db, identity: &Identity) -> Result<Option<UserId>, StoreError> {
