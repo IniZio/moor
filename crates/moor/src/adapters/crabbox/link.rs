@@ -8,7 +8,8 @@
 //! every lookup touches the Box's lease, so a Box that is only looked at must not cause one.
 //! The agent's pane rides the same master, since a gateway may close a fresh connect right
 //! after setup's calls; ending a master, which only a Box's acquire, wake, sleep or release
-//! does, ends the pane too.
+//! does, ends the pane too. Setup leaving the Box user in a new group is the one case that
+//! replaces the master before the pane, since the pane would not have the group otherwise.
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
@@ -19,13 +20,13 @@ use std::time::Duration;
 
 use moor_core::name::BoxHandle;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::proc::{Deadline, ProcError, ProcOutput, ProcSpec, Tool};
 use moor_core::Warning;
 use serde::{Deserialize, Serialize};
 
 use super::errors::{one_line, transport_loss, EXIT_SSH};
-use super::{pin, Crabbox};
+use super::{batch, pin, Crabbox};
 use crate::adapters::sockets::{private_dir, short_hash};
 
 /// Seconds a master stays up after its last call, so a Box used within that time pays for no
@@ -33,6 +34,10 @@ use crate::adapters::sockets::{private_dir, short_hash};
 const PERSIST_SECS: u32 = 600;
 /// Time allowed for a request to a master; it goes over the local socket only.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
+/// Time allowed for reading the Box user's groups.
+const GROUPS_DEADLINE: Duration = Duration::from_secs(30);
+/// The group check's exit code: the Box user is in a group this login lacks.
+const STALE_GROUPS: i32 = 10;
 /// Bytes of a master's log that go into an error message.
 const LOG_TAIL: u64 = 300;
 /// Size past which a master's log is emptied before the next call.
@@ -315,6 +320,41 @@ pub(super) fn lost(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) -> Option<Dr
                 .unwrap_or_default(),
         }),
         _ => transport_loss(e),
+    }
+}
+
+/// The POSIX shell script that exits [`STALE_GROUPS`] when the group database has a group for the
+/// Box user that this login lacks. A group only the login has, as PAM can add, is not stale.
+fn stale_groups_script() -> String {
+    format!(
+        r#"have=" $(id -G) "
+for g in $(id -G "$(id -un)"); do
+  case "$have" in *" $g "*) ;; *) exit {STALE_GROUPS} ;; esac
+done
+"#
+    )
+}
+
+/// Stops the master of the Box behind `handle` when its login lacks a group the Box user is now
+/// in: sshd sets a login's groups once, at connect, and every call on the master shares them. A
+/// stop rather than an exit, so calls in flight and a running pane finish on the old login. A
+/// gateway may refuse a connect right after setup's calls, so a login with every group is kept.
+pub(super) fn refresh(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
+    let Some(link) = cb.link(handle).filter(|_| cb.unshared().is_none()) else {
+        return Ok(());
+    };
+    let steps = [BoxStep::Run(stale_groups_script())];
+    let deadline = Deadline(GROUPS_DEADLINE);
+    match batch::run(cb, handle, &[], &steps, deadline).pop() {
+        Some(Err(e)) => Err(e),
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: STALE_GROUPS },
+            ..
+        })) => {
+            link.control(cb, "stop");
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 

@@ -174,6 +174,11 @@ impl FakeDriver {
         self.st().fail_workdir = Some(e);
     }
 
+    /// Each login refresh: the Box and how many execs had run by then.
+    pub(crate) fn refreshed_logins(&self) -> Vec<(BoxHandle, usize)> {
+        self.st().refreshed_logins.clone()
+    }
+
     /// Every `acquire` reports `notes`, then runs `during` before it returns.
     pub(crate) fn notes_while_acquiring(
         &self,

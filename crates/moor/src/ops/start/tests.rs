@@ -55,6 +55,7 @@ mod promptless;
 mod provider_caps;
 mod provider_unset;
 mod proxy;
+mod refresh_login;
 mod relaunch;
 mod relaunch_sessions;
 mod repo;

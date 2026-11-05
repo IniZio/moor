@@ -14,12 +14,12 @@ use moor_core::seam::driver::{
     DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd,
     SleepKind, SleepOutcome, StepDone,
 };
-use moor_core::seam::proc::{Deadline, Output, Pipes};
+use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 pub(crate) use runs::{eventually, live_in_group, reaped_pid};
 pub(crate) use script::{is_clone_exec, PutCall};
-use script::{layout, write_bytes, CopyCall, ExecHook, PeekCall};
+use script::{layout, write_bytes, write_log, CopyCall, ExecHook, PeekCall};
 pub(crate) use tunnel::TunnelReply;
 
 #[derive(Default)]
@@ -47,6 +47,7 @@ struct State {
     exec_stdout: VecDeque<String>,
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
+    refreshed_logins: Vec<(BoxHandle, usize)>,
     copies: Vec<CopyCall>,
     files: Vec<(String, String, String)>,
     peeks: Vec<PeekCall>,
@@ -296,6 +297,13 @@ impl Driver for FakeDriver {
         self.piped(h, s, p)
     }
 
+    fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let mut s = self.st();
+        let execs = s.execs.len();
+        s.refreshed_logins.push((handle.clone(), execs));
+        Ok(())
+    }
+
     fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("connect_argv {}", handle.as_str()));
@@ -374,14 +382,6 @@ impl Driver for FakeDriver {
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         self.local_wake(handle)
-    }
-}
-
-/// Writes `text` to the log `spec` streams to, if both exist.
-fn write_log(spec: &ExecSpec, text: Option<String>) -> Result<(), DriverError> {
-    match (&spec.output, text) {
-        (Some(Output::Log(path)), Some(text)) => write_bytes(path, text.as_bytes()),
-        _ => Ok(()),
     }
 }
 

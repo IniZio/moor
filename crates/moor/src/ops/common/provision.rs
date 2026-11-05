@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, I
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
+use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -345,6 +345,14 @@ pub(super) fn after_setup(
         return Ok((dotfiles, Err(format!("agent install: {reason}"))));
     }
     profile_fetch::apply(cx, store, at, id, cfg, proxy)?;
+    if let Err(e) = cx.driver().refresh_login(at.0) {
+        cx.warn(Warning {
+            code: "login_not_refreshed".to_owned(),
+            message: format!(
+                "could not check the Box login for groups setup added: {e}; the agent may lack them"
+            ),
+        });
+    }
     Ok((dotfiles, Ok(())))
 }
 
