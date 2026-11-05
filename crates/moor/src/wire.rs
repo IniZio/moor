@@ -327,8 +327,14 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         clock,
         rng: cx.rng(),
         secrets,
+        #[cfg(feature = "test-upstream")]
+        upstream_ca: crate::test_upstream::upstream_ca(env),
+        #[cfg(not(feature = "test-upstream"))]
         upstream_ca: None,
         upstream_dial: None,
+        #[cfg(feature = "test-upstream")]
+        guard_exempt: crate::test_upstream::guard_exempt(env),
+        #[cfg(not(feature = "test-upstream"))]
         guard_exempt: Vec::new(),
         machine_service: cx.config().machines.service.clone(),
         state_dir,

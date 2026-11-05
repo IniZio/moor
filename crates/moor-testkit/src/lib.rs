@@ -5,11 +5,19 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod egress;
+#[cfg(target_os = "linux")]
+mod fleet;
 mod guard;
 pub mod oidc;
+mod tunnel;
+mod upstream;
 
 pub use egress::{write_host_guards, FakeEgress, FAKE_TINYPROXY, HOST_GUARD};
+#[cfg(target_os = "linux")]
+pub use fleet::{Fleet, Member};
 pub use guard::ChildGuard;
+pub use tunnel::write_fake_crabbox;
+pub use upstream::{box_client, Tally, TlsUpstream, Traffic};
 
 /// Writes `contents` to `path` as an executable that can be run at once.
 ///

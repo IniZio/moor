@@ -25,6 +25,8 @@ mod runner_dir;
 pub mod sign_in;
 mod stamp;
 mod store;
+#[cfg(feature = "test-upstream")]
+pub mod test_upstream;
 #[cfg(test)]
 mod testing;
 mod vault;

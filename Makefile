@@ -50,6 +50,7 @@ lint:
 	tools/box-key.sh
 	tools/box-key.sh --selftest
 	tools/exec-env.sh
+	tools/release-features.sh
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	cargo test -p test-children --locked

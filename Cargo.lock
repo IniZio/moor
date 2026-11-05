@@ -3126,6 +3126,7 @@ dependencies = [
  "command-fds",
  "getrandom 0.4.3",
  "ghostty-vt",
+ "moor",
  "moor-client",
  "moor-core",
  "moor-listen",
@@ -3396,11 +3397,14 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
+ "rcgen",
  "ring",
  "rustix",
+ "rustls",
  "serde_json",
  "socket2",
  "tempfile",
+ "ureq",
  "url",
 ]
 

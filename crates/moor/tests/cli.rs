@@ -33,6 +33,9 @@ mod inherited;
 mod inspect;
 #[path = "cli/mcp.rs"]
 mod mcp;
+#[cfg(target_os = "linux")]
+#[path = "cli/proxy_harness.rs"]
+mod proxy_harness;
 #[path = "cli/redial_e2e.rs"]
 mod redial_e2e;
 #[path = "cli/run_output.rs"]
