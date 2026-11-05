@@ -57,6 +57,7 @@ fn proxied(dir: &Path) -> LaunchCtx {
             box_env: Vec::new(),
             egress_port: 41235,
             hosts: Vec::new(),
+            forwarder: false,
         }),
         ..ctx(dir)
     }

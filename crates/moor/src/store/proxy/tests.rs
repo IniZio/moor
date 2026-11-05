@@ -449,3 +449,35 @@ fn proc(pid: u32, handle: &str) -> ReadyProc<'_> {
         boot_id: None,
     }
 }
+
+#[test]
+fn two_rows_cannot_hold_one_forward_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (a, b) = (add(&store, "a"), add(&store, "b"));
+    for id in [a, b] {
+        let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+    }
+    let taken = store.proxy(a).unwrap().unwrap().forward_port.unwrap();
+    let err = store
+        .writer()
+        .run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::ForwardPort, taken)
+                .and_where(Expr::col(Proxy::Box).eq(b.get())),
+        )
+        .unwrap_err();
+    assert!(super::forward_port_taken(&err), "{err}");
+}
+
+#[test]
+fn a_reserve_after_the_lease_lapsed_needs_the_token_delivered_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    assert!(store.set_egress_token(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    clock.sleep(LEASE);
+    let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+    assert!(!store.egress_token_delivered(id).unwrap());
+}

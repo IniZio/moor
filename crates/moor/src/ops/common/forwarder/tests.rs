@@ -51,12 +51,16 @@ fn a_loopback_address_is_reached_over_the_tunnel_of_the_box() {
         route.upstream(20555).as_deref(),
         Some("ws://127.0.0.1:20555/egress")
     );
-    let direct = EgressRoute::parse("ws://10.0.0.5:8090/egress").unwrap();
+    let direct = EgressRoute::parse("wss://moor.example/egress").unwrap();
     assert_eq!(direct.relay(), None);
     assert_eq!(
         direct.upstream(20555).as_deref(),
-        Some("ws://10.0.0.5:8090/egress")
+        Some("wss://moor.example/egress")
     );
+    for clear in ["ws://10.0.0.5:8090/egress", "ws://moor.example/egress"] {
+        let err = EgressRoute::parse(clear).unwrap_err();
+        assert!(err.contains("in the clear"), "{err}");
+    }
     assert_eq!(EgressRoute::PerBox.upstream(20555), None);
     for bad in ["https://moor.example/egress", "ws://", "moor.example"] {
         assert!(EgressRoute::parse(bad).is_err(), "{bad}");
@@ -267,4 +271,51 @@ fn the_controller_delivers_the_forwarder_installed_beside_moor() {
         crate::cx::egress::binary(&Env::from_pairs([("MOOR_EGRESS_FORWARD_BIN", "/opt/fwd")])),
         Path::new("/opt/fwd")
     );
+}
+
+#[test]
+fn a_mark_lost_to_another_controllers_mint_is_tried_again() {
+    let r = rig();
+    let writes = std::cell::Cell::new(0);
+    let other = |_: &str| {
+        writes.set(writes.get() + 1);
+        if writes.get() == 1 {
+            token::mint(&r.store, KEY, r.id).unwrap();
+        }
+        Ok(())
+    };
+    super::mint_until_marked(&r.store, KEY, r.id, other).unwrap();
+    assert_eq!(writes.get(), 2);
+    assert!(r.store.egress_token_delivered(r.id).unwrap());
+}
+
+#[test]
+fn every_mark_lost_fails_the_delivery() {
+    let r = rig();
+    let writes = std::cell::Cell::new(0);
+    let other = |_: &str| {
+        writes.set(writes.get() + 1);
+        token::mint(&r.store, KEY, r.id).unwrap();
+        Ok(())
+    };
+    let err = super::mint_until_marked(&r.store, KEY, r.id, other).unwrap_err();
+    assert!(err.contains("another controller replaced"), "{err}");
+    assert_eq!(writes.get(), super::MINT_TRIES);
+    assert!(!r.store.egress_token_delivered(r.id).unwrap());
+}
+
+#[test]
+fn a_box_that_lost_its_forwarder_config_gets_a_new_delivery() {
+    let r = rig();
+    r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
+    let r = Rig {
+        driver: r.driver.exec_ends_when(
+            "egress-forward.json",
+            moor_core::seam::driver::ExecOutcome::Exited { code: 1 },
+        ),
+        ..r
+    };
+    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert_eq!(r.written().len(), 4, "delivered twice");
+    assert!(r.store.egress_token_delivered(r.id).unwrap());
 }

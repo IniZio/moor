@@ -8,7 +8,6 @@ use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::BoxId;
 
 use super::detached::DetachedSupervisor;
-use super::ledger::LEDGER;
 use crate::store::{ProxyRow, Store};
 
 /// What the controller does with one recorded Proxy.
@@ -17,8 +16,9 @@ enum Fate {
     Keep,
     /// The Box needs its Proxy but the supervisor is gone: start another on the same port.
     Restart,
-    /// The supervisor runs but was started to speak another ledger protocol, or none: stop it
-    /// and start another on the same port.
+    /// The supervisor runs but was started to speak another ledger protocol, or none, or to
+    /// relay its tunnel when this host does not, or the other way round: stop it and start
+    /// another on the same port.
     Replace,
     /// The Box no longer needs a Proxy.
     Stop,
@@ -81,7 +81,7 @@ fn fate(
             .is_some_and(|p| p > 1 && proc.alive(p) && proc.group_leader(p))
         && host.same_boot(row)
         && host.live(row);
-    Some(match (ours, row.ledger == Some(LEDGER)) {
+    Some(match (ours, row.ledger == Some(host.started_as())) {
         (true, true) => Fate::Keep,
         (true, false) => Fate::Replace,
         (false, _) => Fate::Restart,

@@ -72,6 +72,7 @@ pub(super) fn launch(
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
             hosts: p.hosts.clone(),
+            forwarder: p.forwarder,
         }),
         home,
         prompt: req.prompt.clone(),

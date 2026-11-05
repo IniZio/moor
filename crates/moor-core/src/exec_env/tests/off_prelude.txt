@@ -1,0 +1,64 @@
+moor_img=$(sed -n 's/^PATH=//p' '/etc/environment' 2>/dev/null | tail -n 1 | tr -d "\"'"); [ -z "$moor_img" ] || PATH="$PATH:$moor_img"; unset moor_img
+unset GH_TOKEN GITHUB_TOKEN
+moor_ca='-----BEGIN CERTIFICATE-----
+QUJD'\''REVG
+-----END CERTIFICATE-----
+'; mkdir -p "$HOME/.moor-proxy" && { if [ -L "$HOME/.moor-proxy/ca.pem" ] || { [ -e "$HOME/.moor-proxy/ca.pem" ] && [ ! -f "$HOME/.moor-proxy/ca.pem" ]; }; then false; elif printf '%s' "$moor_ca" | cmp -s - "$HOME/.moor-proxy/ca.pem"; then :; elif printf '%s' "$moor_ca" >"$HOME/.moor-proxy/ca.pem.$$" && chmod 644 "$HOME/.moor-proxy/ca.pem.$$" && mv -f "$HOME/.moor-proxy/ca.pem.$$" "$HOME/.moor-proxy/ca.pem"; then :; else rm -f "$HOME/.moor-proxy/ca.pem.$$"; false; fi; } || { echo "moor: the Proxy CA could not be written to $HOME/.moor-proxy/ca.pem" >&2; exit 1; }
+moor_sys=; for moor_f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem; do [ -f "$moor_f" ] && { moor_sys=$moor_f; break; }; done
+moor_mark=$(sed -n 2p "$HOME/.moor-proxy/ca.pem")
+if [ -n "$moor_sys" ] && sudo -n true 2>/dev/null && { grep -qF "$moor_mark" "$moor_sys" || sudo -n tee -a "$moor_sys" <"$HOME/.moor-proxy/ca.pem" >/dev/null; }; then moor_bundle=$moor_sys; else moor_bundle="$HOME/.moor-proxy/ca-bundle.pem"; { if [ -L "$moor_bundle" ] || { [ -e "$moor_bundle" ] && [ ! -f "$moor_bundle" ]; }; then false; elif { if [ -n "$moor_sys" ]; then cat "$moor_sys"; fi; cat "$HOME/.moor-proxy/ca.pem"; } | cmp -s - "$moor_bundle"; then :; elif { if [ -n "$moor_sys" ]; then cat "$moor_sys"; fi; cat "$HOME/.moor-proxy/ca.pem"; } >"$moor_bundle.$$" && chmod 644 "$moor_bundle.$$" && mv -f "$moor_bundle.$$" "$moor_bundle"; then :; else rm -f "$moor_bundle.$$"; false; fi; } || { echo "moor: the Proxy CA could not be written to $HOME/.moor-proxy/ca-bundle.pem" >&2; exit 1; }; fi
+mkdir -p "$HOME/.moor" || { echo "moor: the egress proxy could not start: $HOME/.moor could not be created" >&2; exit 1; }
+( flock -w 300 9 || { echo "moor: the egress proxy could not start: another command held $HOME/.moor/egress.lock for 300 s" >&2; exit 1; }; command -v tinyproxy >/dev/null 2>&1 || { command -v apt-get >/dev/null 2>&1 || { echo "moor: the egress proxy could not start: tinyproxy is not installed and the Box has no apt-get; moor installs it only with apt" >&2; exit 1; }; if [ "$(id -u)" = 0 ]; then moor_su=; else moor_su="sudo -n"; fi; moor_apt="$moor_su env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=300"; { $moor_apt install tinyproxy-bin || { $moor_apt update && $moor_apt install tinyproxy-bin; }; } >"$HOME/.moor/egress-install.log" 2>&1 || { echo "moor: the egress proxy could not start: apt-get could not install tinyproxy-bin: $(tail -n 1 "$HOME/.moor/egress-install.log")" >&2; exit 1; }; }; moor_conf='Port 4322
+Listen 127.0.0.1
+DisableViaHeader Yes
+LogLevel Critical
+MaxClients 1024
+'"PidFile \"$HOME/.moor/egress.pid\""; moor_new=; if ! printf '%s\n' "$moor_conf" | cmp -s - "$HOME/.moor/egress.conf" 2>/dev/null; then printf '%s\n' "$moor_conf" >"$HOME/.moor/egress.conf.new" || { rm -f "$HOME/.moor/egress.conf.new"; { echo "moor: the egress proxy could not start: its config could not be written to $HOME/.moor/egress.conf" >&2; exit 1; }; }; moor_new=1; fi; moor_pid=$(cat "$HOME/.moor/egress.pid" 2>/dev/null); moor_ours=; [ -n "$moor_pid" ] && [ "$(cat "/proc/$moor_pid/comm" 2>/dev/null)" = tinyproxy ] && moor_ours=1; if grep -q ' 0100007F:10E2 00000000:0000 0A' /proc/net/tcp 2>/dev/null && [ -z "$moor_ours" ]; then { echo "moor: the egress proxy could not start: port 4322 is taken by another process" >&2; exit 1; }; fi; if [ -n "$moor_new" ] || ! grep -q ' 0100007F:10E2 00000000:0000 0A' /proc/net/tcp 2>/dev/null; then if [ -n "$moor_ours" ]; then kill "$moor_pid" 2>/dev/null; moor_n=0; while moor_st=$(sed -n 's/.*) \(.\) .*/\1/p' "/proc/$moor_pid/stat" 2>/dev/null) && [ -n "$moor_st" ] && [ "$moor_st" != Z ]; do moor_n=$((moor_n+1)); [ $moor_n -le 50 ] || { echo "moor: the egress proxy could not start: the old tinyproxy $moor_pid did not exit after TERM" >&2; exit 1; }; sleep 0.1; done; fi; moor_n=0; while grep -q ' 0100007F:10E2 00000000:0000 0A' /proc/net/tcp 2>/dev/null; do moor_n=$((moor_n+1)); [ $moor_n -le 50 ] || { echo "moor: the egress proxy could not start: port 4322 stays held after tinyproxy was stopped" >&2; exit 1; }; sleep 0.1; done; if [ -n "$moor_new" ]; then moor_cfg="$HOME/.moor/egress.conf.new"; else moor_cfg="$HOME/.moor/egress.conf"; fi; if [ -f '/etc/apparmor.d/tinyproxy' ] && [ -e '/sys/kernel/security/apparmor/profiles' ] && [ "$(readlink -f "$(command -v tinyproxy)")" = '/usr/bin/tinyproxy' ]; then if [ "$(id -u)" = 0 ]; then moor_su=; elif sudo -n true 2>/dev/null; then moor_su="sudo -n"; else { echo "moor: the egress proxy could not start: /etc/apparmor.d/tinyproxy confines tinyproxy, and allowing it $HOME/.moor in /etc/apparmor.d/local/tinyproxy needs root or passwordless sudo" >&2; exit 1; }; fi; if $moor_su grep -qx 'tinyproxy (enforce)' '/sys/kernel/security/apparmor/profiles' 2>/dev/null; then moor_aa="# Written by moor for its egress proxy.
+file r \"$HOME/.moor/egress.conf\",
+file r \"$HOME/.moor/egress.conf.new\",
+file rw \"$HOME/.moor/egress.pid\",
+file w \"$HOME/.moor/egress-start.log\","; if ! printf '%s\n' "$moor_aa" | $moor_su cmp -s - '/etc/apparmor.d/local/tinyproxy' 2>/dev/null; then { printf '%s\n' "$moor_aa" | $moor_su tee '/etc/apparmor.d/local/tinyproxy' >/dev/null && $moor_su apparmor_parser -r '/etc/apparmor.d/tinyproxy' >"$HOME/.moor/egress-apparmor.log" 2>&1; } || { $moor_su rm -f '/etc/apparmor.d/local/tinyproxy'; { echo "moor: the egress proxy could not start: /etc/apparmor.d/tinyproxy could not be reloaded with $HOME/.moor allowed: $(tail -n 1 "$HOME/.moor/egress-apparmor.log")" >&2; exit 1; }; }; fi; fi; fi; ulimit -n "$(ulimit -Hn)" 2>/dev/null; tinyproxy -c "$moor_cfg" </dev/null >/dev/null 2>"$HOME/.moor/egress-start.log" 9>&- || { echo "moor: the egress proxy could not start: tinyproxy exited: $(tail -n 1 "$HOME/.moor/egress-start.log")" >&2; exit 1; }; moor_n=0; until grep -q ' 0100007F:10E2 00000000:0000 0A' /proc/net/tcp 2>/dev/null; do moor_n=$((moor_n+1)); [ $moor_n -le 50 ] || { echo "moor: the egress proxy could not start: tinyproxy is not listening on 127.0.0.1:4322" >&2; exit 1; }; sleep 0.1; done; if [ -n "$moor_new" ]; then mv -f "$HOME/.moor/egress.conf.new" "$HOME/.moor/egress.conf" || { echo "moor: the egress proxy could not start: its config could not be moved to $HOME/.moor/egress.conf" >&2; exit 1; }; fi; fi ) 9>"$HOME/.moor/egress.lock" || exit 1
+export SSL_CERT_FILE="$moor_bundle"
+export CURL_CA_BUNDLE="$moor_bundle"
+export REQUESTS_CA_BUNDLE="$moor_bundle"
+export GIT_SSL_CAINFO="$moor_bundle"
+export NODE_EXTRA_CA_CERTS="$HOME/.moor-proxy/ca.pem"
+export HTTPS_PROXY="http://127.0.0.1:4322"
+export HTTP_PROXY="http://127.0.0.1:4322"
+export https_proxy="http://127.0.0.1:4322"
+export http_proxy="http://127.0.0.1:4322"
+export YARN_HTTPS_PROXY="http://127.0.0.1:4322"
+export YARN_HTTP_PROXY="http://127.0.0.1:4322"
+export YARN_CACHE_FOLDER="$HOME/.cache/yarn"
+export YARN_GLOBAL_FOLDER="$HOME/.cache/yarn/berry"
+export npm_config_cache="$HOME/.cache/npm"
+export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
+export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
+export NODE_USE_ENV_PROXY=1
+if [ -d /opt/android-sdk ]; then export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}" ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/android-sdk}"; fi
+moor_g="${GRADLE_USER_HOME:-$HOME/.gradle}"; moor_p="$moor_g/gradle.properties"
+if command -v keytool >/dev/null 2>&1; then
+moor_ts="$moor_g/moor-proxy-truststore.p12"
+moor_jh="$JAVA_HOME/lib/security/cacerts"
+[ -f "$moor_jh" ] || moor_jh="$(dirname "$(dirname "$(readlink -f "$(command -v keytool)")")")/lib/security/cacerts"
+if mkdir -p "$moor_g" 2>/dev/null &&
+rm -f "$moor_ts.$$" &&
+{ [ ! -f "$moor_jh" ] || keytool -importkeystore -srckeystore "$moor_jh" -destkeystore "$moor_ts.$$" -deststoretype PKCS12 -deststorepass changeit -srcstorepass changeit -noprompt >/dev/null 2>&1; } &&
+keytool -importcert -noprompt -alias moor-proxy -file "$HOME/.moor-proxy/ca.pem" -keystore "$moor_ts.$$" -storetype PKCS12 -storepass changeit >/dev/null 2>&1 &&
+mv -f "$moor_ts.$$" "$moor_ts" &&
+( umask 077; {
+[ ! -f "$moor_p" ] || sed '/^# moor proxy: begin$/,/^# moor proxy: end$/d' "$moor_p" 2>/dev/null || exit 1; [ -z "$(tail -c1 "$moor_p" 2>/dev/null)" ] || printf '\n'; printf '%s\n' '# moor proxy: begin'
+printf '%s\n' 'systemProp.http.proxyHost=127.0.0.1' 'systemProp.http.proxyPort=4322'
+printf '%s\n' 'systemProp.https.proxyHost=127.0.0.1' 'systemProp.https.proxyPort=4322'
+printf '%s\n' 'systemProp.http.nonProxyHosts=127.0.0.1|localhost' 'systemProp.https.nonProxyHosts=127.0.0.1|localhost' "systemProp.javax.net.ssl.trustStore=$moor_ts" 'systemProp.javax.net.ssl.trustStorePassword=changeit' 'systemProp.javax.net.ssl.trustStoreType=PKCS12' '# moor proxy: end'
+} >"$moor_p.$$" ) &&
+mv -f "$moor_p.$$" "$moor_p"; then
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=$moor_ts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=4322 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=4322 -Dhttp.nonProxyHosts=127.0.0.1|localhost -Dhttps.nonProxyHosts=127.0.0.1|localhost"
+else rm -f "$moor_ts.$$" "$moor_p.$$"; fi
+fi
+if mkdir -p "$moor_g" 2>/dev/null && ( umask 077; {
+[ ! -f "$moor_p" ] || sed '/^# moor build cache: begin$/,/^# moor build cache: end$/d' "$moor_p" || exit 1; [ -z "$(tail -c1 "$moor_p")" ] || printf '\n'
+[ -n "$(sed -n '/^# moor proxy: begin$/,/^# moor proxy: end$/d;/^# moor build cache: begin$/,/^# moor build cache: end$/d;/^[[:space:]]*org\.gradle\.caching[[:space:]=:]/p' "$moor_p")" ] || printf '%s\n' '# moor build cache: begin' 'org.gradle.caching=true' '# moor build cache: end'
+} >"$moor_p.$$" ) 2>/dev/null &&
+mv -f "$moor_p.$$" "$moor_p" 2>/dev/null; then :; else rm -f "$moor_p.$$"; fi
+unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa

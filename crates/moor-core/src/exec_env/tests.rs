@@ -52,6 +52,7 @@ fn ctx<'a>(
             egress_port: 4322,
             ca_pem,
             hosts: &[],
+            forwarder: false,
         }),
         workdir,
         strip: &[],
@@ -477,4 +478,31 @@ fn a_proxy_exec_exports_the_sdk_at_its_preset_path_before_the_java_lines() {
         .prelude
         .join("\n")
         .contains("ANDROID"));
+}
+
+#[test]
+fn with_the_shared_proxy_off_the_prelude_is_unchanged() {
+    let (wd, e) = (path("/work"), env());
+    let b = ctx(&e, Some(PEM), Some(&wd));
+    let got = build(&b, Purpose::Run).unwrap().prelude.join("\n") + "\n";
+    assert_eq!(got, include_str!("tests/off_prelude.txt"));
+}
+
+#[test]
+fn with_the_forwarder_one_lock_starts_it_before_tinyproxy() {
+    let (wd, e) = (path("/work"), env());
+    let mut b = ctx(&e, Some(PEM), Some(&wd));
+    if let Some(p) = b.proxy.as_mut() {
+        p.forwarder = true;
+    }
+    let prelude = build(&b, Purpose::Run).unwrap().prelude;
+    let locked: Vec<&String> = prelude.iter().filter(|l| l.contains("flock")).collect();
+    assert_eq!(locked.len(), 1, "{locked:?}");
+    let line = locked.first().unwrap();
+    let forwarder = line.find("setsid \"$moor_fw\"").unwrap();
+    let tinyproxy = line.find("tinyproxy -c").unwrap();
+    assert!(forwarder < tinyproxy, "{line}");
+    assert!(prelude
+        .iter()
+        .any(|l| l.starts_with("unset ") && l.ends_with(" moor_fw")));
 }
