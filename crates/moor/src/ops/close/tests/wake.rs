@@ -1,4 +1,4 @@
-//! Close wakes an Asleep Box without needing the Proxy tunnel.
+//! Close wakes an Asleep Box that has a Proxy row before it closes it.
 
 use super::boxwork::{fx_woken, put_to_sleep};
 use super::{req, row, run, Fx};

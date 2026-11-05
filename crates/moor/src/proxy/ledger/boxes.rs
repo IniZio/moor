@@ -23,9 +23,10 @@ const PENDING: usize = 256;
 pub(crate) struct BoxView {
     /// Work can still happen on it: it is neither closed nor rejected.
     pub(crate) open: bool,
-    /// Its machine, when it has one.
+    /// Its machine, when it has one. Only a shared Proxy an earlier build started reads it,
+    /// and it outlives the controller, so the answer keeps the field.
     pub(crate) handle: Option<BoxHandle>,
-    /// It is stored as asleep.
+    /// It is stored as asleep; kept for the same Proxy.
     pub(crate) asleep: bool,
 }
 
