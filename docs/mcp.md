@@ -94,8 +94,8 @@ for a fresh header before it connects:
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_events`, `GET /events`, `GET /boxes/.../artifacts/...`, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook` |
+| `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `list_workflow_runs`, `list_events`, `GET /events`, `GET /boxes/.../artifacts/...`, the Box resources, `subscriptions/listen` |
+| `moor:write` | `start_box`, `send_to_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled` |
 
 A token without `moor:write` gets an error from the write tools and can still
 read.
@@ -117,6 +117,11 @@ read.
 | `list_webhooks` | none |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
 | `remove_webhook` | `id` |
+| `add_workflow` | `name`, `cron`, `timezone`, `repos` (each `owner/name`), `prompt`; optional `timeout_minutes`. See [Workflows](workflows.md). |
+| `list_workflows` | none |
+| `remove_workflow` | `name` |
+| `set_workflow_enabled` | `name`, `enabled` |
+| `list_workflow_runs` | optional `after`, `limit` |
 
 `close_box` refuses a Box that holds unpushed commits or uncommitted files, or
 that could not be checked for them. `force: true` closes it anyway and discards
