@@ -69,8 +69,9 @@ FROM ${RUST_IMAGE} AS rust
 ARG TARGETARCH
 ARG ZIG_VERSION ZIG_SHA256_AMD64 ZIG_SHA256_ARM64 AGENT37_REPO AGENT37_COMMIT
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git pkg-config xz-utils \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends ca-certificates curl git musl-tools pkg-config xz-utils \
+ && rm -rf /var/lib/apt/lists/* \
+ && rustup target add "$(uname -m)-unknown-linux-musl"
 # Zig builds the terminal emulator that the pty surface links.
 RUN set -eu; \
     case "$TARGETARCH" in \
@@ -136,6 +137,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
     cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) $features \
  && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
+# The egress forwarder runs inside Boxes, whatever their libc, so it links statically.
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
+    target="$(uname -m)-unknown-linux-musl"; \
+    export "CC_$(echo "$target" | tr - _)=musl-gcc" CARGO_PROFILE_RELEASE_STRIP=symbols; \
+    cargo build --release --locked -p moor-egress-forward --target "$target" \
+ && install -D "target/$target/release/moor-egress-forward" /out/moor-egress-forward
 
 
 FROM ${NODE_IMAGE} AS runtime
