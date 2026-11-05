@@ -15,6 +15,9 @@ ZIG_SHA256_x86_64-macos := 4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98
 ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
 ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
+# A token binstall cannot use (a Box Proxy placeholder) stalls it on GitHub's API, then it
+# compiles from source; without one it finds the release by URL.
+BINSTALL := env -u GH_TOKEN -u GITHUB_TOKEN cargo binstall --no-confirm --locked --disable-strategies quick-install
 
 PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 
@@ -26,11 +29,11 @@ help:
 setup:
 	@rustup show active-toolchain >/dev/null
 	@cargo binstall -V 2>/dev/null | grep -qx '$(BINSTALL_VERSION)' || curl --retry 5 -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/cargo-bins/cargo-binstall/v$(BINSTALL_VERSION)/install-from-binstall-release.sh | BINSTALL_VERSION=$(BINSTALL_VERSION) sh
-	@cargo deny --version 2>/dev/null | grep -q '$(DENY_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-deny@=$(DENY_VERSION)
-	@cargo machete --version 2>/dev/null | grep -q '$(MACHETE_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-machete@=$(MACHETE_VERSION)
-	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-nextest@=$(NEXTEST_VERSION)
-	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install taplo-cli@=$(TAPLO_VERSION)
-	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install typos-cli@=$(TYPOS_VERSION)
+	@cargo deny --version 2>/dev/null | grep -q '$(DENY_VERSION)' || $(BINSTALL) cargo-deny@=$(DENY_VERSION)
+	@cargo machete --version 2>/dev/null | grep -q '$(MACHETE_VERSION)' || $(BINSTALL) cargo-machete@=$(MACHETE_VERSION)
+	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || $(BINSTALL) cargo-nextest@=$(NEXTEST_VERSION)
+	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || $(BINSTALL) taplo-cli@=$(TAPLO_VERSION)
+	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || $(BINSTALL) typos-cli@=$(TYPOS_VERSION)
 	@helm version --short 2>/dev/null | grep -q '^v$(HELM_VERSION)+' || echo "setup: make chart needs helm $(HELM_VERSION)"
 	@echo "setup: toolchain and pinned tools present"
 
