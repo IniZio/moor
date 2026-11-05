@@ -1,7 +1,7 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
-//! It takes `--state-dir DIR --listen ADDR` and optionally `--grace SECS`, `--rate N` and
-//! `--burst N`, and the ledger key in `MOOR_EGRESS_KEY`. It reaches the controller through
+//! It takes `--state-dir DIR --listen ADDR` and optionally `--grace SECS`, `--rate N`,
+//! `--burst N` and `--lookup-rate N`, and the ledger key in `MOOR_EGRESS_KEY`. It reaches the controller through
 //! the ledger socket in the state dir, and keeps each Box's CA and request log under
 //! `<state-dir>/egress`. On SIGTERM or SIGINT it drains, then exits.
 
@@ -17,7 +17,7 @@ use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
 
-use super::{Config, Server};
+use super::{Config, Rate, Server};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY};
 use crate::ledger_dir;
@@ -42,6 +42,8 @@ pub(crate) struct Args {
     pub(crate) rate: f64,
     /// Tunnels a token may open at once.
     pub(crate) burst: f64,
+    /// Lookups a second, and at once, for tokens not yet confirmed, shared by all of them.
+    pub(crate) lookup_rate: f64,
 }
 
 impl Args {
@@ -53,6 +55,7 @@ impl Args {
             grace: GRACE,
             rate: 20.0,
             burst: 100.0,
+            lookup_rate: 200.0,
         };
         let mut words = words.iter().map(|w| w.to_string_lossy().into_owned());
         while let Some(flag) = words.next() {
@@ -66,6 +69,7 @@ impl Args {
                 "--grace" => args.grace = Duration::from_secs(value.parse().map_err(|_| bad())?),
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
+                "--lookup-rate" => args.lookup_rate = value.parse().map_err(|_| bad())?,
                 other => return Err(format!("unknown argument {other}")),
             }
         }
@@ -97,8 +101,14 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         ledger: ledger_dir::socket(&state_dir),
         key,
         work_dir: state_dir.join("egress"),
-        rate: args.rate,
-        burst: args.burst,
+        rate: Rate {
+            per_sec: args.rate,
+            burst: args.burst,
+        },
+        lookups: Rate {
+            per_sec: args.lookup_rate,
+            burst: args.lookup_rate,
+        },
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
         clock: Arc::clone(&clock),

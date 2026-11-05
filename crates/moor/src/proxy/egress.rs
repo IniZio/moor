@@ -24,7 +24,8 @@
 //! - `400`: not a WebSocket upgrade, or `X-Moor-Target` is missing or not `host:port`.
 //! - `401`: the token is missing or unknown, or its Box has closed.
 //! - `404`: a path other than `/egress` or `/ready`.
-//! - `429`: the token opened more tunnels than its rate allows. Retry after a second.
+//! - `429`: the token opened more tunnels than its rate allows, or too many unknown tokens were
+//!   tried. Retry after a second.
 //! - `503`: the controller cannot be reached and the token was never seen, or the Box's proxy
 //!   could not start.
 //! - Any other status is the Box's proxy refusing the CONNECT, `403` for a host it refuses.
@@ -56,7 +57,7 @@ use tokio::sync::Notify;
 use zeroize::Zeroizing;
 
 use boxes::Boxes;
-use limit::Limit;
+pub(crate) use limit::Rate;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
@@ -73,10 +74,10 @@ pub(crate) struct Config {
     pub(crate) key: Zeroizing<String>,
     /// Where each Box's CA and request log go.
     pub(crate) work_dir: PathBuf,
-    /// Tunnels each token may open per second, past its burst.
-    pub(crate) rate: f64,
-    /// Tunnels a token may open at once before the rate applies.
-    pub(crate) burst: f64,
+    /// The tunnel rate of each token the ledger confirmed.
+    pub(crate) rate: Rate,
+    /// The lookup rate shared by tokens not yet confirmed.
+    pub(crate) lookups: Rate,
     /// Extra upstream root PEM the Box proxies trust; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Loopback addresses the egress guard lets through; empty in production.
@@ -89,8 +90,6 @@ pub(crate) struct Config {
 struct Shared {
     /// Each token's Box and its proxy.
     boxes: Boxes,
-    /// Each token's rate.
-    limit: Limit,
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
 }
@@ -121,10 +120,8 @@ impl Server {
         let addr = listener
             .local_addr()
             .map_err(|e| format!("cannot read the listen address: {e}"))?;
-        let limit = Limit::new(cfg.rate, cfg.burst, Arc::clone(&cfg.clock));
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
-            limit,
             open: AtomicUsize::new(0),
         });
         let stop = Arc::new(Notify::new());
@@ -140,6 +137,12 @@ impl Server {
     /// Where it listens.
     pub(crate) const fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// How many tokens this replica keeps.
+    #[cfg(test)]
+    pub(crate) fn tracked(&self) -> usize {
+        self.shared.boxes.tracked()
     }
 
     /// Delivers each Box's audit and drops the proxies of Boxes that closed.

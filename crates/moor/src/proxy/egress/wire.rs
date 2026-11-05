@@ -97,11 +97,9 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
     };
     let token = ask.token.ok_or_else(|| refuse(401, "no token"))?;
     let hash = token_hash(&token);
-    if !shared.limit.allow(&hash) {
-        return Err(refuse(429, "too many tunnels; retry after a second"));
-    }
     let route = admit(shared, &hash).map_err(|refused| match refused {
         Refused::Unknown => refuse(401, "unknown token"),
+        Refused::Limited => refuse(429, "too many tunnels; retry after a second"),
         Refused::Unavailable(why) => (503, why),
     })?;
     Ok(Checked::Tunnel { key, target, route })
