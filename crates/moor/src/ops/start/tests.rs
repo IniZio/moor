@@ -35,7 +35,6 @@ mod identity;
 mod interrupted;
 mod launch_deadline;
 mod launch_skipped;
-mod launch_warnings;
 mod lease;
 mod lease_dirs;
 mod lease_handle;

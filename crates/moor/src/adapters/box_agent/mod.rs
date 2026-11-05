@@ -8,7 +8,6 @@ pub(crate) mod claude;
     reason = "the launch script calls the writers in a later change"
 )]
 mod codex;
-pub(crate) mod gh_release;
 mod launch;
 
 pub(crate) use launch::detach::relay_argv;
@@ -30,17 +29,15 @@ use std::sync::Arc;
 
 use moor_core::activity::Probes;
 use moor_core::config::AgentHolder;
-use moor_core::name::{BoxHandle, BoxName, BoxPath};
+use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, LaunchNotice, LaunchReq, SessionRef, Steer, SteerOutcome,
+    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, Surface, WorkspaceRef};
-
-use self::gh_release::GhRelease;
 
 /// An agent running in a Box, read through the Driver and the Surface.
 pub(crate) struct BoxAgent {
@@ -52,27 +49,23 @@ pub(crate) struct BoxAgent {
     profile: Arc<dyn AgentAdapter>,
     /// Paces the submit key after typing.
     clock: Arc<dyn Clock>,
-    /// Fetches the pinned gh for a Box that lacks it.
-    release: Arc<GhRelease>,
     /// Holds the terminal of each new agent; a running one keeps the holder its session records.
     holder: AgentHolder,
 }
 
 impl BoxAgent {
-    /// A kit over the given Driver, Surface, agent adapter, clock and gh source.
+    /// A kit over the given Driver, Surface, agent adapter and clock.
     pub(crate) fn new(
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         profile: Arc<dyn AgentAdapter>,
         clock: Arc<dyn Clock>,
-        release: Arc<GhRelease>,
     ) -> Self {
         Self {
             driver,
             surface,
             profile,
             clock,
-            release,
             holder: AgentHolder::default(),
         }
     }
@@ -112,19 +105,13 @@ impl Engine for BoxAgent {
         launch::holder::with_agent(holder(self.holder), self.profile.install())
     }
 
-    fn deliver_gh(&self, handle: &BoxHandle, forge: bool) -> Option<LaunchNotice> {
-        forge
-            .then(|| launch::gh::deliver(self.driver.as_ref(), &self.release, handle))
-            .flatten()
-    }
-
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         launch::launch(
             self.driver.as_ref(),
             self.surface.as_ref(),
             self.profile.as_ref(),
             req,
-            (&self.release, self.holder),
+            self.holder,
         )
     }
 

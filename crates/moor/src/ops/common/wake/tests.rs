@@ -47,7 +47,6 @@ fn session(pane: &str) -> SessionRef {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(PaneRef::new(pane)),
         holder: moor_core::config::AgentHolder::Hc,
-        warnings: Vec::new(),
     }
 }
 

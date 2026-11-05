@@ -11,7 +11,6 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
-use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -107,7 +106,6 @@ fn session(pane: Option<&str>) -> SessionRef {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: pane.map(PaneRef::new),
         holder: moor_core::config::AgentHolder::Hc,
-        warnings: Vec::new(),
     }
 }
 
@@ -132,7 +130,6 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
         s.clone(),
         Arc::new(Stub),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        offline_release(),
     )
 }
 

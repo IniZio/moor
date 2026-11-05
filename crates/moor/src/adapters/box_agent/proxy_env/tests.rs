@@ -18,7 +18,6 @@ fn proxy() -> ProxyAddr {
         box_port: PORT,
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
-        forge: false,
         egress_port: EGRESS,
         hosts: Vec::new(),
     }

@@ -55,7 +55,6 @@ fn proxied(dir: &Path) -> LaunchCtx {
             box_port: 41234,
             ca_pem: String::new(),
             box_env: Vec::new(),
-            forge: false,
             egress_port: 41235,
             hosts: Vec::new(),
         }),

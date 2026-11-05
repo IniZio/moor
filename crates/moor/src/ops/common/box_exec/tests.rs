@@ -1,10 +1,8 @@
 //! Tests for the Box exec environment.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::proxy::{ResolvedInject, ResolvedRule, GITHUB_SECRET};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::exec_env::Purpose;
@@ -13,7 +11,7 @@ use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::user::{Identity, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
-use super::{forge_routed, prepare, BoxProxy, Site};
+use super::{prepare, BoxProxy, Site};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
@@ -85,7 +83,6 @@ fn boxed_proxy() -> BoxProxy {
             box_port: 4000,
             ca_pem: "CA-PEM".to_owned(),
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
-            forge: false,
             egress_port: 4001,
             hosts: Vec::new(),
         },
@@ -198,31 +195,6 @@ fn another_providers_strip_env_is_not_applied() {
     let e = prepare(&r.cx, &r.site(None), None, &cfg(), Purpose::Run).unwrap();
     assert!(e.env.unset.is_empty());
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
-}
-
-fn rule_with(credential: &str) -> ResolvedRule {
-    ResolvedRule {
-        name: "r".to_owned(),
-        hosts: vec!["api.github.com".to_owned()],
-        credential: credential.to_owned(),
-        inject: ResolvedInject::BasicAuth {
-            user: "x".to_owned(),
-        },
-        endpoint_rules: Vec::new(),
-        box_env: BTreeMap::new(),
-    }
-}
-
-#[test]
-fn a_forge_rule_marks_the_proxy_as_forge_routed() {
-    let rules = [rule_with("other"), rule_with(GITHUB_SECRET)];
-    assert!(forge_routed(&rules));
-}
-
-#[test]
-fn rules_without_a_forge_credential_do_not() {
-    assert!(!forge_routed(&[rule_with("other")]));
-    assert!(!forge_routed(&[]));
 }
 
 #[test]

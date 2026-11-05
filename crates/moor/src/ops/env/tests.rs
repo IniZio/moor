@@ -133,7 +133,7 @@ fn item_order_is_fixed() {
         .filter(|i| i.kind == EnvKind::Box)
         .map(|i| i.name.as_str())
         .collect();
-    assert_eq!(boxes, ["provider", "size", "gh"]);
+    assert_eq!(boxes, ["provider", "size"]);
 }
 
 #[test]
