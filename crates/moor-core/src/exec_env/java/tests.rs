@@ -257,16 +257,19 @@ fn a_failing_keytool_sets_nothing_and_does_not_stop_the_prelude() {
     moor_testkit::write_executable(&at, "#!/bin/sh\nexit 1\n").unwrap();
     let env = s.run(&[]);
     assert!(!env.contains_key("JAVA_TOOL_OPTIONS"));
-    assert!(!s.home().join(".gradle/gradle.properties").exists());
+    let text = fs::read_to_string(s.home().join(".gradle/gradle.properties")).unwrap();
+    assert!(!text.contains("proxyHost"), "{text}");
     assert!(!s.home().join(".gradle/moor-proxy-truststore.p12").exists());
 }
 
 #[test]
-fn without_keytool_nothing_is_written_or_exported() {
+fn without_keytool_no_proxy_setting_is_written_or_exported() {
     let s = Scratch::new("none");
     let env = s.run(&[]);
     assert!(!env.contains_key("JAVA_TOOL_OPTIONS"));
-    assert!(!s.home().join(".gradle").exists());
+    let text = fs::read_to_string(s.home().join(".gradle/gradle.properties")).unwrap();
+    assert!(!text.contains("proxyHost"), "{text}");
+    assert!(!s.home().join(".gradle/moor-proxy-truststore.p12").exists());
 }
 
 /// The `-D` options `JAVA_TOOL_OPTIONS` holds.
@@ -333,4 +336,85 @@ fn a_build_cache_setting_the_user_wrote_stays_the_only_one() {
             "{own}\n{text}"
         );
     }
+}
+
+#[test]
+fn a_box_with_no_jdk_turns_the_build_cache_on() {
+    let s = Scratch::new("cache-nojdk");
+    let env = s.run(&[]);
+    let file = s.home().join(".gradle/gradle.properties");
+    let text = fs::read_to_string(&file).unwrap();
+    assert_eq!(text.matches("org.gradle.caching=true").count(), 1, "{text}");
+    assert_eq!(
+        fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(!text.contains("proxyHost"), "{text}");
+    assert!(!env.contains_key("JAVA_TOOL_OPTIONS"));
+}
+
+#[test]
+fn a_build_cache_setting_the_user_wrote_wins_with_no_jdk() {
+    for own in [
+        "org.gradle.caching=false",
+        "org.gradle.caching = true",
+        "org.gradle.caching:false",
+        "org.gradle.caching false",
+        "  org.gradle.caching=false",
+    ] {
+        let s = Scratch::new("cache-own");
+        let text = gradle_props(&s, Some(&format!("{own}\n")));
+        assert_eq!(text, format!("{own}\n"));
+    }
+}
+
+#[test]
+fn a_setting_the_user_adds_later_replaces_moors_line() {
+    let s = Scratch::new("cache-later");
+    let text = gradle_props(&s, None);
+    assert!(text.contains("org.gradle.caching=true"), "{text}");
+    fs::write(
+        s.home().join(".gradle/gradle.properties"),
+        format!("org.gradle.caching=false\n{text}"),
+    )
+    .unwrap();
+    let text = gradle_props(&s, None);
+    assert_eq!(text, "org.gradle.caching=false\n");
+}
+
+#[test]
+fn a_jdk_that_arrives_later_adds_the_proxy_and_keeps_one_cache_line() {
+    let s = Scratch::new("cache-jdk-later");
+    let file = s.home().join(".gradle/gradle.properties");
+    s.run(&[]);
+    s.fake_keytool(&s.root.join("bin/keytool"));
+    s.run(&[]);
+    s.run(&[]);
+    let text = fs::read_to_string(&file).unwrap();
+    assert_eq!(text.matches("org.gradle.caching=true").count(), 1, "{text}");
+    assert_eq!(text.matches("http.proxyHost=").count(), 1, "{text}");
+    fs::remove_file(s.root.join("bin/keytool")).unwrap();
+    s.run(&[]);
+    assert_eq!(fs::read_to_string(&file).unwrap(), text);
+}
+
+#[test]
+fn an_unreadable_properties_file_is_left_alone_with_no_jdk() {
+    let s = Scratch::new("cache-unreadable");
+    let gradle = s.home().join(".gradle");
+    fs::create_dir_all(&gradle).unwrap();
+    let file = gradle.join("gradle.properties");
+    fs::write(&file, "org.gradle.workers.max=2\n").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&file).is_ok() {
+        // Running as root: reads succeed, so the failure cannot be provoked.
+        return;
+    }
+    s.run(&[]);
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "org.gradle.workers.max=2\n"
+    );
+    assert_eq!(fs::read_dir(&gradle).unwrap().count(), 1);
 }

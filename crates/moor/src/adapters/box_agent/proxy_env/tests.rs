@@ -308,11 +308,17 @@ fn java_builds_get_the_proxy_and_gradle_holds_no_proxy_login() {
 }
 
 #[test]
-fn without_keytool_the_java_setup_changes_nothing() {
+fn without_keytool_the_java_setup_adds_no_proxy_setting() {
     let l = run_launch(false);
     assert!(!l.env.contains_key("JAVA_TOOL_OPTIONS"));
     let text = std::fs::read_to_string(l.dir.path().join("gradle/gradle.properties")).unwrap();
-    assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
+    assert!(text.starts_with("org.gradle.jvmargs=-Xmx2560m\n"), "{text}");
+    assert!(!text.contains("proxyHost"), "{text}");
+    assert!(!l
+        .dir
+        .path()
+        .join("gradle/moor-proxy-truststore.p12")
+        .exists());
     assert!(!l.dir.path().join("home/.gradle").exists());
     is(
         &l.env,
