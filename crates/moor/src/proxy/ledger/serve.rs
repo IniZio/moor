@@ -12,6 +12,7 @@ use crate::store::Store;
 use crate::vault::Vault;
 
 mod boxes;
+mod start;
 
 /// The keys the controller started its Proxy processes with.
 #[derive(Debug, Default)]

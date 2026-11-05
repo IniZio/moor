@@ -16,7 +16,6 @@ use super::machine::MachineSlot;
 use super::park::{parked_tunnel, starts_parked};
 use super::tunnel::OutageSlot;
 use super::{Deps, Sink, LEASE};
-use crate::proxy::detached::read_spec;
 use crate::proxy::ledger::{BoxView, LedgerError};
 use crate::store::{Fenced, Lease, ReadyProc};
 
@@ -101,9 +100,16 @@ fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxView, BoxHandle, Prox
         say(sink, format_args!("Box {} has no machine", box_id.get()));
         return Err(1);
     };
-    let Ok(spec) = read_spec(deps.state_dir, box_id) else {
-        say(sink, format_args!("no proxy spec for Box {}", box_id.get()));
-        return Err(1);
+    let spec = match deps.ledger.spec() {
+        Ok(Some(spec)) => spec,
+        Ok(None) => {
+            say(sink, format_args!("no proxy spec for Box {}", box_id.get()));
+            return Err(1);
+        }
+        Err(err) => {
+            say(sink, format_args!("cannot read the proxy spec: {err}"));
+            return Err(1);
+        }
     };
     Ok((view, handle, spec))
 }

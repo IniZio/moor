@@ -3,6 +3,7 @@
 use std::io::{BufRead, Write};
 
 use crate::env::Env;
+use crate::proxy::adopt;
 use crate::proxy::ledger::{serve, Keys};
 use crate::store::Store;
 use crate::vault::Vault;
@@ -17,5 +18,13 @@ pub(crate) fn serve_ledger(
     if let Some(store) = env.shared::<Store>() {
         let keys = Keys { fronts: fronts_key };
         serve((store, vault), &keys, read, write);
+    }
+}
+
+/// Moves the spec and CA files Proxies were started from into their rows; one line per failure.
+pub(crate) fn import_proxy_files(env: &Env, vault: &Vault) -> Vec<String> {
+    match (env.state_dir(), env.shared::<Store>()) {
+        (Some(state_dir), Some(store)) => adopt::import(store, vault, &state_dir),
+        _ => Vec::new(),
     }
 }

@@ -22,6 +22,8 @@ use crate::testing::cx::{put_secret, test_vault_key};
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
+mod start;
+
 /// A ledger served on a thread, as the controller serves it; dropping it ends the listener
 /// and every connection, as a controller that exits does.
 pub(crate) struct Served {
@@ -150,16 +152,16 @@ fn box_ledger_in(
     on
 }
 
-struct World {
+pub(super) struct World {
     _dir: tempfile::TempDir,
-    store: Store,
-    vault: Arc<Vault>,
+    pub(super) store: Store,
+    pub(super) vault: Arc<Vault>,
     clock: Arc<FakeClock>,
     ann: UserId,
     socket: PathBuf,
 }
 
-fn world() -> World {
+pub(super) fn world() -> World {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();

@@ -10,7 +10,7 @@ use std::str::FromStr as _;
 use age::secrecy::ExposeSecret as _;
 use age::x25519::{Identity, Recipient};
 use moor_core::user::{SecretName, UserId};
-use moor_core::Secret;
+use moor_core::{BoxId, Secret};
 
 /// File name of the vault key in the controller config's directory.
 pub(crate) const VAULT_KEY: &str = "vault.key";
@@ -63,9 +63,24 @@ impl Vault {
         name: &SecretName,
         plain: &Secret,
     ) -> Result<Vec<u8>, VaultError> {
-        let head = row_head(user, name);
+        self.seal_bound(&row_head(user, name), plain)
+    }
+
+    /// Encrypts the key of `box_id`'s interception CA, bound to that Box.
+    pub(crate) fn seal_box_ca(&self, box_id: BoxId, key: &Secret) -> Result<Vec<u8>, VaultError> {
+        self.seal_bound(&ca_head(box_id), key)
+    }
+
+    /// Decrypts a CA key that [`Vault::seal_box_ca`] bound to `box_id`.
+    pub(crate) fn open_box_ca(&self, box_id: BoxId, sealed: &[u8]) -> Result<Secret, VaultError> {
+        self.open_bound(&ca_head(box_id), sealed)
+            .map_err(|_| VaultError::Open("the CA key was sealed for another Box".into()))
+    }
+
+    /// Encrypts `plain` after `head`, which [`Vault::open_bound`] checks.
+    fn seal_bound(&self, head: &[u8], plain: &Secret) -> Result<Vec<u8>, VaultError> {
         let mut bound = Vec::with_capacity(head.len() + plain.expose().len());
-        bound.extend_from_slice(&head);
+        bound.extend_from_slice(head);
         bound.extend_from_slice(plain.expose());
         let bound = Secret::new(bound);
         age::encrypt(&self.recipient, bound.expose()).map_err(|e| VaultError::Seal(e.to_string()))
@@ -79,12 +94,17 @@ impl Vault {
         name: &SecretName,
         sealed: &[u8],
     ) -> Result<Secret, VaultError> {
+        self.open_bound(&row_head(user, name), sealed)
+    }
+
+    /// Decrypts a value [`Vault::seal_bound`] sealed after `head`; another head is refused.
+    fn open_bound(&self, head: &[u8], sealed: &[u8]) -> Result<Secret, VaultError> {
         let bound = age::decrypt(&self.identity, sealed)
             .map(Secret::new)
             .map_err(|e| VaultError::Open(e.to_string()))?;
         bound
             .expose()
-            .strip_prefix(row_head(user, name).as_slice())
+            .strip_prefix(head)
             .map(|value| Secret::new(value.to_vec()))
             .ok_or_else(|| VaultError::Open("it was sealed for another user or name".into()))
     }
@@ -94,6 +114,11 @@ impl Vault {
 /// line break, so no row's header is a prefix of another's.
 fn row_head(user: UserId, name: &SecretName) -> Vec<u8> {
     format!("{} {}\n", user.get(), name.as_str()).into_bytes()
+}
+
+/// What a Box's CA key is bound to; no user's secret has this head, as theirs starts with a digit.
+fn ca_head(box_id: BoxId) -> Vec<u8> {
+    format!("box-ca {}\n", box_id.get()).into_bytes()
 }
 
 /// [`Vault::load_or_create`] with the uid that must own the file.

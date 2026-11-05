@@ -205,10 +205,10 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
         Arc::clone(&proc),
         clock,
         Arc::new(SystemRng),
-        Some(state_dir.clone()),
+        Some(state_dir),
     )
     .sharing(Some(store.clone()));
-    adopt::reconcile(&host, proc.as_ref(), store, &state_dir)
+    adopt::reconcile(&host, proc.as_ref(), store)
 }
 
 /// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
@@ -375,7 +375,7 @@ pub use store_copy::copy_store;
 mod surface_pick;
 
 pub(crate) use crate::proxy::detached::LEASE as PROXY_LEASE;
-pub(crate) use ledger::serve_ledger;
+pub(crate) use ledger::{import_proxy_files, serve_ledger};
 
 pub(crate) use surface_pick::surface_kind;
 #[cfg(test)]

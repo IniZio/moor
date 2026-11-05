@@ -66,6 +66,7 @@ mod turns;
 mod users;
 
 pub(crate) use agent::SessionRow;
+pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
 pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 #[cfg(test)]

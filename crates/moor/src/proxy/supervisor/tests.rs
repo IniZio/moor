@@ -28,10 +28,10 @@ mod socket;
 mod users_e2e;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
-use crate::proxy::detached::{read_spec, write_spec};
 use crate::proxy::ledger::tests::{box_ledger, OnLedger};
 use crate::proxy::nono::ca::ca_dir;
 use crate::proxy::nono::capture::UserSecretsFn;
+use crate::store::db::DbExt as _;
 use crate::store::{Lease, ProxyRow, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
@@ -93,7 +93,7 @@ impl World {
             user: moor_core::user::UserId::new(1),
         };
         edit(&mut spec);
-        write_spec(dir.path(), &spec).unwrap();
+        store.set_proxy_spec(id, &spec).unwrap();
         Self {
             sockets: dir.path().join("s"),
             owner: rustix::process::getuid().as_raw(),
@@ -430,8 +430,9 @@ fn failed_stop_releases_the_lease_and_exits_one() {
 #[test]
 fn missing_box_is_refused_with_a_stderr_line() {
     let w = World::new([]);
-    let deps = w.deps();
     let missing = BoxId::new(9_999);
+    let on = box_ledger(&w.store, missing);
+    let deps = w.deps_on(&on);
 
     assert_eq!(start(&deps, missing).err(), Some(1));
 
@@ -500,7 +501,15 @@ pub(super) fn unrestartable() -> Vec<TunnelReply> {
 #[test]
 fn missing_spec_is_refused_before_the_lease_is_claimed() {
     let w = World::new([]);
-    std::fs::remove_file(ca_dir(w.dir.path(), w.id).join("spec.json")).unwrap();
+    crate::store::db::Conn::open_file(&w.dir.path().join("moor.db"))
+        .unwrap()
+        .run(
+            sea_query::Query::update()
+                .table(moor_schema::tables::Proxy::Table)
+                .value(moor_schema::tables::Proxy::Spec, Option::<String>::None)
+                .take(),
+        )
+        .unwrap();
     let deps = w.deps();
 
     assert_eq!(start(&deps, w.id).err(), Some(1));
@@ -523,7 +532,10 @@ fn closed_removes_the_ca_and_spec() {
     assert_eq!(run.finish(Stop::Closed), 0);
 
     assert!(!dir.exists());
-    assert!(read_spec(w.dir.path(), w.id).is_err());
+    assert!(
+        w.store.proxy(w.id).unwrap().is_none(),
+        "the row and its spec went"
+    );
 }
 
 #[test]
@@ -535,7 +547,7 @@ fn signal_keeps_the_ca_and_spec() {
     assert_eq!(run.finish(Stop::Signal), 0);
 
     assert!(ca_dir(w.dir.path(), w.id).exists());
-    assert!(read_spec(w.dir.path(), w.id).is_ok());
+    assert!(w.store.proxy_spec(w.id).unwrap().is_some());
 }
 
 #[test]

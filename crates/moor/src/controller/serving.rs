@@ -32,6 +32,9 @@ pub(super) fn serve_started(
     for line in interrupted {
         log(sink, &format!("start: {line}"));
     }
+    for line in Moor::import_proxy_files(&running.env, &running.vault) {
+        log(sink, &format!("proxy: {line}"));
+    }
     resume_setups_in_background(claimed, &running.env, sink);
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
     let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), sink);

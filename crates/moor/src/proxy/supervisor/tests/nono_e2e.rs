@@ -20,7 +20,6 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, Secret};
 use ureq::Agent;
 
-use crate::proxy::detached::write_spec;
 use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::{serve, Deps, Sink, LEASE};
@@ -224,12 +223,12 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),
     };
-    write_spec(dir.path(), &spec).unwrap();
 
     let stop = Arc::new(AtomicBool::new(false));
     let err: Sink = Arc::new(Mutex::new(Vec::new()));
     let rng = FakeRng::default();
     let ledger = box_ledger(&store, id);
+    store.set_proxy_spec(id, &spec).unwrap();
     let deps = Deps {
         ledger: Arc::clone(&ledger),
         driver: &driver,

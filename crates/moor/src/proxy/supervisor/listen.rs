@@ -38,8 +38,7 @@ pub(super) struct Live {
 
 /// Loads the Box CA, opens the log and starts the filter and the proxy; the caller still holds the lease on failure.
 pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result<Live, String> {
-    let ca = ca::load_or_create(deps.state_dir, box_id)
-        .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
+    let ca = box_ca(deps, box_id)?;
     let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
     let capture = new_capture(deps, spec);
     let internal = internal_token()?;
@@ -95,6 +94,16 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
         withheld,
         log,
     })
+}
+
+/// The Box CA the controller keeps, installed in the Box's CA directory for nono to read.
+fn box_ca(deps: &Deps<'_>, box_id: BoxId) -> Result<ca::BoxCa, String> {
+    let pair = deps
+        .ledger
+        .ca()
+        .map_err(|err| format!("cannot read the proxy CA: {err}"))?;
+    ca::install(deps.state_dir, box_id, (&pair.key_pem, &pair.cert_pem))
+        .map_err(|err| format!("cannot load the proxy CA: {err}"))
 }
 
 /// The machine service, reading what the Box holds through the ledger per request.
@@ -265,7 +274,7 @@ impl Live {
         }
     }
 
-    /// Removes the Box CA directory, which also holds the spec.
+    /// Removes the Box CA directory.
     pub(super) fn forget(deps: &Deps<'_>, box_id: BoxId) {
         if let Err(err) = ca::remove(deps.state_dir, box_id) {
             say(

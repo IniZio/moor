@@ -9,6 +9,7 @@ use moor_migrate::{Backend, Script, Step};
 mod baseline;
 mod insertion_order;
 mod proxy_key;
+mod proxy_state;
 pub mod tables;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
@@ -26,6 +27,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V47__proxy_key",
         write: proxy_key::write,
+    },
+    Step {
+        name: "V48__proxy_state",
+        write: proxy_state::write,
     },
 ];
 
