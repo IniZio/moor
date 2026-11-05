@@ -12,7 +12,7 @@ use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, StderrGate, Stdin, To
 
 use super::errors::{one_line, EXIT_SSH};
 use super::peek::ssh_target;
-use super::{link, lost, touch, Crabbox};
+use super::{link, touch, Crabbox};
 
 /// How often a running Box command touches the Box's lease: crabbox renews a lease only
 /// while one of its own commands runs, and moor's commands run over ssh instead.
@@ -58,20 +58,10 @@ pub(super) fn run(
         gate,
         exit_tag,
     } = wrapped(cb, handle, spec, deadline)?;
-    let hidden = gate.hide.clone();
     let result = touching_lease(cb, handle, || match &spec.output {
         Some(out) => cb.proc.run_streamed(&proc.stderr_gate(gate), out),
-        None => cb
-            .proc
-            .run(&proc)
-            .map(|done| lost::scan(handle, &done.stderr)),
+        None => cb.proc.run(&proc).map(|_| ()),
     });
-    if hidden.is_some_and(|h| h.seen()) {
-        lost::note(handle);
-    }
-    if let Err(ProcError::NonZero { stderr_tail, .. }) = &result {
-        lost::scan(handle, stderr_tail);
-    }
     outcome(cb, handle, result, &exit_tag)
 }
 
@@ -103,7 +93,6 @@ pub(super) fn wrapped(
     let gate = StderrGate {
         begin: format!("{token}-begin"),
         end: format!("{token}-end"),
-        hide: Some(lost::hidden()),
     };
     let exit_tag = format!("{token}-exit");
     let cwd = spec.cwd.as_ref().map_or("", |c| c.as_str());

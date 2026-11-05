@@ -19,7 +19,6 @@ use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
 use super::errors::{one_line, EXIT_SSH};
 use super::exec::{self, Wrapped};
-use super::lost::Strip;
 use super::peek::ssh_target;
 use super::{link, Crabbox};
 
@@ -94,13 +93,10 @@ pub(super) fn follow(
         .arg(format!("sh -c {}", quote(&follow_script(run, from))));
     let mut offset = from;
     let mut refused = None;
-    let mut out = Strip::new(out);
     let result = exec::touching_lease(cb, handle, || {
-        cb.proc.run_reading(&spec, &mut |r| {
-            refused = copy(r, &mut out, &mut offset).err();
-        })
+        cb.proc
+            .run_reading(&spec, &mut |r| refused = copy(r, out, &mut offset).err())
     });
-    out.finish(handle);
     if let Some(e) = refused {
         return Err(failed(
             format!("the output of run {run} could not be written: {e}"),

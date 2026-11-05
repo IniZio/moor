@@ -105,27 +105,6 @@ impl FakeDriver {
         self
     }
 
-    /// Whether the Box behind `handle` reported a lost forwarder config; forgets the report.
-    pub(super) fn take_forwarder_lost(&self, handle: &BoxHandle) -> bool {
-        let mut s = self.st();
-        let before = s.forwarder_lost.len();
-        s.forwarder_lost.retain(|h| h != handle.as_str());
-        s.forwarder_lost.len() != before
-    }
-
-    /// Records a login refresh after the execs so far.
-    pub(super) fn note_refresh(&self, handle: &BoxHandle) {
-        let mut s = self.st();
-        let execs = s.execs.len();
-        s.refreshed_logins.push((handle.clone(), execs));
-    }
-
-    /// Reports, as an exec's prelude would, that the Box behind `handle` lost its forwarder
-    /// config.
-    pub(crate) fn report_forwarder_lost(&self, handle: &BoxHandle) {
-        self.st().forwarder_lost.push(handle.as_str().to_owned());
-    }
-
     /// Ends every `exec` whose argv mentions `needle` with `outcome`, whatever is queued.
     pub(crate) fn exec_ends_when(self, needle: &str, outcome: ExecOutcome) -> Self {
         self.st().exec_ends.push((needle.to_owned(), outcome));
