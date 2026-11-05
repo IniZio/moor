@@ -14,7 +14,8 @@ use moor_testkit::ChildGuard;
 use rustix::process::{kill_process_group, Pid, Signal};
 
 use super::{
-    cancel_script, end_script, follow_script, launch_script, parse_end, End, Outcome, LOST, REFUSED,
+    attached_script, cancel_script, end_script, follow_script, launch_script, parse_end, End,
+    Outcome, LOST, REFUSED,
 };
 use crate::boxscript::quote;
 
@@ -493,4 +494,48 @@ fn parse_end_rejects_anything_else() {
     ] {
         assert_eq!(parse_end(text), None, "{text:?}");
     }
+}
+
+#[test]
+fn attaching_again_after_a_kill_follows_the_same_run_to_its_exit() {
+    let sb = Scratch::new("attach-again");
+    let command = "echo ran >> ../ran; printf one; sleep 1; printf two; exit 7";
+    let mut first = ChildGuard::new(
+        sb.sh(&attached_script(RUN, command))
+            .process_group(0)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    assert!(eventually(|| sb.pid().is_some()), "the first attach launched nothing");
+    let group = Pid::from_raw(i32::try_from(first.id()).unwrap()).unwrap();
+    kill_process_group(group, Signal::KILL).unwrap();
+    first.wait().unwrap();
+
+    let again = sb.run(&attached_script(RUN, command));
+    assert_eq!(again.status.code(), Some(7), "{again:?}");
+    assert_eq!(again.stdout, b"onetwo");
+    assert_eq!(fs::read_to_string(sb.root.join("ran")).unwrap(), "ran\n");
+}
+
+#[test]
+fn two_attaches_at_once_run_the_command_once() {
+    let sb = Scratch::new("attach-twice");
+    let command = "echo ran >> ../ran; sleep 1; printf done";
+    let a = sb.sh(&attached_script(RUN, command)).stdout(Stdio::piped()).spawn().unwrap();
+    let b = sb.sh(&attached_script(RUN, command)).stdout(Stdio::piped()).spawn().unwrap();
+    let (a, b) = (a.wait_with_output().unwrap(), b.wait_with_output().unwrap());
+    assert_eq!((a.status.code(), b.status.code()), (Some(0), Some(0)));
+    assert_eq!((a.stdout.as_slice(), b.stdout.as_slice()), (&b"done"[..], &b"done"[..]));
+    assert_eq!(fs::read_to_string(sb.root.join("ran")).unwrap(), "ran\n");
+}
+
+#[test]
+fn an_attach_to_a_lost_run_exits_1() {
+    let sb = Scratch::new("attach-lost");
+    fs::create_dir_all(sb.run_dir()).unwrap();
+    fs::write(sb.run_dir().join("pid"), format!("{}\n", dead_pid())).unwrap();
+    let out = sb.run(&attached_script(RUN, "true"));
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("ended without an exit code"));
 }

@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::boxscript::detached::attached_script;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
@@ -67,9 +68,34 @@ pub(super) fn setup_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
 /// Peels the Proxy wrapper (`sh -c <prelude> sh`) off an argv.
 pub(super) fn unwrapped(argv: Vec<String>) -> Vec<String> {
     match argv.as_slice() {
-        [_, _, _, sh, rest @ ..] if sh == "sh" => rest.to_vec(),
+        [_, _, _, sh, rest @ ..] if sh == "sh" => detached(rest.to_vec()),
         _ => argv,
     }
+}
+
+/// `argv` with a setup script attached to as a detached run replaced by the script's own argv.
+fn detached(argv: Vec<String>) -> Vec<String> {
+    let Some(text) = argv.last() else {
+        return argv;
+    };
+    let Some(run) = text
+        .split_once(".moor/runs/")
+        .and_then(|(_, r)| r.split('"').next()?.parse::<i64>().ok())
+    else {
+        return argv;
+    };
+    let template = attached_script(run, "@CMD@");
+    let (head, tail) = template.split_once("@CMD@").unwrap();
+    let Some(command) = text.strip_prefix(head).and_then(|t| t.strip_suffix(tail)) else {
+        return argv;
+    };
+    let command = command.replace(r"'\''", "'");
+    let script = command
+        .strip_prefix("'sh' '-c' '")
+        .and_then(|c| c.strip_suffix('\''))
+        .unwrap()
+        .replace(r"'\''", "'");
+    ["sh", "-c", &script].map(str::to_owned).to_vec()
 }
 
 /// The argv of every exec except the clone, wrapper peeled.

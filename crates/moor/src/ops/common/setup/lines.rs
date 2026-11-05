@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::Output;
 
 use super::Failure;
@@ -133,10 +133,21 @@ pub(super) fn follow_lines(
         }),
         exec,
     );
-    let ok = matches!(result, Ok(ExecOutcome::Exited { code: 0 }));
-    lines
-        .finish(ok, clock.instant())
-        .into_iter()
-        .for_each(on_line);
+    if !cut(&result) {
+        let ok = matches!(result, Ok(ExecOutcome::Exited { code: 0 }));
+        lines
+            .finish(ok, clock.instant())
+            .into_iter()
+            .for_each(on_line);
+    }
     result
+}
+
+/// Whether `result` is a channel that broke before the script ended and its deadline passed.
+pub(super) fn cut(result: &Result<ExecOutcome, Failure>) -> bool {
+    match result {
+        Ok(ExecOutcome::Interrupted) => true,
+        Err(Failure::Exec(e)) => !matches!(e, DriverError::Timeout(_)),
+        _ => false,
+    }
 }

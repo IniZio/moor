@@ -121,6 +121,35 @@ done
     )
 }
 
+/// POSIX sh text that launches `command` as run `run` unless it was launched before, prints its
+/// whole log as it grows, and exits with its exit code once it ends.
+///
+/// Killing this script leaves the run going, and running it again attaches to the same run, so
+/// the command runs once however often this is run. A run lost with no exit code exits 1.
+#[must_use]
+pub fn attached_script(run: i64, command: &str) -> String {
+    format!(
+        r#"( {launch} ) >/dev/null
+__moor_rc=$?
+[ "$__moor_rc" -eq 0 ] || [ "$__moor_rc" -eq {REFUSED} ] || exit "$__moor_rc"
+{dir}__moor_n=0
+while [ ! -s "$__moor_dir/pid" ] && [ "$__moor_n" -lt 100 ]; do
+  __moor_n=$((__moor_n + 1))
+  sleep 0.1
+done
+( {follow} )
+__moor_rc=$?
+[ "$__moor_rc" -eq {LOST} ] && {{ echo "moor: run {run} ended without an exit code"; exit 1; }}
+[ "$__moor_rc" -eq 0 ] || exit "$__moor_rc"
+__moor_rc=$(cat "$__moor_dir/exit" 2>/dev/null)
+exit "${{__moor_rc:-1}}"
+"#,
+        launch = launch_script(run, command),
+        follow = follow_script(run, 0),
+        dir = dir_line(run),
+    )
+}
+
 /// POSIX sh text that prints one line [`parse_end`] reads: the exit code (or `running` or
 /// `lost`), whether a cancel was asked for, and whether the workdir holds [`MOVED_FILE`].
 #[must_use]
