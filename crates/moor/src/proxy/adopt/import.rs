@@ -1,6 +1,9 @@
 //! Moves what a Proxy was started from before its row kept it, a spec file and the CA files under
 //! the state dir, into the row. A Box trusts its CA for life, so a row that lost it would break the
 //! Box at its next Proxy restart.
+//!
+//! This exists only so Proxies started before the row kept this state keep their CA. It goes once
+//! no controller older than this one runs.
 
 use std::fs;
 use std::path::Path;

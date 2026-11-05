@@ -33,7 +33,12 @@ pub(super) fn serve_started(
         log(sink, &format!("start: {line}"));
     }
     for line in Moor::import_proxy_files(&running.env, &running.vault) {
-        log(sink, &format!("proxy: {line}"));
+        log(
+            sink,
+            &format!(
+                "proxy: import failed, {line}. That Box's CA will be replaced at its next Proxy restart."
+            ),
+        );
     }
     resume_setups_in_background(claimed, &running.env, sink);
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
