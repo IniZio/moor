@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
 use moor_core::config::AgentHolder;
-use moor_core::name::{BoxName, BoxPath};
+use moor_core::name::{BoxHandle, BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+    AgentFate, Engine, EngineError, LaunchNotice, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
@@ -43,6 +43,8 @@ struct State {
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
+    gh_deliveries: Vec<bool>,
+    gh_notice: Option<LaunchNotice>,
     fates: VecDeque<Result<AgentFate, EngineError>>,
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
@@ -157,34 +159,6 @@ impl FakeEngine {
         self.st().steers.clone()
     }
 
-    /// Every transcript request writes `text` to its destination.
-    pub(crate) fn transcript_text(self, text: &str) -> Self {
-        self.st().transcript_text = Some(text.to_owned());
-        self
-    }
-
-    /// The next transcript request without a queued text of its own writes `text`, ahead of the fixed one.
-    pub(crate) fn then_transcript_text(self, text: &str) -> Self {
-        self.st().later_texts.push_back(text.to_owned());
-        self
-    }
-
-    /// The next transcript request fails once with `e`.
-    pub(crate) fn fail_transcript(self, e: EngineError) -> Self {
-        self.st().fail_transcript = Some(e);
-        self
-    }
-
-    /// The next transcript request fails once with `e`, set on an Engine already shared.
-    pub(crate) fn fail_next_transcript(&self, e: EngineError) {
-        self.st().fail_transcript = Some(e);
-    }
-
-    /// Runs `f` inside every transcript request, before it is served.
-    pub(crate) fn on_transcript(&self, f: impl Fn() + Send + Sync + 'static) {
-        self.st().on_transcript = Some(Arc::new(f));
-    }
-
     /// The session ids transcripts were requested for, in call order.
     /// Queues what the next calls to `agent_fate` answer, in order; an empty queue answers
     /// that the agent ended with its pane.
@@ -287,6 +261,12 @@ impl Engine for FakeEngine {
 
     fn agent_install(&self) -> Option<AgentInstall> {
         self.st().install.clone()
+    }
+
+    fn deliver_gh(&self, _handle: &BoxHandle, forge: bool) -> Option<LaunchNotice> {
+        let mut st = self.st();
+        st.gh_deliveries.push(forge);
+        st.gh_notice.take()
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
@@ -396,5 +376,6 @@ impl Engine for FakeEngine {
     }
 }
 
+mod knobs;
 #[cfg(test)]
 mod tests;

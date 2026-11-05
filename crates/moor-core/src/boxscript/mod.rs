@@ -13,6 +13,10 @@ pub mod teardown;
 #[cfg(test)]
 mod tests;
 
+/// The line that puts the agent's install directories on the Box's `PATH`, in the launch script,
+/// in the check that the agent command exists, and in the profile's `setup.sh`.
+pub const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
+
 /// POSIX single-quotes `s`: wraps it in `'...'` and renders each `'` as `'\''`. Always quotes.
 #[must_use]
 pub fn quote(s: &str) -> String {

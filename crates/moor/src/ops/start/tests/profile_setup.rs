@@ -1,5 +1,6 @@
 //! The profile's own `setup.sh` runs once per new Box, after the fetch, and never fails the start.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use moor_core::seam::driver::ExecOutcome;
@@ -180,4 +181,50 @@ fn a_box_without_a_profile_records_no_profile_step() {
     let w = world(FakeDriver::new());
     let id = started(&w);
     assert!(super::agent_install::step_events(&w, id).is_empty());
+}
+
+/// A profile world whose engine is `engine`.
+fn world_with_engine(engine: FakeEngine) -> (World, Arc<FakeEngine>) {
+    let engine = Arc::new(engine);
+    let mut w = world_answering(None, HEAD, None);
+    w.cx = w.cx.with_engine(engine.clone());
+    set_profile(&w, None);
+    (w, engine)
+}
+
+#[test]
+fn gh_is_delivered_before_setup_sh_runs() {
+    let (w, engine) = world_with_engine(FakeEngine::new());
+    let seen = Arc::new(Mutex::new(None));
+    let (at_setup, asked) = (Arc::clone(&seen), Arc::clone(&engine));
+    w.driver.on_exec_of(MARK, move || {
+        *at_setup.lock().unwrap() = Some(asked.gh_deliveries().len());
+    });
+    started(&w);
+    assert_eq!(*seen.lock().unwrap(), Some(1));
+    assert_eq!(engine.gh_deliveries().len(), 1);
+}
+
+#[test]
+fn a_gh_that_cannot_be_delivered_is_warned_and_setup_sh_still_runs() {
+    let notice = moor_core::seam::engine::LaunchNotice {
+        code: "gh_not_delivered".to_owned(),
+        message: "no gh".to_owned(),
+    };
+    let (w, _) = world_with_engine(FakeEngine::new().gh_notice(notice));
+    w.cx.take_warnings();
+    started(&w);
+    assert_eq!(setup_execs(&w).len(), 1);
+    assert!(warning_codes(&w).contains(&"gh_not_delivered".to_owned()));
+}
+
+#[test]
+fn a_failed_fetch_delivers_no_gh() {
+    let driver = FakeDriver::new().exec_ends_when("git fetch", ExecOutcome::Exited { code: 128 });
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = answering(driver, None, HEAD, None);
+    w.cx = w.cx.with_engine(engine.clone());
+    set_profile(&w, None);
+    started(&w);
+    assert!(engine.gh_deliveries().is_empty());
 }

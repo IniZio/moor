@@ -1,11 +1,18 @@
 //! Puts the pinned `gh` into the Box: `gh pr create --attach` needs gh 2.99 or newer.
 
+use moor_core::name::{BoxHandle, BoxPath};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
+use moor_core::seam::proc::Deadline;
 
-use super::super::gh_release::GH_VERSION;
+use super::super::gh_release::{sha256_hex, GhRelease, GH_VERSION};
+use super::INSTALL_DEADLINE;
 
 /// Where `gh` lives, relative to the Box home.
 pub(super) const GH_PATH: &str = ".local/bin/gh";
+
+/// Prints the Box's home, then its operating system and architecture.
+const HOME_AND_PLATFORM: &str = "printf '%s\\n' \"$HOME\"; uname -s -m";
 
 /// The check script's exit code: `gh` is missing or is not the pinned binary.
 pub(super) const NOT_INSTALLED: i32 = 10;
@@ -31,6 +38,65 @@ pub(super) fn not_delivered(reason: &impl std::fmt::Display) -> LaunchNotice {
              so `gh pr create --attach` is unavailable"
         ),
     }
+}
+
+/// Puts the pinned `gh` in the Box behind `handle` when it is missing; the notice says why it
+/// could not. The launch keeps its own check, since a Box can lose `gh` before then.
+pub(in crate::adapters::box_agent) fn deliver(
+    driver: &dyn Driver,
+    release: &GhRelease,
+    handle: &BoxHandle,
+) -> Option<LaunchNotice> {
+    put_if_missing(driver, release, handle)
+        .err()
+        .map(|reason| not_delivered(&reason))
+}
+
+/// The steps of [`deliver`]; the error is why `gh` is not in the Box.
+fn put_if_missing(
+    driver: &dyn Driver,
+    release: &GhRelease,
+    handle: &BoxHandle,
+) -> Result<(), String> {
+    let (out, _) = run(driver, handle, HOME_AND_PLATFORM.to_owned())?;
+    let mut lines = out.lines();
+    let (home, platform) = (lines.next().unwrap_or_default(), lines.next());
+    let mut words = platform.unwrap_or_default().split_whitespace();
+    let (Some(os), Some(arch)) = (words.next(), words.next()) else {
+        return Err("could not read the Box's home and platform".to_owned());
+    };
+    let bytes = release.gh_binary(os, arch).map_err(|e| e.to_string())?;
+    match run(driver, handle, check_script(&sha256_hex(&bytes)))? {
+        (_, 0) => Ok(()),
+        (_, NOT_INSTALLED) => {
+            let path = BoxPath::under(home, GH_PATH).map_err(|e| e.to_string())?;
+            let put = BoxStep::Put {
+                path,
+                bytes,
+                mode: 0o755,
+            };
+            step(driver, handle, put).map(drop)
+        }
+        (_, code) => Err(format!("the check exited {code}")),
+    }
+}
+
+/// What `script` printed in the Box, and its exit code.
+fn run(driver: &dyn Driver, handle: &BoxHandle, script: String) -> Result<(String, i32), String> {
+    match step(driver, handle, BoxStep::Run(script))? {
+        StepDone::Ran {
+            outcome: ExecOutcome::Exited { code },
+            stdout,
+        } => Ok((stdout, code)),
+        _ => Err("the step was interrupted".to_owned()),
+    }
+}
+
+/// Runs one `step` in the Box.
+fn step(driver: &dyn Driver, handle: &BoxHandle, step: BoxStep) -> Result<StepDone, String> {
+    let done = driver.batch(handle, &[], &[step], Deadline(INSTALL_DEADLINE));
+    let first = done.into_iter().next().ok_or("the step did not run")?;
+    first.map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use moor_core::seam::proc::Tool;
 use super::super::agent_env;
 use super::super::probe::HOOK_FILE;
 use super::super::profile_writer::FAILURES_FILE;
-use super::{BRIEF_FILE, SCRIPT_FILE, STATUS_OSC_FILE};
+use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE, STATUS_OSC_FILE};
 
 /// Where the agent script lands on the Box.
 pub(super) fn script_path(cred: &BoxPath) -> Result<BoxPath, NameError> {
@@ -28,11 +28,6 @@ pub(super) fn script(
 ) -> Result<String, NameError> {
     script_stripping(paths, ctx, hooks, preseed, (argv, &[]), (proxy, env, &[]))
 }
-
-/// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
-/// and in the check that the agent command exists.
-pub(in crate::adapters::box_agent) const AGENT_PATH_LINE: &str =
-    "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`

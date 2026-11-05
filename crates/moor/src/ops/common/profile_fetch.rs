@@ -88,6 +88,13 @@ fn fetch_and_setup(
         failed(cx, store, id, ProfileStep::Fetch, detail)?;
         return Ok(false);
     }
+    let forge = proxy.is_some_and(|p| p.addr.forge);
+    if let Some(notice) = cx.engine().deliver_gh(handle, forge) {
+        cx.warn(Warning {
+            code: notice.code,
+            message: notice.message,
+        });
+    }
     let setup_log = cx
         .state_dir()
         .map(|d| log_dir(d, id).join("profile-setup.log"))

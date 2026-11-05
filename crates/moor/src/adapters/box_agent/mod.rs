@@ -30,12 +30,12 @@ use std::sync::Arc;
 
 use moor_core::activity::Probes;
 use moor_core::config::AgentHolder;
-use moor_core::name::{BoxName, BoxPath};
+use moor_core::name::{BoxHandle, BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+    AgentFate, Engine, EngineError, LaunchNotice, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, Surface, WorkspaceRef};
@@ -110,6 +110,12 @@ impl Engine for BoxAgent {
 
     fn agent_install(&self) -> Option<AgentInstall> {
         launch::holder::with_agent(holder(self.holder), self.profile.install())
+    }
+
+    fn deliver_gh(&self, handle: &BoxHandle, forge: bool) -> Option<LaunchNotice> {
+        forge
+            .then(|| launch::gh::deliver(self.driver.as_ref(), &self.release, handle))
+            .flatten()
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

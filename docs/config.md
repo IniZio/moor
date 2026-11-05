@@ -221,10 +221,14 @@ claude:
 When the repo has a `setup.sh` at its root, each new Box runs `sh setup.sh` once
 after fetching the profile, from the checkout (`~/.moor-profile/person`), as the
 Box user, with the same environment and Proxy as the repo's `setup` commands and
-a 10 minute limit. A relaunch of the same Box does not run it again. The agent's
-`PATH` starts with `~/.local/bin`, then `~/.bun/bin`, so a binary the script
-installs must land in one of those or in a directory already on the Box's
-`PATH` such as `/usr/local/bin` (that needs root in the Box). A failure
+a 10 minute limit. A relaunch of the same Box does not run it again. The script's
+`PATH`, like the agent's, starts with `~/.local/bin`, then `~/.bun/bin`, so a
+binary the script installs must land in one of those or in a directory already
+on the Box's `PATH` such as `/usr/local/bin` (that needs root in the Box). When
+the Box's Proxy routes the forge, moor puts the pinned `gh` in `~/.local/bin`
+before the script runs, so the script can call `gh`, for example
+`gh extension install`. A `gh` that cannot be delivered is a warning, and the
+script still runs. A failure
 (non-zero exit, timeout) is reported as a profile warning with the end of the
 log, and the Box still starts. It runs on every new Box, so keep it fast and
 safe to rerun. For example, to give bun-based hooks their runtime:
