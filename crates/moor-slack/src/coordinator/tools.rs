@@ -84,6 +84,7 @@ pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
         Call::SleepBox { box_name } => control::sleep(scope, box_name),
         Call::WakeBox { box_name } => control::wake(scope, box_name),
         Call::RestartAgent { box_name } => control::restart(scope, box_name),
+        workflow_call => workflow::run(scope, workflow_call),
     };
     ran.unwrap_or_else(|e| Reply::refused(format!("The front could not read slack.db: {e}")))
 }
@@ -352,6 +353,8 @@ mod control;
 
 mod start;
 use start::start;
+
+mod workflow;
 
 #[cfg(test)]
 mod tests;

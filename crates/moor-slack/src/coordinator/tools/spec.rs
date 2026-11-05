@@ -13,7 +13,7 @@ pub(crate) struct Spec {
 }
 
 /// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 10] = [
+pub(crate) const SPECS: [Spec; 15] = [
     Spec {
         name: "list_boxes",
         description: "List this thread's Boxes: name, repo, requester and state as the \
@@ -157,6 +157,71 @@ pub(crate) const SPECS: [Spec; 10] = [
                     "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."}
                 },
                 "required": ["box"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "add_workflow",
+        description: "Add a recurring job: on its cron, moor starts a Box in each repo with the prompt, and this thread is told what each run did. Every run acts as this thread's starter, with their credentials, and its agent may push branches and open pull requests in those repos; it cannot merge them. A run is skipped while the previous run for that repo is unfinished. Three failed runs in a row for a repo disable the workflow. Adding an existing name replaces it and moves its reports to this thread. Works only when the thread's starter wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Lowercase letters, digits, '.', '_' or '-'; unique among the starter's workflows."},
+                    "cron": {"type": "string", "description": "Five fields: minute, hour, day of month, month, day of week."},
+                    "timezone": {"type": "string", "description": "IANA time zone the cron is read in, such as Europe/London."},
+                    "repos": {"type": "array", "items": {"type": "string"}, "description": "Each as owner/name; every firing starts one Box in each."},
+                    "prompt": {"type": "string", "description": "What each Box's agent should do, in plain words."},
+                    "timeout_minutes": {"type": "integer", "description": "Minutes a run may take before it is stopped, 1 to 720."}
+                },
+                "required": ["name", "cron", "timezone", "repos", "prompt"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "list_workflows",
+        description: "List the thread starter's workflows: cron, repos, prompt, whether each is enabled and the latest run of each repo. Works only when the thread's starter wrote in this turn.",
+        input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
+    },
+    Spec {
+        name: "remove_workflow",
+        description: "Remove one of the thread starter's workflows and its run history. Boxes it already started stay open. Works only when the thread's starter wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "The workflow's name, as list_workflows shows it."}},
+                "required": ["name"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "set_workflow_enabled",
+        description: "Enable or disable one of the thread starter's workflows. Enabling never runs the times missed while it was off. Works only when the thread's starter wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The workflow's name, as list_workflows shows it."},
+                    "enabled": {"type": "boolean", "description": "True to fire from now on, false to stop."}
+                },
+                "required": ["name", "enabled"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "list_workflow_runs",
+        description: "Read what the thread starter's workflow runs did, oldest change first. Pass the previous `next` as `after` to get only newer changes. Works only when the thread's starter wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "after": {"type": "integer", "description": "The `next` of the previous call; everything when left out."},
+                    "limit": {"type": "integer", "description": "Most changes to return; 50 when left out."}
+                },
                 "additionalProperties": false
             })
         },

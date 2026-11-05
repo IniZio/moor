@@ -10,7 +10,7 @@ use moor_core::user::Identity;
 use crate::credentials::SlackUser;
 
 /// The namespace of the controller's `slack` front socket.
-const NAMESPACE: &str = "slack";
+pub(crate) const NAMESPACE: &str = "slack";
 
 /// Longest team id accepted.
 const TEAM_MAX: usize = 32;

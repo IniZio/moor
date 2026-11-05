@@ -36,6 +36,10 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V4__box_node.sql",
             include_str!("../migrations/V4__box_node.sql"),
         ),
+        (
+            "V5__workflow_reports.sql",
+            include_str!("../migrations/V5__workflow_reports.sql"),
+        ),
     ])
 }
 
@@ -189,6 +193,8 @@ pub(crate) use prompts::{Posted, Prompt, PromptState};
 
 mod turns;
 pub(crate) use turns::{End, OpenTurn, TurnRow};
+
+mod workflow;
 
 #[cfg(test)]
 mod tests;
