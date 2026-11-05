@@ -21,6 +21,10 @@ pub(crate) const DATABASE_READERS: &str = "MOOR_DATABASE_READERS";
 /// The variable holding the key a Proxy process presents on the ledger socket.
 pub(crate) const PROXY_KEY: &str = "MOOR_PROXY_KEY";
 
+/// The variable holding the key the shared egress Proxy presents on the ledger socket. The
+/// controller and the shared Proxy are given the same one; unset, the shared Proxy is off.
+pub(crate) const EGRESS_KEY: &str = "MOOR_EGRESS_KEY";
+
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {

@@ -1,5 +1,5 @@
 //! The store calls a Proxy makes. A Box's supervisor names no Box: each call answers for the
-//! Box its hello proved.
+//! Box its hello proved. The shared egress Proxy names the Box in its hello.
 
 use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::user::{SecretName, UserId};
@@ -126,6 +126,11 @@ pub(crate) enum Call {
     Spec,
     /// The Box's interception CA, made on first call.
     Ca,
+    /// The open Box whose egress token hashes to `token_hash`.
+    TokenBox {
+        /// The hex SHA-256 of the token the Box presented.
+        token_hash: String,
+    },
 }
 
 impl Call {

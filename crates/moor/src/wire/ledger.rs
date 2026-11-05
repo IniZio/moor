@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, Write};
 
-use crate::env::Env;
+use crate::env::{Env, EGRESS_KEY};
 use crate::proxy::adopt;
 use crate::proxy::ledger::{serve, Keys};
 use crate::store::Store;
@@ -16,7 +16,10 @@ pub(crate) fn serve_ledger(
     (read, write): (impl BufRead, impl Write),
 ) {
     if let Some(store) = env.shared::<Store>() {
-        let keys = Keys { fronts: fronts_key };
+        let keys = Keys {
+            fronts: fronts_key,
+            egress: env.get(EGRESS_KEY).filter(|k| !k.is_empty()),
+        };
         serve((store, vault), &keys, read, write);
     }
 }

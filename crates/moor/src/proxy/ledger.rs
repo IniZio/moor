@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
 use call::Call;
-pub(crate) use client::FrontsLedger;
+pub(crate) use client::{EgressLedger, FrontsLedger};
 pub(crate) use serve::{serve, Keys};
 
 use crate::store::StoreError;
@@ -50,6 +50,15 @@ pub(crate) enum Hello {
         v: u32,
         /// Its key.
         key: String,
+    },
+    /// The shared egress Proxy, with the key it and the controller were both given.
+    Egress {
+        /// The protocol it speaks.
+        v: u32,
+        /// Its key.
+        key: String,
+        /// The Box whose requests the connection serves; none for token lookups.
+        box_id: Option<BoxId>,
     },
 }
 

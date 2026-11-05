@@ -7,6 +7,7 @@ use moor_migrate::sea_query::{
 use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
+mod egress_token;
 mod insertion_order;
 mod proxy_key;
 mod proxy_state;
@@ -46,6 +47,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V51__proxy_state",
         write: proxy_state::write,
+    },
+    Step {
+        name: "V52__egress_token",
+        write: egress_token::write,
     },
 ];
 

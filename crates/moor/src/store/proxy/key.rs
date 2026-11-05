@@ -1,5 +1,6 @@
-//! The key a Box's supervisor presents on the ledger socket. Only its hex SHA-256 is stored,
-//! with the ledger protocol the supervisor was started to speak.
+//! The key a Box's supervisor presents on the ledger socket, and the token the Box presents to
+//! the shared egress Proxy. Only their hex SHA-256 is stored, with the ledger protocol the
+//! supervisor was started to speak.
 
 use moor_core::BoxId;
 use moor_schema::tables::Proxy;
@@ -46,6 +47,35 @@ impl Store {
             .optional()?;
         Ok(found.is_some())
     }
+
+    /// Records `token` as the one `box_id` presents to the shared egress Proxy, unless the row
+    /// already has one; true when it was recorded. A Box keeps its first token for the life of
+    /// its row, and removing the row revokes it.
+    pub(crate) fn set_egress_token(&self, box_id: BoxId, token: &[u8]) -> Result<bool, StoreError> {
+        let changed = self.writer().run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::TokenHash, hash(token))
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(Expr::col(Proxy::TokenHash).is_null()),
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// The Box whose egress token hashes to `token_hash`, if a row holds it.
+    pub(crate) fn egress_token_box(&self, token_hash: &str) -> Result<Option<BoxId>, StoreError> {
+        let found: Option<i64> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(Proxy::Box)
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::TokenHash).eq(token_hash)),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found.map(BoxId::new))
+    }
 }
 
 #[cfg(test)]
@@ -54,6 +84,7 @@ mod tests {
     use moor_core::BoxName;
 
     use crate::store::tests::open;
+    use crate::store::users::front_leases::hash;
     use crate::testing::rng::FakeRng;
 
     #[test]
@@ -80,5 +111,28 @@ mod tests {
         assert!(store.proxy_key_is(a, b"k2").unwrap());
         assert_eq!(store.proxy(a).unwrap().unwrap().ledger, Some(1));
         assert_eq!(store.proxy(b).unwrap().unwrap().ledger, None);
+    }
+
+    #[test]
+    fn a_box_keeps_its_first_egress_token_until_its_row_goes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = open(dir.path());
+        let nt = NewBox {
+            name: BoxName::parse_allow_bare("a").unwrap(),
+            repo: None,
+        };
+        let a = store.apply(Decision::insert(nt)).unwrap().box_id;
+        assert!(!store.set_egress_token(a, b"t1").unwrap(), "no row yet");
+        drop(store.reserve(a, &FakeRng::default(), std::time::Duration::from_secs(30)));
+        assert!(store.set_egress_token(a, b"t1").unwrap());
+        assert!(!store.set_egress_token(a, b"t2").unwrap(), "already minted");
+        assert_eq!(store.egress_token_box(&hash(b"t1")).unwrap(), Some(a));
+        assert_eq!(store.egress_token_box(&hash(b"t2")).unwrap(), None);
+        store.remove_proxy(a).unwrap();
+        assert_eq!(
+            store.egress_token_box(&hash(b"t1")).unwrap(),
+            None,
+            "revoked"
+        );
     }
 }
