@@ -33,8 +33,9 @@ when it sleeps, or when it woke and waits for a free slot. The Proxy still passe
 with `X-Moor-Box` and `X-Moor-Machine-Missing: <reason>` in place of the
 machine headers. The agent still sees the runner's own tools in the tool list,
 and the list leaves out relayed tools. Every call except `machine_claim` and
-`machine_release` returns an error result that gives the reason and says "Try
-again later." Nothing runs on the machine. The runner does not refuse these requests, because
+`machine_release` returns an error result that gives the reason. A Box with no
+claim is told to call `machine_claim`. A Box that sleeps or waits for a slot is
+told to try again later. Nothing runs on the machine. The runner does not refuse these requests, because
 a refusal makes the agent's client ask for OAuth and drop the tools for the
 rest of the session.
 

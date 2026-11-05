@@ -35,7 +35,7 @@ fn service() -> (SocketAddr, Receiver<String>) {
     (addr, rx)
 }
 
-const NO_CLAIM: &str = "this Box has no machine: its repo's .moor.yaml asks for none, or none was free when it started";
+const NO_CLAIM: &str = "this Box has no machine yet; call the machine_claim tool to take a slot on one of your user's machines";
 
 /// A Box 7 front with the machine service; the Box holds `mac` while `holds` is set, and
 /// otherwise lacks a slot for the reason in `missing`.
