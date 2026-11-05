@@ -54,40 +54,6 @@ fn a_built_context_carries_the_prompt_window_from_the_environment() {
     assert_eq!(build(&env).unwrap().prompt_window(), Duration::ZERO);
 }
 
-/// A writer whose bytes the test can read back after the proxy owns it.
-struct Shared(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Shared {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-#[test]
-fn serving_an_unknown_box_fails_with_one_stderr_line() {
-    let home = tempfile::tempdir().unwrap();
-    let root = home.path().to_str().unwrap();
-    let state = home.path().join("state");
-    let env = Env::from_pairs([
-        ("HOME", root),
-        ("XDG_CONFIG_HOME", root),
-        ("XDG_STATE_HOME", root),
-        ("MOOR_CONFIG", &format!("{root}/absent.yaml")),
-        ("MOOR_STATE_DIR", state.to_str().unwrap()),
-    ]);
-    let out = Arc::new(Mutex::new(Vec::new()));
-    let code = serve_proxy(&env, BoxId::new(1), Shared(Arc::clone(&out)));
-    assert_ne!(code, 0);
-    let text = String::from_utf8(out.lock().unwrap().clone()).unwrap();
-    assert!(text.starts_with("moor proxy: "), "{text}");
-    assert_eq!(text.lines().count(), 1, "{text}");
-}
-
 #[test]
 fn lookup_deadlines_cover_only_providers_that_set_one() {
     let drivers = BTreeMap::from([

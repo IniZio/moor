@@ -27,7 +27,7 @@ use std::time::Duration;
 use moor_core::Secret;
 
 use super::Sink;
-pub(crate) use machine::{hold_or_missing, Held, Hold, MachineRoute};
+pub(crate) use machine::{hold_or_missing, Held, Hold};
 pub(crate) use plain::{connect_head, plain_request};
 pub(crate) use refusal::refusal;
 use refusal::{target_of, Refusals};
@@ -38,7 +38,6 @@ mod auth;
 mod machine;
 mod plain;
 mod refusal;
-mod relay;
 mod socket;
 
 /// Largest request or response head accepted.
@@ -88,40 +87,10 @@ impl fmt::Debug for Front {
 }
 
 impl Front {
-    /// Binds `socket`, replacing a stale file, and starts accepting. `internal`
-    /// is the session token nono checks, never shown to the Box; `machine` is the service
-    /// the front serves itself.
-    pub(crate) fn start(
-        target: SocketAddr,
-        socket: FrontSocket,
-        internal: Secret,
-        machine: Option<MachineRoute>,
-        log: Sink,
-    ) -> Result<Self, String> {
-        Self::bind(
-            socket,
-            Arc::new(move |_| Some((target, Secret::new(internal.expose().to_vec())))),
-            machine,
-            log,
-        )
-    }
-
     /// Binds `socket`, replacing a stale file, and starts accepting; `route` picks each
-    /// request's nono from its head.
+    /// request's nono from its head, and each refusal writes one line to `log`.
     pub(crate) fn routed(socket: FrontSocket, route: Route, log: Sink) -> Result<Self, String> {
-        Self::bind(socket, route, None, log)
-    }
-
-    /// Binds `socket` and serves each connection by `route` and `machine`, writing one line
-    /// per refusal to `log`.
-    fn bind(
-        socket: FrontSocket,
-        route: Route,
-        machine: Option<MachineRoute>,
-        log: Sink,
-    ) -> Result<Self, String> {
-        let handler: Handler =
-            Arc::new(move |client| serve(client, &*route, machine.as_ref(), &log));
+        let handler: Handler = Arc::new(move |client| serve(client, &*route, &log));
         let listening = socket.listen(true, &handler)?;
         Ok(Self {
             socket,
@@ -131,6 +100,7 @@ impl Front {
     }
 
     /// The socket path.
+    #[cfg(test)]
     pub(crate) fn path(&self) -> &Path {
         self.socket.path()
     }
@@ -194,7 +164,7 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: UnixStream, route: &RouteFn, machine: Option<&MachineRoute>, log: &Sink) {
+fn serve(mut client: UnixStream, route: &RouteFn, log: &Sink) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
@@ -211,9 +181,6 @@ fn serve(mut client: UnixStream, route: &RouteFn, machine: Option<&MachineRoute>
         log,
         target: target_of(&head.bytes),
     };
-    if let Some(machine) = machine.filter(|m| m.aims_at(&head.bytes)) {
-        return machine.serve(client, &head);
-    }
     let Some((target, internal)) = route(&head.bytes) else {
         return refusals.refuse(client, "no route for this request");
     };

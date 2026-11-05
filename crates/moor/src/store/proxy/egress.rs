@@ -1,13 +1,14 @@
-//! Proxy audit events recorded by the supervisor's audit drain.
+//! Events about a Box's Proxy: the audit the shared egress Proxy drains, and what its keeper
+//! records.
 
 use moor_core::attention::{open_limits, Limit};
 use moor_core::domain::event::Event;
 use moor_core::BoxId;
-use moor_schema::tables::Events;
+use moor_schema::tables::{Events, Proxy};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use crate::store::apply::insert_event;
-use crate::store::db::DbExt as _;
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{load_box, Store, StoreError};
 
 impl Store {
@@ -45,6 +46,30 @@ impl Store {
         tx.commit()?;
         drop(conn);
         Ok(())
+    }
+
+    /// Appends `event` for `box_id` while it has a proxy row; false when it has none.
+    pub(crate) fn proxy_row_event(&self, box_id: BoxId, event: &Event) -> Result<bool, StoreError> {
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        let exists = tx
+            .row(
+                Query::select()
+                    .column(Proxy::Box)
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            return Ok(false);
+        }
+        insert_event(&tx, box_id, event, now)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(true)
     }
 
     /// The Box's `agent_rate_limited`, `proxy_credential_rejected` and

@@ -1,27 +1,21 @@
-//! Tests for proxy rows, the supervisor lease and proxy events.
+//! Tests for proxy rows and their egress token.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, NewBox};
-use moor_core::seam::clock::{Clock, Ts};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxName};
 use moor_schema::tables::Proxy;
 use sea_query::{Expr, ExprTrait as _, Query};
 
-use super::{
-    Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN, EGRESS_PORT_MAX, EGRESS_PORT_MIN,
-};
+use super::{BOX_PORT_MAX, BOX_PORT_MIN, EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 use crate::store::db::DbExt as _;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
-
-const LEASE: Duration = Duration::from_secs(30);
-const JUST_UNDER: Duration = Duration::from_millis(29_999);
 
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
@@ -66,38 +60,20 @@ impl Rng for Scripted {
 fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     let (store, clock) = open(dir);
     let id = add(&store, "t");
-    let outcome = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
-    assert!(matches!(outcome, Reserve::Reserved(_)), "{outcome:?}");
+    store.reserve(id, &FakeRng::default()).unwrap();
     (store, clock, id)
 }
 
-/// Kinds and payloads of the box's events, ascending.
-fn events_of(store: &Store, id: BoxId, kind: &str) -> Vec<serde_json::Value> {
-    store
-        .events(id, 100)
-        .unwrap()
-        .into_iter()
-        .filter(|e| e.kind == kind)
-        .map(|e| e.payload)
-        .collect()
-}
-
 #[test]
-fn reserve_returns_port_in_range_unready() {
+fn reserve_returns_port_in_range() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
-    let outcome = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
-    let port = match outcome {
-        Reserve::Reserved(port) => port,
-        Reserve::Leased { .. } => 0,
-    };
+    let port = store.reserve(id, &FakeRng::default()).unwrap();
     assert!((BOX_PORT_MIN..=BOX_PORT_MAX).contains(&port), "{port}");
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.box_id, id);
     assert_eq!(row.box_port, port);
-    assert!(!row.ready);
-    assert_eq!((row.pid, row.handle), (None, None));
 }
 
 #[test]
@@ -106,38 +82,11 @@ fn reserve_skips_port_held_by_another_box() {
     let (store, _) = open(dir.path());
     let a = add(&store, "a");
     let b = add(&store, "b");
-    let held = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
-    assert_eq!(held, Reserve::Reserved(BOX_PORT_MIN + 7));
+    let held = store.reserve(a, &Scripted::new(&[7])).unwrap();
+    assert_eq!(held, BOX_PORT_MIN + 7);
     let rng = Scripted::new(&[7, 8]);
-    let port = store.reserve(b, &rng, LEASE).unwrap();
-    assert_eq!(port, Reserve::Reserved(BOX_PORT_MIN + 8));
-}
-
-#[test]
-fn rereserve_keeps_port_and_resets_the_row() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    let first = store.proxy(id).unwrap().unwrap().box_port;
-    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-    store
-        .writer()
-        .run(
-            Query::update()
-                .table(Proxy::Table)
-                .value(Proxy::Ready, 1)
-                .value(Proxy::Pid, 77)
-                .value(Proxy::Handle, "h")
-                .and_where(Expr::col(Proxy::Box).eq(id.get())),
-        )
-        .unwrap();
-    clock.sleep(LEASE);
-    let again = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
-    assert_eq!(again, Reserve::Reserved(first));
-    let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.box_port, first);
-    assert!(!row.ready);
-    assert_eq!((row.pid, row.handle), (None, None));
-    assert_eq!((row.lease_owner, row.lease_heartbeat), (None, None));
+    let port = store.reserve(b, &rng).unwrap();
+    assert_eq!(port, BOX_PORT_MIN + 8);
 }
 
 #[test]
@@ -146,8 +95,8 @@ fn reserve_gives_each_box_its_own_egress_port_outside_the_box_ports() {
     let (store, _) = open(dir.path());
     let a = add(&store, "a");
     let b = add(&store, "b");
-    let _ = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
-    let _ = store.reserve(b, &Scripted::new(&[7, 8]), LEASE).unwrap();
+    let _ = store.reserve(a, &Scripted::new(&[7])).unwrap();
+    let _ = store.reserve(b, &Scripted::new(&[7, 8])).unwrap();
     let (ra, rb) = (
         store.proxy(a).unwrap().unwrap(),
         store.proxy(b).unwrap().unwrap(),
@@ -167,8 +116,8 @@ fn no_forward_port_is_another_rows_egress_or_forward_port() {
     let (store, _) = open(dir.path());
     let a = add(&store, "a");
     let b = add(&store, "b");
-    let _ = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
-    let _ = store.reserve(b, &Scripted::new(&[7]), LEASE).unwrap();
+    let _ = store.reserve(a, &Scripted::new(&[7])).unwrap();
+    let _ = store.reserve(b, &Scripted::new(&[7])).unwrap();
     let (ra, rb) = (
         store.proxy(a).unwrap().unwrap(),
         store.proxy(b).unwrap().unwrap(),
@@ -191,34 +140,20 @@ fn no_forward_port_is_another_rows_egress_or_forward_port() {
 #[test]
 fn rereserve_keeps_the_forward_port() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
+    let (store, _, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().forward_port;
     assert!(first.is_some());
-    clock.sleep(LEASE);
-    let _ = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
+    let _ = store.reserve(id, &Scripted::new(&[999])).unwrap();
     assert_eq!(store.proxy(id).unwrap().unwrap().forward_port, first);
 }
 
 #[test]
 fn rereserve_keeps_the_egress_port() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
+    let (store, _, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().egress_port;
-    clock.sleep(LEASE);
-    let _ = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
+    let _ = store.reserve(id, &Scripted::new(&[999])).unwrap();
     assert_eq!(store.proxy(id).unwrap().unwrap().egress_port, first);
-}
-
-#[test]
-fn rereserve_refuses_while_lease_is_live() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-    clock.sleep(JUST_UNDER);
-    let again = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
-    assert_eq!(again, Reserve::Leased { owner: "A".into() });
-    let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.lease_owner.as_deref(), Some("A"));
 }
 
 #[test]
@@ -227,9 +162,7 @@ fn reserve_on_unknown_box_is_not_found() {
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
     let missing = BoxId::new(id.get() + 100);
-    let err = store
-        .reserve(missing, &FakeRng::default(), LEASE)
-        .unwrap_err();
+    let err = store.reserve(missing, &FakeRng::default()).unwrap_err();
     assert!(
         matches!(err, StoreError::NotFound(t) if t == missing),
         "{err:?}"
@@ -246,217 +179,12 @@ fn remove_proxy_deletes_row_once() {
 }
 
 #[test]
-fn second_claimant_fails_while_lease_fresh_and_succeeds_after_expiry() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-    assert_eq!(
-        store.claim_lease(id, "B", LEASE).unwrap(),
-        Lease::Held { owner: "A".into() }
-    );
-    clock.sleep(LEASE);
-    assert_eq!(store.claim_lease(id, "B", LEASE).unwrap(), Lease::Claimed);
-    let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.lease_owner.as_deref(), Some("B"));
-}
-
-#[test]
-fn claim_just_before_expiry_is_still_held() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    clock.sleep(JUST_UNDER);
-    assert_eq!(
-        store.claim_lease(id, "B", LEASE).unwrap(),
-        Lease::Held { owner: "A".into() }
-    );
-}
-
-#[test]
-fn owner_reclaims_its_own_fresh_lease() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-}
-
-#[test]
-fn heartbeat_by_owner_extends_the_lease() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    clock.sleep(JUST_UNDER);
-    assert!(store.heartbeat(id, "A").unwrap());
-    clock.sleep(JUST_UNDER);
-    assert_eq!(
-        store.claim_lease(id, "B", LEASE).unwrap(),
-        Lease::Held { owner: "A".into() }
-    );
-}
-
-#[test]
-fn heartbeat_by_owner_extends_an_expired_lease() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    clock.sleep(LEASE.saturating_mul(10));
-    assert!(store.heartbeat(id, "A").unwrap());
-    assert_eq!(
-        store.claim_lease(id, "B", LEASE).unwrap(),
-        Lease::Held { owner: "A".into() }
-    );
-}
-
-#[test]
-fn heartbeat_by_non_owner_is_false_and_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    let before = store.proxy(id).unwrap().unwrap().lease_heartbeat;
-    clock.sleep(Duration::from_secs(5));
-    assert!(!store.heartbeat(id, "B").unwrap());
-    assert_eq!(store.proxy(id).unwrap().unwrap().lease_heartbeat, before);
-}
-
-#[test]
-fn release_by_owner_lets_another_claim_at_once() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    store.release(id, "A").unwrap();
-    assert_eq!(store.claim_lease(id, "B", LEASE).unwrap(), Lease::Claimed);
-}
-
-#[test]
-fn release_by_non_owner_keeps_the_lease() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    store.release(id, "B").unwrap();
-    assert_eq!(
-        store.claim_lease(id, "C", LEASE).unwrap(),
-        Lease::Held { owner: "A".into() }
-    );
-}
-
-#[test]
-fn claim_lease_without_a_row_is_not_found() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let id = add(&store, "t");
-    let err = store.claim_lease(id, "A", LEASE).unwrap_err();
-    assert!(matches!(err, StoreError::NotFound(t) if t == id), "{err:?}");
-}
-
-#[test]
-fn mark_ready_records_the_box_port_and_emits_one_event() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    let box_port = store.proxy(id).unwrap().unwrap().box_port;
-    store.claim_lease(id, "A", LEASE).unwrap();
-    let outcome = store
-        .mark_ready(
-            id,
-            "A",
-            box_port,
-            ReadyProc {
-                pid: 4242,
-                handle: "tunnel-1",
-                boot_id: Some("boot-1"),
-            },
-        )
-        .unwrap();
-    assert_eq!(outcome, Fenced::Applied);
-    let row = store.proxy(id).unwrap().unwrap();
-    assert!(row.ready);
-    assert_eq!(row.pid, Some(4242));
-    assert_eq!(row.handle.as_deref(), Some("tunnel-1"));
-    assert_eq!(row.boot_id.as_deref(), Some("boot-1"));
-    assert_started_payload(&store, id, box_port);
-}
-
-/// The one `ProxyStarted` event carries the recorded values.
-fn assert_started_payload(store: &Store, id: BoxId, box_port: u16) {
-    let events = events_of(store, id, "proxy_started");
-    assert_eq!(events.len(), 1);
-    let payload = events.first().unwrap();
-    assert_eq!(payload["box_port"], box_port);
-    assert_eq!(payload["pid"], 4242);
-    assert_eq!(payload["handle"], "tunnel-1");
-}
-
-#[test]
-fn tunnel_restarted_appends_one_event() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    let box_port = store.proxy(id).unwrap().unwrap().box_port;
-    store.claim_lease(id, "A", LEASE).unwrap();
-    let outcome = store
-        .tunnel_restarted(id, "A", box_port, "ssh exited")
-        .unwrap();
-    assert_eq!(outcome, Fenced::Applied);
-    let events = events_of(&store, id, "tunnel_restarted");
-    assert_eq!(events.len(), 1);
-    let payload = events.first().unwrap();
-    assert_eq!(payload["box_port"], box_port);
-    assert_eq!(payload["reason"], "ssh exited");
-}
-
-/// A claims, stalls past the lease, and B takes over; returns the row's box port.
-fn taken_over(store: &Store, clock: &FakeClock, id: BoxId) -> u16 {
-    store.claim_lease(id, "A", LEASE).unwrap();
-    clock.sleep(LEASE);
-    assert_eq!(store.claim_lease(id, "B", LEASE).unwrap(), Lease::Claimed);
-    store.proxy(id).unwrap().unwrap().box_port
-}
-
-#[test]
-fn stale_owner_mark_ready_loses_lease_and_keeps_new_owners_row() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    let box_port = taken_over(&store, &clock, id);
-    let applied = store
-        .mark_ready(id, "B", box_port, proc(111, "tunnel-b"))
-        .unwrap();
-    assert_eq!(applied, Fenced::Applied);
-    let lost = store
-        .mark_ready(id, "A", box_port, proc(222, "tunnel-a"))
-        .unwrap();
-    assert_eq!(lost, Fenced::LostLease);
-    let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.pid, Some(111));
-    assert_eq!(row.handle.as_deref(), Some("tunnel-b"));
-    assert_eq!(events_of(&store, id, "proxy_started").len(), 1);
-}
-
-#[test]
-fn stale_owner_tunnel_restarted_loses_lease_and_writes_no_event() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
-    let box_port = taken_over(&store, &clock, id);
-    let lost = store.tunnel_restarted(id, "A", box_port, "stale").unwrap();
-    assert_eq!(lost, Fenced::LostLease);
-    assert!(events_of(&store, id, "tunnel_restarted").is_empty());
-    let applied = store.tunnel_restarted(id, "B", box_port, "fresh").unwrap();
-    assert_eq!(applied, Fenced::Applied);
-    assert_eq!(events_of(&store, id, "tunnel_restarted").len(), 1);
-}
-
-fn proc(pid: u32, handle: &str) -> ReadyProc<'_> {
-    ReadyProc {
-        pid,
-        handle,
-        boot_id: None,
-    }
-}
-
-#[test]
 fn two_rows_cannot_hold_one_forward_port() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let (a, b) = (add(&store, "a"), add(&store, "b"));
     for id in [a, b] {
-        let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+        let _ = store.reserve(id, &FakeRng::default()).unwrap();
     }
     let taken = store.proxy(a).unwrap().unwrap().forward_port.unwrap();
     let err = store
@@ -472,13 +200,12 @@ fn two_rows_cannot_hold_one_forward_port() {
 }
 
 #[test]
-fn a_reserve_after_the_lease_lapsed_needs_the_token_delivered_again() {
+fn a_reserve_again_needs_the_token_delivered_again() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, clock, id) = reserved(dir.path());
+    let (store, _, id) = reserved(dir.path());
     assert!(store.set_egress_token(id, b"t1").unwrap());
     assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());
-    clock.sleep(LEASE);
-    let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+    let _ = store.reserve(id, &FakeRng::default()).unwrap();
     assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
@@ -543,14 +270,6 @@ fn a_box_moved_onto_a_fork_needs_the_token_delivered_again() {
 }
 
 #[test]
-fn a_restarted_proxy_needs_the_token_delivered_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = delivered_on_a_machine(dir.path());
-    assert!(store.expire_proxy(id).unwrap());
-    assert!(!store.egress_token_delivered(id, 1).unwrap());
-}
-
-#[test]
 fn a_change_that_keeps_the_machine_keeps_the_delivery() {
     use moor_core::domain::decision::{Field, Fields};
     let dir = tempfile::tempdir().unwrap();
@@ -562,20 +281,4 @@ fn a_change_that_keeps_the_machine_keeps_the_delivery() {
         }))
         .unwrap();
     assert!(store.egress_token_delivered(id, 1).unwrap());
-}
-
-#[test]
-fn fencing_a_supervisor_ends_its_lease_and_key_once() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    store.claim_lease(id, "A", LEASE).unwrap();
-    store.set_proxy_key(id, b"k", 1).unwrap();
-    assert!(store.fence_supervisor(id).unwrap());
-    assert!(!store.heartbeat(id, "A").unwrap(), "its lease is gone");
-    assert!(!store.proxy_key_is(id, b"k").unwrap(), "its key is gone");
-    assert!(
-        !store.fence_supervisor(id).unwrap(),
-        "nothing left to fence"
-    );
-    assert!(store.proxy(id).unwrap().is_some(), "the row stays");
 }

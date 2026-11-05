@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::Secret;
 
+use crate::proxy::engine::Engine;
 use crate::proxy::ledger::BoxLedger;
-use crate::proxy::supervisor::Engine;
 
 /// A Box's proxy, built from one spec. Tunnels hold it, so a proxy replaced after a spec change
 /// keeps serving its open tunnels and stops once the last one ends.

@@ -21,8 +21,6 @@ pub struct ProxyAddr {
     pub box_env: Vec<(String, String)>,
     /// The hosts the credential rules serve; every other host is dialed direct.
     pub hosts: Vec<String>,
-    /// Whether `box_port` is the in-Box egress forwarder's rather than the Proxy tunnel's.
-    pub forwarder: bool,
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -32,7 +30,6 @@ impl fmt::Debug for ProxyAddr {
             .field("box_env", &self.box_env)
             .field("egress_port", &self.egress_port)
             .field("hosts", &self.hosts)
-            .field("forwarder", &self.forwarder)
             .finish_non_exhaustive()
     }
 }

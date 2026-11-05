@@ -121,7 +121,7 @@ mod tests {
         };
         let a = store.apply(Decision::insert(nt)).unwrap().box_id;
         assert!(mint(&store, b"k", a).unwrap().is_none(), "no proxy row");
-        drop(store.reserve(a, &FakeRng::default(), std::time::Duration::from_secs(30)));
+        drop(store.reserve(a, &FakeRng::default()));
         let first = mint(&store, b"k", a).unwrap().unwrap();
         assert!(verify(b"k", first.expose()));
         let second = mint(&store, b"k", a).unwrap().unwrap();

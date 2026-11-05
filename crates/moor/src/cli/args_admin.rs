@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use moor_core::{BoxId, EnvReq, GateReq, Request};
+use moor_core::{EnvReq, GateReq, Request};
 
 use super::args::Action;
 
@@ -12,9 +12,6 @@ use super::args::Action;
 pub(super) enum AdminCmd {
     /// Preview the layered agent environment.
     Env(EnvArgs),
-    /// Proxy commands.
-    #[command(subcommand)]
-    Proxy(ProxyCmd),
     /// Controller commands.
     #[command(subcommand)]
     Controller(ControllerCmd),
@@ -40,14 +37,6 @@ pub(super) struct EnvArgs {
     /// Commit or ref to read the repo at; the default branch when absent.
     #[arg(long)]
     base: Option<String>,
-}
-
-/// Subcommands of `proxy`.
-#[derive(Debug, Subcommand)]
-pub(super) enum ProxyCmd {
-    /// Serve the credential proxy.
-    #[command(hide = true)]
-    Serve(ServeArgs),
 }
 
 /// Subcommands of `controller`.
@@ -101,13 +90,6 @@ pub(super) struct ControllerServeArgs {
     config: PathBuf,
 }
 
-/// Arguments of `proxy serve`.
-#[derive(Debug, Args)]
-pub(super) struct ServeArgs {
-    /// Box id to serve.
-    box_id: i64,
-}
-
 impl AdminCmd {
     /// Convert the parsed admin verb into an action.
     pub(super) fn into_action(self) -> Action {
@@ -116,7 +98,6 @@ impl AdminCmd {
                 repo: a.repo,
                 base: a.base,
             })),
-            Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
             Self::Store(StoreCmd::Migrate) => Action::StoreMigrate,

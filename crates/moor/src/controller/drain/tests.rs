@@ -538,7 +538,7 @@ fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
         repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    drop(store.reserve(id, &FakeRng::default(), Duration::ZERO));
+    drop(store.reserve(id, &FakeRng::default()));
     let deps = Arc::new(Deps {
         store,
         driver: Arc::new(crate::testing::driver::FakeDriver::new()),

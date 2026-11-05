@@ -58,13 +58,6 @@ pub enum Parsed {
     Request(Invocation),
     /// Read a request from stdin.
     CallStdin(GlobalOpts),
-    /// Run the proxy supervisor for a Box.
-    ProxyServe {
-        /// Global options.
-        opts: GlobalOpts,
-        /// Box to serve.
-        box_id: moor_core::BoxId,
-    },
     /// Run the controller daemon from a config file.
     ControllerServe {
         /// Global options.
@@ -145,7 +138,6 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
     match args::parse(args) {
         Ok((opts, Action::Request(request))) => Parsed::Request(Invocation { opts, request }),
         Ok((opts, Action::CallStdin)) => Parsed::CallStdin(GlobalOpts { json: true, ..opts }),
-        Ok((opts, Action::ProxyServe(box_id))) => Parsed::ProxyServe { opts, box_id },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
         Ok((opts, Action::StoreMigrate)) => Parsed::StoreMigrate { opts },

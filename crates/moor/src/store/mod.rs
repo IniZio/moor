@@ -68,10 +68,7 @@ mod users;
 
 pub(crate) use agent::SessionRow;
 pub(crate) use proxy::state::StoredCa;
-#[cfg(test)]
-pub(crate) use proxy::Reserve;
-pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc};
-pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
+pub(crate) use proxy::ProxyRow;
 #[cfg(test)]
 pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};

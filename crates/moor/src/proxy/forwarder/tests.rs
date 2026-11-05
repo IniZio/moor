@@ -2,7 +2,6 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
@@ -80,9 +79,7 @@ fn rig() -> Rig {
         }))
         .unwrap()
         .box_id;
-    let _ = store
-        .reserve(id, &FakeRng::default(), Duration::from_secs(30))
-        .unwrap();
+    let _ = store.reserve(id, &FakeRng::default()).unwrap();
     let driver = FakeDriver::new();
     let handle = driver
         .acquire(&AcquireReq {

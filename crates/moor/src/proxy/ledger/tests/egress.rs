@@ -22,10 +22,7 @@ fn box_with_token(w: &World, name: &str, token: &[u8]) -> BoxId {
         repo: None,
     };
     let id = w.store.apply(Decision::insert(nt)).unwrap().box_id;
-    drop(
-        w.store
-            .reserve(id, &FakeRng::default(), crate::proxy::supervisor::LEASE),
-    );
+    drop(w.store.reserve(id, &FakeRng::default()));
     assert!(w.store.set_egress_token(id, token).unwrap());
     id
 }
@@ -60,17 +57,12 @@ fn a_wrong_egress_key_is_refused() {
 }
 
 #[test]
-fn the_egress_proxy_reads_a_box_but_never_takes_its_lease() {
+fn the_egress_proxy_reads_a_box() {
     let w = world();
     let _served = w.serve();
     let a = box_with_token(&w, "a", b"token-a");
     let ledger = BoxLedger::egress(Endpoint::Unix(w.socket), a, EGRESS_KEY.to_owned());
     assert!(ledger.view().unwrap().is_some_and(|v| v.open));
-    assert!(matches!(
-        ledger.claim_lease("owner", std::time::Duration::from_secs(30)),
-        Err(LedgerError::Refused(_))
-    ));
-    assert!(matches!(ledger.box_port(), Err(LedgerError::Refused(_))));
 }
 
 #[test]
@@ -86,10 +78,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         .apply(Decision::insert(nt).requester(w.ann))
         .unwrap()
         .box_id;
-    drop(
-        w.store
-            .reserve(a, &FakeRng::default(), crate::proxy::supervisor::LEASE),
-    );
+    drop(w.store.reserve(a, &FakeRng::default()));
     let rule = ResolvedRule {
         name: "claude".to_owned(),
         hosts: vec!["api.anthropic.com".to_owned()],

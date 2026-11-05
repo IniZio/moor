@@ -117,7 +117,7 @@ mod tests {
             repo: None,
         };
         let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-        drop(store.reserve(id, &FakeRng::default(), std::time::Duration::from_secs(30)));
+        drop(store.reserve(id, &FakeRng::default()));
         id
     }
 
@@ -177,17 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn a_reserve_after_the_lease_lapsed_keeps_the_spec_and_ca() {
+    fn a_reserve_again_keeps_the_spec_and_ca() {
         let dir = tempfile::tempdir().unwrap();
-        let (store, clock) = open(dir.path());
+        let (store, _) = open(dir.path());
         let id = reserved(&store, "a");
         store.set_proxy_spec(id, &spec(id)).unwrap();
         store.keep_proxy_ca(id, &ca("first")).unwrap();
-        store
-            .claim_lease(id, "A", std::time::Duration::from_secs(30))
-            .unwrap();
-        moor_core::seam::clock::Clock::sleep(clock.as_ref(), std::time::Duration::from_secs(60));
-        drop(store.reserve(id, &FakeRng::default(), std::time::Duration::from_secs(30)));
+        drop(store.reserve(id, &FakeRng::default()));
         assert_eq!(store.proxy_spec(id).unwrap(), Some(spec(id)));
         assert_eq!(store.proxy_ca(id).unwrap(), Some(ca("first")));
     }

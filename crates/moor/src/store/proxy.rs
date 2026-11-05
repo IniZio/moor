@@ -1,10 +1,5 @@
-//! Proxy rows: the reserved box port, readiness and the supervisor lease.
-//!
-//! The lease is an owner token plus a heartbeat timestamp. A pid alone is never trusted, because
-//! pids get reused; another claimant may take over only once the heartbeat is older than the lease.
-
-use std::fmt;
-use std::time::Duration;
+//! Proxy rows: each Box's reserved ports, the spec and CA its engine starts from, and its
+//! egress token.
 
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
@@ -12,34 +7,21 @@ use moor_core::BoxId;
 use moor_schema::tables::Proxy;
 use sea_query::{Expr, ExprTrait as _, Order, Query, UpdateStatement};
 
-use super::{load_box, to_u32, Store, StoreError};
+use super::{load_box, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// The columns a proxy row is read with, in the order [`raw_from_row`] reads them.
-const COLUMNS: [Proxy; 11] = [
+const COLUMNS: [Proxy; 4] = [
     Proxy::Box,
     Proxy::BoxPort,
     Proxy::EgressPort,
-    Proxy::Pid,
-    Proxy::Handle,
-    Proxy::Ready,
-    Proxy::LeaseOwner,
-    Proxy::LeaseHeartbeat,
-    Proxy::BootId,
-    Proxy::Ledger,
     Proxy::ForwardPort,
 ];
 
-/// Reset the row of `box_id` to unready with no pid, handle or lease.
+/// Marks the row of `box_id` touched, with its egress token undelivered.
 fn reset(box_id: BoxId, now: Ts) -> UpdateStatement {
     Query::update()
         .table(Proxy::Table)
-        .value(Proxy::Ready, 0)
-        .value(Proxy::Pid, Option::<i64>::None)
-        .value(Proxy::Handle, Option::<String>::None)
-        .value(Proxy::LeaseOwner, Option::<String>::None)
-        .value(Proxy::LeaseHeartbeat, Option::<i64>::None)
-        .value(Proxy::BootId, Option::<String>::None)
         .value(Proxy::TokenDelivered, 0)
         .value(Proxy::UpdatedAt, now.as_millis())
         .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
@@ -78,18 +60,8 @@ pub(crate) const EGRESS_PORT_MIN: u16 = 10000;
 pub(crate) const EGRESS_PORT_MAX: u16 = 19999;
 const _: () = assert!(EGRESS_PORT_MAX < BOX_PORT_MIN);
 
-/// The supervisor process a ready proxy runs in.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ReadyProc<'a> {
-    /// Supervisor process id.
-    pub(crate) pid: u32,
-    /// Handle of the running proxy.
-    pub(crate) handle: &'a str,
-    /// Host boot the supervisor runs in; `None` where the host has no boot id.
-    pub(crate) boot_id: Option<&'a str>,
-}
-
 /// A stored proxy row.
+#[derive(Debug)]
 pub(crate) struct ProxyRow {
     /// Owning box.
     pub(crate) box_id: BoxId,
@@ -100,68 +72,17 @@ pub(crate) struct ProxyRow {
     /// The loopback port the Box's egress forwarder listens on, kept for the life of the row;
     /// none until a reserve gives a row from before it one.
     pub(crate) forward_port: Option<u16>,
-    /// Proxy process id; never trusted without the lease.
-    pub(crate) pid: Option<u32>,
-    /// Handle of the running proxy.
-    pub(crate) handle: Option<String>,
-    /// Whether the proxy has reported ready.
-    pub(crate) ready: bool,
-    /// Token of the supervisor holding the lease.
-    pub(crate) lease_owner: Option<String>,
-    /// When the lease holder last proved it was alive.
-    pub(crate) lease_heartbeat: Option<Ts>,
-    /// Host boot the supervisor marked the row ready in.
-    pub(crate) boot_id: Option<String>,
-    /// The ledger protocol the supervisor was started to speak; none before its key was set.
-    pub(crate) ledger: Option<u32>,
-}
-
-impl fmt::Debug for ProxyRow {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProxyRow")
-            .field("box_id", &self.box_id)
-            .field("box_port", &self.box_port)
-            .field("egress_port", &self.egress_port)
-            .field("forward_port", &self.forward_port)
-            .field("pid", &self.pid)
-            .field("handle", &self.handle)
-            .field("ready", &self.ready)
-            .field("lease_owner", &self.lease_owner)
-            .field("lease_heartbeat", &self.lease_heartbeat)
-            .field("boot_id", &self.boot_id)
-            .field("ledger", &self.ledger)
-            .finish()
-    }
-}
-
-/// Outcome of a reservation.
-#[must_use]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Reserve {
-    /// The row is reserved on this box port.
-    Reserved(u16),
-    /// A supervisor holds a live lease on the row; nothing changed.
-    Leased {
-        /// The current owner.
-        owner: String,
-    },
 }
 
 impl Store {
-    /// Reserve a box port for `box_id`. Keeps the row's ports if no other row
-    /// holds them; otherwise draws the box, egress and forward ports from `rng`. A row with no
-    /// forward port is given one. An existing row is reset to unready with no
-    /// pid, handle or lease, unless a lease younger than `lease` is live.
-    pub(crate) fn reserve(
-        &self,
-        box_id: BoxId,
-        rng: &dyn Rng,
-        lease: Duration,
-    ) -> Result<Reserve, StoreError> {
+    /// Reserve a box port for `box_id`; the port. Keeps the row's ports if no other row holds
+    /// them; otherwise draws the box, egress and forward ports from `rng`. A row with no forward
+    /// port is given one. An existing row's egress token is marked undelivered.
+    pub(crate) fn reserve(&self, box_id: BoxId, rng: &dyn Rng) -> Result<u16, StoreError> {
         let mut tries = 0;
         loop {
             tries += 1;
-            match self.reserve_once(box_id, rng, lease) {
+            match self.reserve_once(box_id, rng) {
                 Err(StoreError::Db(e)) if tries < RESERVE_TRIES && forward_port_taken(&e) => {}
                 other => return other,
             }
@@ -169,39 +90,28 @@ impl Store {
     }
 
     /// One try of [`Self::reserve`]; a forward port another writer took first fails it.
-    fn reserve_once(
-        &self,
-        box_id: BoxId,
-        rng: &dyn Rng,
-        lease: Duration,
-    ) -> Result<Reserve, StoreError> {
+    fn reserve_once(&self, box_id: BoxId, rng: &dyn Rng) -> Result<u16, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
         }
-        let existing: Option<(i64, Option<String>, Option<i64>)> = tx
+        let existing: Option<i64> = tx
             .row(
                 Query::select()
-                    .columns([Proxy::BoxPort, Proxy::LeaseOwner, Proxy::LeaseHeartbeat])
+                    .column(Proxy::BoxPort)
                     .from(Proxy::Table)
                     .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| r.get(0),
             )
             .optional()?;
-        let port = if let Some((raw, owner, beat)) = existing {
+        let port = if let Some(raw) = existing {
             let port = to_port("box_port", raw)?;
             if held_by_other(&tx, box_id, port)? {
                 return Err(StoreError::Corrupt(format!(
                     "box_port {port} held by two rows"
                 )));
-            }
-            let window = i64::try_from(lease.as_millis()).unwrap_or(i64::MAX);
-            if let (Some(owner), Some(beat)) = (owner, beat) {
-                if now.as_millis().saturating_sub(beat) < window {
-                    return Ok(Reserve::Leased { owner });
-                }
             }
             tx.run(reset(box_id, now))?;
             give_forward_port(&tx, box_id, rng)?;
@@ -216,14 +126,12 @@ impl Store {
                         Proxy::Box,
                         Proxy::BoxPort,
                         Proxy::EgressPort,
-                        Proxy::Ready,
                         Proxy::UpdatedAt,
                     ])
                     .values_panic([
                         box_id.get().into(),
                         port.into(),
                         egress.into(),
-                        0.into(),
                         now.as_millis().into(),
                     ]),
             )?;
@@ -232,7 +140,7 @@ impl Store {
         };
         tx.commit()?;
         drop(conn);
-        Ok(Reserve::Reserved(port))
+        Ok(port)
     }
 
     /// The proxy row of `box_id`, if any.
@@ -263,17 +171,6 @@ impl Store {
         rows.collect()
     }
 
-    /// Reset the row of `box_id` to unready with no pid, handle or lease, keeping its
-    /// box port, so the next reservation restarts it on the same port.
-    #[cfg(test)]
-    pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
-        let now = self.now();
-        let conn = self.writer();
-        let changed = conn.run(reset(box_id, now))?;
-        drop(conn);
-        Ok(changed > 0)
-    }
-
     /// Delete the proxy row of `box_id`; returns whether a row was deleted.
     pub(crate) fn remove_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer();
@@ -283,7 +180,6 @@ impl Store {
                 .from_table(Proxy::Table)
                 .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
         )?;
-        park::clear(&tx, box_id)?;
         tx.commit()?;
         drop(conn);
         Ok(changed > 0)
@@ -298,20 +194,6 @@ struct RawRow {
     box_port: i64,
     /// Egress port column.
     egress_port: i64,
-    /// Pid column.
-    pid: Option<i64>,
-    /// Handle column.
-    handle: Option<String>,
-    /// Ready flag column.
-    ready: i64,
-    /// Lease owner column.
-    lease_owner: Option<String>,
-    /// Lease heartbeat column.
-    lease_heartbeat: Option<i64>,
-    /// Boot id column.
-    boot_id: Option<String>,
-    /// Ledger column.
-    ledger: Option<i64>,
     /// Forward port column.
     forward_port: Option<i64>,
 }
@@ -322,14 +204,7 @@ fn raw_from_row(r: &Row<'_>) -> crate::store::db::Result<RawRow> {
         box_id: r.get(0)?,
         box_port: r.get(1)?,
         egress_port: r.get(2)?,
-        pid: r.get(3)?,
-        handle: r.get(4)?,
-        ready: r.get(5)?,
-        lease_owner: r.get(6)?,
-        lease_heartbeat: r.get(7)?,
-        boot_id: r.get(8)?,
-        ledger: r.get(9)?,
-        forward_port: r.get(10)?,
+        forward_port: r.get(3)?,
     })
 }
 
@@ -345,13 +220,6 @@ impl TryFrom<RawRow> for ProxyRow {
                 .forward_port
                 .map(|v| to_port("forward_port", v))
                 .transpose()?,
-            pid: r.pid.map(|p| to_u32("proxy pid", p)).transpose()?,
-            handle: r.handle,
-            ready: r.ready != 0,
-            lease_owner: r.lease_owner,
-            lease_heartbeat: r.lease_heartbeat.map(Ts::from_millis),
-            boot_id: r.boot_id,
-            ledger: r.ledger.map(|v| to_u32("proxy ledger", v)).transpose()?,
         })
     }
 }
@@ -380,11 +248,7 @@ mod egress;
 mod key;
 mod ports;
 use ports::{free_port, give_forward_port, BOX_PORTS, EGRESS_PORTS};
-mod lease;
-mod park;
 pub(crate) mod state;
-pub(crate) use lease::{Fenced, Lease};
-pub(crate) use park::{TunnelAck, TunnelRequest, TunnelWant};
 
 #[cfg(test)]
 mod tests;

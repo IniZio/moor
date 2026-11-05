@@ -7,7 +7,6 @@
 
 use std::fs;
 use std::io;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -16,10 +15,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use moor_core::BoxId;
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
 
-use crate::adapters::sockets::{private_dir, short_hash};
+use crate::adapters::sockets::private_dir;
 use crate::front_dir;
 
 /// Longest wait for a connection before the acceptor checks its stop flag again.
@@ -64,16 +62,14 @@ pub(super) struct Listening {
 }
 
 impl FrontSocket {
-    /// The socket of `box_id` in `dir`. The name also hashes `state_dir`, so two state dirs
-    /// never share a socket, and it is the same for every supervisor of the Box.
-    pub(crate) fn new(dir: &Path, owner: u32, state_dir: &Path, box_id: BoxId) -> Self {
-        let id = box_id.get().to_string();
-        let hash = short_hash(&[state_dir.as_os_str().as_bytes(), id.as_bytes()]);
+    /// A socket named `px` in `dir`, for tests that need no front's directory.
+    #[cfg(test)]
+    pub(crate) fn at(dir: std::path::PathBuf, owner: u32) -> Self {
         Self {
-            dir: dir.to_path_buf(),
+            path: dir.join("px"),
+            dir,
             own: None,
             owner,
-            path: dir.join(format!("px-{hash}")),
         }
     }
 

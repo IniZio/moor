@@ -74,8 +74,6 @@ pub struct ProxyCtx<'a> {
     pub ca_pem: &'a str,
     /// The hosts the credential rules serve; only these go through the Proxy.
     pub hosts: &'a [String],
-    /// Whether `box_port` is the in-Box egress forwarder's, which the prelude keeps running.
-    pub forwarder: bool,
 }
 
 impl<'a> ProxyCtx<'a> {
@@ -87,7 +85,6 @@ impl<'a> ProxyCtx<'a> {
             egress_port: addr.egress_port,
             ca_pem: &addr.ca_pem,
             hosts: &addr.hosts,
-            forwarder: addr.forwarder,
         }
     }
 }
@@ -147,7 +144,7 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         prelude.extend(proxy_lines(p));
     }
     if b.proxy.is_some() {
-        prelude.push(unset_line(b.proxy.is_some_and(|p| p.forwarder)));
+        prelude.push(unset_line());
         // The agent launch script exports the repo env, these included, just before the agent starts.
         if !matches!(purpose, Purpose::Agent) {
             for name in ["GH_TOKEN", "GITHUB_TOKEN"] {
@@ -285,11 +282,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             )
         ),
     ];
-    lines.extend(if p.forwarder {
-        egress::forwarded_lines(p.egress_port, p.box_port, p.hosts)
-    } else {
-        egress::lines(p.egress_port, p.box_port, p.hosts)
-    });
+    lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",
@@ -328,13 +321,12 @@ fn android_lines(root: &str) -> Vec<String> {
     )]
 }
 
-/// The line that unsets the prelude's own shell variables, `moor_fw` too when `forwarder`.
-fn unset_line(forwarder: bool) -> String {
+/// The line that unsets the prelude's own shell variables.
+fn unset_line() -> String {
     format!(
-        "unset moor_bundle moor_sys moor_mark moor_f {} {}{}",
+        "unset moor_bundle moor_sys moor_mark moor_f {} {} moor_fw",
         java::JAVA_SHELL_VARS,
         egress::EGRESS_SHELL_VARS,
-        if forwarder { " moor_fw" } else { "" }
     )
 }
 

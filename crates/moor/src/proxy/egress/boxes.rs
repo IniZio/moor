@@ -20,10 +20,10 @@ use zeroize::Zeroizing;
 use super::limit::{Bucket, Rate};
 use super::served::{lock, Served, Tunnel};
 use super::Config;
+use crate::proxy::engine::{engine, Parts};
 use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
 use crate::proxy::nono::capture::UserSecretsFn;
-use crate::proxy::supervisor::{engine, Parts};
 use crate::proxy::{token, Sink};
 
 /// Where a tunnel for a Box goes; holding it keeps the proxy and counts the tunnel.

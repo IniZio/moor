@@ -6,8 +6,8 @@ use moor_core::domain::event::{Event, MachineEvent};
 
 use moor_core::BoxHandle;
 
+use super::link::{keep, ForwardFailed, MachineLink, Via};
 use super::Kept;
-use crate::proxy::supervisor::machine_link::{keep, ForwardFailed, MachineLink, Via};
 use crate::store::{HeldMachine, MachineWake};
 
 /// The forwards to the attached machine and whether their last open failed.

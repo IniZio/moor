@@ -15,7 +15,7 @@ use moor_core::user::{Identity, SecretName, UserId};
 
 use moor_core::BoxId;
 
-use super::{serve, BoxLedger, FrontsLedger, Keys, LedgerError, LEDGER};
+use super::{serve, BoxLedger, Endpoint, FrontsLedger, Keys, LedgerError};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, test_vault_key};
@@ -69,7 +69,6 @@ pub(crate) fn serve_on(
             let (store, vault, fronts) = (store.clone(), Arc::clone(&vault), fronts.clone());
             std::thread::spawn(move || {
                 let keys = Keys {
-                    supervisors: true,
                     fronts: fronts.as_deref(),
                     egress: Some(EGRESS_KEY),
                 };
@@ -84,7 +83,7 @@ pub(crate) fn serve_on(
     }
 }
 
-/// A Box ledger served for `store`'s Box, as a supervisor the controller started reaches it;
+/// A Box ledger served for `store`'s Box, as the shared egress Proxy reaches it;
 /// it derefs to the [`BoxLedger`], and its controller can be taken down and brought back.
 pub(crate) struct OnLedger {
     ledger: Arc<BoxLedger>,
@@ -121,7 +120,7 @@ impl OnLedger {
     }
 }
 
-/// Serves `store` on a ledger of its own and returns `box_id`'s supervisor's end of it.
+/// Serves `store` on a ledger of its own and returns the egress Proxy's end of it for `box_id`.
 pub(crate) fn box_ledger(store: &Store, box_id: BoxId) -> OnLedger {
     let dir = tempfile::tempdir().unwrap();
     let vault = Vault::load(&test_vault_key(dir.path())).unwrap();
@@ -141,13 +140,15 @@ fn box_ledger_in(
     vault: Arc<Vault>,
 ) -> OnLedger {
     let socket = dir.path().join("proxy.sock");
-    // A Box the store lacks gets no key, so its calls are refused as a missing Box's are.
     if matches!(store.proxy(box_id), Ok(None)) {
-        drop(store.reserve(box_id, &FakeRng::default(), crate::proxy::supervisor::LEASE));
+        drop(store.reserve(box_id, &FakeRng::default()));
     }
-    drop(store.set_proxy_key(box_id, b"box-key", LEDGER));
     let on = OnLedger {
-        ledger: Arc::new(BoxLedger::at(socket.clone(), box_id, "box-key".to_owned())),
+        ledger: Arc::new(BoxLedger::egress(
+            Endpoint::Unix(socket.clone()),
+            box_id,
+            EGRESS_KEY.to_owned(),
+        )),
         socket,
         store: store.clone(),
         vault,
@@ -300,37 +301,6 @@ fn a_call_while_the_controller_is_down_is_unavailable() {
         ledger.lease_user(b"x", "slack"),
         Err(LedgerError::Unavailable(_))
     ));
-}
-
-#[test]
-fn a_box_supervisor_is_answered_only_with_the_current_key_of_its_box() {
-    let w = world();
-    let new = |name: &str| {
-        let nt = moor_core::domain::decision::NewBox {
-            name: moor_core::BoxName::parse_allow_bare(name).unwrap(),
-            repo: None,
-        };
-        let id = w
-            .store
-            .apply(moor_core::domain::decision::Decision::insert(nt));
-        id.unwrap().box_id
-    };
-    let (a, b) = (new("a"), new("b"));
-    let on = box_ledger(&w.store, a);
-    assert_eq!(on.box_port().map(|p| p.is_some()), Ok(true));
-    let refused = |ledger: &BoxLedger| matches!(ledger.box_port(), Err(LedgerError::Refused(_)));
-    let socket = &on.socket;
-    assert!(refused(&BoxLedger::at(
-        socket.clone(),
-        a,
-        "wrong".to_owned()
-    )));
-    assert!(
-        refused(&BoxLedger::at(socket.clone(), b, "box-key".to_owned())),
-        "another Box with this Box's key"
-    );
-    w.store.set_proxy_key(a, b"respawned", LEDGER).unwrap();
-    assert!(refused(&on), "the key of a supervisor that was replaced");
 }
 
 #[test]

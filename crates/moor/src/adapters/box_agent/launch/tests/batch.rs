@@ -65,7 +65,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 box_env: Vec::new(),
                 egress_port: 4568,
                 hosts: Vec::new(),
-                forwarder: false,
             })
         }),
         strip_env: Vec::new(),

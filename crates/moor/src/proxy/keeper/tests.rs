@@ -40,11 +40,7 @@ impl World {
         let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
         let driver = Arc::new(FakeDriver::new().reverse_tunnels().tunnel_replies(replies));
         let id = ready_box(&store, &driver);
-        drop(
-            store
-                .reserve(id, &FakeRng::default(), Duration::ZERO)
-                .unwrap(),
-        );
+        store.reserve(id, &FakeRng::default()).unwrap();
         Self {
             dir,
             store,

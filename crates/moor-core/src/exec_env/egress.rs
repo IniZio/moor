@@ -108,8 +108,10 @@ fn stop(reason: &str) -> String {
     format!("{{ echo \"moor: {EGRESS_FAILED}: {reason}\" >&2; exit 1; }}")
 }
 
-/// Lines that install tinyproxy when it is missing, write its config, and start it when it is not
+/// Lines that keep the egress forwarder running on loopback `forward`, install tinyproxy when it
+/// is missing, write its config sending `hosts` to the forwarder, and start it when it is not
 /// listening on `listen` or its config changed. Every failure stops the exec with the reason.
+/// Inside the same `flock`, the forwarder starts before tinyproxy is pointed at it.
 ///
 /// A changed config goes to a temp file and replaces `~/.moor/egress.conf` only once the new
 /// tinyproxy listens, so a failed restart leaves the old config and the next command retries.
@@ -117,15 +119,8 @@ fn stop(reason: &str) -> String {
 /// One command at a time does this, under `flock` on a file in `~/.moor`, so two commands that
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
-pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String> {
-    lines_with(listen, upstream, hosts, &SYSTEM_APPARMOR)
-}
-
-/// [`lines`] for a Box the shared Proxy serves: tinyproxy sends `hosts` to the egress forwarder
-/// on loopback `forward`. Inside the same `flock`, the forwarder starts before tinyproxy is
-/// pointed at it.
-pub(super) fn forwarded_lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> {
-    assemble(listen, (forward, true), hosts, &SYSTEM_APPARMOR)
+pub(super) fn lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> {
+    lines_with(listen, forward, hosts, &SYSTEM_APPARMOR)
 }
 
 /// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
@@ -136,17 +131,6 @@ pub(super) fn forwarded_lines(listen: u16, forward: u16, hosts: &[String]) -> Ve
 pub(super) fn lines_with(
     listen: u16,
     upstream: u16,
-    hosts: &[String],
-    aa: &AppArmor<'_>,
-) -> Vec<String> {
-    assemble(listen, (upstream, false), hosts, aa)
-}
-
-/// The egress lines, sending `hosts` to loopback `upstream`, which the forwarder serves when
-/// `forwarded`.
-fn assemble(
-    listen: u16,
-    (upstream, forwarded): (u16, bool),
     hosts: &[String],
     aa: &AppArmor<'_>,
 ) -> Vec<String> {
@@ -198,13 +182,9 @@ fn assemble(
             stop(&format!("{DIR} could not be created"))
         ),
         format!(
-            "( flock -w {LOCK_WAIT} 9 || {}; {}{install}; {config}; {ours}; {start} ) 9>\"{LOCK}\" || exit 1",
+            "( flock -w {LOCK_WAIT} 9 || {}; {}; {install}; {config}; {ours}; {start} ) 9>\"{LOCK}\" || exit 1",
             stop(&format!("another command held {LOCK} for {LOCK_WAIT} s")),
-            if forwarded {
-                forwarder(upstream) + "; "
-            } else {
-                String::new()
-            },
+            forwarder(upstream),
         ),
     ]
 }

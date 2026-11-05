@@ -14,6 +14,7 @@
 //! lock, which [`Keepers::end`] waits for: once it returns, the ended keeper opens nothing.
 
 mod host;
+mod link;
 mod machine;
 #[cfg(test)]
 mod tests;
@@ -129,11 +130,6 @@ impl Keepers {
         let k = Arc::new(Kept::new(Arc::clone(deps), box_id, box_port));
         kept.insert(box_id, Arc::clone(&k));
         drop(kept);
-        match deps.store.fence_supervisor(box_id) {
-            Ok(true) => k.say(format_args!("took the Box from its supervisor")),
-            Ok(false) => {}
-            Err(e) => k.say(format_args!("cannot fence the Box's supervisor: {e}")),
-        }
         let ticking = Arc::clone(&k);
         let spawned = std::thread::Builder::new()
             .name(format!("moor-keeper-{}", box_id.get()))
