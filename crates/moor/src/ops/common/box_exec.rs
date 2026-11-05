@@ -9,7 +9,9 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::UserId;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
+use crate::cx::egress::{self, EgressRoute};
 use crate::cx::Cx;
+use crate::ops::common::forwarder::{self, Delivery};
 use crate::ops::common::proxy::{box_env, plan};
 
 /// The Box's running Proxy, as a Box exec needs it.
@@ -70,8 +72,22 @@ pub(crate) fn proxy(
         .chain(service)
         .collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
+    let route = EgressRoute::from_env(cx.env())?;
+    let binary = egress::binary(cx.env());
+    let box_port = forwarder::deliver(
+        &Delivery {
+            route: &route,
+            key: egress::key(cx.env()),
+            driver: cx.driver(),
+            store: cx.store().map_err(|e| e.error.to_string())?,
+            box_id,
+            handle: spec.box_handle.as_ref(),
+            binary: &binary,
+        },
+        &ep,
+    )?;
     let addr = ProxyAddr {
-        box_port: ep.box_port,
+        box_port,
         egress_port: ep.egress_port,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),

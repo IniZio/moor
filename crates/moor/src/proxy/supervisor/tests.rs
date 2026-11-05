@@ -143,6 +143,7 @@ impl World {
             secrets,
             upstream_dial: None,
             machine_service: None,
+            relay: None,
             guard_exempt: Vec::new(),
             upstream_ca,
             state_dir: self.dir.path(),

@@ -16,7 +16,7 @@ use super::{load_box, to_u32, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// The columns a proxy row is read with, in the order [`raw_from_row`] reads them.
-const COLUMNS: [Proxy; 10] = [
+const COLUMNS: [Proxy; 11] = [
     Proxy::Box,
     Proxy::BoxPort,
     Proxy::EgressPort,
@@ -27,6 +27,7 @@ const COLUMNS: [Proxy; 10] = [
     Proxy::LeaseHeartbeat,
     Proxy::BootId,
     Proxy::Ledger,
+    Proxy::ForwardPort,
 ];
 
 /// Reset the row of `box_id` to unready with no pid, handle or lease.
@@ -56,9 +57,6 @@ pub(crate) const EGRESS_PORT_MIN: u16 = 10000;
 pub(crate) const EGRESS_PORT_MAX: u16 = 19999;
 const _: () = assert!(EGRESS_PORT_MAX < BOX_PORT_MIN);
 
-/// Number of random draws before falling back to a linear scan.
-const DRAWS: u32 = 64;
-
 /// The supervisor process a ready proxy runs in.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ReadyProc<'a> {
@@ -78,6 +76,9 @@ pub(crate) struct ProxyRow {
     pub(crate) box_port: u16,
     /// The loopback port the Box's egress proxy listens on, kept for the life of the row.
     pub(crate) egress_port: u16,
+    /// The loopback port the Box's egress forwarder listens on, kept for the life of the row;
+    /// none until a reserve gives a row from before it one.
+    pub(crate) forward_port: Option<u16>,
     /// Proxy process id; never trusted without the lease.
     pub(crate) pid: Option<u32>,
     /// Handle of the running proxy.
@@ -100,6 +101,7 @@ impl fmt::Debug for ProxyRow {
             .field("box_id", &self.box_id)
             .field("box_port", &self.box_port)
             .field("egress_port", &self.egress_port)
+            .field("forward_port", &self.forward_port)
             .field("pid", &self.pid)
             .field("handle", &self.handle)
             .field("ready", &self.ready)
@@ -126,7 +128,8 @@ pub(crate) enum Reserve {
 
 impl Store {
     /// Reserve a box port for `box_id`. Keeps the row's ports if no other row
-    /// holds them; otherwise draws both the box port and the egress port from `rng`. An existing row is reset to unready with no
+    /// holds them; otherwise draws the box, egress and forward ports from `rng`. A row with no
+    /// forward port is given one. An existing row is reset to unready with no
     /// pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
         &self,
@@ -163,6 +166,7 @@ impl Store {
                 }
             }
             tx.run(reset(box_id, now))?;
+            give_forward_port(&tx, box_id, rng)?;
             port
         } else {
             let port = free_port(&tx, rng, BOX_PORTS)?;
@@ -185,6 +189,7 @@ impl Store {
                         now.as_millis().into(),
                     ]),
             )?;
+            give_forward_port(&tx, box_id, rng)?;
             port
         };
         tx.commit()?;
@@ -268,6 +273,8 @@ struct RawRow {
     boot_id: Option<String>,
     /// Ledger column.
     ledger: Option<i64>,
+    /// Forward port column.
+    forward_port: Option<i64>,
 }
 
 /// Read a proxy row without range checks.
@@ -283,6 +290,7 @@ fn raw_from_row(r: &Row<'_>) -> crate::store::db::Result<RawRow> {
         lease_heartbeat: r.get(7)?,
         boot_id: r.get(8)?,
         ledger: r.get(9)?,
+        forward_port: r.get(10)?,
     })
 }
 
@@ -294,6 +302,10 @@ impl TryFrom<RawRow> for ProxyRow {
             box_id: BoxId::new(r.box_id),
             box_port: to_port("box_port", r.box_port)?,
             egress_port: to_port("egress_port", r.egress_port)?,
+            forward_port: r
+                .forward_port
+                .map(|v| to_port("forward_port", v))
+                .transpose()?,
             pid: r.pid.map(|p| to_u32("proxy pid", p)).transpose()?,
             handle: r.handle,
             ready: r.ready != 0,
@@ -325,71 +337,10 @@ fn held_by_other(conn: &dyn Db, box_id: BoxId, port: u16) -> Result<bool, StoreE
         .is_some())
 }
 
-/// A range of ports a proxy row reserves, and the column that holds them.
-#[derive(Clone, Copy)]
-struct Ports {
-    /// Lowest port.
-    min: u16,
-    /// Highest port (inclusive).
-    max: u16,
-    /// The `proxy` column.
-    column: Proxy,
-    /// What the error names when the range is full.
-    what: &'static str,
-}
-
-/// The box ports a Proxy tunnel listens on.
-const BOX_PORTS: Ports = Ports {
-    min: BOX_PORT_MIN,
-    max: BOX_PORT_MAX,
-    column: Proxy::BoxPort,
-    what: "box port",
-};
-
-/// The loopback ports a Box's egress proxy listens on.
-const EGRESS_PORTS: Ports = Ports {
-    min: EGRESS_PORT_MIN,
-    max: EGRESS_PORT_MAX,
-    column: Proxy::EgressPort,
-    what: "egress port",
-};
-
-/// Draw a port of `ports` no row holds from `rng`, falling back to a linear scan from the last
-/// draw.
-fn free_port(conn: &dyn Db, rng: &dyn Rng, ports: Ports) -> Result<u16, StoreError> {
-    let span = u32::from(ports.max - ports.min) + 1;
-    let at = |offset: u32| ports.min + u16::try_from(offset % span).unwrap_or(0);
-    let taken = |port: u16| -> Result<bool, StoreError> {
-        Ok(conn
-            .row(
-                Query::select()
-                    .column(Proxy::Box)
-                    .from(Proxy::Table)
-                    .and_where(Expr::col(ports.column).eq(port)),
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-    };
-    let mut draw = 0;
-    for _ in 0..DRAWS {
-        draw = rng.u32() % span;
-        let port = at(draw);
-        if !taken(port)? {
-            return Ok(port);
-        }
-    }
-    for step in 1..=span {
-        let port = at(draw + step);
-        if !taken(port)? {
-            return Ok(port);
-        }
-    }
-    Err(StoreError::Invalid(format!("no free {}", ports.what)))
-}
-
 mod egress;
 mod key;
+mod ports;
+use ports::{free_port, give_forward_port, BOX_PORTS, EGRESS_PORTS};
 mod lease;
 mod park;
 pub(crate) mod state;

@@ -35,8 +35,9 @@ use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
+use crate::cx::egress::EgressRoute;
 use crate::cx::{Cx, CxParts, MachineLinks};
-use crate::env::{Env, PROXY_KEY};
+use crate::env::{Env, EGRESS_RELAY, PROXY_KEY};
 use crate::error::CommandError;
 use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
@@ -223,8 +224,10 @@ fn proxy_host(
     rng: &Arc<dyn Rng>,
     state_dir: Option<PathBuf>,
 ) -> Result<Arc<DetachedSupervisor>, StoreError> {
+    let relay = EgressRoute::from_env(env).ok().and_then(|r| r.relay());
     Ok(Arc::new(
         DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir)
+            .relaying(relay)
             .in_database(Database::from_env(env)?)
             .sharing(env.shared::<Store>().cloned()),
     ))
@@ -331,6 +334,7 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         upstream_dial: None,
         guard_exempt: Vec::new(),
         machine_service: cx.config().machines.service.clone(),
+        relay: env.get(EGRESS_RELAY).and_then(|a| a.parse().ok()),
         state_dir,
         sockets: &sockets,
         owner: rustix::process::getuid().as_raw(),

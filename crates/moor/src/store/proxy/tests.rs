@@ -162,6 +162,44 @@ fn reserve_gives_each_box_its_own_egress_port_outside_the_box_ports() {
 }
 
 #[test]
+fn no_forward_port_is_another_rows_egress_or_forward_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let a = add(&store, "a");
+    let b = add(&store, "b");
+    let _ = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
+    let _ = store.reserve(b, &Scripted::new(&[7]), LEASE).unwrap();
+    let (ra, rb) = (
+        store.proxy(a).unwrap().unwrap(),
+        store.proxy(b).unwrap().unwrap(),
+    );
+    let ports = [
+        ra.egress_port,
+        ra.forward_port.unwrap(),
+        rb.egress_port,
+        rb.forward_port.unwrap(),
+    ];
+    for port in ports {
+        assert!(
+            (EGRESS_PORT_MIN..=EGRESS_PORT_MAX).contains(&port),
+            "{ports:?}"
+        );
+        assert_eq!(ports.iter().filter(|p| **p == port).count(), 1, "{ports:?}");
+    }
+}
+
+#[test]
+fn rereserve_keeps_the_forward_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    let first = store.proxy(id).unwrap().unwrap().forward_port;
+    assert!(first.is_some());
+    clock.sleep(LEASE);
+    let _ = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
+    assert_eq!(store.proxy(id).unwrap().unwrap().forward_port, first);
+}
+
+#[test]
 fn rereserve_keeps_the_egress_port() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());

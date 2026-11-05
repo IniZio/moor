@@ -70,13 +70,17 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     let engine = engine(&deps.parts(), box_id, spec)?;
     let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
     let internal = Secret::new(engine.internal.expose().to_vec());
-    let front = match Front::start(
-        engine.addr(),
-        socket,
-        internal,
-        machine_route(deps),
-        Arc::clone(&deps.stderr),
-    ) {
+    let started = match deps.relay {
+        Some(to) => Front::relay(socket, to),
+        None => Front::start(
+            engine.addr(),
+            socket,
+            internal,
+            machine_route(deps),
+            Arc::clone(&deps.stderr),
+        ),
+    };
+    let front = match started {
         Ok(front) => front,
         Err(err) => {
             engine.stop();

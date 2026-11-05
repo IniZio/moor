@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::io;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -14,7 +15,7 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use crate::env::PROXY_KEY;
+use crate::env::{EGRESS_RELAY, PROXY_KEY};
 use crate::proxy::ledger::LEDGER;
 use crate::store::{Database, ProxyRow, Reserve, Store, StoreError};
 
@@ -58,6 +59,8 @@ pub(crate) struct DetachedSupervisor {
     database: Option<Database>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
+    /// The shared egress Proxy on this host each supervisor relays its tunnel to, if any.
+    relay: Option<SocketAddr>,
 }
 
 impl DetachedSupervisor {
@@ -75,7 +78,16 @@ impl DetachedSupervisor {
             state_dir,
             database: None,
             store: OnceLock::new(),
+            relay: None,
         }
+    }
+
+    /// This host starting supervisors that relay their tunnel to the shared egress Proxy at
+    /// `relay`, when there is one.
+    #[must_use]
+    pub(crate) const fn relaying(mut self, relay: Option<SocketAddr>) -> Self {
+        self.relay = relay;
+        self
     }
 
     /// This host opening the store in the Postgres `database`, when there is one.
@@ -227,11 +239,14 @@ impl ProxyHost for DetachedSupervisor {
                 store
                     .set_proxy_key(box_id, key.as_bytes(), LEDGER)
                     .map_err(|e| store_failed(&e, &log))?;
-                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
+                let mut spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
                     .args(["proxy", "serve", &box_id.get().to_string()])
                     // The controller may run on a state dir its own config chose.
                     .env("MOOR_STATE_DIR", state.to_string_lossy())
                     .env(PROXY_KEY, key.as_str());
+                if let Some(relay) = self.relay {
+                    spec = spec.env(EGRESS_RELAY, relay.to_string());
+                }
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)
                 })?;

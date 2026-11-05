@@ -275,6 +275,7 @@ impl Rig {
             upstream_ca: Some(self.upstream_ca.clone()),
             upstream_dial: Some(self.up.addr),
             machine_service: None,
+            relay: None,
             guard_exempt: self.guard_exempt.clone(),
             state_dir: self.dir.path(),
             sockets: &self.sockets,

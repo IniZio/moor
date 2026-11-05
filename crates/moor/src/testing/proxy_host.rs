@@ -123,6 +123,7 @@ impl ProxyHost for FakeProxyHost {
         Ok(ProxyEndpoint {
             box_port: s.box_port,
             egress_port: s.egress_port,
+            forward_port: None,
             ca_pem: String::new(),
         })
     }

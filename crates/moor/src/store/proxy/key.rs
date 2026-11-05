@@ -64,10 +64,6 @@ impl Store {
 
     /// Records that `token` reached `box_id`; false when the row holds another token, minted
     /// after it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the in-Box forwarder's delivery marks its token")
-    )]
     pub(crate) fn note_egress_token_delivered(
         &self,
         box_id: BoxId,
@@ -81,6 +77,21 @@ impl Store {
                 .and_where(Expr::col(Proxy::TokenHash).eq(hash(token))),
         )?;
         Ok(changed > 0)
+    }
+
+    /// Whether the egress token the row of `box_id` holds reached the Box.
+    pub(crate) fn egress_token_delivered(&self, box_id: BoxId) -> Result<bool, StoreError> {
+        let delivered: Option<Option<i64>> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(Proxy::TokenDelivered)
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(delivered.flatten().is_some_and(|d| d != 0))
     }
 
     /// The Box whose egress token hashes to `token_hash`, if a row holds it.
