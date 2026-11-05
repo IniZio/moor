@@ -294,6 +294,14 @@ impl Boxes {
         lock(&self.known).len()
     }
 
+    /// Where each running engine takes its tunnels.
+    pub(super) fn engines(&self) -> Vec<std::net::SocketAddr> {
+        lock(&self.served)
+            .values()
+            .filter_map(|slot| lock(slot).as_ref().map(|s| s.addr))
+            .collect()
+    }
+
     /// How many Boxes have a running proxy.
     pub(super) fn serving(&self) -> usize {
         lock(&self.served)

@@ -200,3 +200,68 @@ fn a_machine_service_that_is_down_is_502() {
     );
     server.drain(Duration::from_secs(5));
 }
+
+/// The proxy credentials a Box can send with a request.
+const FORGED: [&str; 4] = [
+    "",
+    "Proxy-Authorization: Basic bW9vcjp4\r\n",
+    "Authorization: Bearer x\r\n",
+    "Proxy-Authorization: Basic bW9vcjp4\r\nAuthorization: Bearer x\r\n",
+];
+
+#[test]
+fn an_origin_form_route_request_is_refused_before_nono_whatever_credential_it_forges() {
+    let w = World::new();
+    let plain = Plain::start();
+    let mut cfg = w.config(64.0, 10.0, 64);
+    cfg.guard_exempt.push(plain.addr);
+    let server = Server::start(cfg).unwrap();
+    let target = w.target();
+    let routes = [
+        "POST /claude__0/v1/messages",
+        "GET /github-git__0/info/refs?service=git-upload-pack",
+        "POST /github-api__0/graphql",
+    ];
+    for route in routes {
+        for forged in FORGED {
+            let tunnel = open_as(&server, &w.token, &target, true).unwrap();
+            let reply = exchange(
+                tunnel,
+                &format!("{route} HTTP/1.1\r\nHost: {target}\r\n{forged}Content-Length: 0\r\n\r\n"),
+            );
+            assert!(
+                reply.starts_with("HTTP/1.1 403 "),
+                "{route} {forged}: {reply}"
+            );
+            assert!(!reply.contains(super::SECRET), "{reply}");
+        }
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(w.up.seen().is_empty(), "the credential host was reached");
+    assert!(plain.heads().is_empty());
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_plain_request_to_the_nono_port_is_refused_by_the_guard() {
+    let w = World::new();
+    let plain = Plain::start();
+    let server = server(&w, &plain, None);
+    let warm = open_as(&server, &w.token, &w.target(), true).unwrap();
+    drop(exchange(
+        warm,
+        &format!("GET http://{0}/ HTTP/1.1\r\nHost: {0}\r\n\r\n", w.target()),
+    ));
+    let engines = server.engines();
+    let [nono] = engines.as_slice() else {
+        unreachable!("{engines:?}")
+    };
+    let target = format!("127.0.0.1:{}", nono.port());
+    assert_eq!(
+        open_as(&server, &w.token, &target, true).err(),
+        Some(502),
+        "the guard refuses the CONNECT into the nono port"
+    );
+    assert!(w.up.seen().is_empty(), "the credential host was reached");
+    server.drain(Duration::from_secs(5));
+}
