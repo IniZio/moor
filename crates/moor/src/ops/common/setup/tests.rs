@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::boxscript::detached::attached_script;
+use moor_core::boxscript::quote;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{BoxSettings, Flags, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
@@ -15,6 +17,9 @@ use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{run_setup as run_setup_with, SetupRun};
+
+/// The detached run every setup in these tests attaches to.
+const RUN: i64 = -7;
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -85,7 +90,7 @@ fn run_setup(
     cfg: &BoxSettings,
 ) -> SetupRun {
     let logs = super::log_dir(state, BoxId::new(1));
-    run_setup_with(cx, handle, "p", workdir, &logs, cfg, None, &|_| {})
+    run_setup_with(cx, handle, ("p", RUN), workdir, &logs, cfg, None, &|_| {})
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -132,9 +137,10 @@ fn lines_run_as_one_generated_script_under_sh() {
     // The wrapper puts the Box's image PATH on the exec first; the script is the last argument.
     assert_eq!(spec.argv.get(..2).unwrap(), ["sh", "-c"]);
     assert!(spec.argv.get(2).unwrap().contains("/etc/environment"));
+    let script = ["sh", "-c", &setup_script(&c.setup)].map(quote).join(" ");
     assert_eq!(
         spec.argv.get(3..).unwrap(),
-        ["sh", "sh", "-c", setup_script(&c.setup).as_str()]
+        ["sh", "sh", "-c", attached_script(RUN, &script).as_str()]
     );
 }
 
@@ -393,10 +399,10 @@ fn failed_is_true_only_for_failed() {
 }
 
 #[test]
-fn interrupted_line_fails_and_stops_the_run() {
+fn a_channel_cut_on_every_attach_fails_the_line_and_stops_the_run_in_the_box() {
     let d = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new()
-        .exec_results([Ok(ExecOutcome::Interrupted)])
+        .exec_results((0..6).map(|_| Ok(ExecOutcome::Interrupted)))
         .copy_text("moor setup: $ a\n");
     let r = rig(d.path(), driver);
     let got = run_setup(
@@ -406,22 +412,34 @@ fn interrupted_line_fails_and_stops_the_run() {
         d.path(),
         &cfg(&["a", "b"], &[]),
     );
-    assert_eq!(
-        got,
-        SetupRun::Failed {
-            line: "a".to_owned(),
-            exit: None,
-            ms: 0,
-            tail: "moor setup: $ a".to_owned(),
-        }
+    assert!(
+        matches!(&got, SetupRun::Failed { line, exit: None, .. } if line == "a"),
+        "{got:?}"
     );
-    assert_eq!(r.driver.execs().len(), 1);
-    assert_eq!(r.driver.copies().len(), 1);
+    assert_eq!(r.driver.execs().len(), 6);
+    assert!(r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
     let warnings = r.cx.take_warnings();
     assert_eq!(warnings.len(), 1);
     let w = warnings.first().unwrap();
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("interrupted"));
+}
+
+#[test]
+fn a_cut_channel_attaches_to_the_same_run_again_and_takes_its_exit() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([
+        Ok(ExecOutcome::Interrupted),
+        Err(DriverError::Unavailable("ssh".to_owned())),
+        Ok(ExecOutcome::Exited { code: 0 }),
+    ]);
+    let r = rig(d.path(), driver);
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    assert!(matches!(got, SetupRun::Ok { .. }), "{got:?}");
+    let argvs: Vec<_> = r.driver.execs().into_iter().map(|(_, s, _)| s.argv).collect();
+    assert_eq!(argvs.len(), 3);
+    assert!(argvs.iter().all(|a| *a == argvs[0]), "every attach names the same run");
+    assert!(!r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
 }
 
 #[test]

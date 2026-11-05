@@ -36,7 +36,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     run_setup(
         &f.cx,
         &handle,
-        provider,
+        (provider, -1),
         &workdir,
         f.dir.path(),
         &cfg,

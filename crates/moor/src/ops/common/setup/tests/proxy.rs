@@ -4,7 +4,7 @@ use moor_core::seam::agent_adapter::ProxyAddr;
 
 use moor_core::domain::box_state::SetupOutcome;
 
-use super::{cfg, only, rig, run_setup, run_setup_with};
+use super::{cfg, only, rig, run_setup, run_setup_with, RUN};
 use crate::ops::common::box_exec::BoxProxy;
 use crate::testing::driver::FakeDriver;
 
@@ -48,7 +48,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
     run_setup_with(
         &r.cx,
         &r.handle,
-        "p",
+        ("p", RUN),
         &r.workdir,
         d.path(),
         &cfg(&["a"], &[("A", "1")]),
@@ -119,7 +119,7 @@ fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
     run_setup_with(
         &r.cx,
         &r.handle,
-        "p",
+        ("p", RUN),
         &r.workdir,
         d.path(),
         &cfg(&["a"], &[("A", "1"), RESERVED, CREDENTIAL_LIKE]),

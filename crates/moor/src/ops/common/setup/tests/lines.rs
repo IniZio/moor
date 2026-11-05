@@ -9,7 +9,7 @@ use moor_core::seam::driver::ExecOutcome;
 
 use super::super::lines::Lines;
 use super::super::{run_setup as run_setup_with, SetupRun};
-use super::{cfg, exits, rig};
+use super::{cfg, exits, rig, RUN};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 
@@ -41,7 +41,7 @@ fn run(steps: &[&str], stdout: &str, code: i32) -> (SetupRun, Vec<ExtraEvent>) {
     let got = run_setup_with(
         &r.cx,
         &r.handle,
-        "p",
+        ("p", RUN),
         &r.workdir,
         &d.path().join("logs"),
         &cfg(steps, &[]),
@@ -151,17 +151,17 @@ fn announcements_split_across_reads_are_still_counted_once() {
 }
 
 #[test]
-fn a_run_cut_short_by_the_driver_ends_the_open_line_as_failed() {
+fn an_attach_again_after_a_cut_reports_each_line_once() {
     let d = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new()
-        .exec_stdout(["moor setup: $ a\n"])
-        .exec_results([Ok(ExecOutcome::Interrupted)]);
+        .exec_stdout(["moor setup: $ a\n", "moor setup: $ a\n"])
+        .exec_results([Ok(ExecOutcome::Interrupted), Ok(ExecOutcome::Exited { code: 0 })]);
     let r = rig(d.path(), driver);
     let seen = Mutex::new(Vec::new());
     run_setup_with(
         &r.cx,
         &r.handle,
-        "p",
+        ("p", RUN),
         &r.workdir,
         &d.path().join("logs"),
         &cfg(&["a"], &[]),
@@ -170,6 +170,6 @@ fn a_run_cut_short_by_the_driver_ends_the_open_line_as_failed() {
     );
     assert_eq!(
         seen.into_inner().unwrap(),
-        [started(1, 1, "a"), finished(1, 1, false)]
+        [started(1, 1, "a"), finished(1, 1, true)]
     );
 }

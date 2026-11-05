@@ -35,10 +35,18 @@ pub(super) fn run_through_proxy(
             // The lines are reported from a thread that follows the script's output, which
             // cannot hold the `Cx`; the first write failure is warned once the script ends.
             let unrecorded = Mutex::new(None);
+            let attempt = store
+                .newest_events_of(id, "setting_up", 1)
+                .ok()
+                .and_then(|mut e| e.pop())
+                .map_or(0, |e| e.id);
             let run = setup::run_setup(
                 cx,
                 target.handle,
-                target.provider,
+                (
+                    target.provider,
+                    setup::run_id(attempt, target.workdir, place),
+                ),
                 target.workdir,
                 target.log_dir,
                 cfg,
