@@ -155,20 +155,6 @@ impl Crabbox {
         self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
-    /// Releases whatever a failed first acquire of `handle` started, which also drops its
-    /// lease dir; when that release fails the dir stays so a later release can still name
-    /// the lease, and the error carries both failures.
-    fn undo_acquire(&self, handle: &BoxHandle, failed: DriverError) -> DriverError {
-        match self.release(handle) {
-            Ok(_) => failed,
-            Err(release) => DriverError::Failed {
-                summary: format!(
-                    "{failed}; releasing the lease it started also failed, so its lease dir stays for a later release: {release}"
-                ),
-            },
-        }
-    }
-
     /// Asks for the relative work root [`WORK_ROOT`], which crabbox joins to the lease's login home.
     fn spec(deadline: Duration) -> ProcSpec {
         ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env(WORK_ROOT_KEY, WORK_ROOT)
@@ -346,6 +332,10 @@ impl Driver for Crabbox {
     fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
         self.require_version()?;
         connect::connect_argv(self, handle)
+    }
+
+    fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        link::refresh(self, handle)
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {

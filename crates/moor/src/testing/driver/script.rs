@@ -346,3 +346,11 @@ impl FakeDriver {
         fail.map_or(Ok(()), |(_, e)| Err(e))
     }
 }
+
+/// Writes `text` to the log `spec` streams to, if both exist.
+pub(super) fn write_log(spec: &ExecSpec, text: Option<String>) -> Result<(), DriverError> {
+    match (&spec.output, text) {
+        (Some(Output::Log(path)), Some(text)) => write_bytes(path, text.as_bytes()),
+        _ => Ok(()),
+    }
+}

@@ -11,7 +11,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 
 use moor_core::name::{BoxHandle, ProviderId};
-use moor_core::seam::driver::{BoxListing, DriverError, Released};
+use moor_core::seam::driver::{BoxListing, Driver, DriverError, Released};
 use moor_core::seam::proc::ProcSpec;
 
 use super::{split_handle, static_env, target_args, Crabbox};
@@ -20,6 +20,20 @@ use super::{split_handle, static_env, target_args, Crabbox};
 pub(super) const CEILING: &str = "GIT_CEILING_DIRECTORIES";
 
 impl Crabbox {
+    /// Releases whatever a failed first acquire of `handle` started, which also drops its
+    /// lease dir; when that release fails the dir stays so a later release can still name
+    /// the lease, and the error carries both failures.
+    pub(super) fn undo_acquire(&self, handle: &BoxHandle, failed: DriverError) -> DriverError {
+        match self.release(handle) {
+            Ok(_) => failed,
+            Err(release) => DriverError::Failed {
+                summary: format!(
+                    "{failed}; releasing the lease it started also failed, so its lease dir stays for a later release: {release}"
+                ),
+            },
+        }
+    }
+
     /// `<state>/leases/<slug>`, the dir every crabbox call on `handle` runs from.
     ///
     /// # Errors

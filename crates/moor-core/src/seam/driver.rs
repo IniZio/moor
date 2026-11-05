@@ -219,6 +219,17 @@ pub trait Driver: Send + Sync {
         socket: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
 
+    /// Makes the next call to the Box log in anew when the Box user has joined a group this
+    /// login lacks, since a login keeps the groups it connected with. Calls in flight finish on
+    /// the old login. A driver whose every call logs in anew has nothing to do.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the groups cannot be read; the login stays as it was.
+    fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let _ = handle;
+        Ok(())
+    }
+
     /// Forwards a free host loopback port to Box `127.0.0.1:box_port` until the returned
     /// tunnel drops.
     ///
