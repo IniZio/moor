@@ -7,8 +7,8 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{
-    run_finished, workflow_breaker, workflow_due, workflow_expired, RunBoxFacts, WorkflowRepoFacts,
-    WorkflowVerdict,
+    run_finished, workflow_breaker, workflow_due, workflow_expired, PriorRun, RunBoxFacts,
+    WorkflowRepoFacts, WorkflowVerdict,
 };
 use moor_core::name::ForgeRepo;
 use moor_core::request::EndSessionReq;
@@ -121,8 +121,8 @@ struct History {
 }
 
 impl History {
-    /// The decider's facts: each repo's latest due time, and whether the Box of its latest
-    /// firing that has one is still open (a firing being started is open).
+    /// The decider's facts: each repo's latest due time and its latest real run. Skipped and
+    /// refused runs are looked through, so a skip does not unblock the next firing.
     fn facts(&self, store: &Store) -> Result<Vec<WorkflowRepoFacts>, StoreError> {
         let mut facts: Vec<WorkflowRepoFacts> = Vec::new();
         for run in &self.runs {
@@ -130,22 +130,39 @@ impl History {
                 continue;
             }
             let mine = || self.runs.iter().filter(|r| r.repo == run.repo);
-            let previous = mine().find_map(|r| match r.outcome {
-                WorkflowOutcome::Starting => Some(None),
-                _ => r.outcome.box_id().map(Some),
-            });
-            let previous_open = match previous {
-                Some(None) => true,
-                Some(Some(id)) => box_is_open(store, id)?,
-                None => false,
+            let prior = match mine().find_map(|r| real_run(&r.outcome)) {
+                Some(Real::Prior(p)) => Some(p),
+                Some(Real::TimedOut(id)) => Some(PriorRun::TimedOut {
+                    box_open: box_is_open(store, id)?,
+                }),
+                None => None,
             };
             facts.push(WorkflowRepoFacts {
                 repo: run.repo.clone(),
                 last_due: mine().map(|r| r.due_at).max(),
-                previous_open,
+                prior,
             });
         }
         Ok(facts)
+    }
+}
+
+/// A run that is a real attempt, as the decider sees it.
+enum Real {
+    /// Settled without looking at a Box.
+    Prior(PriorRun),
+    /// Timed out; its Box decides.
+    TimedOut(BoxId),
+}
+
+/// `outcome` as a real attempt; none for a skipped or refused run.
+const fn real_run(outcome: &WorkflowOutcome) -> Option<Real> {
+    match outcome {
+        WorkflowOutcome::Starting => Some(Real::Prior(PriorRun::Starting)),
+        WorkflowOutcome::Started { .. } => Some(Real::Prior(PriorRun::Started)),
+        WorkflowOutcome::Finished { .. } => Some(Real::Prior(PriorRun::Finished)),
+        WorkflowOutcome::TimedOut { box_id, .. } => Some(Real::TimedOut(*box_id)),
+        WorkflowOutcome::SkippedOverlap | WorkflowOutcome::Refused { .. } => None,
     }
 }
 

@@ -11,8 +11,35 @@ pub struct WorkflowRepoFacts {
     pub repo: ForgeRepo,
     /// The due time of the latest recorded firing, whatever came of it.
     pub last_due: Option<Ts>,
-    /// Whether the Box the previous firing started is still open.
-    pub previous_open: bool,
+    /// The latest run that was a real attempt, looking through skipped and refused ones.
+    pub prior: Option<PriorRun>,
+}
+
+/// A run that may keep the next firing of its repo from starting a Box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PriorRun {
+    /// Its Box is being started.
+    Starting,
+    /// Its Box was started and has not ended.
+    Started,
+    /// Its agent finished.
+    Finished,
+    /// It ran to its timeout.
+    TimedOut {
+        /// Whether its Box, which the timeout keeps, is still open.
+        box_open: bool,
+    },
+}
+
+impl PriorRun {
+    /// Whether this run keeps the next firing from starting: while it is starting or started,
+    /// or after a timeout while its Box is open. A finished run never does, whatever its Box.
+    const fn blocks(self) -> bool {
+        matches!(
+            self,
+            Self::Starting | Self::Started | Self::TimedOut { box_open: true }
+        )
+    }
 }
 
 /// What to do for one repo.
@@ -63,12 +90,12 @@ pub fn workflow_due(
         .map(|repo| {
             let fact = facts.iter().find(|f| &f.repo == repo);
             let last_due = fact.and_then(|f| f.last_due);
-            let previous_open = fact.is_some_and(|f| f.previous_open);
+            let prior = fact.and_then(|f| f.prior);
             let due = latest.filter(|&d| d >= since && last_due.is_none_or(|l| d > l));
             WorkflowRepoVerdict {
                 repo: repo.clone(),
                 verdict: due.map_or(WorkflowVerdict::NotDue, |due_at| {
-                    overlap_policy(previous_open, due_at)
+                    overlap_policy(prior, due_at)
                 }),
             }
         })
@@ -151,13 +178,12 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
     })
 }
 
-/// What a due firing does when the previous firing's Box may still be open. The default is to
-/// skip and record the skip, so two Boxes never work the same repo for one workflow at once.
-const fn overlap_policy(previous_open: bool, due_at: Ts) -> WorkflowVerdict {
-    if previous_open {
-        WorkflowVerdict::SkipOverlap { due_at }
-    } else {
-        WorkflowVerdict::Start { due_at }
+/// What a due firing does given the prior run: skip and record the skip while the prior run
+/// blocks, so two unfinished runs never work the same repo of one workflow at once.
+const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict {
+    match prior {
+        Some(p) if p.blocks() => WorkflowVerdict::SkipOverlap { due_at },
+        _ => WorkflowVerdict::Start { due_at },
     }
 }
 

@@ -1,7 +1,7 @@
 //! Tests for the workflow tick decider.
 
 use super::{
-    workflow_breaker, workflow_due, workflow_expired, WorkflowExpiry, WorkflowRepoFacts,
+    workflow_breaker, workflow_due, workflow_expired, PriorRun, WorkflowExpiry, WorkflowRepoFacts,
     WorkflowVerdict,
 };
 use crate::name::BoxId;
@@ -45,11 +45,11 @@ fn enabled_since(ms: i64) -> WorkflowState {
     WorkflowState::Enabled { since: ts(ms) }
 }
 
-fn facts(r: &str, last_due: Option<i64>, previous_open: bool) -> WorkflowRepoFacts {
+fn facts(r: &str, last_due: Option<i64>, unfinished: bool) -> WorkflowRepoFacts {
     WorkflowRepoFacts {
         repo: repo(r),
         last_due: last_due.map(ts),
-        previous_open,
+        prior: unfinished.then_some(PriorRun::Started),
     }
 }
 
@@ -485,4 +485,35 @@ fn a_disabled_workflow_has_nothing_to_trip() {
     );
     let runs: Vec<_> = (0..4).map(|i| refused("a/b", i * DAY)).collect();
     assert!(workflow_breaker(&w, &runs).is_none());
+}
+
+fn with_prior(prior: Option<PriorRun>) -> WorkflowVerdict {
+    let f = [WorkflowRepoFacts {
+        repo: repo("a/b"),
+        last_due: Some(ts(DAY0 - DAY + 9 * HOUR)),
+        prior,
+    }];
+    verdicts(&daily(), &f, DAY0 + 10 * HOUR)
+        .into_iter()
+        .next()
+        .unwrap()
+}
+
+#[test]
+fn only_an_unfinished_prior_run_blocks_the_next_firing() {
+    let skip = WorkflowVerdict::SkipOverlap {
+        due_at: ts(DAY0 + 9 * HOUR),
+    };
+    let go = start(DAY0 + 9 * HOUR);
+    let table = [
+        (None, go),
+        (Some(PriorRun::Starting), skip),
+        (Some(PriorRun::Started), skip),
+        (Some(PriorRun::Finished), go),
+        (Some(PriorRun::TimedOut { box_open: true }), skip),
+        (Some(PriorRun::TimedOut { box_open: false }), go),
+    ];
+    for (prior, want) in table {
+        assert_eq!(with_prior(prior), want, "{prior:?}");
+    }
 }
