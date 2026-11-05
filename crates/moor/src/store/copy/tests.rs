@@ -228,3 +228,53 @@ fn a_batch_of_the_widest_table_stays_under_the_bind_limit() {
         .unwrap();
     assert!(super::BATCH * widest < 65_535, "{widest} columns");
 }
+
+#[test]
+fn a_copied_store_continues_the_workflow_change_numbers() {
+    use moor_core::name::ForgeRepo;
+    use moor_core::user::Identity;
+    use moor_core::workflow::{
+        TimeoutMinutes, WorkflowDef, WorkflowName, WorkflowOutcome, WorkflowRun, WorkflowSchedule,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let (source, _) = filled(&path);
+    let (user, _) = source
+        .enroll(&Identity::parse("local:1").unwrap(), None)
+        .unwrap();
+    let def = WorkflowDef::new(
+        WorkflowName::parse("daily").unwrap(),
+        WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+        vec![ForgeRepo::new("o", "n")],
+        "fix",
+        (true, TimeoutMinutes::DEFAULT),
+    )
+    .unwrap();
+    let id = source.put_workflow(user, &def).unwrap();
+    let run = |due: i64| WorkflowRun {
+        workflow: id,
+        repo: ForgeRepo::new("o", "n"),
+        due_at: Ts::from_millis(due),
+        outcome: WorkflowOutcome::SkippedOverlap,
+        recorded_at: Ts::from_millis(due),
+    };
+    source.record_workflow_run(&run(1)).unwrap();
+    source.record_workflow_run(&run(2)).unwrap();
+    let Some(target) = target(dir.path()) else {
+        return;
+    };
+    let counts = copy_to_postgres(&path, &target).unwrap();
+    assert!(counts
+        .iter()
+        .any(|c| c.table == "workflow_seq" && c.rows == 1));
+    let copy = Store::open_postgres(&target, 1, dir.path(), clock()).unwrap();
+    copy.record_workflow_run(&run(3)).unwrap();
+    let seqs: Vec<_> = copy
+        .workflow_changes(user, 0, 10)
+        .unwrap()
+        .iter()
+        .map(|c| c.seq)
+        .collect();
+    assert_eq!(seqs, [1, 2, 3]);
+}

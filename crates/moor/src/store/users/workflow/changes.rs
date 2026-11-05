@@ -3,27 +3,31 @@
 use moor_core::user::UserId;
 use moor_core::workflow::{ChangeKind, WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
 use moor_schema::tables::{WorkflowRuns, WorkflowSeq, Workflows};
-use sea_query::{Expr, ExprTrait as _, Order, Query};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::corrupt;
 use super::runs::{run_of, RunRow, RUN_COLS};
 use crate::store::db::{self, Db, DbExt as _};
 use crate::store::{Store, StoreError};
 
-/// The next change number, taken in `tx`. The counter row stays locked until `tx` ends, so a
-/// number committed later is always larger and a poller never steps past an uncommitted one.
+/// The next change number, taken in `tx`. One upsert creates the counter row or increments it and
+/// returns the new number. The row stays locked until `tx` ends, so a number committed later is
+/// always larger and a poller never steps past an uncommitted one.
 fn next_seq(tx: &dyn Db) -> Result<i64, StoreError> {
-    tx.run(
-        Query::update()
-            .table(WorkflowSeq::Table)
-            .value(WorkflowSeq::N, Expr::col(WorkflowSeq::N).add(1))
-            .and_where(Expr::col(WorkflowSeq::Id).eq(1)),
-    )?;
     Ok(tx.row(
-        Query::select()
-            .column(WorkflowSeq::N)
-            .from(WorkflowSeq::Table)
-            .and_where(Expr::col(WorkflowSeq::Id).eq(1)),
+        Query::insert()
+            .into_table(WorkflowSeq::Table)
+            .columns([WorkflowSeq::Id, WorkflowSeq::N])
+            .values_panic([1_i64.into(), 1_i64.into()])
+            .on_conflict(
+                OnConflict::column(WorkflowSeq::Id)
+                    .value(
+                        WorkflowSeq::N,
+                        Expr::col((WorkflowSeq::Table, WorkflowSeq::N)).add(1),
+                    )
+                    .to_owned(),
+            )
+            .returning_col(WorkflowSeq::N),
         |r| r.get(0),
     )?)
 }
