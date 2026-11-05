@@ -80,7 +80,8 @@ tables! {
         SetupMs, User, Chain, ChainAt, Parent, Evicting }
     SetupCheckpointPins { BoxId, Provider, LayerKey, Layer }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
-        TimeoutMinutes, CreatedAt, UpdatedAt }
+        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
-        RecordedAt }
+        RecordedAt, Seq }
+    WorkflowSeq { Id, N }
 }

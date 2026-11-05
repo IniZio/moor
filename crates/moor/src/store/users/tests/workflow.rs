@@ -513,3 +513,41 @@ fn enabled_workflows_lists_every_owners_enabled_ones() {
     assert_eq!(ids, [a, b]);
     assert_eq!(store.workflow_by_id(b).unwrap().unwrap().owner, bob);
 }
+
+#[test]
+fn concurrent_settles_get_gapless_numbers_in_commit_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = user(&store, "local:1");
+    let id = store
+        .put_workflow(alice, &def("daily", &["a/one"], true))
+        .unwrap();
+    std::thread::scope(|scope| {
+        for t in 0..4_i64 {
+            let store = &store;
+            scope.spawn(move || {
+                for n in 0..25_i64 {
+                    let due = t * 1000 + n;
+                    assert!(store
+                        .record_workflow_run(&started(id, "a/one", due, 1))
+                        .unwrap());
+                }
+            });
+        }
+    });
+    let seqs: Vec<_> = store
+        .workflow_changes(alice, 0, 1000)
+        .unwrap()
+        .iter()
+        .map(|c| c.seq)
+        .collect();
+    assert_eq!(seqs, (1..=100).collect::<Vec<_>>());
+    assert!(!store
+        .record_workflow_run(&started(id, "a/one", 0, 1))
+        .unwrap());
+    assert_eq!(
+        store.workflow_changes(alice, 0, 1000).unwrap().len(),
+        100,
+        "a repeated record takes no number"
+    );
+}

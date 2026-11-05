@@ -100,7 +100,7 @@ fn plain_default(raw: &str) -> String {
 #[test]
 fn sqlite_reads_back_every_table_with_its_keys() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
-    assert_eq!(schema.tables.len(), 34, "{:?}", schema.tables.keys());
+    assert_eq!(schema.tables.len(), 35, "{:?}", schema.tables.keys());
     let sessions = schema.tables.get("sessions").unwrap();
     assert_eq!(sessions.primary_key, ["id"]);
     assert!(sessions.indexes.contains(&Index {

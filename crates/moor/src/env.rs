@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// File name, inside the state directory, of the lock that a running controller holds.
 pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
@@ -35,6 +36,8 @@ pub struct Env {
     front_proxies: Arc<BTreeMap<String, Vec<String>>>,
     /// The fronts that deliver the users' webhooks, by namespace.
     front_webhooks: Arc<BTreeSet<String>>,
+    /// The shortest gap a workflow's cron may have between firings.
+    workflow_min_interval: Option<Duration>,
     /// What the controller opened once for every request and tick, such as the state store.
     shared: Option<Arc<dyn Any + Send + Sync>>,
 }
@@ -157,6 +160,19 @@ impl Env {
     pub fn with_front_webhooks(mut self, fronts: BTreeSet<String>) -> Self {
         self.front_webhooks = Arc::new(fronts);
         self
+    }
+
+    /// Set the shortest gap a workflow's cron may have between firings.
+    #[must_use]
+    pub const fn with_workflow_min_interval(mut self, floor: Duration) -> Self {
+        self.workflow_min_interval = Some(floor);
+        self
+    }
+
+    /// The shortest gap a workflow's cron may have between firings.
+    pub(crate) fn workflow_min_interval(&self) -> Duration {
+        self.workflow_min_interval
+            .unwrap_or(moor_core::workflow::MIN_FIRING_INTERVAL)
     }
 
     /// Whether front `ns` delivers the users' webhooks.

@@ -25,6 +25,9 @@ pub struct ControllerConfig {
     /// Seconds between passes that settle every open Box's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
+    /// Shortest gap, in seconds, a workflow's cron may have between two firings; must be above
+    /// 0. None means 3600.
+    pub workflow_min_interval_secs: Option<u64>,
     /// Seconds a SIGTERM waits for in-flight requests before the controller exits anyway.
     /// None means 600.
     pub drain_timeout_secs: Option<u64>,
@@ -108,6 +111,13 @@ impl ControllerConfig {
         Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
     }
 
+    /// The shortest gap a workflow's cron may have between two firings.
+    #[must_use]
+    pub fn workflow_min_interval(&self) -> Duration {
+        self.workflow_min_interval_secs
+            .map_or(crate::workflow::MIN_FIRING_INTERVAL, Duration::from_secs)
+    }
+
     /// How long a Box may stay `setup_failed` before the controller closes it; None when closing
     /// is off.
     #[must_use]
@@ -123,6 +133,19 @@ impl ControllerConfig {
     pub fn drain_timeout(&self) -> Duration {
         Duration::from_secs(self.drain_timeout_secs.unwrap_or(DEFAULT_DRAIN_SECS))
     }
+}
+
+/// Refuses an interval key set to 0.
+fn check_intervals(cfg: &ControllerConfig, file: &str) -> Result<(), ConfigError> {
+    for (key, secs) in [
+        ("settle_every_secs", cfg.settle_every_secs),
+        ("workflow_min_interval_secs", cfg.workflow_min_interval_secs),
+    ] {
+        if secs == Some(0) {
+            return Err(ConfigError::new(key, "must be above 0").in_file(file));
+        }
+    }
+    Ok(())
 }
 
 /// Parses and validates a controller config document.
@@ -150,9 +173,7 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
             .in_file(file));
         }
     }
-    if cfg.settle_every_secs == Some(0) {
-        return Err(ConfigError::new("settle_every_secs", "must be above 0").in_file(file));
-    }
+    check_intervals(&cfg, file)?;
     if cfg.web.is_some() {
         return Err(ConfigError::new(
             "web",

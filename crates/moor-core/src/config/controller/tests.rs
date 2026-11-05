@@ -279,3 +279,21 @@ fn setup_failed_close_defaults_to_a_day_and_zero_turns_it_off() {
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(off.close_setup_failed_after(), None);
 }
+
+#[test]
+fn workflow_floor_parses_and_defaults_to_an_hour() {
+    let c = parse_controller("c.yaml", "workflow_min_interval_secs: 60\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        c.workflow_min_interval(),
+        std::time::Duration::from_secs(60)
+    );
+    assert_eq!(
+        ControllerConfig::default().workflow_min_interval(),
+        std::time::Duration::from_secs(3600)
+    );
+    assert_eq!(
+        err("workflow_min_interval_secs: 0\n").path,
+        "workflow_min_interval_secs"
+    );
+}

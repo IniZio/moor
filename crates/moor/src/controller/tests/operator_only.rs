@@ -21,7 +21,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
         | "machine-list" | "machine-keys" | "node-list" | "provider-ready" | "webhook-list"
-        | "close-failed" => {
+        | "close-failed" | "workflow-list" | "workflow-runs" => {
             json!({"cmd": kind})
         }
         "machine-links" => json!({"cmd": kind, "links": []}),
@@ -38,6 +38,12 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "webhook-remove" | "webhook-setup-show" | "webhook-setup-finish" => {
             json!({"cmd": kind, "id": 1})
         }
+        "workflow-add" => json!({
+            "cmd": kind, "name": "n", "cron": "0 9 * * *", "timezone": "UTC",
+            "repos": ["o/n"], "prompt": "p"
+        }),
+        "workflow-remove" => json!({"cmd": kind, "name": "n"}),
+        "workflow-set-enabled" => json!({"cmd": kind, "name": "n", "enabled": false}),
         "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
         "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),

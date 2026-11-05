@@ -10,6 +10,7 @@ mod baseline;
 mod insertion_order;
 mod proxy_key;
 pub mod tables;
+mod workflow_changes;
 mod workflows;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
@@ -31,6 +32,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V48__workflows",
         write: workflows::write,
+    },
+    Step {
+        name: "V49__workflow_changes",
+        write: workflow_changes::write,
     },
 ];
 

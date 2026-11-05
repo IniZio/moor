@@ -8,7 +8,7 @@ use crate::error::CommandError;
 use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
-use moor_core::request::{Grant, UserCmd};
+use moor_core::request::{Grant, UserCmd, WorkflowCmd};
 use moor_core::seam::checkout::Checkout;
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
@@ -237,6 +237,7 @@ impl Moor {
                 caller.resolve(asserted)
             })
             .map_err(|why| CommandError::new(ErrorKind::Refused, why));
+        let cmd = &with_origin(cmd, caller);
         match who.and_then(|who| ops::users::run(&self.cx, vault, &who, cmd)) {
             Ok(value) => Response::ok(name, Some(value)).with_warnings(self.cx.take_warnings()),
             Err(e) => e.into_response(name, self.cx.take_warnings()),
@@ -304,3 +305,18 @@ mod workflow;
 
 #[cfg(test)]
 mod tests;
+
+/// `cmd` with the front socket it arrived on, when it is a workflow being added; a client never
+/// supplies that, so any value the command carried is replaced.
+fn with_origin(cmd: &UserCmd, caller: &Result<Caller, String>) -> UserCmd {
+    match cmd {
+        UserCmd::Workflow(WorkflowCmd::Add { req, .. }) => UserCmd::Workflow(WorkflowCmd::Add {
+            req: req.clone(),
+            origin_front: match caller {
+                Ok(Caller::Front(ns)) => Some(ns.clone()),
+                _ => None,
+            },
+        }),
+        _ => cmd.clone(),
+    }
+}
