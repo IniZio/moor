@@ -101,6 +101,10 @@ impl BoxLedger {
 
     /// The shared egress Proxy's ledger on `socket` for `box_id`, presenting its `key`; the
     /// controller answers only the reads a request makes and its audit.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the shared egress Proxy is not wired yet")
+    )]
     pub(crate) fn egress(socket: PathBuf, box_id: BoxId, key: String) -> Self {
         let hello = Hello::Egress {
             v: LEDGER,
