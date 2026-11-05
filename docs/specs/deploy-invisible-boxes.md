@@ -46,7 +46,7 @@ Every process and listener in the pod, from [deployment.yaml in moor-gitops](htt
 | Process | Listens on | Who depends on it | State it holds | What a Box sees while it is down | Must outlive a controller deploy |
 |---|---|---|---|---|---|
 | controller (`moor controller serve`) | `controller.sock`, each front's socket, `runner/runner.sock`, `ledger/proxy.sock` | CLI, fronts, gate, runner, every Box Proxy | Store, vault key, settle loop, ops in flight | No start, steer or close. Proxies lose the ledger. | No. It is what deploys. Its clients must ride out its absence. |
-| Box Proxy supervisor (`moor proxy serve <box>`), one per Box | Unix socket per Box, nono on loopback | The Box, through its tunnel | Lease, in-flight CONNECTs, request log, per-Box CA | Every request to a credential host fails. Setup lines and agent API calls fail. | Yes |
+| Box Proxy supervisor (`moor proxy serve <box>`), one per Box | Unix socket per Box, nono on loopback | The Box, through its tunnel | Lease, in-flight CONNECT tunnels, request log, per-Box CA | Every request to a credential host fails. Setup lines and agent API calls fail. | Yes |
 | Reverse tunnel, a `crabbox tunnel --reverse` child of each supervisor | `box_port` on the Box's loopback | tinyproxy in the Box | ssh session, crabbox lease files | Same as the supervisor | Yes |
 | Machine runner (`moor-machine-runner`) with the links broker | `127.0.0.1:7700`, `:7701` agent links, `runner/links.sock` | Box Proxies, controller, `moor link-dial`, machine agents | Live agent links, slot holds, relay MCP sessions, forwards, host mirrors | Machine tools fail. Agent link drops. Tunnels to pool VMs die, since they dial through the broker. | Yes |
 | Agent pane, a `ssh -t` attach run by the controller's pty surface | None | Box event and status reads | None. The agent is held in the Box. | Nothing. The agent keeps running and the next controller attaches again. | No |
@@ -232,7 +232,7 @@ sequenceDiagram
   N->>B: open second tunnel on a fresh box_port
   N->>B: repoint tinyproxy upstream, reload
   B->>N: new connections
-  O->>O: in-flight CONNECTs finish, supervisor exits
+  O->>O: in-flight CONNECT tunnels finish, supervisor exits
   O->>O: tell its machine agents to dial again, finish in-flight execs
   Note over O: pod exits once it owns no rows and no links
 ```
