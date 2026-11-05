@@ -8,6 +8,7 @@ use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
 mod egress_token;
+mod forward_port;
 mod insertion_order;
 mod proxy_key;
 mod proxy_state;
@@ -51,6 +52,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V52__egress_token",
         write: egress_token::write,
+    },
+    Step {
+        name: "V53__forward_port",
+        write: forward_port::write,
     },
 ];
 

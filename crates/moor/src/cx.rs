@@ -307,6 +307,7 @@ impl Cx {
     }
 }
 
+pub(crate) mod egress;
 mod requester;
 #[cfg(test)]
 mod tests;

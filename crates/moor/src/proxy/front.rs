@@ -37,6 +37,7 @@ mod auth;
 mod machine;
 mod plain;
 mod refusal;
+mod relay;
 mod socket;
 
 /// Largest request or response head accepted.

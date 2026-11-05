@@ -17,6 +17,7 @@ use super::{Front, FrontSocket};
 use crate::proxy::Sink;
 
 mod machine;
+mod relay;
 
 const INTERNAL: &str = "internal-token-456";
 const FORWARDED_HEAD: &str = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n";
@@ -101,12 +102,12 @@ fn serve_fake(conn: &mut TcpStream, answer: Answer, tx: &mpsc::Sender<Vec<u8>>) 
 }
 
 /// The uid this test runs as.
-fn uid() -> u32 {
+pub(super) fn uid() -> u32 {
     rustix::process::getuid().as_raw()
 }
 
 /// The front socket of Box 1 in `dir`'s private socket directory `s`, which `owner` must own.
-fn socket_in(dir: &TempDir, owner: u32) -> FrontSocket {
+pub(super) fn socket_in(dir: &TempDir, owner: u32) -> FrontSocket {
     FrontSocket::new(
         &dir.path().join("s"),
         owner,

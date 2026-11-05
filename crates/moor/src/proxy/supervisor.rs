@@ -60,6 +60,9 @@ pub(crate) struct Deps<'a> {
     pub(crate) guard_exempt: Vec<std::net::SocketAddr>,
     /// The service the front serves itself for the Box's machine; `None` when none is configured.
     pub(crate) machine_service: Option<moor_core::config::MachineService>,
+    /// The shared egress Proxy on this host that the front relays the Box's tunnel to, in place
+    /// of serving CONNECT itself; `None` unless the shared Proxy serves Boxes over their tunnels.
+    pub(crate) relay: Option<std::net::SocketAddr>,
     /// Directory holding the proxy logs, CA and spec.
     pub(crate) state_dir: &'a Path,
     /// moor's private socket directory, where the front listens.

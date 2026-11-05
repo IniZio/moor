@@ -4,6 +4,7 @@ use super::*;
 
 mod egress;
 mod egress_load;
+mod forwarder;
 mod shell;
 
 /// Every proxy and CA variable name the prelude may export.

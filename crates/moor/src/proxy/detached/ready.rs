@@ -31,6 +31,7 @@ pub(super) fn ready_endpoint(
     Ok(ProxyEndpoint {
         box_port: row.box_port,
         egress_port: row.egress_port,
+        forward_port: row.forward_port,
         ca_pem: ca.cert_pem,
     })
 }

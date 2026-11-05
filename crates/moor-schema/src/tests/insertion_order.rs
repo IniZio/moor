@@ -103,5 +103,8 @@ fn the_migration_runs_once_and_a_reopen_changes_nothing() {
         &conn,
         "SELECT CAST(version AS TEXT) FROM refinery_schema_history ORDER BY version",
     );
-    assert_eq!(history, ["45", "46", "47", "48", "49", "50", "51", "52"]);
+    assert_eq!(
+        history,
+        ["45", "46", "47", "48", "49", "50", "51", "52", "53"]
+    );
 }

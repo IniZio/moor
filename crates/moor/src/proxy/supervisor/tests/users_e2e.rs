@@ -205,6 +205,7 @@ impl Two {
             upstream_ca: Some(self.up.ca_path.clone()),
             upstream_dial: None,
             machine_service: None,
+            relay: None,
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
             state_dir: self.dir.path(),
             sockets,

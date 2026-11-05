@@ -34,6 +34,9 @@ pub struct ProxyEndpoint {
     pub box_port: u16,
     /// The loopback port the Box's egress proxy listens on, stable for the Box.
     pub egress_port: u16,
+    /// The loopback port the Box's egress forwarder listens on, stable for the Box; none for a
+    /// Proxy started before Boxes had one.
+    pub forward_port: Option<u16>,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
 }
@@ -43,6 +46,7 @@ impl fmt::Debug for ProxyEndpoint {
         f.debug_struct("ProxyEndpoint")
             .field("box_port", &self.box_port)
             .field("egress_port", &self.egress_port)
+            .field("forward_port", &self.forward_port)
             .field("ca_pem_len", &self.ca_pem.len())
             .finish()
     }

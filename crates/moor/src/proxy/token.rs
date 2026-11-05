@@ -16,10 +16,6 @@ use crate::store::{Store, StoreError};
 
 /// Mints a token for `box_id` under `key` and records it, replacing the Box's last one; `None`
 /// when the Box has no proxy row. The delivery into the Box marks it delivered.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the in-Box forwarder's delivery mints its token")
-)]
 pub(crate) fn mint(store: &Store, key: &[u8], box_id: BoxId) -> Result<Option<Secret>, String> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| format!("cannot mint the egress token: {e}"))?;
