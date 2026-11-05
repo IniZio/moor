@@ -3,7 +3,7 @@
 use std::os::unix::net::UnixStream;
 use std::sync::PoisonError;
 
-use super::{refuse, Sink};
+use super::{refuse, Sink, REFUSAL_BODY};
 
 /// Where refusals are written and what they name.
 pub(super) struct Refusals<'a> {
@@ -38,4 +38,12 @@ pub(super) fn target_of(head: &[u8]) -> String {
     } else {
         target.to_owned()
     }
+}
+
+/// The 403 a refused request is answered with.
+pub(crate) fn refusal() -> String {
+    format!(
+        "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{REFUSAL_BODY}",
+        REFUSAL_BODY.len()
+    )
 }

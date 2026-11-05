@@ -34,6 +34,14 @@
 //! After `101`, each binary message carries tunnel bytes in order. A close frame or the end of
 //! the connection ends the tunnel. Any other data message ends it too.
 //!
+//! With `X-Moor-Plain: 1` the tunnel carries one absolute-form `http://` request for the target,
+//! sent whole after `101`, and its reply. The Proxy sends it on in origin form, without
+//! `Proxy-*` or hop-by-hop headers, through the Box's proxy and never with a credential. A
+//! request for the machine service goes to the service instead, carrying the Box and the machine
+//! it holds in `X-Moor-*` headers that only the Proxy sets; the service not answering is `502`
+//! before the upgrade, and a CONNECT to it is `403`. A request that is not one plain request for
+//! the target gets a `403` reply in the tunnel.
+//!
 //! `GET /ready` answers `200` while the Proxy takes new tunnels. On SIGTERM it stops listening,
 //! so the probe fails and new tunnels go to another replica, and open tunnels get up to the
 //! grace to finish.
@@ -52,6 +60,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::config::MachineService;
 use moor_core::seam::clock::Clock;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
@@ -66,6 +75,8 @@ pub(crate) use limit::Rate;
 pub(crate) const PATH: &str = "/egress";
 /// The header naming the CONNECT target as `host:port`.
 pub(crate) const TARGET: &str = "x-moor-target";
+/// The header that marks a tunnel carrying one plain `http://` request.
+pub(crate) const PLAIN: &str = "x-moor-plain";
 
 /// How the Proxy runs.
 pub(crate) struct Config {
@@ -91,6 +102,8 @@ pub(crate) struct Config {
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Loopback addresses the egress guard lets through; empty in production.
     pub(crate) guard_exempt: Vec<SocketAddr>,
+    /// The machine service plain requests for its host go to; `None` when none is configured.
+    pub(crate) machine: Option<MachineService>,
     /// Source of time.
     pub(crate) clock: Arc<dyn Clock>,
 }
@@ -101,6 +114,8 @@ struct Shared {
     boxes: Boxes,
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
+    /// The machine service, when one is configured.
+    machine: Option<MachineService>,
 }
 
 /// A running Proxy.
@@ -136,9 +151,11 @@ impl Server {
             .local_addr()
             .map_err(|e| format!("cannot read the listen address: {e}"))?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
+        let machine = cfg.machine.clone();
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
             open: AtomicUsize::new(0),
+            machine,
         });
         let stop = Arc::new(Notify::new());
         let accepting = runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));

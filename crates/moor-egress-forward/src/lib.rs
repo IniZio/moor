@@ -5,6 +5,9 @@
 //!
 //! The Proxy answers before it upgrades, so its status is the CONNECT's: `101` becomes
 //! `200 Connection established`, and any other status goes to the client as it came.
+//!
+//! An absolute-form `http://` request goes the same way with `X-Moor-Plain: 1`. After `101` the
+//! whole request goes into the tunnel, and the Proxy's reply comes back as sent.
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
@@ -23,6 +26,10 @@ use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
 /// The header naming the CONNECT target as `host:port`.
 const TARGET: &str = "x-moor-target";
+/// The header that marks a tunnel carrying one plain `http://` request.
+const PLAIN: &str = "x-moor-plain";
+/// The port of an `http://` target that names none.
+const HTTP_PORT: u16 = 80;
 /// The longest CONNECT head taken.
 const HEAD_MAX: usize = 8 * 1024;
 /// Most bytes read from the client per WebSocket message, well under the Proxy's 1 MiB cap.
@@ -162,12 +169,14 @@ pub async fn serve(listener: TcpListener, upstream: Arc<Upstream>) {
     }
 }
 
-/// A CONNECT read from a client.
+/// A CONNECT or plain request read from a client.
 struct Connect {
     /// `host:port`.
     target: String,
-    /// Bytes the client sent after the head, such as a TLS hello.
+    /// Bytes the client sent after a CONNECT head, such as a TLS hello, or the whole plain request.
     early: Vec<u8>,
+    /// Whether it is a plain `http://` request.
+    plain: bool,
 }
 
 /// A WebSocket open to the Proxy.
@@ -188,8 +197,8 @@ async fn forward(mut client: TcpStream, upstream: &Upstream) {
         Ok(None) => return,
         Err(status) => return answer(&mut client, status, b"").await,
     };
-    match dial(upstream, &connect.target).await {
-        Ok(tunnel) => pump(client, tunnel, connect.early).await,
+    match dial(upstream, &connect).await {
+        Ok(tunnel) => pump(client, tunnel, connect).await,
         Err(Refused::Status(status, body)) => answer(&mut client, status, &body).await,
         Err(Refused::Unreachable(why)) => {
             say(format_args!("CONNECT {}: {why}", connect.target));
@@ -218,11 +227,16 @@ async fn read_connect(client: &mut TcpStream) -> Result<Option<Connect>, StatusC
     if !matches!(req.parse(&buf), Ok(httparse::Status::Complete(_))) {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let path = req.path.unwrap_or_default();
     if req.method != Some("CONNECT") {
-        return Err(StatusCode::METHOD_NOT_ALLOWED);
+        let target = plain_target(path)?;
+        return Ok(Some(Connect {
+            target,
+            early: buf,
+            plain: true,
+        }));
     }
-    let target = req
-        .path
+    let target = Some(path)
         .filter(|t| {
             t.rsplit_once(':')
                 .is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok())
@@ -232,17 +246,37 @@ async fn read_connect(client: &mut TcpStream) -> Result<Option<Connect>, StatusC
     Ok(Some(Connect {
         target,
         early: buf.split_off(end),
+        plain: false,
     }))
 }
 
-/// Opens a WebSocket to the Proxy for `target`, dialing again while it cannot be reached.
-async fn dial(upstream: &Upstream, target: &str) -> Result<Tunnel, Refused> {
+/// The `host:port` of an absolute `http://` request target, port 80 when it names none.
+fn plain_target(path: &str) -> Result<String, StatusCode> {
+    let rest = path
+        .get(..7)
+        .filter(|s| s.eq_ignore_ascii_case("http://"))
+        .and_then(|_| path.get(7..))
+        .ok_or(StatusCode::METHOD_NOT_ALLOWED)?;
+    let authority = rest.split(['/', '?']).next().unwrap_or_default();
+    let named = authority
+        .rsplit_once(':')
+        .filter(|(_, p)| !p.contains(']'))
+        .map(|(h, p)| (h, p.parse::<u16>().ok()));
+    let (host, port) = named.unwrap_or((authority, Some(HTTP_PORT)));
+    match (host.is_empty(), port) {
+        (false, Some(port)) => Ok(format!("{host}:{port}")),
+        _ => Err(StatusCode::BAD_REQUEST),
+    }
+}
+
+/// Opens a WebSocket to the Proxy for `connect`, dialing again while it cannot be reached.
+async fn dial(upstream: &Upstream, connect: &Connect) -> Result<Tunnel, Refused> {
     let mut last = String::new();
     for attempt in 0..ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(RETRY).await;
         }
-        match tokio::time::timeout(DIAL, dial_once(upstream, target)).await {
+        match tokio::time::timeout(DIAL, dial_once(upstream, connect)).await {
             Ok(Ok(tunnel)) => return Ok(tunnel),
             Ok(Err(Refused::Unreachable(why))) => last = why,
             Ok(Err(refused)) => return Err(refused),
@@ -253,7 +287,7 @@ async fn dial(upstream: &Upstream, target: &str) -> Result<Tunnel, Refused> {
 }
 
 /// One dial of [`dial`].
-async fn dial_once(upstream: &Upstream, target: &str) -> Result<Tunnel, Refused> {
+async fn dial_once(upstream: &Upstream, connect: &Connect) -> Result<Tunnel, Refused> {
     let mut req = upstream
         .url
         .as_str()
@@ -263,9 +297,12 @@ async fn dial_once(upstream: &Upstream, target: &str) -> Result<Tunnel, Refused>
     headers.insert("authorization", upstream.bearer.clone());
     headers.insert(
         TARGET,
-        HeaderValue::from_str(target)
+        HeaderValue::from_str(&connect.target)
             .map_err(|_| Refused::Status(StatusCode::BAD_REQUEST, Vec::new()))?,
     );
+    if connect.plain {
+        headers.insert(PLAIN, HeaderValue::from_static("1"));
+    }
     let tls = Connector::Rustls(Arc::clone(&upstream.tls));
     match tokio_tungstenite::connect_async_tls_with_config(req, None, true, Some(tls)).await {
         Ok((tunnel, _)) => Ok(tunnel),
@@ -280,16 +317,18 @@ async fn dial_once(upstream: &Upstream, target: &str) -> Result<Tunnel, Refused>
     }
 }
 
-/// Tells `client` its tunnel is open, then copies bytes between it and `tunnel`, `early` first,
-/// until the tunnel ends.
-async fn pump(mut client: TcpStream, tunnel: Tunnel, early: Vec<u8>) {
-    if client
-        .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-        .await
-        .is_err()
+/// Tells a CONNECT client its tunnel is open, then copies bytes between it and `tunnel`, its
+/// early bytes first, until the tunnel ends.
+async fn pump(mut client: TcpStream, tunnel: Tunnel, connect: Connect) {
+    if !connect.plain
+        && client
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await
+            .is_err()
     {
         return;
     }
+    let early = connect.early;
     let (mut sink, mut stream) = tunnel.split();
     let (mut from_client, mut to_client) = client.into_split();
     let up = async move {

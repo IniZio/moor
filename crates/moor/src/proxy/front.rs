@@ -27,8 +27,9 @@ use std::time::Duration;
 use moor_core::Secret;
 
 use super::Sink;
-pub(crate) use machine::{Held, Hold, MachineRoute};
-pub(crate) use plain::connect_head;
+pub(crate) use machine::{hold_or_missing, Held, Hold, MachineRoute};
+pub(crate) use plain::{connect_head, plain_request};
+pub(crate) use refusal::refusal;
 use refusal::{target_of, Refusals};
 pub(crate) use socket::FrontSocket;
 use socket::{Handler, Listening};
@@ -331,11 +332,7 @@ fn splice(mut client: UnixStream, mut upstream: TcpStream) {
 /// Answers 403, closes the write half and drains what the client still sends, so
 /// the client reads the reply before the close.
 fn refuse(mut client: UnixStream) {
-    let reply = format!(
-        "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{REFUSAL_BODY}",
-        REFUSAL_BODY.len()
-    );
-    let _ = client.write_all(reply.as_bytes());
+    let _ = client.write_all(refusal().as_bytes());
     let _ = client.shutdown(Shutdown::Write);
     let _ = client.set_read_timeout(Some(DRAIN_TIMEOUT));
     let _ = io::copy(&mut (&mut client).take(DRAIN_LIMIT), &mut io::sink());
