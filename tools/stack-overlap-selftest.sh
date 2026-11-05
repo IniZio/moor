@@ -111,6 +111,6 @@ git config remote.origin.url "$tmp/origin.git"
 ln -s "$root/tools" tools
 mkdir -p sub/deep; echo x > sub/deep/y.txt
 name='make'
-out="$(make -s -f "$root/Makefile" overlap BASE=main FILES='sub/*' 2>&1)" || fail
+out="$(make -s --no-print-directory -f "$root/Makefile" overlap BASE=main FILES='sub/*' 2>&1)" || fail
 [ "$out" = $'#7 PR 7 u/7\n  sub/deep/y.txt' ] || fail
 echo "stack-overlap-selftest: ok"
