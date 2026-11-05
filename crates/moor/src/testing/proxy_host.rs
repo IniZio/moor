@@ -124,7 +124,6 @@ impl ProxyHost for FakeProxyHost {
             box_port: s.box_port,
             egress_port: s.egress_port,
             ca_pem: String::new(),
-            egress_token: None,
         })
     }
 

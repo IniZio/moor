@@ -162,7 +162,7 @@ pub(super) struct World {
     pub(super) store: Store,
     pub(super) vault: Arc<Vault>,
     clock: Arc<FakeClock>,
-    ann: UserId,
+    pub(super) ann: UserId,
     pub(super) socket: PathBuf,
 }
 

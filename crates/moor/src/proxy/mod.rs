@@ -19,6 +19,7 @@ pub(crate) mod ledger;
 pub(crate) mod links;
 pub(crate) mod nono;
 pub(crate) mod supervisor;
+pub(crate) mod token;
 
 pub(crate) use supervisor::{serve, Deps, Sink};
 

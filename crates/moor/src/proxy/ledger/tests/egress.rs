@@ -1,8 +1,13 @@
 //! The shared egress Proxy's end of the ledger: its key opens token lookups and the reads a
 //! request makes for one Box, and nothing else.
 
+use std::collections::BTreeMap;
+
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::user::SecretName;
 use moor_core::{BoxId, BoxName};
 
 use super::super::{BoxLedger, EgressLedger, LedgerError};
@@ -66,4 +71,63 @@ fn the_egress_proxy_reads_a_box_but_never_takes_its_lease() {
         Err(LedgerError::Refused(_))
     ));
     assert!(matches!(ledger.box_port(), Err(LedgerError::Refused(_))));
+}
+
+#[test]
+fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_open() {
+    let w = world();
+    let _served = w.serve();
+    let nt = NewBox {
+        name: BoxName::parse_allow_bare("a").unwrap(),
+        repo: None,
+    };
+    let a = w
+        .store
+        .apply(Decision::insert(nt).requester(w.ann))
+        .unwrap()
+        .box_id;
+    drop(
+        w.store
+            .reserve(a, &FakeRng::default(), crate::proxy::detached::LEASE),
+    );
+    let rule = ResolvedRule {
+        name: "claude".to_owned(),
+        hosts: vec!["api.anthropic.com".to_owned()],
+        credential: "claude".to_owned(),
+        inject: ResolvedInject::Header {
+            header: "x-api-key".to_owned(),
+            form: "{secret}".to_owned(),
+        },
+        endpoint_rules: Vec::new(),
+        box_env: BTreeMap::new(),
+    };
+    let spec = ProxySpec {
+        box_id: a,
+        box_handle: None,
+        box_repo: None,
+        other_repos: Vec::new(),
+        rules: vec![rule],
+        user: w.ann,
+    };
+    w.store.set_proxy_spec(a, &spec).unwrap();
+    let ledger = BoxLedger::egress(w.socket.clone(), a, EGRESS_KEY.to_owned());
+    let named = ledger
+        .secret(&SecretName::parse("claude").unwrap())
+        .unwrap();
+    assert_eq!(named.unwrap().expose(), b"ann-token");
+    let other = ledger.secret(&SecretName::parse("github").unwrap());
+    assert!(
+        matches!(other, Err(LedgerError::Refused(_))),
+        "a secret no rule names"
+    );
+    let close = Decision::new(a).lifecycle(BoxLifecycleInput::Close { reason: None });
+    w.store.apply(close).unwrap();
+    assert!(
+        matches!(ledger.spec(), Err(LedgerError::Refused(_))),
+        "a closed Box"
+    );
+    assert!(
+        ledger.view().unwrap().is_some_and(|v| !v.open),
+        "its view still answers"
+    );
 }

@@ -50,12 +50,16 @@ pub(super) fn answer(
 }
 
 /// The reply to `call` from the shared egress Proxy for `box_id`: only the reads a request makes
-/// and its audit, never the lease, tunnel or machine.
+/// and its audit, never the lease, tunnel or machine. Only `View` answers for a closed Box, and
+/// only the secrets its spec's rules name are read.
 pub(super) fn for_egress(
     (store, vault): (&Store, &Vault),
     box_id: BoxId,
     call: Call,
 ) -> Zeroizing<String> {
+    if let Err(fault) = egress_may(store, box_id, &call) {
+        return encode(&Err::<(), _>(fault));
+    }
     match call {
         Call::View
         | Call::Spec
@@ -67,6 +71,27 @@ pub(super) fn for_egress(
             "the egress Proxy only reads a Box and records its audit".to_owned(),
         ))),
     }
+}
+
+/// Refuses an egress call for a closed Box, other than `View`, and a secret no rule names.
+fn egress_may(store: &Store, box_id: BoxId, call: &Call) -> Result<(), Fault> {
+    if matches!(call, Call::View) {
+        return Ok(());
+    }
+    if !view(store, box_id)?.is_some_and(|v| v.open) {
+        return Err(Fault::Refused(format!("Box {} is closed", box_id.get())));
+    }
+    if let Call::Secret { name } = call {
+        let spec = store.proxy_spec(box_id)?;
+        let named = spec.is_some_and(|s| s.rules.iter().any(|r| r.credential == name.as_str()));
+        if !named {
+            return Err(Fault::Refused(format!(
+                "no rule of Box {} names that secret",
+                box_id.get()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// The open Box whose egress token hashes to `token_hash`; none once it closes.

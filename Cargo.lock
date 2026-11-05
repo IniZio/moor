@@ -3170,6 +3170,7 @@ dependencies = [
  "command-fds",
  "getrandom 0.4.3",
  "ghostty-vt",
+ "hmac 0.12.1",
  "moor-client",
  "moor-core",
  "moor-listen",
