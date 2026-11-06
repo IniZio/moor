@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycle;
 
-use super::pressure::{agents_report, tick, wake_up};
+use super::pressure::{agents_report, live_world_on, tick, wake_up};
 use super::*;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
@@ -56,5 +56,22 @@ fn a_last_resort_suspend_parks_the_keeper_and_its_resume_restores_it() {
     assert_eq!(
         keeper_calls(&host),
         [ProxyHostCall::Park(c), ProxyHostCall::Restore(c)]
+    );
+}
+
+#[test]
+fn a_failed_suspend_restores_the_keeper_it_parked() {
+    use moor_core::seam::driver::DriverError;
+    let (w, hv) = live_world_on(FakeDriver::new().fail_sleep(DriverError::Unavailable("x".into())));
+    let (b, c) = (started(&w, "b"), started(&w, "c"));
+    let (w, _) = agents_report(w, &[], &[b, c]);
+    let (w, host) = hosted(w);
+    tick(&w, hv, 512, 0, 0);
+    assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready, "its suspend failed");
+    let calls = keeper_calls(&host);
+    assert_eq!(
+        calls.get(..2),
+        Some(&[ProxyHostCall::Park(c), ProxyHostCall::Restore(c)][..]),
+        "{calls:?}"
     );
 }

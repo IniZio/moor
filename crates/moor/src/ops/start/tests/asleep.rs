@@ -67,3 +67,17 @@ fn starting_an_asleep_box_whose_agent_failed_wakes_it_and_delivers_the_prompt() 
     assert_eq!(prompts.len(), 2);
     assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
 }
+
+#[test]
+fn starting_an_asleep_box_restores_its_keeper() {
+    use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
+    let (mut w, _engine, id) = asleep_after_failed_launch();
+    let host = FakeProxyHost::new();
+    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    run(&w.cx, &prompt_req("carry on")).unwrap();
+    assert!(
+        host.calls().contains(&ProxyHostCall::Restore(id)),
+        "{:?}",
+        host.calls()
+    );
+}
