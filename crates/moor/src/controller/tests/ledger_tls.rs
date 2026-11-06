@@ -299,7 +299,7 @@ fn the_tls_ledger_keeps_answering_while_the_controller_drains() {
 }
 
 #[test]
-fn the_tls_ledger_needs_the_egress_key_and_a_readable_certificate() {
+fn the_tls_ledger_needs_the_egress_key_a_readable_certificate_and_client_ca() {
     let dir = tempfile::tempdir().unwrap();
     pki(dir.path(), "ctl", true);
     let cfg = tls_config(dir.path(), "");
@@ -307,6 +307,27 @@ fn the_tls_ledger_needs_the_egress_key_and_a_readable_certificate() {
         panic!("started a TLS ledger without the egress key");
     };
     assert!(stop.message.contains("MOOR_EGRESS_KEY"), "{}", stop.message);
+
+    std::fs::write(dir.path().join("ctl-ca.pem"), "").unwrap();
+    let Err(stop) = start(&env_with(dir.path(), &[("MOOR_EGRESS_KEY", KEY)]), &cfg) else {
+        panic!("started a TLS ledger with an empty client CA");
+    };
+    assert!(
+        stop.message.contains("ledger_tls.client_ca"),
+        "{}",
+        stop.message
+    );
+    assert!(stop.message.contains("no certificate"), "{}", stop.message);
+
+    std::fs::remove_file(dir.path().join("ctl-ca.pem")).unwrap();
+    let Err(stop) = start(&env_with(dir.path(), &[("MOOR_EGRESS_KEY", KEY)]), &cfg) else {
+        panic!("started a TLS ledger without its client CA");
+    };
+    assert!(
+        stop.message.contains("ledger_tls.client_ca"),
+        "{}",
+        stop.message
+    );
 
     std::fs::remove_file(dir.path().join("ctl.pem")).unwrap();
     let Err(stop) = start(&env_with(dir.path(), &[("MOOR_EGRESS_KEY", KEY)]), &cfg) else {

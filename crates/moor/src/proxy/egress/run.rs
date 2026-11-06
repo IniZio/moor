@@ -260,3 +260,6 @@ mod test_upstream {
         Vec::new()
     }
 }
+
+#[cfg(test)]
+mod tests;
