@@ -55,6 +55,7 @@ struct State {
     fail_put: Option<DriverError>,
     fail_connect: Option<DriverError>,
     fail_peek: Option<DriverError>,
+    fail_peek_of: Option<(BoxPath, DriverError)>,
     fail_sleep: Option<DriverError>,
     fail_wake: Option<DriverError>,
     sleep_outcome: Option<SleepOutcome>,
@@ -258,7 +259,7 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        if let Some(e) = s.fail_peek.take() {
+        if let Some(e) = s.peek_failure(path) {
             return Err(e);
         }
         Ok(s.files

@@ -38,6 +38,9 @@ pub(super) struct Fetch<'a> {
     pub dir: &'a Path,
     /// The private staging directory.
     pub staging: &'a Path,
+    /// A limit on the stream, for a collect that must not hold up a suspend; it copies nothing
+    /// file by file.
+    pub within: Option<Duration>,
 }
 
 impl Fetch<'_> {
@@ -69,7 +72,7 @@ impl Fetch<'_> {
                 self.handle,
                 &from,
                 &names,
-                Deadline(STREAM_DEADLINE),
+                Deadline(self.within.unwrap_or(STREAM_DEADLINE)),
                 &mut sink,
             )
         };
@@ -80,6 +83,7 @@ impl Fetch<'_> {
     /// returns how many new versions were stored.
     fn settle(&self, result: Result<(), DriverError>, pending: &[ArtifactFile]) -> usize {
         match result {
+            Err(DriverError::Unsupported(_)) if self.within.is_some() => 0,
             Err(DriverError::Unsupported(_)) => {
                 pending.iter().filter(|file| self.copied(file)).count()
             }

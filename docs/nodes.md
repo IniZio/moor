@@ -200,11 +200,11 @@ closes the head.
 
 ### Closing an asleep Box
 
-Just before an idle Box is suspended, moor checks it for unpushed work, for up to
-10 seconds, and keeps the answer. A suspended guest cannot change, so the answer
+Just before an idle Box is suspended, moor checks it for unpushed work and collects
+its reports and artifacts, for about 10 seconds in all, and keeps the answer. If any of
+that fails, no answer is kept and the suspend goes ahead. A suspended guest cannot change, so the answer
 stands until the Box next runs: any wake or new machine clears it, and so does
-finding a Box stopped that moor did not suspend. A check that cannot answer stores
-nothing and does not hold up the suspend, and critical memory skips the check.
+finding a Box stopped that moor did not suspend. Critical memory skips the check.
 
 A Box whose agent is working or that has a run in flight is not checked and keeps
 no answer, since it could write between the check and the snapshot. An idle Box's
@@ -214,7 +214,7 @@ A close never takes a place in the queue or suspends another Box:
 
 | What is known | The Box fits now | It does not |
 | --- | --- | --- |
-| Clean | Wakes, so its teardown runs and its caches are saved | Deleted unwoken, with a `caches_not_saved` event |
+| Clean | Wakes, so its teardown runs and its caches are saved | Deleted unwoken, with a `caches_not_saved` event; its reports and artifacts are already saved |
 | Holds unsaved work | Refused, naming the work, unwoken | Same |
 | Nothing | Wakes and checks | Refused with why |
 

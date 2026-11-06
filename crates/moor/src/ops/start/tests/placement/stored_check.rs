@@ -277,3 +277,103 @@ fn a_forced_close_ignores_the_answer() {
     close_box(&w, b, true).unwrap();
     assert_eq!(lifecycle(&w, b), Closed);
 }
+
+fn sha(bytes: &[u8]) -> String {
+    format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(bytes))
+}
+
+/// An idle Box whose check answers clean, with report `plan.md` and artifact `a.md` to collect
+/// and `extra` listed in the artifact index too.
+fn idle_with_files(w: &World, extra: &str) -> BoxId {
+    let id = started(w, "files");
+    idle(w, id);
+    holds(w, id, CLEAN);
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    let b = row.boxed.unwrap();
+    let (handle, workdir) = (b.handle.unwrap(), b.workdir.unwrap());
+    let at = |rel: &str| BoxPath::under(&workdir, rel).unwrap();
+    w.driver
+        .set_peek_text(handle.as_str(), &at(".moor/reports.index"), "plan.md\t4\n");
+    w.driver
+        .set_peek_text(handle.as_str(), &at(".moor/reports/plan.md"), "# ok");
+    w.driver
+        .push_artifact_index(format!("a.md\t5\t{}\n{extra}", sha(b"hello")));
+    w.driver.put_box_file("a.md", b"hello");
+    id
+}
+
+/// Suspends the idle Box `id` under memory pressure.
+fn pressed(w: &World, hv: i64, id: BoxId) {
+    tick(w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(lifecycle(w, id), Asleep);
+}
+
+fn kept(w: &World, id: BoxId) -> (usize, usize) {
+    let store = w.cx.store().unwrap();
+    (
+        store.reports(id).unwrap().len(),
+        store.latest_artifacts(id).unwrap().len(),
+    )
+}
+
+#[test]
+fn a_stored_answer_means_reports_and_artifacts_were_collected_first() {
+    let (w, hv) = live_world(32_768);
+    let id = idle_with_files(&w, "");
+    let (w, _) = agents_report(w, &[id], &[]);
+    pressed(&w, hv, id);
+    assert_eq!(stored(&w, id), Some((0, 0)));
+    assert_eq!(kept(&w, id), (1, 1));
+}
+
+#[test]
+fn checking_and_collecting_stay_within_the_short_deadline() {
+    let (w, hv) = live_world(32_768);
+    let id = idle_with_files(&w, "");
+    let (w, _) = agents_report(w, &[id], &[]);
+    let before = w.driver.execs().len();
+    pressed(&w, hv, id);
+    let execs = w.driver.execs();
+    assert!(execs.len() >= before + 3, "the check and both indexes ran");
+    let limit = std::time::Duration::from_secs(10);
+    assert!(execs.iter().skip(before).all(|(_, _, d)| d.0 <= limit));
+}
+
+#[test]
+fn a_report_that_cannot_be_read_stores_no_answer_and_the_box_still_sleeps() {
+    let (w, hv) = live_world(32_768);
+    let id = idle_with_files(&w, "");
+    let (w, _) = agents_report(w, &[id], &[]);
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    let workdir = row.boxed.unwrap().workdir.unwrap();
+    let path = BoxPath::under(&workdir, ".moor/reports/plan.md").unwrap();
+    w.driver.fail_peek_of(
+        &path,
+        moor_core::seam::driver::DriverError::Timeout(std::time::Duration::from_secs(1)),
+    );
+    pressed(&w, hv, id);
+    assert_eq!(stored(&w, id), None);
+}
+
+#[test]
+fn an_artifact_not_received_stores_no_answer_and_the_box_still_sleeps() {
+    let (w, hv) = live_world(32_768);
+    let id = idle_with_files(&w, &format!("b.md\t4\t{}\n", sha(b"gone")));
+    let (w, _) = agents_report(w, &[id], &[]);
+    pressed(&w, hv, id);
+    assert_eq!(stored(&w, id), None);
+}
+
+#[test]
+fn a_close_after_a_stored_answer_keeps_the_reports_with_no_wake() {
+    let (w, hv) = live_world(32_768);
+    let other = started(&w, "other");
+    let id = idle_with_files(&w, "");
+    guest_memory(&w, id, CEILING);
+    let (w, _) = agents_report(w, &[id], &[other]);
+    pressed(&w, hv, id);
+    let before = calls(&w, "wake");
+    close_box(&w, id, false).unwrap();
+    assert_eq!(calls(&w, "wake"), before);
+    assert_eq!(kept(&w, id), (1, 1));
+}
