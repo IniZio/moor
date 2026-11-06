@@ -50,7 +50,7 @@ tables! {
         LaunchFailure, Provider, Handle, DriverState, AttemptedHandle, Workdir, Egress,
         SleepReason, Cpus, MemMib, DriverUpdatedAt, CreatedAt, UpdatedAt, Node, NodeLabels,
         NodeMemMib, ResumeFirstAt, OtherRepos, StepsPendingAt, SuspendAhead, SuspendDirty,
-        SuspendCheckedAt }
+        SuspendCheckedAt, HeldPrompt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, WorkspaceId, Pane, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, Pane, StartedAt, EndedAt, Exit, TranscriptDigest,

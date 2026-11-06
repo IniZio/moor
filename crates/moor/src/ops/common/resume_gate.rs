@@ -72,6 +72,30 @@ fn resume_shortfall(
     ))
 }
 
+/// Whether asleep `row` could not fit on `node` even with every Box running there gone. Boxes behind
+/// it may then pass, and none is suspended for it. As soon as stopping what runs would make room,
+/// neither holds, so passing Boxes cannot starve it.
+pub(crate) fn beyond_reach(
+    store: &Store,
+    node: &Node,
+    memory: &Memory,
+    row: &BoxRow,
+) -> Result<bool, CommandError> {
+    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Asleep) else {
+        return Ok(false);
+    };
+    let guest = b.delivered.map(|d| d.mem_mib);
+    let Some(needed) = needed_to_resume(store.resume_memory_mib(row.id)?, guest) else {
+        return Ok(false);
+    };
+    let mut held = Some(0_u64);
+    for id in store.ready_on(&node.name)? {
+        let of_box = store.box_host_memory(id)?;
+        held = held.zip(of_box).map(|(sum, mib)| sum.saturating_add(mib));
+    }
+    Ok(memory.beyond_reach(needed, held))
+}
+
 /// Before an asleep Box resumes: why it may not yet, after suspending an idle Box on its node to
 /// make room when it is next; `None` when it may wake now.
 pub(crate) fn room_to_wake(
@@ -98,24 +122,31 @@ pub(crate) fn room_to_wake(
     let Some(short) = resume_shortfall(store, &node, &memory, row, now(cx))? else {
         return Ok(None);
     };
-    if turn != Turn::OnlyIfRoom {
+    if turn != Turn::OnlyIfRoom && !beyond_reach(store, &node, &memory, row)? {
         suspend_idlest(cx, store, &node, short, row.name.as_str())?;
     }
     Ok(Some(short.reason(&node.name)))
 }
 
-/// What the head of the queue on `node` asks of it: a resume what it needs, a new start room to
-/// boot. Nothing when its Box count is full, since a suspension would not help.
+/// What the head of the queue on `node` asks of it, passing over Boxes beyond reach: a resume what
+/// it needs, a new start room to boot. Nothing when its Box count is full, since a suspension would
+/// not help.
 pub(super) fn demand(
     store: &Store,
     node: &Node,
     memory: &Memory,
     now: i64,
 ) -> Result<Demand, CommandError> {
-    let head = match store.pending_on(&node.name)?.first() {
-        Some(id) => store.box_row(*id)?,
-        None => None,
-    };
+    let mut head = None;
+    for id in store.pending_on(&node.name)? {
+        let Some(row) = store.box_row(id)? else {
+            continue;
+        };
+        if !beyond_reach(store, node, memory, &row)? {
+            head = Some(row);
+            break;
+        }
+    }
     let Some(head) = head else {
         return Ok(Demand::default());
     };

@@ -193,10 +193,13 @@ at the head that fails for its own reason, such as a provider error, does not
 hold the others back.
 
 Nothing makes room for the head except what already frees memory: idle Boxes are
-suspended for it and working ones finish. So if only asleep Boxes remain and other
-work on the host leaves too little memory, the head waits there, with its reason
-and place, and every Box behind it waits too, until the host has room or someone
-closes the head.
+suspended for it and working ones finish. A head that could not fit even with every
+Box on the node gone, going by what each lists as `hostMemoryMiB`, is beyond reach:
+other work on the host leaves too little. No Box is suspended for it, and Boxes
+behind it that fit may pass. As soon as stopping what runs would make room for the
+head, passing stops, so it cannot starve. When a running Box does not list what it
+holds, nothing passes. The head waits with its reason and place until the host has
+room or someone closes it.
 
 ### Closing an asleep Box
 

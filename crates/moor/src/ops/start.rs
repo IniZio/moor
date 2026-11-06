@@ -25,6 +25,7 @@ use super::common::node;
 use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
+use super::common::wake::give_held_prompt;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -255,6 +256,13 @@ fn attach(
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
     let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
+    if req.prompt.is_some() {
+        store.set_held_prompt(row.id, None)?;
+    } else if agent.launched {
+        give_held_prompt(cx, store, row, AfterWake::Relaunched)?;
+    } else {
+        give_held_prompt(cx, store, row, AfterWake::Intact)?;
+    }
     let mut v = queued_view(cx, row, true);
     if let Some(p) = reprovisioned {
         set_provisioned(&mut v, &p);

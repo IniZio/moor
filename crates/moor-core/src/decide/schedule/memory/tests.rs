@@ -126,3 +126,25 @@ fn a_stale_report_pressure_or_an_unreported_box_blocks_any_resume() {
         Some(Shortfall::Unreported)
     );
 }
+
+#[test]
+fn a_box_is_beyond_reach_only_when_what_runs_could_not_make_room_for_it() {
+    // available, held by what runs, Boxes starting, beyond reach
+    let table = [
+        (10 * 1024, Some(CEILING + 1024 - 10 * 1024 - 1), 0, true),
+        (10 * 1024, Some(CEILING + 1024 - 10 * 1024), 0, false),
+        (10 * 1024, None, 0, false),
+        (10 * 1024, Some(0), 1, false),
+    ];
+    for (available, held, starting, beyond) in table {
+        let m = Memory {
+            starting,
+            ..memory(available)
+        };
+        assert_eq!(
+            m.beyond_reach(CEILING, held),
+            beyond,
+            "{available} {held:?}"
+        );
+    }
+}

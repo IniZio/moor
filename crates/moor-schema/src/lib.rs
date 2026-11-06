@@ -9,6 +9,7 @@ use moor_migrate::{Backend, Script, Step};
 mod baseline;
 mod egress_token;
 mod forward_port;
+mod held_prompt;
 mod insertion_order;
 mod proxy_key;
 mod proxy_state;
@@ -61,6 +62,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V54__suspend_check",
         write: suspend_check::write,
+    },
+    Step {
+        name: "V55__held_prompt",
+        write: held_prompt::write,
     },
 ];
 
