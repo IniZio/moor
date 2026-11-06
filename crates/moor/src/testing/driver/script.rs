@@ -72,6 +72,11 @@ impl FakeDriver {
         self.st().fail_peek_of = Some((path.clone(), e));
     }
 
+    /// The next `peek_file` calls fail with `errors`, one each, as a guest not yet up does.
+    pub(crate) fn silent_peeks(&self, errors: Vec<DriverError>) {
+        self.st().silent_peeks = errors.into();
+    }
+
     /// The next `put_file` fails once with `e`.
     pub(crate) fn fail_put(self, e: DriverError) -> Self {
         self.st().fail_put = Some(e);
@@ -363,7 +368,10 @@ pub(super) fn write_log(spec: &ExecSpec, text: Option<String>) -> Result<(), Dri
 impl super::State {
     /// What the next `peek_file` of `path` is scripted to fail with.
     pub(super) fn peek_failure(&mut self, path: &BoxPath) -> Option<DriverError> {
-        let one_off = self.fail_peek.take();
+        let one_off = self
+            .silent_peeks
+            .pop_front()
+            .or_else(|| self.fail_peek.take());
         one_off.or_else(|| {
             let of = self.fail_peek_of.as_ref().filter(|(p, _)| p == path);
             of.map(|(_, e)| e.clone())

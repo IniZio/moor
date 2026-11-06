@@ -12,7 +12,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::reread;
-use crate::ops::common::wake::wake_box_if_asleep;
+use crate::ops::common::wake::{await_guest, wake_box_if_asleep};
 use crate::store::{Store, StoreError};
 
 /// Whether an attached Box can go on to launch its agent.
@@ -49,6 +49,7 @@ pub(super) fn wake(
         return Ok(Woken::Queued);
     }
     if machine_asleep {
+        await_guest(cx, store, &row)?;
         restore_tunnel(cx, id)?;
     }
     Ok(Woken::Awake)

@@ -55,6 +55,7 @@ struct State {
     fail_put: Option<DriverError>,
     fail_connect: Option<DriverError>,
     fail_peek: Option<DriverError>,
+    silent_peeks: VecDeque<DriverError>,
     fail_peek_of: Option<(BoxPath, DriverError)>,
     fail_sleep: Option<DriverError>,
     fail_wake: Option<DriverError>,
