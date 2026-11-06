@@ -75,6 +75,11 @@ pub(crate) use limit::Rate;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
+/// Answers 200 once the replica has learned the open Boxes from the ledger, and from then on;
+/// a rollout waits on it, so new replicas never replace old ones while the controller is away.
+pub(crate) const SYNCED: &str = "/synced";
+/// How often each replica relearns the open Boxes, their secrets and holds.
+const WARM_EVERY: Duration = Duration::from_secs(10);
 
 /// The machine service plain requests for `host` go to, as `--machine-service HOST=ADDR` names
 /// it. `upstream` is `host:port` and may be a DNS name, looked up on each connection, so the
@@ -264,7 +269,17 @@ impl Server {
         let thread = std::thread::Builder::new()
             .name("moor-egress-tend".to_owned())
             .spawn(move || {
+                let warm_every = (WARM_EVERY.as_millis() / every.as_millis().max(1)).max(1);
+                let mut ticks = 0_u128;
                 while on.load(Ordering::Acquire) {
+                    if ticks.is_multiple_of(warm_every) || !boxes.boxes.synced() {
+                        if let Err(e) = boxes.boxes.warm() {
+                            boxes
+                                .boxes
+                                .say(format_args!("cannot learn the open Boxes: {e}"));
+                        }
+                    }
+                    ticks += 1;
                     clock.sleep(every);
                     boxes.boxes.tend();
                 }

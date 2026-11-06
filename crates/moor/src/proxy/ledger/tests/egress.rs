@@ -45,6 +45,25 @@ fn a_token_finds_its_box_until_the_box_closes() {
 }
 
 #[test]
+fn the_open_tokens_name_every_open_box_and_no_closed_one() {
+    let w = world();
+    let _served = w.serve();
+    let a = box_with_token(&w, "a", b"token-a");
+    let b = box_with_token(&w, "b", b"token-b");
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
+    let mut open = ledger.open_tokens().unwrap();
+    open.sort();
+    let mut want = vec![(token_hash(b"token-a"), a), (token_hash(b"token-b"), b)];
+    want.sort();
+    assert_eq!(open, want);
+    let close = Decision::new(a).lifecycle(BoxLifecycleInput::Close { reason: None });
+    w.store.apply(close).unwrap();
+    assert_eq!(ledger.open_tokens(), Ok(vec![(token_hash(b"token-b"), b)]));
+    let wrong = EgressLedger::at(Endpoint::Unix(w.socket), "not-the-key".to_owned());
+    assert!(matches!(wrong.open_tokens(), Err(LedgerError::Refused(_))));
+}
+
+#[test]
 fn a_wrong_egress_key_is_refused() {
     let w = world();
     let _served = w.serve();

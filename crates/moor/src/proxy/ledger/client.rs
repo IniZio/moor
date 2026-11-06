@@ -177,6 +177,11 @@ impl EgressLedger {
         Self(Ledger::new(endpoint, &hello))
     }
 
+    /// The token hash and Box of every open Box that has an egress token.
+    pub(crate) fn open_tokens(&self) -> Result<Vec<(String, BoxId)>, LedgerError> {
+        self.0.call(&Call::OpenTokens)
+    }
+
     /// The open Box whose egress token hashes to `token_hash`.
     pub(crate) fn token_box(&self, token_hash: &str) -> Result<Option<BoxId>, LedgerError> {
         self.0.call(&Call::TokenBox {

@@ -351,6 +351,9 @@ fn the_token_of_a_closed_box_is_refused() {
 fn a_token_past_its_rate_is_refused() {
     let w = World::new();
     let server = w.server(2.0);
+    eventually("the first sync", || {
+        synced::synced(&server) == "HTTP/1.1 200 OK"
+    });
     assert!(open(&server, &w.token, &w.target()).is_ok());
     assert!(open(&server, &w.token, &w.target()).is_ok());
     assert_eq!(open(&server, &w.token, &w.target()).err(), Some(429));
@@ -529,33 +532,6 @@ fn a_changed_spec_rebuilds_the_proxy() {
 }
 
 #[test]
-fn a_503_names_no_detail_and_the_log_does() {
-    let mut w = World::new();
-    let server = w.server(10.0);
-    drop(w.ledger.take());
-    let mut raw = TcpStream::connect(addr(&server)).unwrap();
-    write!(
-        raw,
-        "GET {PATH} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
-         Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-         Authorization: Bearer {}\r\n{TARGET}: {}\r\n\r\n",
-        w.token,
-        w.target()
-    )
-    .unwrap();
-    let mut reply = String::new();
-    raw.read_to_string(&mut reply).unwrap();
-    assert!(reply.starts_with("HTTP/1.1 503"), "{reply}");
-    assert!(
-        reply.ends_with("\r\n\r\ntemporarily unavailable"),
-        "{reply}"
-    );
-    let log = String::from_utf8(w.log.lock().unwrap().clone()).unwrap();
-    assert!(log.contains("the controller is unavailable"), "{log}");
-    server.drain(Duration::from_secs(5));
-}
-
-#[test]
 fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
     for ok in ["h:443", "localhost:8443", "[::1]:443", "1.2.3.4:1"] {
         assert!(authority_ok(ok), "{ok}");
@@ -569,6 +545,7 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
 
 mod logs;
 mod plain;
+mod synced;
 
 #[test]
 fn a_second_proxy_never_takes_the_socket_of_a_live_one() {
