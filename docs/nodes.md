@@ -137,6 +137,11 @@ it has answered, an agent that stopped mid-turn is told once for how long, wheth
 its processes are intact or lost, that network connections open at that moment
 were dropped, and to carry on with its work. Its wall clock jumps.
 
+If a waiting Box's machine is gone altogether, it takes its turn for a new one,
+whose disk is empty. Moor records a `disk_lost` event, starts the agent again, and
+tells it what is gone. Anything not pushed is lost. `moor start` on a Box that lost
+its machine does the same.
+
 Every Box still finishes. Pressure only decides when it runs.
 
 ## Disk

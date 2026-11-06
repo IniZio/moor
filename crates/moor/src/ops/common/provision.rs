@@ -192,7 +192,7 @@ pub(crate) fn provision(
     match warm.map_or_else(|| acquire_timed(cx, store, id, &req), Ok) {
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
-            record_acquired(store, id, &got)?;
+            record_acquired(store, id, &got, (entry == Entry::Stay).then_some(&started))?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
             let repo = started.repo.as_ref();

@@ -8,6 +8,7 @@ impl From<ExtraEvent> for Event {
     fn from(e: ExtraEvent) -> Self {
         match e {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
+            ExtraEvent::DiskLost => Self::DiskLost,
             ExtraEvent::Ran {
                 run,
                 exit,

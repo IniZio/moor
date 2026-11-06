@@ -11,6 +11,8 @@ pub enum ExtraEvent {
         /// The driver's reason.
         reason: String,
     },
+    /// The Box's machine was gone and a new one replaced it, without the old disk.
+    DiskLost,
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.

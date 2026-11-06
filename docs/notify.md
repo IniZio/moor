@@ -90,6 +90,7 @@ removed and added again. A webhook can name others that the controller stores:
 | `launch_timed_out` | The agent did not start in time. |
 | `relaunch_capped` | The agent ended too often, so moor does not start it again. |
 | `box_failed` | The machine for the Box could not be made. |
+| `disk_lost` | The machine of a Box that had done work was gone, so a new one with an empty disk replaced it. Anything not pushed is lost. |
 | `agent_stalled` | The agent reported busy, then sent no report for 10 minutes while no `moor run` was in flight. Sent once per stall. |
 | `node_disk_low` | The disk of a node the owner has a Box on fell below the free space moor keeps for another Box. Sent once per owner per crossing, on one Box, with `node`, `free_mib` and `total_mib` in `data`. See [nodes](nodes.md#disk). |
 | `node_disk_recovered` | That node's free disk climbed back past its floor and margin. |

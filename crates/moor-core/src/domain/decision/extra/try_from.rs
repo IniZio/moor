@@ -11,6 +11,7 @@ impl TryFrom<Event> for ExtraEvent {
     fn try_from(e: Event) -> Result<Self, Event> {
         match e {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
+            Event::DiskLost => Ok(Self::DiskLost),
             Event::Ran {
                 run,
                 exit,

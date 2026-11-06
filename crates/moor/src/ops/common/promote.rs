@@ -3,8 +3,9 @@
 use std::time::Duration;
 
 use moor_core::config::{BoxSettings, Flags};
-use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::Decision;
 use moor_core::name::NodeName;
 use moor_core::{BoxId, BoxName, ErrorKind, Warning};
 
@@ -13,8 +14,10 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
-use crate::ops::common::wake::wake_in_turn;
-use crate::store::Store;
+use crate::ops::common::resume_gate::{room_to_wake, Turn};
+use crate::ops::common::wake::{wait_for_room, wake_in_turn};
+use crate::ops::start::revive_after_wake;
+use crate::store::{BoxRow, Store};
 
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
@@ -77,6 +80,23 @@ fn promote_into(
     Ok(())
 }
 
+/// Gives a Box whose machine vanished while it waited a new one, once its node has room, and
+/// brings its agent back as a wake would.
+fn replace_machine(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+) -> Result<(), CommandError> {
+    if let Some(reason) = room_to_wake(cx, store, row, Turn::Reached)? {
+        return Err(wait_for_room(store, row, reason)?);
+    }
+    store.apply(Decision::new(row.id).lifecycle(BoxLifecycleInput::Wake))?;
+    provision(cx, store, row.id, Entry::Stay, cfg)?;
+    revive_after_wake(cx, store, row.id)?;
+    Ok(())
+}
+
 /// What promoting one waiting Box came to.
 enum Promotion {
     /// It left Pending.
@@ -114,8 +134,14 @@ fn promote_one(
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
+    let gone = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Gone);
     let started = if asleep {
         wake_in_turn(cx, store, &row).map(|_| ())
+    } else if gone {
+        replace_machine(cx, store, &row, cfg)
     } else {
         provision(cx, store, id, Entry::Waiting, cfg).map(|_| ())
     };
