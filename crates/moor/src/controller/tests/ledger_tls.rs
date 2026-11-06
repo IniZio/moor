@@ -1,6 +1,7 @@
 //! The ledger's TLS listener: it answers the shared egress Proxy that checks the controller's
-//! certificate and presents the egress key, serves a machine runner presenting the service key
-//! as the runner socket does, refuses anything else, and stays up through a drain.
+//! certificate, presents a client certificate from the ledger CA and the egress key, serves a
+//! machine runner presenting a client certificate from that CA and the service key as the
+//! runner socket does, refuses anything else, and stays up through a drain.
 #![allow(clippy::panic, reason = "test assertions")]
 #![allow(
     clippy::indexing_slicing,
@@ -17,24 +18,32 @@ use std::time::Duration;
 use moor_client::tls::RunnerPki;
 use moor_client::{Client, ClientError};
 use moor_core::request::Request;
-use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType};
+use rcgen::{
+    BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
+};
+use rustls::pki_types::pem::PemObject as _;
+use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use serde_json::Value;
 
 use super::{config, env_with, Buf};
 use crate::controller::drain::Drain;
 use crate::controller::{start, Running, Sink};
-use crate::proxy::ledger::{EgressLedger, Endpoint, LedgerError};
+use crate::proxy::ledger::{EgressLedger, Endpoint, LedgerError, TlsFiles};
 
 const KEY: &str = "egress-key";
 const SERVICE_KEY: &str = "service-key";
 
 /// Writes a CA as `<name>-ca.pem` and, when `leaf` is set, a certificate it signed for
-/// 127.0.0.1 as `<name>.pem` with its key as `<name>.key`; returns the CA's path.
+/// 127.0.0.1 as `<name>.pem` with its key as `<name>.key`, and a client certificate as
+/// `<name>-client.pem` with its key as `<name>-client.key`; returns the CA's path.
 fn pki(dir: &Path, name: &str, leaf: bool) -> PathBuf {
     let ca_key = KeyPair::generate().unwrap();
     let mut ca = CertificateParams::default();
     ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    ca.distinguished_name
+        .push(DnType::CommonName, format!("{name} CA"));
     let ca_cert = ca.self_signed(&ca_key).unwrap();
     let ca_path = dir.join(format!("{name}-ca.pem"));
     std::fs::write(&ca_path, ca_cert.pem()).unwrap();
@@ -46,6 +55,12 @@ fn pki(dir: &Path, name: &str, leaf: bool) -> PathBuf {
         let cert = params.signed_by(&key, &issuer).unwrap();
         std::fs::write(dir.join(format!("{name}.pem")), cert.pem()).unwrap();
         std::fs::write(dir.join(format!("{name}.key")), key.serialize_pem()).unwrap();
+        let key = KeyPair::generate().unwrap();
+        let cert = CertificateParams::default()
+            .signed_by(&key, &issuer)
+            .unwrap();
+        std::fs::write(dir.join(format!("{name}-client.pem")), cert.pem()).unwrap();
+        std::fs::write(dir.join(format!("{name}-client.key")), key.serialize_pem()).unwrap();
     }
     ca_path
 }
@@ -53,13 +68,18 @@ fn pki(dir: &Path, name: &str, leaf: bool) -> PathBuf {
 /// The config of a controller serving the ledger on TLS at 127.0.0.1 with `pki`'s `ctl` files,
 /// after `extra`.
 fn tls_config(dir: &Path, extra: &str) -> PathBuf {
-    let (cert, key) = (dir.join("ctl.pem"), dir.join("ctl.key"));
+    let (cert, key, ca) = (
+        dir.join("ctl.pem"),
+        dir.join("ctl.key"),
+        dir.join("ctl-ca.pem"),
+    );
     config(
         dir,
         &format!(
-            "{extra}ledger_tls:\n  listen: 127.0.0.1:0\n  cert: {}\n  key: {}\n",
+            "{extra}ledger_tls:\n  listen: 127.0.0.1:0\n  cert: {}\n  key: {}\n  client_ca: {}\n",
             cert.display(),
-            key.display()
+            key.display(),
+            ca.display()
         ),
     )
 }
@@ -88,9 +108,26 @@ fn started_with(
     (running, addr, ca)
 }
 
-/// The TLS ledger at `addr`, checked against `ca`.
+/// The TLS ledger at `addr`, checked against `ca`, dialled with the client certificate `pki`
+/// wrote for `client`.
+fn endpoint_as(addr: SocketAddr, ca: &Path, client: &str) -> Endpoint {
+    let dir = ca.parent().expect("dir");
+    let (cert, key) = (
+        dir.join(format!("{client}-client.pem")),
+        dir.join(format!("{client}-client.key")),
+    );
+    let files = TlsFiles {
+        ca,
+        cert: &cert,
+        key: &key,
+    };
+    Endpoint::parse(&format!("tls://{addr}"), Some(files)).expect("endpoint")
+}
+
+/// The TLS ledger at `addr`, checked against `ca`, dialled with the controller CA's client
+/// certificate.
 fn endpoint(addr: SocketAddr, ca: &Path) -> Endpoint {
-    Endpoint::parse(&format!("tls://{addr}"), Some(ca)).expect("endpoint")
+    endpoint_as(addr, ca, "ctl")
 }
 
 /// The first line the controller answers `hello` with over TLS.
@@ -114,6 +151,51 @@ fn the_egress_proxy_with_the_ca_and_key_is_answered_over_tls() {
     serve(running);
     let ledger = EgressLedger::at(endpoint(addr, &ca), KEY.to_owned());
     assert_eq!(ledger.token_box("no-such-token"), Ok(None));
+    let awake = ledger.awake_tokens();
+    assert!(awake.is_ok(), "the warm pass is answered: {awake:?}");
+}
+
+#[test]
+fn a_connect_without_a_client_certificate_is_refused_in_the_handshake() {
+    let dir = tempfile::tempdir().unwrap();
+    let (running, addr, ca) = started(&dir, "");
+    serve(running);
+    let mut roots = RootCertStore::empty();
+    for cert in CertificateDer::pem_file_iter(&ca).unwrap() {
+        roots.add(cert.unwrap()).unwrap();
+    }
+    let config =
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+    let conn = ClientConnection::new(Arc::new(config), ServerName::try_from("127.0.0.1").unwrap())
+        .unwrap();
+    let sock = TcpStream::connect(addr).unwrap();
+    sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let tls = StreamOwned::new(conn, sock);
+    assert!(refusal(tls).contains("CertificateRequired"));
+}
+
+#[test]
+fn a_client_certificate_another_ca_signed_is_refused_in_the_handshake() {
+    let dir = tempfile::tempdir().unwrap();
+    let (running, addr, ca) = started(&dir, "");
+    serve(running);
+    pki(dir.path(), "stranger", true);
+    let at = endpoint_as(addr, &ca, "stranger");
+    assert!(refusal(at.dial(Duration::from_secs(5)).expect("dial")).contains("UnknownCA"));
+}
+
+/// The alert the controller ends the handshake with, read before the client says anything so
+/// no write races the close.
+fn refusal(mut tls: impl std::io::Read) -> String {
+    let mut byte = [0; 1];
+    match tls.read(&mut byte) {
+        Err(e) => e.to_string(),
+        Ok(n) => panic!("the controller kept the connection and sent {n} bytes"),
+    }
 }
 
 #[test]
@@ -252,11 +334,10 @@ fn runner_asks(
     request: &str,
 ) -> Result<Value, ClientError> {
     let dir = ca.parent().expect("pki dir");
-    pki(dir, "runner", true);
     let files = RunnerPki {
         ca: ca.to_owned(),
-        cert: dir.join("runner.pem"),
-        key: dir.join("runner.key"),
+        cert: dir.join("ctl-client.pem"),
+        key: dir.join("ctl-client.key"),
     };
     let client = Client::runner(&format!("tls://{addr}"), &files, key).expect("client");
     let request: Request = serde_json::from_str(request).expect("request");

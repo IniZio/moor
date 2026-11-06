@@ -71,16 +71,17 @@ fn drain_timeout_parses_and_defaults_to_ten_minutes() {
 }
 
 #[test]
-fn ledger_tls_parses_its_address_cert_and_key() {
+fn ledger_tls_parses_its_address_cert_key_and_client_ca() {
     let c = parse_controller(
         "c.yaml",
-        "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /tls/tls.crt\n  key: /tls/tls.key\n",
+        "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /tls/tls.crt\n  key: /tls/tls.key\n  client_ca: /tls/ca.pem\n",
     )
     .unwrap_or_else(|e| panic!("{e}"));
     let tls = c.ledger_tls.unwrap_or_else(|| panic!("no ledger_tls"));
     assert_eq!(tls.listen.to_string(), "0.0.0.0:7443");
     assert_eq!(tls.cert, std::path::Path::new("/tls/tls.crt"));
     assert_eq!(tls.key, std::path::Path::new("/tls/tls.key"));
+    assert_eq!(tls.client_ca, std::path::Path::new("/tls/ca.pem"));
     assert_eq!(ControllerConfig::default().ledger_tls, None);
 }
 
@@ -88,15 +89,19 @@ fn ledger_tls_parses_its_address_cert_and_key() {
 fn ledger_tls_needs_every_key_and_a_socket_address() {
     for (text, path) in [
         (
-            "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /c\n",
+            "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /c\n  client_ca: /a\n",
             "ledger_tls",
         ),
         (
-            "ledger_tls:\n  listen: ledger\n  cert: /c\n  key: /k\n",
+            "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /c\n  key: /k\n",
+            "ledger_tls",
+        ),
+        (
+            "ledger_tls:\n  listen: ledger\n  cert: /c\n  key: /k\n  client_ca: /a\n",
             "ledger_tls.listen",
         ),
         (
-            "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /c\n  key: /k\n  ca: /a\n",
+            "ledger_tls:\n  listen: 0.0.0.0:7443\n  cert: /c\n  key: /k\n  client_ca: /a\n  ca: /a\n",
             "ledger_tls",
         ),
     ] {
