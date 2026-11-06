@@ -207,9 +207,10 @@ fn a_second_interrupt_exits_130_before_the_controller_answers() {
 /// Output large enough that a client holding it would show in its peak memory.
 const BIG: usize = 64 * 1024 * 1024;
 
-/// Peak memory a client may reach while it streams [`BIG`] bytes: about 10 MiB above what the
-/// client peaks at with a 64 KiB output, and half of `BIG`.
-const PEAK_KB: u64 = 32 * 1024;
+/// How far a client's peak memory may grow past its peak after the first chunk while it streams
+/// the rest of [`BIG`]: a quarter of `BIG`, so a client holding the output fails and the size of
+/// the moor binary does not matter.
+const GROWTH_KB: u64 = 16 * 1024;
 
 /// Byte `i` of the big output.
 fn pattern(i: usize) -> u8 {
@@ -224,41 +225,22 @@ fn peak_kb(pid: u32) -> u64 {
 }
 
 /// What the controller saw before it answered: whether the client had printed every byte,
-/// and the client's peak memory.
+/// and the client's peak memory after the first chunk and after the last.
 struct BeforeAnswer {
     printed_all: bool,
+    first_kb: u64,
     peak_kb: u64,
 }
 
-#[test]
-fn large_run_output_streams_with_bounded_client_memory() {
-    let (_root, socket) = socket();
-    let (pid_tx, pid_rx) = mpsc::channel::<u32>();
-    let (printed_tx, printed_rx) = mpsc::channel::<()>();
-    let (seen_tx, seen_rx) = mpsc::channel::<BeforeAnswer>();
-    let server = serve_once(&socket, move |stream, id| {
-        let piece: Vec<u8> = (0..BYTES_MAX).map(pattern).collect();
-        for _ in 0..BIG / BYTES_MAX {
-            write_bytes(stream, id, &piece).unwrap();
-        }
-        let pid = pid_rx.recv().unwrap();
-        let printed_all = printed_rx.recv_timeout(Duration::from_secs(20)).is_ok();
-        seen_tx
-            .send(BeforeAnswer {
-                printed_all,
-                peak_kb: peak_kb(pid),
-            })
-            .unwrap();
-    });
-    let mut child = moor(&socket, &["run", "foo", "--", "cat", "big"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(ChildGuard::new)
-        .unwrap();
-    pid_tx.send(child.id()).unwrap();
-    let mut stdout = child.stdout.take().unwrap();
-    let reader = thread::spawn(move || {
+/// Reads the big output from `stdout` on a thread of its own, signalling `first` once the first
+/// chunk is in and `printed` once all of it is; the bytes read and the first byte that did not
+/// follow [`pattern`].
+fn read_big(
+    mut stdout: std::process::ChildStdout,
+    first: mpsc::Sender<()>,
+    printed: mpsc::Sender<()>,
+) -> thread::JoinHandle<(usize, Option<usize>)> {
+    thread::spawn(move || {
         let mut buf = vec![0; 1 << 16];
         let mut total = 0;
         let mut mismatch = None;
@@ -272,21 +254,60 @@ fn large_run_output_streams_with_bounded_client_memory() {
                     mismatch = Some(total + k);
                 }
             }
+            if total < BYTES_MAX && total + n >= BYTES_MAX {
+                first.send(()).unwrap();
+            }
             total += n;
             if total == BIG {
                 // The controller stops waiting after a while; a late signal has no reader.
-                printed_tx.send(()).ok();
+                printed.send(()).ok();
             }
         }
+    })
+}
+
+#[test]
+fn large_run_output_streams_with_bounded_client_memory() {
+    let (_root, socket) = socket();
+    let (pid_tx, pid_rx) = mpsc::channel::<u32>();
+    let (first_tx, first_rx) = mpsc::channel::<()>();
+    let (printed_tx, printed_rx) = mpsc::channel::<()>();
+    let (seen_tx, seen_rx) = mpsc::channel::<BeforeAnswer>();
+    let server = serve_once(&socket, move |stream, id| {
+        let piece: Vec<u8> = (0..BYTES_MAX).map(pattern).collect();
+        let pid = pid_rx.recv().unwrap();
+        write_bytes(stream, id, &piece).unwrap();
+        first_rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        let first_kb = peak_kb(pid);
+        for _ in 1..BIG / BYTES_MAX {
+            write_bytes(stream, id, &piece).unwrap();
+        }
+        let printed_all = printed_rx.recv_timeout(Duration::from_secs(20)).is_ok();
+        seen_tx
+            .send(BeforeAnswer {
+                printed_all,
+                first_kb,
+                peak_kb: peak_kb(pid),
+            })
+            .unwrap();
     });
+    let mut child = moor(&socket, &["run", "foo", "--", "cat", "big"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(ChildGuard::new)
+        .unwrap();
+    pid_tx.send(child.id()).unwrap();
+    let reader = read_big(child.stdout.take().unwrap(), first_tx, printed_tx);
     let seen = seen_rx.recv_timeout(Duration::from_secs(60)).unwrap();
     assert!(
         seen.printed_all,
         "the client printed the output only at the end"
     );
     assert!(
-        seen.peak_kb < PEAK_KB,
-        "client peak memory {} kB while streaming {BIG} bytes",
+        seen.peak_kb - seen.first_kb < GROWTH_KB,
+        "client peak memory grew from {} kB to {} kB while streaming {BIG} bytes",
+        seen.first_kb,
         seen.peak_kb
     );
     assert_eq!(child.wait().unwrap().code(), Some(EXIT));
