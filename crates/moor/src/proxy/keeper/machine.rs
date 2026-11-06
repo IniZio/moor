@@ -12,8 +12,9 @@ use super::link::{keep, ForwardFailed, MachineLink, Via};
 use super::Kept;
 use crate::store::{HeldMachine, MachineWake};
 
-/// A held machine's id and the runner that holds its link.
-pub(super) type Reach = (i64, Result<Runner, String>);
+/// A held machine's id, the runner its link row names, and that runner with its name looked up
+/// for dialing.
+pub(super) type Reach = (i64, Result<(Runner, Runner), String>);
 
 /// The forwards to the attached machine and whether their last open failed.
 #[derive(Default)]
@@ -75,20 +76,19 @@ impl Kept {
         if slot.opened != wanted {
             slot.link = None;
         }
-        // Looked up here only when the machine was granted during this tick.
-        let runner = match reach {
-            Some((id, runner)) if id == enrolled => runner,
-            _ => self.reach(enrolled),
-        };
-        let now = runner.as_ref().ok();
+        // Nothing is looked up under the busy lock: a machine the tick could not read before it
+        // opens on the next tick.
+        let (_, runner) = reach.filter(|(id, _)| *id == enrolled)?;
+        let now = runner.as_ref().ok().map(|(named, _)| named);
         let fresh = !slot.link.as_mut().is_some_and(|l| l.holds(now));
         let opened = keep(&mut slot.link, now, || {
-            let runner = runner.as_ref().map_err(|error| ForwardFailed {
+            let (named, dialed) = runner.as_ref().map_err(|error| ForwardFailed {
                 port: None,
                 error: error.clone(),
             })?;
             let via = Via {
-                runner,
+                named,
+                dialed,
                 box_id: self.box_id.get(),
                 machine_id: enrolled,
             };
@@ -113,12 +113,8 @@ impl Kept {
     /// slow name lookup holds up no `end` or park; none when the Box holds no machine.
     pub(super) fn reach_machine(&self) -> Option<Reach> {
         let id = self.deps.store.box_machine(self.box_id).ok()??.machine_id;
-        Some((id, self.reach(id)))
-    }
-
-    /// The runner holding machine `id`'s link, its name looked up.
-    fn reach(&self, id: i64) -> Result<Runner, String> {
-        self.deps.runners.runner(id).and_then(Runner::looked_up)
+        let named = self.deps.runners.runner(id);
+        Some((id, named.and_then(|n| Ok((n.clone(), n.looked_up()?)))))
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.
