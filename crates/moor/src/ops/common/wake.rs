@@ -33,13 +33,19 @@ use crate::store::{BoxRow, Store};
 /// workdir, nothing is applied and the Box and machine stay Asleep, so the next
 /// call tries both again.
 /// `Ok(true)` when it woke anything. The Proxy tunnel stays parked and no agent
-/// is relaunched; close uses this since it needs neither.
+/// is relaunched.
 pub(crate) fn wake_box_if_asleep(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
 ) -> Result<bool, CommandError> {
     wake(cx, store, row, Turn::JoinsQueue).map(|w| w.any)
+}
+
+/// Like `wake_box_if_asleep` for a close, which needs neither tunnel nor agent, and which refuses
+/// when the Box does not fit now, leaving it as it was.
+pub(crate) fn wake_to_close(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    wake(cx, store, row, Turn::OnlyIfRoom).map(|w| w.any)
 }
 
 /// Like `wake_box_if_asleep`, then restores the tunnel and relaunches a gone agent.
@@ -163,7 +169,10 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
             if let Some(reason) = room_to_wake(cx, store, row, turn)? {
-                return Err(wait_for_room(store, row, reason)?);
+                return Err(match turn {
+                    Turn::OnlyIfRoom => CommandError::new(ErrorKind::Refused, reason),
+                    Turn::Reached | Turn::JoinsQueue => wait_for_room(store, row, reason)?,
+                });
             }
             cx.driver().wake(handle)?;
             if b.workdir

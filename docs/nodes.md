@@ -191,8 +191,9 @@ Nothing makes room for the head except what already frees memory: idle Boxes are
 suspended for it and working ones finish. So if only asleep Boxes remain and other
 work on the host leaves too little memory, the head waits there, with its reason
 and place, and every Box behind it waits too, until the host has room or someone
-closes the head. Closing an asleep Box wakes it first, so such a close waits in
-the same line.
+closes the head. Closing an asleep Box wakes it first to check for unpushed work.
+That wake takes no place in the queue: when the Box does not fit now, the close
+fails, the Box stays asleep, and no other Box is suspended for it.
 
 ## Choosing a node
 

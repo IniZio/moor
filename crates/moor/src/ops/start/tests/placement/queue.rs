@@ -221,3 +221,51 @@ fn a_box_that_just_resumed_is_not_picked_again_until_it_settles() {
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(states(&w, &[a, b, newest]), [Ready, Pending, Ready]);
 }
+
+#[test]
+fn a_close_that_cannot_wake_a_box_leaves_it_asleep_and_asks_nothing_of_the_node() {
+    use moor_core::domain::box_state::BoxLifecycle::Asleep;
+    use moor_core::domain::boxes::BoxState;
+    let (w, hv) = live_world(32_768);
+    let shut = asleep(&w, "shut", CEILING);
+    let other = started(&w, "other");
+    idle(&w, other);
+    let (w, _) = agents_report(w, &[other], &[]);
+    tick(&w, hv, with_free(8192), 0, 0);
+    let store = w.cx.store().unwrap();
+    let before = store.box_row(shut).unwrap().unwrap();
+    let req = CloseReq {
+        target: before.name.clone().into(),
+        force: false,
+    };
+    let refused = close::run(&w.cx, &req).unwrap_err();
+    let said = refused.error.to_string();
+    assert!(said.contains("waiting for capacity on hv"), "{said}");
+    assert!(!refused.hints.iter().any(|h| h.contains("on its own")));
+    assert_eq!(lifecycle(&w, shut), Asleep);
+    assert_eq!(lifecycle(&w, other), Ready, "nothing suspended for a close");
+    tick(&w, hv, with_free(8192), 0, 0);
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(lifecycle(&w, other), Ready, "no demand on later reports");
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(lifecycle(&w, shut), Asleep, "no wake on its own");
+    let after = store.box_row(shut).unwrap().unwrap();
+    assert_eq!(after.session, before.session);
+    assert_eq!(after.state_reason, before.state_reason);
+    assert_eq!(after.boxed.map(|b| b.state), Some(BoxState::Asleep));
+}
+
+#[test]
+fn a_close_with_room_still_wakes_and_closes_the_box() {
+    use moor_core::domain::box_state::BoxLifecycle::Closed;
+    let (w, hv) = live_world(32_768);
+    let shut = asleep(&w, "shut", 1024);
+    tick(&w, hv, 32_768, 0, 0);
+    let name = w.cx.store().unwrap().box_row(shut).unwrap().unwrap().name;
+    let req = CloseReq {
+        target: name.into(),
+        force: true,
+    };
+    close::run(&w.cx, &req).unwrap();
+    assert_eq!(lifecycle(&w, shut), Closed);
+}
