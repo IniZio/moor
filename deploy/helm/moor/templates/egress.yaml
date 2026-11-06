@@ -1,0 +1,133 @@
+{{- if .Values.egress.enabled }}
+{{- $uid := int .Values.controller.uid -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-egress
+  labels: {{- include "moor.egressLabels" . | nindent 4 }}
+type: Opaque
+stringData:
+  egress-key: {{ required "egress.key is required when egress.enabled" .Values.egress.key | quote }}
+  ledger-ca.pem: {{ required "egress.ledgerTls.ca is required when egress.enabled" .Values.egress.ledgerTls.ca | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-egress
+  labels: {{- include "moor.egressLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.egress.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "moor.egressLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "moor.egressLabels" . | nindent 8 }}
+      annotations:
+        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca | toJson | sha256sum | quote }}
+        {{- range $k, $v := .Values.podAnnotations }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      hostUsers: false
+      automountServiceAccountToken: false
+      # Open tunnels get the whole --grace to finish before Kubernetes kills the pod.
+      terminationGracePeriodSeconds: {{ add .Values.egress.graceSecs 30 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $uid }}
+        runAsGroup: {{ $uid }}
+        fsGroup: {{ $uid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: egress
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command: [moor, proxy, serve-egress]
+          args:
+            - --state-dir=/var/lib/moor/egress-state
+            - --listen=0.0.0.0:{{ .Values.egress.port }}
+            - --ledger=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+            - --ledger-ca=/var/lib/moor/egress/ledger-ca.pem
+            - --grace={{ .Values.egress.graceSecs }}
+          env:
+            - name: MOOR_EGRESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: egress-key }
+          ports:
+            - { name: egress, containerPort: {{ .Values.egress.port }} }
+          readinessProbe:
+            httpGet: { path: /ready, port: egress }
+            periodSeconds: 5
+          {{- with .Values.egress.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Only the CA and the key: never the database URL, the vault key or provider keys.
+          volumeMounts:
+            - { name: egress-secrets, mountPath: /var/lib/moor/egress, readOnly: true }
+            - { name: egress-state, mountPath: /var/lib/moor/egress-state }
+      volumes:
+        - name: egress-secrets
+          secret:
+            secretName: {{ .Release.Name }}-egress
+            defaultMode: 0440
+            items:
+              - { key: ledger-ca.pem, path: ledger-ca.pem }
+        - name: egress-state
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-egress
+  labels: {{- include "moor.egressLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "moor.egressLabels" . | nindent 4 }}
+  ports:
+    - { name: egress, port: {{ .Values.egress.port }}, targetPort: egress }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ledger
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "moor.labels" . | nindent 4 }}
+  ports:
+    - { name: ledger, port: {{ .Values.egress.ledgerPort }}, targetPort: ledger }
+---
+# The ledger answers only the egress key, and only the egress pods reach its port. The other
+# controller pod ports stay open to anything that reached them before.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-ledger
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "moor.labels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "moor.egressLabels" . | nindent 14 }}
+      ports:
+        - { port: ledger, protocol: TCP }
+    {{- if or .Values.gate.enabled .Values.runner.enabled }}
+    - ports:
+        {{- if .Values.gate.enabled }}
+        - { port: gate, protocol: TCP }
+        {{- end }}
+        {{- if .Values.runner.enabled }}
+        - { port: agents, protocol: TCP }
+        {{- end }}
+    {{- end }}
+{{- end }}

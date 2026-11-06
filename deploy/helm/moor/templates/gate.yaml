@@ -47,6 +47,14 @@ spec:
                 name: {{ $.Release.Name }}-gate
                 port: { name: gate }
           {{- end }}
+          {{- if .Values.egress.enabled }}
+          - path: /egress
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-egress
+                port: { name: egress }
+          {{- end }}
           {{- if .Values.runner.enabled }}
           - path: /machines/link
             pathType: Prefix

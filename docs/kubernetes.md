@@ -83,6 +83,51 @@ to turn on:
   enroll through the gate.
 - `controller.nodes` and `controller.defaultNode` declare shared
   [nodes](nodes.md).
+- `egress.enabled` moves the shared egress Proxy out of the controller's pod.
+  Read [The egress Proxy](#the-egress-proxy).
+
+## The egress Proxy
+
+Every Box's credential hosts go through one shared egress Proxy. By default the
+controller runs it inside its own pod, so each upgrade cuts every Box's egress
+until the new pod is up.
+
+`egress.enabled` runs the Proxy as the Deployment `<release>-egress`. It has
+two replicas, rolled one at a time, and each gives open tunnels
+`egress.graceSecs` (300) to finish. Boxes dial it at `wss://<host>/egress` (`egress.url`
+overrides it), which the gate ingress routes to the Service `<release>-egress`.
+The Proxy reaches the controller's ledger over TLS at
+`<release>-ledger.<namespace>.svc:7443`. A NetworkPolicy opens that port only
+to the egress pods. The egress pods get the egress key and the CA, never the
+database URL, the vault key or the provider keys.
+
+It needs three more secrets, which the chart refuses to render without:
+
+| Key | What it is |
+| --- | --- |
+| `egress.key` | The key Box tokens are signed with: `openssl rand -hex 32`. |
+| `egress.ledgerTls.cert`, `egress.ledgerTls.key` | The certificate the ledger presents, issued for `<release>-ledger.<namespace>.svc`, and its key, in PEM. |
+| `egress.ledgerTls.ca` | The PEM CA that signed it, which the egress pods trust. |
+
+Make the CA and the certificate with openssl, for release `moor` in namespace
+`moor`:
+
+```sh
+name=moor-ledger.moor.svc
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+  -subj "/CN=moor ledger CA" -keyout ca.key -out ca.crt
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -subj "/CN=$name" -keyout ledger.key -out ledger.csr
+openssl x509 -req -in ledger.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+  -extfile <(printf 'subjectAltName=DNS:%s\nextendedKeyUsage=serverAuth\n' "$name") \
+  -out ledger.crt
+```
+
+Put `ledger.crt`, `ledger.key` and `ca.crt` in the values. Keep `ca.key`
+offline until the certificate needs renewing.
+
+The machine runner's service (`machines.service`) is reached only from inside
+the controller's pod. With `egress.enabled`, a Box's requests to it fail.
 
 ## Upgrades
 
