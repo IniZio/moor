@@ -112,6 +112,13 @@ pub struct MachineLinksValue {
     pub links: Vec<crate::request::MachineLink>,
 }
 
+/// Value of `machine-box`: the record got, put or listed; none after a drop or for no record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineBoxValue {
+    /// The records.
+    pub boxes: Vec<crate::request::MachineBox>,
+}
+
 /// Value of `machine-add` and `machine-remove`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineChangeValue {

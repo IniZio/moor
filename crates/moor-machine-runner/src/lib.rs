@@ -88,7 +88,6 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         min_free_gb: config.min_free_gb,
         client: config.controller.clone(),
         timeout: config.hook_timeout,
-        boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
         preparing: Mutex::default(),
         agents: config.agents.clone(),
@@ -278,7 +277,7 @@ impl Runner {
     ) -> Result<Json<MachineInfo>, ErrorData> {
         let caller = Caller::from_headers(&parts.headers)?;
         let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
-        let notice = self.hooks.notice(&caller);
+        let notice = self.hooks.notice(&caller).await;
         Ok(Json(MachineInfo {
             box_id: caller.box_id.get(),
             machine: caller.machine,

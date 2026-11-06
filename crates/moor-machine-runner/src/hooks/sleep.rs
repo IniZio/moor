@@ -6,8 +6,9 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{box_env, open_boxes, read, tail, write, Facts, Hooks, Record};
+use super::{box_env, open_boxes, tail, Facts, Hooks, Record};
 use moor_client::link::ops::Hook;
+use moor_core::request::BoxStage;
 
 use crate::caller::{Caller, Reach};
 use crate::holds::Holds;
@@ -28,8 +29,10 @@ impl Hooks {
     ) -> Result<(), String> {
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
-        let path = self.record(id);
-        let Some(mut record) = read(&path)?.filter(|r| r.prepared && r.suspended_at.is_none())
+        let Some(mut record) = self
+            .load(id)
+            .await?
+            .filter(|r| r.stage == BoxStage::Prepared)
         else {
             return Ok(());
         };
@@ -37,8 +40,10 @@ impl Hooks {
         holds.release_box(id);
         let env = box_env(id, record.slot, &record.facts);
         self.hook(id, &record.reach, Hook::Suspend, &env).await?;
-        record.suspended_at = Some(now());
-        write(&path, &record).map_err(|e| format!("could not note the suspend: {e}"))
+        record.stage = BoxStage::Suspended { at: now() };
+        self.keep(id, &record)
+            .await
+            .map_err(|e| format!("could not note the suspend: {e}"))
     }
 
     /// Makes room for a call of `caller`'s Box on its machine: with less free space than the
@@ -102,15 +107,19 @@ impl Hooks {
                 return Vec::new();
             }
         };
-        let mut found: Vec<(u64, i64)> = self
-            .prepared()
-            .unwrap_or_default()
+        let records = match self.on_machine(target.machine_id).await {
+            Ok(records) => records,
+            Err(e) => {
+                eprintln!("moor-machine-runner: {e}");
+                return Vec::new();
+            }
+        };
+        let mut found: Vec<(u64, i64)> = records
             .into_iter()
-            .filter(|id| *id != except && open.asleep.contains(id))
-            .filter_map(|id| {
-                let record = read(&self.record(id)).ok().flatten()?;
-                let at = record.suspended_at.filter(|_| record.reach == *target)?;
-                Some((at, id))
+            .filter(|(id, _)| *id != except && open.asleep.contains(id))
+            .filter_map(|(id, record)| match record.stage {
+                BoxStage::Suspended { at } => Some((at, id)),
+                BoxStage::Noted | BoxStage::Prepared => None,
             })
             .collect();
         found.sort_unstable();
@@ -124,27 +133,33 @@ impl Hooks {
         let _held = lock
             .try_lock()
             .map_err(|_| "it is being called".to_owned())?;
-        let path = self.record(id);
-        let Some(record) = read(&path)?.filter(|r| r.suspended_at.is_some()) else {
+        let Some(record) = self
+            .load(id)
+            .await?
+            .filter(|r| matches!(r.stage, BoxStage::Suspended { .. }))
+        else {
             return Err("it is no longer suspended".to_owned());
         };
         self.release_files(id, &record).await?;
         let evicted = Record {
             facts: Facts::new(),
-            prepared: false,
-            suspended_at: None,
+            stage: BoxStage::Noted,
             evicted: true,
             ..record
         };
-        write(&path, &evicted).map_err(|e| format!("could not note the eviction: {e}"))
+        self.keep(id, &evicted)
+            .await
+            .map_err(|e| format!("could not note the eviction: {e}"))
     }
 
     /// Before a sync: makes room, and prepares a Box that was suspended or moved slot.
     pub(crate) async fn before_sync(&self, caller: &Caller) -> Result<(), String> {
         self.guard(caller).await?;
         self.note(caller).await?;
-        let stale = read(&self.record(caller.box_id.get()))?
-            .is_some_and(|r| r.prepared && !r.is_current(caller));
+        let stale = self
+            .load(caller.box_id.get())
+            .await?
+            .is_some_and(|r| r.stage != BoxStage::Noted && !r.is_current(caller));
         if stale {
             self.facts(caller).await?;
         }
@@ -156,23 +171,24 @@ impl Hooks {
         let id = caller.box_id.get();
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
-        let path = self.record(id);
-        match read(&path)? {
-            Some(record) if record.evicted => write(
-                &path,
-                &Record {
-                    evicted: false,
-                    ..record
-                },
-            )
-            .map_err(|e| format!("could not keep the Box's record: {e}")),
+        match self.load(id).await? {
+            Some(record) if record.evicted => self
+                .keep(
+                    id,
+                    &Record {
+                        evicted: false,
+                        ..record
+                    },
+                )
+                .await
+                .map_err(|e| format!("could not keep the Box's record: {e}")),
             _ => Ok(()),
         }
     }
 
     /// What a Box must know about its files, if they were removed while it slept.
-    pub(crate) fn notice(&self, caller: &Caller) -> Option<String> {
-        let record = read(&self.record(caller.box_id.get())).ok().flatten()?;
+    pub(crate) async fn notice(&self, caller: &Caller) -> Option<String> {
+        let record = self.load(caller.box_id.get()).await.ok().flatten()?;
         record.evicted.then(|| {
             format!(
                 "The files of this Box on {} were removed while it slept to free disk space. \

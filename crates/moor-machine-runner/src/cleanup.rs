@@ -57,7 +57,7 @@ async fn sweep(client: &Client, agents: &Agents, hooks: &Hooks) {
         Ok(Err(e)) => return eprintln!("moor-machine-runner: no machine sweep: {e}"),
         Err(e) => return eprintln!("moor-machine-runner: no machine sweep: {e}"),
     };
-    let recorded = match hooks.prepared() {
+    let recorded = match hooks.recorded().await {
         Ok(ids) => ids,
         Err(e) => return eprintln!("moor-machine-runner: no machine sweep: {e}"),
     };

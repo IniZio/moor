@@ -70,6 +70,7 @@ impl Request {
             Self::MachineStatus(_) => "machine-status",
             Self::MachineKeys {} => "machine-keys",
             Self::MachineLinks(_) => "machine-links",
+            Self::MachineBox(_) => "machine-box",
             Self::MachineHold(_) => "machine-hold",
             Self::ProxyLease(_) => "proxy-lease",
             Self::WebhookClaim(_) => "webhook-claim",

@@ -50,8 +50,7 @@ fn sleepy(extra: &[&str]) -> Rig {
 }
 
 fn record(rig: &Rig, id: i64) -> Value {
-    let bytes = std::fs::read(rig.state().join(format!("boxes/{id}.json"))).unwrap();
-    serde_json::from_slice(&bytes).unwrap()
+    rig.record(id).unwrap()
 }
 
 /// Prepares Box 7 and puts it to sleep; waits until it is suspended.
@@ -75,7 +74,7 @@ fn an_asleep_box_is_suspended_once_with_its_facts() {
         [format!("7 0 dev-7 {home}/moor-state/7")]
     );
     eventually("the record is marked", || {
-        record(&rig, 7)["suspended_at"].is_u64()
+        record(&rig, 7)["stage"]["suspended"]["at"].is_u64()
     });
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(lines(&rig.remote.join("suspended")).len(), 1);
@@ -92,7 +91,7 @@ fn a_failed_suspend_is_retried_and_leaves_the_record_unmarked() {
     eventually("the hook ran twice", || {
         lines(&rig.remote.join("suspended")).len() >= 2
     });
-    assert!(record(&rig, 7)["suspended_at"].is_null());
+    assert_eq!(record(&rig, 7)["stage"], "prepared");
 }
 
 #[test]
@@ -134,7 +133,7 @@ fn a_call_after_wake_in_another_slot_prepares_again_with_the_new_ports() {
         "{info}"
     );
     assert_eq!(lines(&rig.remote.join("prepared")), ["7 0", "7 3"]);
-    assert!(record(&rig, 7)["suspended_at"].is_null());
+    assert_eq!(record(&rig, 7)["stage"], "prepared");
     rig.call_with("machine_info", json!({}), &SLOT_3).unwrap();
     assert_eq!(lines(&rig.remote.join("prepared")).len(), 2);
 }
@@ -172,7 +171,7 @@ fn sleep_and_wait(rig: &Rig, id: i64, runs: usize) {
         lines(&rig.remote.join("suspended")).len() >= runs
     });
     eventually("the record is marked", || {
-        record(rig, id)["suspended_at"].is_u64()
+        record(rig, id)["stage"]["suspended"]["at"].is_u64()
     });
     std::thread::sleep(Duration::from_millis(1200));
 }
@@ -197,15 +196,15 @@ fn low_disk_evicts_the_oldest_sleeping_boxes_until_there_is_room() {
             "{id}"
         );
         let kept = record(&rig, id.parse().unwrap());
-        assert_eq!(kept["prepared"], false, "{kept}");
-        assert_eq!(kept["facts"], json!({}), "{kept}");
+        assert_eq!(kept["stage"], "noted", "{kept}");
+        assert_eq!(kept["facts"], "{}", "{kept}");
         assert_eq!(kept["evicted"], true, "{kept}");
     }
     assert!(
         rig.remote.join("moor/9").is_dir(),
         "the newest sleeper stays"
     );
-    assert_eq!(record(&rig, 9)["prepared"], true);
+    assert!(record(&rig, 9)["stage"]["suspended"]["at"].is_u64());
 }
 
 #[test]

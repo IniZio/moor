@@ -1,8 +1,9 @@
 //! Per-Box setup and clean-up on the machine: operator commands the runner runs over ssh.
 //!
 //! `prepare` runs before a Box's first `exec` or `machine_info` and prints the Box's facts,
-//! which the runner keeps in `<state dir>/boxes/<id>.json`; a `sync` leaves a record too. A
-//! sweep takes each Box with a record that the controller no longer lists as open: it runs
+//! which the runner keeps as the Box's record in the controller's store, so another runner that
+//! takes the machine's link reads them; a `sync` leaves a record too. A sweep takes each Box on a
+//! linked machine with a record that the controller no longer lists as open: it runs
 //! `release` if the Box was prepared, removes the Box's copy on the machine, then drops its host
 //! mirror and the record. A failed step keeps everything, so the next call or sweep retries.
 //!
@@ -12,13 +13,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_client::Client;
-use moor_core::request::{Request, ShowReq};
-use serde::{Deserialize, Serialize};
+use moor_core::request::{BoxStage, Request, ShowReq};
 
 use moor_client::link::ops::Hook;
 
@@ -29,6 +29,7 @@ use crate::relay::Relays;
 
 mod reach;
 mod reap;
+mod records;
 mod sleep;
 
 /// What `prepare` printed about a Box, such as `device`.
@@ -45,8 +46,6 @@ pub(crate) struct Hooks {
     pub(crate) client: Client,
     /// How long either may run.
     pub(crate) timeout: Duration,
-    /// Parent of the per-Box records.
-    pub(crate) boxes: PathBuf,
     /// Parent of the per-Box host mirrors, which release removes.
     pub(crate) mirrors: PathBuf,
     /// One lock per Box id, so two calls of a Box never prepare it twice.
@@ -55,40 +54,34 @@ pub(crate) struct Hooks {
     pub(crate) agents: Option<crate::Agents>,
 }
 
-/// What the runner keeps about a prepared Box: where it is, for `release`, and its facts.
-#[derive(Serialize, Deserialize)]
+/// What the runner keeps about a Box it set up: where it is, for `release`, and its facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Record {
     /// How the runner reaches the machine.
-    #[serde(flatten)]
     reach: Reach,
     /// The Box's slot on the machine.
     slot: u16,
     /// What `prepare` printed.
     facts: Facts,
-    /// Whether `prepare` ran; a record a `sync` left has not.
-    prepared: bool,
-    /// When the Box was suspended, in unix seconds; none while it is awake.
-    #[serde(default)]
-    suspended_at: Option<u64>,
+    /// Whether `prepare` ran, and `suspend` since.
+    stage: BoxStage,
     /// Whether the Box's files on the machine were removed while it slept; until its next sync.
-    #[serde(default)]
     evicted: bool,
 }
 
 impl Record {
     /// Whether the facts still hold for `caller`: prepared, awake, and in the same slot.
     fn is_current(&self, caller: &Caller) -> bool {
-        self.prepared && self.suspended_at.is_none() && self.slot == caller.slot
+        self.stage == BoxStage::Prepared && self.slot == caller.slot
     }
 
-    /// A record of a Box that is not suspended and whose files were not evicted.
-    fn new(caller: &Caller, facts: Facts, prepared: bool) -> Self {
+    /// A record of a Box at `stage` whose files were not evicted.
+    fn new(caller: &Caller, facts: Facts, stage: BoxStage) -> Self {
         Self {
             reach: caller.reach.clone(),
             slot: caller.slot,
             facts,
-            prepared,
-            suspended_at: None,
+            stage,
             evicted: false,
         }
     }
@@ -101,8 +94,7 @@ impl Hooks {
         let id = caller.box_id.get();
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
-        let path = self.record(id);
-        let old = read(&path)?;
+        let old = self.load(id).await?;
         if let Some(record) = old.as_ref().filter(|r| r.is_current(caller)) {
             return Ok(record.facts.clone());
         }
@@ -121,9 +113,11 @@ impl Hooks {
                 })?
             }
         };
-        let mut record = Record::new(caller, facts, true);
+        let mut record = Record::new(caller, facts, BoxStage::Prepared);
         record.evicted = old.is_some_and(|r| r.evicted);
-        write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
+        self.keep(id, &record)
+            .await
+            .map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
     }
 
@@ -132,12 +126,13 @@ impl Hooks {
         let id = caller.box_id.get();
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
-        let path = self.record(id);
-        if read(&path)?.is_some() {
+        if self.load(id).await?.is_some() {
             return Ok(());
         }
-        let record = Record::new(caller, Facts::new(), false);
-        write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
+        let record = Record::new(caller, Facts::new(), BoxStage::Noted);
+        self.keep(id, &record)
+            .await
+            .map_err(|e| format!("could not note the Box: {e}"))
     }
 
     /// The lock that keeps two calls of Box `id` from preparing it twice.
@@ -149,11 +144,11 @@ impl Hooks {
         Arc::clone(locks.entry(id).or_default())
     }
 
-    /// Releases every Box with a record that the controller does not list as open, ending its
-    /// relay sessions first, suspends the open ones that sleep, then cleans up Boxes it has no
-    /// record for.
+    /// Releases every Box on a linked machine with a record that the controller does not list as
+    /// open, ending its relay sessions first, suspends the open ones that sleep, then cleans up
+    /// Boxes it has no record for.
     pub(crate) async fn sweep(&self, client: &Client, relays: &Relays, holds: &Holds) {
-        let prepared = match self.prepared() {
+        let prepared = match self.recorded().await {
             Ok(ids) => ids,
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };
@@ -181,46 +176,24 @@ impl Hooks {
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
         relays.end_box(id).await;
-        let path = self.record(id);
-        let Some(record) = read(&path)? else {
+        let Some(record) = self.load(id).await? else {
             return Ok(());
         };
         self.release_files(id, &record).await?;
-        let gone = |r: io::Result<()>| match r {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),
-            _ => Ok(()),
-        };
-        gone(std::fs::remove_dir_all(self.mirrors.join(id.to_string())))?;
-        gone(std::fs::remove_file(&path))
+        match std::fs::remove_dir_all(self.mirrors.join(id.to_string())) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.to_string()),
+            _ => {}
+        }
+        self.forget(id).await
     }
 
     /// Runs `release` for a prepared Box, then removes its copy and state dir on the machine.
     async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
-        if record.prepared {
+        if record.stage != BoxStage::Noted {
             let env = box_env(id, record.slot, &record.facts);
             self.hook(id, &record.reach, Hook::Release, &env).await?;
         }
         self.remove_on_machine(&record.reach, id).await
-    }
-
-    /// The record of Box `id`.
-    fn record(&self, id: i64) -> PathBuf {
-        self.boxes.join(format!("{id}.json"))
-    }
-
-    /// The ids of the Boxes with a record.
-    pub(super) fn prepared(&self) -> io::Result<Vec<i64>> {
-        let entries = match std::fs::read_dir(&self.boxes) {
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            entries => entries?,
-        };
-        let mut ids = Vec::new();
-        for entry in entries {
-            let name = entry?.file_name();
-            let id = name.to_str().and_then(|n| n.strip_suffix(".json"));
-            ids.extend(id.and_then(|n| n.parse::<i64>().ok()));
-        }
-        Ok(ids)
     }
 }
 
@@ -330,27 +303,6 @@ pub(super) fn open_boxes(client: &Client) -> Result<OpenBoxes, String> {
         }
     }
     Ok(open)
-}
-
-/// The record at `path`, or none when there is no file.
-fn read(path: &Path) -> Result<Option<Record>, String> {
-    match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|e| format!("{} is not a Box record: {e}", path.display())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("cannot read {}: {e}", path.display())),
-    }
-}
-
-/// Writes `record` to `path` whole: to a temp file, then renamed over it.
-fn write(path: &Path, record: &Record) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec(record)?)?;
-    std::fs::rename(tmp, path)
 }
 
 /// `out` when it exited 0, else an error quoting its tail.

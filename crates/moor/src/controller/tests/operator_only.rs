@@ -25,6 +25,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
             json!({"cmd": kind})
         }
         "machine-links" => json!({"cmd": kind, "runner": "/run/runner.sock", "links": []}),
+        "machine-box" => json!({"cmd": kind, "op": {"get": {"box_id": 1}}}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),

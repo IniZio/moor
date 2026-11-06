@@ -36,10 +36,15 @@ pub(crate) const LINKS_OPERATOR_ONLY: &str =
 pub(crate) const HOLD_OPERATOR_ONLY: &str =
     "machine-hold is the machine runner's, which is operator-only";
 
+/// The refusal for a `machine-box` from anyone but the runner and the operator: it spans every
+/// user.
+pub(crate) const BOXES_OPERATOR_ONLY: &str =
+    "machine-box keeps every user's machine Box records, which is operator-only";
+
 /// The refusal for any other request on the machine runner's socket.
 pub(crate) const NOT_THE_RUNNERS: &str =
-    "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links \
-     and box-rsync";
+    "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links, \
+     machine-box and box-rsync";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -105,6 +110,7 @@ fn runners(request: &Request) -> Result<(), CommandError> {
         | Request::MachineHold(_)
         | Request::MachineKeys {}
         | Request::MachineLinks(_)
+        | Request::MachineBox(_)
         | Request::BoxRsync(_) => Ok(()),
         _ => Err(CommandError::new(ErrorKind::Refused, NOT_THE_RUNNERS)),
     }
@@ -124,6 +130,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),
         Request::MachineLinks(_) => Some(LINKS_OPERATOR_ONLY),
+        Request::MachineBox(_) => Some(BOXES_OPERATOR_ONLY),
         Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),
         Request::Start(_)
         | Request::StartNeeds(_)

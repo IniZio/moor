@@ -64,14 +64,14 @@ moor-machine-runner --socket <state dir>/runner/runner.sock \
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links` and `box-rsync`. The runner needs no access to the controller's own socket. |
+| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `machine-box` and `box-rsync`. The runner needs no access to the controller's own socket. |
 | `--controller tls://HOST:PORT` | none | The controller's `ledger_tls` listener, in place of `--socket`, for a runner in another pod. It serves the same requests. Needs `--controller-ca`, `--controller-cert`, `--controller-key`, `--service-key` and `--advertise`. |
 | `--controller-ca PEM` | none | The CA that signed the controller's certificate. |
 | `--controller-cert PEM` | `$MOOR_RUNNER_CLIENT_CERT` | The certificate the runner presents to `--controller`, signed by the ledger CA. Required with `--controller`. |
 | `--controller-key PEM` | `$MOOR_RUNNER_CLIENT_KEY` | The private key of `--controller-cert`. Required with `--controller`. |
 | `--service-key KEY` | `$MOOR_MACHINE_SERVICE_KEY` | The key the runner presents to `--controller` and checks on `--links`. |
 | `--advertise ADDR` | `--socket` | The address the runner reports to the controller as holding its machines' links. |
-| `--state-dir` | | Where the runner keeps one host mirror and one record for each Box. |
+| `--state-dir` | | Where the runner keeps one host mirror for each Box. Each Box's record is in the controller's store. |
 | `--listen` | `127.0.0.1:7700` | The address the Proxy routes to. |
 | `--agents ADDR` | none | Where machine agents dial in, at `/machines/link`. Without it, no machine can be reached. |
 | `--links ADDR` | none | Where a controller in another pod reaches the links broker and port forwards, such as `0.0.0.0:7701`. Each connection opens with the service key. Needs `--agents` and `--service-key`. Without it, both are served only on sockets beside `--socket`. |
@@ -284,9 +284,9 @@ anything on stderr. CMD fails if it exits non-zero, runs past
 fails with the tail of its output, and the runner keeps nothing. The Box's next
 call runs CMD again. Two calls of one Box never run it at the same time.
 
-The runner keeps the facts, with the Box's machine and slot, in
-`<state dir>/boxes/<box id>.json`. So a restarted runner does not prepare the
-Box again. `machine_info` returns the facts as `facts`. Every `exec` command
+The runner keeps the facts, with the Box's machine and slot, as the Box's record
+in the controller's store, through `machine-box`. So a restarted runner, or any
+other runner, does not prepare the Box again. `machine_info` returns the facts as `facts`. Every `exec` command
 sees each fact as `MOOR_FACT_<KEY>`. The key is in uppercase, and every
 character that is not a letter or a digit becomes `_`. So `device` is
 `MOOR_FACT_DEVICE`. With no `prepare` hook, the facts are empty and the runner
@@ -297,7 +297,7 @@ same place as `prepare`, with the same variables and the `MOOR_FACT_*`
 variables. A `sync` also leaves a record, so the runner cleans up a Box that
 only synced too. Every `--sweep-secs`, the runner asks the controller for the
 open Boxes, with a `show` with no Box over the same socket. For each recorded
-Box that the controller does not list, the runner does these steps:
+Box on a machine linked to it that the controller does not list, it:
 
 1. Runs release, if the Box was prepared.
 2. Removes `~/moor/<box id>` and `~/moor-state/<box id>` on the machine.
@@ -320,8 +320,8 @@ host stay, and a sweep from a controller that does not say its id stops nothing.
 
 Removing a Box's files and reading the machine's free space are commands the
 runner sends with `exec`, so a machine that Boxes claim runs its agent with
-`--allow-exec`. Files of a Box that the runner has no record of, such as after
-its state dir was lost, stay on the machine until someone removes them.
+`--allow-exec`. Files of a Box that the runner has no record of stay on the machine
+until someone removes them.
 
 `sync` runs `rsync --delete` into `~/moor/<box id>`, so the next sync removes
 anything that prepare puts there. Put per-Box folders, such as a build's
