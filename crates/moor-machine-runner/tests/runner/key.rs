@@ -32,3 +32,19 @@ fn a_runner_without_a_service_key_trusts_the_headers_alone() {
         .call_with("machine_info", json!({}), &with(None))
         .is_ok());
 }
+
+#[test]
+fn a_runner_listening_beyond_loopback_without_a_service_key_refuses_to_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
+        .env_remove("MOOR_MACHINE_SERVICE_KEY")
+        .args(["--listen", "0.0.0.0:0", "--socket"])
+        .arg(dir.path().join("runner.sock"))
+        .arg("--state-dir")
+        .arg(dir.path().join("state"))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{err}");
+    assert!(err.contains("needs --service-key"), "{err}");
+}

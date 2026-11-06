@@ -19,7 +19,7 @@ struct Args {
     listen: SocketAddr,
     /// The key every caller must send in `X-Moor-Service-Key`; set it when `--listen` is not
     /// loopback, so only the egress Proxy holding it can name a Box.
-    #[arg(long, env = "MOOR_MACHINE_SERVICE_KEY", hide_env_values = true)]
+    #[arg(long, env = moor_machine_runner::SERVICE_KEY_ENV, hide_env_values = true)]
     service_key: Option<String>,
     /// Address to accept machine agents' links on, at `/machines/link`; none accepts no links.
     #[arg(long, value_name = "ADDR")]
@@ -229,6 +229,14 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if !args.listen.ip().is_loopback() && args.service_key.as_deref().is_none_or(str::is_empty) {
+        eprintln!(
+            "moor-machine-runner: --listen {} is not loopback, so it needs --service-key or {}",
+            args.listen,
+            moor_machine_runner::SERVICE_KEY_ENV
+        );
+        return ExitCode::FAILURE;
+    }
     let listener = match tokio::net::TcpListener::bind(args.listen).await {
         Ok(l) => l,
         Err(e) => {

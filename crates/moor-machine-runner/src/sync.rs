@@ -79,10 +79,7 @@ pub(crate) fn run(
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let remote = caller.remote_dir();
-    let mut rsync = Command::new("rsync");
-    rsync
-        .args(["-a", "--delete", "--exclude=.git"])
-        .args(exclude.iter().map(|p| format!("--exclude={p}")));
+    let mut rsync = rsync(&exclude);
     let (target, _syncing) = reach(&mut rsync, rsh, caller, &remote)?;
     let out = rsync
         .arg(format!("{}/", mirror.display()))
@@ -126,4 +123,28 @@ fn reach(
         .env(SOCKET_ENV, &rsh.socket);
     let syncing = rsh.syncs.start(caller.box_id.get(), *machine_id, machine);
     Ok((format!("link:{remote}/"), Some(syncing)))
+}
+
+/// The rsync that copies the mirror to the machine, leaving out `exclude`; it and the remote
+/// shell it runs never see the service key.
+fn rsync(exclude: &[String]) -> Command {
+    let mut rsync = Command::new("rsync");
+    rsync
+        .env_remove(crate::SERVICE_KEY_ENV)
+        .args(["-a", "--delete", "--exclude=.git"])
+        .args(exclude.iter().map(|p| format!("--exclude={p}")));
+    rsync
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rsync_never_inherits_the_service_key() {
+        let rsync = super::rsync(&[]);
+        let removed: Vec<_> = rsync.get_envs().filter(|(_, v)| v.is_none()).collect();
+        assert_eq!(
+            removed,
+            [(std::ffi::OsStr::new(crate::SERVICE_KEY_ENV), None)]
+        );
+    }
 }
