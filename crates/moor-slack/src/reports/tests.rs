@@ -523,7 +523,7 @@ fn a_refusal_after_the_run_fired_goes_in_its_thread_even_after_an_earlier_streak
     assert!(said[0].starts_with("top: "));
     assert!(said[1].starts_with("1.0: ") && said[1].contains("repo not found"));
     assert!(
-        said[2].starts_with("100.1: ") && said[2].contains("No Box was started"),
+        said[2].starts_with("100.1: ") && said[2].contains("could not start"),
         "{said:?}"
     );
     assert_repolling_repeats_nothing(dir.path(), &world);
