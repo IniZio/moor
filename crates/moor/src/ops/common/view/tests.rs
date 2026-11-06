@@ -115,7 +115,7 @@ fn box_view_maps_sleep_reason() {
         .unwrap();
     assert_eq!(
         (b.sleep.after.as_deref(), b.sleep.reason),
-        (Some("30m"), None)
+        (Some("5m"), None)
     );
     let fields = Fields {
         box_sleep_reason: Field::Set("provider cannot wake".into()),
@@ -125,7 +125,7 @@ fn box_view_maps_sleep_reason() {
     let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
-    assert_eq!(b.sleep.after.as_deref(), Some("30m"));
+    assert_eq!(b.sleep.after.as_deref(), Some("5m"));
     assert_eq!(b.sleep.reason.as_deref(), Some("provider cannot wake"));
 }
 

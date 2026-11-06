@@ -406,7 +406,7 @@ fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
 
 #[test]
 fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))] {
         let f = idle_with(FakeDriver::new().sleep_kind(kind));
         let v = run(&f.cx, &req()).unwrap();
         assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
