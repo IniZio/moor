@@ -93,9 +93,17 @@ controller runs it inside its own pod, so each upgrade cuts every Box's egress
 until the new pod is up.
 
 `egress.enabled` runs the Proxy as the Deployment `<release>-egress`. It has
-two replicas, rolled one at a time, and each gives open tunnels
-`egress.graceSecs` (300) to finish. Boxes dial it at `wss://<host>/egress` (`egress.url`
-overrides it), which the gate ingress routes to the Service `<release>-egress`.
+two replicas, rolled one at a time, spread across nodes where it can, and kept
+at one or more by a PodDisruptionBudget. Each gives open tunnels
+`egress.graceSecs` (300) to finish. Boxes dial it at `wss://<host>/egress`,
+which the gate ingress routes to the Service `<release>-egress`. Without
+`gate.ingress.enabled`, set `egress.url` to where Boxes reach that Service.
+
+Every ten seconds each replica learns every open Box, its secrets and its
+machine from the ledger. While the controller is away, such as during its own
+upgrade, any replica serves any open Box from those answers. A replica turns
+Ready only after its first answer, so a rollout during a controller upgrade
+waits and the old replicas keep serving.
 The Proxy reaches the controller's ledger over TLS at
 `<release>-ledger.<namespace>.svc:7443`. A NetworkPolicy opens that port only
 to the egress pods. The egress pods get the egress key and the CA, never the
