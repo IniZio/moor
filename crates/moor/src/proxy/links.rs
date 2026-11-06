@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_client::link::broker;
 use moor_client::link::lease::{Answer, Boot, Verb};
@@ -132,13 +133,17 @@ pub(crate) fn dial(
     })
 }
 
-/// A blocking connection to `runner` for `service`, its hello sent.
+/// A blocking connection to `runner` for `service`, its hello sent, given up after `within`.
 ///
 /// # Errors
 /// The runner cannot be reached.
-pub(crate) fn connect(runner: &Runner, service: Service) -> Result<StdConn, String> {
+pub(crate) fn connect(
+    runner: &Runner,
+    service: Service,
+    within: Duration,
+) -> Result<StdConn, String> {
     blocking(async {
-        let conn = runner.connect(service).await?;
+        let conn = runner.connect_within(service, within).await?;
         reach::into_blocking(conn).map_err(|e| e.to_string())
     })
 }
@@ -147,11 +152,14 @@ pub(crate) fn connect(runner: &Runner, service: Service) -> Result<StdConn, Stri
 fn blocking<T: Send>(call: impl Future<Output = Result<T, String>> + Send) -> Result<T, String> {
     std::thread::scope(|s| {
         s.spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
+            let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| e.to_string())?
-                .block_on(call)
+                .map_err(|e| e.to_string())?;
+            let done = runtime.block_on(call);
+            // A name lookup still running on the blocking pool must not hold the caller.
+            runtime.shutdown_background();
+            done
         })
         .join()
         .unwrap_or_else(|_| Err("the links broker call panicked".to_owned()))

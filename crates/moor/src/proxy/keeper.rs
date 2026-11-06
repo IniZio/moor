@@ -233,6 +233,7 @@ impl Kept {
                 return true;
             }
         };
+        let reach = self.reach_machine();
         let busy = lock(&self.busy);
         if self.stopped() {
             return false;
@@ -242,7 +243,7 @@ impl Kept {
             self.sleep_machine();
         } else {
             drop(self.tend_tunnel());
-            self.tend_machine();
+            self.tend_machine(reach);
         }
         drop(busy);
         true

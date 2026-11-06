@@ -13,10 +13,10 @@ use moor_core::seam::driver::{Driver, LocalTunnel};
 use moor_core::seam::proc::Deadline;
 use moor_core::BoxHandle;
 
-use crate::proxy::links::Runners;
-
 /// How long the runner may take to answer.
 const RUNNER_ANSWER: Deadline = Deadline(std::time::Duration::from_secs(30));
+/// How long a connect to the runner may take; a tick waits on it under the keeper's busy lock.
+const RUNNER_CONNECT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Why a machine's forwards are down.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,8 +29,8 @@ pub(crate) struct ForwardFailed {
 
 /// The machine runner a machine's agent links in to, and which machine's forwards to ask for.
 pub(crate) struct Via<'a> {
-    /// The runners, of which the one holding the machine's link serves the forwards.
-    pub(crate) runners: &'a Runners,
+    /// The runner that holds the machine's link, its name already looked up.
+    pub(crate) runner: &'a Runner,
     /// The Box whose ports these are.
     pub(crate) box_id: i64,
     /// The machine's enrolled id.
@@ -43,6 +43,8 @@ pub(crate) struct MachineLink {
     tunnels: Vec<LocalTunnel>,
     /// The connection the runner keeps the agent's listeners up for.
     carrier: StdConn,
+    /// The runner it is open on.
+    runner: Runner,
 }
 
 impl MachineLink {
@@ -78,9 +80,12 @@ impl MachineLink {
             machine_id: via.machine_id,
             ports: forwards,
         };
-        let runner = via.runners.runner(via.machine_id).map_err(failed)?;
-        let carrier = ask_runner(&runner, &req).map_err(failed)?;
-        Ok(Self { tunnels, carrier })
+        let carrier = ask_runner(via.runner, &req).map_err(failed)?;
+        Ok(Self {
+            tunnels,
+            carrier,
+            runner: via.runner.clone(),
+        })
     }
 
     /// True while every tunnel and what serves them still run.
@@ -91,12 +96,18 @@ impl MachineLink {
         );
         carried && self.tunnels.iter().all(|t| t.tunnel.alive())
     }
+
+    /// True while it is alive and open on `now`, the runner the link row names; an unknown
+    /// runner keeps it, so a store hiccup cuts no forwards.
+    pub(crate) fn holds(&mut self, now: Option<&Runner>) -> bool {
+        self.alive() && now.is_none_or(|now| *now == self.runner)
+    }
 }
 
 /// Sends `req` to `runner`; the connection to hold while the forwards are up.
 fn ask_runner(runner: &Runner, req: &Forward) -> Result<StdConn, String> {
     let unreachable = |e: io::Error| format!("the machine runner went away: {e}");
-    let mut conn = crate::proxy::links::connect(runner, Service::Forwards)?;
+    let mut conn = crate::proxy::links::connect(runner, Service::Forwards, RUNNER_CONNECT)?;
     conn.set_read_timeout(Some(RUNNER_ANSWER.0))
         .map_err(unreachable)?;
     let mut line = serde_json::to_vec(req).map_err(|e| e.to_string())?;
@@ -116,15 +127,17 @@ fn ask_runner(runner: &Runner, req: &Forward) -> Result<StdConn, String> {
     }
 }
 
-/// One keeper tick: a link with a dead child is dropped and opened again once.
+/// One keeper tick: a link with a dead child, or open on another runner than `now`, is dropped
+/// and opened again once.
 ///
 /// # Errors
 /// Why the reopened forwards failed; the link is then gone until the next tick.
 pub(crate) fn keep(
     link: &mut Option<MachineLink>,
+    now: Option<&Runner>,
     open: impl FnOnce() -> Result<MachineLink, ForwardFailed>,
 ) -> Result<(), ForwardFailed> {
-    if link.as_mut().is_some_and(MachineLink::alive) {
+    if link.as_mut().is_some_and(|l| l.holds(now)) {
         return Ok(());
     }
     *link = None;

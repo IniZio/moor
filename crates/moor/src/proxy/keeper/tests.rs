@@ -2,6 +2,7 @@
 //! reopened when it dies, is parked while the Box sleeps, and goes with the Box.
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -13,6 +14,8 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::request::{MachineLink, RunnerAddr};
+use moor_core::seam::clock::Clock as _;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::user::Identity;
@@ -53,17 +56,19 @@ impl World {
 
     /// A keeper that tunnels to the shared Proxy's socket when `tunnels`.
     fn kept(&self, tunnels: bool) -> Kept {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+        let runners = Runners::new(self.dir.path(), None, clock, None);
+        self.kept_via(tunnels, runners)
+    }
+
+    /// A keeper that reaches machines through `runners`.
+    fn kept_via(&self, tunnels: bool, runners: Runners) -> Kept {
         let deps = Deps {
             store: self.store.clone(),
             driver: Arc::clone(&self.driver) as Arc<dyn Driver>,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
             egress: tunnels.then(|| self.socket()),
-            runners: Runners::new(
-                self.dir.path(),
-                None,
-                Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-                None,
-            ),
+            runners,
             log: self.log.clone(),
         };
         Kept::new(Arc::new(deps), self.id, 41_000)
@@ -316,6 +321,82 @@ fn the_machine_is_attached_reattached_on_a_new_machine_and_let_go_on_close() {
         ["machine_attached", "machine_attached", "machine_detached"]
     );
     assert!(w.store.box_machine(w.id).unwrap().is_none());
+}
+
+/// A machine runner across the network: answers each forward request `up` and holds it; its
+/// address and, per connection, the hello it opened with.
+fn tcp_runner() -> (String, Receiver<(String, TcpStream)>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let (tx, asked) = mpsc::channel();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let mut conn = conn.unwrap();
+            let mut reader = BufReader::new(conn.try_clone().unwrap());
+            let (mut hello, mut ask) = (String::new(), String::new());
+            reader.read_line(&mut hello).unwrap();
+            reader.read_line(&mut ask).unwrap();
+            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
+            drop(tx.send((hello, conn)));
+        }
+    });
+    (addr, asked)
+}
+
+/// Records that the runner at `addr` holds machine `machine_id`'s link at `clock`'s now.
+fn link_row(w: &World, clock: &FakeClock, addr: &str, machine_id: i64) {
+    let link = MachineLink {
+        machine_id,
+        online: true,
+        since: clock.now(),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
+        memory: None,
+    };
+    let runner = RunnerAddr::new(addr);
+    w.store
+        .set_machine_links(&runner, false, &[link], clock.now())
+        .unwrap();
+}
+
+#[test]
+fn forwards_reach_the_runner_the_link_row_names_and_reopen_when_it_moves() {
+    let w = World::new([]);
+    hold_machine(&w);
+    let machine_id = w.store.box_machine(w.id).unwrap().unwrap().machine_id;
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let runners = Runners::new(
+        w.dir.path(),
+        Some(w.store.clone()),
+        clock.clone(),
+        Some("k"),
+    );
+    let kept = w.kept_via(false, runners);
+    let (first, at_first) = tcp_runner();
+    link_row(&w, &clock, &first, machine_id);
+    assert!(kept.tick());
+    assert_eq!(w.kinds(), ["machine_attached"]);
+    let (hello, _held) = at_first.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(hello, "{\"forwards\":{\"v\":1,\"key\":\"k\"}}\n");
+    assert!(kept.tick());
+    assert_eq!(at_first.try_iter().count(), 0, "live forwards are kept");
+
+    clock.sleep(Duration::from_secs(1));
+    let (second, at_second) = tcp_runner();
+    link_row(&w, &clock, &second, machine_id);
+    assert!(kept.tick());
+    let reopened = at_second.recv_timeout(Duration::from_secs(5));
+    assert!(
+        reopened.is_ok(),
+        "the forwards reopen on the runner the row names now"
+    );
+    assert_eq!(w.kinds(), ["machine_attached", "machine_attached"]);
 }
 
 #[test]
