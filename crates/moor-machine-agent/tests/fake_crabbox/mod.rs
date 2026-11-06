@@ -26,7 +26,16 @@ case "$1" in
   providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;
   list) cat "$HOME/leases.json" 2>/dev/null || echo '[]' ;;
   doctor) if [ -e "$HOME/doctor-fail" ]; then
-      echo "checkpoint: cloud-hypervisor v52.0 needs v52.0-moor.1"; exit 1
+      fail="FAIL checkpoints: cloud-hypervisor v52.0-moor.1 is required (found cloud-hypervisor v52.0)"
+      echo "ok      git      /usr/bin/git"
+      [ -e "$HOME/doctor-config" ] && echo "failed  config   /c.yaml: permissions 0664 want 0600"
+      echo "failed  provider provider=fake class=config external provider command failed: exit status 1: ok kvm: fine"
+      i=0; while [ $i -lt 40 ]; do echo "ok check-$i: a long line of a check that passed"; i=$((i+1)); done
+      echo "$fail"
+      echo "doctor: 21 ok, 3 warn, 1 fail: $fail"
+      echo "doctor finished"
+      echo "$fail" >&2
+      echo "doctor found problems" >&2; exit 1
     fi ;;
   checkpoint) case "$2" in
     create) cat "$HOME/create.json" 2>/dev/null \

@@ -127,24 +127,30 @@ make room on a node frees nothing there.
 ## Use the cloud-hypervisor provider
 
 [crabbox-cloudhypervisor](https://github.com/IniZio/crabbox-cloudhypervisor)
-runs each Box as a cloud-hypervisor VM. Two settings in the crabbox user config
+runs each Box as a cloud-hypervisor VM. Three settings in the crabbox user config
 make it faster and let moor checkpoint a Box:
 
 ```yaml
 external:
   capabilities: { checkpoints: true }
-  config: { bootTemplate: true }
+  config: { checkpoints: true, bootTemplate: true }
 ```
 
 - `capabilities.checkpoints` gives the provider the `workspace-checkpoint` and
   `workspace-fork` features. Only the trusted user config can turn it on.
+- `config.checkpoints` makes the adapter's `doctor` fail unless `cloud-hypervisor`
+  is the patched `v52.0-moor.1`, since a guest's network is dead after a checkpoint
+  on a stock build.
+- On a node, `moor-machine-agent enroll` and every `moor-machine-agent run` add
+  both `checkpoints` keys when missing, for `--runtime external`. They never change
+  a value you set, so `false` on either opts the node out, and `moor node ls` shows
+  that as the reason. A failing `doctor` shows there too. crabbox's `doctor` also
+  fails on a config file not mode 0600, and the agent makes a new one 0600.
 - `bootTemplate` restores a new VM from a snapshot of a provisioned guest, so a
-  Box is ready in about 4 s instead of 41 s. The first VM of each size builds
-  the template and takes a few seconds longer. Put `cacheDir` on a filesystem
-  that reflinks, such as btrfs or XFS. Elsewhere each VM copies the template
-  disk in full, which is slower but works. moor cannot promise a reflink
-  filesystem on a user's host, so `bootTemplate` stays opt-in and
-  `tools/nested-e2e.sh` turns it on.
+  Box is ready in about 4 s instead of 41 s. It is on unless you set it to `false`.
+  The first VM of each size builds the template and takes a few seconds longer.
+  Put `cacheDir` on a filesystem that reflinks, such as btrfs or XFS. Elsewhere
+  each VM copies the template disk in full, which is slower but works.
 
 ## Cache volumes
 

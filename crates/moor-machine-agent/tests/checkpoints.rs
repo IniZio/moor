@@ -299,12 +299,26 @@ async fn the_offer_says_which_feature_is_missing_and_runs_no_doctor() {
 }
 
 #[tokio::test]
-async fn the_offer_names_what_a_failing_doctor_needs() {
+async fn the_offer_names_the_adapters_failing_check_once_and_no_passing_one() {
     let (home, pool) = host();
     describe(home.path(), BOTH);
     std::fs::write(home.path().join("doctor-fail"), "").unwrap();
     let offer = pool::offer(&machine(home.path(), pool)).await.unwrap();
     assert!(!offer.checkpoints);
     let off = offer.checkpoints_off.unwrap();
-    assert!(off.contains("needs v52.0-moor.1"), "{off}");
+    assert!(off.contains("v52.0-moor.1 is required"), "{off}");
+    assert_eq!(off.matches("FAIL checkpoints").count(), 1, "{off}");
+    assert!(!off.contains("ok kvm"), "{off}");
+}
+
+#[tokio::test]
+async fn the_offer_also_names_a_failed_check_of_crabbox_itself() {
+    let (home, pool) = host();
+    describe(home.path(), BOTH);
+    std::fs::write(home.path().join("doctor-fail"), "").unwrap();
+    std::fs::write(home.path().join("doctor-config"), "").unwrap();
+    let offer = pool::offer(&machine(home.path(), pool)).await.unwrap();
+    let off = offer.checkpoints_off.unwrap();
+    assert!(off.contains("permissions 0664 want 0600"), "{off}");
+    assert!(off.contains("v52.0-moor.1 is required"), "{off}");
 }
