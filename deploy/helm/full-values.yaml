@@ -6,6 +6,9 @@ crabbox:
     external:
       command: /usr/local/bin/crabbox-agent37
   sshKey: example-ssh-key
+database:
+  url: postgres://example:example@db.example.com:5432/moor
+  readers: 8
 controller:
   surface: pty
   agentModel: opus
