@@ -7,16 +7,26 @@
 {{- $tls := .Values.egress.ledgerTls | default dict -}}
 {{- $names := list "ledger-ca.pem" "ledger-ca.key" "ledger-tls.crt" "ledger-tls.key" "egress-client.crt" "egress-client.key" "runner-client.crt" "runner-client.key" -}}
 {{- $pem := dict -}}
+{{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
+{{- $keptPairs := and (get $was "ledger-tls.crt") (get $was "ledger-tls.key") (get $was "egress-client.crt") (get $was "egress-client.key") (get $was "runner-client.crt") (get $was "runner-client.key") -}}
 {{- if or $tls.cert $tls.key $tls.ca $tls.caKey $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey -}}
 {{- if not (and $tls.cert $tls.key $tls.ca) -}}
 {{- fail "egress.ledgerTls needs cert, key and ca together" -}}
 {{- end -}}
+{{- if and $tls.caKey (not (hasPrefix "-----BEGIN RSA PRIVATE KEY-----" $tls.caKey)) -}}
+{{- fail "egress.ledgerTls.caKey must be a PKCS#1 RSA key (BEGIN RSA PRIVATE KEY); convert it with: openssl rsa -in ca.key -traditional -out ca-rsa.key" -}}
+{{- end -}}
 {{- if not (or $tls.caKey (and $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey)) -}}
 {{- fail "egress.ledgerTls with your own ca needs caKey, or all of egressClientCert, egressClientKey, runnerClientCert and runnerClientKey" -}}
 {{- end -}}
-{{- $pem = dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
-{{- else if and (get $was "ledger-ca.pem") (get $was "ledger-ca.key") -}}
+{{- if eq (get $was "ledger-ca.pem") $tls.ca -}}
 {{- range $names }}{{ $_ := set $pem . (get $was .) }}{{ end -}}
+{{- end -}}
+{{- range $k, $v := $given }}{{ if $v }}{{ $_ := set $pem $k $v }}{{ end }}{{ end -}}
+{{- else if and (get $was "ledger-ca.pem") (or (get $was "ledger-ca.key") $keptPairs) -}}
+{{- range $names }}{{ $_ := set $pem . (get $was .) }}{{ end -}}
+{{- else if get $was "ledger-ca.pem" -}}
+{{- fail (printf "the Secret %s-egress keeps a ledger CA without its key and lacks a certificate: set egress.ledgerTls again, or delete the Secret to make a new CA, which ends every Box token" .Release.Name) -}}
 {{- else -}}
 {{- $made := genCA "moor ledger CA" 3650 -}}
 {{- $pem = dict "ledger-ca.pem" $made.Cert "ledger-ca.key" $made.Key -}}
@@ -73,7 +83,7 @@ spec:
     metadata:
       labels: {{- include "moor.egressLabels" . | nindent 8 }}
       annotations:
-        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca .Values.egress.ledgerTls.egressClientCert | toJson | sha256sum | quote }}
+        checksum/egress: {{ list .Values.egress.key $tls.ca $tls.egressClientCert | toJson | sha256sum | quote }}
         {{- range $k, $v := .Values.podAnnotations }}
         {{ $k }}: {{ $v | quote }}
         {{- end }}
