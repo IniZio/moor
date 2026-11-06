@@ -59,3 +59,17 @@ wss://{{ required "host is required" .Values.host }}/egress
 {{- define "moor.ledgerHost" -}}
 {{ .Release.Name }}-ledger.{{ .Release.Namespace }}.svc
 {{- end -}}
+
+{{/* Not moor.labels: the controller pod and its Services select on those. */}}
+{{- define "moor.runnerLabels" -}}
+app.kubernetes.io/name: moor-runner
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+{{- end -}}
+
+{{/* Non-empty when the runner is its own Deployment, which dials the controller's ledger. */}}
+{{- define "moor.runnerSeparate" -}}
+{{- if and .Values.runner.enabled .Values.runner.separate -}}
+{{- if not .Values.egress.enabled }}{{ fail "runner.separate needs egress.enabled: the runner dials the controller through the ledger listener and the machine service key" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}

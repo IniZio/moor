@@ -218,6 +218,19 @@ spec:
 The ledger refuses a client without the egress certificate either way. The
 NetworkPolicy only narrows who can try.
 
+## Runner Deployment
+
+`runner.separate: true`, with `runner.enabled` and `egress.enabled`, moves the machine runner out of the
+controller pod into `<release>-runner`, a Deployment of `runner.replicas` pods, two by default, that rolls
+with `maxUnavailable: 0`. Each pod dials the controller's ledger with the machine service key, the ledger CA
+and its own client certificate, `runner-client.crt` and `.key` from the Secret `<release>-egress`, and tells
+the controller its own address, so a machine's link can sit on any replica. Its state is an `emptyDir` of Box
+mirrors, so a new pod copies a Box's tree again on first use.
+
+The Service `<release>-machine` then selects the runner pods, and the ingress sends `/machines/link` to
+`<release>-runner-agents`. The controller dials a runner pod on `runner.linksPort`, 7702 by default, since
+7701 is the agents port.
+
 ## Upgrades
 
 The pod uses the `Recreate` strategy, so the old controller stops before the
@@ -227,3 +240,6 @@ the same time. The pod's grace period is the drain plus 30 seconds, so the
 drain finishes before Kubernetes kills the pod. The new pod starts only after
 the old one is gone, so a longer drain makes each upgrade's outage longer. Read
 [Deploy the controller with systemd](deploy.md) for what a drain waits on.
+
+With `runner.separate`, a controller upgrade leaves the runner pods up, and rolling the runner pods one at a
+time relinks each machine within a redial of its agent.

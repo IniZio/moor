@@ -62,7 +62,13 @@ notify:
 
 runner:
   enabled: false
+  # true runs the runner as <release>-runner, a Deployment of its own, in place of a sidecar of the
+  # controller pod: a controller deploy or a runner roll then costs each machine one redial. Needs egress.enabled.
+  separate: false
+  replicas: 2
   agentsPort: 7701
+  # separate only: where the controller dials a runner pod for links and port forwards.
+  linksPort: 7702
   extraArgs: []
   resources: {}
 

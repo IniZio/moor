@@ -21,8 +21,8 @@ mounted=$(awk '
   kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
   kind == "Deployment" && /- \{ key: / { key = $4; sub(/,$/, "", key); print name, key }
 ' <<<"$full")
-if grep -E ' (ledger-ca\.key|runner-client\.(crt|key))$' <<<"$mounted"; then
-  fail "mounts the CA key or the runner certificate"
+if grep -E ' (ledger-ca\.key|runner-client\.(crt|key))$' <<<"$mounted" | grep -v '^moor-runner '; then
+  fail "mounts the CA key, or the runner certificate outside the runner pods"
 fi
 egress=$(awk '$1 == "moor-egress" { print $2 }' <<<"$mounted" | sort | tr '\n' ' ')
 [ "$egress" = "egress-client.crt egress-client.key ledger-ca.pem " ] ||
@@ -30,4 +30,16 @@ egress=$(awk '$1 == "moor-egress" { print $2 }' <<<"$mounted" | sort | tr '\n' '
 controller=$(awk '$1 == "moor" { print $2 }' <<<"$mounted" | grep -E '^(ledger|egress|runner)-' | sort | tr '\n' ' ')
 [ "$controller" = "ledger-ca.pem ledger-tls.crt ledger-tls.key " ] ||
   fail "the controller mounts [$controller], want the CA and the ledger certificate only"
+
+separate=$(helm template moor "${chart[@]}" --set runner.separate=true)
+if grep -E '^(apiVersion: policy/|kind: (NetworkPolicy|PodDisruptionBudget))' <<<"$separate"; then
+  fail "renders a policy kind with runner.separate"
+fi
+runner=$(awk '
+  /^kind:/ { kind = $2; name = "" }
+  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
+  kind == "Deployment" && name == "moor-runner" && /- \{ key: / { key = $4; sub(/,$/, "", key); print key }
+' <<<"$separate" | sort | tr '\n' ' ')
+[ "$runner" = "ledger-ca.pem runner-client.crt runner-client.key " ] ||
+  fail "runner pods mount [$runner], want the CA and their client certificate only"
 echo "chart-render: ok"
