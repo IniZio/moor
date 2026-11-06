@@ -88,7 +88,7 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
 async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
     let service = shared.machine.as_ref().filter(|_| ask.machine);
     let opened = match service {
-        Some(service) => TcpStream::connect(service.upstream)
+        Some(service) => TcpStream::connect(service.upstream.as_str())
             .await
             .map(|s| (s, Vec::new()))
             .map_err(|_| (502, "the machine service is not answering")),

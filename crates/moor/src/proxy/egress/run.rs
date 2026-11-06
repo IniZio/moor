@@ -15,12 +15,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moor_core::config::MachineService;
 use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
 
-use super::{Config, Listen, Rate, Server};
+use super::{Config, Listen, MachineRoute, Rate, Server};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY};
 use crate::ledger_dir;
@@ -45,7 +44,7 @@ pub(crate) struct Args {
     /// The CA bundle that checks a TLS ledger's certificate.
     pub(crate) ledger_ca: Option<PathBuf>,
     /// The machine service plain requests for its host go to.
-    pub(crate) machine: Option<MachineService>,
+    pub(crate) machine: Option<MachineRoute>,
     /// How long open tunnels get after SIGTERM.
     pub(crate) grace: Duration,
     /// Tunnels a token may open per second.
@@ -88,11 +87,7 @@ impl Args {
                 "--ledger" => args.ledger = Some(value),
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
                 "--machine-service" => {
-                    let (host, addr) = value.split_once('=').ok_or_else(bad)?;
-                    args.machine = Some(MachineService {
-                        host: host.to_owned(),
-                        upstream: addr.parse().map_err(|_| bad())?,
-                    });
+                    args.machine = Some(MachineRoute::parse(&value).ok_or_else(bad)?);
                 }
                 "--grace" => args.grace = Duration::from_secs(value.parse().map_err(|_| bad())?),
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,

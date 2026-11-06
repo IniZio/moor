@@ -61,7 +61,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::MachineService;
 use moor_core::seam::clock::Clock;
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 
@@ -76,6 +75,33 @@ pub(crate) use limit::Rate;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
+
+/// The machine service plain requests for `host` go to, as `--machine-service HOST=ADDR` names
+/// it. `upstream` is `host:port` and may be a DNS name, looked up on each connection, so the
+/// Proxy can run in another pod than the service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MachineRoute {
+    /// Name a Box requests over `http://`, compared without case.
+    pub(crate) host: String,
+    /// Where those requests go.
+    pub(crate) upstream: String,
+}
+
+impl MachineRoute {
+    /// `HOST=ADDR`; none when either side is empty or `ADDR` is not `host:port`.
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        let (host, upstream) = value.split_once('=')?;
+        (!host.is_empty() && wire::authority_ok(upstream)).then(|| Self {
+            host: host.to_owned(),
+            upstream: upstream.to_owned(),
+        })
+    }
+
+    /// True when `host` (no port) names this service.
+    fn serves(&self, host: &str) -> bool {
+        host.eq_ignore_ascii_case(&self.host)
+    }
+}
 /// The header naming the CONNECT target as `host:port`.
 pub(crate) const TARGET: &str = "x-moor-target";
 /// The header that marks a tunnel carrying one plain `http://` request.
@@ -167,7 +193,7 @@ pub(crate) struct Config {
     /// Loopback addresses the egress guard lets through; empty in production.
     pub(crate) guard_exempt: Vec<SocketAddr>,
     /// The machine service plain requests for its host go to; `None` when none is configured.
-    pub(crate) machine: Option<MachineService>,
+    pub(crate) machine: Option<MachineRoute>,
     /// Source of time.
     pub(crate) clock: Arc<dyn Clock>,
 }
@@ -179,7 +205,7 @@ struct Shared {
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
     /// The machine service, when one is configured.
-    machine: Option<MachineService>,
+    machine: Option<MachineRoute>,
     /// Names the egress key on `/ready`.
     key_id: i64,
 }

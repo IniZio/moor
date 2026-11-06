@@ -6,10 +6,10 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moor_core::config::MachineService;
 use tokio_tungstenite::tungstenite::{Message, WebSocket};
 
 use super::{open, open_as, Server, World};
+use crate::proxy::egress::MachineRoute;
 
 /// The machine service's host name, as Boxes request it.
 const MACHINE: &str = "machine.moor.internal";
@@ -53,13 +53,11 @@ impl Plain {
 }
 
 /// A shared Proxy that lets `plain` through its guard and sends `machine` to it when set.
-fn server(w: &World, plain: &Plain, machine: Option<SocketAddr>) -> Server {
+fn server(w: &World, plain: &Plain, machine: Option<String>) -> Server {
     let mut cfg = w.config(10.0, 10.0, 64);
     cfg.guard_exempt.push(plain.addr);
-    cfg.machine = machine.map(|upstream| MachineService {
-        host: MACHINE.to_owned(),
-        upstream,
-    });
+    cfg.machine =
+        machine.map(|upstream| MachineRoute::parse(&format!("{MACHINE}={upstream}")).unwrap());
     Server::start(cfg).unwrap()
 }
 
@@ -145,7 +143,7 @@ fn a_plain_request_for_another_host_than_its_tunnel_is_refused() {
 fn the_machine_service_gets_the_box_identity_and_never_one_the_box_forged() {
     let w = World::new();
     let service = Plain::start();
-    let server = server(&w, &service, Some(service.addr));
+    let server = server(&w, &service, Some(service.addr.to_string()));
     let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
     let reply = exchange(
         tunnel,
@@ -173,10 +171,48 @@ fn the_machine_service_gets_the_box_identity_and_never_one_the_box_forged() {
 }
 
 #[test]
+fn a_machine_service_named_by_dns_is_looked_up_when_a_box_calls_it() {
+    let w = World::new();
+    let service = Plain::start();
+    let server = server(
+        &w,
+        &service,
+        Some(format!("localhost:{}", service.addr.port())),
+    );
+    let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &format!("GET http://{MACHINE}/mcp HTTP/1.1\r\nHost: {MACHINE}\r\n\r\n"),
+    );
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    assert_eq!(service.heads().len(), 1);
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_machine_service_flag_takes_an_ip_or_a_dns_name_with_a_port() {
+    for ok in [
+        "m=127.0.0.1:7700",
+        "m=moor-machine.moor.svc:7700",
+        "m=[::1]:7700",
+    ] {
+        assert!(MachineRoute::parse(ok).is_some(), "{ok}");
+    }
+    for bad in [
+        "m=moor-machine.moor.svc",
+        "=127.0.0.1:7700",
+        "m=http://x:1",
+        "m",
+    ] {
+        assert!(MachineRoute::parse(bad).is_none(), "{bad}");
+    }
+}
+
+#[test]
 fn a_connect_to_the_machine_service_is_refused() {
     let w = World::new();
     let service = Plain::start();
-    let server = server(&w, &service, Some(service.addr));
+    let server = server(&w, &service, Some(service.addr.to_string()));
     assert_eq!(
         open(&server, &w.token, &format!("{MACHINE}:443")).err(),
         Some(403)
@@ -193,7 +229,7 @@ fn a_machine_service_that_is_down_is_502() {
         .unwrap()
         .local_addr()
         .unwrap();
-    let server = server(&w, &plain, Some(down));
+    let server = server(&w, &plain, Some(down.to_string()));
     assert_eq!(
         open_as(&server, &w.token, &format!("{MACHINE}:80"), true).err(),
         Some(502)
