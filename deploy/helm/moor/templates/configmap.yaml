@@ -29,6 +29,7 @@ data:
       listen: 0.0.0.0:{{ .Values.egress.ledgerPort }}
       cert: /var/lib/moor/config/ledger-tls.crt
       key: /var/lib/moor/config/ledger-tls.key
+      client_ca: /var/lib/moor/config/ledger-ca.pem
     {{- end }}
   {{- if .Values.slack.enabled }}
   slack.yaml: |

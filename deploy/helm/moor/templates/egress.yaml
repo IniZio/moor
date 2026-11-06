@@ -4,19 +4,42 @@
 {{- $was := dict -}}
 {{- range $k, $v := $kept }}{{ $_ := set $was $k (b64dec $v) }}{{ end -}}
 {{- $key := .Values.egress.key | default (get $was "egress-key") | default (randAlphaNum 64) -}}
-{{- $tls := .Values.egress.ledgerTls -}}
-{{- $pem := dict "crt" $tls.cert "key" $tls.key "ca" $tls.ca -}}
+{{- $tls := .Values.egress.ledgerTls | default dict -}}
+{{- $names := list "ledger-ca.pem" "ledger-ca.key" "ledger-tls.crt" "ledger-tls.key" "egress-client.crt" "egress-client.key" "runner-client.crt" "runner-client.key" -}}
+{{- $pem := dict -}}
+{{- if or $tls.cert $tls.key $tls.ca $tls.caKey $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey -}}
 {{- if not (and $tls.cert $tls.key $tls.ca) -}}
-{{- $pem = dict "crt" (get $was "ledger-tls.crt") "key" (get $was "ledger-tls.key") "ca" (get $was "ledger-ca.pem") -}}
-{{- if not (and $pem.crt $pem.key $pem.ca) -}}
-{{- $ca := genCA "moor ledger CA" 3650 -}}
+{{- fail "egress.ledgerTls needs cert, key and ca together" -}}
+{{- end -}}
+{{- if not (or $tls.caKey (and $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey)) -}}
+{{- fail "egress.ledgerTls with your own ca needs caKey, or all of egressClientCert, egressClientKey, runnerClientCert and runnerClientKey" -}}
+{{- end -}}
+{{- $pem = dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
+{{- else if and (get $was "ledger-ca.pem") (get $was "ledger-ca.key") -}}
+{{- range $names }}{{ $_ := set $pem . (get $was .) }}{{ end -}}
+{{- else -}}
+{{- $made := genCA "moor ledger CA" 3650 -}}
+{{- $pem = dict "ledger-ca.pem" $made.Cert "ledger-ca.key" $made.Key -}}
+{{- end -}}
+{{- $ca := dict -}}
+{{- if get $pem "ledger-ca.key" -}}
+{{- $ca = buildCustomCert (get $pem "ledger-ca.pem" | b64enc) (get $pem "ledger-ca.key" | b64enc) -}}
+{{- end -}}
+{{- if not (and (get $pem "ledger-tls.crt") (get $pem "ledger-tls.key")) -}}
 {{- $cert := genSignedCert (include "moor.ledgerHost" .) nil (list (include "moor.ledgerHost" .)) 3650 $ca -}}
-{{- $pem = dict "crt" $cert.Cert "key" $cert.Key "ca" $ca.Cert -}}
+{{- $_ := set $pem "ledger-tls.crt" $cert.Cert -}}
+{{- $_ := set $pem "ledger-tls.key" $cert.Key -}}
+{{- end -}}
+{{- range $role := list "egress" "runner" -}}
+{{- if not (and (get $pem (printf "%s-client.crt" $role)) (get $pem (printf "%s-client.key" $role))) -}}
+{{- $cert := genSignedCert (printf "moor %s" $role) nil nil 3650 $ca -}}
+{{- $_ := set $pem (printf "%s-client.crt" $role) $cert.Cert -}}
+{{- $_ := set $pem (printf "%s-client.key" $role) $cert.Key -}}
 {{- end -}}
 {{- end -}}
-# The key Box tokens are signed with and the ledger's certificates. Made on first install and read
-# back on each upgrade, so they never change by accident; kept past an uninstall, since running
-# Boxes hold tokens signed with the key.
+# The key Box tokens are signed with, the ledger CA with its key, and the certificates it signed.
+# Made on first install and read back on each upgrade by the same $names, so they never change by
+# accident; kept past an uninstall, since running Boxes hold tokens signed with the key.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -27,9 +50,9 @@ metadata:
 type: Opaque
 stringData:
   egress-key: {{ $key | quote }}
-  ledger-tls.crt: {{ $pem.crt | quote }}
-  ledger-tls.key: {{ $pem.key | quote }}
-  ledger-ca.pem: {{ $pem.ca | quote }}
+  {{- range $names }}
+  {{ . }}: {{ get $pem . | default "" | quote }}
+  {{- end }}
   machine-service-key: {{ printf "moor machine service:%s" $key | sha256sum | quote }}
 ---
 apiVersion: apps/v1
@@ -50,7 +73,7 @@ spec:
     metadata:
       labels: {{- include "moor.egressLabels" . | nindent 8 }}
       annotations:
-        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca | toJson | sha256sum | quote }}
+        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca .Values.egress.ledgerTls.egressClientCert | toJson | sha256sum | quote }}
         {{- range $k, $v := .Values.podAnnotations }}
         {{ $k }}: {{ $v | quote }}
         {{- end }}
@@ -89,6 +112,10 @@ spec:
             - tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
             - --ledger-ca
             - /var/lib/moor/egress/ledger-ca.pem
+            - --ledger-cert
+            - /var/lib/moor/egress/egress-client.crt
+            - --ledger-key
+            - /var/lib/moor/egress/egress-client.key
             - --grace
             - {{ .Values.egress.graceSecs | quote }}
             - --warm-every
@@ -122,7 +149,8 @@ spec:
           {{- with .Values.egress.resources }}
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}
-          # Only the CA and the key: never the database URL, the vault key or provider keys.
+          # Only the CA, the client certificate and the key: never the database URL, the vault key
+          # or provider keys.
           volumeMounts:
             - { name: egress-secrets, mountPath: /var/lib/moor/egress, readOnly: true }
             - { name: egress-state, mountPath: /var/lib/moor/egress-state }
@@ -133,18 +161,10 @@ spec:
             defaultMode: 0440
             items:
               - { key: ledger-ca.pem, path: ledger-ca.pem }
+              - { key: egress-client.crt, path: egress-client.crt }
+              - { key: egress-client.key, path: egress-client.key }
         - name: egress-state
           emptyDir: {}
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: {{ .Release.Name }}-egress
-  labels: {{- include "moor.egressLabels" . | nindent 4 }}
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels: {{- include "moor.egressLabels" . | nindent 6 }}
 ---
 apiVersion: v1
 kind: Service
@@ -180,34 +200,4 @@ spec:
   ports:
     - { name: machine, port: 7700, targetPort: machine }
 {{- end }}
----
-# Only the egress pods reach the ledger and the machine service, which trusts the X-Moor-* headers
-# the Proxy sets. The other controller pod ports stay open to anything that reached them before.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ .Release.Name }}-ledger
-  labels: {{- include "moor.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels: {{- include "moor.labels" . | nindent 6 }}
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels: {{- include "moor.egressLabels" . | nindent 14 }}
-      ports:
-        - { port: ledger, protocol: TCP }
-        {{- if .Values.runner.enabled }}
-        - { port: machine, protocol: TCP }
-        {{- end }}
-    {{- if or .Values.gate.enabled .Values.runner.enabled }}
-    - ports:
-        {{- if .Values.gate.enabled }}
-        - { port: gate, protocol: TCP }
-        {{- end }}
-        {{- if .Values.runner.enabled }}
-        - { port: agents, protocol: TCP }
-        {{- end }}
-    {{- end }}
 {{- end }}

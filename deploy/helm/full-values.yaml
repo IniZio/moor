@@ -54,4 +54,8 @@ egress:
     cert: example-cert
     key: example-key
     ca: example-ca
+    egressClientCert: example-egress-cert
+    egressClientKey: example-egress-key
+    runnerClientCert: example-runner-cert
+    runnerClientKey: example-runner-key
   resources: {limits: {memory: 256Mi}}
