@@ -34,6 +34,29 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        {{- if .Values.database.url }}
+        # Moving to Postgres starts the store empty. State a SQLite store left behind is set aside, not
+        # copied, so the controller does not meet Boxes its new store never recorded.
+        - name: state-aside
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - sh
+            - -ec
+            - |
+              cd /pv/state
+              if [ ! -e moor.db ]; then exit 0; fi
+              aside=".sqlite-$(date -u +%Y%m%dT%H%M%SZ)"
+              mkdir -m 0700 "$aside"
+              find . -mindepth 1 -maxdepth 1 ! -name '.sqlite-*' -exec mv {} "$aside"/ \;
+              echo "state-aside: moved the SQLite state to /pv/state/$aside"
+          volumeMounts:
+            - { name: state, mountPath: /pv }
+        {{- end }}
         - name: config
           image: {{ include "moor.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -89,6 +112,13 @@ spec:
               value: /var/lib/moor/config/crabbox.yaml
             - name: XDG_CONFIG_HOME
               value: /var/lib/moor/pv/state/xdg-config
+            {{- if .Values.database.url }}
+            - name: MOOR_DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: database-url }
+            - name: MOOR_DATABASE_READERS
+              value: {{ .Values.database.readers | quote }}
+            {{- end }}
             {{- with .Values.controller.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

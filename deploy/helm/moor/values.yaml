@@ -22,6 +22,14 @@ crabbox:
   # ssh private key whose public half the provider account trusts; crabbox reads it at /var/lib/moor/config/box-ssh-key.
   sshKey: ""
 
+# The controller store. Empty url keeps the SQLite file on the state volume. A set url (a secret, kept out of
+# plain values files) moves the store to Postgres and starts it empty: an init container moves an existing
+# SQLite state dir's contents into state/.sqlite-<time> (kept, never read again).
+database:
+  url: ""
+  # Read connections the controller keeps open (MOOR_DATABASE_READERS).
+  readers: 4
+
 controller:
   uid: 10001
   # surface.kind in the controller config. Empty keeps the image default, MOOR_SURFACE=pty; a set value overrides it.
