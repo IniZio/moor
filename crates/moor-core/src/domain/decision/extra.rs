@@ -139,6 +139,13 @@ pub enum ExtraEvent {
         /// The reason in a sentence.
         detail: String,
     },
+    /// A restored cache volume failed a restore step, so the Box emptied it and went on.
+    CacheEmptied {
+        /// The volume.
+        volume: String,
+        /// Why, as the step printed it.
+        reason: String,
+    },
     /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
     CheckpointTaken {
         /// Setup lines the checkpoint holds; 0 is the clone alone.

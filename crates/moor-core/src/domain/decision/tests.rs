@@ -171,6 +171,17 @@ fn extra_events_round_trip() {
     }
 }
 
+#[test]
+fn a_cache_emptied_event_round_trips() {
+    let x = ExtraEvent::CacheEmptied {
+        volume: "docker".into(),
+        reason: "r".into(),
+    };
+    let e = Event::from(x.clone());
+    assert_eq!(e.kind(), "cache_emptied");
+    assert_eq!(ExtraEvent::try_from(e).unwrap(), x);
+}
+
 /// Position of an intent in `intent_samples()`; the exhaustive match fails to compile on a new variant.
 const fn intent_index(i: &Intent) -> usize {
     match i {

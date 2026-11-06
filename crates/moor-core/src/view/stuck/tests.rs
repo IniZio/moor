@@ -219,6 +219,16 @@ fn a_detail_falls_back_to_the_kind_in_words() {
 }
 
 #[test]
+fn an_emptied_cache_is_not_stuck() {
+    let events = [at(
+        "cache_emptied",
+        json!({"volume": "docker", "reason": "x"}),
+        "2026-01-01T00:00:00Z",
+    )];
+    assert_eq!(stuck_of(&events), None);
+}
+
+#[test]
 fn a_cold_cache_is_not_stuck() {
     let events = [at(
         "cache_cold",

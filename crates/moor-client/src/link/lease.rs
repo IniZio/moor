@@ -141,8 +141,7 @@ pub struct Cache {
     pub scope: Option<String>,
 }
 
-/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group`, `paths` and
-/// `sealed`.
+/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group` and `paths`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheVolume {
@@ -157,7 +156,4 @@ pub struct CacheVolume {
     /// Size hint; 0 is the adapter's default.
     #[serde(rename = "sizeGB", default)]
     pub size_gb: u32,
-    /// The volume has a seal; the provider keeps it only with the seal's marker in each path.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub sealed: bool,
 }

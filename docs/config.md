@@ -576,7 +576,7 @@ cache:
     - name: android-sdk      # [a-z][a-z0-9-]{0,31}
       path: /opt/android-sdk
       size_gb: 12            # a hint; the provider's default when unset
-      seal:                  # optional; runs in the Box at close
+      restore:               # optional; runs first in a new Box that restored it
         - rm -rf /opt/android-sdk/.temp
 ```
 
@@ -587,7 +587,7 @@ cache:
 | `cache.volumes[].name` | string | required | The volume's name, unique in the Box. |
 | `cache.volumes[].path` | path | required | The directory kept. It is `~/<dir>` (the Box user's home), `/opt/<dir>`, `/var/cache/<dir>`, or exactly `/var/lib/containerd` or `/var/lib/containers` (nothing below them). Letters, digits, `/`, and `._-+@` only. |
 | `cache.volumes[].size_gb` | integer, at least 1 | none | A size hint. The provider caps it. |
-| `cache.volumes[].seal` | list of shell commands | empty | Commands that run in the Box when it closes, after `teardown`, before the provider keeps the volume. |
+| `cache.volumes[].restore` | list of shell commands | empty | Commands that run in a new Box that restored the volume, before the clone and setup. A command that fails empties the volume. |
 
 A layer declares at most 8 volumes. Two volumes may not share a name, and
 their paths may not be equal or nested. A repo volume and an operator volume
@@ -602,8 +602,8 @@ When moor installs the agent in a Box (see `agent.install`), the directory that
 holds the install is a volume named `agent`. moor keeps it per user, shared by
 every repo that the user starts a Box in. A later Box restores the volume and
 links the cached version instead of downloading the agent again. The volume's
-seal runs the newest cached version, so moor never keeps a half-finished
-install. A provider without cache volumes keeps nothing and says nothing, and
+restore step runs the newest cached version, so a half-finished install is
+emptied and downloaded again. A provider without cache volumes keeps nothing and says nothing, and
 the install runs in every Box.
 
 #### Presets
@@ -621,7 +621,7 @@ and `~/.android/adbkey`, are not kept.
 | `cache` | `~/.cache` | The [XDG cache root](https://specifications.freedesktop.org/basedir-spec/latest/). It holds npm and Yarn (moor sets `npm_config_cache`, `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it), Go's build cache, pip, and ccache and sccache. |
 | `pnpm` | `~/.local/share/pnpm/store` | [pnpm `storeDir`](https://pnpm.io/settings/store#storedir) |
 | `bun` | `~/.bun/install/cache` | [Bun global cache](https://bun.sh/docs/install/cache) |
-| `docker` | `~/docker`, `/var/lib/containerd` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)) and the containerd image store that Docker 29 uses by default ([containerd image store](https://docs.docker.com/engine/storage/containerd/)). Sealed, see below. |
+| `docker` | `~/docker`, `/var/lib/containerd` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)) and the containerd image store that Docker 29 uses by default ([containerd image store](https://docs.docker.com/engine/storage/containerd/)). Cleaned when a new Box restores it, see below. |
 | `podman` | `~/.local/share/containers` | [rootless `graphroot`](https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md) |
 | `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` | [Gradle user home](https://docs.gradle.org/current/userguide/directory_layout.html) |
 | `dart` | `~/.pub-cache` | [`PUB_CACHE`](https://dart.dev/tools/pub/environment-variables) |
@@ -642,20 +642,22 @@ outranks a project's `gradle.properties`, so a repo that sets
 `org.gradle.caching=false` there still gets the cache. To turn it off for a
 repo, write the line to `~/.gradle/gradle.properties` in its setup.
 
-The `docker` preset's seal removes every container, volume, and network, so
-only images and build cache are kept. The seal runs `docker` directly when the
-login user can reach the Docker socket, else `sudo -n docker`. When neither
-works, the seal fails. Without Docker in the Box there is nothing to seal.
+The `docker` preset's restore step runs with no Docker daemon up, so nothing
+from the last Box starts again. It hashes every content blob in
+`/var/lib/containerd` against its name, four at a time, which adds 2 to 4
+seconds per GiB to the start of a Box with a large Docker cache. A blob that
+does not match fails the step. Otherwise it removes every container, volume, and
+network, and any unfinished pull, so only images and build cache are kept. A
+missing blob is not detected. An image that starts Docker itself has Docker
+stopped first and started again after.
 
-When a volume's seal succeeds, moor writes a `.crabbox-sealed` file into each
-of its paths, through `sudo -n` where the login user cannot. The provider keeps
-a volume that has a seal only when every one of its paths holds that file. The
-provider deletes the file when it restores the volume. So a seal that fails, a
-close that never ran the seal, or a Box stopped outside moor leaves the volume
-unkept. A seal that fails also empties its volume in the Box, and the close
-goes on with a `cache_seal_failed` warning. Each volume with a seal is kept in
-a store of its own, so a docker volume that is not kept never holds back the
-other presets.
+Restore steps are the first thing provisioning runs, once per Box. Rerunning a
+start does not run them again. moor skips a volume whose paths hold nothing.
+When a step fails, moor empties that volume, and the start goes on. The Box
+records a `cache_emptied` event with the volume and the reason, lists it in its
+steps, and warns `cache_emptied`. It is neither stuck nor failed. Each volume
+with restore steps is kept in a store of its own, so emptying one never empties
+another.
 
 #### Submodules
 
@@ -702,31 +704,18 @@ prints the field as its own line:
 
 A Box that keeps no tree, or that has already refreshed its tree, such as on a
 rerun of the start, says nothing. `cold` does not say why there was no tree to
-refresh. The cause can be a first Box, a provider that kept none, or a close
-that did not keep the tree. In the last case, the close of that Box warned
-`work_tree_not_kept` with the reason.
+refresh. The cause can be a first Box or a provider that kept none.
 
-The close keeps the tree only when the tree holds nothing the remote lacks.
-These conditions block it:
+The close keeps the tree whatever it holds, including unpushed work. The copy
+is not a backup. A close without `--force` still refuses unpushed work, because
+the refresh in the next Box drops every ref that reaches it, along with stashes
+and reflogs. The objects themselves can stay in the kept tree, so
+`git fsck --lost-found` in a later Box of the same user and repo may find them.
+Ignored files such as `.env` are kept too. A provider may skip saving a tree
+that barely grew since it was restored.
 
-- A rebase, merge, cherry-pick, revert, am, or bisect in progress.
-- A stash or a staged change.
-- A commit that HEAD or any ref other than a tag or one of the remote's
-  branches reaches, unless one of the remote's branches or the base holds it.
-  Such refs include local branches, a detached HEAD, notes, other remotes, and
-  custom refs.
-
-Tags do not block it, because the refresh prunes tags the remote lacks.
-Modified and untracked files do not block it, because the next refresh removes
-them. A tree that is not kept stays as it is in the Box, and the close warns
-`work_tree_not_kept` with the reason. The next Box then starts from an earlier
-kept tree, when the provider has one, or clones fresh. A close without
-`--force` already refuses unpushed work, so these conditions matter only after
-`close --force`. A provider may also skip saving a tree that barely grew since
-it was restored.
-
-The work tree has a store of its own, so a failed Docker seal never discards
-it, and a failed work tree never discards the Docker volume. `size_gb` is the
+The work tree has a store of its own, so emptying Docker's volume never touches
+it. `size_gb` is the
 size hint for that store. A repo whose name has a character other than
 letters, digits, and `._-+@` gets no work tree. A declared volume named
 `worktree` replaces it.

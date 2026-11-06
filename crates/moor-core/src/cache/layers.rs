@@ -8,7 +8,7 @@ use super::{
 };
 use crate::name::ForgeRepo;
 
-/// A declared volume left out of a plan because it met a sealed preset's directory, which stays
+/// A declared volume left out of a plan because it met the directory of a preset with restore steps, which stays
 /// reserved even when that preset is turned off.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dropped {
@@ -16,7 +16,7 @@ pub struct Dropped {
     pub origin: Origin,
     /// The volume left out.
     pub volume: CacheName,
-    /// The sealed preset it met.
+    /// The preset it met.
     pub preset: CacheName,
 }
 
@@ -28,8 +28,8 @@ impl fmt::Display for Dropped {
         };
         write!(
             f,
-            "{who} cache volume {} meets the sealed {} preset, which keeps its directory, so it \
-             is dropped",
+            "{who} cache volume {} meets the {} preset, which cleans its directory on restore, \
+             so it is dropped",
             self.volume.as_str(),
             self.preset.as_str()
         )
@@ -52,7 +52,7 @@ pub struct CacheLayers {
 pub struct Resolved {
     /// Every volume, presets first.
     pub volumes: Vec<Declared>,
-    /// Declared volumes that met a sealed preset.
+    /// Declared volumes that met a preset with restore steps.
     pub dropped: Vec<Dropped>,
 }
 
@@ -66,9 +66,9 @@ impl CacheLayers {
     }
 
     /// Every volume of a Box, presets first, then the work tree, and the declared volumes left
-    /// out. Presets, the work tree and repo volumes need a repo. An unsealed preset that shares a name or a directory with a declared
-    /// volume yields to it. A declared volume whose directory meets a sealed preset's is dropped
-    /// instead, whether that preset is kept or not, so no unsealed volume ever holds it.
+    /// out. Presets, the work tree and repo volumes need a repo. A preset without restore steps that shares a name or a directory with a declared
+    /// volume yields to it. A declared volume whose directory meets that of a preset with restore steps is dropped
+    /// instead, whether that preset is kept or not, so no other volume ever holds it.
     ///
     /// # Errors
     /// A layer that does not check, or a repo and an operator volume that clash.
@@ -88,10 +88,10 @@ impl CacheLayers {
         let declared: Vec<Declared> = (repo.into_iter().map(|v| (Origin::Repo, v)))
             .chain(operator.into_iter().map(|v| (Origin::Operator, v)))
             .filter_map(|(origin, volume)| {
-                let sealed = presets
+                let cleaned = presets
                     .iter()
-                    .find(|p| !p.seal.is_empty() && nested(&volume, p));
-                if let Some(p) = sealed {
+                    .find(|p| !p.restore.is_empty() && nested(&volume, p));
+                if let Some(p) = cleaned {
                     dropped.push(Dropped {
                         origin,
                         volume: volume.name,
@@ -130,7 +130,7 @@ impl CacheLayers {
     }
 
     /// The agent's install directory, unless it is not a cache path or a declared volume takes
-    /// its name or a directory of it, to which it yields as an unsealed preset would.
+    /// its name or a directory of it, to which it yields as a preset without restore steps would.
     fn agent_volume(&self, declared: &[Declared]) -> Option<Declared> {
         let volume = agent::volume(self.agent.as_ref()?)?;
         let taken = declared
@@ -143,7 +143,7 @@ impl CacheLayers {
     }
 
     /// The work tree of `forge`, unless a layer turns it off, its name makes no cache path, or a
-    /// declared volume takes its name, to which it yields as an unsealed preset would.
+    /// declared volume takes its name, to which it yields as a preset without restore steps would.
     fn work_tree(&self, forge: Option<&ForgeRepo>, declared: &[Declared]) -> Option<Declared> {
         let (repo, operator) = (&self.repo.work_tree, &self.operator.work_tree);
         let forge = forge.filter(|_| repo.keeps() && operator.keeps())?;

@@ -2,15 +2,28 @@
 
 use std::num::NonZeroU32;
 
-use super::{CacheName, CachePath, OnFail, Volume};
+use super::{CacheName, CachePath, Volume};
 
-/// Clears containers, volumes and networks so only images and build cache are kept; without
-/// Docker there is nothing to seal. The login user may lack the socket, so `sudo -n` is tried
-/// next; a Docker neither can reach fails the seal.
-const DOCKER_SEAL: &str = "command -v docker >/dev/null 2>&1 || exit 0; \
-    if docker info >/dev/null 2>&1; then d=docker; \
-    elif sudo -n docker info >/dev/null 2>&1; then d='sudo -n docker'; else exit 1; fi; \
-    $d ps -aq | xargs -r $d rm -f && $d volume prune -af && $d network prune -f";
+/// With no daemon up: fails on a blob whose content is not its name, then removes all but images
+/// and build cache, so nothing from the last Box runs again.
+const DOCKER_RESTORE: &str = r#"su=; [ "$(id -u)" -eq 0 ] || ! sudo -n true 2>/dev/null || su='sudo -n'
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active -q docker.socket docker.service containerd.service 2>/dev/null; then
+  mkdir -p "$HOME/.moor" && : >"$HOME/.moor/docker-stopped"
+  $su systemctl stop docker.socket docker.service containerd.service || { echo 'Docker could not be stopped'; exit 1; }
+fi
+blobs=/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256
+if $su test -d "$blobs"; then
+  $su find "$blobs" -type f -print0 |
+    $su xargs -0 -r -P4 -n1 sh -c 'h=$(sha256sum -- "$1") && [ "${h%% *}" = "${1##*/}" ] || { echo "blob ${1##*/} does not match its hash"; exit 255; }' sh || exit 1
+fi
+$su rm -rf -- "$HOME/docker/containers" "$HOME/docker/volumes" "$HOME/docker/network" /var/lib/containerd/io.containerd.content.v1.content/ingest || { echo 'old containers could not be removed'; exit 1; }"#;
+
+/// Starts again a Docker that [`DOCKER_RESTORE`] stopped, after its volume is clean or empty.
+const DOCKER_AFTER: &str = r#"[ -e "$HOME/.moor/docker-stopped" ] || exit 0
+rm -f "$HOME/.moor/docker-stopped"
+su=; [ "$(id -u)" -eq 0 ] || ! sudo -n true 2>/dev/null || su='sudo -n'
+$su systemctl reset-failed docker.socket docker.service containerd.service 2>/dev/null
+$su systemctl start docker.socket docker.service"#;
 
 /// Presets whose paths are the tools' own defaults, in `~/` form.
 ///
@@ -35,7 +48,7 @@ const FIXED: [(&str, &[&str]); 14] = [
     ("android-sdk", &["/opt/android-sdk"]),
 ];
 
-/// Size hints of the presets that grow large. Every unsealed preset shares one disk, whose size
+/// Size hints of the presets that grow large. Every preset without restore steps shares one disk, whose size
 /// is the sum of the hints up to the provider's 40 GB cap, so these two together ask for all of it.
 /// The disk is sparse, so a repo that never fills it pays nothing.
 const SIZE_GB: [(&str, u32); 2] = [("cache", 20), ("android-sdk", 20)];
@@ -51,11 +64,7 @@ pub(super) fn all() -> Vec<Volume> {
     FIXED
         .iter()
         .filter_map(|(name, paths)| {
-            let seal = if *name == "docker" {
-                vec![DOCKER_SEAL.to_owned()]
-            } else {
-                Vec::new()
-            };
+            let docker = *name == "docker";
             Some(Volume {
                 name: CacheName::parse(name).ok()?,
                 paths: paths
@@ -67,8 +76,12 @@ pub(super) fn all() -> Vec<Volume> {
                     .iter()
                     .find(|(n, _)| n == name)
                     .and_then(|(_, gb)| NonZeroU32::new(*gb)),
-                seal,
-                on_fail: OnFail::Clear,
+                restore: if docker {
+                    vec![DOCKER_RESTORE.to_owned()]
+                } else {
+                    Vec::new()
+                },
+                after: docker.then_some(DOCKER_AFTER),
             })
         })
         .collect()

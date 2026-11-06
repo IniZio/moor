@@ -172,28 +172,25 @@ moor sends the volumes only on `crabbox warmup`, as a JSON array in
 - `key`, which is `<group>-<name>`
 - `paths`, the paths in the Box, where `~/` is the login user's home
 - `sizeGB`, a size hint, where 0 means the adapter's default
-- `"sealed": true`, when the volume has a seal
 
-A sealed volume's group is the scope's 16 hex characters followed by `x`, so
-it has a store of its own. The work tree volume, `worktree` at
-`~/moor/repos/<repo name>`, is sealed in a group that ends in `w` instead. As a
-result, neither its seal nor Docker's seal can discard the other. An adapter
+The group of a volume with restore steps is the scope's 16 hex characters
+followed by `x`, so it has a store of its own. The work tree volume, `worktree`
+at `~/moor/repos/<repo name>`, is in a group that ends in `w`, and the agent's
+in a group that ends in `a`. As a result, one bad group never empties another.
+An adapter
 that has the feature gives each lease its own login home, because the work
 tree path is the same in every Box of a repo. The adapter keeps one store per
 group, with each name as a subdirectory. The adapter decides where the store
 lives, how big it can grow, and when old copies go. moor never asks a provider
 to require a volume. Any failure starts the Box cold.
 
-At close, after teardown and before release, moor runs each volume's seal in
-the Box. After a seal succeeds, moor writes `.crabbox-sealed` into each of that
-volume's paths. When the adapter restores the group, it deletes that file from
-every path of a sealed volume. On release, the adapter keeps a sealed group
-only when every path of each of its sealed volumes holds the file again. The
-adapter keeps a Box's copy on release after a clean shutdown. A Box that is
+moor cleans what a volume holds when a new Box restores it, so an adapter
+learns nothing about what is inside. The adapter keeps a Box's copy on release
+after a clean shutdown. A Box that is
 killed, or only paused, keeps nothing.
 
 When the Box has a repo, moor also sends `CRABBOX_CACHE_SCOPE`. Its value is
-the repo group's 16 hex characters, without the `x` of a sealed group. A Box
+the repo group's 16 hex characters, without the group's suffix. A Box
 without a repo, or without volumes, gets no scope.
 
 A provider without the feature starts every Box cold, and the Box records a

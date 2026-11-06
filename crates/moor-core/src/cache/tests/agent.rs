@@ -25,19 +25,19 @@ fn plan_for(l: &CacheLayers, user: i64, repo: Option<&ForgeRepo>) -> CachePlan {
 }
 
 #[test]
-fn the_agent_dir_is_a_sealed_volume_in_a_group_of_its_own() {
+fn the_agent_dir_has_its_check_as_a_restore_step_in_a_group_of_its_own() {
     let p = plan(&with_agent("", ""));
     let v = agent_volume(&p).expect("the plan keeps the agent dir");
     let paths: Vec<&str> = v.paths.iter().map(CachePath::as_str).collect();
     assert_eq!(paths, ["~/.local/share/agent"]);
-    assert_eq!(v.seal(), ["true"]);
+    assert_eq!(v.restore(), ["true"]);
     assert!(v.group.ends_with('a'));
     assert_eq!(v.key, format!("{}-agent", v.group));
     let shared = p
         .volumes()
         .iter()
         .any(|o| o.name.as_str() != "agent" && o.group == v.group);
-    assert!(!shared, "a failed seal elsewhere never drops it");
+    assert!(!shared, "a failed restore elsewhere never empties it");
 }
 
 #[test]

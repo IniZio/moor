@@ -8,7 +8,9 @@ use moor_core::boxscript::clone::{
 };
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
+use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
@@ -28,8 +30,8 @@ use crate::ops::common::cache;
 use crate::ops::common::dotfiles;
 use crate::ops::common::identity::Identity;
 use crate::ops::common::proxy::TAIL_LINES;
-use crate::ops::common::step::timed_result;
-use crate::store::Store;
+use crate::ops::common::step::{self, timed_result};
+use crate::store::{BoxRow, Store};
 
 /// What the clone exec reported about the Box.
 #[derive(Default)]
@@ -85,7 +87,11 @@ pub(super) fn clone_with_proxy(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<(Cloned, SetupProxy), CommandError> {
-    let plan = plan(cx, store, id, target, cfg)?;
+    let row = store.box_row(id)?;
+    let kept = row.as_ref().map_or_else(CachePlan::none, |r| {
+        cache::derived(cx, store, r, cfg, &ProviderId::new(target.provider))
+    });
+    let plan = plan(row, target, &kept);
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
@@ -101,11 +107,11 @@ pub(super) fn clone_with_proxy(
             })
         })
         .transpose();
-    let job = Job::new(id, target, plan.as_ref());
+    let job = Job::new(id, target, plan.as_ref(), kept.restore_script());
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
-        _ => clone(cx, target, cfg, &job, &proxy).and_then(|done| {
+        _ => clone(cx, store, target, cfg, &job, &proxy).and_then(|done| {
             let branch = plan.as_ref().map(|p| p.branch.as_str()).unwrap_or_default();
             let others = target.repo.is_some_and(|r| !r.others.is_empty());
             let cloned = |step| {
@@ -139,28 +145,18 @@ pub(super) fn clone_with_proxy(
 }
 
 /// What the Box clones: its repo at the Box's base and on its branch; none for a Box with no repo.
-fn plan(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    target: &SetupTarget<'_>,
-    cfg: &BoxSettings,
-) -> Result<Option<Plan>, CommandError> {
-    let Some(repo) = target.repo else {
-        return Ok(None);
-    };
-    let Some(row) = store.box_row(id)? else {
-        return Ok(None);
-    };
-    let provider = ProviderId::new(target.provider);
-    let refresh = cache::keeps_work_tree(cx, store, &row, cfg, &provider)
-        .then(|| target.handle.as_str().to_owned());
-    Ok(Some(Plan {
+fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
+    let repo = target.repo?;
+    let row = row?;
+    let refresh = kept.work_tree().map(|_| target.handle.as_str().to_owned());
+    Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
-        branch: row.branch.unwrap_or_else(|| box_key::branch(id, &row.name)),
+        branch: row
+            .branch
+            .unwrap_or_else(|| box_key::branch(row.id, &row.name)),
         refresh,
-    }))
+    })
 }
 
 /// What the clone exec runs for Box `id`: the clone and the identity lines of the repo's author.
@@ -171,19 +167,31 @@ struct Job<'a> {
     plan: Option<&'a Plan>,
     /// The identity to set.
     identity: Option<Identity>,
+    /// What makes the Box's restored cache volumes safe, run before anything else.
+    restore: Option<String>,
 }
 
 impl<'a> Job<'a> {
     /// Whether the Box has no repo to clone and no identity to set, so no exec runs and the probe
     /// has none to ride.
     const fn is_empty(&self) -> bool {
-        self.plan.is_none() && self.identity.is_none()
+        self.plan.is_none() && self.identity.is_none() && self.restore.is_none()
     }
 
     /// The job for Box `id`, with the author stored with the target's repo.
-    fn new(id: BoxId, target: &SetupTarget<'_>, plan: Option<&'a Plan>) -> Self {
+    fn new(
+        id: BoxId,
+        target: &SetupTarget<'_>,
+        plan: Option<&'a Plan>,
+        restore: Option<String>,
+    ) -> Self {
         let identity = target.repo.and_then(|r| Identity::of(&r.author));
-        Self { id, plan, identity }
+        Self {
+            id,
+            plan,
+            identity,
+            restore,
+        }
     }
 }
 
@@ -194,6 +202,7 @@ impl<'a> Job<'a> {
 /// reports as before.
 fn clone(
     cx: &Cx,
+    store: &Store,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     job: &Job<'_>,
@@ -211,10 +220,11 @@ fn clone(
         .ok();
     let plan = job.plan;
     let identity = job.identity.as_ref().filter(|_| log.is_some());
-    if plan.is_none() && identity.is_none() {
+    if plan.is_none() && identity.is_none() && job.restore.is_none() {
         return Ok(Cloned::default());
     }
-    let mut script = identity.map(Identity::script).unwrap_or_default();
+    let mut script = job.restore.clone().unwrap_or_default();
+    script.push_str(&identity.map(Identity::script).unwrap_or_default());
     if let Some(plan) = plan {
         if let Some(key) = &plan.refresh {
             script.push_str(&refresh_script(&plan.checkout(), key));
@@ -246,6 +256,7 @@ fn clone(
         let _ = std::fs::remove_file(log);
         text
     });
+    report_emptied(cx, store, job.id, text.as_deref().unwrap_or_default());
     let reason = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => {
             return Ok(report(cx, identity, plan, ms, text.as_deref()));
@@ -257,6 +268,27 @@ fn clone(
         Err(e) => e.to_string(),
     };
     Err(with_tail(reason, text.as_deref().unwrap_or_default()))
+}
+
+/// Reports each volume the restore script emptied; a rerun does not run the script again.
+fn report_emptied(cx: &Cx, store: &Store, id: BoxId, text: &str) {
+    for e in emptied(text) {
+        let message = format!(
+            "cache volume {} was emptied: {}; the Box goes on without it",
+            e.volume, e.reason
+        );
+        let event = ExtraEvent::CacheEmptied {
+            volume: e.volume,
+            reason: e.reason,
+        };
+        if let Err(e) = step::try_record(store, id, event) {
+            step::warn_unrecorded(cx, &e);
+        }
+        cx.warn(Warning {
+            code: "cache_emptied".to_owned(),
+            message,
+        });
+    }
 }
 
 /// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, a submodule

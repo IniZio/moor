@@ -405,6 +405,23 @@ fn a_commit_the_previous_session_reset_away_is_reachable_by_no_name() {
 }
 
 #[test]
+fn an_unpushed_commit_and_stash_are_reachable_by_no_ref_after_the_refresh() {
+    let o = Origin::new("restored");
+    ok(&o, BOX1, "main");
+    let commit = unpushed_commit(&o);
+    std::fs::write(o.tree().join("a.txt"), "stashed\n").unwrap();
+    tree_git(&o, &["stash", "-q"]);
+    let stash = tree_git(&o, &["rev-parse", "refs/stash"]);
+    ok(&o, BOX2, "main");
+    let reachable = tree_git(&o, &["rev-list", "--all", "--reflog"]);
+    assert!(!reachable.contains(&commit), "{reachable}");
+    assert!(!reachable.contains(&stash), "{reachable}");
+    let t = o.tree();
+    let stash_ref = o.try_git(&t, &["rev-parse", "-q", "--verify", "refs/stash"]);
+    assert!(!stash_ref.status.success(), "the stash is gone");
+}
+
+#[test]
 fn a_local_tag_on_an_unpushed_commit_is_gone() {
     let o = Origin::new("tag");
     let tagged = unpushed_commit(&o);
