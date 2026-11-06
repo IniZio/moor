@@ -77,6 +77,15 @@ RS
 removed_names removed-names-punctuated fail <<'RS'
 fn f() { let _ = Worktree { a: 1 }; }
 RS
+removed_names removed-names-submodule-rewrite pass crates/moor-core/src/boxscript/clone.rs <<'RS'
+const G: &str = "git -c url.https://github.com/.insteadOf=git@github.com:";
+RS
+removed_names removed-names-rewrite-elsewhere fail crates/fake.rs <<'RS'
+const G: &str = "git -c url.https://github.com/.insteadOf=git@github.com:";
+RS
+removed_names removed-names-other-insteadof fail crates/moor-core/src/boxscript/clone.rs <<'RS'
+const G: &str = "git config url.x.insteadOf y";
+RS
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS

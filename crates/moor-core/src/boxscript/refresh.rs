@@ -1,7 +1,7 @@
 //! Script that brings a work tree a previous Box left back to a fresh clone plus its ignored
 //! build outputs, before the clone script runs.
 
-use super::clone::Checkout;
+use super::clone::{Checkout, SUBMODULE_GIT};
 use super::quote;
 
 /// What the refresh prints on stdout before `refreshed`, `cold` or `cold after: <reason>`.
@@ -52,8 +52,8 @@ moor_tree_refresh() {{
   for op in rebase merge cherry-pick revert am; do git "$op" --abort >/dev/null 2>&1 || :; done
   git bisect reset >/dev/null 2>&1 || :
   rm -rf -- .git/rebase-merge .git/rebase-apply
-  git fetch -q --prune --prune-tags origin || {{ moor_tree_cold 'git fetch failed'; return 0; }}
-  git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q -- origin {base} || {{ moor_tree_cold 'the base could not be fetched'; return 0; }}
+  git fetch -q --no-recurse-submodules --prune --prune-tags origin || {{ moor_tree_cold 'git fetch failed'; return 0; }}
+  git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q --no-recurse-submodules -- origin {base} || {{ moor_tree_cold 'the base could not be fetched'; return 0; }}
   if [ {base} = HEAD ]; then
     git remote set-head origin -a >/dev/null || {{ moor_tree_cold "the remote's default branch is unknown"; return 0; }}
     from=refs/remotes/origin/HEAD
@@ -70,7 +70,7 @@ moor_tree_refresh() {{
   rm -f -- .git/ORIG_HEAD .git/REBASE_HEAD .git/BISECT_EXPECTED_REV
   git reflog expire --expire=now --all && git worktree prune || {{ moor_tree_cold 'git could not drop old refs'; return 0; }}
   if [ -f .gitmodules ] && git submodule status --recursive 2>/dev/null | grep -q '^[ +U]'; then
-    {{ git submodule sync -q --recursive && git submodule update -q --recursive --force &&
+    {{ {SUBMODULE_GIT} submodule sync -q --recursive && {SUBMODULE_GIT} submodule update -q --recursive --force &&
       git submodule foreach -q --recursive 'git clean -ffdq'; }} || {{ moor_tree_cold 'a submodule could not be updated'; return 0; }}
   fi
   mkdir -p .moor && printf '%s\n' {key} > .moor/tree

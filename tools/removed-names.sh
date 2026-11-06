@@ -37,8 +37,11 @@ for n in "${names[@]}"; do
 done
 scan=(-rn --include='*.rs' --include='*.sh'
   --exclude='tests.rs' --exclude-dir=tests --exclude-dir=target)
+# insteadOf was retired with the old Proxy listener; only the submodule fetch's per-command ssh
+# rewrite may use it, and it writes no git config.
 hits=$( { grep "${scan[@]}" -wF "${word_args[@]}" crates/ || true
-          grep "${scan[@]}" -F "${sub_args[@]}" crates/ || true; } | sort -u )
+          grep "${scan[@]}" -F "${sub_args[@]}" crates/ || true; } | sort -u |
+  grep -vE '^crates/moor-core/src/boxscript/clone\.rs:[0-9]+:.*-c url\.https://github\.com/\.insteadOf=' || true )
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"

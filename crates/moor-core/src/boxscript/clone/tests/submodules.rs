@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use super::super::{at_base, clone_script, left_out_submodules, script, Checkout};
+use super::super::{at_base, clone_script, left_out_submodules, script, Checkout, SUBMODULE_GIT};
 use crate::boxscript::refresh::{outcome, refresh_script};
 use crate::testgit::{Origin, BRANCH};
 
@@ -28,6 +28,10 @@ fn add(o: &Origin, to: &Path, dir: &Path, path: &str) {
 }
 
 fn add_link(o: &Origin, path: &str, url: &str) {
+    add_link_at(o, path, url, &"1".repeat(40));
+}
+
+fn add_link_at(o: &Origin, path: &str, url: &str, commit: &str) {
     let seed = o.seed();
     std::fs::create_dir_all(seed.join(path)).unwrap();
     let gitmodules = seed.join(".gitmodules");
@@ -35,8 +39,41 @@ fn add_link(o: &Origin, path: &str, url: &str) {
     let entry = format!("[submodule \"{path}\"]\n\tpath = {path}\n\turl = {url}\n");
     std::fs::write(&gitmodules, before + &entry).unwrap();
     o.git(&seed, &["add", ".gitmodules"]);
-    let link = format!("160000,{},{path}", "1".repeat(40));
+    let link = format!("160000,{commit},{path}");
     o.git(&seed, &["update-index", "--add", "--cacheinfo", &link]);
+}
+
+const NATIVE_HTTPS: &str = "https://github.com/acme/native.git";
+
+/// A git exec path whose https transport serves `dir` for [`NATIVE_HTTPS`] alone and logs each URL
+/// it is given to the returned file, so nothing leaves the machine. No ssh command works.
+fn fake_https(o: &Origin, dir: &Path) -> (Vec<(&'static str, String)>, PathBuf) {
+    let exec = o.path("exec-path");
+    std::fs::create_dir_all(&exec).unwrap();
+    let real = o.git(&o.seed(), &["--exec-path"]);
+    for entry in std::fs::read_dir(&real).unwrap() {
+        let entry = entry.unwrap();
+        std::os::unix::fs::symlink(entry.path(), exec.join(entry.file_name())).unwrap();
+    }
+    let log = o.path("https.log");
+    let helper = exec.join("git-remote-https");
+    std::fs::remove_file(&helper).unwrap();
+    let body = format!(
+        "#!/bin/sh\necho \"$2\" >> '{}'\n[ \"$2\" = {NATIVE_HTTPS} ] || exit 1\nexec git remote-ext \"$1\" 'git-upload-pack {}'\n",
+        log.display(),
+        dir.display()
+    );
+    std::fs::write(&helper, body).unwrap();
+    std::fs::set_permissions(&helper, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let vars = vec![
+        ("GIT_EXEC_PATH", exec.display().to_string()),
+        ("GIT_SSH_COMMAND", "false".to_owned()),
+    ];
+    (vars, log)
+}
+
+fn borrowed<'a>(vars: &'a [(&'static str, String)]) -> Vec<(&'a str, &'a str)> {
+    vars.iter().map(|(n, v)| (*n, v.as_str())).collect()
 }
 
 fn publish(o: &Origin) -> String {
@@ -303,4 +340,97 @@ fn a_submodule_past_the_budget_is_left_out_and_the_script_finishes() {
     assert_eq!(left_out_paths(&text), ["lib"], "{text}");
     assert!(text.contains("out of time"), "{text}");
     assert_eq!(read(&o, "a.txt"), "one\n");
+}
+
+#[test]
+fn only_an_ssh_github_url_is_rewritten() {
+    let o = Origin::new("sub-rewrite");
+    for (given, want) in [
+        ("git@github.com:acme/native.git", NATIVE_HTTPS),
+        ("ssh://git@github.com/acme/native.git", NATIVE_HTTPS),
+        (NATIVE_HTTPS, NATIVE_HTTPS),
+        (
+            "git@gitlab.com:acme/native.git",
+            "git@gitlab.com:acme/native.git",
+        ),
+        ("file:///srv/native.git", "file:///srv/native.git"),
+    ] {
+        let cmd = format!("{SUBMODULE_GIT} ls-remote --get-url {given}");
+        let (_, text) = run(&o, &cmd, &[]);
+        assert_eq!(text.trim(), want, "{given}");
+    }
+}
+
+#[test]
+fn a_fresh_clone_fetches_an_ssh_submodule_over_https_and_writes_no_config() {
+    for ssh in [
+        "git@github.com:acme/native.git",
+        "ssh://git@github.com/acme/native.git",
+    ] {
+        let o = Origin::new("sub-ssh");
+        let sub = repo(&o, "native");
+        let beside = repo(&o, "beside");
+        let commit = o.git(&sub, &["rev-parse", "HEAD"]);
+        add_link_at(&o, "lib", ssh, &commit);
+        add(&o, &o.seed(), &beside, "local");
+        let base = publish(&o);
+        let (vars, log) = fake_https(&o, &sub);
+        let url = o.url();
+        let c = Checkout {
+            url: &url,
+            base: &base,
+            branch: BRANCH,
+        };
+
+        let (_, text) = run(&o, &clone_script(&c), &borrowed(&vars));
+
+        assert!(left_out_submodules(&text).is_empty(), "{text}");
+        assert_eq!(read(&o, "lib/s.txt"), "native\n");
+        assert_eq!(read(&o, "local/s.txt"), "beside\n", "file:// is unaffected");
+        let asked = std::fs::read_to_string(log).unwrap();
+        assert!(asked.lines().all(|u| u == NATIVE_HTTPS), "{asked}");
+        assert!(!asked.is_empty());
+        for config in [o.tree().join(".git/config"), o.home().join(".gitconfig")] {
+            let text = std::fs::read_to_string(&config).unwrap();
+            assert!(
+                !text.to_lowercase().contains("insteadof"),
+                "{config:?}: {text}"
+            );
+        }
+        let lib = o.tree().join("lib");
+        assert_eq!(o.git(&lib, &["remote", "get-url", "--push", "origin"]), ssh);
+    }
+}
+
+#[test]
+fn a_refresh_moves_an_initialised_ssh_submodule_to_its_new_commit() {
+    let o = Origin::new("sub-ssh-refresh");
+    let sub = repo(&o, "native");
+    let first = o.git(&sub, &["rev-parse", "HEAD"]);
+    add_link_at(&o, "lib", "git@github.com:acme/native.git", &first);
+    let base = publish(&o);
+    let (vars, _) = fake_https(&o, &sub);
+    let vars = borrowed(&vars);
+    let url = o.url();
+    let c = Checkout {
+        url: &url,
+        base: &base,
+        branch: BRANCH,
+    };
+    let script_for = |key: &str| format!("{}{}", refresh_script(&c, key), clone_script(&c));
+    let (_, text) = run(&o, &script_for("moor-1-aaaaaa"), &vars);
+    assert_eq!(read(&o, "lib/s.txt"), "native\n", "{text}");
+
+    std::fs::write(sub.join("s.txt"), "moved\n").unwrap();
+    o.git(&sub, &["commit", "-q", "-am", "moved"]);
+    let moved = o.git(&sub, &["rev-parse", "HEAD"]);
+    let link = format!("160000,{moved},lib");
+    o.git(&o.seed(), &["update-index", "--cacheinfo", &link]);
+    o.push(BRANCH, &[]);
+
+    let (_, text) = run(&o, &script_for("moor-2-bbbbbb"), &vars);
+
+    assert_eq!(outcome(&text), Some("refreshed"), "{text}");
+    assert_eq!(o.git(&o.tree().join("lib"), &["rev-parse", "HEAD"]), moved);
+    assert_eq!(read(&o, "lib/s.txt"), "moved\n");
 }

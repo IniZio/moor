@@ -419,10 +419,12 @@ can read Dependabot alerts and the required checks of a branch. It cannot
 dismiss an alert, because the rule has no write method on those paths.
 
 A submodule on GitHub comes through the same rule as the clone, so a Box gets
-any submodule that token can read, on any owner. A private submodule's URL in
-`.gitmodules` must be https and end in `.git`, the only path the rule allows.
-Any other form reaches GitHub without the token, so moor leaves that submodule
-out and warns.
+any submodule that token can read, on any owner. An `ssh://git@github.com/` or
+`git@github.com:` URL in `.gitmodules` is fetched over https, for moor's own
+submodule fetches only, because a Box has no ssh key. Run yourself, a git command
+that needs such a submodule's remote still tries ssh. A private submodule's
+https URL must end in `.git`, the only path the rule allows; otherwise it reaches
+GitHub without the token, so moor leaves that submodule out and warns.
 
 Only the hosts of these rules go through the Proxy. The Box reaches every
 other host directly. See
