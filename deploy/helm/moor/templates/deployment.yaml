@@ -74,6 +74,9 @@ spec:
               for f in crabbox.yaml box-ssh-key; do
                 if [ -e "/src/secrets/$f" ]; then install -m 0600 "/src/secrets/$f" "/var/lib/moor/config/$f"; fi
               done
+              {{- if .Values.egress.enabled }}
+              install -m 0600 /src/secrets/ledger-tls.crt /src/secrets/ledger-tls.key /var/lib/moor/config/
+              {{- end }}
               {{- if .Values.slack.enabled }}
               cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
               install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
@@ -119,9 +122,20 @@ spec:
             - name: MOOR_DATABASE_READERS
               value: {{ .Values.database.readers | quote }}
             {{- end }}
+            {{- if .Values.egress.enabled }}
+            - name: MOOR_EGRESS_URL
+              value: {{ .Values.egress.url | default (printf "wss://%s/egress" (required "host is required" .Values.host)) | quote }}
+            - name: MOOR_EGRESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: egress-key }
+            {{- end }}
             {{- with .Values.controller.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.egress.enabled }}
+          ports:
+            - { name: ledger, containerPort: {{ .Values.egress.ledgerPort }} }
+          {{- end }}
           readinessProbe:
             exec:
               command: [test, -S, /var/lib/moor/pv/state/controller.sock]

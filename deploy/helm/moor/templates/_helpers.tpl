@@ -34,3 +34,14 @@ seccompProfile:
 capabilities:
   drop: [ALL]
 {{- end -}}
+
+{{/* Not moor.labels: the gate Service and the controller Deployment select on those. */}}
+{{- define "moor.egressLabels" -}}
+app.kubernetes.io/name: moor-egress
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+{{- end -}}
+
+{{/* The name the ledger certificate is issued for and the egress pods dial. */}}
+{{- define "moor.ledgerHost" -}}
+{{ .Release.Name }}-ledger.{{ .Release.Namespace }}.svc
+{{- end -}}

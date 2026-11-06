@@ -90,6 +90,30 @@ mcp:
   enabled: true
   resourceUrl: ""
 
+# The shared egress Proxy, `moor proxy serve-egress`, in a Deployment of its own: every Box's
+# credential hosts go through it at wss://<host>/egress, so a controller deploy leaves Box egress up.
+# Off, the controller runs the Proxy inside its own pod and each deploy cuts it. docs/kubernetes.md
+# says how to make the key and the ledger certificate.
+egress:
+  enabled: false
+  replicas: 2
+  port: 8080
+  # The address Boxes dial; empty is wss://<host>/egress, through the gate ingress.
+  url: ""
+  # How long open tunnels get to finish after SIGTERM (serve-egress --grace).
+  graceSecs: 300
+  # The controller serves its ledger on this port, over TLS, to the egress pods.
+  ledgerPort: 7443
+  # Secret: the key Box tokens are signed with, MOOR_EGRESS_KEY.
+  key: ""
+  # Secret: PEM certificate and key the controller's ledger presents, issued for
+  # <release>-ledger.<namespace>.svc, and the CA the egress pods check it against.
+  ledgerTls:
+    cert: ""
+    key: ""
+    ca: ""
+  resources: {}
+
 persistence:
   size: 10Gi
   storageClassName: ""

@@ -24,6 +24,12 @@ data:
     {{- else }}
     fronts: {}
     {{- end }}
+    {{- if .Values.egress.enabled }}
+    ledger_tls:
+      listen: 0.0.0.0:{{ .Values.egress.ledgerPort }}
+      cert: /var/lib/moor/config/ledger-tls.crt
+      key: /var/lib/moor/config/ledger-tls.key
+    {{- end }}
   {{- if .Values.slack.enabled }}
   slack.yaml: |
     app_token_file: /var/lib/moor/slack/app-token

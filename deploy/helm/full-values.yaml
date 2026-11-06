@@ -46,3 +46,12 @@ persistence:
   storageClassName: standard
 podAnnotations:
   example.com/note: "1"
+egress:
+  enabled: true
+  url: wss://egress.example.com/egress
+  key: example-egress-key
+  ledgerTls:
+    cert: example-cert
+    key: example-key
+    ca: example-ca
+  resources: {limits: {memory: 256Mi}}
