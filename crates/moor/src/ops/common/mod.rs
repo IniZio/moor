@@ -29,6 +29,7 @@ pub(crate) mod resume_gate;
 pub(crate) mod room;
 pub(crate) mod setup;
 pub(crate) mod step;
+pub(crate) mod suspend_check;
 pub(crate) mod target;
 pub(crate) mod transcript;
 pub(crate) mod view;

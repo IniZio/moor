@@ -314,6 +314,7 @@ fn all_events() -> Vec<Event> {
             total_mib: 409_600,
         }),
         Event::DiskLost,
+        Event::CachesNotSaved,
     ]
 }
 
@@ -415,6 +416,7 @@ const fn event_index(e: &Event) -> usize {
         Event::NodeDisk(NodeDiskEvent::NodeDiskLow { .. }) => 77,
         Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered { .. }) => 78,
         Event::DiskLost => 79,
+        Event::CachesNotSaved => 80,
     }
 }
 
@@ -422,7 +424,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 80);
+    assert_eq!(all.len(), 81);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

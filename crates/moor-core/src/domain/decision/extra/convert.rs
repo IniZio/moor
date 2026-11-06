@@ -9,6 +9,7 @@ impl From<ExtraEvent> for Event {
         match e {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::DiskLost => Self::DiskLost,
+            ExtraEvent::CachesNotSaved => Self::CachesNotSaved,
             ExtraEvent::Ran {
                 run,
                 exit,

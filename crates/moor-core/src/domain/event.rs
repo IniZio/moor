@@ -2,7 +2,6 @@
 
 pub use crate::domain::turn::TurnOutcome;
 use crate::{domain::box_state::BoxLifecycle, name::RunId};
-
 /// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -96,6 +95,8 @@ pub enum Event {
     },
     /// The Box's machine was gone and a new one replaced it, without the old disk.
     DiskLost,
+    /// A close deleted the Box without waking it, so its caches were not saved.
+    CachesNotSaved,
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.

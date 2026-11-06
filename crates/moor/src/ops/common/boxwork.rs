@@ -70,13 +70,18 @@ pub(crate) struct ProbePlan {
 /// Anything that stops the probe from giving a definite answer is
 /// [`BoxWork::Unknown`], so a caller never mistakes a failed probe for a clean Box.
 pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> BoxWork {
+    probe_within(cx, row, boxed, BOXWORK_DEADLINE)
+}
+
+/// [`probe`] with no more than `within` to answer.
+pub(crate) fn probe_within(cx: &Cx, row: &BoxRow, boxed: &DriverRow, within: Duration) -> BoxWork {
     let plan = match plan(cx, row, boxed) {
         Ok(plan) => plan,
         Err(work) => return work,
     };
     let done = cx
         .driver()
-        .batch(&plan.handle, &[], &plan.steps, Deadline(BOXWORK_DEADLINE));
+        .batch(&plan.handle, &[], &plan.steps, Deadline(within));
     read(&plan, &mut done.into_iter())
 }
 

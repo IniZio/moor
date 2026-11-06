@@ -549,6 +549,7 @@ mod disk_alert;
 mod keeper;
 mod pressure;
 mod queue;
+mod stored_check;
 
 #[test]
 fn a_node_short_of_disk_makes_a_start_wait_with_a_disk_reason() {

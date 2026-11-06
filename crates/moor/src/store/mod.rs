@@ -54,6 +54,7 @@ pub(crate) mod lease;
 mod open;
 pub(crate) use open::Database;
 mod pressure;
+pub(crate) use pressure::SuspendCheck;
 mod proxy;
 pub(super) mod reads;
 mod repo;

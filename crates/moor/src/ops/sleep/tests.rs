@@ -466,14 +466,21 @@ fn sleep_with_the_pane_already_gone_still_sleeps() {
 }
 
 #[test]
-fn sleep_makes_no_box_call_but_the_sleep() {
+fn sleep_asks_the_box_only_what_it_holds_then_sleeps() {
     let f = idle();
     let before = f.driver.calls();
     run(&f.cx, &req()).unwrap();
     let calls = f.driver.calls();
     assert_eq!(
         calls.get(before.len()..),
-        Some(&["sleep box-1".to_owned()][..])
+        Some(
+            &[
+                "workdir box-1".to_owned(),
+                "exec box-1".to_owned(),
+                "peek_file box-1".to_owned(),
+                "sleep box-1".to_owned()
+            ][..]
+        )
     );
 }
 

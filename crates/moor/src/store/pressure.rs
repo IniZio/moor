@@ -23,6 +23,17 @@ pub(crate) struct Pressure {
     pub(crate) suspended_at: Option<i64>,
 }
 
+/// What a Box held that was not pushed, checked just before it was suspended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SuspendCheck {
+    /// Commits on no remote-tracking ref and not in the base.
+    pub(crate) ahead: u32,
+    /// Changed or untracked paths.
+    pub(crate) dirty: u32,
+    /// When it was checked, unix seconds.
+    pub(crate) at: i64,
+}
+
 impl Store {
     /// `node`'s pressure state.
     pub(crate) fn pressure(&self, node: &NodeName) -> Result<Pressure, StoreError> {
@@ -110,6 +121,49 @@ impl Store {
                 .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())
+    }
+
+    /// Stores what Box `id` holds, or that nothing is known of it.
+    pub(crate) fn set_suspend_check(
+        &self,
+        id: BoxId,
+        check: Option<SuspendCheck>,
+    ) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::SuspendAhead, check.map(|c| i64::from(c.ahead)))
+                .value(Boxes::SuspendDirty, check.map(|c| i64::from(c.dirty)))
+                .value(Boxes::SuspendCheckedAt, check.map(|c| c.at))
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+        )?;
+        Ok(())
+    }
+
+    /// What was stored of Box `id` before it was suspended; none when no answer stands.
+    pub(crate) fn suspend_check(&self, id: BoxId) -> Result<Option<SuspendCheck>, StoreError> {
+        let conn = self.reader()?;
+        let row: Option<(Option<i64>, Option<i64>, Option<i64>)> = conn
+            .row(
+                Query::select()
+                    .columns([
+                        Boxes::SuspendAhead,
+                        Boxes::SuspendDirty,
+                        Boxes::SuspendCheckedAt,
+                    ])
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        Ok(match row {
+            Some((Some(ahead), Some(dirty), Some(at))) => Some(SuspendCheck {
+                ahead: u32::try_from(ahead).unwrap_or(u32::MAX),
+                dirty: u32::try_from(dirty).unwrap_or(u32::MAX),
+                at,
+            }),
+            _ => None,
+        })
     }
 
     /// When Box `id` was suspended as a last resort, unix seconds; none when it was not.

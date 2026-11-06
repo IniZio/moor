@@ -12,6 +12,7 @@ impl TryFrom<Event> for ExtraEvent {
         match e {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::DiskLost => Ok(Self::DiskLost),
+            Event::CachesNotSaved => Ok(Self::CachesNotSaved),
             Event::Ran {
                 run,
                 exit,

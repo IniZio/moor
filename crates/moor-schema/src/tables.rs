@@ -49,7 +49,8 @@ tables! {
         State, StateReason, IntentKind, IntentPid, IntentRun, IntentAt, SetupFailedAt, IdleSince,
         LaunchFailure, Provider, Handle, DriverState, AttemptedHandle, Workdir, Egress,
         SleepReason, Cpus, MemMib, DriverUpdatedAt, CreatedAt, UpdatedAt, Node, NodeLabels,
-        NodeMemMib, ResumeFirstAt, OtherRepos, StepsPendingAt }
+        NodeMemMib, ResumeFirstAt, OtherRepos, StepsPendingAt, SuspendAhead, SuspendDirty,
+        SuspendCheckedAt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, WorkspaceId, Pane, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, Pane, StartedAt, EndedAt, Exit, TranscriptDigest,

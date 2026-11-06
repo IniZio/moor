@@ -32,7 +32,8 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 80] = [
+pub const EVENT_KINDS: [&str; 81] = [
+    "caches_not_saved",
     "disk_lost",
     "started",
     "rejected",
@@ -143,6 +144,7 @@ impl Event {
             Self::BoxReleaseFailed { .. } => "box_release_failed",
             Self::StaysUp { .. } => "stays_up",
             Self::DiskLost => "disk_lost",
+            Self::CachesNotSaved => "caches_not_saved",
             Self::Ran { .. } => "ran",
             Self::Copied { .. } => "copied",
             Self::SessionStarted { .. } => "session_started",
