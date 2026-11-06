@@ -99,6 +99,8 @@ pub(crate) enum BoxEvent {
     Relaunched,
     /// The controller refused another automatic agent relaunch.
     RelaunchCapped,
+    /// The Box's machine was lost and replaced, along with its disk.
+    DiskLost,
     /// The controller refused a close because the Box holds work that is not pushed.
     Unsaved {
         /// Unpushed commits.
@@ -161,6 +163,7 @@ impl BoxEvent {
             Self::AutoSlept => "auto_slept",
             Self::Relaunched => "relaunched",
             Self::RelaunchCapped => "relaunch_capped",
+            Self::DiskLost => "disk_lost",
             Self::Unsaved { .. } => "unsaved",
             Self::CloseRefused => "close_refused",
             Self::Stopped(_) => "stopped",
@@ -191,6 +194,7 @@ impl BoxEvent {
             Self::AutoSlept => "went to sleep to save resources",
             Self::Relaunched => "had its agent started again",
             Self::RelaunchCapped => "was not relaunched, the automatic relaunch cap was reached",
+            Self::DiskLost => "lost its machine and its disk",
         };
         format!("[moor] Box `{name}` {what}.")
     }

@@ -29,7 +29,7 @@ use crate::{rewrite, Person};
 pub(crate) const PREFIX: &str = "moor://box/";
 
 /// Kinds after which a Box's resource reads differently.
-const UPDATED: [&str; 17] = [
+const UPDATED: [&str; 18] = [
     "idled",
     "busy",
     "needs_input",
@@ -42,6 +42,7 @@ const UPDATED: [&str; 17] = [
     "launch_timed_out",
     "relaunch_capped",
     "relaunched",
+    "disk_lost",
     "box_ready",
     "box_failed",
     "asleep",

@@ -46,6 +46,7 @@ One line per event, flushed at once:
 | `moor: box <name> <event>: <agent_said>` | The Box's newest `idled`, `needs_input`, `agent_stalled`, `agent_resumed`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped` or `closed` event. `agent_said` is the first line of what the agent said, cut at 200 characters, and the `: ...` is left out when there is none. Each event prints once. The `closed` line does not say why: the event's `data` has `from` and, when moor closed the Box on its own, `reason` (`setup_failed_expired` or `close_failed`). |
 | `moor: box <name> stalled: no progress for <N> min[ while <doing>]` | The agent reported busy and has sent no report for at least 10 minutes. `while ...` names what it was doing, when it said. Printed once per stall. |
 | `moor: box <name> resumed after <N> min` | A stalled agent reported again. |
+| `moor: box <name> disk_lost: its machine was replaced, so anything not pushed is gone` | The Box's machine vanished and a new one with an empty disk took its place. |
 | `moor: box <name> node_disk_low: <node> has <N> GiB free of <M> GiB` | The disk of the Box's node ran low. Sent for one Box per owner. `node_disk_recovered` has the same shape. |
 | `moor-listen: stream lost (<reason>); reconnecting` | The stream ended, failed or sent nothing for 45 s, and the first reconnect failed too. A drop that reconnects at once prints nothing. Printed once per outage; it retries after 2 s, doubling to 60 s. |
 | `moor-listen: reconnected` | The stream is back after a `stream lost` line. |

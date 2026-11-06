@@ -15,7 +15,7 @@ use crate::token::Fail;
 const PREFIX: &str = "moor://box/";
 
 /// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 12] = [
+const WORTH: [&str; 13] = [
     "idled",
     "needs_input",
     "agent_stalled",
@@ -27,6 +27,7 @@ const WORTH: [&str; 12] = [
     "launch_timed_out",
     "box_failed",
     "relaunch_capped",
+    "disk_lost",
     "closed",
 ];
 
@@ -361,6 +362,11 @@ fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String>
 
 /// The line for a node's disk running low or coming back; none for other kinds.
 fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
+    if kind == "disk_lost" {
+        return Some(format!(
+            "moor: box {name} disk_lost: its machine was replaced, so anything not pushed is gone"
+        ));
+    }
     if !matches!(kind, "node_disk_low" | "node_disk_recovered") {
         return None;
     }
