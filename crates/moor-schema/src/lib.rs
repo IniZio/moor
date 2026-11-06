@@ -12,6 +12,7 @@ mod forward_port;
 mod held_prompt;
 mod insertion_order;
 mod link_runner;
+mod pause_publish;
 mod proxy_key;
 mod proxy_state;
 mod resume_memory;
@@ -76,6 +77,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V58__warm_starts",
         write: warm_starts::write,
+    },
+    Step {
+        name: "V59__pause_publish",
+        write: pause_publish::write,
     },
 ];
 

@@ -6,9 +6,13 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::{BoxPath, ErrorKind};
 
+use crate::ops::common::autosleep;
+
 use super::pressure::{agents_report, tick, wake_up, BELOW_RESERVE};
 use super::*;
 use crate::store::SuspendCheck;
+
+mod pause_publish;
 
 const CEILING: u64 = 23 * 1024;
 const CLEAN: &str = "ahead=0 dirty=0";
@@ -134,7 +138,9 @@ fn an_idle_box_with_a_run_in_flight_is_not_asked_either() {
     };
     let _claim = w.cx.store().unwrap().begin_run(new_run).unwrap();
     let before = calls(&w, "exec");
-    crate::ops::common::suspend_check::record(&w.cx, w.cx.store().unwrap(), b);
+    let store = w.cx.store().unwrap();
+    let settled = autosleep::settled(&w.cx, store, &store.box_row(b).unwrap().unwrap()).unwrap();
+    crate::ops::common::suspend_check::record(&w.cx, store, b, settled);
     assert_eq!(stored(&w, b), None);
     assert_eq!(calls(&w, "exec"), before);
 }

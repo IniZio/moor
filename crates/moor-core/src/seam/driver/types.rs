@@ -52,6 +52,15 @@ pub struct BoxListing {
     pub asleep: bool,
 }
 
+/// Whether a sleep may save the Box's caches; a Box suspended at work could hold torn files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PausePublish {
+    /// The provider may save the caches once the Box is suspended.
+    Allowed,
+    /// The provider saves nothing for this sleep.
+    Denied,
+}
+
 /// What `Driver::sleep` did for a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SleepOutcome {

@@ -185,9 +185,33 @@ lives, how big it can grow, and when old copies go. moor never asks a provider
 to require a volume. Any failure starts the Box cold.
 
 moor cleans what a volume holds when a new Box restores it, so an adapter
-learns nothing about what is inside. The adapter keeps a Box's copy on release
-after a clean shutdown. A Box that is
-killed, or only paused, keeps nothing.
+learns nothing about what is inside. The adapter keeps a Box's copy on release.
+A Box killed outside a pause or a close keeps nothing.
+
+### Saving at a pause
+
+A provider with the `cache-save-on-pause` feature in `crabbox providers --json
+--configured` can also save the volumes while a Box sleeps, so a new Box of the
+repo need not wait for the old one to close. Only the trusted crabbox user config
+can turn it on:
+
+```yaml
+external:
+  capabilities: { cacheSaveOnPause: true }
+```
+
+moor asks with `CRABBOX_PAUSE_PUBLISH=1` on `crabbox pause`, which crabbox sends to
+the adapter as `publishCaches: true` in the `pause` request. An absent field means
+save nothing, and an adapter must treat it that way.
+
+moor asks only when the agent was quiet before the sleep began and no run is in
+flight. An agent moor cannot read does not count as quiet. A Box suspended at work, whether by memory pressure, by the awake limit or by
+`moor sleep`, saves nothing, because it could hold torn files. Such a
+Box closed without a wake also saves nothing and records `caches_not_saved`. Woken
+first, it closes as usual and saves.
+
+On a personal node the machine's agent reports the feature with the others, so
+the crabbox config on that machine turns it on.
 
 When the Box has a repo, moor also sends `CRABBOX_CACHE_SCOPE`. Its value is
 the repo group's 16 hex characters, without the group's suffix. A Box

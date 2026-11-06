@@ -72,3 +72,43 @@ fn a_personal_node_that_mounts_cache_volumes_records_nothing() {
     planned_volumes(&w);
     assert!(cold_reasons(&w).is_empty());
 }
+
+fn saves(w: &World) -> bool {
+    let store = w.cx.store().unwrap();
+    let row = store
+        .open_box_by_name(&crate::testing::box_name("demo"))
+        .unwrap()
+        .unwrap();
+    crate::ops::common::cache::saves_on_pause(&w.cx, store, &row)
+}
+
+#[test]
+fn a_personal_node_saves_at_a_pause_only_when_its_online_agent_reports_it() {
+    let w = cached_world(&["cache-volume", "cache-save-on-pause"], true);
+    planned_volumes(&w);
+    assert!(saves(&w));
+    let w = cached_world(&["cache-volume"], true);
+    planned_volumes(&w);
+    assert!(!saves(&w));
+    let store_links = |w: &World| w.cx.store().unwrap().user_machine_links(REQUESTER_USER);
+    let w = cached_world(&["cache-volume", "cache-save-on-pause"], true);
+    planned_volumes(&w);
+    let machine_id = store_links(&w).unwrap().first().unwrap().1.machine_id;
+    let offline = MachineLink {
+        machine_id,
+        online: false,
+        since: Ts::from_millis(2),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: vec!["cache-save-on-pause".to_owned()],
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
+        warm_starts: None,
+        memory: None,
+    };
+    nodes::set_links(&w.cx, &crate::testing::one_runner(vec![offline])).unwrap();
+    assert!(!saves(&w));
+}

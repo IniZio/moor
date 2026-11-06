@@ -283,6 +283,7 @@ fn write_box(
                 Boxes::SuspendAhead,
                 Boxes::SuspendDirty,
                 Boxes::SuspendCheckedAt,
+                Boxes::SuspendPublish,
             ] {
                 sets.push((column, None::<i64>.into()));
             }

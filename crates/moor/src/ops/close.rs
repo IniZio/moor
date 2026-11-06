@@ -9,6 +9,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Intent};
+use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
@@ -62,7 +63,11 @@ pub(crate) fn run_with_reason(
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
-    if probed_clean && unwoken {
+    // A forced close reads nothing in the Box, so it has no answer; its caches go with it all the same.
+    if unwoken
+        && (probed_clean || req.force)
+        && store.pause_publish(row.id)? != PausePublish::Allowed
+    {
         store.apply(Decision::new(row.id).event(ExtraEvent::CachesNotSaved))?;
     }
     let saved = save_transcript(cx, store, &row)?;

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
 use moor_core::name::{BoxId, NodeName};
+use moor_core::seam::driver::PausePublish;
 
 use moor_schema::tables::{Boxes, NodePressure};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
@@ -193,6 +194,41 @@ impl Store {
                 at,
             }),
             _ => None,
+        })
+    }
+
+    /// Stores whether the suspend of Box `id` may save its caches.
+    pub(crate) fn set_pause_publish(
+        &self,
+        id: BoxId,
+        publish: PausePublish,
+    ) -> Result<(), StoreError> {
+        let allowed = (publish == PausePublish::Allowed).then_some(1_i64);
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::SuspendPublish, allowed)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+        )?;
+        Ok(())
+    }
+
+    /// Whether the last suspend of Box `id` may have saved its caches; found stopped, it did not.
+    pub(crate) fn pause_publish(&self, id: BoxId) -> Result<PausePublish, StoreError> {
+        let conn = self.reader()?;
+        let allowed: Option<Option<i64>> = conn
+            .row(
+                Query::select()
+                    .column(Boxes::SuspendPublish)
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(if allowed.flatten().is_some() {
+            PausePublish::Allowed
+        } else {
+            PausePublish::Denied
         })
     }
 

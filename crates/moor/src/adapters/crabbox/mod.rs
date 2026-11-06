@@ -40,8 +40,8 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
-    DriverError, ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, Released, RunEnd,
-    SleepOutcome, StepDone, TunnelHandle,
+    DriverError, ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, PausePublish, Released,
+    RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -326,8 +326,12 @@ impl Driver for Crabbox {
         link::refresh(self, handle)
     }
 
-    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        let result = sleep::sleep(self, handle);
+    fn sleep(
+        &self,
+        handle: &BoxHandle,
+        publish: PausePublish,
+    ) -> Result<SleepOutcome, DriverError> {
+        let result = sleep::sleep(self, handle, publish);
         self.forget_targets(handle);
         result
     }

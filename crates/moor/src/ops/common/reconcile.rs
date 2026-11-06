@@ -6,7 +6,7 @@ use moor_core::decide::reconcile::{reconcile, stopped, BoxFact, STOPPED_REASON};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, PausePublish};
 use moor_core::{ProviderId, Warning};
 
 use crate::adapters::proc::plain::last_sentence;
@@ -99,6 +99,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
         return;
     }
     let _ = store.set_suspend_check(id, None);
+    let _ = store.set_pause_publish(id, PausePublish::Denied);
     if row.session.is_quiet() {
         let _ = store.apply(d);
         return;

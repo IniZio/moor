@@ -12,6 +12,7 @@ const SCRIPT: &str = r#"#!/bin/sh
 echo "$PWD $*" >> "$HOME/crabbox.log"
 [ -n "$CRABBOX_CACHE_VOLUMES" ] && printf '%s %s\n' "$CRABBOX_CACHE_SCOPE" "$CRABBOX_CACHE_VOLUMES" >> "$HOME/cache.env"
 echo "$1 ${CRABBOX_CACHE_STORE_MAX_GB-unset}" >> "$HOME/cap.log"
+echo "$1 ${CRABBOX_PAUSE_PUBLISH-unset}" >> "$HOME/publish.log"
 for a in "$@"; do
   case "$a" in
     --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;

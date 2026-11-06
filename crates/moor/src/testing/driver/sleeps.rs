@@ -1,13 +1,18 @@
 //! The Driver fake's sleep and wake: both log the call, fail on an unknown Box, then run the hook.
 
-use moor_core::seam::driver::{DriverError, SleepOutcome};
+use moor_core::seam::driver::{DriverError, PausePublish, SleepOutcome};
 use moor_core::BoxHandle;
 
 use super::FakeDriver;
 
 impl FakeDriver {
-    pub(super) fn local_sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+    pub(super) fn local_sleep(
+        &self,
+        handle: &BoxHandle,
+        publish: PausePublish,
+    ) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
+        s.cache.pause_publishes.push(publish);
         s.note(format!("sleep {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);

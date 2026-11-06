@@ -217,11 +217,12 @@ A close never takes a place in the queue or suspends another Box:
 
 | What is known | The Box fits now | It does not |
 | --- | --- | --- |
-| Clean | Wakes, so its teardown runs and its caches are saved | Deleted unwoken, with a `caches_not_saved` event; its reports and artifacts are already saved |
+| Clean | Wakes, so its teardown runs and its caches are saved | Deleted unwoken; its reports and artifacts are already saved. Caches are kept if it [saved them as it slept](providers.md#saving-at-a-pause), otherwise it records a `caches_not_saved` event |
 | Holds unsaved work | Refused, naming the work, unwoken | Same |
 | Nothing | Wakes and checks | Refused with why |
 
-`--force` closes without any of this.
+`--force` closes without any of this, and records `caches_not_saved` when the Box
+is asleep and did not save its caches as it slept.
 
 
 ## Warm starts

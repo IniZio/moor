@@ -53,6 +53,7 @@ fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
         reverse_tunnel: true,
         has_workdir: true,
         cache_volumes: false,
+        cache_save_on_pause: false,
         checkpoints: false,
     }
 }
@@ -240,4 +241,16 @@ fn caps_failure_carries_crabbox_message() {
             ),
         })
     );
+}
+
+#[test]
+fn saving_at_a_pause_follows_its_own_feature_token() {
+    let saves = |features: &[&str]| {
+        let json = serde_json::json!([{"provider": "p", "features": features}]).to_string();
+        caps_from(&json, &ProviderId::new("p"))
+            .unwrap()
+            .cache_save_on_pause
+    };
+    assert!(saves(&["pause-resume", "cache-save-on-pause"]));
+    assert!(!saves(&["pause-resume", "cache-volume"]));
 }

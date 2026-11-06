@@ -7,7 +7,8 @@ use std::time::Duration;
 use super::*;
 use crate::name::{BoxPath, ProviderId};
 use crate::seam::driver::{
-    AcquireReq, Acquired, BoxListing, DriverCaps, Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, DriverCaps, PausePublish, Released, SleepOutcome,
+    TunnelHandle,
 };
 
 struct Scripted {
@@ -75,7 +76,7 @@ impl Driver for Scripted {
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         no()
     }
-    fn sleep(&self, _: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+    fn sleep(&self, _: &BoxHandle, _: PausePublish) -> Result<SleepOutcome, DriverError> {
         no()
     }
     fn wake(&self, _: &BoxHandle) -> Result<(), DriverError> {

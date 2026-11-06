@@ -11,7 +11,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
-use moor_core::seam::driver::SleepOutcome;
+use moor_core::seam::driver::{PausePublish, SleepOutcome};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{ErrorKind, Warning};
 
@@ -19,6 +19,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::Reading;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::cache::saves_on_pause;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::suspend_check;
 use crate::ops::start::revive_after_wake;
@@ -109,6 +110,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
+    let settled = agent != AgentRead::Unread && settled(cx, store, &row)?;
     if !row.session.is_quiet() {
         // Only the awake cap gets here; the sleep ends the agent's pane, so its Session is quiet.
         match store.apply(Decision::new(id).session(SessionInput::AgentQuiet)) {
@@ -117,7 +119,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
             Err(e) => return Err(e.into()),
         }
     }
-    let decision = match sleep_parked(cx, store, id, &handle)? {
+    let decision = match sleep_parked(cx, store, &row, &handle, settled)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .lifecycle(BoxLifecycleInput::Sleep {
                 auto: true,
@@ -147,20 +149,30 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
 /// finds the pane gone and attaches a new one, or relaunches an agent that did not survive. A Box
 /// that stays awake gets its tunnel back and its agent back the same way. Both are best effort: the sleep result is what the caller needs
 /// to see.
+///
+/// `settled` comes from [`settled`], read before anything marked the agent quiet for this sleep.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
-    id: BoxId,
+    row: &BoxRow,
     handle: &BoxHandle,
+    settled: bool,
 ) -> Result<SleepOutcome, CommandError> {
+    let id = row.id;
+    let publish = if settled && saves_on_pause(cx, store, row) {
+        PausePublish::Allowed
+    } else {
+        PausePublish::Denied
+    };
+    store.set_pause_publish(id, publish)?;
     // Parking takes the Proxy away, and the check runs in the Box.
-    suspend_check::record(cx, store, id);
+    suspend_check::record(cx, store, id, settled);
     park_tunnel(cx, id)?;
     if let Err(e) = close_agent_pane(cx, store, id) {
         let _ = restore_tunnel(cx, id);
         return Err(e);
     }
-    let slept = cx.driver().sleep(handle);
+    let slept = cx.driver().sleep(handle, publish);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, id);
         if let Err(e) = revive_after_wake(cx, store, id) {
@@ -171,6 +183,14 @@ pub(crate) fn sleep_parked(
         }
     }
     Ok(slept?)
+}
+
+/// Whether `row`'s agent is read and quiet and no run is in flight, so nothing it started writes to
+/// the Box.
+pub(crate) fn settled(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    Ok(row.session.is_quiet()
+        && store.in_flight_run(row.id)?.is_none()
+        && !store.agent_unread(row.id, cx.clock().now())?)
 }
 
 /// Closes the live agent pane; a pane already gone is fine.

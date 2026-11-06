@@ -548,8 +548,10 @@ old image.
 A cache volume is a directory in the Box that the provider keeps across Boxes,
 so a second Box does not download the same packages again. Each Box gets a
 private copy of the newest kept copy when it starts. When the Box closes, its
-copy becomes the newest. Two Boxes never write the same copy, and the newest
-close wins. The provider decides where the copies live and how big they grow.
+copy becomes the newest. On a provider that can [save at a
+pause](providers.md#saving-at-a-pause), so does a Box that goes to sleep with its
+agent quiet and no run in flight. A Box suspended at work saves nothing. Two Boxes
+never write the same copy, and the newest save wins. The provider decides where the copies live and how big they grow.
 See [Cache volumes](providers.md#cache-volumes). A provider without cache
 volumes starts every Box cold.
 
