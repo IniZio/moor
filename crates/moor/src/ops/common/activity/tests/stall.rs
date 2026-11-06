@@ -3,6 +3,8 @@
 use std::time::Duration;
 
 use moor_core::activity::Activity;
+use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::boxes::BoxInput;
 use moor_core::seam::clock::Clock;
 
 use super::*;
@@ -84,6 +86,26 @@ fn a_busy_hook_quiet_for_eleven_minutes_writes_one_stall() {
 fn nine_minutes_is_not_a_stall() {
     let (_dir, rig) = rig();
     rig.hooked(HookKind::Busy, 9 * MINUTE, None);
+    rig.pass(false);
+    assert!(rig.events("agent_stalled").is_empty());
+}
+
+#[test]
+fn a_box_suspended_mid_turn_is_not_a_stall() {
+    let (_dir, rig) = rig();
+    rig.hooked(HookKind::Busy, 11 * MINUTE, None);
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: "last-resort suspend".to_owned(),
+    };
+    rig.cx
+        .store()
+        .unwrap()
+        .apply(
+            Decision::new(rig.id)
+                .lifecycle(suspend)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
     rig.pass(false);
     assert!(rig.events("agent_stalled").is_empty());
 }

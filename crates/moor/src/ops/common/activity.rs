@@ -141,7 +141,8 @@ impl Reading {
 
 /// Read `row`'s agent once.
 ///
-/// The only caller of `Engine::probe`; a Box with no live session, handle or workdir is not probed.
+/// The only caller of `Engine::probe`; a Box that is asleep or has no live session, handle or
+/// workdir is not probed.
 /// A fresh hook report is cached; a dropped read leaves the cache. A run in flight forces `Working`.
 ///
 /// # Errors
@@ -168,13 +169,8 @@ pub(crate) fn read(
         return Ok(Reading::none(in_flight));
     };
     let cache = stored_hook(cx, store, row.id)?;
-    let probes = cx.engine().probe(&sref, deadline).unwrap_or_else(|e| {
-        warn(cx, format!("could not probe the agent: {e}"));
-        Probes {
-            hook: HookRead::TimedOut,
-            pane: PaneRead::TimedOut,
-        }
-    });
+    let asleep = row.asleep();
+    let probes = probe(cx, &sref, asleep, deadline);
     let mut agent_session = row.agent_session_id.clone();
     if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;
@@ -191,7 +187,7 @@ pub(crate) fn read(
     if in_flight {
         activity.state = AgentState::Working;
     }
-    let may_quiet = !in_flight && may_apply_quiet(&activity, Some(&probes));
+    let may_quiet = !asleep && !in_flight && may_apply_quiet(&activity, Some(&probes));
     let said = said::said(&activity, &probes.hook, cache.as_ref());
     Ok(Reading {
         pane: liveness(&probes.pane, &activity),
@@ -205,7 +201,25 @@ pub(crate) fn read(
         agent_session,
         pane_text,
         said,
-        hook_unread: cache.is_none() && matches!(probes.hook, HookRead::TimedOut),
+        hook_unread: !asleep && cache.is_none() && matches!(probes.hook, HookRead::TimedOut),
+    })
+}
+
+/// What the agent `sref` answers. A suspended guest answers nothing, and asking ties up its host
+/// until the call times out, so an `asleep` Box answers from what is stored.
+fn probe(cx: &Cx, sref: &SessionRef, asleep: bool, deadline: Deadline) -> Probes {
+    if asleep {
+        return Probes {
+            hook: HookRead::TimedOut,
+            pane: PaneRead::Absent,
+        };
+    }
+    cx.engine().probe(sref, deadline).unwrap_or_else(|e| {
+        warn(cx, format!("could not probe the agent: {e}"));
+        Probes {
+            hook: HookRead::TimedOut,
+            pane: PaneRead::TimedOut,
+        }
     })
 }
 
@@ -235,7 +249,8 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
-/// A Box that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
+/// An asleep Box is not moved: nothing was read from it, and a wake asks after its agent. A Box
+/// that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
 /// only when the reading `may_quiet` and is not busy; an Idle Box goes back to Working when the
 /// reading is busy. Nothing else decides quiet: a gone pane, an idle status or a dropped hook
 /// read never idles a Box. If the row changed since the read, the store refuses the step.
@@ -248,6 +263,9 @@ pub(crate) fn settle(
     row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
+    if row.asleep() {
+        return Ok(());
+    }
     let fate = match (reading.pane, reading.session) {
         (PaneLiveness::Exited | PaneLiveness::Lost, Some(probed)) => {
             link::after_pane_end(cx, store, row, reading, probed)?.map(|f| (f, probed))
