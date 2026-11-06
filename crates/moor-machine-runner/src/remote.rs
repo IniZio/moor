@@ -1,5 +1,6 @@
 //! The runner's listener for a controller in another pod: each connection opens with a hello
-//! naming the links broker or port forwards and carrying the machine service key.
+//! naming the links broker, port forwards or a forwarded connection's dial back, and carrying
+//! the machine service key.
 
 use std::io;
 use std::net::SocketAddr;
@@ -7,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_client::link::ops;
-use moor_client::link::reach::{Hello, Keyed, HELLO_V};
+use moor_client::link::reach::{Hello, HELLO_V};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::Agents;
@@ -53,16 +54,20 @@ async fn greet(mut conn: TcpStream, agents: &Agents, key: &str) {
         return;
     };
     match hello {
-        Hello::Links(keyed) => crate::broker::carry(conn, agents, admits(&keyed, key)).await,
-        Hello::Forwards(keyed) => crate::forwards::hold(conn, agents, admits(&keyed, key)).await,
+        Hello::Links(k) => crate::broker::carry(conn, agents, admits(k.v, &k.key, key)).await,
+        Hello::Forwards(k) => crate::forwards::hold(conn, agents, admits(k.v, &k.key, key)).await,
+        Hello::Conn(d) => {
+            let admitted = admits(d.v, &d.key, key);
+            crate::forwards::claim(conn, &agents.routes, d.n, admitted).await;
+        }
     }
 }
 
-/// Whether `keyed` speaks this version and carries `key`; the keys' digests are compared in
-/// constant time, so timing says nothing of the key.
-fn admits(keyed: &Keyed, key: &str) -> bool {
+/// Whether a hello of version `v` presenting `presented` speaks this version and carries `key`;
+/// the keys' digests are compared in constant time, so timing says nothing of the key.
+fn admits(v: u32, presented: &str, key: &str) -> bool {
     use sha2::{Digest as _, Sha256};
     use subtle::ConstantTimeEq as _;
-    let same = Sha256::digest(keyed.key.as_bytes()).ct_eq(&Sha256::digest(key.as_bytes()));
-    keyed.v == HELLO_V && bool::from(same)
+    let same = Sha256::digest(presented.as_bytes()).ct_eq(&Sha256::digest(key.as_bytes()));
+    v == HELLO_V && bool::from(same)
 }

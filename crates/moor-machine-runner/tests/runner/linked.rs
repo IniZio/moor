@@ -1,6 +1,9 @@
 //! A machine whose agent links in: exec, hooks and relays reach it over the link, never ssh.
 
-use std::path::Path;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -244,37 +247,96 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// Echoes every connection on a fresh loopback port, standing in for the tunnel into the Box.
-fn echo() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    std::thread::spawn(move || {
-        for conn in listener.incoming().flatten() {
-            std::thread::spawn(move || {
-                let mut out = conn.try_clone().unwrap();
-                let _ = std::io::copy(&mut &conn, &mut out);
-            });
+/// The machine service key a controller in another pod presents.
+const KEY: &str = "machine-service-key";
+
+/// The supervisor's held connection: its lines, and the stream that writes them.
+type Carrier = BufReader<Box<dyn ReadWrite>>;
+
+trait ReadWrite: Read + Write + Send {}
+impl<T: Read + Write + Send> ReadWrite for T {}
+
+/// How the supervisor reaches the runner: the socket on this host, or across the network with
+/// a key.
+#[derive(Clone)]
+enum Via {
+    Local(PathBuf),
+    Remote(u16, &'static str),
+}
+
+impl Via {
+    /// A connection for `local`'s line on this host, or `hello`'s across the network.
+    fn connect(&self, local: Option<Value>, hello: Value) -> Box<dyn ReadWrite> {
+        match self {
+            Self::Local(path) => {
+                let mut conn = UnixStream::connect(path).unwrap();
+                if let Some(line) = local {
+                    writeln!(conn, "{line}").unwrap();
+                }
+                Box::new(conn)
+            }
+            Self::Remote(port, key) => {
+                let mut conn = TcpStream::connect(("127.0.0.1", *port)).unwrap();
+                let (name, mut v) = hello
+                    .as_object()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .next()
+                    .unwrap();
+                v["v"] = json!(1);
+                v["key"] = json!(key);
+                let hello = json!({ name: v });
+                writeln!(conn, "{hello}").unwrap();
+                Box::new(conn)
+            }
         }
-    });
-    port
+    }
+
+    /// Asks the runner to forward Box `ports` of `box_id`, as the supervisor does; its answer and
+    /// the carrier.
+    fn forward(&self, box_id: i64, ports: &[u16]) -> (Value, Carrier) {
+        let mut conn = self.connect(None, json!({"forwards": {}}));
+        let req = json!({"box_id": box_id, "machine_id": MACHINE_ID, "ports": ports});
+        writeln!(conn, "{req}").unwrap();
+        let mut carrier = BufReader::new(conn);
+        let mut line = String::new();
+        carrier.read_line(&mut line).unwrap();
+        (serde_json::from_str(&line).unwrap(), carrier)
+    }
+
+    /// Reads the next connection the carrier names; its number and Box port.
+    fn next_conn(carrier: &mut Carrier) -> (u64, u16) {
+        let mut line = String::new();
+        carrier.read_line(&mut line).unwrap();
+        let line: Value = serde_json::from_str(&line).unwrap();
+        let conn = &line["conn"];
+        let port = u16::try_from(conn["port"].as_u64().unwrap()).unwrap();
+        (conn["n"].as_u64().unwrap(), port)
+    }
+
+    /// Dials back for connection `n`.
+    fn dial_back(&self, n: u64) -> Box<dyn ReadWrite> {
+        let local = json!({"conn": {"n": n}});
+        self.connect(Some(local.clone()), local)
+    }
+
+    /// Answers every connection the carrier names as the Box would, echoing its bytes.
+    fn echo(self, mut carrier: Carrier) {
+        std::thread::spawn(move || loop {
+            let (n, _) = Self::next_conn(&mut carrier);
+            let mut back = self.dial_back(n);
+            std::thread::spawn(move || {
+                let mut got = [0u8; 4];
+                while back.read_exact(&mut got).is_ok() && back.write_all(&got).is_ok() {}
+            });
+        });
+    }
 }
 
 impl Linked {
-    /// Asks the runner to forward `ports` of `box_id`, as the supervisor does; its answer and
-    /// the connection that holds the forwards.
-    fn forward(
-        &self,
-        box_id: i64,
-        ports: &[(u16, u16)],
-    ) -> (Value, std::os::unix::net::UnixStream) {
-        use std::io::{BufRead, Write};
-        let path = self.rig.dir().join("machine-forwards.sock");
-        let mut conn = std::os::unix::net::UnixStream::connect(path).unwrap();
-        let req = json!({"box_id": box_id, "machine_id": MACHINE_ID, "ports": ports});
-        writeln!(conn, "{req}").unwrap();
-        let mut line = String::new();
-        std::io::BufReader::new(&conn).read_line(&mut line).unwrap();
-        (serde_json::from_str(&line).unwrap(), conn)
+    fn local(&self) -> Via {
+        Via::Local(self.rig.dir().join("machine-forwards.sock"))
     }
 }
 
@@ -284,8 +346,7 @@ fn ping(port: u16) -> std::io::Result<String> {
 }
 
 fn ping_at(ip: &str, port: u16) -> std::io::Result<String> {
-    use std::io::{Read, Write};
-    let mut conn = std::net::TcpStream::connect((ip, port))?;
+    let mut conn = TcpStream::connect((ip, port))?;
     conn.set_read_timeout(Some(Duration::from_secs(5)))?;
     conn.write_all(b"ping")?;
     let mut got = [0u8; 4];
@@ -294,27 +355,68 @@ fn ping_at(ip: &str, port: u16) -> std::io::Result<String> {
 }
 
 #[test]
-fn a_machine_port_reaches_the_box_until_the_supervisor_lets_go() {
+fn a_machine_connection_is_named_on_the_carrier_and_the_dial_back_pipes_it_both_ways() {
     let m = Linked::start(&[]);
-    let (machine_port, host_port) = (free_port(), echo());
+    let via = m.local();
+    let port = free_port();
 
-    let (answer, conn) = m.forward(7, &[(machine_port, host_port)]);
+    let (answer, mut carrier) = via.forward(7, &[port]);
     assert_eq!(answer, json!({"reply": "up"}));
-    assert_eq!(ping(machine_port).unwrap(), "ping", "the Box answered");
-    drop(conn);
-    eventually("the listener closed", || ping(machine_port).is_err());
+    let machine = std::thread::spawn(move || ping(port));
+    let (n, named) = Via::next_conn(&mut carrier);
+    assert_eq!(named, port, "the carrier names the Box port");
+    let mut back = via.dial_back(n);
+    let mut got = [0u8; 4];
+    back.read_exact(&mut got).unwrap();
+    assert_eq!(&got, b"ping", "the machine's bytes reach the Box");
+    back.write_all(b"pong").unwrap();
+    assert_eq!(
+        machine.join().unwrap().unwrap(),
+        "pong",
+        "the Box's bytes reach the machine"
+    );
+    drop(carrier);
+    eventually("the listener closed", || ping(port).is_err());
     assert!(!m.ssh_ran(), "the forward never used ssh");
+}
+
+#[test]
+fn a_dial_back_across_the_network_with_the_wrong_key_is_refused() {
+    let m = Linked::start(&["--links", "127.0.0.1:0", "--service-key", KEY]);
+    let links = m.rig.links.unwrap();
+    let (via, wrong) = (Via::Remote(links, KEY), Via::Remote(links, "not-the-key"));
+    let port = free_port();
+
+    let (answer, mut carrier) = via.forward(7, &[port]);
+    assert_eq!(answer, json!({"reply": "up"}));
+    let machine = std::thread::spawn(move || ping(port));
+    let (n, _) = Via::next_conn(&mut carrier);
+    let mut refused = wrong.dial_back(n);
+    assert_eq!(
+        refused.read(&mut [0u8; 4]).unwrap(),
+        0,
+        "the wrong key is hung up on"
+    );
+    let mut back = via.dial_back(n);
+    let mut got = [0u8; 4];
+    back.read_exact(&mut got).unwrap();
+    back.write_all(&got).unwrap();
+    assert_eq!(
+        machine.join().unwrap().unwrap(),
+        "ping",
+        "the right key still claims it"
+    );
 }
 
 #[test]
 fn a_box_beyond_the_machines_slots_gets_no_listener() {
     let m = Linked::start(&[]);
+    let via = m.local();
     let (first, second) = (free_port(), free_port());
-    let host_port = echo();
 
-    let (answer, _held) = m.forward(7, &[(first, host_port)]);
+    let (answer, _held) = via.forward(7, &[first]);
     assert_eq!(answer, json!({"reply": "up"}));
-    let (answer, _) = m.forward(8, &[(second, host_port)]);
+    let (answer, _) = via.forward(8, &[second]);
     assert_eq!(answer["reply"], "refused");
     assert!(
         answer["reason"].as_str().unwrap().contains("slots"),
@@ -327,20 +429,22 @@ fn a_box_beyond_the_machines_slots_gets_no_listener() {
 fn a_forward_of_no_ports_is_refused() {
     let m = Linked::start(&[]);
 
-    let (answer, _) = m.forward(7, &[]);
+    let (answer, _) = m.local().forward(7, &[]);
     assert_eq!(answer["reply"], "refused");
 }
 
 #[test]
 fn a_machine_port_answers_on_127_0_0_1_alone() {
     let m = Linked::start(&[]);
-    let (machine_port, host_port) = (free_port(), echo());
+    let via = m.local();
+    let port = free_port();
 
-    let (answer, _held) = m.forward(7, &[(machine_port, host_port)]);
+    let (answer, carrier) = via.forward(7, &[port]);
     assert_eq!(answer, json!({"reply": "up"}));
-    assert_eq!(ping(machine_port).unwrap(), "ping");
+    via.echo(carrier);
+    assert_eq!(ping(port).unwrap(), "ping");
     assert!(
-        ping_at("127.0.0.2", machine_port).is_err(),
+        ping_at("127.0.0.2", port).is_err(),
         "no other address of the machine reaches the Box"
     );
 }

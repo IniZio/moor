@@ -20,7 +20,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId};
 pub(crate) use runs::{eventually, live_in_group, reaped_pid};
 pub(crate) use script::{is_clone_exec, PutCall};
 use script::{layout, write_bytes, write_log, CopyCall, ExecHook, PeekCall};
-pub(crate) use tunnel::TunnelReply;
+pub(crate) use tunnel::{TunnelReply, LOCAL_PORT_OFFSET};
 
 #[derive(Default)]
 struct State {

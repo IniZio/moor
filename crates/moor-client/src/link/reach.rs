@@ -54,6 +54,20 @@ pub enum Hello {
     Links(Keyed),
     /// Port forwards; a [`Forward`](crate::forward::Forward) follows.
     Forwards(Keyed),
+    /// A dial back for a connection a forwards carrier named; its bytes follow.
+    Conn(Dial),
+}
+
+/// A dial back's version, key and connection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Dial {
+    /// [`HELLO_V`].
+    pub v: u32,
+    /// The machine service key.
+    pub key: String,
+    /// The connection's number, as the carrier named it.
+    pub n: u64,
 }
 
 /// A hello's version and key.
@@ -73,6 +87,8 @@ pub enum Service {
     Links,
     /// Port forwards.
     Forwards,
+    /// The dial back for forwarded connection `n`.
+    Conn(u64),
 }
 
 impl Service {
@@ -80,7 +96,7 @@ impl Service {
     const fn socket(self) -> &'static str {
         match self {
             Self::Links => super::broker::SOCKET,
-            Self::Forwards => crate::forward::SOCKET,
+            Self::Forwards | Self::Conn(_) => crate::forward::SOCKET,
         }
     }
 
@@ -93,6 +109,11 @@ impl Service {
         match self {
             Self::Links => Hello::Links(keyed),
             Self::Forwards => Hello::Forwards(keyed),
+            Self::Conn(n) => Hello::Conn(Dial {
+                v: keyed.v,
+                key: keyed.key,
+                n,
+            }),
         }
     }
 }
@@ -157,9 +178,15 @@ impl Runner {
         match self {
             Self::Local(socket) => {
                 let path = socket.with_file_name(service.socket());
-                let conn = UnixStream::connect(&path).await;
-                conn.map(Either::Left)
-                    .map_err(|e| unreachable(&path.display(), &e))
+                let failed = |e: &io::Error| unreachable(&path.display(), e);
+                let mut conn = UnixStream::connect(&path).await.map_err(|e| failed(&e))?;
+                if let Service::Conn(n) = service {
+                    let claim = crate::forward::Claim::Conn { n };
+                    ops::write_line(&mut conn, &claim)
+                        .await
+                        .map_err(|e| failed(&e))?;
+                }
+                Ok(Either::Left(conn))
             }
             Self::Remote { addr, key } => {
                 let failed = |e: &io::Error| unreachable(addr, e);
@@ -208,7 +235,7 @@ pub fn into_blocking(conn: Conn) -> io::Result<StdConn> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Hello, Keyed, Runner};
+    use super::{Hello, Keyed, Runner, Service};
 
     #[test]
     fn a_runners_debug_never_shows_the_key() {
@@ -230,5 +257,9 @@ mod tests {
         );
         let forwards: Hello = serde_json::from_str(r#"{"forwards":{"v":1,"key":"k"}}"#).unwrap();
         assert!(matches!(forwards, Hello::Forwards(Keyed { v: 1, .. })));
+        assert_eq!(
+            serde_json::to_string(&Service::Conn(4).hello("k")).unwrap(),
+            r#"{"conn":{"v":1,"key":"k","n":4}}"#
+        );
     }
 }

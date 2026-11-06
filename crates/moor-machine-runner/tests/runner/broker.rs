@@ -403,7 +403,7 @@ async fn a_controller_with_the_wrong_key_is_refused_links_and_forwards() {
     let ask = Forward {
         box_id: 7,
         machine_id: MACHINE_ID,
-        ports: vec![(8080, 1)],
+        ports: vec![8080],
     };
     ops::write_line(&mut conn, &ask).await.unwrap();
     let answer: Forwarding = ops::read_line(&mut conn).await.unwrap();
