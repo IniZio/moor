@@ -357,7 +357,8 @@ fn applied_migrations_are_never_edited() {
             (2, 6_043_544_592_493_671_438),
             (3, 10_676_293_054_036_308_522),
             (4, 14_359_854_395_702_897_262),
-            (5, 11_515_804_310_040_654_868)
+            (5, 11_515_804_310_040_654_868),
+            (6, 6_454_306_041_711_749_165)
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -406,4 +407,27 @@ fn a_file_from_before_emails_gains_the_table_and_keeps_its_rows() {
     let db = Db::open(&path).unwrap();
     db.set_user_email("U1", "a@example.com", 5).unwrap();
     assert!(!db.event_once("Ev1", 2).unwrap(), "the old row is kept");
+}
+
+#[test]
+fn a_store_at_v5_with_workflow_rows_migrates_to_v6_and_keeps_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let all = super::schema().unwrap();
+    let v5: Vec<_> = all.into_iter().filter(|m| m.version() <= 5).collect();
+    assert_eq!(v5.len(), 5);
+    let mut conn = rusqlite::Connection::open(&path).unwrap();
+    moor_migrate::migrate(&mut conn, &v5, super::legacy).unwrap();
+    conn.execute_batch(
+        "INSERT INTO workflow_cursor (owner, after) VALUES ('U1', 7);
+         INSERT INTO workflow_outbox (owner, channel, thread_ts, text) VALUES ('U1', 'C1', '1.0', 'old line');",
+    )
+    .unwrap();
+    drop(conn);
+    let db = Db::open(&path).unwrap();
+    assert_eq!(db.workflow_cursor("U1").unwrap(), 7);
+    let owed = db.owed_lines("U1").unwrap();
+    assert_eq!(owed.len(), 1, "{owed:?}");
+    assert!(owed.iter().all(|l| l.box_name.is_none()));
+    assert!(!db.run_thread_known("sec-1").unwrap());
 }

@@ -2,7 +2,7 @@
 //! Slack.
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test code")]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 
 use moor_client::ClientError;
@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 
 use super::{poll, Fx, GIVE_UP};
 use crate::db::{BoxState, Db, SlackThread};
+use crate::socket::Mention;
+use crate::worker::record;
 
 /// A database with threads `1.0` and `2.0` of channel `C1`, both started by `U1`.
 fn open(dir: &Path) -> Db {
@@ -53,9 +55,13 @@ fn ours(seq: i64, outcome: &str, boxed: Option<&str>) -> Value {
 struct World {
     changes: Vec<Value>,
     asked: RefCell<Vec<Option<i64>>>,
-    posts: RefCell<Vec<(String, String, String)>>,
+    /// `(channel, thread, text)`; no thread for a top-level message.
+    posts: RefCell<Vec<(String, Option<String>, String)>>,
+    logged: RefCell<Vec<String>>,
     /// Threads whose posts fail.
     broken: Vec<&'static str>,
+    /// Top-level posts that fail before they go through.
+    top_fails: Cell<u32>,
 }
 
 impl World {
@@ -64,7 +70,9 @@ impl World {
             changes,
             asked: RefCell::new(Vec::new()),
             posts: RefCell::new(Vec::new()),
+            logged: RefCell::new(Vec::new()),
             broken: Vec::new(),
+            top_fails: Cell::new(0),
         }
     }
 
@@ -93,87 +101,241 @@ impl World {
             }
             other => panic!("unexpected {other:?}"),
         };
-        let mut post = |c: &str, t: &str, text: &str| {
-            if self.broken.contains(&t) {
+        let mut post = |c: &str, t: Option<&str>, text: &str| {
+            let broken = t.is_some_and(|t| self.broken.contains(&t));
+            let top_fails = t.is_none() && self.top_fails.get() > 0;
+            if broken || top_fails {
+                self.top_fails.set(self.top_fails.get().saturating_sub(1));
                 return Err("channel_not_found".to_owned());
             }
-            self.posts
-                .borrow_mut()
-                .push((c.into(), t.into(), text.into()));
-            Ok(())
+            let mut posts = self.posts.borrow_mut();
+            posts.push((c.into(), t.map(str::to_owned), text.into()));
+            Ok(format!("100.{}", posts.len()))
         };
+        let log = |line: &str| self.logged.borrow_mut().push(line.to_owned());
         let mut fx = Fx {
             call: &mut call,
             post: &mut post,
-            log: &|_| {},
+            log: &log,
             clock: || 7,
         };
         poll(db, "U1", &mut fx)
     }
 
+    /// Each post as `thread: text`, `top` for a top-level message.
     fn said(&self) -> Vec<String> {
         self.posts
             .borrow()
             .iter()
-            .map(|(_, t, text)| format!("{t}: {text}"))
+            .map(|(_, t, text)| format!("{}: {text}", t.as_deref().unwrap_or("top")))
             .collect()
+    }
+
+    /// The top-level posts.
+    fn tops(&self) -> Vec<String> {
+        let posts = self.posts.borrow();
+        let tops = posts.iter().filter(|(_, t, _)| t.is_none());
+        tops.map(|(_, _, text)| text.clone()).collect()
+    }
+}
+
+/// The reply of `user` in thread `ts` of channel `C1`.
+fn reply(user: &str, ts: &str) -> Mention {
+    Mention {
+        event_id: format!("Ev-{user}"),
+        channel: "C1".into(),
+        user: user.into(),
+        text: "look at the diff".into(),
+        ts: "200.0".into(),
+        thread_ts: Some(ts.into()),
+        reply: true,
     }
 }
 
 #[test]
-fn a_started_box_joins_its_thread_and_the_feed_lists_it_once() {
+fn a_started_run_opens_its_own_thread_and_the_origin_thread_hears_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
     let world = World::new(vec![ours(1, "started", Some("sec-1"))]);
     world.poll(&db).unwrap();
-    world.poll(&db).unwrap();
-    let boxes = db.thread_boxes("C1", "1.0").unwrap();
+    let tops = world.tops();
+    assert_eq!(tops.len(), 1, "{tops:?}");
+    let missing = [
+        "<@U1>",
+        "`sec`",
+        "`acme/api`",
+        "https://slack.com/archives/C1/p10",
+    ]
+    .into_iter()
+    .filter(|want| !tops[0].contains(want))
+    .collect::<Vec<_>>();
+    assert!(missing.is_empty(), "{missing:?} not in {}", tops[0]);
+    assert_eq!(world.posts.borrow().len(), 1, "nothing else is posted");
+    assert!(db.thread_boxes("C1", "1.0").unwrap().is_empty());
+    assert_adopted_in_new_thread(&db);
+}
+
+/// Box `sec-1` is bound on the new thread, owned by `U1`, and the feed lists it once.
+fn assert_adopted_in_new_thread(db: &Db) {
+    let boxes = db.thread_boxes("C1", "100.1").unwrap();
     assert_eq!(boxes.len(), 1);
     assert_eq!(boxes[0].requested_by, "U1");
     assert!(matches!(boxes[0].state, BoxState::Bound { box_id, .. } if box_id.get() == 9));
+    assert_eq!(db.thread("C1", "100.1").unwrap().unwrap().owner, "U1");
     assert_eq!(db.fed_boxes().unwrap().len(), 1, "the feed sees it once");
-    assert!(
-        world.said().is_empty(),
-        "the feed shows a Box, so the report adds no line"
+}
+
+#[test]
+fn each_run_gets_a_thread_of_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![
+        ours(1, "started", Some("sec-1")),
+        ours(2, "started", Some("sec-2")),
+    ]);
+    world.poll(&db).unwrap();
+    assert_eq!(world.tops().len(), 2);
+    let one = db.thread_boxes("C1", "100.1").unwrap();
+    let two = db.thread_boxes("C1", "100.2").unwrap();
+    assert_eq!(
+        (one[0].box_name.as_str(), two[0].box_name.as_str()),
+        ("sec-1", "sec-2")
     );
 }
 
 #[test]
-fn a_finished_run_adopts_a_box_it_never_saw_start_and_leaves_the_words_to_the_feed() {
+fn a_run_that_finished_unseen_gets_a_thread_and_the_feed_keeps_the_words() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
     let world = World::new(vec![ours(1, "finished", Some("sec-1"))]);
     world.poll(&db).unwrap();
-    assert_eq!(db.fed_boxes().unwrap().len(), 1);
-    assert!(world.said().is_empty());
+    assert_eq!(db.thread_boxes("C1", "100.1").unwrap().len(), 1);
+    assert_eq!(
+        world.posts.borrow().len(),
+        1,
+        "only the thread's first message"
+    );
 }
 
 #[test]
-fn a_timeout_a_refusal_and_a_disabled_workflow_each_get_one_line() {
+fn a_failed_first_post_holds_nothing_and_a_later_one_makes_one_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
-    let disabled = json!({"kind": "disabled", "seq": 3, "workflow": "sec",
+    let world = World::new(vec![
+        ours(1, "started", Some("sec-1")),
+        ours(2, "refused", None),
+    ]);
+    world.top_fails.set(2);
+    world.poll(&db).unwrap();
+    assert_eq!(db.workflow_cursor("U1").unwrap(), 2, "the cursor moved on");
+    assert!(db.thread_boxes("C1", "100.1").unwrap().is_empty());
+    assert_eq!(
+        world.said().len(),
+        1,
+        "the refusal still reaches the origin"
+    );
+    world.poll(&db).unwrap();
+    world.poll(&db).unwrap();
+    assert_eq!(world.tops().len(), 1);
+    assert_eq!(db.thread_boxes("C1", "100.2").unwrap().len(), 1);
+    assert_eq!(*world.asked.borrow(), [Some(0), Some(2), Some(2)]);
+}
+
+#[test]
+fn a_run_thread_given_up_on_is_logged_with_its_box_and_never_tried_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![
+        ours(1, "started", Some("sec-1")),
+        ours(2, "finished", Some("sec-1")),
+    ]);
+    world.top_fails.set(1000);
+    for _ in 0..GIVE_UP + 3 {
+        world.poll(&db).unwrap();
+    }
+    assert_eq!(
+        1000 - world.top_fails.get(),
+        u32::try_from(GIVE_UP).unwrap()
+    );
+    let logged = world.logged.borrow();
+    let dropped: Vec<_> = logged.iter().filter(|l| l.contains("dropped")).collect();
+    assert_eq!(dropped.len(), 1, "{logged:?}");
+    assert!(dropped[0].contains("sec-1") && dropped[0].contains("sec"));
+    assert!(
+        db.thread_boxes("C1", "1.0").unwrap().is_empty(),
+        "left unadopted"
+    );
+}
+
+#[test]
+fn polling_again_after_success_repeats_nothing_even_with_a_reopened_db() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new(vec![
+        ours(1, "started", Some("sec-1")),
+        ours(2, "finished", Some("sec-1")),
+    ]);
+    world.poll(&open(dir.path())).unwrap();
+    world.poll(&open(dir.path())).unwrap();
+    world.poll(&open(dir.path())).unwrap();
+    assert_eq!(world.posts.borrow().len(), 1);
+    assert_eq!(open(dir.path()).fed_boxes().unwrap().len(), 1);
+}
+
+#[test]
+fn the_owner_reaches_the_coordinator_from_the_run_thread_and_others_get_the_usual_refusal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    World::new(vec![ours(1, "started", Some("sec-1"))])
+        .poll(&db)
+        .unwrap();
+    assert_eq!(record(&reply("U1", "100.1"), &db, 9).unwrap(), None);
+    let inbox = db.inbox("C1", "100.1").unwrap();
+    assert_eq!(inbox.last().unwrap().text, "look at the diff");
+    assert_eq!(
+        db.thread_boxes("C1", "100.1").unwrap()[0].box_name.as_str(),
+        "sec-1"
+    );
+    let other = record(&reply("U2", "100.1"), &db, 9).unwrap().unwrap();
+    assert!(format!("{other:?}").contains("Only <@U1> can direct this thread"));
+}
+
+#[test]
+fn a_timeout_goes_to_the_run_thread_and_the_rest_go_to_the_origin() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let disabled = json!({"kind": "disabled", "seq": 4, "workflow": "sec",
         "origin": {"front": "slack", "key": "C1/1.0"}, "reason": "3 failed runs in a row"});
     let world = World::new(vec![
-        ours(1, "timed_out", Some("sec-1")),
-        ours(2, "refused", None),
+        ours(1, "started", Some("sec-1")),
+        ours(2, "timed_out", Some("sec-1")),
+        ours(3, "refused", None),
         disabled,
     ]);
     world.poll(&db).unwrap();
     world.poll(&db).unwrap();
     let said = world.said();
-    assert_eq!(said.len(), 3, "{said:?}");
+    assert_eq!(said.len(), 4, "{said:?}");
+    assert!(said[0].starts_with("top: "));
+    let at = |needle: &str| said.iter().find(|s| s.contains(needle)).unwrap().clone();
+    assert!(at("ran out of time").starts_with("100.1: "));
+    assert!(at("ran out of time").contains("close"));
+    assert!(at("repo not found").starts_with("1.0: "));
+    assert!(at("3 failed runs in a row").starts_with("1.0: "));
+}
+
+#[test]
+fn a_timeout_seen_before_any_start_waits_for_the_run_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![ours(1, "timed_out", Some("sec-1"))]);
+    world.top_fails.set(1);
+    world.poll(&db).unwrap();
+    assert!(world.said().is_empty(), "the line waits for the thread");
+    world.poll(&db).unwrap();
+    let said = world.said();
     assert!(
-        said[0].contains("ran out of time")
-            && said[0].contains("sec-1")
-            && said[0].contains("close")
-    );
-    assert!(said[1].contains("repo not found") && said[1].contains("acme/api"));
-    assert!(said[2].contains("disabled") && said[2].contains("3 failed runs in a row"));
-    assert_eq!(
-        db.fed_boxes().unwrap().len(),
-        1,
-        "the timed-out Box is kept in the thread"
+        said[0].starts_with("top: ") && said[1].starts_with("100.1: "),
+        "{said:?}"
     );
 }
 
@@ -186,19 +348,21 @@ fn a_streak_of_skips_is_said_once_and_a_later_streak_again() {
     changes.push(ours(5, "skipped_overlap", None));
     let world = World::new(changes);
     world.poll(&db).unwrap();
-    let said = world.said();
-    assert_eq!(said.len(), 2, "{said:?}");
-    assert!(said
-        .iter()
-        .all(|s| s.contains("previous run is still open") || s.contains("still open")));
+    let origin: Vec<_> = world
+        .said()
+        .into_iter()
+        .filter(|s| s.starts_with("1.0: "))
+        .collect();
+    assert_eq!(origin.len(), 2, "{origin:?}");
+    assert!(origin.iter().all(|s| s.contains("still open")));
 }
 
 #[test]
 fn the_cursor_survives_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let world = World::new(vec![
-        ours(1, "timed_out", Some("sec-1")),
-        ours(2, "refused", None),
+        ours(1, "refused", None),
+        run(2, ("slack", Some("C1/1.0")), "started", Some("sec-1")),
     ]);
     world.poll(&open(dir.path())).unwrap();
     world.poll(&open(dir.path())).unwrap();
@@ -211,13 +375,13 @@ fn another_front_and_a_workflow_without_origin_are_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
     let world = World::new(vec![
-        run(1, ("herdr", Some("C1/1.0")), "refused", None),
+        run(1, ("herdr", Some("C1/1.0")), "started", Some("sec-1")),
         json!({"kind": "run", "seq": 2, "workflow": "sec", "repo": "acme/api", "due_at": 0,
-            "outcome": "started", "box": "sec-1"}),
+            "outcome": "started", "box": "sec-2"}),
     ]);
     world.poll(&db).unwrap();
     assert!(world.said().is_empty());
-    assert!(db.thread_boxes("C1", "1.0").unwrap().is_empty());
+    assert!(db.fed_boxes().unwrap().is_empty());
     world.poll(&db).unwrap();
     assert_eq!(
         *world.asked.borrow(),
@@ -227,7 +391,7 @@ fn another_front_and_a_workflow_without_origin_are_ignored() {
 }
 
 #[test]
-fn a_failed_post_neither_holds_the_cursor_nor_blocks_another_thread() {
+fn a_failed_line_neither_holds_the_cursor_nor_blocks_another_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
     let mut elsewhere = run(2, ("slack", Some("C1/2.0")), "refused", None);
@@ -243,16 +407,6 @@ fn a_failed_post_neither_holds_the_cursor_nor_blocks_another_thread() {
         db.owed_lines("U1").unwrap().is_empty(),
         "the line is given up on"
     );
-    assert_eq!(
-        world
-            .asked
-            .borrow()
-            .iter()
-            .skip(1)
-            .copied()
-            .collect::<Vec<_>>(),
-        vec![Some(2); 5]
-    );
     assert_eq!(world.said().len(), 1);
 }
 
@@ -266,7 +420,7 @@ fn a_controller_that_cannot_be_read_leaves_the_cursor_alone() {
             message: "down".into(),
         })
     };
-    let mut post = |_: &str, _: &str, _: &str| Ok(());
+    let mut post = |_: &str, _: Option<&str>, _: &str| Ok(String::new());
     let mut fx = Fx {
         call: &mut call,
         post: &mut post,

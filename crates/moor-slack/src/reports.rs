@@ -1,8 +1,10 @@
-//! Workflow reports: one poller per person who added a workflow here reads their `workflow-runs` stream and tells the
-//! thread that added each workflow what its runs did. A started run's Box is adopted into the
-//! thread, so the feed shows its status, artifacts and prompts and queues the agent's final
-//! message when it finishes. The reporter itself posts only what the feed does not: a run that
-//! timed out, one skipped or refused, and a workflow the controller disabled.
+//! Workflow reports: one poller per person who added a workflow here reads their
+//! `workflow-runs` stream and tells the thread that added each workflow what its runs did. A
+//! run with a Box gets a thread of its own in the same channel, which mentions the owner and
+//! links the thread that added the workflow. The Box is adopted into it, so the feed shows its
+//! status, artifacts and prompts there and queues the agent's final message when it finishes.
+//! The reporter itself posts only what the feed does not: a run that timed out, one skipped
+//! or refused, and a workflow the controller disabled.
 //!
 //! Each change is handled in one `slack.db` transaction with the cursor past it, so a restart
 //! repeats nothing and skips nothing. A line to post is first written to an outbox in that
@@ -16,14 +18,13 @@ use std::thread;
 use std::time::Duration;
 
 use moor_client::ClientError;
-use moor_core::name::{BoxId, BoxName};
-use moor_core::request::{Request, ShowReq, WorkflowRunsReq};
+use moor_core::request::{Request, WorkflowRunsReq};
 use moor_core::response::{ExitClass, Response};
 use moor_core::secret::Secret;
 use moor_core::view::workflow::{ChangeView, LastRunView, WorkflowRunsValue};
 
 use crate::api::Api;
-use crate::db::{Db, SlackBox};
+use crate::db::{Db, Outbox};
 use crate::error_text::error_text;
 use crate::escape::{code, escape};
 use crate::feed::Feed;
@@ -39,12 +40,16 @@ const GIVE_UP: i64 = 5;
 /// Changes read at once.
 const BATCH: u32 = 200;
 
+/// Posts `(channel, thread, text)` and returns the message `ts`.
+pub(crate) type Poster<'a> = &'a mut dyn FnMut(&str, Option<&str>, &str) -> Result<String, String>;
+
 /// What one poll acts through, so tests can script the controller and record what Slack sees.
 pub(crate) struct Fx<'a> {
     /// Sends one request to the controller as the person.
     pub(crate) call: &'a mut dyn FnMut(Request) -> Result<Response, ClientError>,
-    /// Posts `(channel, thread, text)`.
-    pub(crate) post: &'a mut dyn FnMut(&str, &str, &str) -> Result<(), String>,
+    /// Posts `(channel, thread, text)`, as a new top-level message without a thread; returns
+    /// the message `ts`.
+    pub(crate) post: Poster<'a>,
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
     /// The current time in unix seconds.
@@ -117,9 +122,12 @@ impl Reports {
                 Err(e) => return log(&format!("open slack.db: {e}")),
             };
             let mut call = |request| client.request(request, |_| {});
-            let mut post = |channel: &str, thread: &str, text: &str| {
-                api.post_message(&bot, channel, thread, text)
-                    .map(drop)
+            let mut post = |channel: &str, thread: Option<&str>, text: &str| {
+                thread
+                    .map_or_else(
+                        || api.post_top_level(&bot, channel, text),
+                        |thread| api.post_message(&bot, channel, thread, text),
+                    )
                     .map_err(|e| e.to_string())
             };
             let mut fx = Fx {
@@ -147,6 +155,7 @@ impl Reports {
 /// the controller or `slack.db` could not be read; the cursor then stays where it was.
 pub(crate) fn poll(db: &Db, owner: &str, fx: &mut Fx<'_>) -> Result<(), String> {
     let handled = changes(db, owner, fx);
+    open_threads(db, owner, fx);
     flush(db, owner, fx);
     handled
 }
@@ -208,22 +217,21 @@ fn handle(db: &Db, owner: &str, change: &ChangeView, fx: &mut Fx<'_>) -> Result<
     let known = db
         .thread(channel, thread_ts)
         .map_err(|e| format!("slack.db: {e}"))?;
-    let Some(known) = known else {
+    if known.is_none() {
         (fx.log)(&format!("workflows: {workflow} reports to thread {channel}/{thread_ts}, which this front does not know"));
         return advance(db, owner, seq);
-    };
-    let (adopt, said) = match change {
+    }
+    let (owe, said) = match change {
         ChangeView::Run { run, .. } => (
-            adoption(db, &known.owner, (channel, thread_ts), run, fx)?,
+            run_thread(db, owner, workflow, (channel, thread_ts, run), fx)?,
             run_line(workflow, run),
         ),
         ChangeView::Disabled { reason, .. } => (None, disabled_line(workflow, reason)),
     };
-    let now = (fx.clock)();
     let owed = (channel, thread_ts, said);
     db.atomically(|| {
-        if let Some((boxed, id, branch)) = &adopt {
-            db.adopt(boxed, *id, branch.as_deref(), now)?;
+        if let Some(thread) = &owe {
+            db.owe_run_thread(thread)?;
         }
         record(db, owner, change, &owed)?;
         db.set_workflow_cursor(owner, seq)
@@ -244,8 +252,11 @@ fn record(
         Say::Nothing => (None, None),
     };
     let ChangeView::Run { workflow, run, .. } = change else {
-        return line.map_or(Ok(()), |l| db.enqueue_line(owner, channel, thread_ts, l));
+        let at = (*channel, *thread_ts);
+        return line.map_or(Ok(()), |l| db.enqueue_line(owner, at, None, l));
     };
+    let timed_out = run.outcome == "timed_out";
+    let boxed = run.box_name.as_deref().filter(|_| timed_out);
     let fresh = if let Some(kind) = kind {
         db.note_streak(owner, (workflow, &run.repo, kind))?
     } else {
@@ -253,7 +264,7 @@ fn record(
         true
     };
     match line {
-        Some(line) if fresh => db.enqueue_line(owner, channel, thread_ts, line),
+        Some(line) if fresh => db.enqueue_line(owner, (channel, thread_ts), boxed, line),
         _ => Ok(()),
     }
 }
@@ -262,64 +273,6 @@ fn record(
 fn advance(db: &Db, owner: &str, seq: i64) -> Result<(), String> {
     db.set_workflow_cursor(owner, seq)
         .map_err(|e| format!("slack.db: {e}"))
-}
-
-/// The Box of `run`, as a row for the thread, when the run has one the thread lacks.
-fn adoption(
-    db: &Db,
-    by: &str,
-    (channel, thread_ts): (&str, &str),
-    run: &LastRunView,
-    fx: &mut Fx<'_>,
-) -> Result<Option<(SlackBox, BoxId, Option<String>)>, String> {
-    let Some(name) = run.box_name.as_deref() else {
-        return Ok(None);
-    };
-    let Ok(box_name) = BoxName::parse_allow_bare(name) else {
-        return Ok(None);
-    };
-    let have = db
-        .thread_boxes(channel, thread_ts)
-        .map_err(|e| format!("slack.db: {e}"))?;
-    if have.iter().any(|b| b.box_name == box_name) {
-        return Ok(None);
-    }
-    let reply = (fx.call)(Request::Show(ShowReq {
-        target: Some(box_name.clone().into()),
-        events: None,
-        agent: false,
-        reports: false,
-        artifacts: false,
-        pane: false,
-    }))
-    .map_err(|e| format!("controller: {e}"))?;
-    let boxed = reply.value.as_ref().and_then(|v| v.get("box"));
-    let id = boxed
-        .and_then(|b| b.get("id"))
-        .and_then(serde_json::Value::as_i64);
-    let Some(id) = id.filter(|_| reply.class == ExitClass::Ok) else {
-        (fx.log)(&format!(
-            "workflows: Box {name} cannot be adopted: {}",
-            error_text(reply)
-        ));
-        return Ok(None);
-    };
-    let branch = boxed
-        .and_then(|b| b.get("branch"))
-        .and_then(serde_json::Value::as_str);
-    let row = SlackBox {
-        channel: channel.to_owned(),
-        thread_ts: thread_ts.to_owned(),
-        box_name,
-        repo: run.repo.clone(),
-        prompt: "workflow run".to_owned(),
-        base: None,
-        node: None,
-        requested_by: by.to_owned(),
-        parent: None,
-        state: crate::db::BoxState::Starting,
-    };
-    Ok(Some((row, BoxId::new(id), branch.map(str::to_owned))))
 }
 
 /// What the thread is told of `run`; a started or finished run says nothing, since the feed
@@ -364,12 +317,20 @@ fn flush(db: &Db, owner: &str, fx: &mut Fx<'_>) {
         Err(e) => return (fx.log)(&format!("slack.db: {e}; reading again")),
     };
     for line in owed {
-        let recorded = match (fx.post)(&line.channel, &line.thread_ts, &line.text) {
-            Ok(()) => db.line_done(line.id),
+        let at = match line_thread(db, &line) {
+            Ok(Some(at)) => at,
+            Ok(None) => continue,
+            Err(e) => {
+                (fx.log)(&format!("slack.db: {e}"));
+                continue;
+            }
+        };
+        let recorded = match (fx.post)(&at.0, Some(&at.1), &line.text) {
+            Ok(_) => db.line_done(line.id),
             Err(why) if line.attempts + 1 >= GIVE_UP => {
                 (fx.log)(&format!(
                     "slack: workflow line to {}/{} dropped: {why}",
-                    line.channel, line.thread_ts
+                    at.0, at.1
                 ));
                 db.line_done(line.id)
             }
@@ -383,6 +344,24 @@ fn flush(db: &Db, owner: &str, fx: &mut Fx<'_>) {
         }
     }
 }
+
+/// Where `line` is posted: its Box's thread when it has a Box, else the thread that added the
+/// workflow. None while the Box's thread is still owed, so the line waits for it.
+fn line_thread(db: &Db, line: &Outbox) -> rusqlite::Result<Option<(String, String)>> {
+    let Some(name) = &line.box_name else {
+        return Ok(Some((line.channel.clone(), line.thread_ts.clone())));
+    };
+    if let Some(at) = db.box_thread(name)? {
+        return Ok(Some(at));
+    }
+    if db.run_thread_pending(name, GIVE_UP)? {
+        return Ok(None);
+    }
+    Ok(Some((line.channel.clone(), line.thread_ts.clone())))
+}
+
+mod threads;
+use threads::{open_threads, run_thread};
 
 #[cfg(test)]
 mod tests;
