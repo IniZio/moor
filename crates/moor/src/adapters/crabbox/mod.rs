@@ -343,17 +343,15 @@ impl Driver for Crabbox {
     }
 
     fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
-        self.require_version()?;
         checkpoint::create(self, handle, name)
     }
 
     fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
-        self.require_version()?;
         checkpoint::fork(self, id, req)
     }
 
-    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
-        checkpoint::delete(self, id)
+    fn delete_checkpoint(&self, home: &ProviderId, id: &str) -> Result<(), DriverError> {
+        checkpoint::delete(self, home, id)
     }
 
     fn checkpoint_disk(&self, provider: &ProviderId) -> Result<checkpoint::Disk, DriverError> {

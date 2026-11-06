@@ -73,7 +73,7 @@ tables! {
     UserMachinesV2 { MachineId, User, Name, Pubkey, Labels, Capacity, EnrolledAt, PoolProvider }
     MachineLinks { MachineId, Online, Since, Version, Protocol, MaxBoxes, CacheGb, PoolFeatures,
         MemMib, Cpus, ReserveMib, MemAvailableMib, PsiCenti, ReportedAt, PsiFullCenti, DiskFreeMib,
-        DiskTotalMib, RunnerAddr, HeardAt, DrainingSince }
+        DiskTotalMib, RunnerAddr, HeardAt, DrainingSince, WarmStarts }
     BoxMachines { Box, User, State, Machine, Labels, Ports, Slot, SyncExclude, Since, Until,
         Enrolled }
     NodePressure { Node, Readings, HighSince, SuspendedAt }

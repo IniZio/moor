@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_client::link::lease::{Answer, Boot, Verb};
+use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
 use moor_client::link::status::Status;
 use moor_core::seam::clock::Clock;
 
@@ -34,6 +34,10 @@ impl PoolHosts for Runners {
         boot: &Boot,
     ) -> Result<Answer, String> {
         Self::lease(self, machine_id, verb, slug, key, boot)
+    }
+
+    fn checkpoint(&self, machine_id: i64, act: CheckpointAct) -> Result<Answer, String> {
+        Self::checkpoint(self, machine_id, act)
     }
 
     fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {

@@ -337,6 +337,7 @@ fn a_link_keeps_its_agent_version_and_names_its_machine() {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     let held = store
@@ -384,6 +385,7 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     let set = |links: &[MachineLink]| {

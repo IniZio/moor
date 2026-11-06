@@ -357,6 +357,7 @@ fn link_row(w: &World, clock: &FakeClock, addr: &str, machine_id: i64) {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     let runner = RunnerAddr::new(addr);

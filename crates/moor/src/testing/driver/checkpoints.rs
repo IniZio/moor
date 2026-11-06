@@ -37,6 +37,8 @@ pub(super) struct LayerKnobs {
     checkpoint_fails: Option<DriverError>,
     /// Whether every delete fails, leaving the checkpoint on the disk.
     deletes_fail: bool,
+    /// The machine each fork was asked for, in order.
+    fork_seats: Vec<Option<i64>>,
 }
 
 /// A checkpoint the fake keeps.
@@ -135,6 +137,11 @@ impl FakeDriver {
             d.free_mib = free_mib;
         }
         drop(s);
+    }
+
+    /// The machine each fork was asked for, in order.
+    pub(crate) fn fork_seats(&self) -> Vec<Option<i64>> {
+        self.st().layers.fork_seats.clone()
     }
 
     /// The ids of the checkpoints kept, oldest first.
@@ -261,6 +268,8 @@ impl FakeDriver {
     pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
         let mut s = self.st();
         s.note(format!("fork {id}"));
+        let seat = req.pool_machine.as_ref().map(|s| s.machine);
+        s.layers.fork_seats.push(seat);
         s.cache.forks.push(req.cache.clone());
         if let Some(e) = s.layers.fork_fails.take() {
             return Err(e);

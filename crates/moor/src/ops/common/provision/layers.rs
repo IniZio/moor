@@ -18,6 +18,7 @@ use super::{nonce, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
+use crate::ops::common::node::{checkpoint_home, seat_of};
 use crate::ops::common::setup::SetupRun;
 use crate::store::checkpoints::{Lineage, Place};
 use crate::store::lease::LeaseKind;
@@ -27,8 +28,10 @@ use crate::store::{BoxRow, Store};
 pub(super) struct Layered {
     /// The clone's key, then one per setup line.
     keys: Vec<LayerKey>,
-    /// The provider that holds the checkpoints.
+    /// The provider a Box forks with.
     provider: ProviderId,
+    /// What its checkpoints are recorded under, and the disk they fill is read by.
+    home: ProviderId,
     /// Whose chain the layers make.
     lineage: Lineage,
     /// The Box the layers are for.
@@ -53,6 +56,7 @@ impl Layered {
 /// no checkpoints or the Box has no setup lines, no base commit, no user, or more than one repo.
 pub(super) fn plan(
     cx: &Cx,
+    store: &Store,
     row: &BoxRow,
     provider: &str,
     cfg: &BoxSettings,
@@ -64,6 +68,8 @@ pub(super) fn plan(
     if cfg.setup.is_empty() || !provider_caps(cx, provider).is_ok_and(|c| c.checkpoints) {
         return None;
     }
+    let provider = ProviderId::new(provider);
+    let home = checkpoint_home(cx, store, row, &provider, user)?;
     let repo = repo.repo.to_string();
     let keys = chain(user, &repo, base, &cache.identity(), &cfg.setup);
     Some(Layered {
@@ -73,7 +79,8 @@ pub(super) fn plan(
             chain: keys.first()?.clone(),
         },
         keys,
-        provider: ProviderId::new(provider),
+        provider,
+        home,
         id: row.id,
         from: 0,
         cache: cache.clone(),
@@ -93,19 +100,19 @@ pub(super) fn warm(
 ) -> Result<Option<Acquired>, CommandError> {
     let mut deepest = None;
     for (layer, key) in layered.keys.iter().enumerate().rev() {
-        let row = store.checkpoint(&layered.provider, key)?;
+        let row = store.checkpoint(&layered.home, key)?;
         if let Some((row, place)) = row.and_then(|r| r.place.clone().map(|p| (r, p))) {
             deepest = Some((layer, key, row.checkpoint, place));
             break;
         }
     }
     let Some((layer, key, checkpoint, place)) = deepest else {
-        make_room(cx, store, id, &layered.provider)?;
+        make_room(cx, store, id, &layered.home)?;
         return Ok(None);
     };
-    store.pin_checkpoint(id, &layered.provider, key, layer)?;
-    make_room(cx, store, id, &layered.provider)?;
-    if !store.use_checkpoint(&layered.provider, key)? {
+    store.pin_checkpoint(id, &layered.home, key, layer)?;
+    make_room(cx, store, id, &layered.home)?;
+    if !store.use_checkpoint(&layered.home, key)? {
         return Ok(None);
     }
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
@@ -233,13 +240,10 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
     let Some(key) = layered.keys.get(layer) else {
         return;
     };
-    if store
-        .use_checkpoint(&layered.provider, key)
-        .unwrap_or(false)
-    {
+    if store.use_checkpoint(&layered.home, key).unwrap_or(false) {
         return;
     }
-    if !make_room(cx, store, layered.id, &layered.provider).unwrap_or(true) {
+    if !make_room(cx, store, layered.id, &layered.home).unwrap_or(true) {
         cx.warn(Warning {
             code: "checkpoint_skipped".to_owned(),
             message: format!(
@@ -271,9 +275,9 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
             setup_ms: layered.spent_ms.load(Ordering::Relaxed),
         };
         store
-            .record_checkpoint(&layered.provider, key, &layered.lineage, &made)
-            .and_then(|()| store.place_checkpoint(&layered.provider, key, &place))
-            .and_then(|()| store.pin_checkpoint(layered.id, &layered.provider, key, layer))
+            .record_checkpoint(&layered.home, key, &layered.lineage, &made)
+            .and_then(|()| store.place_checkpoint(&layered.home, key, &place))
+            .and_then(|()| store.pin_checkpoint(layered.id, &layered.home, key, layer))
             .map_err(|e| e.to_string())
     });
     if let Err(e) = saved {
@@ -302,10 +306,10 @@ pub(super) fn resume(
         .pop()
         .and_then(|e| e.payload.get("line")?.as_str().map(str::to_owned))
         .map_or(cfg.setup.len(), |line| failed_layer(&cfg.setup, &line));
-    make_room(cx, store, row.id, &layered.provider)?;
+    make_room(cx, store, row.id, &layered.home)?;
     let mut kept = Vec::new();
     for key in &layered.keys {
-        kept.push(store.checkpoint(&layered.provider, key)?);
+        kept.push(store.checkpoint(&layered.home, key)?);
     }
     let held = |k: &LayerKey| {
         let at = layered.keys.iter().position(|x| x == k);
@@ -317,8 +321,8 @@ pub(super) fn resume(
     let (Some(Some(saved)), Some(key)) = (kept.get(layer), layered.keys.get(layer)) else {
         return Ok(None);
     };
-    store.pin_checkpoint(row.id, &layered.provider, key, layer)?;
-    if !store.use_checkpoint(&layered.provider, key)? {
+    store.pin_checkpoint(row.id, &layered.home, key, layer)?;
+    if !store.use_checkpoint(&layered.home, key)? {
         return Ok(None);
     }
     let req = AcquireReq {
@@ -328,7 +332,7 @@ pub(super) fn resume(
         class: cfg.size.as_ref().map(|s| s.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         cache: layered.cache.clone(),
-        pool_machine: None,
+        pool_machine: seat_of(cx, store, row)?,
     };
     // Planned first, so a fork cut short is still found from its record.
     let planned = cx.driver().planned_handle(&req);

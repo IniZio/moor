@@ -4,6 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::box_key::checkpoint_home_machine;
 use moor_core::name::{BoxHandle, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError};
 use serde::Deserialize;
@@ -63,6 +64,10 @@ pub(super) fn create(
     handle: &BoxHandle,
     name: &str,
 ) -> Result<Checkpoint, DriverError> {
+    if pool::is_pool(handle) {
+        return pool::checkpoints::create(cb, handle, name);
+    }
+    cb.require_version()?;
     let spec = Crabbox::spec(CHECKPOINT_DEADLINE)
         .args(["checkpoint", "create"])
         .args(target_args(handle))
@@ -76,6 +81,10 @@ pub(super) fn create(
 /// claimed there, with the Box's cache volumes as warmup gives them; a fork that fails releases
 /// what it started.
 pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+    if pool::is_pool_provider(&req.provider) {
+        return pool::checkpoints::fork(cb, id, req);
+    }
+    cb.require_version()?;
     let provider = req.provider.as_str();
     let name = slug(req);
     let class = class_args(req.class.as_deref())?;
@@ -98,8 +107,11 @@ pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle
     }
 }
 
-/// Deletes checkpoint `id` and the provider's copy of it.
-pub(super) fn delete(cb: &Crabbox, id: &str) -> Result<(), DriverError> {
+/// Deletes checkpoint `id`, recorded under `home`, and the provider's copy of it.
+pub(super) fn delete(cb: &Crabbox, home: &ProviderId, id: &str) -> Result<(), DriverError> {
+    if let Some(machine) = checkpoint_home_machine(home) {
+        return pool::checkpoints::delete(cb, machine, id);
+    }
     cb.require_version()?;
     let spec = Crabbox::spec(CHECKPOINT_DEADLINE).args(["checkpoint", "delete", id]);
     cb.call(Op::Checkpoint, None, &spec).map(drop)
@@ -110,6 +122,9 @@ pub(super) type Disk = Option<CheckpointDisk>;
 
 /// The disk `provider` keeps checkpoints on: this host's, for a provider that runs here.
 pub(super) fn disk(cb: &Crabbox, provider: &ProviderId) -> Result<Disk, DriverError> {
+    if let Some(machine) = checkpoint_home_machine(provider) {
+        return pool::checkpoints::disk(cb, machine).map(Some);
+    }
     let Some(dir) = cb.checkpoint_dir.as_deref() else {
         return Ok(None);
     };

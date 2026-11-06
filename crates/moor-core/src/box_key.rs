@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::name::{BoxId, BoxName};
+use crate::name::{BoxId, BoxName, ProviderId};
 
 /// The directory under the Box login home that holds every Box workdir.
 pub const WORK_ROOT: &str = "moor";
@@ -64,6 +64,22 @@ pub struct PoolSeat {
     pub machine: i64,
     /// The controller whose lease slugs the host keeps apart from other controllers'.
     pub controller: ControllerId,
+}
+
+impl PoolSeat {
+    /// What this machine's checkpoints of `provider` are recorded under. A node's name is unique
+    /// only among its owner's machines, so `provider` alone does not say which disk holds them.
+    #[must_use]
+    pub fn checkpoint_home(&self, provider: &ProviderId) -> ProviderId {
+        ProviderId::new(format!("{}/{}", provider.as_str(), self.machine))
+    }
+}
+
+/// The machine in a [`PoolSeat::checkpoint_home`]; none for a plain provider.
+#[must_use]
+pub fn checkpoint_home_machine(home: &ProviderId) -> Option<i64> {
+    let (_, machine) = home.as_str().rsplit_once('/')?;
+    machine.parse().ok()
 }
 
 /// The controller and Box a pool lease slug `moor-{controller}-{id}` names; `None` for any other

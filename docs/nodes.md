@@ -223,6 +223,35 @@ A close never takes a place in the queue or suspends another Box:
 
 `--force` closes without any of this.
 
+
+## Warm starts
+
+A later Box on your node can start from a checkpoint a Box of yours saved there,
+skipping the setup lines the checkpoint holds. Checkpoints are never shared across
+users or across nodes.
+
+**A warm start holds only for the same commit today.** A Box at any other commit
+finds no checkpoint, runs its whole setup, and saves a new chain.
+
+`moor node ls` says `warm starts on`, or `warm starts off:` with the reason. The
+agent offers them only when its provider has `workspace-checkpoint` and
+`workspace-fork` and `crabbox doctor` passes. See
+[the cloud-hypervisor provider](providers.md#use-the-cloud-hypervisor-provider)
+for the setting, which the agent adds for you and an owner's `false` turns off.
+
+A chain is the checkpoints of one user, repo, commit and cache plan: the clone, each
+setup line over 20 seconds, and the last line. Each checkpoint is a delta over the one
+before. It holds the guest memory in use at the save and what changed on disk since,
+so a chain costs about what setup wrote to disk, plus the memory in use at each save.
+Each new commit starts a new chain, so chains add up until the disk reaches its floor.
+A just-booted 16 GiB VM on ext4 took 1.07 GiB for its first checkpoint and 0.60 GiB for
+the next, with `v52.0-moor.1`. A real setup costs more, and that is not yet measured.
+
+Checkpoints share the node's disk floor. A setup below the floor saves no
+checkpoint and warns `checkpoint_skipped`. A node below the floor with a Box on it
+deletes checkpoints no Box holds back until it is above the floor again,
+superseded chains first, then the least recently used. A checkpoint a host holds with no record here stays until you remove it.
+
 ## Choosing a node
 
 `moor node ls` lists the shared nodes and your own: name, scope, runtime, online

@@ -157,6 +157,20 @@ fn a_pool_hosts_offer_reaches_its_reported_link() {
     );
 }
 
+#[test]
+fn a_pool_hosts_warm_starts_reach_its_reported_link() {
+    let on = r#"{"capabilities":{"features":["workspace-checkpoint","workspace-fork"]}}"#;
+    let host = Host::start_with(None, None, Some(on));
+    let links = host.rig.link.links.lock().unwrap().clone().unwrap();
+    assert_eq!(links[0]["warm_starts"], serde_json::json!({"state": "on"}));
+    let off = r#"{"capabilities":{"features":[]}}"#;
+    let host = Host::start_with(None, None, Some(off));
+    let links = host.rig.link.links.lock().unwrap().clone().unwrap();
+    assert_eq!(links[0]["warm_starts"]["state"], "off");
+    let why = links[0]["warm_starts"]["why"].as_str().unwrap();
+    assert!(why.contains("workspace-checkpoint"), "{why}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
     let host = Host::start();

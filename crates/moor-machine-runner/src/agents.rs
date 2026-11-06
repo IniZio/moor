@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
 use moor_client::Client;
-use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, RunnerAddr};
+use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, RunnerAddr, WarmStarts};
 use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::SshSig;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -296,6 +296,11 @@ impl Links {
             mem_mib: offer.mem_mib,
             cpus: offer.cpus,
             reserve_mib: offer.reserve_mib,
+            warm_starts: match (offer.checkpoints, offer.checkpoints_off) {
+                (true, _) => Some(WarmStarts::On),
+                (false, Some(why)) => Some(WarmStarts::Off { why }),
+                (false, None) => None,
+            },
             memory: None,
         };
         self.change(|held| {

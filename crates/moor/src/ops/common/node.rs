@@ -10,6 +10,7 @@ use moor_core::decide::schedule::{
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::name::NodeName;
+use moor_core::request::WarmStarts;
 use moor_core::response::Warning;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::user::UserId;
@@ -120,6 +121,26 @@ pub(crate) fn seat_of(
     row: &BoxRow,
 ) -> Result<Option<PoolSeat>, CommandError> {
     recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n))
+}
+
+/// What Box `row`'s checkpoints on `provider` are recorded under: the provider itself, or the
+/// machine of a personal node, whose agent must say it serves them; none when it does not.
+pub(crate) fn checkpoint_home(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    provider: &ProviderId,
+    user: UserId,
+) -> Option<ProviderId> {
+    let Some(seat) = seat_of(cx, store, row).ok()? else {
+        return Some(provider.clone());
+    };
+    let links = store.user_machine_links(user).ok()?;
+    links
+        .iter()
+        .find(|(_, l)| l.machine_id == seat.machine)
+        .filter(|(_, l)| l.warm_starts == Some(WarmStarts::On))?;
+    Some(seat.checkpoint_home(provider))
 }
 
 /// A Box admitted onto a node.
