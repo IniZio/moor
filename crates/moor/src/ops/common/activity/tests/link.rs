@@ -273,6 +273,41 @@ fn a_quiet_box_asleep_keeps_its_session_too() {
 }
 
 #[test]
+fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: "last-resort suspend".to_owned(),
+    };
+    let (cx, engine, id) = polled_asleep(suspend, false);
+    assert_eq!(
+        engine.probe_count(SESSION),
+        0,
+        "no probe of a stopped guest"
+    );
+    assert_eq!(engine.asked(), []);
+    assert!(engine.transcripts().is_empty());
+    assert!(engine.reattached().is_empty());
+    let store = cx.store().unwrap();
+    let wake = Decision::new(id)
+        .lifecycle(BoxLifecycleInput::Wake)
+        .box_input(BoxInput::Wake);
+    store.apply(wake).unwrap();
+    let reading = run_once(&cx, id);
+    settle(&cx, store, &row(&cx, id), &reading).unwrap();
+    assert_eq!(engine.probe_count(SESSION), 1, "polling resumes on wake");
+    assert!(store.live_session(id).unwrap().is_some());
+}
+
+#[test]
+fn stopping_the_agent_of_an_asleep_box_does_not_reach_for_the_guest() {
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: "last-resort suspend".to_owned(),
+    };
+    let (cx, engine, id) = polled_asleep(suspend, false);
+    stop_agent(&cx, cx.store().unwrap(), &row(&cx, id), None).unwrap();
+    assert_eq!(engine.asked(), []);
+}
+
+#[test]
 fn a_transcript_that_failed_for_want_of_a_link_is_saved_once_the_agent_is_reattached() {
     let (cx, engine, id) = settle_exited_after(vec![Ok(AgentFate::Running)], |cx, id| {
         let failed = ExtraEvent::TranscriptFailed {

@@ -113,3 +113,45 @@ fn reconcile_keeps_a_box_its_host_no_longer_lists() {
     driver.forget(&handle);
     assert_eq!(box_state(&cx), BoxState::Ready);
 }
+
+#[test]
+fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let engine = Arc::new(FakeEngine::new());
+    let cx = cx(dir.path(), &driver).with_engine(engine.clone());
+    let id = working(&cx, &driver, "a", Some("sess"));
+    let store = cx.store().unwrap();
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: "last-resort suspend".to_owned(),
+    };
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(suspend)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
+    let before = driver.calls().len();
+    run(&cx, &req(None, None)).unwrap();
+    let shown = run(&cx, &req(Some("a"), None)).unwrap();
+    let inspect = moor_core::request::InspectReq {
+        target: BoxName::parse_allow_bare("a").unwrap().into(),
+        said: None,
+        lines: None,
+    };
+    crate::ops::inspect::run(&cx, &inspect).unwrap();
+    assert_eq!(engine.probe_count("sess"), 0);
+    assert_eq!(engine.asked(), []);
+    let guest: Vec<String> = driver
+        .calls()
+        .split_off(before)
+        .into_iter()
+        .filter(|c| !c.starts_with("list"))
+        .collect();
+    assert_eq!(guest, Vec::<String>::new());
+    assert!(store.live_session(id).unwrap().is_some());
+    let agent = shown.boxed.unwrap().agent.unwrap();
+    assert_eq!(agent.pane, "gone");
+    assert_ne!(agent.state, "exited");
+}

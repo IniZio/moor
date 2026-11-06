@@ -25,7 +25,7 @@ pub(crate) fn stop_agent(
     let sref = session_ref(row, &session);
     // Best effort: a Box that cannot be reached cannot run the agent on, and a close must still
     // go ahead.
-    if let Some(s) = sref {
+    if let Some(s) = sref.filter(|_| !row.asleep()) {
         let _ = cx.engine().stop(&s);
     }
     if let Some(pane) = session.pane.as_deref() {
