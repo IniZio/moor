@@ -122,10 +122,9 @@ count restarts with it and cannot order links across runners; `since` can.
 
 In one pod, the runner and the controller share a volume: three Unix sockets
 and two host paths. As separate pods, each becomes a TCP connection that opens
-with the runner key (`MOOR_RUNNER_KEY`, derived in the chart as
-`sha256("moor runner hello:" + egress.key)`, so a leak of the 7700 service key
-cannot be replayed on the controller), and the runner's one durable file set
-moves to the store. VM and host installs keep the sockets.
+with the machine service key (`MOOR_MACHINE_SERVICE_KEY`, the one the egress
+Proxy holds already; a holder of it can already make store calls through the
+ledger), and the runner's one durable file set moves to the store. VM and host installs keep the sockets.
 
 ```
 runner     ──tls <release>-ledger:7443, hello{runner, key}──▶ controller
@@ -210,8 +209,8 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
 - The `<release>-machine` Service from #1138 selects the runner pods. Network
   policy: 7701 from the controller pod only, 7700 from the egress pods, 7443
   from the egress and runner pods.
-- `MOOR_MACHINE_SERVICE_KEY` and `MOOR_RUNNER_KEY` from the release secret,
-  one key per purpose; the ledger CA mounted as the egress pods mount it.
+- `MOOR_MACHINE_SERVICE_KEY` from the release secret; the ledger CA mounted as
+  the egress pods mount it.
 - `emptyDir` for `mirrors/` and `tmp/`. No PVC.
 
 ### Decisions
