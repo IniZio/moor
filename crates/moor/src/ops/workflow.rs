@@ -271,7 +271,6 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
     if matches!(settled, Ok(false)) {
-        // The run was settled without this start, so its Box must not go on.
         let late = cx.store().map_err(|e| e.error.to_string());
         if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.name)) {
             out.push(format!(
