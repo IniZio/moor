@@ -187,14 +187,22 @@ impl Upstream {
 
 /// A loopback TCP socket bound to `port` with `SO_REUSEPORT`, so a second one can share the port.
 fn reusable(port: u16) -> OwnedFd {
-    use rustix::net::{AddressFamily, SocketFlags, SocketType};
+    use rustix::net::{AddressFamily, SocketType};
+    #[cfg(not(target_vendor = "apple"))]
     let socket = rustix::net::socket_with(
         AddressFamily::INET,
         SocketType::STREAM,
-        SocketFlags::CLOEXEC,
+        rustix::net::SocketFlags::CLOEXEC,
         None,
     )
     .unwrap();
+    // Apple has no SOCK_CLOEXEC, so the flag is set just after the socket exists.
+    #[cfg(target_vendor = "apple")]
+    let socket = {
+        let socket = rustix::net::socket(AddressFamily::INET, SocketType::STREAM, None).unwrap();
+        rustix::io::fcntl_setfd(&socket, rustix::io::FdFlags::CLOEXEC).unwrap();
+        socket
+    };
     rustix::net::sockopt::set_socket_reuseport(&socket, true).unwrap();
     rustix::net::bind(&socket, &SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
     socket
