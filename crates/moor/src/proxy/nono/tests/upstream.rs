@@ -196,7 +196,6 @@ fn reusable(port: u16) -> OwnedFd {
         None,
     )
     .unwrap();
-    // Apple has no SOCK_CLOEXEC, so the flag is set just after the socket exists.
     #[cfg(target_vendor = "apple")]
     let socket = {
         let socket = rustix::net::socket(AddressFamily::INET, SocketType::STREAM, None).unwrap();
