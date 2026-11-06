@@ -89,6 +89,29 @@ impl Store {
         }
     }
 
+    /// Gives the row of `box_id` a forward port when it has none, as a row from before the
+    /// egress forwarder does, changing nothing else.
+    pub(crate) fn give_forward_port(&self, box_id: BoxId, rng: &dyn Rng) -> Result<(), StoreError> {
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            match self.give_forward_port_once(box_id, rng) {
+                Err(StoreError::Db(e)) if tries < RESERVE_TRIES && forward_port_taken(&e) => {}
+                other => return other,
+            }
+        }
+    }
+
+    /// One try of [`Self::give_forward_port`].
+    fn give_forward_port_once(&self, box_id: BoxId, rng: &dyn Rng) -> Result<(), StoreError> {
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        give_forward_port(&tx, box_id, rng)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
     /// One try of [`Self::reserve`]; a forward port another writer took first fails it.
     fn reserve_once(&self, box_id: BoxId, rng: &dyn Rng) -> Result<u16, StoreError> {
         let now = self.now();
