@@ -11,7 +11,7 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::{BoxId, BoxName, ProviderId};
 
-use super::run;
+use super::{run, AgentRead};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::box_view;
@@ -104,11 +104,11 @@ fn pass(f: &Fx, d: Duration) {
 }
 
 fn auto_sleep(f: &Fx) {
-    run(&f.cx, f.cx.store().unwrap(), f.id, false);
+    run(&f.cx, f.cx.store().unwrap(), f.id, AgentRead::Plain);
 }
 
 fn auto_sleep_blocked(f: &Fx) {
-    run(&f.cx, f.cx.store().unwrap(), f.id, true);
+    run(&f.cx, f.cx.store().unwrap(), f.id, AgentRead::Blocked);
 }
 
 /// Kinds of the events recorded for the Box.

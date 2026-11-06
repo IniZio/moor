@@ -9,7 +9,7 @@ use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -17,19 +17,50 @@ use moor_core::{ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::activity::Reading;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::suspend_check;
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
 
+/// What the last read of the agent said, as auto-sleep needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentRead {
+    /// Read, and no prompt holds it.
+    Plain,
+    /// It waits on an unanswered prompt or a first-run screen.
+    Blocked,
+    /// It could not be read, and may have started a turn since it went Idle.
+    Unread,
+}
+
+impl AgentRead {
+    /// How `reading` counts.
+    pub(crate) fn of(reading: &Reading) -> Self {
+        if reading.blocked() {
+            Self::Blocked
+        } else if reading.unread() {
+            Self::Unread
+        } else {
+            Self::Plain
+        }
+    }
+}
+
 /// Sleep the machine of Box `id` when it has been Idle for `box.sleep_after`, Idle for
-/// `box.sleep_after_blocked` while `blocked` on a prompt, or awake for `box.max_awake`.
+/// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`.
+/// While its agent is unread, only the awake cap sleeps it.
 ///
 /// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
 /// everything as it was. A Box with a recorded refusal is not asked again until it has left Idle. Any other failure becomes a warning.
-pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, blocked: bool) {
-    match try_sleep(cx, store, id, blocked) {
+pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) {
+    report(cx, try_sleep(cx, store, id, agent));
+}
+
+/// Warns of a failure other than a refusal.
+fn report(cx: &Cx, slept: Result<(), CommandError>) {
+    match slept {
         Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
             code: "auto_sleep_failed".to_owned(),
             message: e.error.to_string(),
@@ -39,15 +70,19 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, blocked: bool) {
 }
 
 /// Whether `row` has been Idle, or awake, long enough to sleep.
-fn due(cx: &Cx, store: &Store, row: &BoxRow, blocked: bool) -> Result<bool, CommandError> {
+fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, CommandError> {
     let config = &cx.config().box_;
     let facts = SleepFacts {
         lifecycle: row.lifecycle,
-        session: row.session,
+        session: if agent == AgentRead::Unread {
+            SessionState::Working
+        } else {
+            row.session
+        },
         idle_since: row.idle_since,
         now: cx.clock().now(),
         after: config.sleep_after(),
-        blocked,
+        blocked: agent == AgentRead::Blocked,
         after_blocked: config.sleep_after_blocked(),
         awake_since: store.awake_since(row.id)?,
         max_awake: config.max_awake(),
@@ -56,18 +91,18 @@ fn due(cx: &Cx, store: &Store, row: &BoxRow, blocked: bool) -> Result<bool, Comm
 }
 
 /// Sleep the machine once the Box lock is free and the Box is still due.
-fn try_sleep(cx: &Cx, store: &Store, id: BoxId, blocked: bool) -> Result<(), CommandError> {
+fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, store, &row, blocked)? {
+    if !due(cx, store, &row, agent)? {
         return Ok(());
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)?;
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, store, &row, blocked)? {
+    if !due(cx, store, &row, agent)? {
         return Ok(());
     }
     if row.boxed.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {

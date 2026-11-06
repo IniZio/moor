@@ -295,7 +295,7 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     let settled = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)
         .and_then(|reading| activity::settle(cx, store, row, &reading).map(|()| reading));
     match settled {
-        Ok(reading) => autosleep::run(cx, store, row.id, reading.blocked()),
+        Ok(reading) => autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading)),
         Err(e) => cx.warn(Warning {
             code: "settle_failed".to_owned(),
             message: format!("could not settle Box {}: {}", row.id.get(), e.error),

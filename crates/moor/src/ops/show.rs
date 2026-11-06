@@ -198,7 +198,7 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         }
         let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
         activity::settle(cx, store, &row, &reading)?;
-        autosleep::run(cx, store, row.id, reading.blocked());
+        autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading));
         row = store.box_row(row.id)?.unwrap_or(row);
         let in_flight = store.in_flight_run(row.id)?;
         let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());

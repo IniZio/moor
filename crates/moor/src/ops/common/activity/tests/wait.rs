@@ -12,6 +12,8 @@ use super::*;
 use crate::ops::common::autosleep;
 use crate::testing::clock::FakeClock;
 
+mod unread;
+
 const ON: &str = "Run ci, tests, lint for all six packages";
 
 struct Rig {
@@ -87,7 +89,12 @@ impl Rig {
     }
 
     fn sleeps_asked(&self) -> usize {
-        autosleep::run(&self.cx, self.cx.store().unwrap(), self.id, false);
+        autosleep::run(
+            &self.cx,
+            self.cx.store().unwrap(),
+            self.id,
+            autosleep::AgentRead::Plain,
+        );
         let calls = self.driver.calls();
         calls.iter().filter(|c| c.starts_with("sleep ")).count()
     }
