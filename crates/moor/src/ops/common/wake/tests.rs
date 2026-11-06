@@ -27,7 +27,7 @@ mod tunnel;
 
 /// Wake and restore the tunnel, without relaunching the agent.
 fn wake_if_asleep(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    wake_with_tunnel(cx, store, row).map(|w| w.any)
+    wake_with_tunnel(cx, store, row, super::Turn::JoinsQueue).map(|w| w.any)
 }
 
 struct Fx {

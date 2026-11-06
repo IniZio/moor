@@ -5,8 +5,9 @@ use crate::user::UserId;
 
 mod memory;
 pub use memory::{
-    default_reserve_mib, disk_floor_mib, gib, Memory, Shortfall, BOOT_FLOOR_MIB, DISK_FLOOR_MIB,
-    DISK_FLOOR_PERCENT, PSI_LIMIT_CENTI, REPORT_FRESH_SECS,
+    default_reserve_mib, disk_floor_mib, gib, needed_to_resume, Memory, ResumeAsk, Shortfall,
+    ALONE_MARGIN_MIB, BOOT_FLOOR_MIB, DISK_FLOOR_MIB, DISK_FLOOR_PERCENT, PSI_LIMIT_CENTI,
+    REPORT_FRESH_SECS,
 };
 
 /// Who may use a node.
@@ -274,6 +275,21 @@ fn place(n: &Node, default: Option<&NodeName>, now: i64) -> Verdict {
                 reason: short.reason(&n.name),
             },
         ),
+    }
+}
+
+/// `verdict` for a new Box on `n`: one that would bind joins the queue when Boxes wait there.
+///
+/// Room a waiter is gathering does not go to a newcomer. Only on a node that reports memory,
+/// whose every report promotes the queue's head.
+#[must_use]
+pub fn behind_the_queue(verdict: Verdict, n: &Node) -> Verdict {
+    match verdict {
+        Verdict::Bind { node, .. } if n.memory.is_some() && n.waiting > 0 => Verdict::Pending {
+            reason: format!("{node} is making room; {} Boxes ahead", n.waiting),
+            node,
+        },
+        other => other,
     }
 }
 

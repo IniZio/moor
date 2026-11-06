@@ -547,6 +547,7 @@ fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_p
 
 mod disk_alert;
 mod pressure;
+mod queue;
 
 #[test]
 fn a_node_short_of_disk_makes_a_start_wait_with_a_disk_reason() {

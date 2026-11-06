@@ -95,6 +95,7 @@ fn a_report_with_the_per_box_list_round_trips() {
             boxes: vec![super::BoxMemory {
                 slug: "moor-0badcafe-7".to_owned(),
                 host_memory_mib: 1536,
+                resume_memory_mib: None,
             }],
         },
     };
@@ -104,4 +105,17 @@ fn a_report_with_the_per_box_list_round_trips() {
         serde_json::from_str::<super::Opened>(&text).unwrap(),
         opened
     );
+}
+
+#[test]
+fn a_report_from_an_older_agent_has_no_resume_memory() {
+    let back: super::BoxMemory =
+        serde_json::from_str(r#"{"slug":"moor-0a1b2c3d-1","host_memory_mib":0}"#).unwrap();
+    assert_eq!(back.resume_memory_mib, None);
+    let with = super::BoxMemory {
+        resume_memory_mib: Some(6144),
+        ..back
+    };
+    let text = serde_json::to_string(&with).unwrap();
+    assert!(text.contains("\"resume_memory_mib\":6144"), "{text}");
 }

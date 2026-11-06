@@ -39,6 +39,7 @@ pub(super) fn box_memory(machine_id: i64, report: &Report) -> Vec<BoxHostMemory>
                 controller,
                 box_id,
                 host_memory_mib: b.host_memory_mib,
+                resume_memory_mib: b.resume_memory_mib,
             })
         })
         .collect()

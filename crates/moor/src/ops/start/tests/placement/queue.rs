@@ -1,0 +1,223 @@
+//! The one queue on a node: what lets a Box resume, and in what order Boxes leave it.
+
+use moor_core::domain::box_state::BoxLifecycle::{self, Pending, Ready};
+use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::request::BoxHostMemory;
+use moor_core::seam::driver::DriverError;
+
+use super::pressure::{agents_report, live_world_on, tick, wake_up, BELOW_RESERVE};
+use super::*;
+
+const CEILING: u64 = 23 * 1024;
+const REAL_USE: u64 = 6 * 1024;
+
+/// What a report must say for `free` MiB above the 4 GiB reserve.
+const fn with_free(free: u64) -> u64 {
+    4096 + free
+}
+
+fn guest_memory(w: &World, id: BoxId, mib: u64) {
+    apply(
+        w,
+        Decision::new(id).set(Fields {
+            box_cpus: Field::Set(4),
+            box_mem_mib: Field::Set(i64::try_from(mib).unwrap()),
+            ..Fields::default()
+        }),
+    );
+}
+
+fn provider_says(w: &World, hv: i64, id: BoxId, mib: u64) {
+    let store = w.cx.store().unwrap();
+    store
+        .set_box_memory(&[BoxHostMemory {
+            machine_id: hv,
+            controller: store.controller_id().unwrap(),
+            box_id: id,
+            host_memory_mib: 0,
+            resume_memory_mib: Some(mib),
+        }])
+        .unwrap();
+}
+
+fn reason(w: &World, id: BoxId) -> String {
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    row.state_reason.unwrap_or_default()
+}
+
+fn states(w: &World, ids: &[BoxId]) -> Vec<BoxLifecycle> {
+    ids.iter().map(|id| lifecycle(w, *id)).collect()
+}
+
+/// A Box with the given guest memory, asleep.
+fn asleep(w: &World, name: &str, guest: u64) -> BoxId {
+    let id = started(w, name);
+    guest_memory(w, id, guest);
+    put_to_sleep(w, id);
+    id
+}
+
+#[test]
+fn a_ceiling_far_above_real_use_resumes_beside_a_light_box_once_its_provider_says_so() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let light = started(&w, "light");
+    let (w, _) = agents_report(w, &[], &[light]);
+    tick(&w, hv, with_free(13 * 1024), 0, 0);
+    assert!(wake_up(&w, big).is_err(), "the ceiling alone does not fit");
+    assert_eq!(lifecycle(&w, big), Pending);
+    assert_eq!(
+        reason(&w, big),
+        "waiting for capacity on hv: 13 GiB free, needs 23 GiB"
+    );
+    provider_says(&w, hv, big, REAL_USE);
+    tick(&w, hv, with_free(13 * 1024), 0, 0);
+    assert_eq!(lifecycle(&w, big), Ready);
+}
+
+#[test]
+fn only_asleep_boxes_and_too_little_memory_leave_the_head_waiting_with_its_reason_and_place() {
+    let (w, hv) = live_world(32_768);
+    let first = asleep(&w, "first", CEILING);
+    let second = asleep(&w, "second", 1024);
+    tick(&w, hv, 8192, 0, 0);
+    assert!(wake_up(&w, first).is_err());
+    assert!(wake_up(&w, second).is_err());
+    for _ in 0..3 {
+        tick(&w, hv, 8192, 0, 0);
+    }
+    assert_eq!(states(&w, &[first, second]), [Pending, Pending]);
+    assert_eq!(
+        reason(&w, first),
+        "waiting for capacity on hv: 4 GiB free, needs 23 GiB"
+    );
+    let place = |id: BoxId| {
+        let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+        let shown = crate::ops::show::run(
+            &w.cx,
+            &moor_core::ShowReq {
+                target: Some(row.name.into()),
+                events: None,
+                agent: false,
+                reports: false,
+                artifacts: false,
+                pane: false,
+            },
+        )
+        .unwrap();
+        let held = shown.boxed.unwrap().held_machine.unwrap();
+        (held.name, held.position)
+    };
+    assert_eq!(place(first), ("hv".to_owned(), Some(1)));
+    assert_eq!(place(second), ("hv".to_owned(), Some(2)));
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(states(&w, &[first, second]), [Ready, Pending]);
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(states(&w, &[first, second]), [Ready, Ready]);
+}
+
+#[test]
+fn a_small_box_behind_a_big_one_waits_its_turn_even_when_it_would_fit() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let small = asleep(&w, "small", 1024);
+    let up = started(&w, "up");
+    let (w, _) = agents_report(w, &[], &[up]);
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    assert!(wake_up(&w, small).is_err(), "room, but it is behind big");
+    assert_eq!(reason(&w, small), "hv is making room; 1 Boxes ahead");
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Pending, Pending], "no jump");
+    tick(&w, hv, with_free(CEILING), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Ready, Pending]);
+    tick(&w, hv, with_free(CEILING), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Ready, Ready]);
+}
+
+#[test]
+fn a_new_start_with_room_goes_behind_a_resume_that_waits() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let up = started(&w, "up");
+    let (w, _) = agents_report(w, &[], &[up]);
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    let (fresh, why) = waits(&w, "fresh");
+    assert_eq!(why, "hv is making room; 1 Boxes ahead");
+    tick(&w, hv, with_free(CEILING), 0, 0);
+    assert_eq!(states(&w, &[big, fresh]), [Ready, Pending]);
+    tick(&w, hv, with_free(CEILING), 0, 0);
+    assert_eq!(states(&w, &[big, fresh]), [Ready, Ready]);
+}
+
+#[test]
+fn a_resume_goes_ahead_of_an_older_start_in_the_queue() {
+    let (w, hv) = live_world(SHORT);
+    let (older, _) = waits(&w, "older");
+    let other = enrolled(&w, "other", Some(true), None);
+    report(&w, other, 32_768, None);
+    let mut on_other = req("resume");
+    on_other.node = Some("other".to_owned());
+    let resume = BoxId::new(start::run(&w.cx, &on_other).unwrap().boxed.id);
+    put_to_sleep(&w, resume);
+    let store = w.cx.store().unwrap();
+    let hv_name = moor_core::name::NodeName::parse("hv").unwrap();
+    let spec = moor_core::decide::schedule::BoxSpec {
+        labels: Vec::new(),
+        node: Some(hv_name.clone()),
+    };
+    store.set_box_spec(resume, &spec).unwrap();
+    report(&w, hv, SHORT, None);
+    assert!(wake_up(&w, resume).is_err());
+    assert_eq!(store.pending_on(&hv_name).unwrap(), [resume, older]);
+    report(&w, hv, 32_768, None);
+    assert_eq!(states(&w, &[resume, older]), [Ready, Pending]);
+}
+
+#[test]
+fn a_head_that_fails_on_its_own_account_holds_nothing_back() {
+    let (w, hv) = live_world_on(
+        FakeDriver::new().fail_wake(DriverError::Timeout(std::time::Duration::from_secs(1))),
+    );
+    let first = asleep(&w, "first", 8192);
+    let second = asleep(&w, "second", 8192);
+    tick(&w, hv, SHORT, 0, 0);
+    assert!(wake_up(&w, first).is_err());
+    assert!(wake_up(&w, second).is_err());
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(states(&w, &[first, second]), [Pending, Ready]);
+}
+
+#[test]
+fn a_second_wake_waits_for_the_report_that_counts_the_first() {
+    let (w, hv) = live_world(32_768);
+    let (a, b) = (asleep(&w, "a", 1024), asleep(&w, "b", 1024));
+    tick(&w, hv, 32_768, 0, 0);
+    w.cx.clock().sleep(std::time::Duration::from_secs(2));
+    wake_up(&w, a).unwrap();
+    w.cx.clock().sleep(std::time::Duration::from_secs(2));
+    assert!(wake_up(&w, b).is_err());
+    assert_eq!(reason(&w, b), "waiting for the next memory report from hv");
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(lifecycle(&w, b), Ready);
+}
+
+#[test]
+fn a_box_that_just_resumed_is_not_picked_again_until_it_settles() {
+    let (w, hv) = live_world(32_768);
+    let (a, b, newest) = (started(&w, "a"), started(&w, "b"), started(&w, "newest"));
+    let (w, _) = agents_report(w, &[], &[a, b, newest]);
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(lifecycle(&w, newest), Pending);
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(lifecycle(&w, newest), Ready, "resumed");
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(
+        states(&w, &[a, b, newest]),
+        [Ready, Ready, Ready],
+        "cooldown"
+    );
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(states(&w, &[a, b, newest]), [Ready, Pending, Ready]);
+}

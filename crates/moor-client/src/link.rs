@@ -68,6 +68,9 @@ pub struct BoxMemory {
     pub slug: String,
     /// MiB of the host the VM holds; 0 when it is suspended to disk.
     pub host_memory_mib: u64,
+    /// MiB of the host a suspended VM needs to resume; none when its provider does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_memory_mib: Option<u64>,
 }
 
 /// Each line of a stream the agent opens: the connection it accepted for a listen, or one of

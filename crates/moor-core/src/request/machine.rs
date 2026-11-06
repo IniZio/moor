@@ -57,6 +57,9 @@ pub struct BoxHostMemory {
     pub box_id: BoxId,
     /// MiB of the host it holds; 0 when its VM is suspended to disk.
     pub host_memory_mib: u64,
+    /// MiB of the host its suspended VM needs to resume; none when its provider does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_memory_mib: Option<u64>,
 }
 
 /// Whether an enrolled machine's agent holds a link to the runner, since when, and what it

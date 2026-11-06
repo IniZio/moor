@@ -83,7 +83,10 @@ fn blocker(node: &NodeView) -> Option<String> {
         if free_mib >= BOOT_FLOOR_MIB {
             return None;
         }
-        Shortfall::Low { free_mib }
+        Shortfall::Low {
+            free_mib,
+            needs_mib: BOOT_FLOOR_MIB,
+        }
     };
     Some(short.reason(&name))
 }

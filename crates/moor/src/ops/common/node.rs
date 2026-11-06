@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use moor_core::box_key::PoolSeat;
 use moor_core::config::{NodeConfig, UserConfig};
-use moor_core::decide::schedule::{schedule, BoxSpec, Memory, Node, Scope, Verdict};
+use moor_core::decide::schedule::{
+    behind_the_queue, schedule, BoxSpec, Memory, Node, Scope, Verdict,
+};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::name::NodeName;
@@ -130,6 +132,22 @@ pub(crate) struct Bound {
     pub(crate) seat: Option<PoolSeat>,
 }
 
+/// The verdict for a Box of `user` on `node` alone; a `fresh` one goes behind the queue there.
+fn on_node(
+    cx: &Cx,
+    node: &Node,
+    default: Option<&NodeName>,
+    (user, fresh): (Option<UserId>, bool),
+    spec: &BoxSpec,
+) -> Verdict {
+    let judged = verdict(cx, (std::slice::from_ref(node), default), user, spec);
+    if fresh {
+        behind_the_queue(judged, node)
+    } else {
+        judged
+    }
+}
+
 /// Schedules `row` and, in the transaction that counts its node, admits it with the decision
 /// `requested` builds, or leaves it Pending there. `None` when it waits. A fresh Box that no node
 /// can host is refused; a Pending one stays Pending.
@@ -170,7 +188,7 @@ pub(crate) fn admit(
             memory: node.memory.map(|m| Memory { starting, ..m }),
             ..node.clone()
         };
-        match verdict(cx, (&[now], default.as_ref()), row.user, &on_it) {
+        match on_node(cx, &now, default.as_ref(), (row.user, fresh), &on_it) {
             Verdict::Bind { .. } => {
                 bound = true;
                 Some(requested(&provider))

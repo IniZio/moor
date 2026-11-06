@@ -25,6 +25,7 @@ pub(crate) mod proxy;
 pub(crate) mod reconcile;
 pub(crate) mod reports;
 pub(crate) mod resume;
+pub(crate) mod resume_gate;
 pub(crate) mod room;
 pub(crate) mod setup;
 pub(crate) mod step;
