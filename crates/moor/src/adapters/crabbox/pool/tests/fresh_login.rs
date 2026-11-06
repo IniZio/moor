@@ -58,8 +58,8 @@ impl PoolHosts for Node {
         })
     }
 
-    fn dial_command(&self, _machine: i64, _slug: &str) -> String {
-        self.dial.clone()
+    fn dial_command(&self, _machine: i64, _slug: &str) -> Result<String, String> {
+        Ok(self.dial.clone())
     }
 }
 

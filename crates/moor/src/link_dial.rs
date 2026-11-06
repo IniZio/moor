@@ -1,49 +1,40 @@
-//! `moor link-dial <machine-id> <slug>`: an ssh `ProxyCommand` that reaches a pool lease's VM
-//! through the machine runner's links broker, `<state>/runner/links.sock`.
+//! `moor link-dial --runner <addr> <machine-id> <slug>`: an ssh `ProxyCommand` that reaches a
+//! pool lease's VM through the links broker of the runner at `addr`.
 
 use std::io::{Read, Write};
 
+use moor_client::link::reach::Runner;
+
 use crate::adapters::crabbox::DIAL_WITHIN;
-use crate::env::Env;
-use crate::proxy::links::RunnerLinks;
+use crate::env::{Env, MACHINE_SERVICE_KEY};
 
 /// [`link_dial`] on the process's own stdio, as ssh runs a `ProxyCommand`.
 #[must_use]
-pub fn on_stdio(env: &Env, machine_id: i64, slug: &str) -> u8 {
+pub fn on_stdio(env: &Env, runner: &str, (machine_id, slug): (i64, &str)) -> u8 {
     link_dial(
         env,
-        machine_id,
-        slug,
+        (runner, machine_id, slug),
         std::io::stdin(),
         std::io::stdout(),
         std::io::stderr(),
     )
 }
 
-/// Bridges `input`/`output` to the sshd of lease `slug` on machine `machine_id` until either
-/// side closes; the exit code, 0 once the bridge ends, else 1.
+/// Bridges `input`/`output` to the sshd of lease `slug` on machine `machine_id` through the
+/// runner at `runner` until either side closes; the exit code, 0 once the bridge ends, else 1.
 pub fn link_dial(
     env: &Env,
-    machine_id: i64,
-    slug: &str,
+    (runner, machine_id, slug): (&str, i64, &str),
     input: impl Read + Send + 'static,
     output: impl Write,
     mut stderr: impl Write,
 ) -> u8 {
-    let Some(dir) = env.state_dir() else {
-        let _ = writeln!(
-            stderr,
-            "moor: no state directory: set state_dir or MOOR_STATE_DIR"
-        );
-        return 1;
-    };
     let within = env.get(DIAL_WITHIN).and_then(|s| s.parse().ok());
-    let result = match RunnerLinks::under(&dir).dial(machine_id, slug, within) {
-        Ok(conn) => {
+    let result = Runner::at(runner, env.get(MACHINE_SERVICE_KEY))
+        .and_then(|runner| crate::proxy::links::dial(&runner, machine_id, slug, within))
+        .and_then(|conn| {
             crate::controller::attach::bridge(conn, input, output).map_err(|e| e.to_string())
-        }
-        Err(e) => Err(e),
-    };
+        });
     match result {
         Ok(()) => 0,
         Err(e) => {

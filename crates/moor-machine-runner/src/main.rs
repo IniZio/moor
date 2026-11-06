@@ -9,7 +9,8 @@ use clap::Parser;
 use moor_client::Client;
 use moor_core::request::RunnerAddr;
 use moor_machine_runner::{
-    bind_broker, serve, serve_agents, serve_broker, serve_forwards, Agents, Config, Relay,
+    bind_broker, bind_forwards, listen_remote, serve, serve_agents, serve_broker, serve_forwards,
+    Agents, Config, Relay,
 };
 
 /// Serves the tools a Box uses to work on its attached machine.
@@ -19,14 +20,18 @@ struct Args {
     /// Address to listen on; the Box's Proxy routes the service host here.
     #[arg(long, default_value = "127.0.0.1:7700")]
     listen: SocketAddr,
-    /// The machine service key. The runner presents it to `--controller`, and every caller must
-    /// send it in `X-Moor-Service-Key`; set it when `--listen` is not loopback, so only the egress
-    /// Proxy holding it can name a Box.
+    /// The machine service key. The runner presents it to `--controller` and checks it on
+    /// `--links`, and every caller must send it in `X-Moor-Service-Key`; set it when `--listen`
+    /// is not loopback, so only the egress Proxy holding it can name a Box.
     #[arg(long, env = moor_machine_runner::SERVICE_KEY_ENV, hide_env_values = true)]
     service_key: Option<String>,
     /// Address to accept machine agents' links on, at `/machines/link`; none accepts no links.
     #[arg(long, value_name = "ADDR")]
     agents: Option<SocketAddr>,
+    /// Address to serve the links broker and port forwards on to a controller in another pod,
+    /// which opens with the service key; none serves them on sockets beside `--socket` only.
+    #[arg(long, value_name = "ADDR", requires_all = ["agents", "service_key"])]
+    links: Option<SocketAddr>,
     /// The Host the Box's Proxy passes through.
     #[arg(long, default_value = "machine.moor.internal")]
     service_host: String,
@@ -195,6 +200,9 @@ async fn linked(args: &Args) -> Result<(Client, Option<Agents>), String> {
     };
     let runner = advertised(args, &socket);
     let agents = take_links(addr, (client.clone(), &socket), runner).await?;
+    if let (Some(addr), Some(key)) = (args.links, &args.service_key) {
+        listen_remote(addr, agents.clone(), key.clone()).await?;
+    }
     Ok((client, Some(agents)))
 }
 
@@ -211,7 +219,7 @@ async fn take_links(
         eprintln!("moor-machine-runner taking agent links on {addr}");
     }
     let agents = Agents::new(client, runner);
-    let (forwards, uid) = forward_socket(socket)?;
+    let (forwards, uid) = bind_forwards(socket)?;
     let serving = agents.clone();
     tokio::spawn(async move {
         if let Err(e) = serve_agents(listener, serving).await {
@@ -232,22 +240,6 @@ async fn take_links(
         }
     });
     Ok(agents)
-}
-
-/// Listens beside the runner's `socket` to the controller for the supervisors' forward requests, readable
-/// only by this user; the listener and this user's uid.
-fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let path = socket.with_file_name(moor_client::forward::SOCKET);
-    let failed = |e: std::io::Error| format!("cannot listen on {}: {e}", path.display());
-    match std::fs::remove_file(&path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(failed(e)),
-        _ => {}
-    }
-    let listener = tokio::net::UnixListener::bind(&path).map_err(failed)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(failed)?;
-    let uid = std::fs::metadata(&path).map_err(failed)?.uid();
-    Ok((listener, uid))
 }
 
 /// The runner's settings from its flags.

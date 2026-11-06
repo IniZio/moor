@@ -33,7 +33,7 @@ pub(crate) trait PoolHosts: Send + Sync {
         boot: &Boot,
     ) -> Result<Answer, String>;
     /// The ssh `ProxyCommand` that dials `slug`'s sshd on machine `machine_id`.
-    fn dial_command(&self, machine_id: i64, slug: &str) -> String;
+    fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String>;
 }
 
 /// Env var holding the seconds the ssh call running the dial `ProxyCommand` waits; ssh hands
@@ -298,7 +298,10 @@ pub(super) fn target(
         "-o".to_owned(),
         format!(
             "ProxyCommand={}",
-            placed.hosts.dial_command(placed.machine, placed.slug)
+            placed
+                .hosts
+                .dial_command(placed.machine, placed.slug)
+                .map_err(failed)?
         ),
         format!("{user}@{}", placed.slug),
     ];

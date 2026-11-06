@@ -19,6 +19,7 @@ use moor_core::user::Identity;
 use moor_core::{BoxHandle, BoxId, BoxName, HoldOp, ProviderId};
 
 use super::{Deps, Kept};
+use crate::proxy::links::Runners;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
@@ -57,7 +58,12 @@ impl World {
             driver: Arc::clone(&self.driver) as Arc<dyn Driver>,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
             egress: tunnels.then(|| self.socket()),
-            runner: crate::runner_dir::of(self.dir.path()).join(moor_client::forward::SOCKET),
+            runners: Runners::new(
+                self.dir.path(),
+                None,
+                Arc::new(FakeClock::new(Ts::from_millis(1_000))),
+                None,
+            ),
             log: self.log.clone(),
         };
         Kept::new(Arc::new(deps), self.id, 41_000)
@@ -410,7 +416,12 @@ fn kept_proxy(w: &World) -> super::KeptProxy {
         driver: Arc::clone(&w.driver) as Arc<dyn Driver>,
         clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
         egress: None,
-        runner: w.dir.path().join("runner.sock"),
+        runners: Runners::new(
+            w.dir.path(),
+            None,
+            Arc::new(FakeClock::new(Ts::from_millis(1_000))),
+            None,
+        ),
         log: w.log.clone(),
     };
     super::KeptProxy {

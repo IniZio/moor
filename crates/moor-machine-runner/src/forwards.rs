@@ -5,14 +5,15 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_client::forward::{Accepted, Forward, Forwarding, MAX_PORTS};
 use moor_client::link::ops::{self, Op, Reply};
 use moor_client::link::Channel;
-use tokio::io::AsyncReadExt;
-use tokio::net::{TcpStream, UnixListener, UnixStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
+use tokio::net::{TcpStream, UnixListener};
 
 use crate::Agents;
 
@@ -67,6 +68,25 @@ impl Routes {
     }
 }
 
+/// Listens beside the runner's `socket` to the controller for the supervisors' forward
+/// requests, readable only by this user; the listener and this user's uid.
+///
+/// # Errors
+/// The socket cannot be bound.
+pub fn bind_forwards(socket: &Path) -> Result<(UnixListener, u32), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let path = socket.with_file_name(moor_client::forward::SOCKET);
+    let failed = |e: std::io::Error| format!("cannot listen on {}: {e}", path.display());
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(failed(e)),
+        _ => {}
+    }
+    let listener = UnixListener::bind(&path).map_err(failed)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(failed)?;
+    let uid = std::fs::metadata(&path).map_err(failed)?.uid();
+    Ok((listener, uid))
+}
+
 /// Serves forward requests on `listener` from processes of user `uid` until accepting fails.
 ///
 /// # Errors
@@ -76,15 +96,19 @@ pub async fn serve_forwards(listener: UnixListener, agents: Agents, uid: u32) ->
         let (conn, _) = listener.accept().await?;
         if conn.peer_cred().is_ok_and(|c| c.uid() == uid) {
             let agents = agents.clone();
-            tokio::spawn(async move { hold(conn, &agents).await });
+            tokio::spawn(async move { hold(conn, &agents, true).await });
         }
     }
 }
 
-/// Serves one supervisor's connection: the forwards stay up until either it or the agent's
-/// listen stream closes.
-async fn hold(mut conn: UnixStream, agents: &Agents) {
+/// Serves one supervisor's connection, refused unless `admitted`: the forwards stay up until
+/// either it or the agent's listen stream closes.
+pub(crate) async fn hold<S>(mut conn: S, agents: &Agents, admitted: bool)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
     let up = match ops::read_line::<_, Forward>(&mut conn).await {
+        Ok(_) if !admitted => Err(crate::broker::WRONG_KEY.to_owned()),
         Ok(req) => up(agents, &req).await,
         Err(e) => Err(e),
     };

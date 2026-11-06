@@ -55,8 +55,11 @@ pub(super) enum Action {
         /// The Postgres URL to copy into.
         to: String,
     },
-    /// Hidden `link-dial <machine-id> <slug>`: bridge stdio to a pool lease's sshd.
+    /// Hidden `link-dial --runner <addr> <machine-id> <slug>`: bridge stdio to a pool lease's
+    /// sshd.
     LinkDial {
+        /// The runner that holds the pool host's link.
+        runner: String,
         /// The pool host's machine id.
         machine_id: i64,
         /// The lease.

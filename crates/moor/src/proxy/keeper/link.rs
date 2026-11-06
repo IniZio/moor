@@ -5,14 +5,15 @@
 //! the machine runner then serves every one of them back as the Box port on the machine's
 //! loopback.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::io::{self, BufRead, BufReader, Read};
 
 use moor_client::forward::{Forward, Forwarding};
+use moor_client::link::reach::{Runner, Service, StdConn};
 use moor_core::seam::driver::{Driver, LocalTunnel};
 use moor_core::seam::proc::Deadline;
 use moor_core::BoxHandle;
+
+use crate::proxy::links::Runners;
 
 /// How long the runner may take to answer.
 const RUNNER_ANSWER: Deadline = Deadline(std::time::Duration::from_secs(30));
@@ -28,8 +29,8 @@ pub(crate) struct ForwardFailed {
 
 /// The machine runner a machine's agent links in to, and which machine's forwards to ask for.
 pub(crate) struct Via<'a> {
-    /// The runner's forward socket.
-    pub(crate) socket: &'a Path,
+    /// The runners, of which the one holding the machine's link serves the forwards.
+    pub(crate) runners: &'a Runners,
     /// The Box whose ports these are.
     pub(crate) box_id: i64,
     /// The machine's enrolled id.
@@ -41,7 +42,7 @@ pub(crate) struct MachineLink {
     /// One tunnel per Box port.
     tunnels: Vec<LocalTunnel>,
     /// The connection the runner keeps the agent's listeners up for.
-    carrier: UnixStream,
+    carrier: StdConn,
 }
 
 impl MachineLink {
@@ -77,7 +78,8 @@ impl MachineLink {
             machine_id: via.machine_id,
             ports: forwards,
         };
-        let carrier = ask_runner(via.socket, &req).map_err(failed)?;
+        let runner = via.runners.runner(via.machine_id).map_err(failed)?;
+        let carrier = ask_runner(&runner, &req).map_err(failed)?;
         Ok(Self { tunnels, carrier })
     }
 
@@ -91,22 +93,17 @@ impl MachineLink {
     }
 }
 
-/// Sends `req` to the runner at `socket`; the connection to hold while the forwards are up.
-fn ask_runner(socket: &Path, req: &Forward) -> Result<UnixStream, String> {
-    let unreachable = |e: io::Error| {
-        format!(
-            "cannot reach the machine runner at {}: {e}",
-            socket.display()
-        )
-    };
-    let mut conn = UnixStream::connect(socket).map_err(unreachable)?;
+/// Sends `req` to `runner`; the connection to hold while the forwards are up.
+fn ask_runner(runner: &Runner, req: &Forward) -> Result<StdConn, String> {
+    let unreachable = |e: io::Error| format!("the machine runner went away: {e}");
+    let mut conn = crate::proxy::links::connect(runner, Service::Forwards)?;
     conn.set_read_timeout(Some(RUNNER_ANSWER.0))
         .map_err(unreachable)?;
     let mut line = serde_json::to_vec(req).map_err(|e| e.to_string())?;
     line.push(b'\n');
-    conn.write_all(&line).map_err(unreachable)?;
+    io::Write::write_all(&mut conn, &line).map_err(unreachable)?;
     let mut answer = String::new();
-    BufReader::new(&conn)
+    BufReader::new(&mut conn)
         .read_line(&mut answer)
         .map_err(unreachable)?;
     match serde_json::from_str(&answer) {

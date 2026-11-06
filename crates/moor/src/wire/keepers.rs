@@ -12,7 +12,8 @@ use zeroize::Zeroizing;
 use super::parts;
 use crate::adapters::sockets::socket_dir;
 use crate::env::Env;
-use crate::proxy::keeper::{runner_socket, Deps, KeptProxy, NoProxyHost, KEEPERS};
+use crate::proxy::keeper::{Deps, KeptProxy, NoProxyHost, KEEPERS};
+use crate::proxy::links::Runners;
 use crate::proxy::route::{self, EgressRoute};
 use crate::store::Store;
 
@@ -57,12 +58,14 @@ fn keeper_deps(env: &Env, driver: &Arc<dyn Driver>, clock: &Arc<dyn Clock>) -> O
     let egress = EgressRoute::from_env(env)
         .ok()
         .and_then(|r| r.socket().map(Path::to_path_buf));
+    let key = env.get(crate::env::MACHINE_SERVICE_KEY);
+    let runners = Runners::new(&state_dir, Some(store.clone()), Arc::clone(clock), key);
     Some(Arc::new(Deps {
         store,
         driver: Arc::clone(driver),
         clock: Arc::clone(clock),
         egress,
-        runner: runner_socket(&state_dir),
+        runners,
         log: Arc::new(Mutex::new(std::io::stderr())),
     }))
 }
