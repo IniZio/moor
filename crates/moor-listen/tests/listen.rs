@@ -301,6 +301,18 @@ fn a_low_node_disk_prints_the_node_and_its_free_space() {
 }
 
 #[test]
+fn a_lost_disk_prints_what_is_gone() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    world.happen_with("repo/a", 1, "disk_lost", json!({}));
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a disk_lost: its machine was replaced, so anything not pushed is gone"
+    );
+}
+
+#[test]
 fn a_resume_prints_how_long_the_stall_lasted() {
     let world = world(&["repo/a"]);
     let listen = world.listen();

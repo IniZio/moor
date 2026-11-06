@@ -403,7 +403,7 @@ Then it follows your events on the controller from that moment:
 | `agent_stalled`, `agent_resumed` | `notifications/resources/updated` for its URI |
 | `node_disk_low`, `node_disk_recovered` | `notifications/resources/updated` for its URI |
 | `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed` | `notifications/resources/updated` for its URI |
-| `relaunched`, `relaunch_capped` | `notifications/resources/updated` for its URI |
+| `relaunched`, `relaunch_capped`, `disk_lost` | `notifications/resources/updated` for its URI |
 | `box_ready`, `asleep`, `woke`, `closed` | `notifications/resources/updated` for its URI |
 | `started`, `closed`, `box_deleted` | `notifications/resources/list_changed` |
 

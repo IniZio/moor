@@ -25,6 +25,8 @@ pub(super) enum Note {
     Relaunched,
     /// The controller refused another automatic relaunch: relaunches seen, window in seconds.
     RelaunchCapped(u64, u64),
+    /// The machine was lost and replaced, along with its disk.
+    DiskLost,
 }
 
 impl Note {
@@ -41,6 +43,7 @@ impl Note {
                 Some(Self::Relaunched)
             }
             "relaunch_capped" => Some(Self::RelaunchCapped(number("count"), number("window_secs"))),
+            "disk_lost" => Some(Self::DiskLost),
             _ => None,
         }
     }
@@ -53,6 +56,7 @@ impl Note {
             Self::AutoSlept => BoxEvent::AutoSlept,
             Self::Relaunched => BoxEvent::Relaunched,
             Self::RelaunchCapped(..) => BoxEvent::RelaunchCapped,
+            Self::DiskLost => BoxEvent::DiskLost,
         }
     }
 
@@ -76,6 +80,9 @@ impl Note {
             Self::RelaunchCapped(count, secs) => format!(
                 "Box `{name}`'s agent ended {count} times in the last {}, so it is not started again on its own. Reply here and ask me to restart the agent once the cause is fixed.",
                 span(*secs)
+            ),
+            Self::DiskLost => format!(
+                "Box `{name}`'s machine was lost and replaced, so its disk is new and anything not pushed is gone."
             ),
         }
     }

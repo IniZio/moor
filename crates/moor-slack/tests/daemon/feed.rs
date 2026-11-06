@@ -165,6 +165,11 @@ fn a_launch_problem_a_forced_sleep_and_a_relaunch_each_get_one_line_that_says_ho
             "'s agent had ended, so it was started again. If it stalls, reply here and ask me to restart the agent.",
         ),
         (
+            "disk_lost",
+            json!({}),
+            "'s machine was lost and replaced, so its disk is new and anything not pushed is gone.",
+        ),
+        (
             "relaunch_capped",
             json!({"count": 3, "window_secs": 600}),
             "'s agent ended 3 times in the last 10m, so it is not started again on its own. Reply here and ask me to restart the agent once the cause is fixed.",
