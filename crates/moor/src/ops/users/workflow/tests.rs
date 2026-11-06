@@ -276,3 +276,61 @@ fn the_breaker_disabling_is_a_change_of_its_own_and_other_people_see_none() {
         "o/n: three failures"
     );
 }
+
+#[test]
+fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    record(&f, &who, WorkflowOutcome::Starting, 100);
+    record(&f, &who, WorkflowOutcome::SkippedOverlap, 200);
+    record(
+        &f,
+        &who,
+        WorkflowOutcome::Refused {
+            detail: "full".to_owned(),
+        },
+        300,
+    );
+    let id = record(
+        &f,
+        &who,
+        WorkflowOutcome::Started {
+            box_id: BoxId::new(9),
+        },
+        400,
+    );
+    let all = runs(&f, &who, None, None);
+    let seen: Vec<_> = all["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["outcome"].clone(),
+                c["planned_box"].clone(),
+                c["box"].clone(),
+            )
+        })
+        .collect();
+    let planned = |due| {
+        let name = moor_core::workflow::box_name(
+            id,
+            "daily",
+            &ForgeRepo::new("o", "n"),
+            Ts::from_millis(due),
+        );
+        json!(name.unwrap().as_str())
+    };
+    assert_eq!(
+        seen,
+        [
+            (json!("starting"), planned(100), Value::Null),
+            (json!("skipped_overlap"), Value::Null, Value::Null),
+            (json!("refused"), planned(300), Value::Null),
+            (json!("started"), Value::Null, Value::Null),
+        ]
+    );
+    let listed = ok(&f, &who, cmd(WorkflowCmd::List));
+    assert!(listed["workflows"][0]["last_runs"][0].get("box").is_none());
+}

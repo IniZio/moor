@@ -27,6 +27,10 @@ pub struct LastRunView {
     /// The Box it started.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "box")]
     pub box_name: Option<String>,
+    /// The name the run's Box has or will have, for a run that is starting or was refused. No
+    /// Box of that name need exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned_box: Option<String>,
 }
 
 /// One workflow as `workflow-list` shows it.
