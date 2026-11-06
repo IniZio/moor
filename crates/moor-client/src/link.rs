@@ -284,6 +284,10 @@ async fn pump<S>(
         }
     }
     let _ = ws.close(None).await;
+    // yamux answers the last frames it reads, such as window updates; a dropped pipe would fail
+    // those writes, and yamux would end the link before its streams read the data.
+    let _ = far.shutdown().await;
+    let _ = tokio::io::copy(&mut far, &mut tokio::io::sink()).await;
 }
 
 /// Sends yamux's `bytes` on; false once the link is over.

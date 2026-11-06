@@ -201,6 +201,19 @@ impl Rig {
         (self.runner, self.port, self.agents, self.links) = spawn(self.dir.path(), &self.args);
     }
 
+    /// Starts the fake machine's agent again, dialing `port` instead of this runner, and waits
+    /// until it is linked.
+    pub fn agent_dials(&mut self, port: u16) {
+        if let Some(agent) = self.machine_agent.take() {
+            agent.shutdown_background();
+        }
+        self.online(false);
+        let grace = moor_machine_agent::Machine::from_env().sweep_grace;
+        let (agent, log) = machine::start_agent(self.dir(), &self.remote, port, &self.link, grace);
+        (self.machine_agent, self.agent_log) = (Some(agent), log);
+        self.online(true);
+    }
+
     /// Sends the runner SIGTERM.
     pub fn sigterm(&self) {
         let child = self.runner.0.as_ref().unwrap();
