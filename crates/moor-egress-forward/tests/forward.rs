@@ -195,9 +195,13 @@ async fn an_unknown_token_is_401() {
 
 #[tokio::test]
 async fn an_unreachable_proxy_is_502() {
-    let gone = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = gone.local_addr().unwrap();
-    drop(gone);
+    let hangup = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = hangup.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((s, _)) = hangup.accept().await {
+            drop(s);
+        }
+    });
     let fwd = forwarder(format!("ws://{addr}/egress"), RootCertStore::empty()).await;
     let (_c, head) = send(fwd, b"CONNECT h:443 HTTP/1.1\r\n\r\n").await;
     assert!(head.starts_with("HTTP/1.1 502 Bad Gateway\r\n"), "{head}");
