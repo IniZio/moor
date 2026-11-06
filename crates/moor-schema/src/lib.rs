@@ -11,6 +11,7 @@ mod egress_token;
 mod forward_port;
 mod held_prompt;
 mod insertion_order;
+mod link_runner;
 mod proxy_key;
 mod proxy_state;
 mod resume_memory;
@@ -66,6 +67,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V55__held_prompt",
         write: held_prompt::write,
+    },
+    Step {
+        name: "V56__link_runner",
+        write: link_runner::write,
     },
 ];
 

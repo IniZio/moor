@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use moor_core::name::BoxId;
-use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport};
+use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport, RunnerAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::user::MachineKey;
@@ -14,6 +14,8 @@ use sea_query::{
 
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
+
+mod route;
 
 impl Store {
     /// Every enrolled machine with the key its agent signs with, by id.
@@ -39,52 +41,6 @@ impl Store {
             },
         )?;
         Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    /// Replaces the stored links with `links`, dropping any for a machine that is not enrolled;
-    /// what the store holds afterwards, by machine id.
-    pub(crate) fn set_machine_links(
-        &self,
-        links: &[MachineLink],
-    ) -> Result<Vec<MachineLink>, StoreError> {
-        let mut conn = self.writer();
-        let tx = conn.transaction()?;
-        // A relinked agent has not reported yet, but its node still reports memory.
-        let reported: HashMap<i64, MemoryReport> = {
-            let rows = tx.rows(
-                link_select().and_where(
-                    Expr::col((MachineLinks::Table, MachineLinks::MemAvailableMib)).is_not_null(),
-                ),
-                link_row,
-            )?;
-            rows.filter_map(|l| l.map(|l| l.memory.map(|m| (l.machine_id, m))).transpose())
-                .collect::<Result<_, _>>()?
-        };
-        tx.run(Query::delete().from_table(MachineLinks::Table))?;
-        for link in links {
-            let memory = link
-                .memory
-                .or_else(|| reported.get(&link.machine_id).copied());
-            tx.run(
-                Query::delete()
-                    .from_table(MachineLinks::Table)
-                    .and_where(Expr::col(MachineLinks::MachineId).eq(link.machine_id)),
-            )?;
-            if !is_enrolled(&tx, link.machine_id)? {
-                continue;
-            }
-            tx.run(link_insert(link, memory)?)?;
-        }
-        let held = {
-            let rows = tx.rows(
-                link_select().order_by((MachineLinks::Table, MachineLinks::MachineId), Order::Asc),
-                link_row,
-            )?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        tx.commit()?;
-        drop(conn);
-        Ok(held)
     }
 
     /// Replaces the stored per-Box host memory with `boxes`, dropping any for a machine that is not
@@ -187,10 +143,11 @@ impl Store {
     }
 }
 
-/// The insert of `link`, with the last `memory` its machine reported.
+/// The insert of `link` held by `runner`, with the last `memory` its machine reported.
 fn link_insert(
     link: &MachineLink,
     memory: Option<MemoryReport>,
+    runner: &RunnerAddr,
 ) -> Result<InsertStatement, StoreError> {
     Ok(Query::insert()
         .into_table(MachineLinks::Table)
@@ -212,6 +169,7 @@ fn link_insert(
             MachineLinks::PsiFullCenti,
             MachineLinks::DiskFreeMib,
             MachineLinks::DiskTotalMib,
+            MachineLinks::RunnerAddr,
         ])
         .values_panic([
             link.machine_id.into(),
@@ -239,6 +197,7 @@ fn link_insert(
             memory
                 .and_then(|m| m.disk_total_mib.and_then(|d| i64::try_from(d).ok()))
                 .into(),
+            runner.as_str().into(),
         ])
         .take())
 }
@@ -257,7 +216,8 @@ fn is_enrolled(conn: &dyn Db, machine_id: i64) -> Result<bool, StoreError> {
     Ok(found.is_some_and(|n| n > 0))
 }
 
-/// The columns [`link_row`] reads, then the machine's name, from the links and their machines.
+/// The columns [`link_row`] reads, the machine's name, then the runner holding the link, when
+/// it last reported and since when it drains, from the links and their machines.
 fn link_select() -> SelectStatement {
     let link = |c| (MachineLinks::Table, c);
     Query::select()
@@ -284,6 +244,14 @@ fn link_select() -> SelectStatement {
             .map(link),
         )
         .column((UserMachinesV2::Table, UserMachinesV2::Name))
+        .columns(
+            [
+                MachineLinks::RunnerAddr,
+                MachineLinks::HeardAt,
+                MachineLinks::DrainingSince,
+            ]
+            .map(link),
+        )
         .from(MachineLinks::Table)
         .left_join(
             UserMachinesV2::Table,

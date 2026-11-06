@@ -307,6 +307,7 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
 }
 
 mod hold;
+mod links;
 mod machine;
 mod nodes;
 mod overdue;
@@ -339,7 +340,12 @@ fn a_link_keeps_its_agent_version_and_names_its_machine() {
         memory: None,
     };
     let held = store
-        .set_machine_links(std::slice::from_ref(&link))
+        .set_machine_links(
+            &crate::testing::runner(),
+            false,
+            std::slice::from_ref(&link),
+            store.now(),
+        )
         .unwrap();
     assert_eq!(held, vec![link.clone()]);
     assert_eq!(
@@ -380,11 +386,13 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         reserve_mib: None,
         memory: None,
     };
-    let held = store
-        .set_machine_links(&[link(one, true, 5), link(two, false, 6), link(999, true, 7)])
-        .unwrap();
+    let set = |links: &[MachineLink]| {
+        let runner = crate::testing::runner();
+        store.set_machine_links(&runner, false, links, store.now())
+    };
+    let held = set(&[link(one, true, 5), link(two, false, 6), link(999, true, 7)]).unwrap();
     assert_eq!(held, vec![link(one, true, 5), link(two, false, 6)]);
-    let held = store.set_machine_links(&[link(two, true, 9)]).unwrap();
+    let held = set(&[link(two, true, 9)]).unwrap();
     assert_eq!(held, vec![link(two, true, 9)]);
     let listed: Vec<(i64, String, String)> = store
         .machine_keys()

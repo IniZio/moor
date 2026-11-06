@@ -469,15 +469,25 @@ fn wait_events_roundtrips_from_json() {
 }
 
 #[test]
-fn machine_links_without_box_memory_read_and_write_none() {
-    let req: MachineLinksReq = serde_json::from_value(json!({"links": []})).unwrap();
+fn machine_links_without_box_memory_or_draining_read_and_write_none() {
+    let sent = json!({"runner": "/run/runner.sock", "links": []});
+    let req: MachineLinksReq = serde_json::from_value(sent.clone()).unwrap();
     assert!(req.box_memory.is_empty());
-    assert_eq!(serde_json::to_value(&req).unwrap(), json!({"links": []}));
+    assert!(!req.draining);
+    assert_eq!(req.runner.as_str(), "/run/runner.sock");
+    assert_eq!(serde_json::to_value(&req).unwrap(), sent);
+}
+
+#[test]
+fn machine_links_name_the_runner_that_holds_them() {
+    assert!(serde_json::from_value::<MachineLinksReq>(json!({"links": []})).is_err());
 }
 
 #[test]
 fn machine_links_with_box_memory_round_trip() {
     let req = MachineLinksReq {
+        runner: crate::request::RunnerAddr::new("10.0.0.7:7701"),
+        draining: true,
         links: Vec::new(),
         box_memory: vec![BoxHostMemory {
             machine_id: 3,

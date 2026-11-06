@@ -96,6 +96,13 @@ seconds for it before it is refused.
 The runner stores and passes no secret. It reaches each machine only through
 the link its agent opened.
 
+The runner reports its links to the controller on every change and every 20
+seconds, naming itself, and the store records which runner holds each
+machine's link. The controller sends a machine's leases and status to that
+runner only. A link reads as `machine M is not linked` when no runner holds it,
+when its runner is shutting down, or when its runner has not reported for a
+minute.
+
 ## Seeing a machine's state
 
 `moor user machine ls` prints one line per machine of yours: its name, whether
@@ -115,8 +122,8 @@ Last come the agent's last 50 operations, newest first, each with its time,
 name, target and whether it succeeded. Add `--json` for the same data as JSON.
 
 The request is read-only and never runs a command on the machine. It refuses
-a machine that is offline, naming since when, and it refuses a name that is
-not one of yours.
+a machine that is offline, naming since when, a machine that is not linked,
+and a name that is not one of yours.
 
 ## Claiming a machine
 

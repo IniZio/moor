@@ -68,20 +68,25 @@ fn alice_with_machines(store: &Store) -> UserId {
     let plain = EnrolledMachine::parse("plain", KEY, &[], 1).unwrap();
     store.enroll_machine(alice, &plain).unwrap();
     store
-        .set_machine_links(&[MachineLink {
-            machine_id: up,
-            online: true,
-            since: Ts::from_millis(5),
-            version: None,
-            protocol: None,
-            max_boxes: Some(4),
-            cache_gb: None,
-            features: Vec::new(),
-            mem_mib: None,
-            cpus: None,
-            reserve_mib: None,
-            memory: None,
-        }])
+        .set_machine_links(
+            &crate::testing::runner(),
+            false,
+            &[MachineLink {
+                machine_id: up,
+                online: true,
+                since: Ts::from_millis(5),
+                version: None,
+                protocol: None,
+                max_boxes: Some(4),
+                cache_gb: None,
+                features: Vec::new(),
+                mem_mib: None,
+                cpus: None,
+                reserve_mib: None,
+                memory: None,
+            }],
+            store.now(),
+        )
         .unwrap();
     alice
 }

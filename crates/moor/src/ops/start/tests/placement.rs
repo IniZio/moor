@@ -52,7 +52,7 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         reserve_mib: None,
         memory: None,
     };
-    nodes::set_links(&w.cx, &[link]).unwrap();
+    nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
 }
 
 fn held(v: &StartView) -> &str {
@@ -230,7 +230,7 @@ pub(super) fn cached_world(features: &[&str], online: bool) -> World {
         reserve_mib: None,
         memory: None,
     };
-    nodes::set_links(&w.cx, &[link]).unwrap();
+    nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
     w
 }
 
@@ -290,7 +290,7 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
             disk_total_mib: None,
         }),
     };
-    nodes::set_links(&w.cx, &[link]).unwrap();
+    nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
 }
 
 /// Like [`report`] with plenty of memory, plus `free` of `total` GiB of disk.
@@ -317,7 +317,7 @@ fn report_disk(w: &World, hv: i64, disk: Option<(u64, u64)>) {
             disk_total_mib: disk.map(|d| d.1 * 1024),
         }),
     };
-    nodes::set_links(&w.cx, &[link]).unwrap();
+    nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
 }
 
 /// A personal node `hv` that has just reported `available_mib`.

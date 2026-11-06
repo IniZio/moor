@@ -68,7 +68,10 @@ fn two_users(dir: &std::path::Path) -> (Cx, UserId, UserId) {
     let cx = cx(dir);
     let (alice, a) = enroll(&cx, "authgear:a", "mini", true);
     let (bob, b) = enroll(&cx, "authgear:b", "rack", false);
-    cx.store().unwrap().set_machine_links(&[a, b]).unwrap();
+    cx.store()
+        .unwrap()
+        .set_machine_links(&crate::testing::runner(), false, &[a, b], cx.clock().now())
+        .unwrap();
     (cx, alice, bob)
 }
 

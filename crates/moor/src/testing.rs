@@ -16,3 +16,20 @@ pub(crate) mod surface;
 pub(crate) fn box_name(s: &str) -> moor_core::BoxName {
     moor_core::BoxName::parse_allow_bare(s).unwrap()
 }
+
+/// The runner the tests' links come from.
+pub(crate) fn runner() -> moor_core::request::RunnerAddr {
+    moor_core::request::RunnerAddr::new("/run/moor/runner/runner.sock")
+}
+
+/// `links` as the whole report of [`runner`], which is not draining.
+pub(crate) fn one_runner(
+    links: Vec<moor_core::request::MachineLink>,
+) -> moor_core::request::MachineLinksReq {
+    moor_core::request::MachineLinksReq {
+        runner: runner(),
+        draining: false,
+        links,
+        box_memory: Vec::new(),
+    }
+}

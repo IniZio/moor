@@ -3,13 +3,15 @@
 use std::sync::Mutex;
 
 use moor_client::link::{BoxMemory, Offer, Report};
-use moor_core::request::MachineLinksReq;
+use moor_core::request::{MachineLinksReq, RunnerAddr};
 use tokio::sync::{watch, Notify};
 
 use super::Links;
 
 fn links() -> (Links, watch::Receiver<MachineLinksReq>) {
     let (report, rx) = watch::channel(MachineLinksReq {
+        runner: RunnerAddr::new("/run/runner.sock"),
+        draining: false,
         links: Vec::new(),
         box_memory: Vec::new(),
     });
@@ -87,4 +89,29 @@ fn a_machine_that_goes_down_holds_no_box_memory() {
     links.reported(5, generation, &report(&[("moor-0badcafe-7", 100)]));
     links.down(5, generation);
     assert_eq!(held(&rx), []);
+}
+
+#[tokio::test]
+async fn a_draining_runner_says_so_with_every_report_after_and_tells_its_agents_to_relink() {
+    let (links, mut rx) = links();
+    let agents = super::Agents {
+        client: moor_client::Client::new(std::path::Path::new("/nonexistent")),
+        links: std::sync::Arc::new(links),
+        routes: std::sync::Arc::default(),
+    };
+    let (tell, mut told) = tokio::sync::mpsc::channel(1);
+    let (generation, _replaced, _asks) =
+        agents
+            .links
+            .up(5, "1.0.0".to_owned(), Offer::default(), tell);
+    agents.drain(std::time::Duration::ZERO).await;
+    assert!(matches!(
+        told.try_recv(),
+        Ok(moor_client::link::Frame::Relink {})
+    ));
+    agents.links.reported(5, generation, &report(&[]));
+    let sent = rx.borrow_and_update();
+    assert!(sent.draining);
+    assert_eq!(sent.runner.as_str(), "/run/runner.sock");
+    assert_eq!(sent.links.len(), 1);
 }

@@ -10,7 +10,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
 use moor_client::Client;
-use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, Request};
+use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, RunnerAddr};
 use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::SshSig;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -25,12 +25,10 @@ mod drain;
 mod hello;
 mod keys;
 mod memory;
+mod report;
 
 /// How long each handshake frame may take to arrive.
 const ANSWER: Duration = Duration::from_secs(10);
-/// How long a failed `machine-links` report waits before it is sent again.
-const RETRY: Duration = Duration::from_secs(1);
-
 /// The machines whose agents hold a link, which execs, hooks and relays open streams on.
 #[derive(Clone)]
 pub struct Agents {
@@ -49,15 +47,18 @@ impl std::fmt::Debug for Agents {
 }
 
 impl Agents {
-    /// None linked yet; every change is reported to the controller at `socket`.
+    /// None linked yet; every change is reported to the controller at `socket`, which also
+    /// names this runner to it.
     #[must_use]
     pub fn new(socket: &Path) -> Self {
         let client = Client::new(socket);
         let (tx, rx) = watch::channel(MachineLinksReq {
+            runner: RunnerAddr::new(socket.to_string_lossy()),
+            draining: false,
             links: Vec::new(),
             box_memory: Vec::new(),
         });
-        tokio::spawn(report(client.clone(), rx));
+        tokio::spawn(report::report(client.clone(), rx));
         let links = Arc::new(Links {
             held: Mutex::default(),
             report: tx,
@@ -357,26 +358,10 @@ impl Links {
     fn change(&self, edit: impl FnOnce(&mut BTreeMap<i64, Held>)) {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         edit(&mut held);
-        self.report.send_replace(MachineLinksReq {
-            links: held.values().map(|h| h.link.clone()).collect(),
-            box_memory: held.values().flat_map(|h| h.box_memory.clone()).collect(),
+        self.report.send_modify(|r| {
+            r.links = held.values().map(|h| h.link.clone()).collect();
+            r.box_memory = held.values().flat_map(|h| h.box_memory.clone()).collect();
         });
-    }
-}
-
-/// Sends the latest set as `machine-links` after every change, again until the controller
-/// takes it.
-async fn report(client: Client, mut rx: watch::Receiver<MachineLinksReq>) {
-    while rx.changed().await.is_ok() {
-        loop {
-            let request = Request::MachineLinks(rx.borrow_and_update().clone());
-            let client = client.clone();
-            let sent = tokio::task::spawn_blocking(move || client.request(request, |_| {})).await;
-            if matches!(sent, Ok(Ok(ref r)) if r.error.is_none()) {
-                break;
-            }
-            tokio::time::sleep(RETRY).await;
-        }
     }
 }
 

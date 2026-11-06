@@ -37,12 +37,36 @@ pub struct MachineEnrollReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineLinksReq {
+    /// The runner that holds these links.
+    pub runner: RunnerAddr,
+    /// Whether that runner is shutting down; its links read as offline until they move.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draining: bool,
     /// Every machine the runner has seen since it started; any other is offline.
     pub links: Vec<MachineLink>,
     /// The host memory each Box's VM holds, for the Boxes whose provider says; a Box left out has
     /// none recorded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub box_memory: Vec<BoxHostMemory>,
+}
+
+/// Where the controller reaches the runner that holds a machine's link.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RunnerAddr(String);
+
+impl RunnerAddr {
+    /// The runner at `addr`.
+    #[must_use]
+    pub fn new(addr: impl Into<String>) -> Self {
+        Self(addr.into())
+    }
+
+    /// The address as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// The host memory one Box's VM holds on a machine, as its agent last reported.
