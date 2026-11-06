@@ -1,7 +1,8 @@
 //! Menu reading: the numbered choices an agent pane is waiting on.
 
 /// The label of a menu line such as `❯ 1. Yes`, with its number.
-fn menu_line(line: &str) -> Option<(u32, &str)> {
+#[must_use]
+pub fn menu_line(line: &str) -> Option<(u32, &str)> {
     let rest = line
         .trim_start()
         .trim_start_matches(['❯', '>', '›'])
