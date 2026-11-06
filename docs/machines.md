@@ -86,10 +86,12 @@ no `--resource` flags, the runner holds nothing.
 
 On SIGTERM the runner tells each linked agent, and each agent that dials it
 after, to relink. The agent dials again every second while it is told to relink
-or its old link is still open. It lets the calls still running on its old link finish there, then closes it. The
-runner exits when every link has closed, or after 30 seconds, cutting whatever
-still runs. Each dial gives up after 5 seconds. A hello that comes while the
-controller cannot check keys waits up to 8 seconds for it before it is refused.
+or its old link is still open, and at most every 2 seconds for two minutes after
+a relink until a runner takes it. It lets the calls still running on its old
+link finish there, then closes it. The runner exits when every link has closed,
+or after 30 seconds, cutting whatever still runs. Each dial gives up after 5
+seconds. A hello that comes while the controller cannot check keys waits up to 8
+seconds for it before it is refused.
 
 The runner stores and passes no secret. It reaches each machine only through
 the link its agent opened.
