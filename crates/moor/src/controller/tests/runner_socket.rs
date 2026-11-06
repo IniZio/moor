@@ -33,6 +33,7 @@ fn runners_requests() -> Vec<Value> {
         json!({"cmd": "show", "name": B_BOX}),
         json!({"cmd": "machine-keys"}),
         json!({"cmd": "machine-links", "runner": "/run/runner.sock", "links": []}),
+        json!({"cmd": "machine-box", "op": {"get": {"box_id": NO_BOX}}}),
         json!({"cmd": "machine-hold", "id": NO_BOX, "op": "release"}),
         json!({"cmd": "box-rsync", "box": NO_BOX, "argv": MIRROR}),
     ]
@@ -59,6 +60,7 @@ fn the_runner_socket_refuses_every_other_request_but_version() {
         "machine-hold",
         "machine-keys",
         "machine-links",
+        "machine-box",
         "box-rsync",
     ];
     let mut unknown = Vec::new();

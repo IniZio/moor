@@ -503,6 +503,30 @@ fn machine_links_with_box_memory_round_trip() {
 }
 
 #[test]
+fn machine_box_requests_carry_their_op_and_round_trip() {
+    let put = json!({"cmd": "machine-box", "op": {"put": {
+        "box_id": 7, "machine_id": 3, "slot": 1, "reach": "{}", "facts": "{}",
+        "stage": {"suspended": {"at": 60}}, "evicted": true}}});
+    let req: Request = serde_json::from_value(put.clone()).unwrap();
+    assert!(
+        matches!(&req, Request::MachineBox(MachineBoxReq { op: MachineBoxOp::Put(row) })
+            if row.stage == BoxStage::Suspended { at: 60 } && row.evicted),
+        "{req:?}"
+    );
+    assert_eq!(serde_json::to_value(&req).unwrap(), put);
+    for op in [
+        json!({"get": {"box_id": 7}}),
+        json!({"drop": {"box_id": 7}}),
+        json!({"list": {"machine_id": 3}}),
+    ] {
+        let sent = json!({"cmd": "machine-box", "op": op});
+        let req: Request = serde_json::from_value(sent.clone()).unwrap();
+        assert_eq!(req.cmd(), "machine-box");
+        assert_eq!(serde_json::to_value(&req).unwrap(), sent);
+    }
+}
+
+#[test]
 fn box_memory_and_memory_reports_still_refuse_unknown_fields() {
     let box_memory = json!({"machine_id": 3, "controller": "0a1b2c3d", "box_id": 9, "host_memory_mib": 1, "extra": 1});
     assert!(serde_json::from_value::<BoxHostMemory>(box_memory).is_err());

@@ -50,6 +50,75 @@ pub struct MachineLinksReq {
     pub box_memory: Vec<BoxHostMemory>,
 }
 
+/// Arguments of `machine-box`: the runner reads and writes what it keeps about a Box it serves on
+/// a machine, so any runner can wake a Box another prepared.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineBoxReq {
+    /// What to do with the record.
+    pub op: MachineBoxOp,
+}
+
+/// What `machine-box` does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum MachineBoxOp {
+    /// The record of one Box, if any.
+    Get {
+        /// The Box.
+        box_id: BoxId,
+    },
+    /// Write a Box's record whole.
+    Put(MachineBox),
+    /// Remove a Box's record; none is fine.
+    Drop {
+        /// The Box.
+        box_id: BoxId,
+    },
+    /// Every record on one machine.
+    List {
+        /// The machine.
+        machine_id: i64,
+    },
+}
+
+/// What the runner keeps about a Box on a machine. The controller stores `reach` and `facts` as
+/// the runner wrote them and never reads them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineBox {
+    /// The Box.
+    pub box_id: BoxId,
+    /// The machine it was set up on.
+    pub machine_id: i64,
+    /// Its slot there.
+    pub slot: u16,
+    /// How the runner reaches the machine, as JSON.
+    pub reach: String,
+    /// What `prepare` printed, as JSON.
+    pub facts: String,
+    /// How far `prepare` and `suspend` got.
+    pub stage: BoxStage,
+    /// Whether its files on the machine were removed while it slept; until its next sync.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub evicted: bool,
+}
+
+/// How far a Box on a machine got: a sync noted it, `prepare` ran, or `suspend` ran since.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum BoxStage {
+    /// Synced but never prepared.
+    Noted,
+    /// Prepared and awake.
+    Prepared,
+    /// Prepared, then suspended.
+    Suspended {
+        /// When, in unix seconds.
+        at: u64,
+    },
+}
+
 /// Where the controller reaches the runner that holds a machine's link.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

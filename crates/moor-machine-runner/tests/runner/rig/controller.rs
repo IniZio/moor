@@ -63,6 +63,36 @@ pub(super) struct Fake {
     pub(super) link: FakeLink,
     pub(super) show_fails: Arc<AtomicBool>,
     pub(super) shows_refused: Arc<AtomicUsize>,
+    pub(super) boxes: Records,
+}
+
+/// The `machine-box` records the fake controller keeps, by Box id.
+pub type Records = Arc<Mutex<std::collections::BTreeMap<i64, Value>>>;
+
+/// Serves `machine-box` as the store does: whole rows, got by Box, listed by machine.
+fn machine_box(records: &Records, op: &Value) -> Value {
+    let mut records = records.lock().unwrap();
+    let boxes: Vec<Value> = if let Some(row) = op.get("put") {
+        records.insert(row["box_id"].as_i64().unwrap(), row.clone());
+        vec![row.clone()]
+    } else if let Some(get) = op.get("get") {
+        records
+            .get(&get["box_id"].as_i64().unwrap())
+            .cloned()
+            .into_iter()
+            .collect()
+    } else if let Some(drop) = op.get("drop") {
+        records.remove(&drop["box_id"].as_i64().unwrap());
+        Vec::new()
+    } else {
+        let machine = &op["list"]["machine_id"];
+        records
+            .values()
+            .filter(|r| r["machine_id"] == *machine)
+            .cloned()
+            .collect()
+    };
+    json!({ "boxes": boxes })
 }
 
 /// Serves `box-rsync` the way the controller does, on `tree` as the Box's work tree, and
@@ -137,6 +167,8 @@ fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
         let sent = req["links"].clone();
         *fake.link.links.lock().unwrap() = Some(sent.clone());
         Response::ok("machine-links", Some(json!({ "links": sent })))
+    } else if req["cmd"] == "machine-box" {
+        Response::ok("machine-box", Some(machine_box(&fake.boxes, &req["op"])))
     } else if req["cmd"] == "machine-hold" {
         assert_eq!(req["id"], 7, "{frame}");
         let suspended = tree.with_file_name("remote").join("suspended").exists();

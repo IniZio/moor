@@ -91,10 +91,10 @@ fn a_failing_prepare_fails_the_call_with_its_output() {
 }
 
 #[test]
-fn a_restarted_runner_does_not_prepare_again() {
+fn a_runner_restarted_on_an_empty_state_dir_does_not_prepare_again() {
     let mut rig = hooked(RELEASE);
     rig.call("machine_info", json!({})).unwrap();
-    rig.restart();
+    rig.restart_empty();
     let info = rig.call("machine_info", json!({})).unwrap();
     assert_eq!(info["facts"], json!({"device": "dev-7"}));
     assert_eq!(lines(&rig.remote.join("prepared")).len(), 1);
@@ -105,13 +105,11 @@ fn a_closed_box_is_released_once_and_its_record_and_mirror_go() {
     let rig = hooked(RELEASE);
     rig.call("sync", json!({})).unwrap();
     rig.call("exec", json!({"command": "true"})).unwrap();
-    let (record, mirror) = (
-        rig.state().join("boxes/7.json"),
-        rig.state().join("mirrors/7"),
-    );
-    assert!(record.is_file() && mirror.is_dir());
+    let mirror = rig.state().join("mirrors/7");
+    assert_eq!(rig.record(7).unwrap()["stage"], "prepared");
+    assert!(mirror.is_dir());
     rig.open.lock().unwrap().clear();
-    eventually("the record is gone", || !record.exists());
+    eventually("the record is gone", || rig.record(7).is_none());
     assert!(!mirror.exists(), "the mirror is gone");
     assert!(!rig.copy().exists(), "the copy on the machine is gone");
     std::thread::sleep(Duration::from_secs(3));
@@ -127,7 +125,7 @@ fn a_closed_box_that_only_synced_loses_its_copies_without_a_release() {
     rig.open.lock().unwrap().clear();
     eventually("the mirror is gone", || !mirror.exists());
     eventually("the copy on the machine is gone", || !rig.copy().exists());
-    assert!(!rig.state().join("boxes/7.json").exists());
+    eventually("the record is gone", || rig.record(7).is_none());
     assert!(
         lines(&rig.remote.join("released")).is_empty(),
         "never prepared, never released"
@@ -142,7 +140,7 @@ fn a_failing_release_keeps_the_record_and_mirror_and_retries() {
     rig.open.lock().unwrap().clear();
     let released = rig.remote.join("released");
     eventually("release ran twice", || lines(&released).len() >= 2);
-    assert!(rig.state().join("boxes/7.json").is_file());
+    assert!(rig.record(7).is_some());
     assert!(rig.state().join("mirrors/7").is_dir());
 }
 
@@ -153,6 +151,6 @@ fn an_open_box_is_never_released() {
     rig.call("exec", json!({"command": "true"})).unwrap();
     std::thread::sleep(Duration::from_secs(4));
     assert!(lines(&rig.remote.join("released")).is_empty());
-    assert!(rig.state().join("boxes/7.json").is_file());
+    assert!(rig.record(7).is_some());
     assert!(rig.state().join("mirrors/7").is_dir());
 }

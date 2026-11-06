@@ -122,6 +122,7 @@ impl Request {
             | Self::MachineStatus(_)
             | Self::MachineKeys {}
             | Self::MachineLinks(_)
+            | Self::MachineBox(_)
             | Self::ProxyLease(_)
             | Self::ProxyRelease(_)
             | Self::ProxyStatus(_)

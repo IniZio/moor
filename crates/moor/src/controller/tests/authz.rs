@@ -216,6 +216,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "machine-status"
         | "machine-keys"
         | "machine-links"
+        | "machine-box"
         | "webhook-add"
         | "webhook-list"
         | "webhook-remove"

@@ -12,6 +12,7 @@ mod forward_port;
 mod held_prompt;
 mod insertion_order;
 mod link_runner;
+mod machine_boxes;
 mod pause_publish;
 mod proxy_key;
 mod proxy_state;
@@ -81,6 +82,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V59__pause_publish",
         write: pause_publish::write,
+    },
+    Step {
+        name: "V60__machine_boxes",
+        write: machine_boxes::write,
     },
 ];
 

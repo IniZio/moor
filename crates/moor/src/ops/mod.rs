@@ -22,6 +22,7 @@ mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
 mod inspect;
+mod machine_box;
 pub(crate) mod machine_hold;
 mod nodes;
 mod open;
@@ -111,6 +112,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             cx.store()?.set_box_memory(&r.box_memory)?;
             to_value(&nodes::set_links(cx, &r)?)
         }
+        Request::MachineBox(r) => to_value(&machine_box::run(cx, r.op)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),

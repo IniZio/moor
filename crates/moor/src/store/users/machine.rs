@@ -15,6 +15,7 @@ use crate::store::apply::insert_event;
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
 use crate::store::{Store, StoreError};
 
+mod boxes;
 #[cfg(test)]
 mod fixture;
 mod hold;

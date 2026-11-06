@@ -28,7 +28,7 @@ impl Hooks {
             Ok(Err(e)) => return eprintln!("moor-machine-runner: reconcile: {e}"),
             Err(e) => return eprintln!("moor-machine-runner: reconcile: {e}"),
         };
-        let recorded: HashSet<i64> = match self.prepared() {
+        let recorded: HashSet<i64> = match self.recorded().await {
             Ok(ids) => ids.into_iter().collect(),
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };

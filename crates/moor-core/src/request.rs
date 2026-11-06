@@ -25,8 +25,9 @@ mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
 pub use machine::{
-    BoxHostMemory, HoldOp, HoldValue, MachineEnrollReq, MachineHoldReq, MachineLink,
-    MachineLinksReq, MachineRemoveReq, MachineStatusReq, MemoryReport, RunnerAddr, WarmStarts,
+    BoxHostMemory, BoxStage, HoldOp, HoldValue, MachineBox, MachineBoxOp, MachineBoxReq,
+    MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq, MachineRemoveReq,
+    MachineStatusReq, MemoryReport, RunnerAddr, WarmStarts,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -184,6 +185,8 @@ pub enum Request {
     MachineKeys {},
     /// Record which enrolled machines hold a link to the runner; the operator's only.
     MachineLinks(MachineLinksReq),
+    /// Read or write the runner's record of a Box on a machine; the runner's and operator's only.
+    MachineBox(MachineBoxReq),
     /// Claim one of a Box's user's machines for it, or let go of it; the operator's only.
     #[serde(rename = "machine-hold")]
     MachineHold(MachineHoldReq),

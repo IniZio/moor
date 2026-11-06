@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 mod controller;
 mod machine;
-use controller::{fake_controller, Fake};
+use controller::{fake_controller, Fake, Records};
 
 /// Starts the fake controller on the rig at `dir`, listing `open` as open, or refusing to list
 /// when `listing_fails`; what it shares with the test.
@@ -26,6 +26,7 @@ fn start_controller(dir: &Path, tree: &Path, listing_fails: bool, open: &[i64]) 
         link: FakeLink::default(),
         show_fails: Arc::new(AtomicBool::new(listing_fails)),
         shows_refused: Arc::new(AtomicUsize::new(0)),
+        boxes: Records::default(),
     };
     fake_controller(&dir.join("runner.sock"), tree.to_owned(), fake.clone());
     fake
@@ -89,6 +90,8 @@ pub struct Rig {
     pub show_fails: Arc<AtomicBool>,
     /// How many `show` requests the fake controller refused.
     pub shows_refused: Arc<AtomicUsize>,
+    /// The fake controller's `machine-box` records, by Box id.
+    pub boxes: Records,
     /// The port the runner takes agent links on.
     pub agents: u16,
     /// The port the runner takes a controller's dials on, when started with `--links`.
@@ -170,6 +173,7 @@ impl Rig {
             link,
             show_fails,
             shows_refused,
+            boxes,
         } = fake;
         let rig = Self {
             dir,
@@ -182,6 +186,7 @@ impl Rig {
             link,
             show_fails,
             shows_refused,
+            boxes,
             agents,
             links,
             machine_agent: Some(machine_agent),
@@ -195,9 +200,11 @@ impl Rig {
         rig
     }
 
-    /// Stops the runner and starts a new one with the same flags and state dir.
-    pub fn restart(&mut self) {
+    /// Stops the runner, empties its state dir, and starts a new one with the same flags, as a
+    /// new pod would.
+    pub fn restart_empty(&mut self) {
         self.runner = Runner(None);
+        std::fs::remove_dir_all(self.state()).unwrap();
         (self.runner, self.port, self.agents, self.links) = spawn(self.dir.path(), &self.args);
     }
 
@@ -237,6 +244,11 @@ impl Rig {
     /// The rig's own dir.
     pub fn dir(&self) -> &Path {
         self.dir.path()
+    }
+
+    /// Box `id`'s record in the fake controller's store, if it has one.
+    pub fn record(&self, id: i64) -> Option<Value> {
+        self.boxes.lock().unwrap().get(&id).cloned()
     }
 
     /// The runner's state dir.

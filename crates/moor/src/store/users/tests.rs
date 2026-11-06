@@ -306,6 +306,7 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
     );
 }
 
+mod boxes;
 mod hold;
 mod links;
 mod machine;
