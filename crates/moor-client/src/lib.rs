@@ -36,6 +36,7 @@ mod remote;
 pub mod session;
 pub mod sse;
 mod stream;
+pub mod tls;
 mod watch;
 
 /// Id the client puts on its single request per connection.

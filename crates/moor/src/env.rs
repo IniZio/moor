@@ -33,6 +33,16 @@ pub(crate) const EGRESS_URL: &str = "MOOR_EGRESS_URL";
 /// the Box the request names.
 pub(crate) const MACHINE_SERVICE_KEY: &str = "MOOR_MACHINE_SERVICE_KEY";
 
+/// Whether two keys match; their digests are compared in constant time, so timing says nothing
+/// of the key.
+pub(crate) fn same_key(want: &str, got: &str) -> bool {
+    use sha2::{Digest as _, Sha256};
+    use subtle::ConstantTimeEq as _;
+    Sha256::digest(want.as_bytes())
+        .ct_eq(&Sha256::digest(got.as_bytes()))
+        .into()
+}
+
 /// The variable naming the egress forwarder binary the controller delivers into Boxes; unset,
 /// `moor-egress-forward` beside `moor`.
 pub(crate) const EGRESS_FORWARD_BIN: &str = "MOOR_EGRESS_FORWARD_BIN";

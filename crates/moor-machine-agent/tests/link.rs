@@ -79,7 +79,7 @@ async fn world() -> World {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server = format!("http://{}", listener.local_addr().unwrap());
     let agents = moor_machine_runner::Agents::new(
-        &socket,
+        moor_client::Client::new(&socket),
         moor_core::request::RunnerAddr::new(socket.to_string_lossy()),
     );
     let serving = agents.clone();

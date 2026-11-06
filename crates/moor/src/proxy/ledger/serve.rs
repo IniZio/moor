@@ -4,8 +4,6 @@ use std::io::{BufRead, BufReader, Read, Write};
 
 use moor_core::user::{SecretName, UserId};
 use serde::Serialize;
-use sha2::{Digest as _, Sha256};
-use subtle::ConstantTimeEq as _;
 use zeroize::Zeroizing;
 
 use super::{Call, Fault, Hello, LEDGER};
@@ -123,12 +121,9 @@ fn speaks(v: u32) -> Result<(), Fault> {
     )))
 }
 
-/// Whether two keys match; their digests are compared in constant time, so timing says nothing
-/// of the key.
+/// Whether two keys match, compared so timing says nothing of the key.
 fn same(want: &str, got: &str) -> bool {
-    Sha256::digest(want.as_bytes())
-        .ct_eq(&Sha256::digest(got.as_bytes()))
-        .into()
+    crate::env::same_key(want, got)
 }
 
 /// The reply to `line`, a call by `bound`.

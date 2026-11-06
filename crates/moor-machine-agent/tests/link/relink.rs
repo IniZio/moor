@@ -1,6 +1,7 @@
 //! A runner that is stopping tells its agents to relink; a runner admits a hello while the
 //! controller is briefly away.
 
+use moor_client::Client;
 use moor_core::request::RunnerAddr;
 use moor_machine_runner::Agents;
 use tokio::net::TcpListener;
@@ -36,7 +37,7 @@ async fn relink_dials_again_at_once_and_the_old_links_exec_still_answers() {
         key: key.clone(),
         links: Arc::default(),
         dir: tempfile::tempdir().unwrap(),
-        agents: Agents::new(&home.path().join("none.sock"), RunnerAddr::new("none")),
+        agents: Agents::new(Client::new("none.sock"), RunnerAddr::new("none")),
     };
     let dir = agent_dir(&w, MACHINE, &key);
     let machine = moor_machine_agent::Machine {
@@ -100,7 +101,10 @@ async fn a_hello_while_the_controller_is_away_is_admitted_once_it_answers() {
     let socket = dir.path().join("controller.sock");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server = format!("http://{}", listener.local_addr().unwrap());
-    let agents = Agents::new(&socket, RunnerAddr::new(socket.to_string_lossy()));
+    let agents = Agents::new(
+        Client::new(&socket),
+        RunnerAddr::new(socket.to_string_lossy()),
+    );
     let serving = agents.clone();
     tokio::spawn(async move { moor_machine_runner::serve_agents(listener, serving).await });
     let pubkey = key.public_key().to_openssh().unwrap();
@@ -130,7 +134,7 @@ async fn after_relink_refused_dials_retry_every_second_while_the_old_link_is_ope
         key: key.clone(),
         links: Arc::default(),
         dir: tempfile::tempdir().unwrap(),
-        agents: Agents::new(&home.path().join("none.sock"), RunnerAddr::new("none")),
+        agents: Agents::new(Client::new("none.sock"), RunnerAddr::new("none")),
     };
     let dir = agent_dir(&w, MACHINE, &key);
     let machine = moor_machine_agent::Machine {
@@ -183,13 +187,12 @@ async fn after_relink_refused_dials_retry_every_second_while_the_old_link_is_ope
 async fn after_relink_with_the_old_link_closed_dials_never_wait_over_2_s() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
-    let home = tempfile::tempdir().unwrap();
     let w = World {
         server: format!("http://{}", listener.local_addr().unwrap()),
         key: key.clone(),
         links: Arc::default(),
         dir: tempfile::tempdir().unwrap(),
-        agents: Agents::new(&home.path().join("none.sock"), RunnerAddr::new("none")),
+        agents: Agents::new(Client::new("none.sock"), RunnerAddr::new("none")),
     };
     let dir = agent_dir(&w, MACHINE, &key);
     let state = dir.path().to_owned();

@@ -55,6 +55,8 @@ pub(super) enum Link {
     Socket(PathBuf),
     /// A server reached over a signed-in WebSocket.
     Remote(Remote),
+    /// The controller's TLS listener, as the machine runner.
+    Runner(super::tls::Runner),
 }
 
 impl Link {
@@ -63,6 +65,7 @@ impl Link {
         let socket = match self {
             Self::Socket(socket) => socket,
             Self::Remote(remote) => return remote.connect(),
+            Self::Runner(runner) => return runner.connect(),
         };
         match UnixStream::connect(socket) {
             Ok(stream) => Attempt::Done(stream),
@@ -250,7 +253,7 @@ fn loopback(host: &str) -> bool {
 }
 
 /// Connects TCP to `host:port`.
-fn dial(host: &str, port: u16) -> Result<TcpStream, String> {
+pub(super) fn dial(host: &str, port: u16) -> Result<TcpStream, String> {
     let addrs = (host.trim_start_matches('[').trim_end_matches(']'), port)
         .to_socket_addrs()
         .map_err(|e| format!("{host}: {e}"))?;
