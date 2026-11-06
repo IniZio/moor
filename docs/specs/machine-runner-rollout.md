@@ -269,12 +269,22 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
     it. Check: the runner-roll probe with two replicas fails no op.
 11. **Slack.** State to the store, lease, own Deployment.
 
-## To measure in PR 1 and 9
+## Measured
 
-- Seconds a machine shows `not linked` across a nightly deploy.
-- Machine ops failed across a runner roll with one exec in flight.
-- Box events recorded across the roll: the target is none of the five kinds
-  listed above.
+k3s, one enrolled agent, one op every 0.5 s, a 20 s exec in flight, n=3.
+
+| Build | Roll | Unlinked | Ops failed / sent | Exec |
+| --- | --- | --- | --- | --- |
+| develop before PR 1 | controller | 4.0 s | 7–9 / 40 | cut |
+| PR 1 alone, one pod | controller | 7.5–9.5 s (the Recreate gap) | 15–19 / 80 | finished |
+| PRs 1–8, runner Deployment | controller | 0–1 s | 0–2 / 45 | finished |
+| PRs 1–8 | runner | 0 s | 0–2 / 45, all `not linked` | cut |
+| PRs 1–8 + PR 10 + drain fix | runner | 0–2 s | 1–3 / 50, all 421 the Proxy re-asks | finished |
+
+The runner-roll exec died in the shared WebSocket pump, which dropped its pipe
+to yamux in both directions on a far-end close; the pump now drains yamux's
+last writes (#1175). No op is lost across a controller or runner roll; a
+machine is unlinked for at most one redial.
 
 ## Out of scope
 
