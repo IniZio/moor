@@ -140,6 +140,18 @@ gives the runner and the egress pods. The NetworkPolicy also admits only the
 egress pods to the ledger and machine ports, on clusters whose network plugin
 enforces it.
 
+The NetworkPolicy and the PodDisruptionBudget need the account that deploys
+the chart to get, list, create, patch and delete
+`networkpolicies.networking.k8s.io` and `poddisruptionbudgets.policy` in the
+namespace. Without that, turn either off:
+
+- `egress.networkPolicy.enabled: false` leaves the ledger port 7443 and the
+  machine port 7700 open to any pod. Both still require a secret, so the
+  policy only adds a second layer. The ledger requires the egress key in its
+  TLS hello, and the machine service requires the service key.
+- `egress.podDisruptionBudget.enabled: false` lets a node drain evict both
+  egress replicas at once, which cuts Box egress until one is back.
+
 ## Upgrades
 
 The pod uses the `Recreate` strategy, so the old controller stops before the

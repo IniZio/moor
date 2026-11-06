@@ -113,6 +113,12 @@ egress:
     cert: ""
     key: ""
     ca: ""
+  # Each needs the deploying account to manage the kind in the namespace; docs/kubernetes.md
+  # says what turning one off costs.
+  networkPolicy:
+    enabled: true
+  podDisruptionBudget:
+    enabled: true
   resources: {}
 
 persistence:

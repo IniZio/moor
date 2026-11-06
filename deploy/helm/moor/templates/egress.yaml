@@ -135,6 +135,7 @@ spec:
               - { key: ledger-ca.pem, path: ledger-ca.pem }
         - name: egress-state
           emptyDir: {}
+{{- if .Values.egress.podDisruptionBudget.enabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -145,6 +146,7 @@ spec:
   minAvailable: 1
   selector:
     matchLabels: {{- include "moor.egressLabels" . | nindent 6 }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -180,6 +182,7 @@ spec:
   ports:
     - { name: machine, port: 7700, targetPort: machine }
 {{- end }}
+{{- if .Values.egress.networkPolicy.enabled }}
 ---
 # Only the egress pods reach the ledger and the machine service, which trusts the X-Moor-* headers
 # the Proxy sets. The other controller pod ports stay open to anything that reached them before.
@@ -210,4 +213,5 @@ spec:
         - { port: agents, protocol: TCP }
         {{- end }}
     {{- end }}
+{{- end }}
 {{- end }}
