@@ -82,8 +82,9 @@ moor-machine-runner --socket <state dir>/runner/runner.sock \
 
 A resource caps heavy work on a machine, such as native builds, at CAP calls at
 once. The runner counts a resource for each machine name across all Boxes.
-Only the runner process tracks holds, so a runner restart frees them all. With
-no `--resource` flags, the runner holds nothing.
+The runner holding the machine's link counts its holds, and they end with that
+link. A draining runner's calls finish on it while the next runner counts anew.
+With no `--resource` flags, the runner holds nothing.
 
 On SIGTERM the runner tells each linked agent, and each agent that dials it
 after, to relink. The agent dials again every second while it is told to relink
