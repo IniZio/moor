@@ -18,6 +18,7 @@ fn links() -> (Links, watch::Receiver<MachineLinksReq>) {
         report,
         next: Mutex::new(0),
         fresh: Notify::new(),
+        stopping: watch::Sender::new(false),
     };
     (links, rx)
 }
@@ -52,7 +53,12 @@ fn held(rx: &watch::Receiver<MachineLinksReq>) -> Vec<(i64, i64, u64)> {
 #[test]
 fn a_report_stores_the_memory_of_each_box_and_a_later_one_without_it_clears_it() {
     let (links, rx) = links();
-    let (generation, _replaced, _asks) = links.up(5, "1.0.0".to_owned(), Offer::default());
+    let (generation, _replaced, _asks) = links.up(
+        5,
+        "1.0.0".to_owned(),
+        Offer::default(),
+        tokio::sync::mpsc::channel(1).0,
+    );
     links.reported(
         5,
         generation,
@@ -72,7 +78,12 @@ fn a_report_stores_the_memory_of_each_box_and_a_later_one_without_it_clears_it()
 #[test]
 fn a_machine_that_goes_down_holds_no_box_memory() {
     let (links, rx) = links();
-    let (generation, _replaced, _asks) = links.up(5, "1.0.0".to_owned(), Offer::default());
+    let (generation, _replaced, _asks) = links.up(
+        5,
+        "1.0.0".to_owned(),
+        Offer::default(),
+        tokio::sync::mpsc::channel(1).0,
+    );
     links.reported(5, generation, &report(&[("moor-0badcafe-7", 100)]));
     links.down(5, generation);
     assert_eq!(held(&rx), []);

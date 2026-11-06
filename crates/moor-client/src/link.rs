@@ -2,26 +2,28 @@
 //! prove who the agent is; then the socket carries yamux, one stream per exec, hook or relay.
 
 use std::sync::Arc;
-use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{Connector, MaybeTlsStream};
-use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 pub mod broker;
 pub mod lease;
 pub mod ops;
 pub mod status;
+mod stream;
 pub mod sweep;
+
+pub use stream::{drive, Asked, Channel};
 
 #[cfg(test)]
 mod tests;
@@ -152,6 +154,9 @@ pub enum Frame {
         /// Why, for the agent's log.
         reason: String,
     },
+    /// Runner, beside yamux once the link is up: this runner is stopping, so dial again now and
+    /// let this link's streams finish. An agent that does not know it skips it.
+    Relink {},
 }
 
 /// The bytes the agent signs: the runner's nonce, the machine, and the time.
@@ -205,26 +210,47 @@ pub use yamux::Mode;
 /// The socket yamux runs on.
 pub type Socket = Compat<DuplexStream>;
 
+/// A link that is up: the socket yamux runs on, and the frames sent beside it.
+pub struct Carried {
+    /// The end yamux runs on.
+    pub socket: Socket,
+    /// Frames to send the far end.
+    pub tell: mpsc::Sender<Frame>,
+    /// Frames the far end sent.
+    pub heard: mpsc::Receiver<Frame>,
+}
+
 /// Spawns a pump that carries yamux's bytes over `ws` and pings every `keepalive`.
 ///
-/// Returns the end yamux runs on. The pump closes it when the socket closes or fails, or
-/// nothing arrives for three `keepalive` periods.
-pub fn carry<S>(ws: WebSocketStream<S>, keepalive: Duration) -> Socket
+/// The pump closes the socket when `ws` closes or fails, or nothing arrives for three
+/// `keepalive` periods.
+pub fn carry<S>(ws: WebSocketStream<S>, keepalive: Duration) -> Carried
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (near, far) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(pump(ws, far, keepalive));
-    near.compat()
+    let (tell, told) = mpsc::channel(4);
+    let (hear, heard) = mpsc::channel(4);
+    tokio::spawn(pump(ws, far, keepalive, (told, hear)));
+    Carried {
+        socket: near.compat(),
+        tell,
+        heard,
+    }
 }
 
-/// Moves bytes between `ws` and `far` until either ends or the far end goes quiet.
+/// Moves bytes between `ws` and `far` until either ends or the far end goes quiet, sending the
+/// frames told and passing on the frames heard.
 #[expect(
     clippy::cognitive_complexity,
     reason = "the count is select!'s expansion"
 )]
-async fn pump<S>(mut ws: WebSocketStream<S>, mut far: DuplexStream, keepalive: Duration)
-where
+async fn pump<S>(
+    mut ws: WebSocketStream<S>,
+    mut far: DuplexStream,
+    keepalive: Duration,
+    (mut told, hear): (mpsc::Receiver<Frame>, mpsc::Sender<Frame>),
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut tick = tokio::time::interval_at(Instant::now() + keepalive, keepalive);
@@ -235,9 +261,10 @@ where
         let open = tokio::select! {
             msg = ws.next() => {
                 heard = Instant::now();
-                deliver(msg, &mut far).await
+                deliver(msg, &mut far, &hear).await
             }
             n = far.read(&mut buf) => forward(&mut ws, n.ok().and_then(|n| buf.get(..n))).await,
+            Some(frame) = told.recv() => send(&mut ws, &frame).await.is_ok(),
             _ = tick.tick() => ping(&mut ws, heard.elapsed() <= keepalive * 3).await,
         };
         if !open {
@@ -264,70 +291,23 @@ where
     alive && ws.send(Message::Ping(Vec::new().into())).await.is_ok()
 }
 
-/// Writes a binary message's bytes to `far`; false once the link is over.
+/// Writes a binary message's bytes to `far` and passes a frame to `hear`; false once the link
+/// is over. A text message that is no frame this release knows is skipped.
 async fn deliver(
     msg: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
     far: &mut DuplexStream,
+    hear: &mpsc::Sender<Frame>,
 ) -> bool {
     match msg {
         Some(Ok(Message::Binary(bytes))) => far.write_all(&bytes).await.is_ok(),
+        Some(Ok(Message::Text(text))) => {
+            if let Ok(frame) = serde_json::from_str(&text) {
+                let _ = hear.try_send(frame);
+            }
+            true
+        }
         Some(Ok(Message::Close(_)) | Err(_)) | None => false,
         Some(Ok(_)) => true,
-    }
-}
-
-/// One stream on the link.
-pub type Channel = Compat<yamux::Stream>;
-/// Where a stream asked of the link is sent once it opens.
-pub type Asked = oneshot::Sender<Result<Channel, String>>;
-
-/// What the link did next.
-enum Event {
-    /// A stream asked for opened, or could not.
-    Opened(Result<yamux::Stream, yamux::ConnectionError>),
-    /// The far end opened a stream, the link failed, or it closed.
-    Inbound(Option<Result<yamux::Stream, yamux::ConnectionError>>),
-}
-
-/// Runs yamux on `socket` until the link ends, opening a stream for each ask on `asks` and
-/// handing each stream the far end opens to `take`; why it ended.
-pub async fn drive(
-    socket: Socket,
-    mode: yamux::Mode,
-    mut asks: mpsc::Receiver<Asked>,
-    mut take: impl FnMut(Channel),
-) -> String {
-    let mut conn = yamux::Connection::new(socket, yamux::Config::default(), mode);
-    let mut asking: Option<Asked> = None;
-    loop {
-        let event = std::future::poll_fn(|cx| {
-            if asking.is_none() {
-                if let Poll::Ready(Some(ask)) = asks.poll_recv(cx) {
-                    asking = Some(ask);
-                }
-            }
-            if asking.is_some() {
-                if let Poll::Ready(opened) = conn.poll_new_outbound(cx) {
-                    return Poll::Ready(Event::Opened(opened));
-                }
-            }
-            conn.poll_next_inbound(cx).map(Event::Inbound)
-        })
-        .await;
-        match event {
-            Event::Opened(opened) => {
-                if let Some(ask) = asking.take() {
-                    let _ = ask.send(
-                        opened
-                            .map(FuturesAsyncReadCompatExt::compat)
-                            .map_err(|e| format!("the link cannot open a stream: {e}")),
-                    );
-                }
-            }
-            Event::Inbound(Some(Ok(stream))) => take(stream.compat()),
-            Event::Inbound(Some(Err(e))) => return format!("the link failed: {e}"),
-            Event::Inbound(None) => return "the link closed".to_owned(),
-        }
     }
 }
 

@@ -244,16 +244,34 @@ async fn main() -> ExitCode {
         },
         None => None,
     };
-    let config = config(args, linked, relays);
+    let draining = linked.clone();
+    let serving = serve(listener, config(args, linked, relays));
+    tokio::pin!(serving);
     tokio::select! {
-        served = serve(listener, config) => match served {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("moor-machine-runner: {e}");
-                ExitCode::FAILURE
-            }
-        },
-        () = stopped => ExitCode::SUCCESS,
+        served = &mut serving => return ended(served),
+        () = stopped => {}
+    }
+    if let Some(agents) = draining {
+        eprintln!("moor-machine-runner stopping: telling agents to relink");
+        tokio::select! {
+            served = &mut serving => return ended(served),
+            () = agents.drain(DRAIN) => {}
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// How long a stopping runner keeps its links' streams running for the agents to finish them.
+const DRAIN: Duration = Duration::from_secs(30);
+
+/// The exit code for the MCP server stopping with `served`.
+fn ended(served: std::io::Result<()>) -> ExitCode {
+    match served {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("moor-machine-runner: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

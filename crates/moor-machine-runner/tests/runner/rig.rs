@@ -95,6 +95,8 @@ pub struct Rig {
     pub agents: u16,
     /// The fake machine's agent, linked while it runs.
     pub machine_agent: Option<tokio::runtime::Runtime>,
+    /// What the fake machine's agent logged.
+    pub agent_log: Arc<Mutex<Vec<String>>>,
     args: Vec<String>,
     port: u16,
     runner: Runner,
@@ -152,7 +154,7 @@ impl Rig {
         let fake = start_controller(dir.path(), &tree, listing_fails, open);
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port, agents) = spawn(dir.path(), &args);
-        let machine_agent =
+        let (machine_agent, agent_log) =
             machine::start_agent(dir.path(), &remote, agents, &fake.link, sweep_grace);
         let http = ureq::Agent::config_builder()
             .http_status_as_error(false)
@@ -183,6 +185,7 @@ impl Rig {
             shows_refused,
             agents,
             machine_agent: Some(machine_agent),
+            agent_log,
             args,
             port,
             runner,
@@ -196,6 +199,26 @@ impl Rig {
     pub fn restart(&mut self) {
         self.runner = Runner(None);
         (self.runner, self.port, self.agents) = spawn(self.dir.path(), &self.args);
+    }
+
+    /// Sends the runner SIGTERM.
+    pub fn sigterm(&self) {
+        let child = self.runner.0.as_ref().unwrap();
+        let pid = rustix::process::Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
+        rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
+    }
+
+    /// The runner's exit code, waiting up to `within` for it to exit.
+    pub fn exit_code(&mut self, within: Duration) -> Option<i32> {
+        let child = self.runner.0.as_mut().unwrap();
+        let deadline = std::time::Instant::now() + within;
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                return status.code();
+            }
+            assert!(std::time::Instant::now() < deadline, "still running");
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     /// The rig's own dir.
