@@ -122,12 +122,8 @@ pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<(
         links,
         routes,
     } = agents;
-    let mut stopping = links.stopping.subscribe();
     loop {
-        let (stream, _) = tokio::select! {
-            accepted = listener.accept() => accepted?,
-            _ = stopping.wait_for(|s| *s) => return Ok(()),
-        };
+        let (stream, _) = listener.accept().await?;
         let (client, links, routes) = (client.clone(), Arc::clone(&links), Arc::clone(&routes));
         tokio::spawn(async move { serve_link(stream, &client, links, routes).await });
     }
@@ -141,6 +137,12 @@ where
     let Ok(mut ws) = link::accept(stream).await else {
         return;
     };
+    if *links.stopping.borrow() {
+        let _ = link::recv(&mut ws, ANSWER).await;
+        let _ = link::send(&mut ws, &Frame::Relink {}).await;
+        let _ = ws.close(None).await;
+        return;
+    }
     let (machine_id, version, offer) = match admit(&mut ws, client).await {
         Ok(admitted) => admitted,
         Err(answer) => {
@@ -246,7 +248,7 @@ struct Links {
     next: Mutex<u64>,
     /// Woken by each new link; holds one wake-up for a waiter that comes later.
     fresh: Notify,
-    /// Set once the runner stops: no new link is taken, and each is told to relink.
+    /// Set once the runner stops: each link, and each new hello, is told to relink.
     stopping: watch::Sender<bool>,
 }
 

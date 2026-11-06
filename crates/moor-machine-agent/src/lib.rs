@@ -165,25 +165,38 @@ pub async fn run_with(
     let boxes = listen::Boxes::new(state.slots);
     let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
+    // The link a relink left open; while it is, the new runner is coming up, so no backoff.
+    let mut old: Option<tokio::task::JoinHandle<String>> = None;
     loop {
-        match connect(&state, &key, &machine).await {
+        let (why, handing_over) = match connect(&state, &key, &machine).await {
             Ok(carried) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
-                if let Some(why) = held::hold(carried, &machine, &boxes, &recent).await {
-                    log(&format!("{why}; dialing again in {}s", wait.as_secs()));
-                } else {
-                    log("the server asked for a new link; dialing again now");
-                    continue;
+                match held::hold(carried, &machine, &boxes, &recent).await {
+                    held::Ended::Closed(why) => (why, false),
+                    held::Ended::Relinked(link) => {
+                        old = Some(link);
+                        log("the server asked for a new link; dialing again now");
+                        continue;
+                    }
                 }
             }
             Err(Turned::Update(version)) => {
                 return Err(needs_update(&version, auto_update, log));
             }
-            Err(Turned::Failed(why)) => {
-                log(&format!("{why}; dialing again in {}s", wait.as_secs()));
-            }
+            Err(Turned::Relink) => ("the server is handing over".to_owned(), true),
+            Err(Turned::Failed(why)) => (why, false),
+        };
+        if handing_over || old.as_ref().is_some_and(|l| !l.is_finished()) {
+            log(&format!(
+                "{why}; dialing again in {}s",
+                FIRST_WAIT.as_secs()
+            ));
+            tokio::time::sleep(FIRST_WAIT).await;
+            continue;
         }
+        old = None;
+        log(&format!("{why}; dialing again in {}s", wait.as_secs()));
         tokio::time::sleep(wait).await;
         wait = (wait * 2).min(MOST_WAIT);
     }
@@ -229,6 +242,8 @@ fn needs_update(version: &str, auto_update: bool, log: &(dyn Fn(&str) + Sync)) -
 enum Turned {
     /// The server needs this release.
     Update(String),
+    /// The server is stopping and hands its links to another; dial again shortly.
+    Relink,
     /// Anything else; dialing again may work.
     Failed(String),
 }
@@ -272,6 +287,7 @@ async fn connect(
 fn turned(frame: Frame) -> Turned {
     match frame {
         Frame::UpdateRequired { version } => Turned::Update(version),
+        Frame::Relink {} => Turned::Relink,
         Frame::Refused { reason } => {
             Turned::Failed(format!("the server refused the link: {reason}"))
         }

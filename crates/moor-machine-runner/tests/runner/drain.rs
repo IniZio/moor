@@ -37,4 +37,9 @@ fn sigterm_lets_an_exec_in_flight_finish_and_tells_the_agent_to_relink() {
         log.iter().any(|l| l.contains("asked for a new link")),
         "{log:?}"
     );
+    assert!(
+        log.iter()
+            .any(|l| l.contains("handing over; dialing again in 1s")),
+        "the stopping runner answered the next hello with relink: {log:?}"
+    );
 }
