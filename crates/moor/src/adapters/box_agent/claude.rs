@@ -1,7 +1,7 @@
 //! The Claude Code profile: launch arguments, hook setup and hook state file parsing.
 
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::name::NameError;
+use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_adapter::{
     AgentAdapter, AgentInstall, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
     NOTHING_TO_ARCHIVE,
@@ -13,6 +13,7 @@ mod doing;
 mod install;
 mod launch;
 mod profile;
+mod wait;
 
 /// The background work a stop record names, one line per piece; empty when it names none.
 fn background(record: &Value) -> Vec<String> {
@@ -97,6 +98,10 @@ impl AgentAdapter for Claude {
 
     fn install(&self) -> Option<AgentInstall> {
         Some(install::native())
+    }
+
+    fn wait_check_script(&self, hook_file: &BoxPath) -> Option<String> {
+        Some(wait::script(hook_file.as_str(), "/proc"))
     }
 
     fn pane_prompt(&self, tail: &str) -> Option<String> {

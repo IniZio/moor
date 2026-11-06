@@ -16,3 +16,5 @@ std::task::Poll
 std::task::Context
 # Claude Code's own Stop-hook field, read in crates/moor/src/adapters/box_agent/claude/launch.rs.
 background_tasks
+# Claude Code's own directory of shell output files, looked for in crates/moor/src/adapters/box_agent/claude/wait.rs.
+/tasks/

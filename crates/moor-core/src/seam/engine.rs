@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::activity::Probes;
+use crate::activity::{Probes, WaitCheck};
 use crate::box_key::BoxKey;
 use crate::config::{AgentHolder, McpServer};
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
@@ -197,6 +197,11 @@ pub trait Engine: Send + Sync {
     /// [`EngineError::Box`] only when the hook file path cannot be formed;
     /// a failed or late read is reported in the returned [`Probes`] instead.
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError>;
+
+    /// What the Box shows about the background work the agent reports waiting on.
+    fn check_wait(&self, _s: &SessionRef, _deadline: Deadline) -> WaitCheck {
+        WaitCheck::Unknown
+    }
 
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;

@@ -1,12 +1,35 @@
-//! The `agent_stalled` and `agent_resumed` events, written once per stall.
+//! Hook reports gone quiet: the `agent_stalled` and `agent_resumed` events, written once per
+//! stall, and a wait on background work that is gone.
 
-use moor_core::activity::{stalled_for, Activity, AgentState, HookKind, Source};
+use moor_core::activity::{
+    stalled_for, wait_overdue, Activity, AgentState, HookKind, HookRead, Probes, Source, WaitCheck,
+};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::clock::Ts;
+use moor_core::seam::engine::SessionRef;
+use moor_core::seam::proc::Deadline;
 
 use super::Reading;
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
+
+/// `probes` with an overdue wait the Box shows to be empty rewritten as the idle report the agent
+/// never wrote: no hook fires when background work ends without waking the agent.
+pub(super) fn end_wait(
+    cx: &Cx,
+    sref: &SessionRef,
+    mut probes: Probes,
+    now: Ts,
+    deadline: Deadline,
+) -> Probes {
+    if let HookRead::Fresh(rec) = &mut probes.hook {
+        if wait_overdue(rec, now) && cx.engine().check_wait(sref, deadline) == WaitCheck::Nothing {
+            rec.kind = HookKind::Idle;
+        }
+    }
+    probes
+}
 
 /// Append `agent_stalled` when the agent's hook reported busy and has gone quiet, and
 /// `agent_resumed` when a report arrives after one.
