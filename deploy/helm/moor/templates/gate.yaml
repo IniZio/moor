@@ -14,7 +14,7 @@ spec:
       {{- with .Values.gate.service.nodePort }}
       nodePort: {{ . }}
       {{- end }}
-    {{- if .Values.runner.enabled }}
+    {{- if and .Values.runner.enabled (not .Values.runner.separate) }}
     - name: agents
       port: {{ .Values.runner.agentsPort }}
       targetPort: agents
@@ -60,7 +60,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $.Release.Name }}-gate
+                name: {{ $.Release.Name }}-{{ if $.Values.runner.separate }}runner-agents{{ else }}gate{{ end }}
                 port: { name: agents }
           {{- end }}
 {{- end }}

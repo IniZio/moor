@@ -206,7 +206,11 @@ metadata:
   labels: {{- include "moor.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
+  {{- if include "moor.runnerSeparate" . }}
+  selector: {{- include "moor.runnerLabels" . | nindent 4 }}
+  {{- else }}
   selector: {{- include "moor.labels" . | nindent 4 }}
+  {{- end }}
   ports:
     - { name: machine, port: 7700, targetPort: machine }
 {{- end }}

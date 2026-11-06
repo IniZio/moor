@@ -1,0 +1,114 @@
+{{- if include "moor.runnerSeparate" . }}
+{{- $uid := int .Values.controller.uid -}}
+{{- if eq (int .Values.runner.linksPort) (int .Values.runner.agentsPort) }}{{ fail "runner.linksPort must differ from runner.agentsPort" }}{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-runner
+  labels: {{- include "moor.runnerLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.runner.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "moor.runnerLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "moor.runnerLabels" . | nindent 8 }}
+      annotations:
+        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca | toJson | sha256sum | quote }}
+        {{- range $k, $v := .Values.podAnnotations }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      hostUsers: false
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "moor.runnerLabels" . | nindent 20 }}
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $uid }}
+        runAsGroup: {{ $uid }}
+        fsGroup: {{ $uid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.containerSecurity" . | nindent 12 }}
+          command: [moor-machine-runner]
+          args:
+            - --controller=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+            - --controller-ca=/var/lib/moor/runner/ledger-ca.pem
+            - --controller-cert=/var/lib/moor/runner/runner-client.crt
+            - --controller-key=/var/lib/moor/runner/runner-client.key
+            - --listen=0.0.0.0:7700
+            - --agents=0.0.0.0:{{ .Values.runner.agentsPort }}
+            - --links=0.0.0.0:{{ .Values.runner.linksPort }}
+            - --advertise=$(POD_IP):{{ .Values.runner.linksPort }}
+            - --state-dir=/var/lib/moor/runner-state
+            {{- with .Values.runner.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef: { fieldPath: status.podIP }
+            # The runner reads --service-key from here, so the key stays out of the process list.
+            - name: MOOR_MACHINE_SERVICE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: machine-service-key }
+          ports:
+            - { name: agents, containerPort: {{ .Values.runner.agentsPort }} }
+            - { name: machine, containerPort: 7700 }
+            - { name: links, containerPort: {{ .Values.runner.linksPort }} }
+          # Held back until the links port, which the controller dials, is bound too.
+          startupProbe:
+            tcpSocket: { port: links }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket: { port: agents }
+            periodSeconds: 5
+          {{- with .Values.runner.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Mirrors and scratch space only: a new pod re-syncs a Box's tree on its first use.
+          volumeMounts:
+            - { name: runner-secrets, mountPath: /var/lib/moor/runner, readOnly: true }
+            - { name: runner-state, mountPath: /var/lib/moor/runner-state }
+      volumes:
+        - name: runner-secrets
+          secret:
+            secretName: {{ .Release.Name }}-egress
+            defaultMode: 0440
+            items:
+              - { key: ledger-ca.pem, path: ledger-ca.pem }
+              - { key: runner-client.crt, path: runner-client.crt }
+              - { key: runner-client.key, path: runner-client.key }
+        - name: runner-state
+          emptyDir: {}
+---
+# The agents' links come in through the ingress, so /machines/link needs a Service of its own.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-runner-agents
+  labels: {{- include "moor.runnerLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.gate.service.type }}
+  selector: {{- include "moor.runnerLabels" . | nindent 4 }}
+  ports:
+    - { name: agents, port: {{ .Values.runner.agentsPort }}, targetPort: agents }
+{{- end }}

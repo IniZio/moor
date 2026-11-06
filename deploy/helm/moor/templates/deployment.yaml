@@ -132,6 +132,12 @@ spec:
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-egress, key: egress-key }
             {{- end }}
+            {{- if include "moor.runnerSeparate" . }}
+            # The controller checks a remote runner's hello with it and opens its own dials to the runner with it.
+            - name: MOOR_MACHINE_SERVICE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: machine-service-key }
+            {{- end }}
             {{- with .Values.controller.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -228,7 +234,7 @@ spec:
           volumeMounts:
             - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/authgear, readOnly: true }
         {{- end }}
-        {{- if .Values.runner.enabled }}
+        {{- if and .Values.runner.enabled (not .Values.runner.separate) }}
         - name: runner
           image: {{ include "moor.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
