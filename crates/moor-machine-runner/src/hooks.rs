@@ -169,16 +169,18 @@ impl Hooks {
             }
         }
         for id in prepared.into_iter().filter(|id| !open.contains(*id)) {
-            relays.end_box(id).await;
-            if let Err(e) = self.release(id).await {
+            if let Err(e) = self.release(id, relays).await {
                 eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
             }
         }
         self.reconcile(client).await;
     }
 
-    /// Runs `release` for Box `id`, then drops its host mirror and its record.
-    async fn release(&self, id: i64) -> Result<(), String> {
+    /// Ends Box `id`'s relay sessions, runs `release`, then drops its host mirror and its record.
+    async fn release(&self, id: i64, relays: &Relays) -> Result<(), String> {
+        let lock = self.lock_for(id);
+        let _held = lock.lock().await;
+        relays.end_box(id).await;
         let path = self.record(id);
         let Some(record) = read(&path)? else {
             return Ok(());
