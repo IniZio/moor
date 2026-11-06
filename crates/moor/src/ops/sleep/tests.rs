@@ -495,6 +495,23 @@ fn sleep_parks_the_tunnel_first() {
 }
 
 #[test]
+fn sleep_checks_what_the_box_holds_before_it_parks_the_tunnel() {
+    let mut f = idle();
+    let host = FakeProxyHost::new();
+    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (log, watched) = (seen.clone(), host.clone());
+    f.driver.on_exec(move || {
+        log.lock().unwrap().push(watched.calls());
+    });
+    run(&f.cx, &req()).unwrap();
+    let seen = std::mem::take(&mut *seen.lock().unwrap());
+    assert!(!seen.is_empty(), "the check ran");
+    assert!(seen.iter().all(Vec::is_empty), "{seen:?}");
+    assert_eq!(host.calls(), vec![ProxyHostCall::Park(f.id)]);
+}
+
+#[test]
 fn a_box_that_cannot_sleep_gets_its_tunnel_back() {
     let mut f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("no".into())));
     let host = FakeProxyHost::new();
