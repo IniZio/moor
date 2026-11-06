@@ -546,6 +546,7 @@ fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_p
 }
 
 mod disk_alert;
+mod keeper;
 mod pressure;
 mod queue;
 

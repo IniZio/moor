@@ -319,6 +319,22 @@ fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
 }
 
 #[test]
+fn a_reattached_agent_gets_its_keeper_back_and_keeps_its_terminal() {
+    let (mut w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
+    let host = FakeProxyHost::new();
+    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    woken_after_suspend(&w, id, CRITICAL);
+    let restores = host
+        .calls()
+        .into_iter()
+        .filter(|c| *c == ProxyHostCall::Restore(id))
+        .count();
+    assert_eq!(restores, 1);
+    assert_eq!(engine.launches().len(), 1, "no launch over the live agent");
+    assert_eq!(engine.reattached().len(), 1);
+}
+
+#[test]
 fn the_note_says_processes_were_lost_when_the_agent_was_relaunched() {
     let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
     woken_after_suspend(&w, id, CRITICAL);
