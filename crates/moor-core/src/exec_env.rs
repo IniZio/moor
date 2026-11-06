@@ -33,6 +33,13 @@ pub fn prelude_stop(output: &str) -> Option<&str> {
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
+/// What `update-ca-certificates` and `update-ca-trust` rebuild the bundle from, appended CAs lost.
+const TRUST_ANCHOR_DIRS: [&str; 2] = [
+    "/usr/local/share/ca-certificates",
+    "/etc/pki/ca-trust/source/anchors",
+];
+/// The Proxy CA in each existing [`TRUST_ANCHOR_DIRS`]; `update-ca-certificates` reads only `*.crt`.
+const TRUST_ANCHOR_FILE: &str = "moor-proxy.crt";
 /// Where an image can record the `PATH` its Dockerfile `ENV` sets; non-interactive ssh execs do
 /// not inherit that `ENV`.
 const IMAGE_ENV_FILE: &str = "/etc/environment";
@@ -272,7 +279,8 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             + "; do [ -f \"$moor_f\" ] && { moor_sys=$moor_f; break; }; done",
         format!("moor_mark=$(sed -n 2p {ca})"),
         format!(
-            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle=\"{built_file}\"; {}; fi",
+            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }} && {}; then moor_bundle=$moor_sys; else moor_bundle=\"{built_file}\"; {}; fi",
+            trust_anchors(&ca),
             or_stop(
                 &write_if_changed(
                     &format!("{{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }}"),
@@ -308,6 +316,18 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     lines.extend(android_lines(ANDROID_SDK));
     lines.extend(java::java_lines(p.egress_port, &ca));
     lines
+}
+
+/// Shell that keeps `ca` in each trust anchor directory the Box has, or fails, writing only if needed.
+fn trust_anchors(ca: &str) -> String {
+    TRUST_ANCHOR_DIRS
+        .map(|dir| {
+            let file = format!("{dir}/{TRUST_ANCHOR_FILE}");
+            format!(
+                "{{ [ ! -d {dir} ] || cmp -s {ca} {file} || sudo -n install -m 644 {ca} {file}; }}"
+            )
+        })
+        .join(" && ")
 }
 
 /// Where the `android-sdk` cache preset keeps the Android SDK.
