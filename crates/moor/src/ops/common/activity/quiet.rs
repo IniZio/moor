@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use moor_core::activity::AgentState;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::session_state::SessionInput;
@@ -14,6 +15,21 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::store::{BoxRow, Store, StoreError};
 
 use super::Reading;
+
+impl Reading {
+    /// Whether the agent could not be read at all, which says nothing of what it is doing.
+    pub(crate) fn unread(&self) -> bool {
+        self.activity
+            .as_ref()
+            .is_some_and(|a| a.state == AgentState::Unknown)
+    }
+
+    /// Whether the reading shows work under way: an unread agent holds a Working Box up, but
+    /// does not pull an Idle one back.
+    fn shows_work(&self) -> bool {
+        self.busy() && !self.unread()
+    }
+}
 
 /// Steps the Box between Working and Idle to match `reading`; true when it went Idle.
 pub(super) fn step(
@@ -28,7 +44,7 @@ pub(super) fn step(
         (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
             SessionInput::AgentQuiet
         }
-        (true, true) if reading.busy() => SessionInput::AgentBusy,
+        (true, true) if reading.shows_work() => SessionInput::AgentBusy,
         _ => return Ok(false),
     };
     // An op that owns the Box decides where the Box goes; hold the lock across the write.

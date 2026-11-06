@@ -252,7 +252,7 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
 /// An asleep Box is not moved: nothing was read from it, and a wake asks after its agent. A Box
 /// that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
 /// only when the reading `may_quiet` and is not busy; an Idle Box goes back to Working when the
-/// reading is busy. Nothing else decides quiet: a gone pane, an idle status or a dropped hook
+/// reading shows work. Nothing else decides quiet: a gone pane, an idle status or a dropped hook
 /// read never idles a Box. If the row changed since the read, the store refuses the step.
 ///
 /// # Errors
