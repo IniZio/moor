@@ -8,7 +8,7 @@ use moor_core::BoxHandle;
 
 use moor_client::link::reach::Runner;
 
-use super::link::{keep, ForwardFailed, MachineLink, Via};
+use super::link::{keep, ForwardFailed, MachineLink, Via, MAX_PIPES};
 use super::Kept;
 use crate::store::{HeldMachine, MachineWake};
 
@@ -100,7 +100,13 @@ impl Kept {
                 slot.failing = false;
                 Some(MachineEvent::MachineAttached { name, ports })
             }
-            Ok(()) => None,
+            Ok(()) => {
+                let over = slot.link.as_ref().and_then(MachineLink::over_cap);
+                over.map(|port| MachineEvent::MachineForwardFailed {
+                    port: Some(port),
+                    error: format!("over {MAX_PIPES} connections at once; one was refused"),
+                })
+            }
             Err(_) if slot.failing => None,
             Err(ForwardFailed { port, error }) => {
                 slot.failing = true;
