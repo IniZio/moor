@@ -154,7 +154,7 @@ fn the_pid_file_names_the_live_front() {
 fn a_killed_front_is_started_again() {
     let fronts = Fronts::start();
     wait_for("an answer", || (fronts.answers() == 1).then_some(()));
-    let (first, _) = fronts.recorded("web").expect("pid file");
+    let (first, _) = wait_for("a pid file", || fronts.recorded("web"));
     kill_process(
         Pid::from_raw(i32::try_from(first).expect("pid")).expect("pid"),
         Signal::KILL,
