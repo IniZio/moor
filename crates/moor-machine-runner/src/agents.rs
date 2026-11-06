@@ -11,9 +11,8 @@ use futures_util::StreamExt;
 use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
 use moor_client::Client;
 use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, Request};
-use moor_core::view::user::MachineKeysValue;
 use ssh_key::rand_core::{OsRng, RngCore};
-use ssh_key::{PublicKey, SshSig};
+use ssh_key::SshSig;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch, Notify};
@@ -22,7 +21,9 @@ use crate::claim::now;
 use crate::forwards::{accepted, Routes};
 use hello::{judge, STAMPED, VERSION};
 
+mod drain;
 mod hello;
+mod keys;
 mod memory;
 
 /// How long each handshake frame may take to arrive.
@@ -62,6 +63,7 @@ impl Agents {
             report: tx,
             next: Mutex::new(0),
             fresh: Notify::new(),
+            stopping: watch::Sender::new(false),
         });
         Self {
             client,
@@ -120,8 +122,12 @@ pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<(
         links,
         routes,
     } = agents;
+    let mut stopping = links.stopping.subscribe();
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = tokio::select! {
+            accepted = listener.accept() => accepted?,
+            _ = stopping.wait_for(|s| *s) => return Ok(()),
+        };
         let (client, links, routes) = (client.clone(), Arc::clone(&links), Arc::clone(&routes));
         tokio::spawn(async move { serve_link(stream, &client, links, routes).await });
     }
@@ -151,14 +157,14 @@ where
     if link::send(&mut ws, &welcome).await.is_err() {
         return;
     }
-    let (generation, replaced, asks) = links.up(machine_id, version, offer);
+    let carried = link::carry(ws, link::KEEPALIVE);
+    let (generation, replaced, asks) = links.up(machine_id, version, offer, carried.tell);
     eprintln!("machine {machine_id} linked");
-    let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
-        why = link::drive(socket, link::Mode::Server, asks, |ch| {
+        why = link::drive(carried.socket, link::Mode::Server, asks, |ch| {
             let (routes, links) = (Arc::clone(&routes), Arc::clone(&links));
             tokio::spawn(async move { opened(ch, (machine_id, generation), &routes, &links).await });
-        }) => why,
+        }, std::future::pending()) => why,
         _ = replaced => "a newer link replaced it".to_owned(),
     };
     links.down(machine_id, generation);
@@ -206,7 +212,7 @@ where
     let Ok(Frame::Proof { time, signature }) = link::recv(ws, ANSWER).await else {
         return Err(None);
     };
-    let key = key_of(client, machine_id).await.map_err(refused)?;
+    let key = keys::key_of(client, machine_id).await.map_err(refused)?;
     SshSig::from_pem(signature)
         .ok()
         .filter(|sig| {
@@ -230,32 +236,6 @@ fn refused(reason: String) -> Option<Frame> {
     Some(Frame::Refused { reason })
 }
 
-/// The key machine `machine_id` was enrolled with, read from the controller each time so a
-/// replaced or removed key stops working at once.
-async fn key_of(client: &Client, machine_id: i64) -> Result<PublicKey, String> {
-    let client = client.clone();
-    let response =
-        tokio::task::spawn_blocking(move || client.request(Request::MachineKeys {}, |_| {}))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| format!("the server cannot check keys now: {e}"))?;
-    if let Some(error) = response.error {
-        return Err(format!(
-            "the server cannot check keys now: {}",
-            error.message
-        ));
-    }
-    let keys: MachineKeysValue = serde_json::from_value(response.value.unwrap_or_default())
-        .map_err(|e| format!("machine-keys answered something else: {e}"))?;
-    let enrolled = keys
-        .machines
-        .into_iter()
-        .find(|m| m.machine_id == machine_id)
-        .ok_or_else(|| format!("machine {machine_id} is not enrolled"))?;
-    PublicKey::from_openssh(&enrolled.pubkey)
-        .map_err(|e| format!("machine {machine_id}'s key does not parse: {e}"))
-}
-
 /// Every machine seen since the runner started, and the link that holds each online one.
 struct Links {
     /// By machine id.
@@ -266,6 +246,8 @@ struct Links {
     next: Mutex<u64>,
     /// Woken by each new link; holds one wake-up for a waiter that comes later.
     fresh: Notify,
+    /// Set once the runner stops: no new link is taken, and each is told to relink.
+    stopping: watch::Sender<bool>,
 }
 
 /// One machine's link state.
@@ -280,6 +262,8 @@ struct Held {
     end: Option<oneshot::Sender<()>>,
     /// Asks that link for streams; none once it is down.
     asks: Option<mpsc::Sender<Asked>>,
+    /// Sends that link a frame; none once it is down.
+    tell: Option<mpsc::Sender<Frame>>,
 }
 
 impl Links {
@@ -290,6 +274,7 @@ impl Links {
         machine_id: i64,
         version: String,
         offer: Offer,
+        tell: mpsc::Sender<Frame>,
     ) -> (u64, oneshot::Receiver<()>, mpsc::Receiver<Asked>) {
         let generation = {
             let mut next = self.next.lock().unwrap_or_else(PoisonError::into_inner);
@@ -316,6 +301,9 @@ impl Links {
             // Kept across a relink, so the node stays one that reports memory.
             let memory = held.get(&machine_id).and_then(|h| h.link.memory);
             let link = MachineLink { memory, ..link };
+            if *self.stopping.borrow() {
+                let _ = tell.try_send(Frame::Relink {});
+            }
             held.insert(
                 machine_id,
                 Held {
@@ -324,6 +312,7 @@ impl Links {
                     generation,
                     end: Some(end),
                     asks: Some(ask),
+                    tell: Some(tell),
                 },
             );
         });
@@ -343,6 +332,7 @@ impl Links {
                 h.box_memory.clear();
                 h.end = None;
                 h.asks = None;
+                h.tell = None;
             }
         });
     }

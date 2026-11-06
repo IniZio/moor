@@ -2,6 +2,7 @@
 //! home and the hook files in the rig's hooks dir.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use moor_machine_agent::{run, Machine, State};
 use ssh_key::rand_core::OsRng;
@@ -21,14 +22,14 @@ echo "/dev/fake 1000000000 1 $kb 1% $HOME"
 "#;
 
 /// Starts the agent of machine `minion` linking to the runner's agent port, sweeping folders
-/// older than `sweep_grace`; it runs until the returned runtime drops.
+/// older than `sweep_grace`; it runs until the returned runtime drops, and the lines it logs.
 pub(super) fn start_agent(
     dir: &Path,
     remote: &Path,
     port: u16,
     link: &FakeLink,
     sweep_grace: std::time::Duration,
-) -> tokio::runtime::Runtime {
+) -> (tokio::runtime::Runtime, Arc<Mutex<Vec<String>>>) {
     let tools = dir.join("machine-bin");
     std::fs::create_dir_all(&tools).unwrap();
     moor_testkit::write_executable(&tools.join("df"), FAKE_DF).unwrap();
@@ -62,8 +63,13 @@ pub(super) fn start_agent(
         sweep_grace,
     };
     let agent = tokio::runtime::Runtime::new().unwrap();
-    agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });
-    agent
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&lines);
+    agent.spawn(async move {
+        let log = move |line: &str| log.lock().unwrap().push(line.to_owned());
+        run(&state_dir, machine, &log).await
+    });
+    (agent, lines)
 }
 
 /// The fake machine's hooks dir in the rig at `dir`.

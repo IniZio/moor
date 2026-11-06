@@ -584,6 +584,8 @@ mod hello;
 mod pool_dial;
 #[path = "link/pool_sweep.rs"]
 mod pool_sweep;
+#[path = "link/relink.rs"]
+mod relink;
 #[path = "link/sweep.rs"]
 mod sweep;
 use sweep::swept;

@@ -12,5 +12,7 @@ tokio::task::
 /proc/{}/task"
 # std's own poll type, unrelated to the removed concept.
 std::task::Poll
+# std's own waker context type, unrelated to the removed concept.
+std::task::Context
 # Claude Code's own Stop-hook field, read in crates/moor/src/adapters/box_agent/claude/launch.rs.
 background_tasks

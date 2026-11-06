@@ -20,6 +20,7 @@ use rig::{Rig, HEADERS};
 
 mod broker;
 mod claim;
+mod drain;
 mod gc;
 mod holds;
 mod hooks;

@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
-use tokio::sync::mpsc;
 
 pub use crate::pool::Pool;
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 
 mod files;
+mod held;
 mod listen;
 pub mod pool;
 mod release;
@@ -167,30 +167,15 @@ pub async fn run_with(
     let mut wait = FIRST_WAIT;
     loop {
         match connect(&state, &key, &machine).await {
-            Ok(socket) => {
+            Ok(carried) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
-                let (open, asks) = mpsc::channel(16);
-                let reporting = machine
-                    .pool
-                    .clone()
-                    .map(|pool| tokio::spawn(report_on(open.clone(), machine.home.clone(), pool)));
-                let streams = listen::Link {
-                    open,
-                    boxes: Arc::clone(&boxes),
-                };
-                let why = link::drive(socket, link::Mode::Client, asks, |ch| {
-                    let (machine, streams) = (Arc::clone(&machine), streams.clone());
-                    let recent = Arc::clone(&recent);
-                    tokio::spawn(
-                        async move { serve::serve(&machine, &streams, &recent, ch).await },
-                    );
-                })
-                .await;
-                if let Some(r) = reporting {
-                    r.abort();
+                if let Some(why) = held::hold(carried, &machine, &boxes, &recent).await {
+                    log(&format!("{why}; dialing again in {}s", wait.as_secs()));
+                } else {
+                    log("the server asked for a new link; dialing again now");
+                    continue;
                 }
-                log(&format!("{why}; dialing again in {}s", wait.as_secs()));
             }
             Err(Turned::Update(version)) => {
                 return Err(needs_update(&version, auto_update, log));
@@ -248,12 +233,12 @@ enum Turned {
     Failed(String),
 }
 
-/// Dials `state`'s server and proves the machine with `key`; the socket yamux runs on.
+/// Dials `state`'s server and proves the machine with `key`; the link, once it is up.
 async fn connect(
     state: &State,
     key: &PrivateKey,
     machine: &Machine,
-) -> Result<link::Socket, Turned> {
+) -> Result<link::Carried, Turned> {
     let mut ws = link::dial(&state.server).await.map_err(Turned::Failed)?;
     let hello = Frame::Hello {
         machine_id: state.machine_id,
@@ -280,17 +265,6 @@ async fn connect(
     match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
         Frame::Welcome { .. } => Ok(link::carry(ws, link::KEEPALIVE)),
         other => Err(turned(other)),
-    }
-}
-
-/// Opens a stream to the runner on `open` and sends the host's memory reports on it.
-async fn report_on(open: mpsc::Sender<link::Asked>, home: PathBuf, pool: Pool) {
-    let (ask, opened) = tokio::sync::oneshot::channel();
-    if open.send(ask).await.is_err() {
-        return;
-    }
-    if let Ok(Ok(stream)) = opened.await {
-        pool::send_reports(stream, Path::new("/proc"), Some(&home), Some(&pool)).await;
     }
 }
 
