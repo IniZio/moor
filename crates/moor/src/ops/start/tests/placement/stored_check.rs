@@ -6,7 +6,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::{BoxPath, ErrorKind};
 
-use super::pressure::{agents_report, tick, BELOW_RESERVE};
+use super::pressure::{agents_report, tick, wake_up, BELOW_RESERVE};
 use super::*;
 use crate::store::SuspendCheck;
 
@@ -43,15 +43,16 @@ fn guest_memory(w: &World, id: BoxId, mib: u64) {
     );
 }
 
-/// Two working Boxes on `hv`; `b`, the newest, is suspended holding `text` and too big to wake.
+/// A working Box `a` on `hv`, and idle `b` suspended holding `text` and too big to wake.
 fn suspended_holding(text: &str) -> (World, i64, BoxId, BoxId) {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
     guest_memory(&w, b, CEILING);
-    let (w, _) = agents_report(w, &[], &[a, b]);
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[b], &[a]);
     holds(&w, b, text);
     tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(lifecycle(&w, b), Pending);
+    assert_eq!(lifecycle(&w, b), Asleep);
     (w, hv, a, b)
 }
 
@@ -84,38 +85,58 @@ fn a_suspend_records_what_the_box_holds_just_before_it() {
 }
 
 #[test]
-fn a_last_resort_suspend_checks_before_it_parks_the_tunnel() {
-    use crate::store::{Fenced, ReadyProc, TunnelAck, TunnelWant};
-    use crate::testing::rng::FakeRng;
+fn a_working_box_is_not_asked_and_keeps_no_answer() {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
     let (w, _) = agents_report(w, &[], &[a, b]);
     holds(&w, b, CLEAN);
-    let store = w.cx.store().unwrap();
-    let lease = std::time::Duration::from_secs(30);
-    drop(store.reserve(b, &FakeRng::default(), lease).unwrap());
-    store.claim_lease(b, "A", lease).unwrap();
-    let box_port = store.proxy(b).unwrap().unwrap().box_port;
-    let proc = ReadyProc {
-        pid: 4242,
-        handle: "tunnel-1",
-        boot_id: None,
-    };
-    let ready = store.mark_ready(b, "A", box_port, proc).unwrap();
-    assert_eq!(ready, Fenced::Applied);
-    store.ack_tunnel(b, &TunnelAck::Parked { seq: 1 }).unwrap();
-    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let (log, watched) = (seen.clone(), store.clone());
-    w.driver.on_exec(move || {
-        log.lock().unwrap().push(watched.tunnel_request(b).unwrap());
-    });
+    w.cx.store()
+        .unwrap()
+        .set_suspend_check(b, Some(OLD_CLEAN))
+        .unwrap();
+    let before = calls(&w, "exec");
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending);
-    let seen = std::mem::take(&mut *seen.lock().unwrap());
-    assert!(!seen.is_empty(), "the check ran");
-    assert!(seen.iter().all(Option::is_none), "{seen:?}");
-    let parked = store.tunnel_request(b).unwrap().unwrap();
-    assert_eq!(parked.want, TunnelWant::Parked);
+    assert_eq!(stored(&w, b), None);
+    assert_eq!(calls(&w, "exec"), before, "the suspend stays fast");
+}
+
+#[test]
+fn a_working_box_with_no_room_refuses_a_close() {
+    let (w, hv) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    guest_memory(&w, b, CEILING);
+    let (w, _) = agents_report(w, &[], &[a, b]);
+    holds(&w, b, CLEAN);
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    let refused = close_box(&w, b, false).unwrap_err();
+    assert!(
+        refused.error.to_string().contains("could not wake"),
+        "{}",
+        refused.error
+    );
+    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+}
+
+#[test]
+fn an_idle_box_with_a_run_in_flight_is_not_asked_either() {
+    let (w, _) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[b], &[a]);
+    holds(&w, b, CLEAN);
+    let new_run = crate::store::NewRun {
+        box_id: b,
+        argv: vec!["make".into()],
+        record: None,
+        sha: None,
+        pid: 4242,
+    };
+    let _claim = w.cx.store().unwrap().begin_run(new_run).unwrap();
+    let before = calls(&w, "exec");
+    crate::ops::common::suspend_check::record(&w.cx, w.cx.store().unwrap(), b);
+    assert_eq!(stored(&w, b), None);
+    assert_eq!(calls(&w, "exec"), before);
 }
 
 #[test]
@@ -134,11 +155,12 @@ fn an_idle_suspend_records_it_too() {
 fn a_check_that_cannot_answer_drops_any_older_answer_and_does_not_stop_the_suspend() {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
-    let (w, _) = agents_report(w, &[], &[a, b]);
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[b], &[a]);
     let store = w.cx.store().unwrap();
     store.set_suspend_check(b, Some(OLD_CLEAN)).unwrap();
     tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(lifecycle(&w, b), Pending);
+    assert_eq!(lifecycle(&w, b), Asleep);
     assert_eq!(stored(&w, b), None);
 }
 
@@ -146,28 +168,31 @@ fn a_check_that_cannot_answer_drops_any_older_answer_and_does_not_stop_the_suspe
 fn critical_memory_suspends_without_asking_what_the_box_holds() {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
-    let (w, _) = agents_report(w, &[], &[a, b]);
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[b], &[a]);
     holds(&w, b, CLEAN);
     w.cx.store()
         .unwrap()
         .set_suspend_check(b, Some(OLD_CLEAN))
         .unwrap();
-    let before = calls(&w, "batch");
+    let before = calls(&w, "exec");
     tick(&w, hv, 512, 0, 0);
-    assert_eq!(lifecycle(&w, b), Pending);
+    assert_eq!(lifecycle(&w, b), Asleep);
     assert_eq!(stored(&w, b), None);
-    assert_eq!(calls(&w, "batch"), before);
+    assert_eq!(calls(&w, "exec"), before);
 }
 
 #[test]
 fn a_wake_clears_the_answer_since_the_guest_can_change_again() {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
-    let (w, _) = agents_report(w, &[], &[a, b]);
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[b], &[a]);
     holds(&w, b, CLEAN);
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(stored(&w, b), Some((0, 0)));
     tick(&w, hv, 32_768, 0, 0);
+    wake_up(&w, b).unwrap();
     assert_eq!(lifecycle(&w, b), Ready);
     assert_eq!(stored(&w, b), None);
 }
