@@ -10,7 +10,7 @@ use moor_core::view::workflow::{
     WorkflowView,
 };
 use moor_core::workflow::{
-    ChangeKind, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
+    box_name, ChangeKind, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
     WorkflowOutcome, WorkflowRun, WorkflowSchedule,
 };
 use moor_core::ErrorKind;
@@ -145,7 +145,7 @@ fn list(store: &Store, user: UserId, now: Ts) -> Result<serde_json::Value, Comma
     for w in store.workflows(user)? {
         let mut last_runs = Vec::new();
         for run in store.last_workflow_runs(w.id)? {
-            last_runs.push(run_view(store, &run)?);
+            last_runs.push(run_view(store, w.name.as_str(), &run)?);
         }
         workflows.push(view(&w, now, last_runs));
     }
@@ -175,7 +175,7 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
 }
 
 /// `run` as shown, naming its Box.
-fn run_view(store: &Store, run: &WorkflowRun) -> Result<LastRunView, CommandError> {
+fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunView, CommandError> {
     let (outcome, detail) = match &run.outcome {
         WorkflowOutcome::Starting => ("starting", None),
         WorkflowOutcome::Started { .. } => ("started", None),
@@ -184,16 +184,24 @@ fn run_view(store: &Store, run: &WorkflowRun) -> Result<LastRunView, CommandErro
         WorkflowOutcome::SkippedOverlap => ("skipped_overlap", None),
         WorkflowOutcome::Refused { detail } => ("refused", Some(detail.clone())),
     };
-    let box_name = match run.outcome.box_id() {
+    let existing = match run.outcome.box_id() {
         Some(id) => store.box_row(id)?.map(|r| r.name.as_str().to_owned()),
         None => None,
     };
+    let planned_box = matches!(
+        run.outcome,
+        WorkflowOutcome::Starting | WorkflowOutcome::Refused { .. }
+    )
+    .then(|| box_name(run.workflow, workflow, &run.repo, run.due_at).ok())
+    .flatten()
+    .map(|name| name.as_str().to_owned());
     Ok(LastRunView {
         repo: run.repo.to_string(),
         due_at: run.due_at.as_millis(),
         outcome: outcome.to_owned(),
         detail,
-        box_name,
+        box_name: existing,
+        planned_box,
     })
 }
 
@@ -217,12 +225,15 @@ fn runs(
         let workflow = change.workflow.to_string();
         let seq = change.seq;
         changes.push(match change.what {
-            ChangeKind::Run(run) => ChangeView::Run {
-                seq,
-                workflow,
-                origin,
-                run: run_view(store, &run)?,
-            },
+            ChangeKind::Run(run) => {
+                let run = run_view(store, &workflow, &run)?;
+                ChangeView::Run {
+                    seq,
+                    workflow,
+                    origin,
+                    run,
+                }
+            }
             ChangeKind::Disabled { reason } => ChangeView::Disabled {
                 seq,
                 workflow,
