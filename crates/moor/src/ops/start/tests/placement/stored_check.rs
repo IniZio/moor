@@ -377,3 +377,39 @@ fn a_close_after_a_stored_answer_keeps_the_reports_with_no_wake() {
     assert_eq!(calls(&w, "wake"), before);
     assert_eq!(kept(&w, id), (1, 1));
 }
+
+#[test]
+fn a_suspend_checks_then_collects_then_parks_then_sleeps() {
+    use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
+    use std::sync::{Arc, Mutex};
+    let (w, hv) = live_world(32_768);
+    let id = idle_with_files(&w, "");
+    let (mut w, _) = agents_report(w, &[id], &[]);
+    let host = FakeProxyHost::new();
+    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    let at_exec = Arc::new(Mutex::new(Vec::new()));
+    let (log, watched) = (at_exec.clone(), host.clone());
+    w.driver
+        .on_exec(move || log.lock().unwrap().push(watched.calls()));
+    let at_sleep = Arc::new(Mutex::new(Vec::new()));
+    let (log, watched) = (at_sleep.clone(), host);
+    w.driver
+        .on_sleep(move || log.lock().unwrap().push(watched.calls()));
+    let before = w.driver.execs().len();
+    pressed(&w, hv, id);
+    let scripts: Vec<String> = w
+        .driver
+        .execs()
+        .iter()
+        .skip(before)
+        .map(|(_, spec, _)| spec.argv.join(" "))
+        .collect();
+    let first = |needle: &str| scripts.iter().position(|s| s.contains(needle)).unwrap();
+    assert!(first("boxwork") < first("reports.index"), "{scripts:?}");
+    assert!(first("reports.index") < first("artifacts"), "{scripts:?}");
+    let at_exec = std::mem::take(&mut *at_exec.lock().unwrap());
+    assert!(at_exec.iter().all(Vec::is_empty), "{at_exec:?}");
+    let at_sleep = std::mem::take(&mut *at_sleep.lock().unwrap());
+    assert_eq!(at_sleep, [vec![ProxyHostCall::Park(id)]]);
+    assert_eq!(kept(&w, id), (1, 1));
+}
