@@ -75,7 +75,7 @@ spec:
                 if [ -e "/src/secrets/$f" ]; then install -m 0600 "/src/secrets/$f" "/var/lib/moor/config/$f"; fi
               done
               {{- if .Values.egress.enabled }}
-              install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /var/lib/moor/config/
+              install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /src/egress/ledger-ca.pem /var/lib/moor/config/
               {{- end }}
               {{- if .Values.slack.enabled }}
               cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
@@ -279,6 +279,7 @@ spec:
             items:
               - { key: ledger-tls.crt, path: ledger-tls.crt }
               - { key: ledger-tls.key, path: ledger-tls.key }
+              - { key: ledger-ca.pem, path: ledger-ca.pem }
         {{- end }}
         - name: moor-config
           emptyDir: { medium: Memory, sizeLimit: 1Mi }

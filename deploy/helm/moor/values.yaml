@@ -106,13 +106,20 @@ egress:
   # Secret, optional: the key Box tokens are signed with, MOOR_EGRESS_KEY. Empty makes one on
   # first install and keeps it in the Secret <release>-egress.
   key: ""
-  # Secret, optional, all three or none: the PEM certificate and key the controller's ledger
-  # presents, issued for <release>-ledger.<namespace>.svc, and the CA that signed them. Empty
-  # makes them on first install, like key.
+  # Secret, optional: the PEM certificate and key the controller's ledger presents, issued for
+  # <release>-ledger.<namespace>.svc, and the CA that signed them, all three or none. With them,
+  # set either the CA's key, from which the chart signs the client certificates, or both client
+  # certificates and keys (egress pods, machine runner), signed by the same CA. Empty makes the
+  # CA and every certificate on first install, like key.
   ledgerTls:
     cert: ""
     key: ""
     ca: ""
+    caKey: ""
+    egressClientCert: ""
+    egressClientKey: ""
+    runnerClientCert: ""
+    runnerClientKey: ""
   resources: {}
 
 persistence:

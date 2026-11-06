@@ -78,6 +78,14 @@ chart:
 	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url=ws://egress.test/egress 2>&1 | grep -q 'egress.url .* must be a wss://'
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.ledgerTls.ca= 2>&1 | grep -q 'egress.ledgerTls needs cert, key and ca'
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.ledgerTls.runnerClientKey= 2>&1 | grep -q 'egress.ledgerTls with your own ca needs caKey'
+	! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  | grep -E '^(apiVersion: policy/|kind: (NetworkPolicy|PodDisruptionBudget))'
+	! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set gate.ingress.enabled=false | grep -E '^apiVersion: (networking\.k8s\.io|policy)/'
 
 # The two gates that CI runs before any test, so a push that fails one never reaches the tests.
 prepush:

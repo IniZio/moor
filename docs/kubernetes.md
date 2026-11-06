@@ -93,8 +93,9 @@ controller runs it inside its own pod, so each upgrade cuts every Box's egress
 until the new pod is up.
 
 `egress.enabled` runs the Proxy as the Deployment `<release>-egress`. It has
-two replicas, rolled one at a time, spread across nodes where it can, and kept
-at one or more by a PodDisruptionBudget. Each gives open tunnels
+two replicas, rolled one at a time, and spread across nodes where it can. A
+rollout starts the next replica and waits for it to turn Ready before it stops
+an old one. Each gives open tunnels
 `egress.graceSecs` (300) to finish. Boxes dial it at `wss://<host>/egress`,
 which the gate ingress routes to the Service `<release>-egress`. Without
 `gate.ingress.enabled`, set `egress.url` to where Boxes reach that Service.
@@ -104,23 +105,39 @@ machine from the ledger. While the controller is away, such as during its own
 upgrade, any replica serves any open Box from those answers. A replica turns
 Ready only after one whole pass finishes within eight seconds, so a rollout during a controller upgrade
 waits and the old replicas keep serving.
-The Proxy reaches the controller's ledger over TLS at
-`<release>-ledger.<namespace>.svc:7443`. A NetworkPolicy opens that port only
-to the egress pods. The egress pods get the egress key and the CA, never the
-database URL, the vault key or the provider keys.
+The Proxy reaches the controller's ledger over mutual TLS at
+`<release>-ledger.<namespace>.svc:7443`. The controller checks the Proxy's
+client certificate against the ledger CA and drops any connection without one
+in the handshake. The egress pods get the egress key, the CA and their client
+certificate, never the database URL, the vault key or the provider keys.
 
 The chart makes the egress secrets itself. On first install it creates the
-Secret `<release>-egress` with the key Box tokens are signed with, a CA, and
-the ledger's certificate for `<release>-ledger.<namespace>.svc`, valid for ten
-years. Each upgrade reads them back, so they stay the same. An uninstall leaves
-the Secret behind, since running Boxes hold tokens signed with the key.
+Secret `<release>-egress` with these keys, the certificates valid for ten years:
+
+| Key | What it is | Mounted in |
+|---|---|---|
+| `egress-key` | The key Box tokens are signed with | egress pods, as `MOOR_EGRESS_KEY` |
+| `ledger-ca.pem`, `ledger-ca.key` | The ledger CA and its private key | the CA: controller and egress pods. The key: nowhere |
+| `ledger-tls.crt`, `ledger-tls.key` | The ledger's certificate for `<release>-ledger.<namespace>.svc` | controller |
+| `egress-client.crt`, `egress-client.key` | The egress pods' client certificate, CN `moor egress` | egress pods |
+| `runner-client.crt`, `runner-client.key` | A machine runner's client certificate, CN `moor runner` | nowhere yet |
+| `machine-service-key` | The key the runner and the egress pods share | runner, egress pods |
+
+Each upgrade reads them back, so they stay the same. The chart keeps the CA's
+key so an upgrade can sign a certificate that is missing, from the same CA. An
+uninstall leaves the Secret behind, since running Boxes hold tokens signed with
+the key. A Secret without `ledger-ca.key` gets a new CA and new certificates on
+the next upgrade. Its egress key stays, so Box tokens stay valid.
 
 To bring your own, set `egress.key` and all of `egress.ledgerTls.cert`,
-`egress.ledgerTls.key` and `egress.ledgerTls.ca` (PEM). Values you set win over
-the kept ones.
+`egress.ledgerTls.key` and `egress.ledgerTls.ca` (PEM). With them set either
+`egress.ledgerTls.caKey`, from which the chart signs both client certificates,
+or all of `egressClientCert`, `egressClientKey`, `runnerClientCert` and
+`runnerClientKey`, signed by that CA. Values you set win over the kept ones.
+Any other mix fails the render.
 
-To rotate them, delete the Secret and upgrade, then restart the controller
-and the egress pods:
+To rotate the key, the CA and every certificate, delete the Secret and
+upgrade, then restart the controller and the egress pods:
 
 ```sh
 kubectl -n <namespace> delete secret <release>-egress
@@ -136,9 +153,64 @@ address, behind the Service `<release>-machine` on port 7700, and the egress
 pods send Boxes' `machine.moor.internal` requests there. The service names the
 calling Box from the `X-Moor-*` headers the Proxy sets, so it trusts them only
 alongside `X-Moor-Service-Key`, a key the chart derives from `egress.key` and
-gives the runner and the egress pods. The NetworkPolicy also admits only the
-egress pods to the ledger and machine ports, on clusters whose network plugin
-enforces it.
+gives the runner and the egress pods.
+
+### What the chart renders, and what it leaves to you
+
+With `egress.enabled` the chart adds the Secret, the Deployment and the
+Service `<release>-egress`, and the Services `<release>-ledger` and, with
+`runner.enabled`, `<release>-machine`. It renders no PodDisruptionBudget and no
+NetworkPolicy, so it installs with namespaced RBAC on Secrets, Services,
+ConfigMaps, Deployments and Ingresses alone. The rollout strategy above keeps a
+replica serving through a deploy without either.
+
+An operator who may manage `policy/v1` can keep a replica up through node
+drains too:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: <release>-egress
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: moor-egress
+      app.kubernetes.io/instance: <release>
+```
+
+An operator who may manage `networking.k8s.io` NetworkPolicies, on a cluster
+whose network plugin enforces them, can admit only the egress pods to the
+ledger and machine ports. Keep the gate and agent ports open if you use them:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: <release>-ledger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: moor
+      app.kubernetes.io/instance: <release>
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: moor-egress
+              app.kubernetes.io/instance: <release>
+      ports:
+        - { port: ledger, protocol: TCP }
+        - { port: machine, protocol: TCP }
+    - ports:
+        - { port: gate, protocol: TCP }
+        - { port: agents, protocol: TCP }
+```
+
+The ledger refuses a client without the egress certificate either way. The
+NetworkPolicy only narrows who can try.
 
 ## Upgrades
 
