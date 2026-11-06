@@ -1,16 +1,15 @@
 //! Where a start lands, and how a full node keeps it Pending until a Box closes or its link is back.
 
-use moor_core::config::{parse_user, EnrolledMachine};
-use moor_core::request::MachineLink;
-use moor_core::seam::clock::Ts;
-use moor_core::view::StartView;
-use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
-
 use super::{req, world_with, World};
 use crate::cx::Cx;
 use crate::ops::{close, nodes, start};
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
+use moor_core::config::{parse_user, EnrolledMachine};
+use moor_core::request::MachineLink;
+use moor_core::seam::clock::Ts;
+use moor_core::view::StartView;
+use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
 const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
