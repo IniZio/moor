@@ -116,7 +116,7 @@ Secret `<release>-egress` with these keys, the certificates valid for ten years:
 
 | Key | What it is | Mounted in |
 |---|---|---|
-| `egress-key` | The key Box tokens are signed with | egress pods, as `MOOR_EGRESS_KEY` |
+| `egress-key` | The key Box tokens are signed with | controller and egress pods, as `MOOR_EGRESS_KEY` |
 | `ledger-ca.pem`, `ledger-ca.key` | The ledger CA and its private key | the CA: controller and egress pods. The key: nowhere |
 | `ledger-tls.crt`, `ledger-tls.key` | The ledger's certificate for `<release>-ledger.<namespace>.svc` | controller |
 | `egress-client.crt`, `egress-client.key` | The egress pods' client certificate, CN `moor egress` | egress pods |
@@ -126,15 +126,21 @@ Secret `<release>-egress` with these keys, the certificates valid for ten years:
 Each upgrade reads them back, so they stay the same. The chart keeps the CA's
 key so an upgrade can sign a certificate that is missing, from the same CA. An
 uninstall leaves the Secret behind, since running Boxes hold tokens signed with
-the key. A Secret without `ledger-ca.key` gets a new CA and new certificates on
-the next upgrade. Its egress key stays, so Box tokens stay valid.
+the key. A kept Secret whose CA has no key keeps its certificates as long as
+all of them are there. If one is missing the render fails, since nothing can
+sign it; set `egress.ledgerTls` again, or delete the Secret to start over.
 
 To bring your own, set `egress.key` and all of `egress.ledgerTls.cert`,
 `egress.ledgerTls.key` and `egress.ledgerTls.ca` (PEM). With them set either
 `egress.ledgerTls.caKey`, from which the chart signs both client certificates,
 or all of `egressClientCert`, `egressClientKey`, `runnerClientCert` and
-`runnerClientKey`, signed by that CA. Values you set win over the kept ones.
-Any other mix fails the render.
+`runnerClientKey`, signed by that CA as X.509 v3 certificates; the ledger refuses
+a v1 certificate. Values you set win over the kept ones.
+Any other mix fails the render. While the kept CA is the one you set, the
+certificates the chart signed are read back, not signed again. `caKey` must be
+a PKCS#1 RSA key, `-----BEGIN RSA PRIVATE KEY-----`. Convert another RSA key
+with `openssl rsa -in ca.key -traditional -out ca-rsa.key`. An EC key does not
+work.
 
 To rotate the key, the CA and every certificate, delete the Secret and
 upgrade, then restart the controller and the egress pods:
