@@ -98,7 +98,7 @@ fn tell_after_suspend(
     let why = if stopped {
         format!("This Box was down for {secs}s: {STOPPED_REASON}.")
     } else {
-        format!("This Box was suspended for {secs}s because host memory was critical.")
+        format!("This Box was suspended for {secs}s because host memory ran low.")
     };
     let text =
         format!("{why} {cost} Carry on with what you were doing. Re-run anything that failed.");
@@ -199,7 +199,7 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
 }
 
 /// Leaves an asleep Box Pending for `reason` until its node has room; a promotion wakes it then.
-fn wait_for_room(
+pub(crate) fn wait_for_room(
     store: &Store,
     row: &BoxRow,
     reason: String,

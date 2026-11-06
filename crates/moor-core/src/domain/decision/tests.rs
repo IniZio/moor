@@ -150,6 +150,7 @@ fn extra_events_round_trip() {
         },
         ExtraEvent::RunStarted { run: RunId::new(3) },
         ExtraEvent::StaysUp { reason: "r".into() },
+        ExtraEvent::DiskLost,
         ExtraEvent::ProxyStarted {
             box_port: 1080,
             pid: 7,

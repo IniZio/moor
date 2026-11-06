@@ -122,7 +122,7 @@ fn assert_told_of_the_critical_suspension(sent: &[String]) {
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert!(
         sent.first().is_some_and(|n| n
-            .starts_with("This Box was suspended for 10s because host memory was critical.")
+            .starts_with("This Box was suspended for 10s because host memory ran low.")
             && n.ends_with("Re-run anything that failed.")),
         "{sent:?}"
     );

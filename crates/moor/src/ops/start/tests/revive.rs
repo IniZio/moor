@@ -311,7 +311,7 @@ fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
     assert_eq!(
         notes(&engine),
         [
-            "This Box was suspended for 10s because host memory was critical. Its processes and \
+            "This Box was suspended for 10s because host memory ran low. Its processes and \
           files are intact, but network connections open at that moment were dropped (API calls, \
           downloads, git pushes). Carry on with what you were doing. Re-run anything that failed."
         ]
@@ -326,7 +326,7 @@ fn the_note_says_processes_were_lost_when_the_agent_was_relaunched() {
     assert_eq!(
         notes(&engine),
         [
-            "This Box was suspended for 10s because host memory was critical. Its processes were \
+            "This Box was suspended for 10s because host memory ran low. Its processes were \
           lost and its agent was started again, so anything that was running has stopped; its \
           files are kept. Carry on with what you were doing. Re-run anything that failed."
         ]
@@ -389,34 +389,69 @@ fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
     );
 }
 
+/// A Box suspended mid-turn whose machine then vanished, promoted onto a new one.
+fn replaced_machine(w: &World, id: BoxId) {
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    let handle = row.boxed.unwrap().handle.unwrap();
+    w.driver.stop_behind(&handle);
+    crate::ops::common::reconcile::run(&w.cx);
+    assert!(store.resume_first(id).unwrap().is_some());
+    w.driver.forget(&handle);
+    crate::ops::common::reconcile::run(&w.cx);
+    let node = store.box_spec(id).unwrap().node.unwrap();
+    crate::ops::common::promote::promote_waiting(&w.cx, store, &node, "test");
+}
+
+const LOST_NOTE: &str = "This Box's machine was lost and a new one replaced it, so its disk is \
+                         new: files and commits not pushed, and every process, are gone. Check \
+                         what is there before you carry on.";
+
 #[test]
 fn a_stopped_box_whose_machine_is_gone_gets_a_new_one_and_leaves_the_queue() {
     let (w, _engine, id) = answering(vec![]);
-    let store = w.cx.store().unwrap();
-    let handle = store
-        .box_row(id)
-        .unwrap()
-        .unwrap()
-        .boxed
-        .unwrap()
-        .handle
-        .unwrap();
-    w.driver.stop_behind(&handle);
-    crate::ops::common::reconcile::run(&w.cx);
-    w.driver.forget(&handle);
-    crate::ops::common::reconcile::run(&w.cx);
-    let row = store.box_row(id).unwrap().unwrap();
+    replaced_machine(&w, id);
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
-        row.boxed.map(|b| b.state),
-        Some(moor_core::domain::boxes::BoxState::Gone)
-    );
-    let node = store.box_spec(id).unwrap().node.unwrap();
-    crate::ops::common::promote::promote_waiting(&w.cx, store, &node, "test");
-    let row = store.box_row(id).unwrap().unwrap();
-    assert_ne!(
         row.lifecycle,
-        moor_core::domain::box_state::BoxLifecycle::Pending,
+        moor_core::domain::box_state::BoxLifecycle::Ready,
         "{:?}",
         w.cx.take_warnings()
     );
+    assert_eq!(row.intent, None);
+}
+
+#[test]
+fn a_replaced_machine_records_the_lost_disk_and_clears_the_resume_mark() {
+    let (w, _engine, id) = answering(vec![]);
+    replaced_machine(&w, id);
+    let store = w.cx.store().unwrap();
+    assert!(store.newest_event_of(id, "disk_lost").unwrap().is_some());
+    assert_eq!(store.resume_first(id).unwrap(), None);
+}
+
+#[test]
+fn the_first_agent_started_on_a_replaced_machine_is_told_and_only_that_one() {
+    let (w, engine, id) = answering(vec![]);
+    gone(&w);
+    replaced_machine(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(notes(&engine), [LOST_NOTE]);
+    w.surface.push_pane_obs("p-2", Err(SurfaceError::NotFound));
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 3);
+    assert_eq!(notes(&engine), [LOST_NOTE], "told once");
+}
+
+#[test]
+fn a_start_that_replaces_a_lost_machine_records_the_disk_and_tells_the_agent() {
+    let (w, engine, id) = answering(vec![]);
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    w.driver.forget(&row.boxed.unwrap().handle.unwrap());
+    crate::ops::common::reconcile::run(&w.cx);
+    gone(&w);
+    run(&w.cx, &super::req("demo")).unwrap();
+    assert!(store.newest_event_of(id, "disk_lost").unwrap().is_some());
+    assert_eq!(notes(&engine), [LOST_NOTE]);
 }
