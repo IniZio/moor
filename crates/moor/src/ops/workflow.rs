@@ -262,8 +262,9 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
             detail: e.error.to_string(),
         },
     };
+    let at = cx.clock().now();
     let settled = cx.store().map_err(|e| e.error.to_string()).and_then(|s| {
-        s.resolve_workflow_start(job.key(), &outcome)
+        s.resolve_workflow_start(job.key(), &outcome, at)
             .map_err(|e| e.to_string())
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
@@ -334,7 +335,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             },
         };
         let key = (run.workflow, &run.repo, run.due_at);
-        if let Err(e) = store.resolve_workflow_start(key, &outcome) {
+        if let Err(e) = store.resolve_workflow_start(key, &outcome, now) {
             out.push(format!(
                 "could not settle a claimed run of {}: {e}",
                 run.repo

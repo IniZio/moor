@@ -222,7 +222,9 @@ fn the_stream_shows_a_run_again_each_time_it_moves_on() {
     let started = WorkflowOutcome::Started {
         box_id: BoxId::new(9),
     };
-    store.resolve_workflow_start(key, &started).unwrap();
+    store
+        .resolve_workflow_start(key, &started, Ts::from_millis(150))
+        .unwrap();
     let second = runs(&f, &who, Some(cursor), None);
     assert_eq!(second["changes"].as_array().unwrap().len(), 1);
     assert_eq!(second["changes"][0]["outcome"], "started");
