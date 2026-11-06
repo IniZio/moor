@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus};
+use moor_core::activity::{
+    HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, WaitCheck,
+};
 use moor_core::name::NameError;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, EnvVar, Key, LaunchCtx, PromptMatch};
 use moor_core::seam::clock::Ts;
@@ -34,6 +36,10 @@ impl AgentAdapter for Stub {
             at: Ts::from_millis(1),
             turn: None,
         })
+    }
+
+    fn wait_check_script(&self, _: &BoxPath) -> Option<String> {
+        Some("check".to_owned())
     }
 
     fn pane_prompt(&self, tail: &str) -> Option<String> {
@@ -154,6 +160,30 @@ fn the_hook_file_read_is_bounded_by_the_probe_deadline() {
     let short = Deadline(Duration::from_millis(700));
     agent(&d, &s).probe(&session(Some("p-1")), short).unwrap();
     assert_eq!(d.batch_deadlines(), [short]);
+}
+
+#[test]
+fn a_wait_check_reads_only_a_plain_answer() {
+    let s = surface_with(Ok(obs()));
+    for (stdout, want) in [
+        ("none\n", WaitCheck::Nothing),
+        ("running\n", WaitCheck::Running),
+        ("unknown\n", WaitCheck::Unknown),
+        ("", WaitCheck::Unknown),
+        ("none of it\n", WaitCheck::Unknown),
+    ] {
+        let d = live_driver(FakeDriver::new().run_stdout(stdout));
+        let got = agent(&d, &s).check_wait(&session(Some("p-1")), DEADLINE);
+        assert_eq!(got, want, "{stdout:?}");
+    }
+}
+
+#[test]
+fn a_box_that_is_gone_answers_no_wait_check() {
+    let d = Arc::new(FakeDriver::new().run_stdout("none\n"));
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s).check_wait(&session(Some("p-1")), DEADLINE);
+    assert_eq!(got, WaitCheck::Unknown);
 }
 
 #[test]

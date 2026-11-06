@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes, WaitCheck};
 use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
@@ -26,6 +26,7 @@ struct State {
     probes: HashMap<String, Probes>,
     queued: HashMap<String, VecDeque<Probes>>,
     fail_probe: HashMap<String, EngineError>,
+    wait_checks: HashMap<String, WaitCheck>,
     counts: HashMap<String, usize>,
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
@@ -141,6 +142,10 @@ impl FakeEngine {
     }
 
     /// From now on `session` probes as `p`.
+    pub(crate) fn set_wait_check(&self, session: &str, check: WaitCheck) {
+        self.st().wait_checks.insert(session.to_owned(), check);
+    }
+
     pub(crate) fn set_probes(&self, session: &str, p: Probes) {
         self.st().probes.insert(session.to_owned(), p);
     }
@@ -206,6 +211,14 @@ impl FakeEngine {
 }
 
 impl Engine for FakeEngine {
+    fn check_wait(&self, s: &SessionRef, _: Deadline) -> WaitCheck {
+        self.st()
+            .wait_checks
+            .get(&s.id)
+            .copied()
+            .unwrap_or(WaitCheck::Unknown)
+    }
+
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
         let mut st = self.st();
         *st.counts.entry(s.id.clone()).or_default() += 1;

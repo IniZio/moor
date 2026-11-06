@@ -173,6 +173,13 @@ pub trait AgentAdapter: Send + Sync {
     /// The pending question in the pane text, apart from the agent's input box and footer.
     fn pane_prompt(&self, tail: &str) -> Option<String>;
 
+    /// POSIX sh text that reads the agent's report at `hook_file` and the Box's processes, then
+    /// prints `none` only when all the background work reported is visibly gone, or `running` when
+    /// some of it is alive; `None` when this agent has no such check.
+    fn wait_check_script(&self, _hook_file: &BoxPath) -> Option<String> {
+        None
+    }
+
     /// The first-run prompt the pane text shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 

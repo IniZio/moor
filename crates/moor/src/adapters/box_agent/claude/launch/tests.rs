@@ -28,6 +28,7 @@ mod mcp;
 mod preseed;
 mod prompt;
 mod status_osc;
+mod wait;
 
 fn ctx(dir: &Path) -> LaunchCtx {
     let root = dir.to_str().unwrap();

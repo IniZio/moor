@@ -27,7 +27,7 @@ mod transcript;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::activity::Probes;
+use moor_core::activity::{Probes, WaitCheck};
 use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
@@ -91,6 +91,10 @@ impl Engine for BoxAgent {
             s,
             deadline,
         )
+    }
+
+    fn check_wait(&self, s: &SessionRef, deadline: Deadline) -> WaitCheck {
+        probe::check_wait(self.driver.as_ref(), self.profile.as_ref(), s, deadline)
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {

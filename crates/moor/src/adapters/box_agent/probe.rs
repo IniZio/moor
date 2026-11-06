@@ -1,6 +1,6 @@
 //! One probe: the hook file through the Driver, then the pane through the Surface.
 
-use moor_core::activity::{HookKind, HookRead, PaneRead, Probes};
+use moor_core::activity::{HookKind, HookRead, PaneRead, Probes, WaitCheck};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::AgentAdapter;
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, StepDone};
@@ -27,6 +27,30 @@ pub(super) fn probe(
     }
     let pane = read_pane(surface, profile, s, deadline);
     Ok(Probes { hook, pane })
+}
+
+/// Runs the agent's wait check in the Box; anything but a plain answer is unknown.
+pub(super) fn check_wait(
+    driver: &dyn Driver,
+    profile: &dyn AgentAdapter,
+    s: &SessionRef,
+    deadline: Deadline,
+) -> WaitCheck {
+    let Ok(path) = BoxPath::under(s.workdir.as_str(), HOOK_FILE) else {
+        return WaitCheck::Unknown;
+    };
+    let Some(script) = profile.wait_check_script(&path) else {
+        return WaitCheck::Unknown;
+    };
+    let steps = [BoxStep::Run(script)];
+    match driver.batch(&s.handle, &[], &steps, deadline).pop() {
+        Some(Ok(StepDone::Ran { stdout, .. })) => match stdout.trim() {
+            "none" => WaitCheck::Nothing,
+            "running" => WaitCheck::Running,
+            _ => WaitCheck::Unknown,
+        },
+        _ => WaitCheck::Unknown,
+    }
 }
 
 /// The hook file read; a missing or unparsable file is `Absent`, a failed read is `TimedOut`.

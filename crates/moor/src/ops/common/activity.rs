@@ -170,7 +170,7 @@ pub(crate) fn read(
     };
     let cache = stored_hook(cx, store, row.id)?;
     let asleep = row.asleep();
-    let probes = probe(cx, &sref, asleep, deadline);
+    let probes = stall::end_wait(cx, &sref, probe(cx, &sref, asleep, deadline), now, deadline);
     let mut agent_session = row.agent_session_id.clone();
     if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;

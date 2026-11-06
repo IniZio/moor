@@ -8,10 +8,12 @@ mod first_run;
 mod hook;
 mod menu;
 mod stall;
+mod wait;
 
 pub use hook::{HookKind, HookRecord};
 pub use menu::menu_options;
 pub use stall::{stalled_for, STALL_AFTER};
+pub use wait::{wait_overdue, WaitCheck};
 
 /// How long a cached hook reading stands in for a dropped read.
 pub const HOOK_TTL: Duration = Duration::from_secs(120);
