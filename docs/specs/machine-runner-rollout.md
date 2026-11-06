@@ -182,6 +182,16 @@ already reopens on the next keeper tick, now against the new row.
 Deleted: the runner's dial to the controller's loopback ports, and the
 `(box_port, host_port)` pairs.
 
+### Box tool calls reach the holder
+
+Measured with two runner replicas: a Box's tool calls (the shared Proxy to the
+runner's 7700) went through the `<release>-machine` Service, which spreads them
+over the pods, and a pod without the machine's link answered `not linked` about
+half the time. So the ledger `Hold` reply carries the holder's `runner_addr`
+from the link row, and the Proxy dials that address's 7700 with the service
+key. A row that is draining or stale gives no address, and the Box gets the
+not-linked error as today. The Service remains for discovery only.
+
 ### Box records in the store
 
 ```
@@ -255,7 +265,9 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
    `RUNNER_EXEC='deploy/moor-runner -c runner'`, three runner rolls and three
    controller rolls, ops every 0.5 s and an exec in flight: zero failed ops,
    the exec completes, and the agent shows `not linked` for at most one redial.
-10. **Slack.** State to the store, lease, own Deployment.
+10. **Proxy dials the holder.** `Hold` carries `runner_addr`; the Proxy dials
+    it. Check: the runner-roll probe with two replicas fails no op.
+11. **Slack.** State to the store, lease, own Deployment.
 
 ## To measure in PR 1 and 9
 
