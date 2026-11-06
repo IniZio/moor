@@ -86,6 +86,10 @@ const VERSION: &str = match option_env!("MOOR_VERSION") {
 const FIRST_WAIT: Duration = Duration::from_secs(1);
 /// The longest wait between dials.
 const MOST_WAIT: Duration = Duration::from_secs(60);
+/// The longest wait between dials after a relink, while the next runner comes up.
+const RELINK_MOST_WAIT: Duration = Duration::from_secs(2);
+/// How long after a relink the waits stay that short.
+const RELINK_WINDOW: Duration = Duration::from_secs(120);
 /// How long each handshake frame may take to arrive.
 const ANSWER: Duration = Duration::from_secs(10);
 
@@ -167,15 +171,18 @@ pub async fn run_with(
     let mut wait = FIRST_WAIT;
     // The link a relink left open; while it is, the new runner is coming up, so no backoff.
     let mut old: Option<tokio::task::JoinHandle<String>> = None;
+    let mut relinked: Option<tokio::time::Instant> = None;
     loop {
         let (why, handing_over) = match connect(&state, &key, &machine).await {
             Ok(carried) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
+                relinked = None;
                 match held::hold(carried, &machine, &boxes, &recent).await {
                     held::Ended::Closed(why) => (why, false),
                     held::Ended::Relinked(link) => {
                         old = Some(link);
+                        relinked = Some(tokio::time::Instant::now());
                         log("the server asked for a new link; dialing again now");
                         continue;
                     }
@@ -184,7 +191,10 @@ pub async fn run_with(
             Err(Turned::Update(version)) => {
                 return Err(needs_update(&version, auto_update, log));
             }
-            Err(Turned::Relink) => ("the server is handing over".to_owned(), true),
+            Err(Turned::Relink) => {
+                relinked.get_or_insert_with(tokio::time::Instant::now);
+                ("the server is handing over".to_owned(), true)
+            }
             Err(Turned::Failed(why)) => (why, false),
         };
         if handing_over || old.as_ref().is_some_and(|l| !l.is_finished()) {
@@ -196,8 +206,12 @@ pub async fn run_with(
             continue;
         }
         old = None;
-        log(&format!("{why}; dialing again in {}s", wait.as_secs()));
-        tokio::time::sleep(wait).await;
+        let pause = match relinked {
+            Some(at) if at.elapsed() < RELINK_WINDOW => wait.min(RELINK_MOST_WAIT),
+            _ => wait,
+        };
+        log(&format!("{why}; dialing again in {}s", pause.as_secs()));
+        tokio::time::sleep(pause).await;
         wait = (wait * 2).min(MOST_WAIT);
     }
 }

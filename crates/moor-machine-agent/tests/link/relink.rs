@@ -176,3 +176,51 @@ async fn after_relink_refused_dials_retry_every_second_while_the_old_link_is_ope
     );
     agent.abort();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn after_relink_with_the_old_link_closed_dials_never_wait_over_2_s() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let w = World {
+        server: format!("http://{}", listener.local_addr().unwrap()),
+        key: key.clone(),
+        links: Arc::default(),
+        dir: tempfile::tempdir().unwrap(),
+        agents: moor_machine_runner::Agents::new(&home.path().join("none.sock")),
+    };
+    let dir = agent_dir(&w, MACHINE, &key);
+    let state = dir.path().to_owned();
+    let agent = tokio::spawn(async move { run(&state, machine(), &|_| {}).await });
+
+    let old = take(&listener).await;
+    let (_ask, asks) = mpsc::channel(1);
+    let old_link = tokio::spawn(link::drive(
+        old.socket,
+        link::Mode::Server,
+        asks,
+        |_| {},
+        std::future::pending(),
+    ));
+    old.tell.send(Frame::Relink {}).await.unwrap();
+    let mut dials = vec![Instant::now()];
+    for _ in 0..5 {
+        let (refused, _) = listener.accept().await.unwrap();
+        dials.push(Instant::now());
+        drop(refused);
+    }
+    assert!(
+        old_link.is_finished(),
+        "the old link, with no streams, closed"
+    );
+    let _new = tokio::time::timeout(Duration::from_secs(10), take(&listener))
+        .await
+        .expect("the agent dialed a sixth time");
+    dials.push(Instant::now());
+    let waits: Vec<Duration> = dials.windows(2).map(|d| d[1] - d[0]).collect();
+    assert!(
+        waits.iter().all(|w| *w < Duration::from_millis(2300)),
+        "{waits:?}"
+    );
+    agent.abort();
+}
