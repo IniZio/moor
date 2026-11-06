@@ -76,6 +76,8 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.url=ws://egress.test/egress 2>&1 | grep -q 'egress.url .* must be a wss://'
 
 # The two gates that CI runs before any test, so a push that fails one never reaches the tests.
 prepush:
