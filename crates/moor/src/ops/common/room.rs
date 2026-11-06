@@ -12,6 +12,7 @@ use moor_core::decide::schedule::{Memory, Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::session_state::SessionState;
 use moor_core::name::{BoxId, NodeName};
 use moor_core::seam::driver::SleepOutcome;
 
@@ -62,7 +63,7 @@ pub(super) fn suspend_idlest(
             let settled =
                 resumed_at(store, id)?.is_none_or(|at| now(cx).saturating_sub(at) >= SETTLE_SECS);
             if settled {
-                residents.push(resident(store, &row)?);
+                residents.push(resident(cx, store, &row)?);
             }
         }
     }
@@ -85,15 +86,22 @@ fn resumed_at(store: &Store, id: BoxId) -> Result<Option<i64>, CommandError> {
         .map(|ev| ev.ts.as_millis() / 1000))
 }
 
-/// A Box on a node as the suspend choice sees it.
-fn resident(store: &Store, row: &BoxRow) -> Result<Resident, CommandError> {
+/// A Box on a node as the suspend choice sees it. An Idle Box whose agent cannot be read may have
+/// started a turn unseen, so it counts as working here without leaving Idle.
+fn resident(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Resident, CommandError> {
     let needs_input = store
         .last_waiting_marker(row.id)?
         .is_some_and(|e| e.kind == "needs_input");
     Ok(Resident {
         id: row.id,
         lifecycle: row.lifecycle,
-        session: row.session,
+        session: if row.session == SessionState::Idle
+            && store.agent_unread(row.id, cx.clock().now())?
+        {
+            SessionState::Working
+        } else {
+            row.session
+        },
         needs_input,
         idle_since: row.idle_since,
     })
@@ -109,7 +117,7 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };
-    if row.lifecycle != BoxLifecycle::Ready || !suspendable(&resident(store, &row)?) {
+    if row.lifecycle != BoxLifecycle::Ready || !suspendable(&resident(cx, store, &row)?) {
         return Ok(false);
     }
     let Ok(handle) = sleep_handle(cx, &row) else {
@@ -166,7 +174,7 @@ pub(crate) fn on_report(
     for id in store.ready_on(&node.name)? {
         if let Some(row) = store.box_row(id)? {
             boxes.push(Candidate {
-                resident: resident(store, &row)?,
+                resident: resident(cx, store, &row)?,
                 started_at: row.created_at.as_millis() / 1000,
                 in_flight: store.in_flight_run(id)?.is_some(),
                 resumed_at: resumed_at(store, id)?,
@@ -273,7 +281,7 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };
-    let now = resident(store, &row)?;
+    let now = resident(cx, store, &row)?;
     if !working(&now) && !suspendable(&now) {
         return Ok(false);
     }
