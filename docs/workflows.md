@@ -59,8 +59,9 @@ even when its Box stays open.
 
 A run still working after `timeout_minutes` is stopped. Moor ends its agent
 session and keeps the Box open, so you can inspect it. The run is recorded as
-timed out. The clock starts when the Box starts, so time spent queued for a
-machine counts.
+timed out. The clock starts when the Box is ready and its agent has started, so
+time spent queued for a machine or setting up does not count. After a controller
+restart, a run whose Box was already made counts from the restart.
 
 Three refused or timed-out runs in a row for one repo disable the workflow. A
 skipped run neither counts nor resets the streak. A finished run resets it.
