@@ -68,7 +68,8 @@ fn local_runner(dir: &Path) -> (Runner, PathBuf) {
 
 fn via(runner: &Runner) -> Via<'_> {
     Via {
-        runner,
+        named: runner,
+        dialed: runner,
         box_id: 7,
         machine_id: 3,
     }
@@ -138,6 +139,45 @@ fn a_live_link_whose_row_names_another_runner_is_reopened() {
         driver.tunnels().len(),
         2,
         "a moved row opens the forwards again"
+    );
+}
+
+#[test]
+fn a_name_that_resolves_to_another_address_each_tick_keeps_the_link() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (at, socket) = local_runner(dir.path());
+    let seen = runner(&socket, Forwarding::Up);
+    let driver = FakeDriver::new().reverse_tunnels();
+    let h = boxed(&driver);
+    let named = Runner::Remote {
+        addr: "runner.moor.internal:7701".to_owned(),
+        key: "k".to_owned(),
+    };
+    let address = |ip: &str| Runner::Remote {
+        addr: format!("{ip}:7701"),
+        key: "k".to_owned(),
+    };
+    let via = Via {
+        named: &named,
+        dialed: &at,
+        box_id: 7,
+        machine_id: 3,
+    };
+    let mut link = Some(MachineLink::open(&driver, &h, &via, &[8081]).expect("open"));
+    let (_, _held) = seen.recv().expect("runner asked");
+    for ip in ["10.0.0.7", "10.0.0.8", "10.0.0.7", "10.0.0.8"] {
+        let dialed = address(ip);
+        let via = Via {
+            dialed: &dialed,
+            ..via
+        };
+        let open = || MachineLink::open(&driver, &h, &via, &[8081]);
+        keep(&mut link, Some(&named), open).expect("kept");
+    }
+    assert_eq!(
+        driver.tunnels().len(),
+        1,
+        "the link row's name, not an address, is compared"
     );
 }
 

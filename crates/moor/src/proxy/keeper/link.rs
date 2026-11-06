@@ -13,8 +13,8 @@ use moor_core::seam::driver::{Driver, LocalTunnel};
 use moor_core::seam::proc::Deadline;
 use moor_core::BoxHandle;
 
-/// How long the runner may take to answer.
-const RUNNER_ANSWER: Deadline = Deadline(std::time::Duration::from_secs(30));
+/// How long the runner may take to answer; a tick waits on it under the keeper's busy lock.
+const RUNNER_ANSWER: Deadline = Deadline(std::time::Duration::from_secs(5));
 /// How long a connect to the runner may take; a tick waits on it under the keeper's busy lock.
 const RUNNER_CONNECT: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -29,8 +29,10 @@ pub(crate) struct ForwardFailed {
 
 /// The machine runner a machine's agent links in to, and which machine's forwards to ask for.
 pub(crate) struct Via<'a> {
-    /// The runner that holds the machine's link, its name already looked up.
-    pub(crate) runner: &'a Runner,
+    /// The runner that holds the machine's link, as its link row names it.
+    pub(crate) named: &'a Runner,
+    /// The same runner with its name looked up, which is dialed.
+    pub(crate) dialed: &'a Runner,
     /// The Box whose ports these are.
     pub(crate) box_id: i64,
     /// The machine's enrolled id.
@@ -43,7 +45,7 @@ pub(crate) struct MachineLink {
     tunnels: Vec<LocalTunnel>,
     /// The connection the runner keeps the agent's listeners up for.
     carrier: StdConn,
-    /// The runner it is open on.
+    /// The runner it is open on, as the link row named it.
     runner: Runner,
 }
 
@@ -80,11 +82,11 @@ impl MachineLink {
             machine_id: via.machine_id,
             ports: forwards,
         };
-        let carrier = ask_runner(via.runner, &req).map_err(failed)?;
+        let carrier = ask_runner(via.dialed, &req).map_err(failed)?;
         Ok(Self {
             tunnels,
             carrier,
-            runner: via.runner.clone(),
+            runner: via.named.clone(),
         })
     }
 
