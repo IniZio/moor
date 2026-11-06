@@ -81,6 +81,19 @@ impl Store {
             .optional()?;
         Ok(found.map(BoxId::new))
     }
+
+    /// Every egress token hash the store keeps, with its Box.
+    pub(crate) fn egress_tokens(&self) -> Result<Vec<(String, BoxId)>, StoreError> {
+        let conn = self.reader()?;
+        let rows = conn.rows(
+            Query::select()
+                .columns([Proxy::TokenHash, Proxy::Box])
+                .from(Proxy::Table)
+                .and_where(Expr::col(Proxy::TokenHash).is_not_null()),
+            |r| Ok::<_, StoreError>((r.get::<_, String>(0)?, BoxId::new(r.get(1)?))),
+        )?;
+        rows.collect()
+    }
 }
 
 #[cfg(test)]

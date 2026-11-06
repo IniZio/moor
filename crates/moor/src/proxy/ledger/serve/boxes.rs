@@ -79,6 +79,17 @@ pub(super) fn token_box(store: &Store, token_hash: &str) -> Result<Option<BoxId>
     Ok(view(store, box_id)?.filter(|v| v.open).map(|_| box_id))
 }
 
+/// The token hash and Box of every open Box with an egress token.
+pub(super) fn open_tokens(store: &Store) -> Result<Vec<(String, BoxId)>, StoreError> {
+    let mut open = Vec::new();
+    for (hash, box_id) in store.egress_tokens()? {
+        if view(store, box_id)?.is_some_and(|v| v.open) {
+            open.push((hash, box_id));
+        }
+    }
+    Ok(open)
+}
+
 /// The Box as the shared egress Proxy sees it.
 fn view(store: &Store, box_id: BoxId) -> Result<Option<BoxView>, StoreError> {
     Ok(store.box_row(box_id)?.map(|row| BoxView {

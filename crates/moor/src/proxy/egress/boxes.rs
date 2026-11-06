@@ -9,11 +9,12 @@ use std::collections::HashMap;
 use std::fmt::Arguments;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::user::SecretName;
 use moor_core::BoxId;
 use zeroize::Zeroizing;
 
@@ -88,6 +89,8 @@ pub(super) struct Boxes {
     served: Mutex<HashMap<BoxId, Arc<Slot>>>,
     /// Where failures are logged.
     log: Sink,
+    /// Whether the ledger has answered a [`Boxes::warm`] since this replica started.
+    synced: AtomicBool,
 }
 
 impl Boxes {
@@ -108,6 +111,7 @@ impl Boxes {
             known: Mutex::default(),
             served: Mutex::default(),
             log: cfg.log,
+            synced: AtomicBool::new(false),
         }
     }
 
@@ -125,20 +129,66 @@ impl Boxes {
             .map(|k| Arc::clone(&k.open))
             .ok_or(Refused::Unknown)?;
         let tunnel = Tunnel::claim(&open, self.tunnels).ok_or(Refused::Limited)?;
+        Ok(Route {
+            served: self.served(box_id).map_err(Refused::Unavailable)?,
+            _tunnel: tunnel,
+        })
+    }
+
+    /// The proxy of `box_id`, started on first use.
+    fn served(&self, box_id: BoxId) -> Result<Arc<Served>, String> {
         let slot = Arc::clone(lock(&self.served).entry(box_id).or_default());
         let mut current = lock(&slot);
         let served = if let Some(served) = current.as_ref() {
             Arc::clone(served)
         } else {
-            let started = Arc::new(self.start(box_id, None).map_err(Refused::Unavailable)?);
+            let started = Arc::new(self.start(box_id, None)?);
             *current = Some(Arc::clone(&started));
             started
         };
         drop(current);
-        Ok(Route {
-            served,
-            _tunnel: tunnel,
-        })
+        Ok(served)
+    }
+
+    /// Learns every open Box's token from the ledger, then starts each Box's proxy and reads
+    /// the secrets its rules name and what it holds, so this replica serves any open Box on
+    /// last answers while the controller is away, not only the Boxes it has already seen.
+    pub(super) fn warm(&self) -> Result<(), LedgerError> {
+        let tokens = self.lookup.open_tokens()?;
+        let now = self.clock.instant();
+        let mut known = lock(&self.known);
+        known.retain(|hash, _| tokens.iter().any(|(h, _)| h == hash));
+        for (hash, box_id) in &tokens {
+            known
+                .entry(hash.clone())
+                .or_insert_with(|| Known {
+                    box_id: *box_id,
+                    bucket: Bucket::new(self.token_rate.burst, now),
+                    open: Arc::default(),
+                })
+                .box_id = *box_id;
+        }
+        drop(known);
+        for (_, box_id) in &tokens {
+            match self.served(*box_id) {
+                Ok(served) => {
+                    let names = served.spec.rules.iter();
+                    for name in names.filter_map(|r| SecretName::parse(&r.credential).ok()) {
+                        drop(served.ledger.secret(&name));
+                    }
+                    drop(served.ledger.hold());
+                }
+                Err(e) => self.say(format_args!("cannot warm Box {}: {e}", box_id.get())),
+            }
+        }
+        self.synced.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    /// Whether the ledger has answered a [`Boxes::warm`] since this replica started; it stays
+    /// true while the controller is away.
+    pub(super) fn synced(&self) -> bool {
+        self.synced.load(Ordering::Acquire)
     }
 
     /// Takes one tunnel from the bucket of `token_hash`, or from the shared lookup bucket when the

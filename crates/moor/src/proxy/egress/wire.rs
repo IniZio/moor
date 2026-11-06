@@ -17,7 +17,7 @@ use tokio_tungstenite::WebSocketStream;
 use zeroize::Zeroizing;
 
 use super::boxes::{Refused, Route};
-use super::{Shared, PATH, PLAIN, TARGET};
+use super::{Shared, PATH, PLAIN, SYNCED, TARGET};
 use crate::proxy::front::{connect_head, hold_or_missing, plain_request, refusal};
 use crate::store::token_hash;
 
@@ -25,6 +25,8 @@ use crate::store::token_hash;
 const MAX_HEAD: usize = 8 * 1024;
 /// How long a peer may take to send its head, and the Box's proxy to answer the CONNECT.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the machine service gets to accept a connection before the tunnel is a 502.
+const MACHINE_DIAL: Duration = Duration::from_secs(3);
 /// Largest WebSocket message or frame taken from the forwarder.
 const MAX_MESSAGE: usize = 1 << 20;
 /// Bytes read from the target per message.
@@ -53,6 +55,8 @@ struct Ask {
 enum Checked {
     /// Answer the readiness probe.
     Ready,
+    /// Answer whether this replica has learned the open Boxes from the ledger.
+    Synced,
     /// Open a tunnel.
     Tunnel(Open),
 }
@@ -79,6 +83,8 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
     match check(&head, shared) {
         Err((status, why)) => answer(&mut stream, status, &why).await,
         Ok(Checked::Ready) => answer(&mut stream, 200, &shared.key_id.to_string()).await,
+        Ok(Checked::Synced) if shared.boxes.synced() => answer(&mut stream, 200, "synced").await,
+        Ok(Checked::Synced) => answer(&mut stream, 503, "not synced with the ledger yet").await,
         Ok(Checked::Tunnel(open)) => tunnel(stream, shared, &open).await,
     }
 }
@@ -88,10 +94,12 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
 async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
     let service = shared.machine.as_ref().filter(|_| ask.machine);
     let opened = match service {
-        Some(service) => TcpStream::connect(service.upstream.as_str())
+        Some(service) => timeout(MACHINE_DIAL, TcpStream::connect(service.upstream.as_str()))
             .await
+            .ok()
+            .and_then(Result::ok)
             .map(|s| (s, Vec::new()))
-            .map_err(|_| (502, "the machine service is not answering")),
+            .ok_or((502, "the machine service is not answering")),
         None => open(&ask.route, &ask.target)
             .await
             .map_err(|status| (status, "the Box's proxy refused")),
@@ -180,6 +188,7 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
     let ask = parse(head).ok_or_else(|| refuse(400, "bad request"))?;
     match ask.path.as_str() {
         "/ready" => return Ok(Checked::Ready),
+        SYNCED => return Ok(Checked::Synced),
         PATH => {}
         _ => return Err(refuse(404, "not found")),
     }

@@ -221,6 +221,25 @@ fn the_machine_service_gets_the_service_key_and_never_one_the_box_sent() {
 }
 
 #[test]
+fn a_machine_service_that_never_accepts_is_502_within_seconds() {
+    use rustix::net::{bind, listen, socket, AddressFamily, SocketType};
+    let w = World::new();
+    let plain = Plain::start();
+    let full = socket(AddressFamily::INET, SocketType::STREAM, None).unwrap();
+    bind(&full, &SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+    listen(&full, 0).unwrap();
+    let full = TcpListener::from(full);
+    let addr = full.local_addr().unwrap();
+    let _queued = TcpStream::connect(addr).unwrap();
+    let server = server(&w, &plain, Some(addr.to_string()));
+    assert_eq!(
+        open_as(&server, &w.token, &format!("{MACHINE}:80"), true).err(),
+        Some(502)
+    );
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
 fn a_machine_service_flag_takes_an_ip_or_a_dns_name_with_a_port() {
     for ok in [
         "m=127.0.0.1:7700",

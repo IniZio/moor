@@ -1,10 +1,12 @@
 //! Nothing the shared Proxy logs carries a credential or the vault key.
 
+use std::io::{Read as _, Write as _};
+use std::net::TcpStream;
 use std::time::Duration;
 
 use moor_core::user::Identity;
 
-use super::{open, World, SECRET};
+use super::{addr, open, World, PATH, SECRET, TARGET};
 
 /// Every `.log` file under `dir`, concatenated.
 fn logs_under(dir: &std::path::Path) -> Vec<u8> {
@@ -48,4 +50,31 @@ fn no_secret_reaches_a_log_of_the_shared_proxy() {
         let found = said.windows(secret.len()).any(|s| s == secret.as_bytes());
         assert!(!found, "a secret reached the Proxy's log");
     }
+}
+
+#[test]
+fn a_503_names_no_detail_and_the_log_does() {
+    let mut w = World::new();
+    let server = w.server(10.0);
+    drop(w.ledger.take());
+    let mut raw = TcpStream::connect(addr(&server)).unwrap();
+    write!(
+        raw,
+        "GET {PATH} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
+         Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+         Authorization: Bearer {}\r\n{TARGET}: {}\r\n\r\n",
+        w.token,
+        w.target()
+    )
+    .unwrap();
+    let mut reply = String::new();
+    raw.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 503"), "{reply}");
+    assert!(
+        reply.ends_with("\r\n\r\ntemporarily unavailable"),
+        "{reply}"
+    );
+    let log = String::from_utf8(w.log.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("the controller is unavailable"), "{log}");
+    server.drain(Duration::from_secs(5));
 }

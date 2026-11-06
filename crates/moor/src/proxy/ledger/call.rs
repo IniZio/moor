@@ -48,6 +48,8 @@ pub(crate) enum Call {
     Spec,
     /// The Box's interception CA, made on first call.
     Ca,
+    /// The token hash and Box of every open Box that has an egress token.
+    OpenTokens,
     /// The open Box whose egress token hashes to `token_hash`.
     TokenBox {
         /// The hex SHA-256 of the token the Box presented.
