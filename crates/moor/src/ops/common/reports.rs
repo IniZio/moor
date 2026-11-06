@@ -1,6 +1,6 @@
 //! Copies the agent's Reports out of a Box into the local store before teardown.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxState;
@@ -116,11 +116,53 @@ pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
     let Some((b, handle)) = target(row) else {
         return 0;
     };
-    let mut stored = 0;
-    if let Err(reason) = run(cx, store, row, b.workdir.as_deref(), handle, &mut stored) {
+    let mut tally = Tally::open();
+    if let Err(reason) = run(cx, store, row, b.workdir.as_deref(), handle, &mut tally) {
         failed(cx, &reason);
     }
-    stored
+    tally.stored
+}
+
+/// [`collect`] with `within` for the whole collect, which fails unless every report it could read
+/// is stored.
+pub(crate) fn collect_within(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    within: Duration,
+) -> Result<(), String> {
+    let (b, handle) = target(row).ok_or("the Box is not ready")?;
+    let mut tally = Tally {
+        stored: 0,
+        missed: 0,
+        within: Some((within, cx.clock().instant())),
+    };
+    run(cx, store, row, b.workdir.as_deref(), handle, &mut tally)?;
+    match tally.missed {
+        0 => Ok(()),
+        n => Err(format!("{n} reports were not saved")),
+    }
+}
+
+/// What one collect stored and missed.
+struct Tally {
+    /// New versions stored.
+    stored: usize,
+    /// Reports not stored for a reason a later try could cure.
+    missed: usize,
+    /// How long the collect may take and when it began, for one that must not hold up a suspend.
+    within: Option<(Duration, Instant)>,
+}
+
+impl Tally {
+    /// A collect with no limit.
+    const fn open() -> Self {
+        Self {
+            stored: 0,
+            missed: 0,
+            within: None,
+        }
+    }
 }
 
 /// Stores the Reports from the results of an [`IndexPlan`]'s steps. When the batch stopped
@@ -135,14 +177,13 @@ pub(crate) fn collect_from(
     let (Some((_, handle)), Some(ran)) = (target(row), done.next()) else {
         return collect(cx, store, row);
     };
-    let mut stored = 0;
-    let result = indexed(ran, done.next()).and_then(|index| {
-        read_reports(cx, store, row, (handle, &plan.workdir), index, &mut stored)
-    });
+    let mut tally = Tally::open();
+    let result = indexed(ran, done.next())
+        .and_then(|index| read_reports(cx, store, row, (handle, &plan.workdir), index, &mut tally));
     if let Err(reason) = result {
         failed(cx, &reason);
     }
-    stored
+    tally.stored
 }
 
 /// Indexes the Box's Reports and stores each accepted one.
@@ -152,7 +193,7 @@ fn run(
     row: &BoxRow,
     recorded: Option<&str>,
     handle: &BoxHandle,
-    stored: &mut usize,
+    tally: &mut Tally,
 ) -> Result<(), String> {
     let workdir = match recorded.and_then(recorded_workdir) {
         Some(w) => w,
@@ -167,14 +208,15 @@ fn run(
         cwd: Some(workdir.clone()),
         output: None,
     };
-    match cx.driver().exec(handle, &spec, Deadline(INDEX_DEADLINE)) {
+    let allowed = tally.within.map_or(INDEX_DEADLINE, |(within, _)| within);
+    match cx.driver().exec(handle, &spec, Deadline(allowed)) {
         Ok(ExecOutcome::Exited { code: 0 }) => {}
         Ok(ExecOutcome::Exited { code }) => return Err(format!("the index script exited {code}")),
         Ok(ExecOutcome::Interrupted) => return Err("the index script was interrupted".into()),
         Err(e) => return Err(format!("the index script could not run: {e}")),
     }
     let index = peek(cx, handle, &workdir, INDEX_FILE)?;
-    read_reports(cx, store, row, (handle, &workdir), index, stored)
+    read_reports(cx, store, row, (handle, &workdir), index, tally)
 }
 
 /// The index text from the batched index script and index read; `None` when the file is absent.
@@ -212,7 +254,7 @@ fn read_reports(
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     index: Option<String>,
-    stored: &mut usize,
+    tally: &mut Tally,
 ) -> Result<(), String> {
     let Some(index) = index else {
         return Ok(());
@@ -226,6 +268,12 @@ fn read_reports(
         .map_err(|e| e.error.to_string())?
         .join("reports");
     for entry in accepted(cx, entries) {
+        if let Some((within, began)) = tally.within {
+            if cx.clock().instant().saturating_duration_since(began) >= within {
+                tally.missed += 1;
+                break;
+            }
+        }
         let rel = format!("{REPORTS_DIR}/{}", entry.name);
         let Some(kind) = kind_of(&entry.name) else {
             continue;
@@ -235,6 +283,7 @@ fn read_reports(
             Ok(None) => continue,
             Err(_) => {
                 skipped(cx, "a report could not be read and was skipped");
+                tally.missed += 1;
                 continue;
             }
         };
@@ -243,9 +292,12 @@ fn read_reports(
             continue;
         }
         match store.add_report(row.id, kind, &text, &dir) {
-            Ok(Some(_)) => *stored += 1,
+            Ok(Some(_)) => tally.stored += 1,
             Ok(None) => {}
-            Err(_) => skipped(cx, "a report could not be stored and was skipped"),
+            Err(_) => {
+                skipped(cx, "a report could not be stored and was skipped");
+                tally.missed += 1;
+            }
         }
     }
     Ok(())

@@ -67,6 +67,11 @@ impl FakeDriver {
         self
     }
 
+    /// Every later `peek_file` of `path` fails with `e`.
+    pub(crate) fn fail_peek_of(&self, path: &BoxPath, e: DriverError) {
+        self.st().fail_peek_of = Some((path.clone(), e));
+    }
+
     /// The next `put_file` fails once with `e`.
     pub(crate) fn fail_put(self, e: DriverError) -> Self {
         self.st().fail_put = Some(e);
@@ -352,5 +357,16 @@ pub(super) fn write_log(spec: &ExecSpec, text: Option<String>) -> Result<(), Dri
     match (&spec.output, text) {
         (Some(Output::Log(path)), Some(text)) => write_bytes(path, text.as_bytes()),
         _ => Ok(()),
+    }
+}
+
+impl super::State {
+    /// What the next `peek_file` of `path` is scripted to fail with.
+    pub(super) fn peek_failure(&mut self, path: &BoxPath) -> Option<DriverError> {
+        let one_off = self.fail_peek.take();
+        one_off.or_else(|| {
+            let of = self.fail_peek_of.as_ref().filter(|(p, _)| p == path);
+            of.map(|(_, e)| e.clone())
+        })
     }
 }

@@ -108,6 +108,12 @@ fn collect_in(cx: &Cx, store: &Store, row: &BoxRow, held: Option<&mut Vec<Artifa
     let Some((b, handle)) = target(row) else {
         return 0;
     };
+    let mut tally = Tally {
+        stored: 0,
+        missed: 0,
+        held,
+        within: None,
+    };
     let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,
         None => match cx.driver().workdir(handle) {
@@ -115,14 +121,54 @@ fn collect_in(cx: &Cx, store: &Store, row: &BoxRow, held: Option<&mut Vec<Artifa
             Err(_) => return 0,
         },
     };
-    let mut stored = 0;
-    if let Err(reason) = run(cx, store, row, (handle, &workdir), (&mut stored, held)) {
+    if let Err(reason) = run(cx, store, row, (handle, &workdir), &mut tally) {
         cx.warn(Warning {
             code: "artifacts_collect_failed".to_owned(),
             message: format!("artifacts were not fully saved: {reason}"),
         });
     }
-    stored
+    tally.stored
+}
+
+/// [`collect`] with `within` for each step in the Box, which fails unless every fresh file is
+/// stored. It never falls back to the slower copy of one file at a time.
+pub(crate) fn collect_within(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    within: Duration,
+) -> Result<(), String> {
+    let (b, handle) = target(row).ok_or("the Box is not ready")?;
+    let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
+        Some(w) => w,
+        None => cx
+            .driver()
+            .workdir(handle)
+            .map_err(|e| format!("cannot find the box workdir: {e}"))?,
+    };
+    let mut tally = Tally {
+        stored: 0,
+        missed: 0,
+        held: None,
+        within: Some(within),
+    };
+    run(cx, store, row, (handle, &workdir), &mut tally)?;
+    match tally.missed {
+        0 => Ok(()),
+        n => Err(format!("{n} artifacts were not saved")),
+    }
+}
+
+/// What one collect stored and missed, and how it runs.
+struct Tally<'a> {
+    /// New versions stored.
+    stored: usize,
+    /// Fresh files not stored.
+    missed: usize,
+    /// A mid-turn pass's previous index.
+    held: Option<&'a mut Vec<ArtifactFile>>,
+    /// A limit on each step in the Box, for a collect that must not hold up a suspend.
+    within: Option<Duration>,
 }
 
 /// Indexes the Box's artifacts and stores each fresh one.
@@ -131,19 +177,12 @@ fn run(
     store: &Store,
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
-    (stored, held): (&mut usize, Option<&mut Vec<ArtifactFile>>),
+    tally: &mut Tally<'_>,
 ) -> Result<(), String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;
     let dir = state.join("artifacts");
     let staging = private_staging(state, &row.id.get().to_string())?;
-    let result = stage_and_store(
-        cx,
-        store,
-        row,
-        (handle, workdir),
-        (&dir, &staging),
-        (stored, held),
-    );
+    let result = stage_and_store(cx, store, row, (handle, workdir), (&dir, &staging), tally);
     let _ = fs::remove_dir_all(&staging);
     result
 }
@@ -155,32 +194,9 @@ fn stage_and_store(
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     (dir, staging): (&Path, &Path),
-    (stored, held): (&mut usize, Option<&mut Vec<ArtifactFile>>),
+    tally: &mut Tally<'_>,
 ) -> Result<(), String> {
-    let script = format!(
-        "cd -- {} || exit 1\n{INDEX_SCRIPT}",
-        quote(workdir.as_str())
-    );
-    let steps = [BoxStep::Run(script)];
-    let done = cx
-        .driver()
-        .batch(handle, &[], &steps, Deadline(INDEX_DEADLINE));
-    let text = match done.into_iter().next() {
-        Some(Ok(StepDone::Ran {
-            outcome: ExecOutcome::Exited { code: 0 },
-            stdout,
-        })) => stdout,
-        Some(Ok(StepDone::Ran {
-            outcome: ExecOutcome::Exited { code },
-            ..
-        })) => return Err(format!("the index script exited {code}")),
-        Some(Ok(StepDone::Ran {
-            outcome: ExecOutcome::Interrupted,
-            ..
-        })) => return Err("the index script was interrupted".into()),
-        Some(Ok(_)) | None => return Err("the index script could not run".into()),
-        Some(Err(e)) => return Err(format!("the index script could not run: {e}")),
-    };
+    let text = index_text(cx, handle, workdir, tally.within)?;
     let (index, bad) = parse_index(&text);
     if bad > 0 {
         skipped(cx, &format!("{bad} unreadable index lines were skipped"));
@@ -196,7 +212,7 @@ fn stage_and_store(
         })
         .collect::<Vec<_>>();
     let index: Vec<_> = index.into_iter().filter(|f| valid_name(&f.name)).collect();
-    let index = match held {
+    let index = match tally.held.as_deref_mut() {
         Some(prev) => {
             let before = std::mem::replace(prev, index.clone());
             index.into_iter().filter(|f| before.contains(f)).collect()
@@ -211,9 +227,50 @@ fn stage_and_store(
         workdir,
         dir,
         staging,
+        within: tally.within,
     };
-    *stored += fetch.all(fresh(&index, &latest));
+    let due = fresh(&index, &latest);
+    let wanted = due.len();
+    let got = fetch.all(due);
+    tally.stored += got;
+    tally.missed += wanted.saturating_sub(got);
     Ok(())
+}
+
+/// Runs the index script in the Box and returns what it prints.
+fn index_text(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    within: Option<Duration>,
+) -> Result<String, String> {
+    let script = format!(
+        "cd -- {} || exit 1\n{INDEX_SCRIPT}",
+        quote(workdir.as_str())
+    );
+    let steps = [BoxStep::Run(script)];
+    let done = cx.driver().batch(
+        handle,
+        &[],
+        &steps,
+        Deadline(within.unwrap_or(INDEX_DEADLINE)),
+    );
+    match done.into_iter().next() {
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: 0 },
+            stdout,
+        })) => Ok(stdout),
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code },
+            ..
+        })) => Err(format!("the index script exited {code}")),
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Interrupted,
+            ..
+        })) => Err("the index script was interrupted".into()),
+        Some(Ok(_)) | None => Err("the index script could not run".into()),
+        Some(Err(e)) => Err(format!("the index script could not run: {e}")),
+    }
 }
 
 /// Creates an empty private staging directory under the state dir; refuses symlinked parts.
