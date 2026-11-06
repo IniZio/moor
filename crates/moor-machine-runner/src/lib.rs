@@ -63,6 +63,9 @@ mod relay;
 mod rsh;
 mod sync;
 
+/// The variable the service key may come in, which no process the runner starts inherits.
+pub const SERVICE_KEY_ENV: &str = "MOOR_MACHINE_SERVICE_KEY";
+
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
 ///
 /// # Errors
