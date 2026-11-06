@@ -7,10 +7,10 @@
 //! port's tunnel.
 
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read};
 use std::net::{Ipv4Addr, Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_client::forward::{Carried, Forward, Forwarding};
 use moor_client::link::reach::{Runner, Service, StdConn};
@@ -54,11 +54,14 @@ pub(crate) struct MachineLink {
     runner: Runner,
     /// Set once the runner closed the carrier.
     ended: Arc<AtomicBool>,
+    /// The connections it pipes now.
+    pipes: Arc<Pipes>,
 }
 
 impl Drop for MachineLink {
     fn drop(&mut self) {
         let _ = self.carrier.shutdown(Shutdown::Both);
+        self.pipes.close();
     }
 }
 
@@ -96,10 +99,12 @@ impl MachineLink {
             .copied()
             .zip(tunnels.iter().map(|t| t.host_port));
         let ended = Arc::new(AtomicBool::new(false));
+        let pipes = Arc::default();
         let dial = DialBack {
             runner: via.dialed.clone(),
             tunnels: to.collect(),
             ended: Arc::clone(&ended),
+            pipes: Arc::clone(&pipes),
         };
         std::thread::Builder::new()
             .name("moor-machine-forwards".to_owned())
@@ -110,7 +115,13 @@ impl MachineLink {
             carrier,
             runner: via.named.clone(),
             ended,
+            pipes,
         })
+    }
+
+    /// The Box port of the first connection refused for being over [`MAX_PIPES`], once per link.
+    pub(crate) fn over_cap(&self) -> Option<u16> {
+        self.pipes.take_over()
     }
 
     /// True while every tunnel and what serves them still run.
@@ -125,6 +136,11 @@ impl MachineLink {
     }
 }
 
+/// Most connections one link pipes at once.
+pub(crate) const MAX_PIPES: usize = 64;
+/// Longest line the runner may send on the carrier; a longer one ends it.
+const MAX_LINE: u64 = 4096;
+
 /// What answers the connections a carrier names.
 struct DialBack {
     /// The runner to dial back.
@@ -133,37 +149,154 @@ struct DialBack {
     tunnels: HashMap<u16, u16>,
     /// Set once the carrier ends.
     ended: Arc<AtomicBool>,
+    /// The link's live pipes.
+    pipes: Arc<Pipes>,
 }
 
 impl DialBack {
     /// Dials back for each connection `lines` names until the carrier ends.
     fn serve(self, mut lines: BufReader<StdConn>) {
         let mut line = String::new();
-        while lines.read_line(&mut line).is_ok_and(|read| read > 0) {
-            if let Ok(Carried::Conn { n, port }) = serde_json::from_str(&line) {
-                if let Some(&host) = self.tunnels.get(&port) {
-                    let runner = self.runner.clone();
-                    std::thread::spawn(move || pipe(&runner, n, host));
-                }
-            }
+        loop {
             line.clear();
+            match (&mut lines).take(MAX_LINE).read_line(&mut line) {
+                Ok(read) if read > 0 && line.ends_with('\n') => {}
+                _ => break,
+            }
+            let Ok(Carried::Conn { n, port }) = serde_json::from_str(&line) else {
+                continue;
+            };
+            let Some(&host) = self.tunnels.get(&port) else {
+                continue;
+            };
+            let Some(id) = self.pipes.reserve() else {
+                self.pipes.note_over(port);
+                continue;
+            };
+            let (runner, pipes) = (self.runner.clone(), Arc::clone(&self.pipes));
+            let spawned = std::thread::Builder::new()
+                .name("moor-machine-pipe".to_owned())
+                .spawn(move || {
+                    pipe(&runner, n, host, &pipes, id);
+                    pipes.release(id);
+                });
+            if spawned.is_err() {
+                self.pipes.release(id);
+            }
         }
         self.ended.store(true, Ordering::SeqCst);
     }
 }
 
+/// A link's pipes: each one's sockets, so ending the link ends them.
+#[derive(Default)]
+pub(crate) struct Pipes(Mutex<Piped>);
+
+/// What [`Pipes`] guards.
+#[derive(Default)]
+struct Piped {
+    /// Source of pipe ids.
+    next: u64,
+    /// Each pipe's sockets, empty while it still connects.
+    live: HashMap<u64, Vec<StdConn>>,
+    /// Set once the link ended; no pipe starts after it.
+    closed: bool,
+    /// The port of the first connection refused over the cap, until reported.
+    over: Option<u16>,
+    /// Whether a refusal was reported already.
+    told: bool,
+}
+
+impl Pipes {
+    /// Its state, even after a panic elsewhere.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Piped> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A new pipe's id, or none when the link ended or pipes [`MAX_PIPES`] already.
+    fn reserve(&self) -> Option<u64> {
+        let mut p = self.lock();
+        if p.closed || p.live.len() >= MAX_PIPES {
+            return None;
+        }
+        let id = p.next;
+        p.next += 1;
+        p.live.insert(id, Vec::new());
+        drop(p);
+        Some(id)
+    }
+
+    /// Keeps `sockets` under pipe `id`; false, with them shut, once the link ended.
+    fn attach(&self, id: u64, sockets: Vec<StdConn>) -> bool {
+        let mut p = self.lock();
+        if p.closed {
+            for s in &sockets {
+                let _ = s.shutdown(Shutdown::Both);
+            }
+            return false;
+        }
+        p.live.entry(id).or_default().extend(sockets);
+        true
+    }
+
+    /// Forgets pipe `id`, which ended.
+    fn release(&self, id: u64) {
+        self.lock().live.remove(&id);
+    }
+
+    /// Shuts every pipe's sockets and refuses new ones.
+    fn close(&self) {
+        let mut p = self.lock();
+        p.closed = true;
+        for s in p.live.values().flatten() {
+            let _ = s.shutdown(Shutdown::Both);
+        }
+    }
+
+    /// Notes a connection on `port` refused over the cap, unless one was reported already.
+    fn note_over(&self, port: u16) {
+        let mut p = self.lock();
+        if !p.told && p.over.is_none() {
+            p.over = Some(port);
+        }
+    }
+
+    /// The refusal to report, once.
+    fn take_over(&self) -> Option<u16> {
+        let mut p = self.lock();
+        let over = p.over.take();
+        p.told |= over.is_some();
+        over
+    }
+
+    /// How many pipes run or connect.
+    #[cfg(test)]
+    pub(crate) fn live(&self) -> usize {
+        self.lock().live.len()
+    }
+}
+
 /// Dials `runner` back for connection `n` and copies both ways between it and host port
-/// `host`, the Box port's tunnel.
-fn pipe(runner: &Runner, n: u64, host: u16) {
+/// `host`, the Box port's tunnel, as pipe `id` of `pipes`.
+fn pipe(runner: &Runner, n: u64, host: u16, pipes: &Pipes, id: u64) {
     let Ok(back) = crate::proxy::links::connect(runner, Service::Conn(n), RUNNER_CONNECT) else {
         return;
     };
     let Ok(tunnel) = TcpStream::connect((Ipv4Addr::LOCALHOST, host)) else {
         return;
     };
-    let (Ok(mut back_rx), Ok(mut tunnel_tx)) = (back.try_clone(), tunnel.try_clone()) else {
+    let clones = (
+        back.try_clone(),
+        tunnel.try_clone(),
+        back.try_clone(),
+        tunnel.try_clone(),
+    );
+    let (Ok(mut back_rx), Ok(mut tunnel_tx), Ok(held_back), Ok(held_tunnel)) = clones else {
         return;
     };
+    if !pipes.attach(id, vec![held_back, StdConn::from(held_tunnel)]) {
+        return;
+    }
     let up = std::thread::spawn(move || {
         let _ = io::copy(&mut back_rx, &mut tunnel_tx);
         let _ = tunnel_tx.shutdown(Shutdown::Write);

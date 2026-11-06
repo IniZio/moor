@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpListener};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 
 use moor_client::forward::{Carried, Forward, Forwarding};
@@ -298,4 +298,107 @@ fn a_named_connection_is_dialed_back_across_the_network_and_piped_to_its_tunnel(
         "the bytes went through the Box port's tunnel and back"
     );
     assert!(link.alive());
+}
+
+/// A fake runner across the network, and the link the keeper opens on it for one Box port.
+fn remote_link(
+    serve: impl FnOnce(TcpListener, u16) + Send + 'static,
+) -> (MachineLink, FakeDriver, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let at = Runner::Remote {
+        addr: listener.local_addr().expect("addr").to_string(),
+        key: KEY.to_owned(),
+    };
+    let box_port = box_port_tunnel();
+    let runner = thread::spawn(move || serve(listener, box_port));
+    let driver = FakeDriver::new().reverse_tunnels();
+    let h = boxed(&driver);
+    let link = MachineLink::open(&driver, &h, &via(&at), &[box_port]).expect("open");
+    (link, driver, runner)
+}
+
+/// Answers the forward on `listener` and sends `lines` on the carrier; the carrier.
+fn carry(listener: &TcpListener, lines: &[Carried]) -> std::net::TcpStream {
+    let (mut carrier, _) = listener.accept().expect("carrier");
+    let _: Hello = read_line(&mut carrier);
+    let _: Forward = read_line(&mut carrier);
+    write_line(&mut carrier, &Forwarding::Up);
+    for line in lines {
+        write_line(&mut carrier, line);
+    }
+    carrier
+}
+
+#[test]
+fn a_conn_line_for_a_port_the_forward_did_not_list_gets_no_dial_back() {
+    let (seen_tx, seen) = mpsc::channel();
+    let (_link, _driver, runner) = remote_link(move |listener, box_port| {
+        let unlisted = Carried::Conn { n: 1, port: 1 };
+        let listed = Carried::Conn {
+            n: 2,
+            port: box_port,
+        };
+        let _carrier = carry(&listener, &[unlisted, listed]);
+        let (mut back, _) = listener.accept().expect("dial back");
+        seen_tx.send(read_line::<Hello>(&mut back)).expect("send");
+    });
+    let dial = Dial {
+        v: 1,
+        key: KEY.to_owned(),
+        n: 2,
+    };
+    assert_eq!(
+        seen.recv().expect("dialed"),
+        Hello::Conn(dial),
+        "only the listed port"
+    );
+    runner.join().expect("runner");
+}
+
+#[test]
+fn ending_the_link_ends_its_pipes() {
+    let (back_tx, back) = mpsc::channel();
+    let (link, _driver, runner) = remote_link(move |listener, box_port| {
+        let carrier = carry(
+            &listener,
+            &[Carried::Conn {
+                n: 3,
+                port: box_port,
+            }],
+        );
+        let (mut back, _) = listener.accept().expect("dial back");
+        let _: Hello = read_line(&mut back);
+        back.write_all(b"ping").expect("machine bytes");
+        let mut got = [0u8; 4];
+        back.read_exact(&mut got).expect("box bytes");
+        back_tx.send((back, carrier)).expect("send");
+    });
+    let (mut back, _carrier) = back.recv().expect("piped");
+    runner.join().expect("runner");
+    let pipes = Arc::clone(&link.pipes);
+    assert_eq!(pipes.live(), 1);
+    drop(link);
+    back.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("timeout");
+    assert_eq!(back.read(&mut [0u8; 4]).expect("closed, not timed out"), 0);
+    assert!(eventually(|| pipes.live() == 0), "every pipe ended");
+}
+
+#[test]
+fn pipes_beyond_the_cap_are_refused_and_reported_once() {
+    let pipes = super::Pipes::default();
+    for _ in 0..super::MAX_PIPES {
+        assert!(pipes.reserve().is_some());
+    }
+    assert_eq!(pipes.reserve(), None);
+    pipes.note_over(8081);
+    pipes.note_over(3001);
+    assert_eq!(pipes.take_over(), Some(8081));
+    pipes.note_over(8081);
+    assert_eq!(pipes.take_over(), None, "reported once per link");
+    pipes.release(0);
+    assert!(pipes.reserve().is_some(), "a freed pipe makes room");
+    pipes.close();
+    pipes.release(1);
+    assert_eq!(pipes.reserve(), None, "an ended link starts no pipe");
 }
