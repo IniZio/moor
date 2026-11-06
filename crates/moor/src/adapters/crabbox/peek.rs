@@ -54,6 +54,9 @@ pub(super) fn ssh_target(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>
     // Box's link, until a call on them fails; real use touches the lease with a heartbeat.
     let key = handle.as_str().to_owned();
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
+        if super::pool::is_pool(handle) {
+            return super::pool::redialed(cb, handle, words);
+        }
         return Ok(words);
     }
     if super::pool::is_pool(handle) {

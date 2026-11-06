@@ -312,6 +312,28 @@ pub(super) fn target(
     Ok((user, words))
 }
 
+/// `words`, cached for `handle`, with the `ProxyCommand` of the runner that holds its host's link
+/// now, so the first call after a relink already dials the new runner; one store read.
+pub(super) fn redialed(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    mut words: Vec<String>,
+) -> Result<Vec<String>, DriverError> {
+    let placed = cb.placed(handle)?;
+    let dial = placed.hosts.dial_command(placed.machine, placed.slug);
+    let now = format!("ProxyCommand={}", dial.map_err(failed)?);
+    let Some(word) = words.iter_mut().find(|w| w.starts_with("ProxyCommand=")) else {
+        return Ok(words);
+    };
+    if *word != now {
+        *word = now;
+        if let Ok(mut map) = cb.targets.lock() {
+            map.insert(handle.as_str().to_owned(), words.clone());
+        }
+    }
+    Ok(words)
+}
+
 /// A login name: `[a-z_][a-z0-9_-]*`.
 fn valid_user(user: &str) -> bool {
     let mut bytes = user.bytes();

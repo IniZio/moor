@@ -38,6 +38,8 @@ struct FakeHost {
     machines: Mutex<Vec<i64>>,
     caches: Mutex<Vec<Option<Cache>>>,
     classes: Mutex<Vec<Option<String>>>,
+    /// The runner its link row names; none leaves `--runner` out of the dial.
+    runner: Mutex<Option<String>>,
 }
 
 impl FakeHost {
@@ -78,7 +80,9 @@ impl PoolHosts for FakeHost {
     }
 
     fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {
-        Ok(format!("moor link-dial {machine_id} {slug}"))
+        let runner = self.runner.lock().unwrap().clone();
+        let runner = runner.map(|r| format!("--runner {r} ")).unwrap_or_default();
+        Ok(format!("moor link-dial {runner}{machine_id} {slug}"))
     }
 }
 
@@ -320,6 +324,32 @@ fn a_pool_local_tunnel_forwards_a_host_port_over_the_pool_words() {
     let pid = t.tunnel.pid();
     drop(t);
     assert_eq!(p.dropped(), [pid]);
+}
+
+#[test]
+fn after_a_relink_the_next_ssh_call_dials_the_new_runner_without_a_failure() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on_child(Tool::Ssh, &["-T"], ChildReply::Ready("ready".to_owned()));
+    let (host, cb) = rig_on(Arc::clone(&p));
+    *host.runner.lock().unwrap() = Some("10.0.0.7:7701".to_owned());
+    drop(cb.local_tunnel(&handle(), 8080).unwrap());
+    *host.runner.lock().unwrap() = Some("10.0.0.8:7701".to_owned());
+    drop(cb.local_tunnel(&handle(), 8081).unwrap());
+    let calls = p.calls();
+    assert_eq!(
+        calls.len(),
+        2,
+        "one ssh per tunnel, none failed and retried"
+    );
+    for (call, runner) in calls.iter().zip(["10.0.0.7:7701", "10.0.0.8:7701"]) {
+        let want = format!("ProxyCommand=moor link-dial --runner {runner} 42 moor-1a2b3c4d-9101");
+        assert!(call.args.contains(&want), "{want} in {:?}", call.args);
+    }
+    let infos = host.verbs().iter().filter(|v| **v == Verb::Info).count();
+    assert_eq!(
+        infos, 1,
+        "the words are reused with only the runner changed"
+    );
 }
 
 #[test]
