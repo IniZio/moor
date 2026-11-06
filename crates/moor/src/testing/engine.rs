@@ -27,6 +27,7 @@ struct State {
     queued: HashMap<String, VecDeque<Probes>>,
     fail_probe: HashMap<String, EngineError>,
     wait_checks: HashMap<String, WaitCheck>,
+    prompt_gone: bool,
     counts: HashMap<String, usize>,
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
@@ -146,6 +147,10 @@ impl FakeEngine {
         self.st().wait_checks.insert(session.to_owned(), check);
     }
 
+    pub(crate) fn set_prompt_gone(&self, gone: bool) {
+        self.st().prompt_gone = gone;
+    }
+
     pub(crate) fn set_probes(&self, session: &str, p: Probes) {
         self.st().probes.insert(session.to_owned(), p);
     }
@@ -217,6 +222,10 @@ impl Engine for FakeEngine {
             .get(&s.id)
             .copied()
             .unwrap_or(WaitCheck::Unknown)
+    }
+
+    fn prompt_gone(&self, _: &HookRecord, _: &str) -> bool {
+        self.st().prompt_gone
     }
 
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {

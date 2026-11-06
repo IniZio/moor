@@ -1,12 +1,34 @@
 //! The `needs_input` event written once per waiting episode.
 
-use moor_core::activity::{Activity, AgentState, Source};
+use std::time::Duration;
+
+use moor_core::activity::{Activity, AgentState, HookKind, HookRead, PaneRead, Probes, Source};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::Event;
+use moor_core::seam::clock::Ts;
 
 use super::Reading;
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
+
+/// How long a blocked report stands before the pane may show its prompt gone, so a dialog still
+/// being drawn or just answered is not read as an end.
+const PROMPT_GRACE: Duration = Duration::from_secs(30);
+
+/// `probes` with a blocked report whose prompt the pane shows gone rewritten as the idle report
+/// the agent never wrote. Its message is the question, not anything the agent said.
+pub(super) fn end_gone_prompt(cx: &Cx, mut probes: Probes, now: Ts) -> Probes {
+    if let (HookRead::Fresh(rec), PaneRead::Fresh(obs)) = (&mut probes.hook, &probes.pane) {
+        let quiet = now.as_millis() - rec.at.as_millis();
+        let overdue = u128::try_from(quiet).is_ok_and(|q| q >= PROMPT_GRACE.as_millis());
+        if overdue && cx.engine().prompt_gone(rec, &obs.tail) {
+            rec.kind = HookKind::Idle;
+            rec.message = None;
+        }
+    }
+    probes
+}
 
 /// Append a `needs_input` event when the agent starts waiting for the user.
 ///

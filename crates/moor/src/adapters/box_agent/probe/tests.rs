@@ -38,6 +38,10 @@ impl AgentAdapter for Stub {
         })
     }
 
+    fn prompt_gone(&self, _: &HookRecord, tail: &str) -> bool {
+        tail == "gone"
+    }
+
     fn wait_check_script(&self, _: &BoxPath) -> Option<String> {
         Some("check".to_owned())
     }
@@ -184,6 +188,15 @@ fn a_box_that_is_gone_answers_no_wait_check() {
     let s = surface_with(Ok(obs()));
     let got = agent(&d, &s).check_wait(&session(Some("p-1")), DEADLINE);
     assert_eq!(got, WaitCheck::Unknown);
+}
+
+#[test]
+fn whether_a_prompt_is_gone_is_the_agents_call() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Ok(obs()));
+    let rec = Stub.parse_hook(b"busy").unwrap();
+    assert!(agent(&d, &s).prompt_gone(&rec, "gone"));
+    assert!(!agent(&d, &s).prompt_gone(&rec, "there"));
 }
 
 #[test]

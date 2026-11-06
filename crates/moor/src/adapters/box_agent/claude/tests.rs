@@ -497,3 +497,56 @@ fn idle_with_background_work_is_waiting_and_with_none_is_idle() {
         Some(HookKind::Idle)
     );
 }
+
+fn asked(message: Option<&str>, options: &[&str]) -> HookRecord {
+    HookRecord {
+        kind: HookKind::Blocked,
+        session_id: None,
+        message: message.map(str::to_owned),
+        options: options.iter().map(|o| (*o).to_owned()).collect(),
+        doing: None,
+        at: Ts::from_millis(1),
+        turn: None,
+    }
+}
+
+const PERMISSION: Option<&str> = Some("Claude needs your permission");
+const RECAP: &str = "※ recap: fixed the lint and pushed\n\n───\n> \n───\n  ? for shortcuts\n";
+
+#[test]
+fn a_permission_prompt_with_only_an_empty_input_on_screen_is_gone() {
+    assert!(Claude.prompt_gone(&asked(PERMISSION, &[]), RECAP));
+    let to_use = asked(Some("Claude needs your permission to use Bash"), &[]);
+    assert!(Claude.prompt_gone(&to_use, RECAP));
+}
+
+#[test]
+fn a_permission_dialog_on_screen_is_not_gone() {
+    let rec = asked(PERMISSION, &[]);
+    for tail in [
+        "Do you want to proceed?\n❯ 1. Yes\n  2. No\n",
+        "❯ 1. Yes\n  2. Yes, and don't ask again for this very long command\n     that wrapped\n  3. No\n",
+        "⚠ Claude Code will automatically block this request in 1:35, to avoid holding up\n",
+        "Esc to cancel · Tab to amend\n",
+        "Do you want to make this edit?\n",
+    ] {
+        assert!(!Claude.prompt_gone(&rec, tail), "{tail}");
+    }
+}
+
+#[test]
+fn only_a_permission_prompt_can_be_found_gone() {
+    assert!(!Claude.prompt_gone(&asked(Some("Enter the token"), &[]), RECAP));
+    assert!(!Claude.prompt_gone(&asked(None, &[]), RECAP));
+    assert!(!Claude.prompt_gone(&asked(PERMISSION, &["Yes", "No"]), RECAP));
+    let idle = HookRecord {
+        kind: HookKind::Idle,
+        ..asked(PERMISSION, &[])
+    };
+    assert!(!Claude.prompt_gone(&idle, RECAP));
+}
+
+#[test]
+fn a_blank_pane_shows_nothing_about_a_prompt() {
+    assert!(!Claude.prompt_gone(&asked(PERMISSION, &[]), " \n\n"));
+}

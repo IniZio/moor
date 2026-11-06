@@ -12,6 +12,7 @@ use super::*;
 use crate::ops::common::autosleep;
 use crate::testing::clock::FakeClock;
 
+mod stale_prompt;
 mod unread;
 
 const ON: &str = "Run ci, tests, lint for all six packages";

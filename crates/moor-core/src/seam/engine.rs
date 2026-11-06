@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::activity::{Probes, WaitCheck};
+use crate::activity::{HookRecord, Probes, WaitCheck};
 use crate::box_key::BoxKey;
 use crate::config::{AgentHolder, McpServer};
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
@@ -201,6 +201,11 @@ pub trait Engine: Send + Sync {
     /// What the Box shows about the background work the agent reports waiting on.
     fn check_wait(&self, _s: &SessionRef, _deadline: Deadline) -> WaitCheck {
         WaitCheck::Unknown
+    }
+
+    /// Whether the prompt `record` reports is gone from the pane text `tail`.
+    fn prompt_gone(&self, _record: &HookRecord, _tail: &str) -> bool {
+        false
     }
 
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.

@@ -11,7 +11,7 @@ mod stall;
 mod wait;
 
 pub use hook::{HookKind, HookRecord};
-pub use menu::menu_options;
+pub use menu::{menu_line, menu_options};
 pub use stall::{stalled_for, STALL_AFTER};
 pub use wait::{wait_overdue, WaitCheck};
 

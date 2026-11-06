@@ -180,6 +180,12 @@ pub trait AgentAdapter: Send + Sync {
         None
     }
 
+    /// Whether `record` reports a prompt that always shows on the pane while it waits, and the
+    /// pane text `tail` shows it gone; `false` whenever that cannot be told.
+    fn prompt_gone(&self, _record: &HookRecord, _tail: &str) -> bool {
+        false
+    }
+
     /// The first-run prompt the pane text shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 

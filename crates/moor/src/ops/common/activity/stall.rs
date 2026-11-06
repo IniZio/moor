@@ -14,15 +14,21 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// `probes` with an overdue wait the Box shows to be empty rewritten as the idle report the agent
-/// never wrote: no hook fires when background work ends without waking the agent.
-pub(super) fn end_wait(
+/// `probes` with any report the Box or its pane shows to be over rewritten as idle.
+pub(super) fn end_stale(
     cx: &Cx,
     sref: &SessionRef,
-    mut probes: Probes,
+    probes: Probes,
     now: Ts,
     deadline: Deadline,
 ) -> Probes {
+    let probes = end_wait(cx, sref, probes, now, deadline);
+    super::needs_input::end_gone_prompt(cx, probes, now)
+}
+
+/// `probes` with an overdue wait the Box shows to be empty rewritten as the idle report the agent
+/// never wrote: no hook fires when background work ends without waking the agent.
+fn end_wait(cx: &Cx, sref: &SessionRef, mut probes: Probes, now: Ts, deadline: Deadline) -> Probes {
     if let HookRead::Fresh(rec) = &mut probes.hook {
         if wait_overdue(rec, now) && cx.engine().check_wait(sref, deadline) == WaitCheck::Nothing {
             rec.kind = HookKind::Idle;

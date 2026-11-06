@@ -12,6 +12,7 @@ use serde_json::Value;
 mod doing;
 mod install;
 mod launch;
+mod permission;
 mod profile;
 mod wait;
 
@@ -102,6 +103,10 @@ impl AgentAdapter for Claude {
 
     fn wait_check_script(&self, hook_file: &BoxPath) -> Option<String> {
         Some(wait::script(hook_file.as_str(), "/proc"))
+    }
+
+    fn prompt_gone(&self, record: &HookRecord, tail: &str) -> bool {
+        permission::gone(record, tail)
     }
 
     fn pane_prompt(&self, tail: &str) -> Option<String> {
