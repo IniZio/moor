@@ -121,7 +121,7 @@ jobs:
           grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
       - name: Upload
         if: github.event_name == 'push'
-        run: gh release upload "$TAG" dist/* install.sh --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" dist/* ${{ matrix.target == 'x86_64-unknown-linux-musl' && 'install.sh' || '' }} --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
 
