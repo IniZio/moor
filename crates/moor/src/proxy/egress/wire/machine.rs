@@ -21,6 +21,9 @@ use super::{
 };
 use crate::proxy::front::{hold_or_missing, plain_request, Hold};
 
+#[cfg(test)]
+mod tests;
+
 /// How long the machine service gets to accept a connection before the tunnel is a 502.
 const MACHINE_DIAL: Duration = Duration::from_secs(3);
 /// Asks the runner to answer 421 when it does not hold the Box's machine's link, and to leave
@@ -28,6 +31,11 @@ const MACHINE_DIAL: Duration = Duration::from_secs(3);
 const HOLDER_ONLY: &str = "X-Moor-Holder-Only";
 /// What the runner answers to [`HOLDER_ONLY`] when it holds no link to the machine.
 const MISDIRECTED: u16 = 421;
+/// Why the Box gets a 502 when no runner could be reached for its request.
+const NOT_ANSWERING: &str = "the machine service is not answering";
+/// Why the Box gets a 502 when the runner went away before answering; the call may have run,
+/// so it is not sent again.
+const LOST: &str = "the machine runner went away before answering; the call may have run";
 
 /// The machine service, reached for one request.
 struct Reached {
@@ -96,19 +104,36 @@ async fn deliver<S: Peer>(
 ) {
     let mut upstream = reached.stream;
     if reached.holder && whole_body(&mut ws, &plain.request, &mut plain.body).await {
-        match try_holder(&mut upstream, &plain.request, &plain.body).await {
-            Tried::Answered(rest) => return relay(ws, upstream, rest).await,
-            Tried::Lost => return,
-            Tried::Elsewhere => {}
+        match hand_off(&mut upstream, &mut plain, service, ask, &reached.addr).await {
+            Ok(Some(rest)) => return relay(ws, upstream, rest).await,
+            Ok(None) => {}
+            Err(why) => return gateway_error(&mut ws, why).await,
         }
-        let Some(again) = elsewhere(service, ask, &reached.addr, &plain.head).await else {
-            return gateway_error(&mut ws).await;
-        };
-        (upstream, plain.request) = again;
     }
     if send(&mut upstream, &plain.request, &plain.body).await {
         relay(ws, upstream, Vec::new()).await;
     }
+}
+
+/// Tries `plain` on the holder at `failed` over `upstream`: its answer to relay, or `None` once
+/// `upstream` and `plain` are moved to where the ledger points now; why the Box gets a 502.
+async fn hand_off(
+    upstream: &mut TcpStream,
+    plain: &mut Plain,
+    service: &MachineRoute,
+    ask: &Open,
+    failed: &str,
+) -> Result<Option<Vec<u8>>, &'static str> {
+    match try_holder(upstream, &plain.request, &plain.body).await {
+        Tried::Answered(rest) => return Ok(Some(rest)),
+        Tried::Lost => return Err(LOST),
+        Tried::Elsewhere => {}
+    }
+    let (stream, request) = elsewhere(service, ask, failed, &plain.head)
+        .await
+        .ok_or(NOT_ANSWERING)?;
+    (*upstream, plain.request) = (stream, request);
+    Ok(None)
 }
 
 /// After the holder at `failed` said it holds no link: what the ledger names now, dialled, and
@@ -133,19 +158,19 @@ fn marked(head: &[u8], target: &str, hold: &Hold, key: Option<&str>) -> Option<V
     })
 }
 
-/// Sends `request` and `body` marked [`HOLDER_ONLY`] and reads the answer's head.
+/// Sends `request` and `body` marked [`HOLDER_ONLY`] and reads the answer's head, even when
+/// the body could not all be written: a runner without the link answers from the head alone
+/// and closes before reading the body.
 async fn try_holder(upstream: &mut TcpStream, request: &[u8], body: &[u8]) -> Tried {
     let strict = with_header(request, HOLDER_ONLY, "1");
-    if !send(upstream, &strict, body).await {
-        return Tried::Lost;
-    }
+    let sent = send(upstream, &strict, body).await;
     let Some((head, rest)) = read_head(upstream).await else {
         return Tried::Lost;
     };
-    if status(&head) == Some(MISDIRECTED) {
-        Tried::Elsewhere
-    } else {
-        Tried::Answered([head, rest].concat())
+    match status(&head) {
+        Some(MISDIRECTED) => Tried::Elsewhere,
+        _ if sent => Tried::Answered([head, rest].concat()),
+        _ => Tried::Lost,
     }
 }
 
@@ -276,9 +301,8 @@ fn status(head: &[u8]) -> Option<u16> {
     parsed.code
 }
 
-/// Answers 502 in the tunnel, once the Box's request was read.
-async fn gateway_error<S: Peer>(ws: &mut WebSocketStream<S>) {
-    let body = "the machine service is not answering";
+/// Answers 502 with `body` in the tunnel, once the Box's request was read.
+async fn gateway_error<S: Peer>(ws: &mut WebSocketStream<S>, body: &str) {
     let reply = format!(
         "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\
          Connection: close\r\n\r\n{body}",
