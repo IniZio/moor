@@ -23,6 +23,7 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod guest;
 mod tunnel;
 
 /// Wake and restore the tunnel, without relaunching the agent.

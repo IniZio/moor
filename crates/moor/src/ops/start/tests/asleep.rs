@@ -4,6 +4,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
 use moor_core::{BoxId, StartReq};
 
@@ -80,4 +81,14 @@ fn starting_an_asleep_box_restores_its_keeper() {
         "{:?}",
         host.calls()
     );
+}
+
+#[test]
+fn starting_an_asleep_box_looks_for_its_guest_until_it_answers() {
+    let (w, _engine, _id) = asleep_after_failed_launch();
+    let stalled = DriverError::Timeout(std::time::Duration::from_secs(5));
+    w.driver.silent_peeks(vec![stalled.clone(), stalled]);
+    let v = run(&w.cx, &prompt_req("carry on")).unwrap();
+    assert!(v.agent.launched, "{:?}", v.agent);
+    assert_eq!(w.driver.peeks().len(), 3);
 }
