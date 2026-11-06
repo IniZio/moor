@@ -1,13 +1,16 @@
 //! Settling the started runs of a workflow: finished, refused or expired.
 
-use moor_core::decide::workflow::{run_verdict, workflow_expired, RunBoxFacts, RunVerdict};
-use moor_core::request::EndSessionReq;
+use moor_core::decide::workflow::{
+    run_verdict, workflow_expired, workflow_start_overdue, RunBoxFacts, RunVerdict, START_LIMIT,
+};
+use moor_core::name::BoxName;
+use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
 use moor_core::view::LaunchFailure;
-use moor_core::workflow::{RunEnd, Workflow, WorkflowOutcome};
+use moor_core::workflow::{box_name, RunEnd, Workflow, WorkflowOutcome};
 
 use crate::cx::Cx;
-use crate::ops::end_session;
+use crate::ops::{close, end_session};
 use crate::store::{BoxRow, Store, StoreError};
 
 /// What the tick reads of Box `row` to tell where its run stands.
@@ -61,7 +64,7 @@ pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), St
             }
             RunVerdict::Broken => {
                 if let Some(row) = &row {
-                    store.refuse_started_run(key, &broken_detail(store, row)?)?;
+                    store.refuse_run(key, (&broken_detail(store, row)?, false))?;
                 }
             }
         }
@@ -69,7 +72,7 @@ pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), St
     Ok(())
 }
 
-/// Ends the agent session of each started run past its timeout, keeps the Box, and records the
+/// Ends the agent session of each started run whose agent has worked past its timeout, keeps the Box, and records the
 /// run as timed out whether or not a session was live to end.
 pub(super) fn expire_runs(
     cx: &Cx,
@@ -79,7 +82,8 @@ pub(super) fn expire_runs(
     out: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let open = store.open_workflow_runs(w.id)?;
-    for e in workflow_expired(w, &open, now) {
+    let agent = |id| store.first_launch_at(id).ok().flatten();
+    for e in workflow_expired(w, &open, &agent, now) {
         if let Some(row) = store.box_row(e.box_id)? {
             let req = EndSessionReq {
                 box_name: row.name.as_str().to_owned(),
@@ -94,6 +98,67 @@ pub(super) fn expire_runs(
             }
         }
         store.end_workflow_run((w.id, &e.repo, e.due_at), RunEnd::TimedOut, now)?;
+    }
+    Ok(())
+}
+
+/// Closes the open Box called `name`, forcing it, which also stops a start still setting it up.
+/// False when there is no open Box of that name.
+pub(crate) fn close_open_box(cx: &Cx, store: &Store, name: &BoxName) -> Result<bool, String> {
+    let Some(row) = store.open_box_by_name(name).map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+    let req = CloseReq {
+        target: row.name.clone().into(),
+        force: true,
+    };
+    cx.for_box(row.user, || close::run(cx, &req))
+        .map(|_| true)
+        .map_err(|e| e.error.to_string())
+}
+
+/// Refuses each run of `w` whose agent has not started [`START_LIMIT`] after the run was
+/// claimed, and closes its Box so the agent can never start later. A claimed run is refused
+/// first, which settles it before its own start can, and its Box is closed after; a started
+/// run whose Box is queued or stuck keeps its place until the Box is closed.
+pub(super) fn enforce_start_limit(
+    cx: &Cx,
+    store: &Store,
+    w: &Workflow,
+    now: Ts,
+    out: &mut Vec<String>,
+) -> Result<(), StoreError> {
+    let open = store.open_workflow_runs(w.id)?;
+    let agent = |id| store.first_launch_at(id).ok().flatten();
+    for b in workflow_start_overdue(&open, &agent, now) {
+        let key = (w.id, &b.repo, b.due_at);
+        let planned = match b.box_id {
+            Some(id) => store.box_row(id)?.map(|r| r.name),
+            None => box_name(w.id, w.name.as_str(), &b.repo, b.due_at).ok(),
+        };
+        let detail = format!(
+            "the run's agent did not start within {} minutes of the firing, so the run was \
+             stopped and its Box closed",
+            START_LIMIT.as_secs() / 60
+        );
+        let close =
+            |out: &mut Vec<String>| match planned.as_ref().map(|n| close_open_box(cx, store, n)) {
+                Some(Err(why)) => {
+                    out.push(format!(
+                        "workflow {}: could not close the late Box of {}: {why}",
+                        w.name, b.repo
+                    ));
+                    false
+                }
+                _ => true,
+            };
+        if b.claimed_only {
+            if store.refuse_run(key, (&detail, true))? {
+                close(out);
+            }
+        } else if close(out) {
+            store.refuse_run(key, (&detail, false))?;
+        }
     }
     Ok(())
 }

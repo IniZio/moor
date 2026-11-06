@@ -15,7 +15,7 @@ use moor_core::BoxId;
 use crate::store::tests::open;
 use crate::store::Store;
 
-fn repo(s: &str) -> ForgeRepo {
+pub(super) fn repo(s: &str) -> ForgeRepo {
     ForgeRepo::parse(s).unwrap()
 }
 
@@ -23,7 +23,7 @@ fn name(s: &str) -> WorkflowName {
     WorkflowName::parse(s).unwrap()
 }
 
-fn def(n: &str, repos: &[&str], enabled: bool) -> WorkflowDef {
+pub(super) fn def(n: &str, repos: &[&str], enabled: bool) -> WorkflowDef {
     WorkflowDef::new(
         name(n),
         WorkflowSchedule::parse("0 9 * * *", "Europe/London").unwrap(),
@@ -34,14 +34,19 @@ fn def(n: &str, repos: &[&str], enabled: bool) -> WorkflowDef {
     .unwrap()
 }
 
-fn user(store: &Store, identity: &str) -> UserId {
+pub(super) fn user(store: &Store, identity: &str) -> UserId {
     store
         .enroll(&Identity::parse(identity).unwrap(), None)
         .unwrap()
         .0
 }
 
-fn run(workflow: WorkflowId, r: &str, due: i64, outcome: WorkflowOutcome) -> WorkflowRun {
+pub(super) fn run(
+    workflow: WorkflowId,
+    r: &str,
+    due: i64,
+    outcome: WorkflowOutcome,
+) -> WorkflowRun {
     WorkflowRun {
         workflow,
         repo: repo(r),
@@ -474,26 +479,20 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
     assert_eq!(store.starting_workflow_runs().unwrap().len(), 1);
 
     let key = (id, &repo("a/one"), Ts::from_millis(100));
-    let at = Ts::from_millis(9_000_000);
     let started = WorkflowOutcome::Started {
         box_id: BoxId::new(4),
     };
-    assert!(store.resolve_workflow_start(key, &started, at).unwrap());
+    assert!(store.resolve_workflow_start(key, &started).unwrap());
     let refused = WorkflowOutcome::Refused {
         detail: "late".to_owned(),
     };
     assert!(
-        !store.resolve_workflow_start(key, &refused, at).unwrap(),
+        !store.resolve_workflow_start(key, &refused).unwrap(),
         "settled once"
     );
     assert!(store.starting_workflow_runs().unwrap().is_empty());
     let last = store.last_workflow_runs(id).unwrap();
     assert_eq!(last.first().map(|r| &r.outcome), Some(&started));
-    assert_eq!(
-        last.first().map(|r| r.recorded_at),
-        Some(at),
-        "a started run is recorded when it started, not when it was claimed"
-    );
 }
 
 #[test]

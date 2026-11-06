@@ -113,15 +113,69 @@ pub struct WorkflowExpiry {
     pub box_id: BoxId,
 }
 
-/// The runs in `open` that have been running for the workflow's timeout or longer, counted on
-/// the wall clock from when each started. A run that is not Started is never expired.
+/// How long a run may take from its claim until its agent has started, queueing and setup
+/// included. A run that has not started its agent by then is refused and its Box closed.
+pub const START_LIMIT: std::time::Duration = std::time::Duration::from_hours(1);
+
+/// A run that did not start its agent within [`START_LIMIT`] of its claim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartBreach {
+    /// The repo the run is for.
+    pub repo: ForgeRepo,
+    /// The due time the run answers.
+    pub due_at: Ts,
+    /// The Box the run recorded, none while it is still being started.
+    pub box_id: Option<BoxId>,
+    /// Whether the run only claimed its firing so far.
+    pub claimed_only: bool,
+}
+
+/// The runs in `open` whose agent has not started [`START_LIMIT`] after the run was claimed.
+/// `agent_started` tells when a Box's agent first started, if it did.
 #[must_use]
-pub fn workflow_expired(workflow: &Workflow, open: &[WorkflowRun], now: Ts) -> Vec<WorkflowExpiry> {
+pub fn workflow_start_overdue(
+    open: &[WorkflowRun],
+    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    now: Ts,
+) -> Vec<StartBreach> {
+    let limit = i64::try_from(START_LIMIT.as_millis()).unwrap_or(i64::MAX);
+    open.iter()
+        .filter(|run| now.as_millis().saturating_sub(run.recorded_at.as_millis()) >= limit)
+        .filter_map(|run| {
+            let (box_id, claimed_only) = match run.outcome {
+                WorkflowOutcome::Starting => (None, true),
+                WorkflowOutcome::Started { box_id } if agent_started(box_id).is_none() => {
+                    (Some(box_id), false)
+                }
+                _ => return None,
+            };
+            Some(StartBreach {
+                repo: run.repo.clone(),
+                due_at: run.due_at,
+                box_id,
+                claimed_only,
+            })
+        })
+        .collect()
+}
+
+/// The runs in `open` that have worked for the workflow's timeout.
+///
+/// The time counts on the wall clock from when the run's agent first started. A run whose agent
+/// has not started is never expired here; the start limit covers it.
+#[must_use]
+pub fn workflow_expired(
+    workflow: &Workflow,
+    open: &[WorkflowRun],
+    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    now: Ts,
+) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
     open.iter()
         .filter_map(|run| match run.outcome {
             WorkflowOutcome::Started { box_id }
-                if now.as_millis().saturating_sub(run.recorded_at.as_millis()) >= limit =>
+                if agent_started(box_id)
+                    .is_some_and(|at| now.as_millis().saturating_sub(at.as_millis()) >= limit) =>
             {
                 Some(WorkflowExpiry {
                     repo: run.repo.clone(),

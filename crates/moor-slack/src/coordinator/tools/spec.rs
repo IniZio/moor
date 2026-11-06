@@ -173,7 +173,7 @@ pub(crate) const SPECS: [Spec; 15] = [
                     "timezone": {"type": "string", "description": "IANA time zone the cron is read in, such as Europe/London."},
                     "repos": {"type": "array", "items": {"type": "string"}, "description": "Each as owner/name; every firing starts one Box in each."},
                     "prompt": {"type": "string", "description": "What each Box's agent should do, in plain words."},
-                    "timeout_minutes": {"type": "integer", "description": "Minutes a run may work, counted from when its agent starts and not from Box setup, before it is stopped, 1 to 720."}
+                    "timeout_minutes": {"type": "integer", "description": "Minutes the agent may work, counted from when it starts, before the run is stopped, 1 to 720. A run whose agent has not started within an hour of firing is refused and its Box closed, whatever this is."}
                 },
                 "required": ["name", "cron", "timezone", "repos", "prompt"],
                 "additionalProperties": false
