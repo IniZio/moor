@@ -162,7 +162,8 @@ fn pull_reads_a_file_in_the_box_copy_over_the_link() {
         .call("pull", json!({"path": "shot.png", "dest": "out/shot.png"}))
         .unwrap();
     assert_eq!(got, json!({"dest": "out/shot.png", "bytes": 3}));
-    assert_eq!(m.rig.puts.lock().unwrap()[0].1, b"png");
+    let landed = std::fs::read_to_string(m.rig.tree.join("out/shot.png")).unwrap();
+    assert_eq!(landed, "png");
     assert!(!m.ssh_ran());
 }
 
@@ -179,7 +180,7 @@ fn pull_of_a_path_outside_the_box_dirs_is_refused() {
             .unwrap_err();
         assert!(err.contains("outside the Box's dirs"), "{path}: {err}");
     }
-    assert!(m.rig.puts.lock().unwrap().is_empty());
+    assert_eq!(m.rig.puts(), 0);
     assert!(!m.ssh_ran());
 }
 

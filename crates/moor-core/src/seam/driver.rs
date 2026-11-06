@@ -25,7 +25,7 @@ pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
-pub use types::{AcquireReq, Acquired, BoxListing, MirrorStats, Released, SleepOutcome};
+pub use types::{AcquireReq, Acquired, BoxListing, Released, SleepOutcome};
 
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync {
@@ -132,24 +132,6 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns a [`DriverError`] when the copy fails.
     fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError>;
-
-    /// Makes the host directory `to` an exact copy of the Box directory `from`, links and modes
-    /// kept and `.git` and the rsync patterns `exclude` left out, sending only what changed since
-    /// the last mirror.
-    ///
-    /// # Errors
-    /// [`DriverError::Unsupported`] naming the side that cannot mirror; another
-    /// [`DriverError`] when the mirror fails.
-    fn mirror_out(
-        &self,
-        handle: &BoxHandle,
-        from: &BoxPath,
-        to: &Path,
-        exclude: &[String],
-    ) -> Result<MirrorStats, DriverError> {
-        let _ = (handle, from, to, exclude);
-        Err(DriverError::Unsupported("mirroring a Box"))
-    }
 
     /// Streams the regular files `names` from directory `dir` in the Box in one round trip,
     /// calling `sink` once per file received, in stream order. `Some(reader)` yields exactly that

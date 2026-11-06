@@ -442,13 +442,25 @@ fn sync_leaves_alone_the_patterns_the_proxy_sends_and_the_calls_own() {
 }
 
 #[test]
-fn the_box_mirror_request_carries_the_merged_exclude_list() {
+fn the_runners_mirror_leaves_out_the_merged_exclude_list_and_git() {
     let rig = Rig::start();
+    for rel in [
+        "node_modules/m.js",
+        "Pods/p",
+        "app/build/o",
+        ".git/HEAD",
+        "app/src.js",
+    ] {
+        rig.write(rel, "x");
+    }
     let headers = excluding(r#"["node_modules","Pods"]"#);
     let args = json!({ "exclude": ["app/build"] });
     rig.call_with("sync", args, &headers).unwrap();
-    let sent = rig.mirror_excludes.lock().unwrap().clone();
-    assert_eq!(sent, [json!(["node_modules", "Pods", "app/build"])]);
+    let mirror = rig.state().join("mirrors/7");
+    assert!(mirror.join("app/src.js").exists());
+    for left in ["node_modules", "Pods", "app/build", ".git"] {
+        assert!(!mirror.join(left).exists(), "{left}");
+    }
 }
 
 #[test]

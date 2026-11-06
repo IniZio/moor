@@ -55,8 +55,7 @@ fn every_call_answers_the_reason_as_a_tool_error_and_touches_nothing() {
     }
     assert!(!rig.remote.join("ran").exists());
     assert!(std::fs::read_dir(rig.copy()).unwrap().next().is_none());
-    assert!(rig.puts.lock().unwrap().is_empty());
-    assert!(rig.mirror_excludes.lock().unwrap().is_empty());
+    assert!(rig.rsyncs.lock().unwrap().is_empty());
 }
 
 #[test]

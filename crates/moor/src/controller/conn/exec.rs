@@ -15,7 +15,7 @@ use moor_core::controller::{parse_frame, write_bytes, write_stderr, ClientFrame,
 use moor_core::request::Grant;
 use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
-use moor_core::{ErrorKind, ExecReq, Response};
+use moor_core::{ErrorKind, Request, Response};
 
 use super::{Duplex, Peer};
 use crate::env::Env;
@@ -25,16 +25,17 @@ use crate::Moor;
 /// Stdin chunks held for a command that is not reading; the client waits past this many.
 const STDIN_QUEUE: usize = 16;
 
-/// Run the command `req` names over this connection, then answer with how it ended.
-pub(super) fn exec(
+/// Run the command an `exec`, or the machine runner's `box-rsync`, names over this connection,
+/// then answer with how it ended.
+pub(super) fn piped(
     env: &Env,
     peer: &Peer,
     grant: Grant,
     id: &str,
-    req: &ExecReq,
+    request: &Request,
     (input, output): Duplex<'_>,
 ) -> Response {
-    let refused = |e: CommandError| e.into_response("exec", vec![]);
+    let refused = |e: CommandError| e.into_response(request.cmd(), vec![]);
     let Some(hangup) = peer.hangup.as_ref() else {
         return refused(CommandError::new(
             ErrorKind::Failed,
@@ -53,14 +54,22 @@ pub(super) fn exec(
         unblock: &|| hangup.stop_reading(),
         stopping: &|| drain.begun(),
     };
-    answer(stream(link, |pipes| moor.exec(req, pipes)))
+    let ended = stream(link, |pipes| match request {
+        Request::BoxRsync(req) => moor.box_rsync(req, pipes),
+        Request::Exec(req) => moor.exec(req, pipes),
+        other => Err(CommandError::new(
+            ErrorKind::Internal,
+            format!("{} streams no command", other.cmd()),
+        )),
+    });
+    answer(request.cmd(), ended)
 }
 
-/// The answer to an `exec` that ended as `ended`.
-pub(crate) fn answer(ended: Result<ExecView, CommandError>) -> Response {
+/// The answer to a `cmd` that ended as `ended`.
+pub(crate) fn answer(cmd: &str, ended: Result<ExecView, CommandError>) -> Response {
     match ended {
-        Ok(view) => Response::ok("exec", serde_json::to_value(view).ok()),
-        Err(e) => e.into_response("exec", vec![]),
+        Ok(view) => Response::ok(cmd, serde_json::to_value(view).ok()),
+        Err(e) => e.into_response(cmd, vec![]),
     }
 }
 

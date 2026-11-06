@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use super::{report_while, reports_progress, respond_with_progress, wait_unless_draining, Cadence};
+use super::{report_while, respond_with_progress, wait_unless_draining, Cadence};
 use crate::controller::conn::operator;
 use crate::controller::drain::Drain;
 use crate::env::Env;
@@ -162,15 +162,6 @@ fn close_reports_progress_and_show_does_not() {
         pane: false,
     });
     assert_eq!(progress(show), 0);
-}
-
-#[test]
-fn box_mirror_and_box_put_report_progress() {
-    let req = |v| serde_json::from_value::<Request>(v).unwrap();
-    let mirror = req(serde_json::json!({"cmd": "box-mirror", "id": 1, "dest": "/m"}));
-    let put = req(serde_json::json!({"cmd": "box-put", "id": 1, "src": "/s", "dest": "d"}));
-    assert!(reports_progress(&mirror));
-    assert!(reports_progress(&put));
 }
 
 #[test]

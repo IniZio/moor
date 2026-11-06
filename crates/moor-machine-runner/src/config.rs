@@ -9,9 +9,11 @@ use crate::relay::Relay;
 /// What the runner needs to serve.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Dials the controller, which `sync` asks for the Box's work tree.
+    /// Dials the controller.
     pub controller: moor_client::Client,
-    /// Where the runner keeps one host mirror per Box.
+    /// How rsync's remote shell for a Box dials the controller; the same as `controller`.
+    pub dial: crate::Dial,
+    /// Where the runner keeps one mirror per Box.
     pub state_dir: PathBuf,
     /// The `Host` the Box's Proxy passes through, accepted besides the loopback names.
     pub service_host: String,

@@ -74,31 +74,5 @@ pub struct CpValue {
     pub confirmation: String,
 }
 
-/// Payload of `box-put`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct PutValue {
-    /// Where the file landed, in the Box.
-    pub path: String,
-    /// Bytes written.
-    pub bytes: u64,
-    /// Confirmation text.
-    pub confirmation: String,
-}
-
-/// Payload of `box-mirror`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct MirrorValue {
-    /// Work tree mirrored, in the Box.
-    pub from: String,
-    /// Destination directory on the host.
-    pub to: String,
-    /// Regular files this mirror transferred; unchanged files are not counted.
-    pub files: u64,
-    /// Bytes that came over the link from the Box.
-    pub bytes: u64,
-    /// Confirmation text.
-    pub confirmation: String,
-}
-
 #[cfg(test)]
 mod tests;

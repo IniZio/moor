@@ -298,31 +298,20 @@ A `moor call` request names the command in `cmd`, in kebab case:
 echo '{"cmd":"show"}' | moor call
 ```
 
-### `box-mirror`
+### `box-rsync`
 
-`{"cmd":"box-mirror","id":ID,"dest":DIR,"exclude":[PATTERN,...]}` makes the host directory `DIR`
-an exact copy of the work tree of the open Box with store id `ID`. It has no
-CLI command. A client sends it through `moor call` or moor-client. Only the
-operator may send it. `DIR` must be absolute, and moor creates it when it is
-missing.
+`{"cmd":"box-rsync","box":ID,"argv":[WORD,...]}` runs `argv` in the open Box with store id
+`ID` and streams its stdin, stdout and stderr over the connection, as `exec` does. It has no
+CLI command. The machine runner sends it from `moor-machine-runner box-rsh`, which it gives
+rsync as `-e`, to mirror a Box and to put a file into one. Only the runner and the operator
+may send it.
 
-moor runs rsync over the Box's ssh connection. The mirror keeps links as links
-and keeps file modes. It deletes from `DIR` the files that are gone from the
-Box, and it leaves out `.git`. A later mirror sends only what changed. The
-result gives `files`, the regular files sent, and `bytes`, the bytes that came
-from the Box. moor refuses a Box without a ready machine. It also refuses when
-rsync is missing on the Box or on the host, and the error names which one.
-
-### `box-put`
-
-`{"cmd":"box-put","id":ID,"src":FILE,"dest":PATH}` writes the host file `FILE` into the work
-tree of the open Box with store id `ID`, at `PATH`, with mode 0644. It has no CLI command. A
-client sends it through `moor call` or moor-client. Only the operator may send it.
-
-`FILE` must be an absolute path to a regular file of at most 32 MiB. `PATH` is relative to
-the work tree. moor refuses an empty path, an absolute path, and a path with `..`. It
-creates missing directories and replaces an existing file. The result gives `path`, the
-file's place in the Box, and `bytes`.
+`argv` must be `rsync --server [OPTIONS] . PATH`, the command rsync hands its remote shell.
+The options are the ones the runner's rsync sends: `--sender`, `--mkpath` and the short
+option cluster. `PATH` must lie in the Box's work tree. A relative `PATH` is taken from the
+work tree root. moor refuses a path with `..`. It holds the Box lock and wakes the Box first.
+It kills a transfer still running after 10 minutes. The result gives `exit`, rsync's exit
+code, or null when the transfer was killed.
 
 ## Exit codes
 

@@ -18,7 +18,7 @@ pub use env::EnvReq;
 mod exec;
 pub use exec::ExecReq;
 mod files;
-pub use files::{BoxMirrorReq, BoxPutReq, CpReq};
+pub use files::{BoxRsyncReq, CpReq};
 mod inspect;
 pub use inspect::InspectReq;
 mod host_session;
@@ -92,10 +92,9 @@ pub enum Request {
     Close(CloseReq),
     /// Copy a file into a box.
     Cp(CpReq),
-    /// Mirror a Box's work tree into a host directory.
-    BoxMirror(BoxMirrorReq),
-    /// Write one host file into a Box's work tree.
-    BoxPut(BoxPutReq),
+    /// Run the machine runner's rsync in the Box with its stdio streamed both ways over this
+    /// connection. It takes over the connection: the controller socket closes it after the answer.
+    BoxRsync(BoxRsyncReq),
     /// Open a box's workspace.
     Open(BoxReq),
     /// Sleep a box.

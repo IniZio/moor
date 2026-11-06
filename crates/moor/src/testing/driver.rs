@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, CheckpointDisk, Driver,
-    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd,
-    SleepKind, SleepOutcome, StepDone,
+    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, Released, RunEnd, SleepKind,
+    SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -238,18 +238,6 @@ impl Driver for FakeDriver {
         s.copy_content
             .as_deref()
             .map_or(Ok(()), |bytes| write_bytes(to, bytes))
-    }
-
-    fn mirror_out(
-        &self,
-        handle: &BoxHandle,
-        _: &BoxPath,
-        _: &Path,
-        exclude: &[String],
-    ) -> Result<MirrorStats, DriverError> {
-        self.st()
-            .note(format!("mirror_out {} {exclude:?}", handle.as_str()));
-        Err(DriverError::Unsupported("mirroring a Box"))
     }
 
     fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {
