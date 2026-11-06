@@ -84,6 +84,41 @@ fn a_suspend_records_what_the_box_holds_just_before_it() {
 }
 
 #[test]
+fn a_last_resort_suspend_checks_before_it_parks_the_tunnel() {
+    use crate::store::{Fenced, ReadyProc, TunnelAck, TunnelWant};
+    use crate::testing::rng::FakeRng;
+    let (w, hv) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    let (w, _) = agents_report(w, &[], &[a, b]);
+    holds(&w, b, CLEAN);
+    let store = w.cx.store().unwrap();
+    let lease = std::time::Duration::from_secs(30);
+    drop(store.reserve(b, &FakeRng::default(), lease).unwrap());
+    store.claim_lease(b, "A", lease).unwrap();
+    let box_port = store.proxy(b).unwrap().unwrap().box_port;
+    let proc = ReadyProc {
+        pid: 4242,
+        handle: "tunnel-1",
+        boot_id: None,
+    };
+    let ready = store.mark_ready(b, "A", box_port, proc).unwrap();
+    assert_eq!(ready, Fenced::Applied);
+    store.ack_tunnel(b, &TunnelAck::Parked { seq: 1 }).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (log, watched) = (seen.clone(), store.clone());
+    w.driver.on_exec(move || {
+        log.lock().unwrap().push(watched.tunnel_request(b).unwrap());
+    });
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(lifecycle(&w, b), Pending);
+    let seen = std::mem::take(&mut *seen.lock().unwrap());
+    assert!(!seen.is_empty(), "the check ran");
+    assert!(seen.iter().all(Option::is_none), "{seen:?}");
+    let parked = store.tunnel_request(b).unwrap().unwrap();
+    assert_eq!(parked.want, TunnelWant::Parked);
+}
+
+#[test]
 fn an_idle_suspend_records_it_too() {
     let (w, hv) = live_world(32_768);
     let a = started(&w, "a");

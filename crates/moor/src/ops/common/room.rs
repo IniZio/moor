@@ -280,6 +280,7 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Ok(handle) = ready_handle(&row) else {
         return Ok(false);
     };
+    // Parking takes the Proxy away, and the check runs in the Box.
     suspend_check::record(cx, store, id);
     park_tunnel(cx, id)?;
     let slept = cx.driver().sleep(&handle).map_err(|e| e.to_string());
