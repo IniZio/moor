@@ -5,6 +5,8 @@ use std::process::{Command, Output};
 
 use super::{at_base, clone_script, Checkout, CloneStep};
 
+mod submodules;
+
 const BRANCH: &str = "moor/demo";
 
 /// A scratch dir, removed on drop.

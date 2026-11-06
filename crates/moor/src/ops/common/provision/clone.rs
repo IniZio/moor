@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{at_base, clone_script, Checkout, CloneStep};
+use moor_core::boxscript::clone::{
+    at_base, clone_script, left_out_submodules, Checkout, CloneStep,
+};
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
@@ -257,8 +259,8 @@ fn clone(
     Err(with_tail(reason, text.as_deref().unwrap_or_default()))
 }
 
-/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, and a
-/// refresh that fell back to a fresh clone. Returns what the exec told about the Box.
+/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, a submodule
+/// left out and a refresh that fell back to a fresh clone. Returns what the exec told about the Box.
 fn report(
     cx: &Cx,
     identity: Option<&Identity>,
@@ -269,6 +271,7 @@ fn report(
     if let (Some(identity), Some(text)) = (identity, text) {
         identity.report(cx, text);
     }
+    warn_left_out(cx, "", text.unwrap_or_default());
     let kept = plan.is_some_and(|p| p.refresh.is_some());
     let tree = text
         .filter(|_| kept)
@@ -285,6 +288,16 @@ fn report(
         delivered: text.and_then(resources::parse),
         work_tree: tree,
         at_base: text.is_some_and(at_base),
+    }
+}
+
+/// Warns of each submodule a passing clone's `text` left out, its path after `repo`.
+pub(super) fn warn_left_out(cx: &Cx, repo: &str, text: &str) {
+    for left_out in left_out_submodules(text) {
+        cx.warn(Warning {
+            code: "submodule".to_owned(),
+            message: format!("submodule {repo}{left_out}; the Box runs without it"),
+        });
     }
 }
 

@@ -149,3 +149,37 @@ fn other_repos_need_a_primary_repo() {
     let err = run(&w.cx, &req).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
 }
+
+fn submodule_warnings(printed: [&str; 2]) -> Vec<String> {
+    let w = world(FakeDriver::new().exec_stdout(printed));
+    scripted(&w);
+    run(&w.cx, &listing("demo", vec![lib()])).unwrap();
+    w.cx.take_warnings()
+        .into_iter()
+        .filter(|w| w.code == "submodule")
+        .map(|w| w.message)
+        .collect()
+}
+
+#[test]
+fn a_submodule_the_clone_left_out_warns_and_the_start_goes_on() {
+    let warned = submodule_warnings(["moor.clone.submodule=vendor/engine: fatal: refused\n", ""]);
+    assert_eq!(
+        warned,
+        ["submodule vendor/engine: fatal: refused; the Box runs without it"]
+    );
+}
+
+#[test]
+fn a_submodule_another_repo_left_out_warns_with_that_repo() {
+    let warned = submodule_warnings(["", "moor.clone.submodule=native: fatal: refused\n"]);
+    assert_eq!(
+        warned,
+        ["submodule o/lib:native: fatal: refused; the Box runs without it"]
+    );
+}
+
+#[test]
+fn a_clone_with_every_submodule_warns_of_none() {
+    assert!(submodule_warnings(["", ""]).is_empty());
+}

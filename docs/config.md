@@ -418,6 +418,12 @@ and `GET /repos/{repo}/branches/*/protection/required_status_checks`. The Box
 can read Dependabot alerts and the required checks of a branch. It cannot
 dismiss an alert, because the rule has no write method on those paths.
 
+A submodule on GitHub comes through the same rule as the clone, so a Box gets
+any submodule that token can read, on any owner. A private submodule's URL in
+`.gitmodules` must be https and end in `.git`, the only path the rule allows.
+Any other form reaches GitHub without the token, so moor leaves that submodule
+out and warns.
+
 Only the hosts of these rules go through the Proxy. The Box reaches every
 other host directly. See
 [Which traffic goes through the Proxy](providers.md#which-traffic-goes-through-the-proxy).
@@ -649,6 +655,16 @@ goes on with a `cache_seal_failed` warning. Each volume with a seal is kept in
 a store of its own, so a docker volume that is not kept never holds back the
 other presets.
 
+#### Submodules
+
+A Box's clone also fetches the repo's submodules, nested ones included, as a
+partial clone like the repo itself. A repo with no `.gitmodules` pays nothing.
+A failed submodule does not fail the start, because an agent may not need it
+and a private one may be refused. The Box starts without it and the start warns
+with the code `submodule`, naming the path and git's reason. The same happens
+to any submodule still fetching 20 minutes into the clone. A Box missing a
+submodule saves no clone checkpoint, and a retry fetches the submodule again.
+
 #### Work tree
 
 Every Box with a repo also keeps its work tree, in a volume named `worktree`.
@@ -669,8 +685,9 @@ else runs:
 4. It removes every remote but the repo's own. It deletes every ref except the
    Box branch, the remote's branches, and the tags, along with the reflogs.
 
-A file whose content did not change keeps its modification time. When any step
-fails, moor empties the directory and clones fresh, as on the first Box, so the
+A submodule already in the tree follows its new commit, and one that is not
+is fetched as on a fresh clone. A file whose content did not change keeps its
+modification time. When any step fails, moor empties the directory and clones fresh, as on the first Box, so the
 start never fails because of the kept tree.
 
 The start's reply says which case happened in a `work_tree` field. The CLI

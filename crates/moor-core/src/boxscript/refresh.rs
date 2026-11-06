@@ -26,7 +26,8 @@ pub fn outcome(output: &str) -> Option<&str> {
 /// clone script clones cold. A base of `HEAD` means the remote's default branch, never the old local HEAD. Lazy
 /// fetch stays on, so a partial clone's checkout fetches the blobs it needs. The refresh never
 /// fails the script. A URL, base or branch that starts with `-` is left to the clone script,
-/// which refuses it.
+/// which refuses it. Only submodules already initialised are updated; the clone script fetches
+/// the rest, so one it left out never sends a later Box cold.
 #[must_use]
 pub fn refresh_script(c: &Checkout<'_>, key: &str) -> String {
     let (url, base, branch, key) = (quote(c.url), quote(c.base), quote(c.branch), quote(key));
@@ -69,7 +70,7 @@ moor_tree_refresh() {{
   rm -f -- .git/ORIG_HEAD .git/REBASE_HEAD .git/BISECT_EXPECTED_REV
   git reflog expire --expire=now --all && git worktree prune || {{ moor_tree_cold 'git could not drop old refs'; return 0; }}
   if [ -f .gitmodules ] && git submodule status --recursive 2>/dev/null | grep -q '^[ +U]'; then
-    {{ git submodule sync -q --recursive && git submodule update -q --init --recursive --force &&
+    {{ git submodule sync -q --recursive && git submodule update -q --recursive --force &&
       git submodule foreach -q --recursive 'git clean -ffdq'; }} || {{ moor_tree_cold 'a submodule could not be updated'; return 0; }}
   fi
   mkdir -p .moor && printf '%s\n' {key} > .moor/tree

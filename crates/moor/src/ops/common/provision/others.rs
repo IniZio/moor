@@ -10,7 +10,7 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
-use super::clone::{clone_log_of, with_tail, SetupProxy};
+use super::clone::{clone_log_of, warn_left_out, with_tail, SetupProxy};
 use super::layers;
 use super::setup_run::run_through_proxy;
 use super::SetupTarget;
@@ -80,7 +80,7 @@ pub(super) fn clone_others(
         .collect();
     let driver = cx.driver();
     let handle = target.handle;
-    let results: Vec<(String, Result<(), String>)> = if jobs.len() < 2 {
+    let results: Vec<(String, Result<String, String>)> = if jobs.len() < 2 {
         jobs.into_iter()
             .map(|(name, job)| (name, job.and_then(|job| run_clone(driver, handle, &job))))
             .collect()
@@ -105,7 +105,13 @@ pub(super) fn clone_others(
     };
     let failed: Vec<String> = results
         .into_iter()
-        .filter_map(|(name, r)| r.err().map(|e| format!("{name}: {e}")))
+        .filter_map(|(name, r)| match r {
+            Ok(text) => {
+                warn_left_out(cx, &format!("{name}:"), &text);
+                None
+            }
+            Err(e) => Some(format!("{name}: {e}")),
+        })
         .collect();
     if failed.is_empty() {
         Ok(())
@@ -171,28 +177,32 @@ fn prepare_clone(
     })
 }
 
-/// Runs `job` and reads back, then removes, its log.
-fn run_clone(driver: &dyn Driver, handle: &BoxHandle, job: &CloneJob) -> Result<(), String> {
+/// Runs `job` and reads back, then removes, its log; returns what it printed.
+fn run_clone(driver: &dyn Driver, handle: &BoxHandle, job: &CloneJob) -> Result<String, String> {
     let outcome = driver.exec(handle, &job.spec, job.deadline);
-    let text = job.log.as_deref().map(|log| {
-        let text = std::fs::read_to_string(log).unwrap_or_default();
-        let _ = std::fs::remove_file(log);
-        text
-    });
+    let text = job
+        .log
+        .as_deref()
+        .map(|log| {
+            let text = std::fs::read_to_string(log).unwrap_or_default();
+            let _ = std::fs::remove_file(log);
+            text
+        })
+        .unwrap_or_default();
     let checkout = Checkout {
         url: &job.url,
         base: "HEAD",
         branch: &job.branch,
     };
     let reason = match outcome {
-        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
+        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(text),
         Ok(ExecOutcome::Exited { code }) => {
             CloneStep::of_exit(code).map_or_else(|| format!("exit {code}"), |s| s.reason(&checkout))
         }
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e.to_string(),
     };
-    Err(with_tail(reason, text.as_deref().unwrap_or_default()))
+    Err(with_tail(reason, &text))
 }
 
 /// Runs the primary repo's setup, then each other repo's in its own tree, stopping at the first
