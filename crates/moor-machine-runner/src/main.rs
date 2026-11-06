@@ -175,22 +175,10 @@ fn advertised(args: &Args, socket: &Path) -> RunnerAddr {
     RunnerAddr::new(args.advertise.clone().unwrap_or_else(socket))
 }
 
-/// How the runner dials the controller, and the path the runner's own sockets sit beside:
-/// `--socket`, or one in `--state-dir` when the runner dials `--controller`.
+/// How the runner dials the controller, and the path its own sockets sit beside.
 fn controller(args: &Args) -> Result<(Dial, PathBuf), String> {
-    let Some(url) = &args.controller else {
-        let socket = args.socket.clone().ok_or("give --socket or --controller")?;
-        return Ok((Dial::Socket(socket.clone()), socket));
-    };
-    let ca = args
-        .controller_ca
-        .clone()
-        .ok_or("--controller needs --controller-ca")?;
-    let key = args.service_key.clone().filter(|k| !k.is_empty());
-    let key = key.ok_or("--controller needs --service-key")?;
-    let beside = args.state_dir.join("runner.sock");
-    let url = url.clone();
-    Ok((Dial::Tls { url, ca, key }, beside))
+    let tls = (&args.controller, &args.controller_ca, &args.service_key);
+    Dial::from_flags(args.socket.as_deref(), tls, &args.state_dir)
 }
 
 /// The dial and client for the controller, and the agents' links when `--agents` takes them.

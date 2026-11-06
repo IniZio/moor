@@ -3,7 +3,7 @@
 //! stdio over that one connection. The runner hands the helper its dial in the environment.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_client::link::ops;
@@ -42,6 +42,26 @@ impl Dial {
             Self::Socket(socket) => Ok(Client::new(socket)),
             Self::Tls { url, ca, key } => Client::runner(url, ca, key),
         }
+    }
+
+    /// The dial `--socket`, or `--controller` with its CA and key, names, and the path the
+    /// runner's own sockets sit beside: `socket`, or one in `state_dir` for `--controller`.
+    ///
+    /// # Errors
+    /// Names the flag missing.
+    pub fn from_flags(
+        socket: Option<&Path>,
+        (url, ca, key): (&Option<String>, &Option<PathBuf>, &Option<String>),
+        state_dir: &Path,
+    ) -> Result<(Self, PathBuf), String> {
+        let Some(url) = url.clone() else {
+            let socket = socket.ok_or("give --socket or --controller")?.to_path_buf();
+            return Ok((Self::Socket(socket.clone()), socket));
+        };
+        let ca = ca.clone().ok_or("--controller needs --controller-ca")?;
+        let key = key.clone().filter(|k| !k.is_empty());
+        let key = key.ok_or("--controller needs --service-key")?;
+        Ok((Self::Tls { url, ca, key }, state_dir.join("runner.sock")))
     }
 
     /// The environment that hands this dial to a helper.
