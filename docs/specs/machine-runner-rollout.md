@@ -154,7 +154,8 @@ A put is the same call the other way: the runner rsyncs its staged file to
 frames are the ones the `attach` relay already sends (binary, 64 KiB each).
 
 Deleted: `box-mirror` and `box-put` (the runner is their only sender), the
-grant's host directory, and the PVC subPath mounts.
+grant's host directory with the `runner_state_dir` config key, and the PVC
+subPath mounts. A put needs rsync 3.2.3 or later in the Box, for `--mkpath`.
 
 Limits: the mirror lives in the runner pod's `emptyDir`, so a Box's first sync
 after a runner roll copies its whole tree; later syncs send only changes. A put
@@ -204,8 +205,9 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
 ### Chart
 
 - `<release>-runner` Deployment as in Chart above, two replicas by default.
-  Ports: agents (`/machines/link`), 7700 (MCP), 7701 (controller dials).
-- `--advertise=$(POD_IP):7701` from the downward API.
+  Ports: 7701 agents (`/machines/link`, Service `<release>-runner-agents`),
+  7700 (MCP), 7702 links and forwards (controller dials).
+- `--advertise=$(POD_IP):7702` from the downward API.
 - The `<release>-machine` Service from #1138 selects the runner pods. Network
   policy: 7701 from the controller pod only, 7700 from the egress pods, 7443
   from the egress and runner pods.
@@ -227,25 +229,25 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
 
 1. **Drain and relink, single pod.** Done on `feat/machine-link-registry`.
 2. **Link registry in the store.** Done on the same branch.
-3. **Runner dials the controller over TLS.** Runner hello on the ledger
+3. **Runner dials the controller over TLS** (#1143). Runner hello on the ledger
    listener, runner `--controller tls://…` with CA and key. Check: a test
    runner over TLS gets `show` and `machine-keys`; a wrong key is refused.
    About 400 lines.
-4. **Box records in the store.** `machine_boxes` migration (SQLite and
+4. **Box records in the store** (#1144). `machine_boxes` migration (SQLite and
    Postgres), `machine-box`, `boxes/` deleted. Check: prepare a Box, restart
    the runner on an empty state directory, wake it; no second `prepare`.
    About 500 lines.
-5. **box-rsync.** Mirror and put through `box-rsh`; `box-mirror`, `box-put`
+5. **box-rsync** (#1149). Mirror and put through `box-rsh`; `box-mirror`, `box-put`
    and the host directory grant deleted. Check: sync and pull tests with the
    runner's state directory unreadable by the controller. About 600 lines.
-6. **Controller dials the runner by address.** Runner listener on 7701 with
+6. **Controller dials the runner by address** (#1145). Runner listener on 7701 with
    the key hello for links; `wire/links.rs` and link-dial route by the row.
    Check: two runners in a test, a machine linked to the second; lease, dial
    and ssh reach it. About 500 lines.
 7. **Forwards dial back.** The keeper change above, reviewed by the keeper's
    owner. Check: a Box port reached from the machine through a runner in
    another network namespace than the keeper. About 400 lines.
-8. **Runner Deployment.** The chart above. Check: the k3s roll-probe with
+8. **Runner Deployment** (#1146, on the shared Proxy chart). The chart above. Check: the k3s roll-probe with
    `RUNNER_EXEC='deploy/moor-runner -c runner'`, three runner rolls and three
    controller rolls, ops every 0.5 s and an exec in flight: zero failed ops,
    the exec completes, and the agent shows `not linked` for at most one redial.
