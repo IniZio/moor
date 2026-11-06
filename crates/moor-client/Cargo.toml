@@ -58,6 +58,10 @@ link = [
 
 [dev-dependencies]
 moor-testkit = { path = "../moor-testkit" }
+rcgen = { version = "0.14", default-features = false, features = [
+  "pem",
+  "ring",
+] }
 tempfile = "3"
 
 [lints.rust]

@@ -10,13 +10,13 @@ use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::ops::DerefMut;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rustix::event::{poll, PollFd, PollFlags};
 use rustix::io::Errno;
 use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use rustls::StreamOwned;
 use rustls::{ClientConfig, ClientConnection, ConnectionCommon, RootCertStore, SideData};
 
@@ -28,6 +28,17 @@ pub const RUNNER_HELLO: u32 = 1;
 
 /// The longest hello answer the runner reads.
 const ANSWER_MAX: usize = 4096;
+
+/// The PEM files of the runner's TLS dial.
+#[derive(Debug, Clone)]
+pub struct RunnerPki {
+    /// The CA that signed the controller's certificate.
+    pub ca: PathBuf,
+    /// The certificate the runner presents.
+    pub cert: PathBuf,
+    /// The certificate's private key.
+    pub key: PathBuf,
+}
 
 /// The controller's TLS listener, as the runner dials it.
 #[derive(Clone)]
@@ -50,11 +61,12 @@ impl fmt::Debug for Runner {
 
 impl Client {
     /// A client for the controller's TLS listener at `controller`, `tls://HOST:PORT`, whose
-    /// certificate `ca` (PEM) signed; each connection opens with the runner hello and `key`.
+    /// certificate `pki.ca` signed. Each connection presents `pki.cert` and opens with the
+    /// runner hello and `key`.
     ///
     /// # Errors
-    /// The address is not `tls://HOST:PORT` or the CA cannot be read.
-    pub fn runner(controller: &str, ca: &Path, key: &str) -> Result<Self, String> {
+    /// The address is not `tls://HOST:PORT`, or a PEM file cannot be read or does not fit.
+    pub fn runner(controller: &str, pki: &RunnerPki, key: &str) -> Result<Self, String> {
         let rest = controller
             .strip_prefix("tls://")
             .ok_or_else(|| format!("{controller}: expected tls://HOST:PORT"))?;
@@ -69,7 +81,7 @@ impl Client {
         Ok(Self::linked(super::remote::Link::Runner(Runner {
             host,
             port,
-            config: Arc::new(trusting(ca)?),
+            config: Arc::new(client_config(pki)?),
             key: Arc::from(key),
         })))
     }
@@ -104,11 +116,10 @@ impl Runner {
             .map_err(|e| bad(e.to_string()))?;
         let mut tls = StreamOwned::new(conn, tcp);
         let hello = serde_json::json!({"runner": {"v": RUNNER_HELLO, "key": &*self.key}});
-        let down = |e: io::Error| Attempt::Unrun(ClientError::Remote(format!("controller: {e}")));
         writeln!(tls, "{hello}")
             .and_then(|()| tls.flush())
-            .map_err(down)?;
-        let answer = line(&mut tls).map_err(down)?;
+            .map_err(|e| down(&e))?;
+        let answer = line(&mut tls).map_err(|e| down(&e))?;
         let answer: serde_json::Value = serde_json::from_slice(&answer)
             .map_err(|e| bad(format!("the controller's hello answer: {e}")))?;
         if answer.get("Ok").is_some() {
@@ -120,6 +131,17 @@ impl Runner {
             .map_or_else(|| answer.to_string(), str::to_owned);
         Err(Attempt::Failed(ClientError::Unauthorized(why)))
     }
+}
+
+/// A hello that failed with `e`: a TLS error, such as a refused certificate, fails the same
+/// way on every dial, while any other may pass on the next.
+fn down(e: &io::Error) -> Attempt<UnixStream, ClientError> {
+    e.get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+        .map_or_else(
+            || Attempt::Unrun(ClientError::Remote(format!("controller: {e}"))),
+            |tls| Attempt::Failed(ClientError::Unauthorized(format!("controller TLS: {tls}"))),
+        )
 }
 
 /// One line read a byte at a time, so nothing after it is taken from the stream.
@@ -138,8 +160,32 @@ fn line(read: &mut impl Read) -> io::Result<Vec<u8>> {
     Err(io::Error::other("the hello answer is too long"))
 }
 
-/// TLS that trusts only the certificates in the PEM file `ca`.
-fn trusting(ca: &Path) -> Result<ClientConfig, String> {
+/// TLS that trusts only the certificates in `pki.ca` and presents `pki.cert`.
+fn client_config(pki: &RunnerPki) -> Result<ClientConfig, String> {
+    fn named(path: &Path) -> impl Fn(rustls::pki_types::pem::Error) -> String + '_ {
+        move |e| format!("{}: {e}", path.display())
+    }
+    let chain = CertificateDer::pem_file_iter(&pki.cert)
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(named(&pki.cert))?;
+    if chain.is_empty() {
+        return Err(format!("{} holds no certificate", pki.cert.display()));
+    }
+    let key = PrivateKeyDer::from_pem_file(&pki.key).map_err(named(&pki.key))?;
+    trusting(&pki.ca)?
+        .with_client_auth_cert(chain, key)
+        .map_err(|e| {
+            format!(
+                "{}: the key does not fit the certificate: {e}",
+                pki.key.display()
+            )
+        })
+}
+
+/// TLS that trusts only the certificates in the PEM file `ca`, before its client certificate.
+fn trusting(
+    ca: &Path,
+) -> Result<rustls::ConfigBuilder<ClientConfig, rustls::client::WantsClientCert>, String> {
     let mut roots = RootCertStore::empty();
     for cert in CertificateDer::pem_file_iter(ca).map_err(|e| format!("{}: {e}", ca.display()))? {
         roots
@@ -149,13 +195,12 @@ fn trusting(ca: &Path) -> Result<ClientConfig, String> {
     if roots.is_empty() {
         return Err(format!("{} holds no certificate", ca.display()));
     }
-    let config =
+    let builder =
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
             .with_safe_default_protocol_versions()
             .map_err(|e| e.to_string())?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-    Ok(config)
+            .with_root_certificates(roots);
+    Ok(builder)
 }
 
 /// Joins `tls`, past its hello, to a fresh socket pair and returns the near end; a thread
@@ -260,3 +305,6 @@ fn ready(
     let [peer, far] = &fds;
     Ok((up(peer, on_peer), up(far, on_near)))
 }
+
+#[cfg(test)]
+mod tests;

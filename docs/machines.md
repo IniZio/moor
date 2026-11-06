@@ -65,8 +65,10 @@ moor-machine-runner --socket <state dir>/runner/runner.sock \
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links` and `box-rsync`. The runner needs no access to the controller's own socket. |
-| `--controller tls://HOST:PORT` | none | The controller's `ledger_tls` listener, in place of `--socket`, for a runner in another pod. It serves the same requests. Needs `--controller-ca`, `--service-key` and `--advertise`. |
+| `--controller tls://HOST:PORT` | none | The controller's `ledger_tls` listener, in place of `--socket`, for a runner in another pod. It serves the same requests. Needs `--controller-ca`, `--controller-cert`, `--controller-key`, `--service-key` and `--advertise`. |
 | `--controller-ca PEM` | none | The CA that signed the controller's certificate. |
+| `--controller-cert PEM` | `$MOOR_RUNNER_CLIENT_CERT` | The certificate the runner presents to `--controller`, signed by the ledger CA. Required with `--controller`. |
+| `--controller-key PEM` | `$MOOR_RUNNER_CLIENT_KEY` | The private key of `--controller-cert`. Required with `--controller`. |
 | `--service-key KEY` | `$MOOR_MACHINE_SERVICE_KEY` | The key the runner presents to `--controller` and checks on `--links`. |
 | `--advertise ADDR` | `--socket` | The address the runner reports to the controller as holding its machines' links. |
 | `--state-dir` | | Where the runner keeps one host mirror and one record for each Box. |

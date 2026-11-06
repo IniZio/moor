@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_client::tls::RunnerPki;
 use moor_client::{Client, ClientError};
 use moor_core::request::Request;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType};
@@ -250,7 +251,14 @@ fn runner_asks(
     key: &str,
     request: &str,
 ) -> Result<Value, ClientError> {
-    let client = Client::runner(&format!("tls://{addr}"), ca, key).expect("client");
+    let dir = ca.parent().expect("pki dir");
+    pki(dir, "runner", true);
+    let files = RunnerPki {
+        ca: ca.to_owned(),
+        cert: dir.join("runner.pem"),
+        key: dir.join("runner.key"),
+    };
+    let client = Client::runner(&format!("tls://{addr}"), &files, key).expect("client");
     let request: Request = serde_json::from_str(request).expect("request");
     client
         .request(request, |_| {})
