@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -19,7 +20,7 @@ use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume_gate::{room_to_wake, Turn};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
-use crate::ops::start::revive_after_wake;
+use crate::ops::start::{revive_after_wake, AfterWake};
 use crate::store::{BoxRow, Store};
 
 /// Wake the Box and its machine when either is Asleep, leaving the Proxy tunnel parked.
@@ -60,23 +61,47 @@ pub(crate) fn wake_in_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool,
 fn revive(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<bool, CommandError> {
     let woke = wake_with_tunnel(cx, store, row, turn)?;
     if woke.box_resumed {
-        revive_after_wake(cx, store, row.id)?;
-        tell_after_last_resort(cx, store, row)?;
+        let up_at = now(cx);
+        let after = revive_after_wake(cx, store, row.id)?;
+        tell_after_suspend(cx, store, row, up_at, after)?;
     }
     Ok(woke.any)
 }
 
-/// Tells the agent of a Box suspended as a last resort, once, what the suspension dropped.
-fn tell_after_last_resort(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+/// Tells the agent of a Box that stopped mid-turn, once, what that cost it and to carry on. The
+/// mark stays until the Box answers, since only then is there something true to say.
+fn tell_after_suspend(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    up_at: i64,
+    after: AfterWake,
+) -> Result<(), CommandError> {
     let Some(at) = store.resume_first(row.id)? else {
         return Ok(());
     };
-    let secs = now(cx).saturating_sub(at);
-    let text = format!(
-        "This Box was suspended for {secs}s because host memory was critical. Its processes and \
-         files are intact, but network connections open at that moment were dropped (API calls, \
-         downloads, git pushes). Re-run anything that failed."
-    );
+    let cost = match after {
+        AfterWake::Intact => {
+            "Its processes and files are intact, but network connections open at that moment \
+             were dropped (API calls, downloads, git pushes)."
+        }
+        AfterWake::Relaunched => {
+            "Its processes were lost and its agent was started again, so anything that was \
+             running has stopped; its files are kept."
+        }
+        AfterWake::Unknown => return Ok(()),
+    };
+    let secs = up_at.saturating_sub(at);
+    let stopped = store.newest_event_of(row.id, "asleep")?.is_some_and(|ev| {
+        ev.payload.get("reason").and_then(|r| r.as_str()) == Some(STOPPED_REASON)
+    });
+    let why = if stopped {
+        format!("This Box was down for {secs}s: {STOPPED_REASON}.")
+    } else {
+        format!("This Box was suspended for {secs}s because host memory was critical.")
+    };
+    let text =
+        format!("{why} {cost} Carry on with what you were doing. Re-run anything that failed.");
     if let Err(e) = crate::ops::steer::tell(cx, store, row, text) {
         cx.warn(Warning {
             code: "note_failed".to_owned(),

@@ -121,10 +121,21 @@ goes only when no other is left, since the suspension drops the run's
 connection. The only running Box is never suspended while it works. The status
 is `last-resort suspend: memory critical on NODE` or `last-resort suspend:
 memory below the host reserve on NODE`, ending `, with a run in flight` when
-that applies. That Box waits Pending and resumes before any other Box waiting on
-the node. When it wakes, its agent is told once that it was suspended, for how
-long, and that network connections open at that moment were dropped. Its
-processes and files are intact, though its wall clock jumps.
+that applies. That Box waits Pending and resumes before any other Box waiting on the node, with
+no one needing to act.
+
+A Box whose host lists its machine as stopped while its agent was mid-turn is
+treated the same way, with the status `its machine stopped, as when its host
+restarts`. A quiet one just goes asleep and waits to be asked for.
+
+A suspended Box keeps its session: moor cannot ask a machine that is not running
+about its agent, so reading its status decides nothing. On a wake moor asks the
+Box. A running agent gets a new pane and keeps its terminal and every process.
+Only an agent the Box says is gone is started again, from its stored session. A
+Box that does not answer keeps its session, and later status reads decide. Once
+it has answered, an agent that stopped mid-turn is told once for how long, whether
+its processes are intact or lost, that network connections open at that moment
+were dropped, and to carry on with its work. Its wall clock jumps.
 
 Every Box still finishes. Pressure only decides when it runs.
 

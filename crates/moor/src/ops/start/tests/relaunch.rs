@@ -17,7 +17,7 @@ use moor_schema::tables::{Launches, Sessions};
 use sea_query::Order;
 
 /// A start request for `demo` with `prompt`.
-fn prompt_req(prompt: &str) -> StartReq {
+pub(super) fn prompt_req(prompt: &str) -> StartReq {
     StartReq {
         prompt: Some(prompt.into()),
         ..req("demo")

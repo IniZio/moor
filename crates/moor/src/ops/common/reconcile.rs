@@ -2,17 +2,17 @@
 
 use std::time::Duration;
 
-use moor_core::decide::reconcile::{reconcile, stopped, BoxFact};
-use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::decide::reconcile::{reconcile, stopped, BoxFact, STOPPED_REASON};
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent};
-use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
 use moor_core::seam::driver::DriverError;
 use moor_core::{ProviderId, Warning};
 
 use crate::adapters::proc::plain::last_sentence;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::node::now;
 use crate::store::Store;
 
 /// Group live Box rows by provider, keeping first-seen order.
@@ -78,9 +78,10 @@ pub(crate) fn run(cx: &Cx) {
     }
 }
 
-/// Applies `d`. A sleep first quiets the Box's Session, whose agent stopped with the machine, and
-/// only under the Box's lock on a Box still Ready: a suspend in progress shows its machine as
-/// paused before that op records why, and the listing may predate what it recorded.
+/// Applies `d`. A sleep goes only under the Box's lock on a Box still Ready: a suspend in progress
+/// shows its machine as paused before that op records why, and the listing may predate what it
+/// recorded. A Box that was quiet just sleeps; one mid-turn has work to carry on, so it queues to
+/// resume first, its Session as it was.
 fn apply(cx: &Cx, store: &Store, d: Decision) {
     let (Some(BoxInput::Sleep), BoxTarget::Existing(id)) = (&d.box_input, &d.target) else {
         let _ = store.apply(d);
@@ -91,12 +92,27 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
     let Ok(_held) = BoxLock::acquire(cx.clock(), dir, id, "reconcile", Duration::ZERO) else {
         return;
     };
-    let ready = store
-        .box_row(id)
-        .is_ok_and(|r| r.is_some_and(|r| r.lifecycle == BoxLifecycle::Ready));
-    if ready {
-        let _ = store.apply(Decision::new(id).session(SessionInput::AgentQuiet));
+    let Ok(Some(row)) = store.box_row(id) else {
+        return;
+    };
+    if row.lifecycle != BoxLifecycle::Ready {
+        return;
+    }
+    if row.session.is_quiet() {
         let _ = store.apply(d);
+        return;
+    }
+    let suspend = Decision::new(id)
+        .lifecycle(BoxLifecycleInput::Suspend {
+            reason: STOPPED_REASON.to_owned(),
+        })
+        .box_input(BoxInput::Sleep)
+        .set(Fields {
+            state_reason: Field::Set(STOPPED_REASON.to_owned()),
+            ..Fields::default()
+        });
+    if store.apply(suspend).is_ok() {
+        let _ = store.set_resume_first(id, Some(now(cx)));
     }
 }
 
