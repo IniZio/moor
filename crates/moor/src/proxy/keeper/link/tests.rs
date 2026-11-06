@@ -10,7 +10,6 @@ use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 
 use moor_client::forward::{Forward, Forwarding};
@@ -19,11 +18,9 @@ use moor_core::name::BoxName;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::{BoxHandle, BoxId, ProviderId};
 
-use moor_core::seam::clock::Ts;
+use moor_client::link::reach::Runner;
 
 use super::{keep, MachineLink, Via};
-use crate::proxy::links::Runners;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
@@ -62,18 +59,16 @@ fn runner(socket: &Path, answer: Forwarding) -> mpsc::Receiver<(Forward, UnixStr
     rx
 }
 
-/// The runner on the host of state dir `dir`, which no store routes away from, and its
-/// forward socket.
-fn runners(dir: &Path) -> (Runners, PathBuf) {
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+/// The runner on the host of state dir `dir`, and its forward socket.
+fn local_runner(dir: &Path) -> (Runner, PathBuf) {
     let socket = crate::runner_dir::of(dir).join(moor_client::forward::SOCKET);
     std::fs::create_dir_all(socket.parent().expect("runner dir")).expect("runner dir");
-    (Runners::new(dir, None, clock, None), socket)
+    (Runner::Local(socket.with_file_name("runner.sock")), socket)
 }
 
-fn via(runners: &Runners) -> Via<'_> {
+fn via(runner: &Runner) -> Via<'_> {
     Via {
-        runners,
+        runner,
         box_id: 7,
         machine_id: 3,
     }
@@ -82,11 +77,11 @@ fn via(runners: &Runners) -> Via<'_> {
 #[test]
 fn opens_a_tunnel_per_port_then_asks_the_runner_to_serve_them() {
     let dir = tempfile::tempdir().expect("dir");
-    let (runners, socket) = runners(dir.path());
+    let (at, socket) = local_runner(dir.path());
     let seen = runner(&socket, Forwarding::Up);
     let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let mut link = MachineLink::open(&driver, &h, &via(&runners), &[8081, 3001]).expect("open");
+    let mut link = MachineLink::open(&driver, &h, &via(&at), &[8081, 3001]).expect("open");
     assert!(link.alive());
     let ports: Vec<u16> = driver.tunnels().iter().map(|t| t.box_port).collect();
     assert_eq!(ports, [8081, 3001]);
@@ -98,18 +93,18 @@ fn opens_a_tunnel_per_port_then_asks_the_runner_to_serve_them() {
 #[test]
 fn a_dead_link_is_reopened_and_close_ends_every_tunnel() {
     let dir = tempfile::tempdir().expect("dir");
-    let (runners, socket) = runners(dir.path());
+    let (at, socket) = local_runner(dir.path());
     let seen = runner(&socket, Forwarding::Up);
     let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let open = || MachineLink::open(&driver, &h, &via(&runners), &[8081]);
+    let open = || MachineLink::open(&driver, &h, &via(&at), &[8081]);
     let mut link = Some(open().expect("open"));
     let first = driver.tunnels().len();
-    keep(&mut link, open).expect("alive link kept");
+    keep(&mut link, Some(&at), open).expect("alive link kept");
     assert_eq!(driver.tunnels().len(), first, "a live link is left alone");
     let (_, held) = seen.recv().expect("runner asked");
     held.shutdown(Shutdown::Both).expect("runner lets go");
-    keep(&mut link, open).expect("reopened");
+    keep(&mut link, Some(&at), open).expect("reopened");
     assert_eq!(
         driver.tunnels().len(),
         first + 1,
@@ -123,12 +118,36 @@ fn a_dead_link_is_reopened_and_close_ends_every_tunnel() {
 }
 
 #[test]
+fn a_live_link_whose_row_names_another_runner_is_reopened() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (at, socket) = local_runner(dir.path());
+    let seen = runner(&socket, Forwarding::Up);
+    let driver = FakeDriver::new().reverse_tunnels();
+    let h = boxed(&driver);
+    let open = || MachineLink::open(&driver, &h, &via(&at), &[8081]);
+    let mut link = Some(open().expect("open"));
+    let (_, _held) = seen.recv().expect("runner asked");
+    let moved = Runner::Remote {
+        addr: "10.0.0.8:7701".to_owned(),
+        key: "k".to_owned(),
+    };
+    keep(&mut link, None, open).expect("an unknown runner keeps the link");
+    assert_eq!(driver.tunnels().len(), 1);
+    keep(&mut link, Some(&moved), open).expect("reopened");
+    assert_eq!(
+        driver.tunnels().len(),
+        2,
+        "a moved row opens the forwards again"
+    );
+}
+
+#[test]
 fn a_failed_tunnel_names_its_port() {
     let dir = tempfile::tempdir().expect("dir");
-    let (runners, _) = runners(dir.path());
+    let (at, _) = local_runner(dir.path());
     let driver = FakeDriver::new();
     let h = boxed(&driver);
-    let err = MachineLink::open(&driver, &h, &via(&runners), &[8081])
+    let err = MachineLink::open(&driver, &h, &via(&at), &[8081])
         .err()
         .expect("no tunnel support");
     assert_eq!(err.port, Some(8081));
@@ -137,7 +156,7 @@ fn a_failed_tunnel_names_its_port() {
 #[test]
 fn a_refused_forward_carries_the_runner_reason() {
     let dir = tempfile::tempdir().expect("dir");
-    let (runners, socket) = runners(dir.path());
+    let (at, socket) = local_runner(dir.path());
     let _seen = runner(
         &socket,
         Forwarding::Refused {
@@ -146,7 +165,7 @@ fn a_refused_forward_carries_the_runner_reason() {
     );
     let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let err = MachineLink::open(&driver, &h, &via(&runners), &[8081])
+    let err = MachineLink::open(&driver, &h, &via(&at), &[8081])
         .err()
         .expect("refused");
     assert_eq!((err.port, err.error.as_str()), (None, "mini is not linked"));

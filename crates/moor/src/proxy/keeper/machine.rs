@@ -6,9 +6,14 @@ use moor_core::domain::event::{Event, MachineEvent};
 
 use moor_core::BoxHandle;
 
+use moor_client::link::reach::Runner;
+
 use super::link::{keep, ForwardFailed, MachineLink, Via};
 use super::Kept;
 use crate::store::{HeldMachine, MachineWake};
+
+/// A held machine's id and the runner that holds its link.
+pub(super) type Reach = (i64, Result<Runner, String>);
 
 /// The forwards to the attached machine and whether their last open failed.
 #[derive(Default)]
@@ -25,7 +30,7 @@ impl Kept {
     /// Grants the Box's want, then opens the held machine's forwards, or opens them again when a
     /// child died. The caller holds the keeper's busy lock; the forwards open outside the state
     /// lock and are kept only if the Box is still awake on the same machine.
-    pub(super) fn tend_machine(&self) {
+    pub(super) fn tend_machine(&self, reach: Option<Reach>) {
         self.grant_machine();
         let store = &self.deps.store;
         let want = match store.box_machine(self.box_id) {
@@ -43,7 +48,7 @@ impl Kept {
         };
         let mut slot = std::mem::take(&mut inner.machine);
         drop(inner);
-        let event = self.open_forwards(&mut slot, &handle, want);
+        let event = self.open_forwards(&mut slot, &handle, want, reach);
         let mut inner = self.lock();
         if !self.current(&inner, &handle) {
             drop(inner);
@@ -63,19 +68,30 @@ impl Kept {
         slot: &mut MachineSlot,
         handle: &BoxHandle,
         want: HeldMachine,
+        reach: Option<Reach>,
     ) -> Option<MachineEvent> {
         let (name, ports, enrolled) = (want.machine.name, want.ports, want.machine_id);
         let wanted = Some((name.clone(), ports.clone()));
         if slot.opened != wanted {
             slot.link = None;
         }
-        let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
-        let via = Via {
-            runners: &self.deps.runners,
-            box_id: self.box_id.get(),
-            machine_id: enrolled,
+        // Looked up here only when the machine was granted during this tick.
+        let runner = match reach {
+            Some((id, runner)) if id == enrolled => runner,
+            _ => self.reach(enrolled),
         };
-        let opened = keep(&mut slot.link, || {
+        let now = runner.as_ref().ok();
+        let fresh = !slot.link.as_mut().is_some_and(|l| l.holds(now));
+        let opened = keep(&mut slot.link, now, || {
+            let runner = runner.as_ref().map_err(|error| ForwardFailed {
+                port: None,
+                error: error.clone(),
+            })?;
+            let via = Via {
+                runner,
+                box_id: self.box_id.get(),
+                machine_id: enrolled,
+            };
             MachineLink::open(self.deps.driver.as_ref(), handle, &via, &ports)
         });
         match opened {
@@ -91,6 +107,18 @@ impl Kept {
                 Some(MachineEvent::MachineForwardFailed { port, error })
             }
         }
+    }
+
+    /// The runner holding the link of the machine the Box holds, read before the busy lock so a
+    /// slow name lookup holds up no `end` or park; none when the Box holds no machine.
+    pub(super) fn reach_machine(&self) -> Option<Reach> {
+        let id = self.deps.store.box_machine(self.box_id).ok()??.machine_id;
+        Some((id, self.reach(id)))
+    }
+
+    /// The runner holding machine `id`'s link, its name looked up.
+    fn reach(&self, id: i64) -> Result<Runner, String> {
+        self.deps.runners.runner(id).and_then(Runner::looked_up)
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.

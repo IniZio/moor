@@ -4,6 +4,7 @@
 //! listener that serves a connection only after a [`Hello`] carrying the machine service key.
 
 use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -13,13 +14,13 @@ use tokio_util::either::Either;
 
 use super::ops;
 
-/// How long a connect to a runner across the network may take.
-const CONNECT_WITHIN: Duration = Duration::from_secs(10);
+/// How long a connect to a runner across the network may take, unless the caller says.
+pub const CONNECT_WITHIN: Duration = Duration::from_secs(10);
 /// The hello's version.
 pub const HELLO_V: u32 = 1;
 
 /// A machine runner the controller reaches.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Runner {
     /// On this host: its socket to the controller.
     Local(PathBuf),
@@ -30,6 +31,19 @@ pub enum Runner {
         /// The machine service key it checks.
         key: String,
     },
+}
+
+impl std::fmt::Debug for Runner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local(socket) => f.debug_tuple("Local").field(socket).finish(),
+            Self::Remote { addr, .. } => f
+                .debug_struct("Remote")
+                .field("addr", addr)
+                .field("key", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// The first line of a connection to a runner across the network: what it asks for, and the key.
@@ -104,11 +118,42 @@ impl Runner {
         })
     }
 
+    /// This runner with its `host:port` looked up, so connecting to it does no name lookup;
+    /// this blocks on the lookup.
+    ///
+    /// # Errors
+    /// The name has no address.
+    pub fn looked_up(self) -> Result<Self, String> {
+        let Self::Remote { addr, key } = self else {
+            return Ok(self);
+        };
+        if addr.parse::<SocketAddr>().is_ok() {
+            return Ok(Self::Remote { addr, key });
+        }
+        let found = addr
+            .to_socket_addrs()
+            .map_err(|e| unreachable(&addr, &e))?
+            .next();
+        let found = found.ok_or_else(|| format!("the machine runner at {addr} has no address"))?;
+        Ok(Self::Remote {
+            addr: found.to_string(),
+            key,
+        })
+    }
+
     /// A connection for `service`, its hello sent.
     ///
     /// # Errors
     /// The runner cannot be reached.
     pub async fn connect(&self, service: Service) -> Result<Conn, String> {
+        self.connect_within(service, CONNECT_WITHIN).await
+    }
+
+    /// [`Self::connect`], giving up on a runner across the network after `within`.
+    ///
+    /// # Errors
+    /// The runner cannot be reached.
+    pub async fn connect_within(&self, service: Service, within: Duration) -> Result<Conn, String> {
         match self {
             Self::Local(socket) => {
                 let path = socket.with_file_name(service.socket());
@@ -118,11 +163,19 @@ impl Runner {
             }
             Self::Remote { addr, key } => {
                 let failed = |e: &io::Error| unreachable(addr, e);
-                let mut tcp = tokio::time::timeout(CONNECT_WITHIN, TcpStream::connect(addr))
+                let mut tcp = tokio::time::timeout(within, TcpStream::connect(addr))
                     .await
                     .map_err(|_| failed(&io::ErrorKind::TimedOut.into()))?
                     .map_err(|e| failed(&e))?;
                 let _ = tcp.set_nodelay(true);
+                // A runner pod gone without a FIN or RST must read as gone within half a minute.
+                let probes = socket2::TcpKeepalive::new()
+                    .with_time(Duration::from_secs(10))
+                    .with_interval(Duration::from_secs(5))
+                    .with_retries(3);
+                socket2::SockRef::from(&tcp)
+                    .set_tcp_keepalive(&probes)
+                    .map_err(|e| failed(&e))?;
                 ops::write_line(&mut tcp, &service.hello(key))
                     .await
                     .map_err(|e| failed(&e))?;
@@ -155,7 +208,15 @@ pub fn into_blocking(conn: Conn) -> io::Result<StdConn> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Hello, Keyed};
+    use super::{Hello, Keyed, Runner};
+
+    #[test]
+    fn a_runners_debug_never_shows_the_key() {
+        let runner = Runner::at("10.0.0.7:7701", Some("secret-key")).unwrap();
+        let shown = format!("{runner:?}");
+        assert!(shown.contains("10.0.0.7:7701"), "{shown}");
+        assert!(!shown.contains("secret-key"), "{shown}");
+    }
 
     #[test]
     fn the_hello_names_its_service_and_carries_the_key() {
