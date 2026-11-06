@@ -208,9 +208,11 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
   Ports: 7701 agents (`/machines/link`, Service `<release>-runner-agents`),
   7700 (MCP), 7702 links and forwards (controller dials).
 - `--advertise=$(POD_IP):7702` from the downward API.
-- The `<release>-machine` Service from #1138 selects the runner pods. Network
-  policy: 7701 from the controller pod only, 7700 from the egress pods, 7443
-  from the egress and runner pods.
+- The `<release>-machine` Service selects the runner pods. No NetworkPolicy
+  and no PodDisruptionBudget: the deploy account cannot manage policies, and a
+  PDB guards node drains, not deploys. Isolation is the ledger handshake: the
+  runner presents the `runner-client` certificate from the ledger CA, issued
+  into the `<release>-egress` Secret, beside the key hello.
 - `MOOR_MACHINE_SERVICE_KEY` from the release secret; the ledger CA mounted as
   the egress pods mount it.
 - `emptyDir` for `mirrors/` and `tmp/`. No PVC.
@@ -247,13 +249,15 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
 7. **Forwards dial back.** The keeper change above, reviewed by the keeper's
    owner. Check: a Box port reached from the machine through a runner in
    another network namespace than the keeper. About 400 lines.
-8. **Runner Deployment** (#1146, on the shared Proxy chart). The chart above. Check: the k3s roll-probe with
+8. **Runner client certificate** for the ledger dial, `--controller-cert` and
+   `--controller-key`; required once the ledger verifies client certificates.
+9. **Runner Deployment** (#1146): the chart above, mounting that certificate. The chart above. Check: the k3s roll-probe with
    `RUNNER_EXEC='deploy/moor-runner -c runner'`, three runner rolls and three
    controller rolls, ops every 0.5 s and an exec in flight: zero failed ops,
    the exec completes, and the agent shows `not linked` for at most one redial.
-9. **Slack.** State to the store, lease, own Deployment.
+10. **Slack.** State to the store, lease, own Deployment.
 
-## To measure in PR 1 and 8
+## To measure in PR 1 and 9
 
 - Seconds a machine shows `not linked` across a nightly deploy.
 - Machine ops failed across a runner roll with one exec in flight.
