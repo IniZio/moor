@@ -8,7 +8,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, PausePublish, SleepOutcome};
 use moor_core::{BoxId, BoxName, ProviderId};
 
 use super::{run, AgentRead};
@@ -409,4 +409,30 @@ fn auto_sleep_of_a_box_that_cannot_sleep_restores_its_tunnel() {
         host.calls(),
         vec![ProxyHostCall::Park(f.id), ProxyHostCall::Restore(f.id)]
     );
+}
+
+#[test]
+fn an_idle_box_on_a_provider_that_saves_sends_allowed_and_any_other_sends_denied() {
+    let saving = FakeDriver::new();
+    saving.saves_on_pause();
+    let f = idle_with(saving);
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(f.driver.pause_publishes(), [PausePublish::Allowed]);
+
+    let f = idle();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(f.driver.pause_publishes(), [PausePublish::Denied]);
+}
+
+#[test]
+fn the_awake_cap_on_a_provider_that_saves_sends_denied() {
+    let saving = FakeDriver::new();
+    saving.saves_on_pause();
+    let f = working_with(saving);
+    pass(&f, Duration::from_mins(120));
+    auto_sleep(&f);
+    assert_eq!(states(&f).0, BoxLifecycle::Asleep);
+    assert_eq!(f.driver.pause_publishes(), [PausePublish::Denied]);
 }

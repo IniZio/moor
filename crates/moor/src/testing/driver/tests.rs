@@ -230,8 +230,14 @@ fn sleep_and_wake_are_recorded_and_can_fail_once() {
         .fail_sleep(DriverError::Unavailable("x".into()))
         .fail_wake(DriverError::Timeout(Duration::from_secs(1)));
     let h = fake.acquire(&req()).unwrap().handle;
-    assert_eq!(fake.sleep(&h), Err(DriverError::Unavailable("x".into())));
-    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Slept));
+    assert_eq!(
+        fake.sleep(&h, moor_core::seam::driver::PausePublish::Denied),
+        Err(DriverError::Unavailable("x".into()))
+    );
+    assert_eq!(
+        fake.sleep(&h, moor_core::seam::driver::PausePublish::Denied),
+        Ok(SleepOutcome::Slept)
+    );
     assert_eq!(
         fake.wake(&h),
         Err(DriverError::Timeout(Duration::from_secs(1)))
@@ -253,9 +259,15 @@ fn sleep_and_wake_are_recorded_and_can_fail_once() {
 fn sleep_outcome_is_scripted_and_gone_box_is_not_found() {
     let fake = FakeDriver::new().sleep_outcome(SleepOutcome::Native);
     let h = fake.acquire(&req()).unwrap().handle;
-    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Native));
+    assert_eq!(
+        fake.sleep(&h, moor_core::seam::driver::PausePublish::Denied),
+        Ok(SleepOutcome::Native)
+    );
     fake.forget(&h);
-    assert_eq!(fake.sleep(&h), Err(DriverError::NotFound));
+    assert_eq!(
+        fake.sleep(&h, moor_core::seam::driver::PausePublish::Denied),
+        Err(DriverError::NotFound)
+    );
     assert_eq!(fake.wake(&h), Err(DriverError::NotFound));
 }
 

@@ -14,6 +14,8 @@ use crate::store::{BoxRow, Store};
 
 /// The feature a machine's agent reports when its crabbox mounts cache volumes.
 const CACHE_VOLUME: &str = "cache-volume";
+/// The feature a machine's agent reports when a pause can save the lease's cache volumes.
+const CACHE_SAVE_ON_PAUSE: &str = "cache-save-on-pause";
 
 /// Why a Box whose plan holds volumes starts without them.
 #[derive(Clone, Copy)]
@@ -98,20 +100,37 @@ fn layers(cx: &Cx, cfg: &BoxSettings) -> CacheLayers {
 /// Why the personal machine `row` is placed on keeps no crabbox cache volumes for `user`, when
 /// it does not: it is offline, unlinked or not the owner's, or its agent does not report them.
 fn machine_lacks(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<Why> {
-    let Ok(Some(seat)) = seat_of(cx, store, row) else {
-        return Some(Why::MachineOffline);
-    };
-    let links = store.user_machine_links(user).unwrap_or_default();
-    let Some((_, link)) = links.iter().find(|(_, l)| l.machine_id == seat.machine) else {
-        return Some(Why::MachineOffline);
-    };
-    if !link.online {
-        Some(Why::MachineOffline)
-    } else if !link.features.iter().any(|f| f == CACHE_VOLUME) {
-        Some(Why::MachineLacks)
-    } else {
-        None
+    match machine_features(cx, store, row, user) {
+        None => Some(Why::MachineOffline),
+        Some(features) if !features.iter().any(|f| f == CACHE_VOLUME) => Some(Why::MachineLacks),
+        Some(_) => None,
     }
+}
+
+/// What the online agent of the owner's personal machine `row` is placed on reports.
+fn machine_features(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<Vec<String>> {
+    let seat = seat_of(cx, store, row).ok()??;
+    let links = store.user_machine_links(user).unwrap_or_default();
+    let (_, link) = links
+        .into_iter()
+        .find(|(_, l)| l.machine_id == seat.machine)?;
+    link.online.then_some(link.features)
+}
+
+/// Whether the provider under `row` can save cache volumes while the Box sleeps.
+pub(crate) fn saves_on_pause(cx: &Cx, store: &Store, row: &BoxRow) -> bool {
+    let Some(boxed) = row.boxed.as_ref() else {
+        return false;
+    };
+    if boxed.provider.host().is_some() {
+        return row
+            .user
+            .and_then(|user| machine_features(cx, store, row, user))
+            .is_some_and(|features| features.iter().any(|f| f == CACHE_SAVE_ON_PAUSE));
+    }
+    cx.driver()
+        .caps(&boxed.provider)
+        .is_ok_and(|caps| caps.cache_save_on_pause)
 }
 
 /// The plan for `row` on `provider`, or why the Box starts cold. A Box with no volumes to keep is

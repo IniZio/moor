@@ -95,8 +95,9 @@ removed and added again. A webhook can name others that the controller stores:
 | `node_disk_low` | The disk of a node the owner has a Box on fell below the free space moor keeps for another Box. Sent once per owner per crossing, on one Box, with `node`, `free_mib` and `total_mib` in `data`. See [nodes](nodes.md#disk). |
 | `node_disk_recovered` | That node's free disk climbed back past its floor and margin. |
 
-Add `caches_not_saved` to hear when a close deleted an asleep Box that did not fit
-to wake, so its teardown did not run and its caches were lost. Add `relaunched` to
+Add `caches_not_saved` to hear when a close deleted an asleep Box without waking
+it, and the Box had not [saved its caches as it slept](providers.md#saving-at-a-pause),
+so they were lost. Add `relaunched` to
 hear about each automatic restart of the agent, or
 `closed` and `asleep` for those changes. A `closed` event's `data` has `from`,
 the lifecycle the Box left, and a `reason` when moor closed the Box and no

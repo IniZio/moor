@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::cache::CachePlan;
-use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec, PausePublish};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxHandle;
 
@@ -42,6 +42,10 @@ fn is_artifact_index(spec: &ExecSpec) -> bool {
 /// received.
 #[derive(Default)]
 pub(super) struct CacheState {
+    /// Whether the caps report saving caches at a pause.
+    pub(super) saves_on_pause: bool,
+    /// What each `sleep` said of saving caches.
+    pub(super) pause_publishes: Vec<PausePublish>,
     /// Whether `caps` reports cache volumes.
     pub(super) on: bool,
     /// The plan of every `acquire`, in call order.
@@ -127,6 +131,25 @@ impl FakeDriver {
     pub(crate) fn cache_volumes(self) -> Self {
         self.st().cache.on = true;
         self
+    }
+
+    /// Reports that a pause can save the Box's cache volumes.
+    pub(crate) fn saves_on_pause(&self) {
+        self.st().cache.saves_on_pause = true;
+    }
+
+    /// What a machine's agent over this fake would report.
+    pub(crate) fn link_features(&self) -> Vec<String> {
+        let saves = self.st().cache.saves_on_pause;
+        saves
+            .then(|| "cache-save-on-pause".to_owned())
+            .into_iter()
+            .collect()
+    }
+
+    /// What each `sleep` so far said of saving caches, in call order.
+    pub(crate) fn pause_publishes(&self) -> Vec<PausePublish> {
+        self.st().cache.pause_publishes.clone()
     }
 
     /// The cache plan of every `acquire` so far, in call order.

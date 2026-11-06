@@ -25,7 +25,7 @@ pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
-pub use types::{AcquireReq, Acquired, BoxListing, Released, SleepOutcome};
+pub use types::{AcquireReq, Acquired, BoxListing, PausePublish, Released, SleepOutcome};
 
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync {
@@ -302,7 +302,8 @@ pub trait Driver: Send + Sync {
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the provider cannot be asked or the suspend fails.
-    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError>;
+    fn sleep(&self, handle: &BoxHandle, publish: PausePublish)
+        -> Result<SleepOutcome, DriverError>;
 
     /// Wakes a sleeping Box.
     ///

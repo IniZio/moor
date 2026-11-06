@@ -15,6 +15,8 @@ pub enum Verb {
     Info,
     /// Pause the VM, keeping its disk and memory.
     Pause,
+    /// Pause the VM, and let its provider save the lease's cache volumes.
+    PausePublish,
     /// Resume a paused VM.
     Resume,
     /// Delete the VM; one already gone counts as deleted.

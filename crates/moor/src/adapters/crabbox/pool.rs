@@ -10,13 +10,13 @@ use std::process::{Command, Stdio};
 use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
 use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
-use moor_core::seam::driver::{
-    AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind, SleepOutcome,
-};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind};
 
 use super::{handle_of, pin, split_handle, Crabbox};
 
 pub(super) mod checkpoints;
+mod power;
+pub(super) use power::{sleep, wake};
 mod list;
 pub(in crate::adapters::crabbox) use list::{list, list_handles};
 
@@ -135,6 +135,7 @@ pub(super) const CAPS: DriverCaps = DriverCaps {
     reverse_tunnel: true,
     has_workdir: true,
     cache_volumes: false,
+    cache_save_on_pause: false,
     checkpoints: true,
 };
 
@@ -361,27 +362,6 @@ pub(super) fn release(cb: &Crabbox, handle: &BoxHandle) -> Result<Released, Driv
         let _ = fs::remove_file(dir.join(format!("{}.known_hosts", placed.slug)));
     }
     Ok(Released::Deleted)
-}
-
-/// Pauses the VM, or says why it cannot.
-pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-    match cb.placed(handle)?.ask(Verb::Pause, None)? {
-        Answer::Done => Ok(SleepOutcome::Slept),
-        Answer::Unsupported => Ok(SleepOutcome::CannotSleep(format!(
-            "provider {} cannot sleep a box",
-            split_handle(handle).0.unwrap_or_default()
-        ))),
-        other => Err(unexpected(Verb::Pause, &other)),
-    }
-}
-
-/// Resumes the VM.
-pub(super) fn wake(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
-    match cb.placed(handle)?.ask(Verb::Resume, None)? {
-        Answer::Done => Ok(()),
-        Answer::Unsupported => Err(DriverError::Unsupported("provider cannot wake a box")),
-        other => Err(unexpected(Verb::Resume, &other)),
-    }
 }
 
 /// A failure saying `why`.

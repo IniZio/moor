@@ -155,7 +155,10 @@ fn ops() -> Vec<(&'static str, Op)> {
         ("reverse_tunnel", |c| {
             c.reverse_tunnel(&handle(), 1, Path::new("/s")).is_err()
         }),
-        ("sleep", |c| c.sleep(&handle()).is_err()),
+        ("sleep", |c| {
+            c.sleep(&handle(), moor_core::seam::driver::PausePublish::Denied)
+                .is_err()
+        }),
         ("wake", |c| c.wake(&handle()).is_err()),
     ]
 }

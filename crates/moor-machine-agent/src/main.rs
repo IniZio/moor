@@ -73,7 +73,7 @@ enum Command {
     },
     /// Does a lease verb on this host and prints the answer as JSON.
     Lease {
-        /// warmup, info, pause, resume, stop or list.
+        /// warmup, info, pause, pause-publish, resume, stop or list.
         #[arg(value_parser = verb)]
         verb: Verb,
         /// `moor-<controller>-<id>`; none for list.

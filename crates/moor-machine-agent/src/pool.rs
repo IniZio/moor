@@ -39,6 +39,8 @@ const CALL: Duration = Duration::from_mins(2);
 const GONE: i32 = 4;
 /// The variable that caps the size of crabbox's cache store, in GB.
 const CACHE_CAP: &str = "CRABBOX_CACHE_STORE_MAX_GB";
+/// Asks crabbox's pause to save the lease's caches.
+const PAUSE_PUBLISH: &str = "CRABBOX_PAUSE_PUBLISH";
 /// Bytes of crabbox's stderr an error quotes, from the end.
 const TAIL: usize = 2048;
 
@@ -217,7 +219,8 @@ async fn act(
         }
         Verb::Warmup => warmup(lease, slug, boot).await,
         Verb::Info => return reach::info(lease).await,
-        Verb::Pause => lease.run("pause", "--id", CALL, &[0]).await,
+        Verb::Pause => return pause(lease, &[]).await,
+        Verb::PausePublish => return pause(lease, &[(PAUSE_PUBLISH, "1".to_owned())]).await,
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
             let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
@@ -228,12 +231,18 @@ async fn act(
     };
     match ran {
         Ok(_) => Ok(Answer::Done),
-        Err(e) if verb == Verb::Pause && e.contains("does not support pause") => {
-            Ok(Answer::Unsupported)
-        }
         Err(e) if verb == Verb::Stop && e.contains(&format!("lease {slug} not found")) => {
             Ok(Answer::Done)
         }
+        Err(e) => Err(e),
+    }
+}
+
+/// Pauses the lease with `env` added to crabbox's.
+async fn pause(lease: &Crabbox<'_>, env: &[(&str, String)]) -> Result<Answer, String> {
+    match lease.run_with("pause", &["--id"], CALL, &[0], env).await {
+        Ok(_) => Ok(Answer::Done),
+        Err(e) if e.contains("does not support pause") => Ok(Answer::Unsupported),
         Err(e) => Err(e),
     }
 }

@@ -45,7 +45,10 @@ fn fail(stderr: &str) -> Reply {
 fn suspend_provider_pauses_by_provider_and_id() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["pause"], Reply::Ok(String::new()));
-    let got = c.sleep(&BoxHandle::new("pauser/box"));
+    let got = c.sleep(
+        &BoxHandle::new("pauser/box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert_eq!(got, Ok(SleepOutcome::Slept));
     let call = p
         .calls()
@@ -60,7 +63,10 @@ fn suspend_provider_pauses_by_provider_and_id() {
 fn native_provider_makes_no_pause_call() {
     let (p, c) = fixture();
     assert_eq!(
-        c.sleep(&BoxHandle::new("sprites/box")),
+        c.sleep(
+            &BoxHandle::new("sprites/box"),
+            moor_core::seam::driver::PausePublish::Denied
+        ),
         Ok(SleepOutcome::Native)
     );
     assert_eq!(verbs(&p), ["providers"]);
@@ -69,7 +75,10 @@ fn native_provider_makes_no_pause_call() {
 #[test]
 fn provider_that_cannot_sleep_gives_a_reason_and_no_call() {
     let (p, c) = fixture();
-    let got = c.sleep(&BoxHandle::new("plain/box"));
+    let got = c.sleep(
+        &BoxHandle::new("plain/box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("plain")));
     assert_eq!(verbs(&p), ["providers"]);
 }
@@ -77,7 +86,10 @@ fn provider_that_cannot_sleep_gives_a_reason_and_no_call() {
 #[test]
 fn provider_that_cannot_wake_stays_up() {
     let (p, c) = fixture();
-    let got = c.sleep(&BoxHandle::new("namespace-devbox/box"));
+    let got = c.sleep(
+        &BoxHandle::new("namespace-devbox/box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("wake")));
     assert_eq!(verbs(&p), ["providers"]);
 }
@@ -85,7 +97,10 @@ fn provider_that_cannot_wake_stays_up() {
 #[test]
 fn unknown_provider_stays_up_with_a_reason_and_no_pause() {
     let (p, c) = fixture();
-    let got = c.sleep(&BoxHandle::new("nope/box"));
+    let got = c.sleep(
+        &BoxHandle::new("nope/box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("nope")));
     assert_eq!(verbs(&p), ["providers"]);
 }
@@ -93,7 +108,10 @@ fn unknown_provider_stays_up_with_a_reason_and_no_pause() {
 #[test]
 fn handle_without_provider_cannot_sleep() {
     let (p, c) = fixture();
-    let got = c.sleep(&BoxHandle::new("box"));
+    let got = c.sleep(
+        &BoxHandle::new("box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert!(matches!(got, Ok(SleepOutcome::CannotSleep(_))));
     assert!(p.calls().is_empty());
 }
@@ -102,7 +120,12 @@ fn handle_without_provider_cannot_sleep() {
 fn failed_pause_is_an_error_without_raw_stderr() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["pause"], fail("SECRET detail"));
-    let e = c.sleep(&BoxHandle::new("pauser/box")).unwrap_err();
+    let e = c
+        .sleep(
+            &BoxHandle::new("pauser/box"),
+            moor_core::seam::driver::PausePublish::Denied,
+        )
+        .unwrap_err();
     assert!(matches!(e, DriverError::Failed { .. }));
     assert!(!e.to_string().contains("SECRET"));
 }
@@ -112,7 +135,10 @@ fn pause_timeout_is_a_timeout() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["pause"], Reply::Timeout);
     assert!(matches!(
-        c.sleep(&BoxHandle::new("pauser/box")),
+        c.sleep(
+            &BoxHandle::new("pauser/box"),
+            moor_core::seam::driver::PausePublish::Denied
+        ),
         Err(DriverError::Timeout(_))
     ));
 }
@@ -193,7 +219,10 @@ fn external(providers: &str) -> (Arc<ScriptedProc>, Crabbox) {
 fn external_box_with_pause_resume_opted_in_is_paused() {
     let (p, c) = external(EXTERNAL_OPTED_IN);
     assert_eq!(
-        c.sleep(&BoxHandle::new("external/box")),
+        c.sleep(
+            &BoxHandle::new("external/box"),
+            moor_core::seam::driver::PausePublish::Denied
+        ),
         Ok(SleepOutcome::Slept)
     );
     let call = p
@@ -210,7 +239,32 @@ fn external_box_with_pause_resume_opted_in_is_paused() {
 #[test]
 fn external_box_without_pause_resume_cannot_sleep_and_makes_no_pause_call() {
     let (p, c) = external(EXTERNAL_OPTED_OUT);
-    let got = c.sleep(&BoxHandle::new("external/box"));
+    let got = c.sleep(
+        &BoxHandle::new("external/box"),
+        moor_core::seam::driver::PausePublish::Denied,
+    );
     assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("external")));
     assert_eq!(verbs(&p), ["providers"]);
+}
+
+fn pause_env(publish: moor_core::seam::driver::PausePublish) -> Option<String> {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["pause"], Reply::Ok(String::new()));
+    c.sleep(&BoxHandle::new("pauser/box"), publish).unwrap();
+    let call = p
+        .calls()
+        .into_iter()
+        .find(|c| c.args.first().is_some_and(|a| a == "pause"))
+        .unwrap();
+    call.env
+        .iter()
+        .find(|(k, _)| k == "CRABBOX_PAUSE_PUBLISH")
+        .map(|(_, v)| v.clone())
+}
+
+#[test]
+fn only_an_allowed_pause_asks_crabbox_to_save_the_caches() {
+    use moor_core::seam::driver::PausePublish::{Allowed, Denied};
+    assert_eq!(pause_env(Allowed).as_deref(), Some("1"));
+    assert_eq!(pause_env(Denied), None);
 }

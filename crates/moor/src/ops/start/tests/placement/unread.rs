@@ -29,7 +29,7 @@ fn seen_idle(w: &World, id: BoxId) {
 }
 
 /// Reads of `id`'s agent have failed for as long as a cached report stands in.
-fn unread(w: &World, id: BoxId) {
+pub(super) fn unread(w: &World, id: BoxId) {
     seen_idle(w, id);
     w.cx.clock().sleep(HOOK_TTL);
 }

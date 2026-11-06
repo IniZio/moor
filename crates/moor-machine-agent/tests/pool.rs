@@ -101,6 +101,40 @@ fn pausing_on_a_provider_that_cannot_answers_unsupported() {
 }
 
 #[test]
+fn only_pause_publish_asks_crabbox_to_save_the_caches() {
+    let home = warmed();
+    assert_eq!(
+        lease(home.path(), &["pause", "moor-1a2b3c4d-7"]),
+        (true, DONE())
+    );
+    assert_eq!(
+        lease(home.path(), &["pause-publish", "moor-1a2b3c4d-7"]),
+        (true, DONE())
+    );
+    let log = std::fs::read_to_string(home.path().join("publish.log")).unwrap();
+    let pauses: Vec<&str> = log.lines().filter(|l| l.starts_with("pause ")).collect();
+    assert_eq!(pauses, ["pause unset", "pause 1"]);
+    let calls = fake_crabbox::calls(home.path());
+    assert_eq!(
+        calls
+            .matches(" pause --provider fake --id moor-1a2b3c4d-7\n")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn pause_publish_on_a_provider_that_cannot_answers_unsupported() {
+    let home = warmed();
+    std::fs::write(home.path().join("no-pause"), "").unwrap();
+    let want = json!({"reply": "leased", "answer": "unsupported"});
+    assert_eq!(
+        lease(home.path(), &["pause-publish", "moor-1a2b3c4d-7"]),
+        (true, want)
+    );
+}
+
+#[test]
 fn info_gives_the_login_user_and_host_key_only() {
     let home = warmed();
     let want = json!({"reply": "leased", "answer": "info", "user": "vm",
