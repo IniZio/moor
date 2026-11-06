@@ -1,103 +1,79 @@
 # Deploy-invisible Boxes
 
-A controller deploy must not show up inside a Box. A setup line mid-fetch, an agent turn mid-API-call and a machine link all keep working while the controller pod is replaced.
+A controller deploy must not show up inside a Box. A setup line mid-fetch and an agent turn mid-API-call keep working while the controller pod is replaced.
 
-Today they don't. The chart runs one Deployment with `strategy: Recreate`. Every Box-facing process lives in that pod and dies with it.
+Today they don't on the team cluster. The chart runs the shared egress Proxy inside the controller pod, and the pod uses `strategy: Recreate`. Every deploy cuts every Box's egress for 30 to 40 s.
 
-Evidence from the nightly.140 deploy:
+## What is already built
 
-- Deploy started 06:41:20Z. Box 8's setup line, fetching over the network, failed at 06:41:42Z.
-- Every Box Proxy came back at 06:42:04Z with pids 30 and 33, so the new pod started them.
-- The links broker refused connections. One Box lost its agent link. Tunnels restarted.
+Merged on `develop`:
 
-[#1058](https://github.com/IniZio/moor/pull/1058) already lets setup scripts survive a restart. This spec covers the processes the Box talks to.
+- One shared, stateless egress Proxy, `moor proxy serve-egress`, serves every Box by token over a WebSocket `/egress` listener. It caches each Box's spec, secrets and machine, warms them from the ledger every 10 s, and serves from cache while the controller is away.
+- The in-Box forwarder. tinyproxy sends credential hosts to it. It opens one WebSocket per CONNECT.
+- The controller serves its ledger over TLS on `7443` with a shared key, so a Proxy in another pod can reach it.
+- A keeper per Box in the controller. On the direct route it opens no tunnel. It holds only the Box's machine slot and machine forwards.
+- The chart runs the Proxy as its own Deployment behind `egress.enabled`. It has 2 replicas, `RollingUpdate` with `maxUnavailable: 0`, a 300 s drain and `/synced` readiness. It makes and keeps its secrets. It also renders a NetworkPolicy and a PodDisruptionBudget.
 
-## Where Box traffic goes today
+Turning `egress.enabled` on for nightly failed. The deploy account cannot read NetworkPolicies in the `moor` namespace, so Helm stopped before applying anything:
 
-```mermaid
-flowchart LR
-  subgraph Box
-    line[setup line / agent] -->|HTTPS_PROXY 127.0.0.1:egress_port| tiny[tinyproxy]
-  end
-  subgraph pod[controller pod, Recreate]
-    ctl[controller]
-    sup[Box Proxy supervisor<br/>moor proxy serve]
-    tun[reverse tunnel<br/>crabbox tunnel --reverse]
-    run[machine runner<br/>links broker]
-    fp[front Proxy]
-    slack[slack front]
-    notify[notify front]
-    gate[moor-gate]
-  end
-  tiny -->|box_port| tun --> sup
-  sup -->|ledger/proxy.sock| ctl
-  sup -->|127.0.0.1:7700 machine.moor.internal| run
-  ctl -->|runner/links.sock, moor link-dial| run
-  agents[machine agents] -->|/machines/link :7701| run
-  sup --> upstream[(GitHub, model API)]
+```
+networkpolicies.networking.k8s.io "moor-ledger" is forbidden:
+User "system:serviceaccount:default:github-action-k3s-sa" cannot get resource
+"networkpolicies" in API group "networking.k8s.io" in the namespace "moor"
 ```
 
-In-Box tinyproxy sends credential hosts to `box_port`. The reverse tunnel carries `box_port` to the Box's supervisor in the pod. See [egress.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor-core/src/exec_env/egress.rs) and [exec_env.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor-core/src/exec_env.rs).
+PodDisruptionBudget was never reached, so its permission is unknown.
 
-## Inventory
+## What a team install can rely on
 
-Every process and listener in the pod, from [deployment.yaml in moor-gitops](https://github.com/oursky/moor-gitops/blob/d031655040f31b5cf2e75941b1e80fd41176429c/helm/moor/templates/deployment.yaml) and the controller's [mod.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor/src/controller/mod.rs).
+moor is a team product. An install deploys with whatever account the platform gave the team. The nightly account has applied, over many deploys, every kind the chart rendered before egress. Those are Deployment, Service, Secret, ConfigMap, PersistentVolumeClaim and Ingress. It cannot read NetworkPolicy. The chart must give its guarantees with those kinds alone.
 
-| Process | Listens on | Who depends on it | State it holds | What a Box sees while it is down | Must outlive a controller deploy |
-|---|---|---|---|---|---|
-| controller (`moor controller serve`) | `controller.sock`, each front's socket, `runner/runner.sock`, `ledger/proxy.sock` | CLI, fronts, gate, runner, every Box Proxy | Store, vault key, settle loop, ops in flight | No start, steer or close. Proxies lose the ledger. | No. It is what deploys. Its clients must ride out its absence. |
-| Box Proxy supervisor (`moor proxy serve <box>`), one per Box | Unix socket per Box, nono on loopback | The Box, through its tunnel | Lease, in-flight CONNECT tunnels, request log, per-Box CA | Every request to a credential host fails. Setup lines and agent API calls fail. | Yes |
-| Reverse tunnel, a `crabbox tunnel --reverse` child of each supervisor | `box_port` on the Box's loopback | tinyproxy in the Box | ssh session, crabbox lease files | Same as the supervisor | Yes |
-| Machine runner (`moor-machine-runner`) with the links broker | `127.0.0.1:7700`, `:7701` agent links, `runner/links.sock` | Box Proxies, controller, `moor link-dial`, machine agents | Live agent links, slot holds, relay MCP sessions, forwards, host mirrors | Machine tools fail. Agent link drops. Tunnels to pool VMs die, since they dial through the broker. | Yes |
-| Agent pane, a `ssh -t` attach run by the controller's pty surface | None | Box event and status reads | None. The agent is held in the Box. | Nothing. The agent keeps running and the next controller attaches again. | No |
-| Front Proxy (`moor proxy serve-fronts`), child of the controller | Per-front CONNECT socket | Slack front | None | Nothing | No |
-| Slack front | Outbound Socket Mode only | Slack users | Thread state on the PVC | Nothing. Users see the bot pause. | No |
-| notify front | None | Webhook subscribers | Delivery cursor | Nothing. Webhooks arrive late. | No |
-| moor-gate | `:8443` behind the ingress | herdr, CLI, MCP clients, browser sign-in | None | Nothing. Clients reconnect after its drain. | No |
-| Setup run, since #1058 | None | Controller follows it | Runs in the Box | Nothing | Already does |
-| Ledger socket, in the controller | `ledger/proxy.sock` | Box Proxies | None | A Proxy stops 26 s after the controller stops answering | It must answer again before any Proxy gives up |
+That rules out two habits:
 
-A supervisor already rides out a short controller gap, but only for 26 s. See [beat.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor/src/proxy/supervisor/beat.rs). It also reads the user's secret and the machine hold through the ledger on every request. So the gap fails requests even before the cut-off.
+- Isolation by NetworkPolicy. It also never held on clusters whose network plugin does not enforce it, which the chart cannot detect.
+- Safety by PodDisruptionBudget. It guards node drains by the platform, not deploys.
 
-The controller already adopts live supervisors after a process restart. See [adopt.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor/src/proxy/adopt.rs). It trusts a pid, process group and boot id. None of those cross a pod boundary.
-
-The agent is already held in the Box. See [holder.rs](https://github.com/IniZio/moor/blob/293a16c603e2626b199553056e02e0e29c96e007/crates/moor/src/adapters/box_agent/launch/holder.rs). A mid-turn agent only breaks when its API calls lose the Proxy.
+A flag that drops either resource is not an answer. It makes the team install the one without the safety. The safety has to come from the processes themselves.
 
 ## Design
 
-One shared, stateless egress Proxy serves every Box. It sits at a fixed address, outside the controller pod, and keys each request by the Box's token. The per-Box supervisor and its reverse tunnel go away.
+The Proxy stays in its own Deployment. Two changes make it deployable on a team install, and nothing else is added.
+
+### Mutual TLS on the ledger
+
+The ledger listener accepts only a client that presents a certificate signed by the chart's ledger CA. A stranger is refused in the TLS handshake, before any moor code reads a frame. The shared key stays, and still names which Proxy a connection speaks for.
+
+The chart already makes the CA and the server certificate on first install and keeps them in the Secret `<release>-egress`. It now also issues a client certificate from that CA for the egress pods, kept the same way. The runner gets its own client certificate from the same CA when it dials the ledger (phase 8).
+
+This is what the NetworkPolicy gave, done where every install can have it. The NetworkPolicy leaves the chart.
+
+### No PodDisruptionBudget in the chart
+
+A deploy is a `RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1`, so a replica stops only after the next is Ready. That is the whole guarantee this spec needs, and it needs no PDB.
+
+A node drain by the platform evicts a replica with its full grace, so open tunnels finish. Anti-affinity keeps the two replicas on different nodes where the cluster has them. An operator who may manage `policy/v1` adds a PDB beside the chart. The docs give the manifest. The same goes for a NetworkPolicy. The chart's own guarantees do not depend on either.
 
 ```mermaid
 flowchart LR
   subgraph Box
     tool[setup line / agent] -->|HTTPS_PROXY| tiny[tinyproxy]
-    tiny -->|credential hosts| fwd[moor forwarder<br/>loopback port]
+    tiny -->|credential hosts| fwd[forwarder]
   end
-  fwd -->|one WebSocket per CONNECT<br/>wss://host/egress<br/>Bearer box token| cf[Cloudflare Tunnel]
-  cf --> gate[gate ingress<br/>/egress path]
-  gate --> svc[Proxy Service]
-  subgraph proxy[Proxy Deployment, 2 replicas, RollingUpdate]
+  fwd -->|wss://host/egress<br/>Bearer box token| cf[Cloudflare Tunnel]
+  cf --> ing[gate ingress /egress]
+  ing --> svc[egress Service]
+  subgraph egress[egress Deployment, 2 replicas, RollingUpdate]
     p1[Proxy]
     p2[Proxy]
   end
   svc --> p1
   svc --> p2
-  p1 -->|ledger: spec, CA, secrets| ctl[controller]
-  p1 --> upstream[(GitHub, model API)]
+  p1 -->|mTLS 7443, key<br/>spec, secrets, machine| ctl[controller pod]
+  p1 -->|7700, service key<br/>machine.moor.internal| run[runner]
+  p1 --> up[(GitHub, model API)]
 ```
 
-Per request, a Proxy replica does this:
-
-1. Hashes the bearer token and finds the Box it belongs to.
-2. Loads that Box's spec, user secrets and CA through the ledger. [#1075](https://github.com/IniZio/moor/pull/1075) already keeps spec and CA in the Proxy row.
-3. Intercepts TLS with the Box's CA and injects credentials, as today.
-4. Caches the last answers, so a controller gap serves from them. [#1063](https://github.com/IniZio/moor/pull/1063) added that cache.
-
-The Proxy reaches the ledger through an in-cluster Service, over TLS, with its key from the chart Secret. That is its only link into the controller pod. The Proxy never holds the vault key or the database URL.
-
-On SIGTERM a replica fails its readiness check, takes no new WebSocket, and lets open CONNECT tunnels finish within a long termination grace.
-
-### Controller deploy, after
+### Controller deploy
 
 ```mermaid
 sequenceDiagram
@@ -106,16 +82,15 @@ sequenceDiagram
   participant C1 as old controller
   participant C2 as new controller
   B->>P: WebSocket, Bearer token, target
-  P->>C1: token, spec, secret
-  C1-->>P: answers (cached)
+  P->>C1: warm pass every 10 s
   Note over C1: SIGTERM, drains, exits
   B->>P: WebSocket
-  P-->>B: served from cache
+  P-->>B: served from the last warm pass
   Note over C2: starts, ledger answers again
-  P->>C2: next lookup
+  P->>C2: next warm pass
 ```
 
-Nothing in the Box connects to the controller pod, so a controller deploy has nothing to break.
+Nothing in a Box connects to the controller pod. The Proxy's cache covers the gap. A secret revoked inside the gap stays in use until the controller returns.
 
 ### Proxy rollout
 
@@ -124,128 +99,71 @@ sequenceDiagram
   participant B as Box forwarder
   participant O as old replica
   participant N as new replica
-  N->>N: becomes Ready
-  Note over O: SIGTERM, readiness fails
+  N->>N: /synced answers 200
+  Note over O: SIGTERM, stops listening, preStop 10 s
   B->>N: new WebSockets
-  O->>O: open tunnels finish within the grace
+  O->>O: open tunnels finish within 300 s
   Note over O: exits
 ```
 
-The forwarder opens a fresh WebSocket per CONNECT. So a rollout moves new requests at once and lets old ones finish.
+A replica turns Ready only after one whole warm pass finished in time. A Proxy rollout during a controller deploy waits, and the old replicas keep serving.
 
-## Box token
+## Options considered
 
-- Minted per Box at start. Stored only as a hash in the Proxy row.
-- Delivered to the Box with the forwarder's config, readable only by the Box user.
-- Refused once the Box closes.
-- Rate-limited per token in each replica.
-- Short-lived rotation and pinning the token to the Box's address from `CF-Connecting-IP` are later options.
-
-The token grants only what the Box's loopback port grants today. A Box that leaks it leaks its own egress, not another Box's.
-
-## In-Box forwarder
-
-The forwarder is a static Rust binary of about 150 lines. It is built in moor and delivered with box-put. moor ships it itself, so it is not a vendor dependency.
-
-- Listens on the loopback port tinyproxy already routes credential hosts to.
-- Accepts a CONNECT, opens a WebSocket to its upstream URL with `Authorization: Bearer <box token>` and the target in a header, then copies bytes both ways.
-- Takes its upstream URL from config.
-
-tinyproxy stays as the Box's egress proxy. tinyproxy 1.11 has no TLS upstream and supports only http, socks4 and socks5. So it cannot reach the Proxy on its own.
-
-## Transport
-
-| Where | Forwarder upstream | Proxy and forwarder code |
+| Option | What it costs | Outcome |
 |---|---|---|
-| Cluster | `wss://<host>/egress` through Cloudflare Tunnel and the gate ingress | Same |
-| Dev controller with no public ingress | `ws://127.0.0.1:<tunnel port>/egress`, over the crabbox reverse tunnel the controller keeps | Same |
+| Proxy in its own Deployment, mTLS ledger, no NetworkPolicy or PDB in the chart | A client certificate in the existing Secret, about 100 lines in the controller and the Proxy, chart and docs edits | Chosen. Works with the kinds every install can apply. The isolation moves into the handshake. |
+| Keep NetworkPolicy and PDB, make them optional (#1152) | Two flags | Rejected. The team install becomes the one without the isolation. |
+| Ask the platform for NetworkPolicy and PDB rights on the deploy account | A ticket per install | Rejected as the chart's dependency. Welcome as an operator add-on beside the chart. |
+| Controller with 2 replicas, leader-held work, RollingUpdate | Leases in the store, a drain that hands leases over, the gate split from the controller socket | Rejected here. That is phase 6. Egress needs none of it once the Proxy is outside the pod. |
+| Box-side forwarder that rides out a gap | Buffering in the forwarder | Rejected. A CONNECT is a TCP stream with TLS inside. A gap resets it; the forwarder cannot replay it. Only new CONNECTs could wait, and 30 s exceeds most clients' timeouts. |
+| Proxy co-located with the runner Deployment | One Deployment and Service | Rejected. The runner needs `SYS_ADMIN` and an unmasked `/proc`; the Proxy holds Box secrets and needs neither. Their drains differ, 30 s against 300 s. |
+| Proxy on the machine agent, beside the Box | A second Proxy shape, a ledger path over the agent link | Rejected for now. Shared nodes have no agent. Backlog as a latency option for machine-hosted Boxes. |
+| An off-the-shelf proxy (Envoy, nginx, Traefik) in place of `serve-egress` | Lua or ext_authz to look up a Box, inject its credential and sign with its CA | Rejected. The per-Box CA and credential rules are moor's logic. Cloudflare Tunnel, rustls and the Kubernetes rollout already cover the generic parts. |
+| A service mesh for the mTLS | Cluster admin | Rejected. Not available to a team install. |
 
-The dev path keeps the controller holding the tunnel. A dev controller restart still blips its Boxes, which is fine for a dev host.
+## How phase 8 fits
 
-## What the prototype showed
+Two Deployments with clear owners, one trust root.
 
-- moor.oursky.codes sits behind Cloudflare Tunnel (`gate.ingress.className: cloudflare-tunnel`). It answers CONNECT with 400 and ends TLS, so passthrough is out. WebSocket upgrades do reach the backend.
-- A forwarder of about 150 lines on tinyproxy's credential port worked unchanged for curl, git, python, Go, undici and Claude Code.
-- 2 replicas behind a load balancer, with graceful drain on SIGTERM, rolled over cleanly.
-- During that rollout 100 of 100 new requests completed. So did 3 of 3 downloads of 60 MB and 4 of 4 streams of 40 s.
-- An abrupt kill breaks only the streams on that replica.
+| | Egress (this spec) | Runner (phase 8, `machine-runner-rollout.md`) |
+|---|---|---|
+| Holds | Nothing per Box beyond a cache | Live agent links |
+| Drain | 300 s, tunnels finish | 30 s, agents relink |
+| Reaches the controller | Ledger `7443`, egress hello, client certificate | Ledger `7443`, runner hello, client certificate |
+| Reached by | Boxes through the ingress | Agents through the ingress; the Proxy on `7700` with the service key |
 
-## Why one shared Proxy
+The shared pieces live in this spec. They are the Secret with the CA, the server certificate, one client certificate per Deployment, and the ledger listener's client verification. Phase 8 reuses them and repoints the `<release>-machine` Service at the runner pods. It does not add a NetworkPolicy or a PDB either.
 
-The owner's peer research found one shape everywhere credentials stay out of the sandbox. One stateless proxy at a fixed address serves many sandboxes. None moves per-sandbox tunnels between pods.
+## Deferred, with reasons
 
-| Product | Credential path |
-|---|---|
-| E2B | Shared proxy in front of sandboxes |
-| Daytona | Shared proxy in front of sandboxes |
-| Cloudflare Sandbox | Shared proxy in front of sandboxes |
-| Deno Sandbox | Shared proxy in front of sandboxes |
-| Fly tokenizer | Shared proxy that injects tokens |
-| Anthropic's git proxy | Shared proxy that injects git credentials |
-| Docker MCP Gateway | Shared gateway in front of MCP servers |
-| Tailscale Aperture | Shared gateway in front of AI APIs |
-| Coder's AI Gateway | Shared gateway in front of AI APIs |
+- **Machine forwards blip on a controller deploy.** The keeper holds them and dies with the controller. They reopen on the keeper's first tick after the new controller starts, 2 s. Moving the keeper out of the controller is the edge design this spec replaced. Phase 8 keeps the keeper in the controller too. Accepted.
+- **One ledger connection per Box per replica.** The egress hello names a Box, and the ledger serves each connection in its own thread. That is 2 connections per awake Box at 2 replicas. It is fine at the Box counts the team runs. Revisit above about 200 awake Boxes, with a per-call Box in ledger protocol 2. Hard cutover, no compat.
+- **engine-03 timeouts under host load.** Nightly still runs the Proxy in the pod, so each Box on engine-03 reaches it through an ssh reverse tunnel the keeper holds. The direct route opens no such tunnel, so that path goes away with `egress.enabled`. What remains is a host whose CPU is starved by its own Boxes. That is admission and capacity work, tracked apart from this spec.
+- **The Proxy to runner hop on `7700`.** Plain HTTP in the cluster with a service key. mTLS for it comes with phase 8's runner certificate, if wanted. The key already refuses a stranger.
 
-The earlier plan moved each Box's supervisor and tunnel into a long-lived edge Deployment. Three of its seven PRs existed only to keep per-Box tunnels alive across pods. A shared Proxy has no per-Box process to keep alive.
+## Backlog
 
-## Data shape
-
-```rust
-/// One row per Box. The controller writes it at Box start and removes it at close.
-struct ProxyRow {
-    box_id: BoxId,
-    token_hash: TokenHash,    // sha-256 of the Box token
-    spec: ProxySpec,          // from #1075
-    ca: Sealed<CaPair>,       // from #1075, opened only by the controller
-    egress_port: u16,         // tinyproxy's loopback port in the Box
-    forward_port: u16,        // the forwarder's loopback port in the Box
-}
-
-/// What the forwarder reads in the Box.
-struct ForwarderConfig {
-    upstream: Url,            // wss://<host>/egress or ws://127.0.0.1:<tunnel port>/egress
-    token: BoxToken,
-}
-```
-
-Lease, pid, boot id, ready flag and handle leave the row. Nothing runs per Box outside the Box.
-
-## Machine runner
-
-The runner stays stateful and keeps its agent links. It moves to its own rarely deployed Deployment later. Until then a controller deploy blips machine tools and agent links. That is accepted.
-
-## Decisions
-
-- One shared, stateless Proxy replaces the edge split.
-- Hard cutover. Running Boxes are recreated, with no migration.
-- During a controller gap the Proxy keeps injecting the last secret it read. A secret revoked inside the gap stays in use until the controller returns.
-- The Proxy follows the nightly tag. Drain makes each rollout safe.
-- The Proxy Deployment mounts no volume. The controller pod keeps its own PVC for Box logs and Slack state.
-- moor-gate gets its own `RollingUpdate` Deployment as a follow-up.
-- The shared Proxy supersedes three earlier owner answers. A down edge made the controller SIGTERM a same-host supervisor. The edge PR was verified by a live local run and unit tests, with the harness later. `pid` and `boot_id` stayed in the shared Proxy row until the chart split.
-- Earlier prototype findings no longer needed are the crabbox lease dir path, the tinyproxy SIGHUP repoint and the edge reconcile rules.
+- The forwarder retries the WebSocket dial for a few seconds before failing a CONNECT, so a Cloudflare blip or a replica mid-stop costs nothing.
+- A Proxy on the machine agent for machine-hosted Boxes, to skip the Cloudflare round trip.
+- moor-gate in its own `RollingUpdate` Deployment, so herdr and MCP clients see no blip either. Phase 6.
+- Box logs and Slack state into Postgres, retiring the controller pod's PVC.
 
 ## PRs, in order
 
-Each PR stays under about 1000 lines.
+1. **Ledger mTLS.** The controller's ledger listener verifies client certificates against the ledger CA. The Proxy presents one. The chart issues `egress-client` certificate and key in `<release>-egress`, mounts them in the egress pods, and drops the NetworkPolicy and the PodDisruptionBudget. The [Kubernetes doc](https://github.com/IniZio/moor/blob/edfca34b7ac8b19c41828c0c778cbb1d65181de7/docs/kubernetes.md) names what the chart renders, and gives a PDB and a NetworkPolicy as manifests an operator applies beside the chart. Takes the runner loopback key move from #1152. Verified when a ledger connect with no certificate, or one from another CA, is refused in the handshake. `helm template` renders no `networking.k8s.io` and no `policy/v1` kind. The k3s rollout check passes.
+2. **Nightly.** `egress.enabled: true` in moor-gitops, by its owner, once 1 ships in a nightly.
+3. **Measure on nightly.** A Box looping `curl` through a credential host and an agent mid-turn across a controller deploy. Then roll the egress Deployment mid-download. The target for both is no failed request.
+4. **Phase 8 PR 3** gives the runner its client certificate from the same CA.
 
-1. [#1063](https://github.com/IniZio/moor/pull/1063). Proxies ride out a controller gap on last answers. Verified by a live local controller restart under a Box looping `curl`.
-2. [#1075](https://github.com/IniZio/moor/pull/1075). Each Proxy row keeps its spec and CA, the CA key sealed by the vault.
-3. **Shared Proxy.** One Proxy serves many Boxes by token over a WebSocket `/egress` listener. Token mint at Box start, revoke at close, rate limit per token, drain on SIGTERM. Verify with a live local run. Run 2 Proxy processes behind a local load balancer with Boxes on the dev transport. SIGTERM one mid-download. No request fails, and a closed Box's token is refused. Draft [#1077](https://github.com/IniZio/moor/pull/1077) can be adapted to drive the shared Proxy later.
-4. **In-Box forwarder.** The static binary, its delivery with box-put, tinyproxy routed to it, upstream URL from config. Verify with a live local Box. curl, git, python, Go, Node and Claude Code all reach credential hosts through it.
-5. **Ledger over TLS.** The controller also serves the ledger on TCP with TLS and a key, so a Proxy in another pod can reach it. Config sets the address. Until then the shared Proxy uses the unix socket. Verify with a test where a connect that skips TLS or sends a wrong key is refused.
-6. **Cutover.** Delete per-Box supervisors, the adopt code, crabbox lease sharing, the Proxy row's pid and boot id fields, and anything else only the old design needed. Verify with a live local run. Restart the controller mid-setup and mid agent turn. The line succeeds and the turn finishes.
-7. **Chart, in moor-gitops.** A Proxy Deployment with 2 replicas, `RollingUpdate` and a long termination grace, plus an `/egress` path on the gate ingress. The gitops owner makes this PR. Verify with the verify-moor-cluster skill on local k3s. `helm upgrade` the controller mid-setup and mid agent turn, then roll the Proxy mid-download. No request fails.
+## What to measure in PR 3
 
-## To measure in PR 3 or 4
-
-- Handshake latency of one WebSocket per CONNECT through Cloudflare.
-- Cloudflare's idle timeout on a quiet WebSocket, against a long-lived CONNECT tunnel.
+- Failed requests across a controller deploy, from a Box looping `curl`.
+- Failed requests across an egress rollout, with a 60 MB download in flight.
+- Seconds a Box's `machine.moor.internal` is unreachable across a controller deploy.
 
 ## Out of scope
 
 - A restart during acquire still fails the Box. That is controller work, tracked from #1058.
-- herdr and CLI attachments reconnect after a controller deploy. They are client-facing.
-- Follow-up. The machine runner gets its own rarely deployed Deployment.
-- Follow-up. moor-gate gets its own `RollingUpdate` Deployment, so herdr and MCP clients see no blip either.
-- Follow-up. Box logs and Slack state move into Postgres, which retires the controller pod's PVC.
+- herdr and CLI attachments reconnect after a controller deploy. They are client-facing. Phase 6.
+- Dev controllers with no public ingress keep the local route. The controller runs the Proxy, and each Box reaches it over the keeper's ssh reverse tunnel. A dev restart still blips its Boxes.
