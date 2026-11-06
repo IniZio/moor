@@ -78,7 +78,10 @@ async fn world() -> World {
     serve_controller(&socket, pubkey, Arc::clone(&links));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server = format!("http://{}", listener.local_addr().unwrap());
-    let agents = moor_machine_runner::Agents::new(&socket);
+    let agents = moor_machine_runner::Agents::new(
+        &socket,
+        moor_core::request::RunnerAddr::new(socket.to_string_lossy()),
+    );
     let serving = agents.clone();
     tokio::spawn(async move { moor_machine_runner::serve_agents(listener, serving).await });
     World {
