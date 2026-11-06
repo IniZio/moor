@@ -127,6 +127,14 @@ pub struct HookCache {
     pub reported: bool,
 }
 
+impl HookCache {
+    /// Whether no report has been read for so long that this one no longer stands in.
+    #[must_use]
+    pub fn lapsed(&self, now: Ts) -> bool {
+        age(now, self.at) >= HOOK_TTL
+    }
+}
+
 /// The multiplexer's view of a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneStatus {
@@ -286,7 +294,7 @@ fn from_cache(
     pane: &PaneRead,
     first_run: Option<&str>,
 ) -> Option<Activity> {
-    let c = cache.filter(|c| age(now, c.at) < HOOK_TTL)?;
+    let c = cache.filter(|c| !c.lapsed(now))?;
     from_record(&c.record, Source::HooksCached, young, pane, first_run)
 }
 

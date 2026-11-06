@@ -19,7 +19,7 @@ const OLD_CLEAN: SuspendCheck = SuspendCheck {
 };
 
 /// Makes the check of `id` answer `text`.
-fn holds(w: &World, id: BoxId, text: &str) {
+pub(super) fn holds(w: &World, id: BoxId, text: &str) {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let b = row.boxed.unwrap();
     let path = BoxPath::under(b.workdir.as_deref().unwrap(), ".moor/boxwork").unwrap();

@@ -79,6 +79,19 @@ impl Store {
         Ok(())
     }
 
+    /// Whether the live agent of `box_id` has reported, but no read has reached it for so long
+    /// that it may have started a turn unseen. A cache row that cannot be decoded tells nothing.
+    pub(crate) fn agent_unread(&self, box_id: BoxId, now: Ts) -> Result<bool, StoreError> {
+        if self.live_session(box_id)?.is_none() {
+            return Ok(false);
+        }
+        match self.hook(box_id) {
+            Ok(cache) => Ok(cache.is_some_and(|c| c.lapsed(now))),
+            Err(StoreError::Invalid(_) | StoreError::Corrupt(_) | StoreError::Json(_)) => Ok(true),
+            Err(e) => Err(e),
+        }
+    }
+
     /// The latest cached hook report of `box_id`.
     pub(crate) fn hook(&self, box_id: BoxId) -> Result<Option<HookCache>, StoreError> {
         let conn = self.reader()?;

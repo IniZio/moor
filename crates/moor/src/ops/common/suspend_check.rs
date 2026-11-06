@@ -42,7 +42,9 @@ fn answer(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<SuspendCheck>, Com
     };
     // An agent or run at work could write between the check and the snapshot, and a stored clean
     // lets a close delete the Box unwoken.
-    let at_work = !row.session.is_quiet() || store.in_flight_run(id)?.is_some();
+    let at_work = !row.session.is_quiet()
+        || store.in_flight_run(id)?.is_some()
+        || store.agent_unread(id, cx.clock().now())?;
     if at_work || memory_critical(store, &row)? {
         return Ok(None);
     }

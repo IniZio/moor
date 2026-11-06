@@ -227,3 +227,22 @@ fn a_blocked_agent_sleeps_on_the_shorter_prompt_time() {
     autosleep::run(&cx, store, rig.id, autosleep::AgentRead::of(&blocked));
     assert_eq!(rig.sleeps(), 1);
 }
+
+#[test]
+fn a_cache_row_that_cannot_be_decoded_counts_as_unread() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    cache_row(dir.path(), id, r#"{"kind":"nope"}"#);
+    assert!(cx.store().unwrap().agent_unread(id, NOW).unwrap());
+}
+
+#[test]
+fn an_agent_with_no_report_yet_does_not_count_as_unread() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    assert!(!cx.store().unwrap().agent_unread(id, NOW).unwrap());
+}
