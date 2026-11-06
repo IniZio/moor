@@ -72,8 +72,8 @@ fn defaults() {
 fn sleep_after_defaults_and_parses() {
     let c = UserConfig::default();
     assert_eq!(c.box_.sleep_after(), DEFAULT_SLEEP_AFTER);
-    assert_eq!(c.box_.sleep_after(), Duration::from_mins(30));
-    assert_eq!(c.box_.sleep_after_label(), "30m");
+    assert_eq!(c.box_.sleep_after(), Duration::from_mins(5));
+    assert_eq!(c.box_.sleep_after_label(), "5m");
     let c = ok("box: {sleep_after: 45m}");
     assert_eq!(c.box_.sleep_after(), Duration::from_mins(45));
     assert_eq!(c.box_.sleep_after_label(), "45m");
