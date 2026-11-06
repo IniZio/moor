@@ -102,7 +102,7 @@ flowchart LR
   svc --> p1
   svc --> p2
   p1 -->|mTLS 7443, key<br/>spec, secrets, machine| ctl[controller pod]
-  p1 -->|7700, service key<br/>machine.moor.internal| run[runner]
+  p1 -->|7700, service key<br/>holder named by Hold| run[runner]
   p1 --> up[(GitHub, model API)]
 ```
 
@@ -173,7 +173,7 @@ The shared pieces live in this spec. They are the Secret with the CA, the server
 - **Machine forwards blip on a controller deploy.** The keeper holds them and dies with the controller. They reopen on the keeper's first tick after the new controller starts, 2 s. Moving the keeper out of the controller is the edge design this spec replaced. Phase 8 keeps the keeper in the controller too. Accepted.
 - **One ledger connection per Box per replica.** The egress hello names a Box, and the ledger serves each connection in its own thread. That is 2 connections per awake Box at 2 replicas. It is fine at the Box counts the team runs. Revisit above about 200 awake Boxes, with a per-call Box in ledger protocol 2. Hard cutover, no compat.
 - **engine-03 timeouts under host load.** Nightly still runs the Proxy in the pod, so each Box on engine-03 reaches it through an ssh reverse tunnel the keeper holds. The direct route opens no such tunnel, so that path goes away with `egress.enabled`. What remains is a host whose CPU is starved by its own Boxes. That is admission and capacity work, tracked apart from this spec.
-- **The Proxy to runner hop on `7700`.** Plain HTTP in the cluster with a service key. mTLS for it comes with phase 8's runner certificate, if wanted. The key already refuses a stranger.
+- **The Proxy to runner hop on `7700`.** The Proxy dials the holder runner named by the Hold reply, not the machine Service, since only the holder has the machine's link. A runner that is not the holder answers before doing any work, and the Proxy asks the ledger again and resends once. Without a named holder it falls back to the Service. Plain HTTP in the cluster with a service key. mTLS for it comes with the runner certificate, if wanted.
 
 ## Backlog
 
