@@ -9,7 +9,8 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::clock::Ts;
+use moor_core::request::{MachineLink, RunnerAddr};
+use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::Driver;
 use moor_core::user::Identity;
 use moor_core::{BoxId, HoldOp, HoldValue};
@@ -28,6 +29,7 @@ use crate::testing::driver::FakeDriver;
 /// A store with one ready Box and its ledger, as the shared egress Proxy reaches it.
 struct Rig {
     dir: tempfile::TempDir,
+    clock: Arc<FakeClock>,
     store: Store,
     driver: Arc<FakeDriver>,
     id: BoxId,
@@ -37,12 +39,13 @@ struct Rig {
 fn rig() -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let driver = Arc::new(FakeDriver::new());
     let id = ready_box(&store, &driver);
     let ledger = box_ledger(&store, id);
     Rig {
         dir,
+        clock,
         store,
         driver,
         id,
@@ -66,6 +69,40 @@ impl Rig {
     fn user(&self) -> moor_core::user::UserId {
         let who = Identity::parse("slack:T1:U1").unwrap();
         self.store.enroll(&who, None).unwrap().0
+    }
+
+    /// The runner the Box's hold names as holding its machine's link.
+    fn holder(&self) -> Option<String> {
+        match self.ledger.hold().unwrap() {
+            Hold::Held(h) => h.runner.map(|r| r.as_str().to_owned()),
+            Hold::Missing { reason, .. } => unreachable!("not held: {reason}"),
+        }
+    }
+
+    /// `runner` reports the link of the machine the Box holds, `draining` or not.
+    fn link_on(&self, runner: &str, draining: bool) {
+        let Hold::Held(held) = self.ledger.hold().unwrap() else {
+            unreachable!("not held")
+        };
+        let link = MachineLink {
+            machine_id: held.machine_id,
+            online: true,
+            since: Ts::from_millis(1_000),
+            version: None,
+            protocol: None,
+            max_boxes: None,
+            cache_gb: None,
+            features: Vec::new(),
+            mem_mib: None,
+            cpus: None,
+            reserve_mib: None,
+            memory: None,
+            warm_starts: None,
+        };
+        let runner = RunnerAddr::new(runner);
+        self.store
+            .set_machine_links(&runner, draining, &[link], self.store.now())
+            .unwrap();
     }
 
     fn missing(&self) -> String {
@@ -178,4 +215,19 @@ fn a_held_claim_stays_held_while_the_controller_is_down() {
     assert!(matches!(r.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
     r.ledger.down();
     assert!(matches!(r.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
+}
+
+#[test]
+fn a_held_claim_names_the_runner_holding_the_link_and_none_once_it_drains_or_goes_quiet() {
+    let r = rig();
+    r.hold_mini();
+    assert_eq!(r.holder(), None, "no runner reported the link");
+    r.link_on("10.0.0.7:7702", false);
+    assert_eq!(r.holder().as_deref(), Some("10.0.0.7:7702"));
+    r.link_on("10.0.0.7:7702", true);
+    assert_eq!(r.holder(), None, "draining");
+    r.link_on("10.0.0.8:7702", false);
+    assert_eq!(r.holder().as_deref(), Some("10.0.0.8:7702"), "relinked");
+    r.clock.sleep(std::time::Duration::from_secs(61));
+    assert_eq!(r.holder(), None, "not heard from within a minute");
 }

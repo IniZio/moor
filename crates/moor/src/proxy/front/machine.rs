@@ -3,6 +3,7 @@
 //! dropped. A Box that holds no slot is passed on too, marked with why, so its agent sees a tool
 //! error and not an auth failure.
 
+use moor_core::request::RunnerAddr;
 use moor_core::BoxId;
 
 use crate::proxy::ledger::BoxLedger;
@@ -38,6 +39,9 @@ pub(crate) struct Held {
     pub(crate) slot: u16,
     /// rsync patterns a sync to the machine leaves alone.
     pub(crate) sync_exclude: Vec<String>,
+    /// The runner holding the machine's link: up, not draining and heard from lately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) runner: Option<RunnerAddr>,
 }
 
 /// What the Box of `ledger` holds, or why it could not be read.

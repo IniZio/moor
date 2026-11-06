@@ -31,6 +31,9 @@ const SLOT: &str = "X-Moor-Machine-Slot";
 const EXCLUDE: &str = "X-Moor-Machine-Exclude";
 /// Header carrying the machine's enrolled id, under which its agent links in.
 const MACHINE_ID: &str = "X-Moor-Machine-Id";
+/// Header with which the Proxy asks for a 421, before any work, when this runner does not hold
+/// the machine's link.
+const HOLDER_ONLY: &str = "X-Moor-Holder-Only";
 /// Header carrying why the Box holds no machine slot; set instead of the machine headers.
 const MISSING: &str = "X-Moor-Machine-Missing";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
@@ -177,6 +180,15 @@ fn keyed(headers: &HeaderMap, key: Option<&str>) -> Result<(), ErrorData> {
     } else {
         Err(refused(format!("missing or wrong header {SERVICE_KEY}")))
     }
+}
+
+/// The machine a request marked [`HOLDER_ONLY`] names when `held` says this runner holds no
+/// link to it; the Proxy then sends the request on to the runner that does.
+pub(crate) fn not_held_here(headers: &HeaderMap, held: impl FnOnce(i64) -> bool) -> Option<i64> {
+    headers.get(HOLDER_ONLY)?;
+    keyed(headers, KEY.get().map(AsRef::as_ref)).ok()?;
+    let machine_id = machine_id(headers).ok().flatten()?;
+    (!held(machine_id)).then_some(machine_id)
 }
 
 /// An MCP error for a request the runner will not serve.

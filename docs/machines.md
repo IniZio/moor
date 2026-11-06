@@ -110,7 +110,9 @@ holds each machine's link. The controller sends a machine's leases, status, ssh
 dials and port forwards to that runner only. An `--advertise` path is a socket
 on its host. A `host:port` is reached over TCP with the service key. A pool
 lease's ssh runs `moor link-dial --runner ADDR`, with the address read when its
-ssh words are built. A link reads as `machine M is not linked` when no runner
+ssh words are built. The egress Proxy sends a Box's calls to the holder's
+`--advertise` host on the machine service's port, and to the service when the
+holder is a socket or none. A link reads as `machine M is not linked` when no runner
 holds it, when its runner is shutting down, or when its runner has not reported
 for a minute.
 

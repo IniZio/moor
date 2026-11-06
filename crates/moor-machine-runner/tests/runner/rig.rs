@@ -382,6 +382,26 @@ impl Rig {
         stream
     }
 
+    /// The status the runner answers an `initialize` with `headers`.
+    pub fn status(&self, headers: &[(&str, &str)]) -> u16 {
+        let body = rpc(1, "initialize", initialize()).to_string();
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        write!(
+            stream,
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
+             Accept: application/json, text/event-stream\r\nContent-Length: {}\r\n",
+            body.len()
+        )
+        .unwrap();
+        for (k, v) in headers {
+            write!(stream, "{k}: {v}\r\n").unwrap();
+        }
+        write!(stream, "\r\n{body}").unwrap();
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(stream), &mut line).unwrap();
+        line.split(' ').nth(1).unwrap().parse().unwrap()
+    }
+
     fn result(reply: &Value) -> Result<Value, String> {
         if let Some(e) = reply.get("error") {
             return Err(e["message"].as_str().unwrap().to_owned());

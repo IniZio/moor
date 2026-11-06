@@ -3379,9 +3379,12 @@ dependencies = [
 name = "moor-machine-runner"
 version = "0.2.0"
 dependencies = [
+ "bytes",
  "clap",
  "futures-util",
  "http",
+ "http-body-util",
+ "hyper",
  "hyper-util",
  "moor-client",
  "moor-core",

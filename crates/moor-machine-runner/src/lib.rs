@@ -10,14 +10,19 @@
 //! things on the machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bytes::Bytes;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt as _, Full};
+use hyper::body::Incoming;
+use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
-use hyper_util::service::TowerToHyperService;
 use moor_client::Client;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -95,6 +100,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         config.agents.clone(),
     ));
     let holds = Arc::new(Holds::new(config.resources));
+    let agents = config.agents.clone();
     let runner = Runner {
         rsh: rsh::listen(&config.state_dir, config.agents.as_ref())?,
         client: config.controller,
@@ -124,15 +130,44 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         Arc::new(LocalSessionManager::default()),
         http,
     );
+    accept(listener, service, agents).await
+}
+
+/// Serves each connection `listener` accepts with `service`, until accepting fails. A request
+/// the Proxy marks for the link's holder alone gets a 421, unserved, when `agents` hold no link
+/// to its machine.
+async fn accept(
+    listener: TcpListener,
+    service: StreamableHttpService<Runner, LocalSessionManager>,
+    agents: Option<Agents>,
+) -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
-        let service = TowerToHyperService::new(service.clone());
+        let (service, agents) = (service.clone(), agents.clone());
+        let serve = service_fn(move |request: http::Request<Incoming>| {
+            let (service, agents) = (service.clone(), agents.clone());
+            async move {
+                let held = |id| agents.as_ref().is_some_and(|a| a.online().contains(&id));
+                Ok::<_, Infallible>(match caller::not_held_here(request.headers(), held) {
+                    Some(machine_id) => misdirected(machine_id),
+                    None => service.handle(request).await,
+                })
+            }
+        });
         tokio::spawn(async move {
             let _ = auto::Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(stream), service)
+                .serve_connection(TokioIo::new(stream), serve)
                 .await;
         });
     }
+}
+
+/// 421 for a request about machine `machine_id`, whose link this runner does not hold.
+fn misdirected(machine_id: i64) -> http::Response<BoxBody<Bytes, Infallible>> {
+    let body = format!("machine {machine_id} is not linked to this runner");
+    let mut response = http::Response::new(Full::new(Bytes::from(body)).boxed());
+    *response.status_mut() = http::StatusCode::MISDIRECTED_REQUEST;
+    response
 }
 
 /// The MCP server: one per request, sharing the per-Box sync locks.
