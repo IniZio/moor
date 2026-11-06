@@ -47,12 +47,28 @@ struct Args {
         long,
         value_name = "URL",
         conflicts_with = "socket",
-        requires_all = ["controller_ca", "service_key", "advertise"]
+        requires_all = ["controller_ca", "controller_cert", "controller_key", "service_key", "advertise"]
     )]
     controller: Option<String>,
     /// The PEM CA that signed `--controller`'s certificate.
     #[arg(long, value_name = "PEM", requires = "controller")]
     controller_ca: Option<PathBuf>,
+    /// The PEM certificate the runner presents to `--controller`, which the ledger CA signed.
+    #[arg(
+        long,
+        value_name = "PEM",
+        env = "MOOR_RUNNER_CLIENT_CERT",
+        requires = "controller"
+    )]
+    controller_cert: Option<PathBuf>,
+    /// The PEM private key of `--controller-cert`.
+    #[arg(
+        long,
+        value_name = "PEM",
+        env = "MOOR_RUNNER_CLIENT_KEY",
+        requires = "controller"
+    )]
+    controller_key: Option<PathBuf>,
     /// The address this runner reports to the controller as holding its links; `--socket` when
     /// unset.
     #[arg(long, value_name = "ADDR")]
@@ -177,7 +193,12 @@ fn advertised(args: &Args, socket: &Path) -> RunnerAddr {
 
 /// How the runner dials the controller, and the path its own sockets sit beside.
 fn controller(args: &Args) -> Result<(Dial, PathBuf), String> {
-    let tls = (&args.controller, &args.controller_ca, &args.service_key);
+    let files = [
+        &args.controller_ca,
+        &args.controller_cert,
+        &args.controller_key,
+    ];
+    let tls = (&args.controller, files, &args.service_key);
     Dial::from_flags(args.socket.as_deref(), tls, &args.state_dir)
 }
 

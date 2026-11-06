@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_client::link::ops;
+use moor_client::tls::RunnerPki;
 use moor_client::Client;
 use moor_core::request::{BoxRsyncReq, Request};
 use moor_core::BoxId;
@@ -14,6 +15,8 @@ use moor_core::BoxId;
 const SOCKET: &str = "MOOR_RUNNER_SOCKET";
 const CONTROLLER: &str = "MOOR_RUNNER_CONTROLLER";
 const CA: &str = "MOOR_RUNNER_CONTROLLER_CA";
+const CERT: &str = "MOOR_RUNNER_CLIENT_CERT";
+const CLIENT_KEY: &str = "MOOR_RUNNER_CLIENT_KEY";
 const KEY: &str = "MOOR_MACHINE_SERVICE_KEY";
 
 /// How the runner reaches the controller.
@@ -25,8 +28,8 @@ pub enum Dial {
     Tls {
         /// `tls://HOST:PORT`.
         url: String,
-        /// The PEM CA that signed the listener's certificate.
-        ca: PathBuf,
+        /// The CA it trusts and the certificate it presents.
+        pki: RunnerPki,
         /// The machine service key.
         key: String,
     },
@@ -40,37 +43,54 @@ impl Dial {
     pub fn client(&self) -> Result<Client, String> {
         match self {
             Self::Socket(socket) => Ok(Client::new(socket)),
-            Self::Tls { url, ca, key } => Client::runner(url, ca, key),
+            Self::Tls { url, pki, key } => Client::runner(url, pki, key),
         }
     }
 
-    /// The dial `--socket`, or `--controller` with its CA and key, names, and the path the
-    /// runner's own sockets sit beside: `socket`, or one in `state_dir` for `--controller`.
+    /// The dial `--socket`, or `--controller` with its CA, client certificate and key, names,
+    /// and the path the runner's own sockets sit beside: `socket`, or one in `state_dir` for
+    /// `--controller`.
     ///
     /// # Errors
     /// Names the flag missing.
     pub fn from_flags(
         socket: Option<&Path>,
-        (url, ca, key): (&Option<String>, &Option<PathBuf>, &Option<String>),
+        (url, [ca, cert, client_key], key): (
+            &Option<String>,
+            [&Option<PathBuf>; 3],
+            &Option<String>,
+        ),
         state_dir: &Path,
     ) -> Result<(Self, PathBuf), String> {
         let Some(url) = url.clone() else {
             let socket = socket.ok_or("give --socket or --controller")?.to_path_buf();
             return Ok((Self::Socket(socket.clone()), socket));
         };
-        let ca = ca.clone().ok_or("--controller needs --controller-ca")?;
+        let need = |file: &Option<PathBuf>, flag: &str| {
+            file.clone()
+                .ok_or_else(|| format!("--controller needs {flag}"))
+        };
+        let pki = RunnerPki {
+            ca: need(ca, "--controller-ca")?,
+            cert: need(cert, "--controller-cert")?,
+            key: need(client_key, "--controller-key")?,
+        };
         let key = key.clone().filter(|k| !k.is_empty());
         let key = key.ok_or("--controller needs --service-key")?;
-        Ok((Self::Tls { url, ca, key }, state_dir.join("runner.sock")))
+        Ok((Self::Tls { url, pki, key }, state_dir.join("runner.sock")))
     }
 
     /// The environment that hands this dial to a helper.
     fn env(&self) -> Vec<(&'static str, OsString)> {
         match self {
             Self::Socket(socket) => vec![(SOCKET, socket.into())],
-            Self::Tls { url, ca, key } => {
-                vec![(CONTROLLER, url.into()), (CA, ca.into()), (KEY, key.into())]
-            }
+            Self::Tls { url, pki, key } => vec![
+                (CONTROLLER, url.into()),
+                (CA, pki.ca.clone().into()),
+                (CERT, pki.cert.clone().into()),
+                (CLIENT_KEY, pki.key.clone().into()),
+                (KEY, key.into()),
+            ],
         }
     }
 
@@ -87,7 +107,11 @@ impl Dial {
         };
         Ok(Self::Tls {
             url: text(CONTROLLER)?,
-            ca: text(CA)?.into(),
+            pki: RunnerPki {
+                ca: text(CA)?.into(),
+                cert: text(CERT)?.into(),
+                key: text(CLIENT_KEY)?.into(),
+            },
             key: text(KEY)?,
         })
     }

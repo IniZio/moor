@@ -13,20 +13,32 @@ fn the_flags_are_consistent() {
 }
 
 #[test]
-fn a_tls_controller_takes_the_place_of_the_socket_and_needs_its_ca_key_and_address() {
+fn a_tls_controller_takes_the_place_of_the_socket_and_needs_its_ca_client_cert_key_and_address() {
     let tls = [
         "--controller",
         "tls://ctl:7443",
         "--controller-ca",
         "/ca.pem",
     ];
+    let cert = [
+        "--controller-cert",
+        "/runner.pem",
+        "--controller-key",
+        "/runner.key",
+    ];
     let full = [
         &tls[..],
+        &cert,
         &["--service-key", "k", "--advertise", "10.0.0.7:7701"],
     ]
     .concat();
     assert!(parse(&full).is_ok());
     assert!(parse(&tls).is_err(), "no key or address");
+    for left_out in ["--controller-cert", "--controller-key"] {
+        let at = full.iter().position(|a| *a == left_out).unwrap();
+        let without = [&full[..at], &full[at + 2..]].concat();
+        assert!(parse(&without).is_err(), "no {left_out}");
+    }
     assert!(parse(&[&full[..], &["--socket", "/r.sock"]].concat()).is_err());
     assert!(parse(&[]).is_err(), "neither --socket nor --controller");
 }
