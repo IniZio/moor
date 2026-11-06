@@ -315,7 +315,7 @@ fn run_line(workflow: &str, run: &LastRunView) -> Say {
 /// run's only report, so it is never held back as a repeat.
 fn refused_in_thread(workflow: &str, run: &LastRunView) -> String {
     format!(
-        "Workflow {} could not start on {}: {}. No Box was started for this run. Fix that, or ask me to disable the workflow.",
+        "Workflow {} could not start on {}: {}. Fix that, or ask me to disable the workflow.",
         code(workflow),
         code(&run.repo),
         escape(run.detail.as_deref().unwrap_or("no reason given"))
