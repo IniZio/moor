@@ -264,20 +264,34 @@ fn accept(
                 continue;
             }
         };
-        let admitted = match drain.admit(&stream) {
-            Ok(Some(admitted)) => admitted,
-            Ok(None) => {
-                conn::send(&mut &stream, &conn::restarting());
-                return;
-            }
-            Err(e) => {
-                log(sink, &format!("connection setup failed: {e}"));
-                continue;
-            }
-        };
-        let handler = Arc::clone(handler);
-        thread::spawn(move || handler(stream, admitted));
+        if !serve_one(stream, handler, drain, sink) {
+            return;
+        }
     }
+}
+
+/// Serves `stream` with `handler` on a thread of its own; once the drain has begun, answers
+/// `restarting` instead and returns false.
+pub(super) fn serve_one(
+    stream: UnixStream,
+    handler: &Handler,
+    drain: &Arc<Drain>,
+    sink: &Sink,
+) -> bool {
+    let admitted = match drain.admit(&stream) {
+        Ok(Some(admitted)) => admitted,
+        Ok(None) => {
+            conn::send(&mut &stream, &conn::restarting());
+            return false;
+        }
+        Err(e) => {
+            log(sink, &format!("connection setup failed: {e}"));
+            return true;
+        }
+    };
+    let handler = Arc::clone(handler);
+    thread::spawn(move || handler(stream, admitted));
+    true
 }
 
 /// Blocks until `wake` turns readable.

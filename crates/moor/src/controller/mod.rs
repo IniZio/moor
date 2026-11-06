@@ -278,11 +278,12 @@ impl Running {
         for (ns, listener) in self.fronts {
             listeners.push((listener, serve(peer::On::Front(ns))));
         }
-        listeners.push((self.runner, serve(peer::On::Runner)));
+        let runner = serve(peer::On::Runner);
+        listeners.push((self.runner, Arc::clone(&runner)));
         let (ledger, key) = self.ledger;
         ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
         if let Some(tls) = self.ledger_tls {
-            tls.serve_until_exit((&self.env, &self.vault), sink);
+            tls.serve_until_exit((&self.env, &self.vault), (runner, drain), sink);
         }
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),

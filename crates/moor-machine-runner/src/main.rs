@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
+use moor_client::Client;
 use moor_core::request::RunnerAddr;
 use moor_machine_runner::{
     bind_broker, serve, serve_agents, serve_broker, serve_forwards, Agents, Config, Relay,
@@ -18,8 +19,9 @@ struct Args {
     /// Address to listen on; the Box's Proxy routes the service host here.
     #[arg(long, default_value = "127.0.0.1:7700")]
     listen: SocketAddr,
-    /// The key every caller must send in `X-Moor-Service-Key`; set it when `--listen` is not
-    /// loopback, so only the egress Proxy holding it can name a Box.
+    /// The machine service key. The runner presents it to `--controller`, and every caller must
+    /// send it in `X-Moor-Service-Key`; set it when `--listen` is not loopback, so only the egress
+    /// Proxy holding it can name a Box.
     #[arg(long, env = moor_machine_runner::SERVICE_KEY_ENV, hide_env_values = true)]
     service_key: Option<String>,
     /// Address to accept machine agents' links on, at `/machines/link`; none accepts no links.
@@ -29,8 +31,23 @@ struct Args {
     #[arg(long, default_value = "machine.moor.internal")]
     service_host: String,
     /// The controller's socket for the machine runner, `<state>/runner/runner.sock`.
-    #[arg(long, env = "MOOR_RUNNER_SOCKET")]
-    socket: PathBuf,
+    #[arg(
+        long,
+        env = "MOOR_RUNNER_SOCKET",
+        required_unless_present = "controller"
+    )]
+    socket: Option<PathBuf>,
+    /// The controller's TLS listener, `tls://HOST:PORT`, in place of `--socket`.
+    #[arg(
+        long,
+        value_name = "URL",
+        conflicts_with = "socket",
+        requires_all = ["controller_ca", "service_key", "advertise"]
+    )]
+    controller: Option<String>,
+    /// The PEM CA that signed `--controller`'s certificate.
+    #[arg(long, value_name = "PEM", requires = "controller")]
+    controller_ca: Option<PathBuf>,
     /// The address this runner reports to the controller as holding its links; `--socket` when
     /// unset.
     #[arg(long, value_name = "ADDR")]
@@ -148,20 +165,52 @@ fn resource(s: &str) -> Result<(String, usize), String> {
 }
 
 /// The address `--advertise` names, else the controller socket's path.
-fn advertised(args: &Args) -> RunnerAddr {
-    let socket = || args.socket.to_string_lossy().into_owned();
+fn advertised(args: &Args, socket: &Path) -> RunnerAddr {
+    let socket = || socket.to_string_lossy().into_owned();
     RunnerAddr::new(args.advertise.clone().unwrap_or_else(socket))
 }
 
+/// The client for the controller, and the path the runner's own sockets sit beside:
+/// `--socket`, or one in `--state-dir` when the runner dials `--controller`.
+fn controller(args: &Args) -> Result<(Client, PathBuf), String> {
+    let Some(url) = &args.controller else {
+        let socket = args.socket.clone().ok_or("give --socket or --controller")?;
+        return Ok((Client::new(&socket), socket));
+    };
+    let ca = args
+        .controller_ca
+        .as_deref()
+        .ok_or("--controller needs --controller-ca")?;
+    let key = args.service_key.as_deref().filter(|k| !k.is_empty());
+    let key = key.ok_or("--controller needs --service-key")?;
+    let beside = args.state_dir.join("runner.sock");
+    Ok((Client::runner(url, ca, key)?, beside))
+}
+
+/// The client for the controller, and the agents' links when `--agents` takes them.
+async fn linked(args: &Args) -> Result<(Client, Option<Agents>), String> {
+    let (client, socket) = controller(args)?;
+    let Some(addr) = args.agents else {
+        return Ok((client, None));
+    };
+    let runner = advertised(args, &socket);
+    let agents = take_links(addr, (client.clone(), &socket), runner).await?;
+    Ok((client, Some(agents)))
+}
+
 /// Listens for machine agents on `addr` and serves their links in the background.
-async fn take_links(addr: SocketAddr, socket: &Path, runner: RunnerAddr) -> Result<Agents, String> {
+async fn take_links(
+    addr: SocketAddr,
+    (client, socket): (Client, &Path),
+    runner: RunnerAddr,
+) -> Result<Agents, String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("cannot listen for agents on {addr}: {e}"))?;
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner taking agent links on {addr}");
     }
-    let agents = Agents::new(socket, runner);
+    let agents = Agents::new(client, runner);
     let (forwards, uid) = forward_socket(socket)?;
     let serving = agents.clone();
     tokio::spawn(async move {
@@ -202,10 +251,10 @@ fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), Stri
 }
 
 /// The runner's settings from its flags.
-fn config(args: Args, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
+fn config(args: Args, controller: Client, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
     Config {
         agents,
-        socket: args.socket,
+        controller,
         state_dir: args.state_dir,
         service_host: args.service_host,
         resources: args.resources.into_iter().collect(),
@@ -264,18 +313,15 @@ async fn main() -> ExitCode {
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner listening on {addr}");
     }
-    let linked = match args.agents {
-        Some(addr) => match take_links(addr, &args.socket, advertised(&args)).await {
-            Ok(agents) => Some(agents),
-            Err(e) => {
-                eprintln!("moor-machine-runner: {e}");
-                return ExitCode::FAILURE;
-            }
-        },
-        None => None,
+    let (client, linked) = match linked(&args).await {
+        Ok(linked) => linked,
+        Err(e) => {
+            eprintln!("moor-machine-runner: {e}");
+            return ExitCode::FAILURE;
+        }
     };
     let draining = linked.clone();
-    let serving = serve(listener, config(args, linked, relays));
+    let serving = serve(listener, config(args, client, linked, relays));
     tokio::pin!(serving);
     tokio::select! {
         served = &mut serving => return ended(served),
@@ -318,4 +364,40 @@ fn stop_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
             _ = int.recv() => {}
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{CommandFactory as _, Parser as _};
+
+    use super::Args;
+
+    fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
+        let base = ["moor-machine-runner", "--state-dir", "/s"];
+        Args::try_parse_from(base.iter().chain(extra))
+    }
+
+    #[test]
+    fn the_flags_are_consistent() {
+        Args::command().debug_assert();
+    }
+
+    #[test]
+    fn a_tls_controller_takes_the_place_of_the_socket_and_needs_its_ca_key_and_address() {
+        let tls = [
+            "--controller",
+            "tls://ctl:7443",
+            "--controller-ca",
+            "/ca.pem",
+        ];
+        let full = [
+            &tls[..],
+            &["--service-key", "k", "--advertise", "10.0.0.7:7701"],
+        ]
+        .concat();
+        assert!(parse(&full).is_ok());
+        assert!(parse(&tls).is_err(), "no key or address");
+        assert!(parse(&[&full[..], &["--socket", "/r.sock"]].concat()).is_err());
+        assert!(parse(&[]).is_err(), "neither --socket nor --controller");
+    }
 }

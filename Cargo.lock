@@ -3224,6 +3224,7 @@ dependencies = [
  "moor-core",
  "moor-testkit",
  "oauth2",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

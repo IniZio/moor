@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io;
-use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -47,11 +46,10 @@ impl std::fmt::Debug for Agents {
 }
 
 impl Agents {
-    /// None linked yet; every change is reported to the controller at `socket`, naming this
-    /// runner as `runner`.
+    /// None linked yet; every change is reported to the controller through `client`, naming
+    /// this runner as `runner`.
     #[must_use]
-    pub fn new(socket: &Path, runner: RunnerAddr) -> Self {
-        let client = Client::new(socket);
+    pub fn new(client: Client, runner: RunnerAddr) -> Self {
         let (tx, rx) = watch::channel(MachineLinksReq {
             runner,
             draining: false,

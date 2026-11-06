@@ -1,6 +1,11 @@
 //! The ledger's TLS listener: it answers the shared egress Proxy that checks the controller's
-//! certificate and presents the egress key, refuses anything else, and stays up through a drain.
+//! certificate and presents the egress key, serves a machine runner presenting the service key
+//! as the runner socket does, refuses anything else, and stays up through a drain.
 #![allow(clippy::panic, reason = "test assertions")]
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index decoded frames"
+)]
 
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::{SocketAddr, TcpStream};
@@ -9,7 +14,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_client::{Client, ClientError};
+use moor_core::request::Request;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType};
+use serde_json::Value;
 
 use super::{config, env_with, Buf};
 use crate::controller::drain::Drain;
@@ -17,6 +25,7 @@ use crate::controller::{start, Running, Sink};
 use crate::proxy::ledger::{EgressLedger, Endpoint, LedgerError};
 
 const KEY: &str = "egress-key";
+const SERVICE_KEY: &str = "service-key";
 
 /// Writes a CA as `<name>-ca.pem` and, when `leaf` is set, a certificate it signed for
 /// 127.0.0.1 as `<name>.pem` with its key as `<name>.key`; returns the CA's path.
@@ -56,9 +65,18 @@ fn tls_config(dir: &Path, extra: &str) -> PathBuf {
 
 /// A started controller with the TLS ledger on; its address and the CA that signed it.
 fn started(dir: &tempfile::TempDir, extra: &str) -> (Running, SocketAddr, PathBuf) {
+    started_with(dir, extra, &[("MOOR_EGRESS_KEY", KEY)])
+}
+
+/// [`started`] with `keys` in the controller's environment.
+fn started_with(
+    dir: &tempfile::TempDir,
+    extra: &str,
+    keys: &[(&str, &str)],
+) -> (Running, SocketAddr, PathBuf) {
     let ca = pki(dir.path(), "ctl", true);
     let cfg = tls_config(dir.path(), extra);
-    let running = start(&env_with(dir.path(), &[("MOOR_EGRESS_KEY", KEY)]), &cfg).expect("start");
+    let running = start(&env_with(dir.path(), keys), &cfg).expect("start");
     let addr = running
         .ledger_tls
         .as_ref()
@@ -212,4 +230,88 @@ fn the_tls_ledger_needs_the_egress_key_and_a_readable_certificate() {
         panic!("started a TLS ledger without its certificate");
     };
     assert!(stop.message.contains("ledger_tls.cert"), "{}", stop.message);
+}
+
+/// A served controller taking both the egress Proxy and runners on TLS; its address and CA.
+fn serving_runners(dir: &tempfile::TempDir) -> (SocketAddr, PathBuf) {
+    let keys = [
+        ("MOOR_EGRESS_KEY", KEY),
+        ("MOOR_MACHINE_SERVICE_KEY", SERVICE_KEY),
+    ];
+    let (running, addr, ca) = started_with(dir, "", &keys);
+    serve(running);
+    (addr, ca)
+}
+
+/// What a runner presenting `key` gets for `request`, as JSON.
+fn runner_asks(
+    addr: SocketAddr,
+    ca: &Path,
+    key: &str,
+    request: &str,
+) -> Result<Value, ClientError> {
+    let client = Client::runner(&format!("tls://{addr}"), ca, key).expect("client");
+    let request: Request = serde_json::from_str(request).expect("request");
+    client
+        .request(request, |_| {})
+        .map(|r| serde_json::to_value(r).expect("encode"))
+}
+
+#[test]
+fn a_runner_with_the_service_key_gets_show_and_machine_keys_answered_over_tls() {
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, ca) = serving_runners(&dir);
+    for request in [r#"{"cmd":"show"}"#, r#"{"cmd":"machine-keys"}"#] {
+        let got = runner_asks(addr, &ca, SERVICE_KEY, request).expect("answered");
+        assert_eq!(got["class"], "ok", "{request}: {got}");
+    }
+}
+
+#[test]
+fn a_runner_with_a_wrong_key_is_refused_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, ca) = serving_runners(&dir);
+    match runner_asks(addr, &ca, "not-the-key", r#"{"cmd":"show"}"#) {
+        Err(ClientError::Unauthorized(why)) => {
+            assert!(why.contains("not the machine service key"), "{why}");
+        }
+        other => panic!("a wrong key was served: {other:?}"),
+    }
+}
+
+#[test]
+fn a_runner_over_tls_is_refused_what_the_runner_socket_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, ca) = serving_runners(&dir);
+    let got = runner_asks(addr, &ca, SERVICE_KEY, r#"{"cmd":"machine-list"}"#).expect("answered");
+    assert_eq!(got["error"]["kind"], "refused", "{got}");
+    let message = got["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("the machine runner's socket serves only"),
+        "{got}"
+    );
+}
+
+#[test]
+fn the_egress_hello_is_still_answered_beside_runners() {
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, ca) = serving_runners(&dir);
+    let ledger = EgressLedger::at(endpoint(addr, &ca), KEY.to_owned());
+    assert_eq!(ledger.token_box("no-such-token"), Ok(None));
+    let runner = say(
+        &endpoint(addr, &ca),
+        &format!(r#"{{"runner":{{"v":1,"key":"{SERVICE_KEY}"}}}}"#),
+    );
+    assert!(runner.contains("Ok"), "{runner}");
+}
+
+#[test]
+fn a_runner_is_refused_where_no_service_key_is_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let (running, addr, ca) = started(&dir, "");
+    serve(running);
+    match runner_asks(addr, &ca, SERVICE_KEY, r#"{"cmd":"show"}"#) {
+        Err(ClientError::Unauthorized(why)) => assert!(why.contains("unset"), "{why}"),
+        other => panic!("a runner was served without a service key: {other:?}"),
+    }
 }

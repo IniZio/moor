@@ -77,7 +77,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let mirrors = config.state_dir.join("mirrors");
     let hooks = Arc::new(Hooks {
         min_free_gb: config.min_free_gb,
-        client: Client::new(&config.socket),
+        client: config.controller.clone(),
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
@@ -93,7 +93,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let holds = Arc::new(Holds::new(config.resources));
     let runner = Runner {
         rsh: rsh::listen(&config.state_dir, config.agents.as_ref())?,
-        client: Client::new(&config.socket),
+        client: config.controller,
         mirrors,
         syncing: Arc::default(),
         holds: Arc::clone(&holds),
