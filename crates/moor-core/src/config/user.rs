@@ -46,7 +46,7 @@ const DEFAULT_HERDR_SESSION: &str = "moor";
 const MACHINE_MCP: &str = "machine";
 
 /// Idle time before a Box sleeps when `box.sleep_after` is unset.
-pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(30);
+pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(5);
 
 /// Idle time before a Box waiting on a prompt sleeps when `box.sleep_after_blocked` is unset.
 const DEFAULT_SLEEP_AFTER_BLOCKED: Duration = Duration::from_mins(5);
@@ -55,7 +55,7 @@ const DEFAULT_SLEEP_AFTER_BLOCKED: Duration = Duration::from_mins(5);
 const DEFAULT_MAX_AWAKE: Duration = Duration::from_hours(2);
 
 /// Label shown for [`DEFAULT_SLEEP_AFTER`].
-const DEFAULT_SLEEP_AFTER_LABEL: &str = "30m";
+const DEFAULT_SLEEP_AFTER_LABEL: &str = "5m";
 
 /// Time an agent launch may take before it counts as timed out when `box.launch_timeout` is unset.
 const DEFAULT_LAUNCH_TIMEOUT: Duration = Duration::from_mins(3);
@@ -174,7 +174,7 @@ impl BoxConfig {
         duration_or(self.max_awake.as_deref(), DEFAULT_MAX_AWAKE)
     }
 
-    /// The idle time as text: as configured (trimmed), or `30m` when unset.
+    /// The idle time as text: as configured (trimmed), or `5m` when unset.
     #[must_use]
     pub fn sleep_after_label(&self) -> String {
         self.sleep_after.as_deref().map_or_else(
