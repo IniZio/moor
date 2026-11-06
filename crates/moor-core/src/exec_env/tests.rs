@@ -6,6 +6,7 @@ mod egress;
 mod egress_load;
 mod forwarder;
 mod shell;
+mod system_trust;
 
 /// Every proxy and CA variable name the prelude may export.
 const PASS_VARS: &[&str] = &[
