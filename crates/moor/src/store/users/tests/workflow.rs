@@ -474,20 +474,26 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
     assert_eq!(store.starting_workflow_runs().unwrap().len(), 1);
 
     let key = (id, &repo("a/one"), Ts::from_millis(100));
+    let at = Ts::from_millis(9_000_000);
     let started = WorkflowOutcome::Started {
         box_id: BoxId::new(4),
     };
-    assert!(store.resolve_workflow_start(key, &started).unwrap());
+    assert!(store.resolve_workflow_start(key, &started, at).unwrap());
     let refused = WorkflowOutcome::Refused {
         detail: "late".to_owned(),
     };
     assert!(
-        !store.resolve_workflow_start(key, &refused).unwrap(),
+        !store.resolve_workflow_start(key, &refused, at).unwrap(),
         "settled once"
     );
     assert!(store.starting_workflow_runs().unwrap().is_empty());
     let last = store.last_workflow_runs(id).unwrap();
     assert_eq!(last.first().map(|r| &r.outcome), Some(&started));
+    assert_eq!(
+        last.first().map(|r| r.recorded_at),
+        Some(at),
+        "a started run is recorded when it started, not when it was claimed"
+    );
 }
 
 #[test]

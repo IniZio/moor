@@ -288,11 +288,13 @@ impl Store {
     }
 
     /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `outcome`, which is
-    /// Started or Refused. False, with nothing changed, unless the run is still claimed.
+    /// Started or Refused, recorded at `at`. A started run's timeout counts from `at`, not from
+    /// the claim. False, with nothing changed, unless the run is still claimed.
     pub(crate) fn resolve_workflow_start(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
         outcome: &WorkflowOutcome,
+        at: Ts,
     ) -> Result<bool, StoreError> {
         let (name, box_id, detail, _) = outcome_cols(outcome);
         self.numbered(|tx, seq| {
@@ -302,6 +304,7 @@ impl Store {
                     .value(WorkflowRuns::Outcome, name)
                     .value(WorkflowRuns::Box, box_id)
                     .value(WorkflowRuns::Detail, detail)
+                    .value(WorkflowRuns::RecordedAt, at.as_millis())
                     .value(WorkflowRuns::Seq, seq)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
                     .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
