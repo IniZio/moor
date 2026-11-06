@@ -5,16 +5,18 @@
 //! the controller cannot be reached, the last answer for a token is used, as a Box's own Proxy
 //! uses its last answers.
 
+pub(super) mod warm;
+
 use std::collections::HashMap;
 use std::fmt::Arguments;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::user::SecretName;
 use moor_core::BoxId;
 use zeroize::Zeroizing;
 
@@ -46,6 +48,10 @@ pub(super) enum Refused {
     Unavailable(String),
 }
 
+/// How long a token this replica already confirmed waits on the ledger before its last answer
+/// is used.
+const CACHED_LOOKUP: Duration = Duration::from_secs(1);
+
 /// A token the ledger confirmed.
 struct Known {
     /// Its Box.
@@ -62,7 +68,7 @@ type Slot = Mutex<Option<Arc<Served>>>;
 /// Every Box this replica serves.
 pub(super) struct Boxes {
     /// Token lookups.
-    lookup: EgressLedger,
+    lookup: Arc<EgressLedger>,
     /// Where each Box's ledger calls go.
     ledger: Endpoint,
     /// The egress key, which also signs tokens.
@@ -97,7 +103,7 @@ impl Boxes {
     /// No Box served yet.
     pub(super) fn new(cfg: Config) -> Self {
         Self {
-            lookup: EgressLedger::at(cfg.ledger.clone(), cfg.key.to_string()),
+            lookup: Arc::new(EgressLedger::at(cfg.ledger.clone(), cfg.key.to_string())),
             ledger: cfg.ledger,
             key: cfg.key,
             work_dir: cfg.work_dir,
@@ -150,47 +156,6 @@ impl Boxes {
         Ok(served)
     }
 
-    /// Learns every open Box's token from the ledger, then starts each Box's proxy and reads
-    /// the secrets its rules name and what it holds, so this replica serves any open Box on
-    /// last answers while the controller is away, not only the Boxes it has already seen.
-    pub(super) fn warm(&self) -> Result<(), LedgerError> {
-        let tokens = self.lookup.open_tokens()?;
-        let now = self.clock.instant();
-        let mut known = lock(&self.known);
-        known.retain(|hash, _| tokens.iter().any(|(h, _)| h == hash));
-        for (hash, box_id) in &tokens {
-            known
-                .entry(hash.clone())
-                .or_insert_with(|| Known {
-                    box_id: *box_id,
-                    bucket: Bucket::new(self.token_rate.burst, now),
-                    open: Arc::default(),
-                })
-                .box_id = *box_id;
-        }
-        drop(known);
-        for (_, box_id) in &tokens {
-            match self.served(*box_id) {
-                Ok(served) => {
-                    let names = served.spec.rules.iter();
-                    for name in names.filter_map(|r| SecretName::parse(&r.credential).ok()) {
-                        drop(served.ledger.secret(&name));
-                    }
-                    drop(served.ledger.hold());
-                }
-                Err(e) => self.say(format_args!("cannot warm Box {}: {e}", box_id.get())),
-            }
-        }
-        self.synced.store(true, Ordering::Release);
-        Ok(())
-    }
-
-    /// Whether the ledger has answered a [`Boxes::warm`] since this replica started; it stays
-    /// true while the controller is away.
-    pub(super) fn synced(&self) -> bool {
-        self.synced.load(Ordering::Acquire)
-    }
-
     /// Takes one tunnel from the bucket of `token_hash`, or from the shared lookup bucket when the
     /// token is not confirmed yet.
     fn spend(&self, token_hash: &str) -> Result<(), Refused> {
@@ -206,7 +171,12 @@ impl Boxes {
 
     /// The open Box of `token_hash`, or the last answer while the controller is away.
     fn owner(&self, token_hash: &str) -> Result<BoxId, Refused> {
-        let answer = self.lookup.token_box(token_hash);
+        let cached = lock(&self.known).contains_key(token_hash);
+        let answer = if cached {
+            self.lookup_within(token_hash, CACHED_LOOKUP)
+        } else {
+            self.lookup.token_box(token_hash)
+        };
         let mut known = lock(&self.known);
         match answer {
             Ok(Some(box_id)) => {
@@ -233,6 +203,24 @@ impl Boxes {
                 .ok_or_else(|| Refused::Unavailable(e.to_string())),
             Err(e) => Err(Refused::Unavailable(e.to_string())),
         }
+    }
+
+    /// The ledger's answer for `token_hash`, or unavailable once `wait` passes, so a dying
+    /// controller costs a cached token no more than `wait`.
+    fn lookup_within(
+        &self,
+        token_hash: &str,
+        wait: Duration,
+    ) -> Result<Option<BoxId>, LedgerError> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (lookup, hash) = (Arc::clone(&self.lookup), token_hash.to_owned());
+        std::thread::spawn(move || drop(tx.send(lookup.token_box(&hash))));
+        rx.recv_timeout(wait).unwrap_or_else(|_| {
+            Err(LedgerError::Unavailable(format!(
+                "no answer within {}ms",
+                wait.as_millis()
+            )))
+        })
     }
 
     /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps.

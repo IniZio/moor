@@ -25,7 +25,7 @@ use zeroize::Zeroizing;
 
 use super::boxes::closed;
 use super::wire::authority_ok;
-use super::{Config, Listen, Rate, Server, PATH, PLAIN, TARGET};
+use super::{Config, Listen, Rate, Server, Warm, PATH, PLAIN, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
 use crate::proxy::ledger::{BoxView, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
@@ -124,6 +124,10 @@ impl World {
             upstream_ca: Some(self.up.ca_path.clone()),
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
             machine: None,
+            warm: Some(Warm {
+                every: Duration::from_secs(10),
+                deadline: Duration::from_secs(8),
+            }),
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
         }
     }

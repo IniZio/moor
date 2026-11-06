@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
-use moor_core::{BoxId, BoxName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::super::{BoxLedger, EgressLedger, Endpoint, LedgerError};
 use super::{world, World, EGRESS_KEY};
@@ -45,22 +46,43 @@ fn a_token_finds_its_box_until_the_box_closes() {
 }
 
 #[test]
-fn the_open_tokens_name_every_open_box_and_no_closed_one() {
+fn the_awake_tokens_name_every_open_awake_box_and_skip_a_row_that_cannot_be_read() {
     let w = world();
     let _served = w.serve();
-    let a = box_with_token(&w, "a", b"token-a");
-    let b = box_with_token(&w, "b", b"token-b");
+    let closed = box_with_token(&w, "closed", b"token-closed");
+    let sleeping = box_with_token(&w, "sleeping", b"token-sleeping");
+    let broken = box_with_token(&w, "broken", b"token-broken");
+    let awake = box_with_token(&w, "awake", b"token-awake");
     let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
-    let mut open = ledger.open_tokens().unwrap();
-    open.sort();
-    let mut want = vec![(token_hash(b"token-a"), a), (token_hash(b"token-b"), b)];
-    want.sort();
-    assert_eq!(open, want);
-    let close = Decision::new(a).lifecycle(BoxLifecycleInput::Close { reason: None });
+    assert_eq!(ledger.awake_tokens().unwrap().tokens.len(), 4);
+    let close = Decision::new(closed).lifecycle(BoxLifecycleInput::Close { reason: None });
     w.store.apply(close).unwrap();
-    assert_eq!(ledger.open_tokens(), Ok(vec![(token_hash(b"token-b"), b)]));
+    asleep(&w, sleeping);
+    w.store.damage_box_state(broken, "unreadable");
+    let left = ledger.awake_tokens().unwrap();
+    assert_eq!(left.tokens, vec![(token_hash(b"token-awake"), awake)]);
+    let unread: Vec<BoxId> = left.unread.iter().map(|(id, _)| *id).collect();
+    assert_eq!(unread, [broken]);
     let wrong = EgressLedger::at(Endpoint::Unix(w.socket), "not-the-key".to_owned());
-    assert!(matches!(wrong.open_tokens(), Err(LedgerError::Refused(_))));
+    assert!(matches!(wrong.awake_tokens(), Err(LedgerError::Refused(_))));
+}
+
+/// Takes `id` up on a machine, then to sleep.
+fn asleep(w: &World, id: BoxId) {
+    let up = Decision::new(id)
+        .box_input(BoxInput::Requested)
+        .set(Fields {
+            box_provider: Field::Set(ProviderId::new("p")),
+            ..Fields::default()
+        });
+    w.store.apply(up).unwrap();
+    let acquired = Decision::new(id).box_input(BoxInput::Acquired {
+        handle: BoxHandle::new("p/b"),
+    });
+    w.store.apply(acquired).unwrap();
+    w.store
+        .apply(Decision::new(id).box_input(BoxInput::Sleep))
+        .unwrap();
 }
 
 #[test]

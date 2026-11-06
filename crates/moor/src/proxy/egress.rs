@@ -70,20 +70,18 @@ use zeroize::Zeroizing;
 
 use super::ledger::Endpoint;
 use super::Sink;
+use boxes::warm::keep_warm;
+pub(crate) use boxes::warm::Warm;
 use boxes::Boxes;
 pub(crate) use limit::Rate;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
-/// Answers 200 once the replica has learned the open Boxes from the ledger, and from then on;
-/// a rollout waits on it, so new replicas never replace old ones while the controller is away.
+/// Answers 200 from the first whole warming pass on; rollouts wait on it.
 pub(crate) const SYNCED: &str = "/synced";
-/// How often each replica relearns the open Boxes, their secrets and holds.
-const WARM_EVERY: Duration = Duration::from_secs(10);
 
 /// The machine service plain requests for `host` go to, as `--machine-service HOST=ADDR` names
-/// it. `upstream` is `host:port` and may be a DNS name, looked up on each connection, so the
-/// Proxy can run in another pod than the service.
+/// it. `upstream` is `host:port`, its name looked up on each connection.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MachineRoute {
     /// Name a Box requests over `http://`, compared without case.
@@ -208,6 +206,9 @@ pub(crate) struct Config {
     pub(crate) guard_exempt: Vec<SocketAddr>,
     /// The machine service plain requests for its host go to; `None` when none is configured.
     pub(crate) machine: Option<MachineRoute>,
+    /// How the replica keeps every awake Box ready; `None` learns each Box on first use only,
+    /// as one Proxy beside its controller does.
+    pub(crate) warm: Option<Warm>,
     /// Source of time.
     pub(crate) clock: Arc<dyn Clock>,
 }
@@ -240,6 +241,8 @@ pub(crate) struct Server {
     tending: Arc<AtomicBool>,
     /// The tending thread.
     tender: Option<std::thread::JoinHandle<()>>,
+    /// The warming thread, when the replica warms.
+    warmer: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Server {
@@ -254,7 +257,7 @@ impl Server {
             .block_on(cfg.listen.bind())
             .map_err(|e| format!("cannot listen on {}: {e}", cfg.listen))?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
-        let machine = cfg.machine.clone();
+        let (machine, warm) = (cfg.machine.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
@@ -268,23 +271,25 @@ impl Server {
         let (on, boxes) = (Arc::clone(&tending), Arc::clone(&shared));
         let thread = std::thread::Builder::new()
             .name("moor-egress-tend".to_owned())
-            .spawn(move || {
-                let warm_every = (WARM_EVERY.as_millis() / every.as_millis().max(1)).max(1);
-                let mut ticks = 0_u128;
-                while on.load(Ordering::Acquire) {
-                    if ticks.is_multiple_of(warm_every) || !boxes.boxes.synced() {
-                        if let Err(e) = boxes.boxes.warm() {
-                            boxes
-                                .boxes
-                                .say(format_args!("cannot learn the open Boxes: {e}"));
-                        }
+            .spawn({
+                let clock = Arc::clone(&clock);
+                move || {
+                    while on.load(Ordering::Acquire) {
+                        clock.sleep(every);
+                        boxes.boxes.tend();
                     }
-                    ticks += 1;
-                    clock.sleep(every);
-                    boxes.boxes.tend();
                 }
             })
             .map_err(|e| format!("cannot start tending: {e}"))?;
+        let warmer = warm
+            .map(|warm| {
+                let (on, shared) = (Arc::clone(&tending), Arc::clone(&shared));
+                std::thread::Builder::new()
+                    .name("moor-egress-warm".to_owned())
+                    .spawn(move || keep_warm(&shared.boxes, warm, (&on, clock.as_ref(), every)))
+            })
+            .transpose()
+            .map_err(|e| format!("cannot start warming: {e}"))?;
         Ok(Self {
             runtime,
             listening,
@@ -293,6 +298,7 @@ impl Server {
             shared,
             tending,
             tender: Some(thread),
+            warmer,
         })
     }
 
@@ -335,8 +341,11 @@ impl Server {
             shared.open.load(Ordering::Acquire)
         });
         self.tending.store(false, Ordering::Release);
-        if let Some(tender) = self.tender.take() {
-            drop(tender.join());
+        for thread in [self.tender.take(), self.warmer.take()]
+            .into_iter()
+            .flatten()
+        {
+            drop(thread.join());
         }
         self.runtime.shutdown_background();
         self.shared.boxes.stop();

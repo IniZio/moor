@@ -72,6 +72,8 @@ spec:
             - /var/lib/moor/egress/ledger-ca.pem
             - --grace
             - {{ .Values.egress.graceSecs | quote }}
+            - --warm-every
+            - "10"
             {{- if .Values.runner.enabled }}
             - --machine-service
             - machine.moor.internal={{ .Release.Name }}-machine.{{ .Release.Namespace }}.svc:7700

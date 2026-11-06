@@ -99,10 +99,10 @@ at one or more by a PodDisruptionBudget. Each gives open tunnels
 which the gate ingress routes to the Service `<release>-egress`. Without
 `gate.ingress.enabled`, set `egress.url` to where Boxes reach that Service.
 
-Every ten seconds each replica learns every open Box, its secrets and its
+Every ten seconds each replica learns every awake Box, its secrets and its
 machine from the ledger. While the controller is away, such as during its own
 upgrade, any replica serves any open Box from those answers. A replica turns
-Ready only after its first answer, so a rollout during a controller upgrade
+Ready only after one whole pass finishes within eight seconds, so a rollout during a controller upgrade
 waits and the old replicas keep serving.
 The Proxy reaches the controller's ledger over TLS at
 `<release>-ledger.<namespace>.svc:7443`. A NetworkPolicy opens that port only

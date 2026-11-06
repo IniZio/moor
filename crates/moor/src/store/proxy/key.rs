@@ -97,6 +97,22 @@ impl Store {
 }
 
 #[cfg(test)]
+impl Store {
+    /// Writes `state` into the row of `box_id` unchecked, as a damaged row would hold it.
+    pub(crate) fn damage_box_state(&self, box_id: BoxId, state: &str) {
+        use moor_schema::tables::Boxes;
+        self.writer()
+            .run(
+                Query::update()
+                    .table(Boxes::Table)
+                    .value(Boxes::State, state)
+                    .and_where(Expr::col(Boxes::Id).eq(box_id.get())),
+            )
+            .unwrap();
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use moor_core::domain::decision::{Decision, NewBox};
     use moor_core::BoxName;
