@@ -1,17 +1,36 @@
 {{- if .Values.egress.enabled }}
 {{- $uid := int .Values.controller.uid -}}
+{{- $kept := (lookup "v1" "Secret" .Release.Namespace (printf "%s-egress" .Release.Name)).data | default dict -}}
+{{- $was := dict -}}
+{{- range $k, $v := $kept }}{{ $_ := set $was $k (b64dec $v) }}{{ end -}}
+{{- $key := .Values.egress.key | default (get $was "egress-key") | default (randAlphaNum 64) -}}
+{{- $tls := .Values.egress.ledgerTls -}}
+{{- $pem := dict "crt" $tls.cert "key" $tls.key "ca" $tls.ca -}}
+{{- if not (and $tls.cert $tls.key $tls.ca) -}}
+{{- $pem = dict "crt" (get $was "ledger-tls.crt") "key" (get $was "ledger-tls.key") "ca" (get $was "ledger-ca.pem") -}}
+{{- if not (and $pem.crt $pem.key $pem.ca) -}}
+{{- $ca := genCA "moor ledger CA" 3650 -}}
+{{- $cert := genSignedCert (include "moor.ledgerHost" .) nil (list (include "moor.ledgerHost" .)) 3650 $ca -}}
+{{- $pem = dict "crt" $cert.Cert "key" $cert.Key "ca" $ca.Cert -}}
+{{- end -}}
+{{- end -}}
+# The key Box tokens are signed with and the ledger's certificates. Made on first install and read
+# back on each upgrade, so they never change by accident; kept past an uninstall, since running
+# Boxes hold tokens signed with the key.
 apiVersion: v1
 kind: Secret
 metadata:
   name: {{ .Release.Name }}-egress
   labels: {{- include "moor.egressLabels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 type: Opaque
 stringData:
-  egress-key: {{ required "egress.key is required when egress.enabled" .Values.egress.key | quote }}
-  ledger-ca.pem: {{ required "egress.ledgerTls.ca is required when egress.enabled" .Values.egress.ledgerTls.ca | quote }}
-  {{- if .Values.runner.enabled }}
-  machine-service-key: {{ include "moor.machineServiceKey" . | quote }}
-  {{- end }}
+  egress-key: {{ $key | quote }}
+  ledger-tls.crt: {{ $pem.crt | quote }}
+  ledger-tls.key: {{ $pem.key | quote }}
+  ledger-ca.pem: {{ $pem.ca | quote }}
+  machine-service-key: {{ printf "moor machine service:%s" $key | sha256sum | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
