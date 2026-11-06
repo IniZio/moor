@@ -163,7 +163,7 @@ pub(crate) const SPECS: [Spec; 15] = [
     },
     Spec {
         name: "add_workflow",
-        description: "Add a recurring job: on its cron, moor starts a Box in each repo with the prompt, and this thread is told what each run did. Every run acts as this thread's starter, with their credentials, and its agent may push branches and open pull requests in those repos; it cannot merge them. A run is skipped while the previous run for that repo is unfinished. Three failed runs in a row for a repo disable the workflow. Adding an existing name replaces it and moves its reports to this thread. Works only when the thread's starter wrote in this turn.",
+        description: "Add a recurring job: on its cron, moor starts a Box in each repo with the prompt, and each run gets a thread of its own in this channel, which mentions the starter and links this thread, and its Box works there; skips, refusals and a disabled workflow are said here. Every run acts as this thread's starter, with their credentials, and its agent may push branches and open pull requests in those repos; it cannot merge them. A run is skipped while the previous run for that repo is unfinished. Three failed runs in a row for a repo disable the workflow. Adding an existing name replaces it and moves its reports to this thread. Works only when the thread's starter wrote in this turn.",
         input: || {
             json!({
                 "type": "object",

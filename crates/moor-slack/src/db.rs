@@ -40,6 +40,10 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V5__workflow_reports.sql",
             include_str!("../migrations/V5__workflow_reports.sql"),
         ),
+        (
+            "V6__workflow_run_threads.sql",
+            include_str!("../migrations/V6__workflow_run_threads.sql"),
+        ),
     ])
 }
 
@@ -195,6 +199,7 @@ mod turns;
 pub(crate) use turns::{End, OpenTurn, TurnRow};
 
 mod workflow;
+pub(crate) use workflow::{Outbox, RunThread};
 
 #[cfg(test)]
 mod tests;

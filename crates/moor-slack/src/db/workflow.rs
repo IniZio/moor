@@ -1,10 +1,10 @@
 //! What the workflow reporter keeps: each person's cursor into their runs, the skips already
 //! told, the lines still to post, and the Boxes it adopts into their threads.
 
-use moor_core::name::BoxId;
-use rusqlite::params;
+use moor_core::name::{BoxId, BoxName};
+use rusqlite::{params, OptionalExtension};
 
-use super::{Db, SlackBox};
+use super::{BoxState, Db, SlackBox, SlackThread};
 
 /// A line owed to a thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +19,29 @@ pub(crate) struct Outbox {
     pub(crate) text: String,
     /// Posts that failed so far.
     pub(crate) attempts: i64,
+    /// The Box whose run thread the line belongs in, once it has one.
+    pub(crate) box_name: Option<String>,
+}
+
+/// A run's thread that is owed: the Box is adopted into it once its first message posts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RunThread {
+    /// The run's Box.
+    pub(crate) box_name: String,
+    /// The Slack user who owns the workflow.
+    pub(crate) owner: String,
+    /// The workflow's name.
+    pub(crate) workflow: String,
+    /// The repo of the run.
+    pub(crate) repo: String,
+    /// Channel of the thread that added the workflow, and the new thread's.
+    pub(crate) channel: String,
+    /// Timestamp of the root message of the thread that added the workflow.
+    pub(crate) origin_ts: String,
+    /// The Box's id.
+    pub(crate) box_id: i64,
+    /// The Box's branch.
+    pub(crate) branch: Option<String>,
 }
 
 impl Db {
@@ -95,19 +118,20 @@ impl Db {
             .map(drop)
     }
 
-    /// Owes `text` from `owner`'s reporter to a thread.
+    /// Owes `text` from `owner`'s reporter to a thread: the thread of Box `boxed` once it has
+    /// one, else `channel` and `thread_ts`.
     pub(crate) fn enqueue_line(
         &self,
         owner: &str,
-        channel: &str,
-        thread_ts: &str,
+        (channel, thread_ts): (&str, &str),
+        boxed: Option<&str>,
         text: &str,
     ) -> rusqlite::Result<()> {
         self.conn
             .execute(
-                "INSERT INTO workflow_outbox (owner, channel, thread_ts, text) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![owner, channel, thread_ts, text],
+                "INSERT INTO workflow_outbox (owner, channel, thread_ts, text, box_name) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![owner, channel, thread_ts, text, boxed],
             )
             .map(drop)
     }
@@ -115,7 +139,7 @@ impl Db {
     /// The lines `owner`'s reporter owes, oldest first.
     pub(crate) fn owed_lines(&self, owner: &str) -> rusqlite::Result<Vec<Outbox>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, channel, thread_ts, text, attempts FROM workflow_outbox \
+            "SELECT id, channel, thread_ts, text, attempts, box_name FROM workflow_outbox \
              WHERE owner = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![owner], |r| {
@@ -125,6 +149,7 @@ impl Db {
                 thread_ts: r.get(2)?,
                 text: r.get(3)?,
                 attempts: r.get(4)?,
+                box_name: r.get(5)?,
             })
         })?;
         rows.collect()
@@ -175,5 +200,132 @@ impl Db {
             ],
         )?;
         Ok(added == 1)
+    }
+
+    /// The thread `boxed` is in, if any thread has it.
+    pub(crate) fn box_thread(&self, boxed: &str) -> rusqlite::Result<Option<(String, String)>> {
+        self.conn
+            .query_row(
+                "SELECT channel, thread_ts FROM slack_boxes WHERE box_name = ?1",
+                params![boxed],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+    }
+
+    /// Whether a run thread was ever owed for `boxed`, posted, pending or given up on.
+    pub(crate) fn run_thread_known(&self, boxed: &str) -> rusqlite::Result<bool> {
+        self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM workflow_run_threads WHERE box_name = ?1)",
+            params![boxed],
+            |r| r.get(0),
+        )
+    }
+
+    /// Whether a run thread for `boxed` is owed and not given up on.
+    pub(crate) fn run_thread_pending(&self, boxed: &str, give_up: i64) -> rusqlite::Result<bool> {
+        self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM workflow_run_threads \
+             WHERE box_name = ?1 AND opened = 0 AND attempts < ?2)",
+            params![boxed, give_up],
+            |r| r.get(0),
+        )
+    }
+
+    /// Owes a run thread; one already owed for the Box is kept as it is.
+    pub(crate) fn owe_run_thread(&self, t: &RunThread) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO workflow_run_threads \
+                 (box_name, owner, workflow, repo, channel, origin_ts, box_id, branch) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    t.box_name,
+                    t.owner,
+                    t.workflow,
+                    t.repo,
+                    t.channel,
+                    t.origin_ts,
+                    t.box_id,
+                    t.branch
+                ],
+            )
+            .map(drop)
+    }
+
+    /// The run threads `owner` is owed and has not given up on, oldest first.
+    pub(crate) fn owed_run_threads(
+        &self,
+        owner: &str,
+        give_up: i64,
+    ) -> rusqlite::Result<Vec<(RunThread, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT box_name, owner, workflow, repo, channel, origin_ts, box_id, branch, attempts \
+             FROM workflow_run_threads WHERE owner = ?1 AND opened = 0 AND attempts < ?2 ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map(params![owner, give_up], |r| {
+            let thread = RunThread {
+                box_name: r.get(0)?,
+                owner: r.get(1)?,
+                workflow: r.get(2)?,
+                repo: r.get(3)?,
+                channel: r.get(4)?,
+                origin_ts: r.get(5)?,
+                box_id: r.get(6)?,
+                branch: r.get(7)?,
+            };
+            Ok((thread, r.get(8)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Counts one failed first post of the run thread for `boxed`.
+    pub(crate) fn run_thread_failed(&self, boxed: &str) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "UPDATE workflow_run_threads SET attempts = attempts + 1 WHERE box_name = ?1",
+                params![boxed],
+            )
+            .map(drop)
+    }
+
+    /// Opens the run thread whose first message is `ts` and adopts its Box into it, owned by
+    /// the workflow's owner. The owed row stays, marked opened, so a later change
+    /// of the same run owes nothing again.
+    pub(crate) fn open_run_thread(
+        &self,
+        t: &RunThread,
+        ts: &str,
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        let Ok(box_name) = BoxName::parse_allow_bare(&t.box_name) else {
+            return Ok(());
+        };
+        let thread = SlackThread {
+            channel: t.channel.clone(),
+            thread_ts: ts.to_owned(),
+            owner: t.owner.clone(),
+        };
+        let boxed = SlackBox {
+            channel: t.channel.clone(),
+            thread_ts: ts.to_owned(),
+            box_name,
+            repo: t.repo.clone(),
+            prompt: "workflow run".to_owned(),
+            base: None,
+            node: None,
+            requested_by: t.owner.clone(),
+            parent: None,
+            state: BoxState::Starting,
+        };
+        self.atomically(|| {
+            self.insert_thread(&thread, now)?;
+            self.adopt(&boxed, BoxId::new(t.box_id), t.branch.as_deref(), now)?;
+            self.conn.execute(
+                "UPDATE workflow_run_threads SET opened = 1 WHERE box_name = ?1",
+                params![t.box_name],
+            )
+        })
+        .map(drop)
     }
 }
