@@ -47,6 +47,39 @@ The chart already makes the CA and the server certificate on first install and k
 
 This is what the NetworkPolicy gave, done where every install can have it. The NetworkPolicy leaves the chart.
 
+#### Why hand-issued certificates
+
+Tools exist for workload identity. Each needs something a team install cannot assume, or does not exist outside Kubernetes.
+
+| Tool | Needs | Team install (namespaced RBAC, no CRDs, no webhooks) | Local controller, agent37, machines | Outcome |
+|---|---|---|---|---|
+| Helm `genCA`, `genSignedCert`, `lookup` | `get` on Secrets, which Helm needs anyway | Yes | No, but those modes use a Unix socket ledger today | Kept. What the chart does now. |
+| rustls `WebPkiClientVerifier` | Nothing. rustls 0.23 is in the tree | Yes | Yes | Kept. It is the verifier. |
+| rcgen | Nothing. rcgen 0.14 is in the tree | Yes | Yes | Kept for later. It issues the same certificates in process, for a runner outside the cluster (phase 8). |
+| cert-manager | A cluster install and CRDs | No. The agentic cluster has none; only the pandawork and oursky.app clusters run it | No | Rejected. An operator may still point a `Certificate` at the chart's Secret keys. Backlog. |
+| Projected ServiceAccount tokens, verified by the API server's OIDC JWKS | A projected token volume, an SA token in the controller to read the JWKS, the API server on the connect path | Yes. The JWKS is readable by every ServiceAccount by default | No. There is no ServiceAccount outside Kubernetes | Rejected. It replaces only the client half, keeps the generated server certificate, adds a JWT dependency and a second mechanism for the runner off cluster. TokenReview needs cluster RBAC, so it is out. |
+| SPIFFE and SPIRE | A SPIRE server, agents on every node, a registrar with CRDs | No | Yes, with agents on every machine | Rejected. Admin install, heavy. |
+| Linkerd, Istio ambient | CNI, CRDs, admission webhooks | No | No | Rejected. Admin install. |
+
+The chart's certificates work on every install with no RBAC beyond what Helm already needs. The same mechanism works where moor runs without Kubernetes.
+
+#### The kept Secret
+
+The chart keeps the egress key, the CA and the certificates in `<release>-egress` with `helm.sh/resource-policy: keep`. It reads them back on each upgrade and writes the same values again. This is what that means.
+
+- Validity is ten years for the CA and each certificate. rustls refuses an expired one. Nothing renews them.
+- Rotation is manual. Delete the Secret, upgrade, then restart the controller and the egress pods. Every Box token dies with the key, so each Box gets a new forwarder config on its next delivery. The generated values are not in the pod checksum, so the restart is by hand.
+- A leaked client certificate and key, with the egress key, lets anyone who reaches `7443` read any awake Box's secrets. That lasts ten years or until rotation. That is what a leaked key alone allows today. A leaked server key lets someone who sits on the path impersonate the ledger.
+- There is no revocation. Rotating the CA is the revocation.
+- Uninstall leaves the Secret. A reinstall under the same release name adopts it, so old Box tokens stay valid. Two releases in one namespace keep separate Secrets and certificates, since the names and the SAN carry the release name.
+- `helm rollback` writes the Secret the old release rendered. After a rotation that puts the old key back, and the tokens minted since die. Without a rotation it changes nothing.
+- `helm diff` and `helm template` run without `lookup`, so they show the Secret as changing every time. The apply renders it from the cluster and changes nothing.
+- A CA that expires mid-rollout fails every ledger handshake. Synced replicas keep serving from their last warm pass. A new replica never turns Ready. The fix is a rotation.
+
+Regenerating the Secret on every upgrade is the alternative. It would void every Box token on every deploy, which is the outage this spec removes. It would also change the CA under running egress pods on every deploy. So the Secret stays kept.
+
+Rotating the certificates without voiding tokens needs them in a Secret of their own. Backlog, until a rotation is wanted.
+
 ### No PodDisruptionBudget in the chart
 
 A deploy is a `RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1`, so a replica stops only after the next is Ready. That is the whole guarantee this spec needs, and it needs no PDB.
@@ -144,6 +177,8 @@ The shared pieces live in this spec. They are the Secret with the CA, the server
 
 ## Backlog
 
+- The ledger certificates in a Secret of their own, so a rotation keeps Box tokens.
+- The chart's Secret keys named so a cert-manager `Certificate` can fill them where an operator has it.
 - The forwarder retries the WebSocket dial for a few seconds before failing a CONNECT, so a Cloudflare blip or a replica mid-stop costs nothing.
 - A Proxy on the machine agent for machine-hosted Boxes, to skip the Cloudflare round trip.
 - moor-gate in its own `RollingUpdate` Deployment, so herdr and MCP clients see no blip either. Phase 6.
