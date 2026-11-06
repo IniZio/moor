@@ -110,6 +110,8 @@ pub(crate) struct Server {
     addr: SocketAddr,
     /// Wakes the accept loop to stop listening.
     stop: Arc<Notify>,
+    /// The accept loop, which holds the listener until it returns.
+    accepting: tokio::task::JoinHandle<()>,
     /// Shared with connections.
     shared: Arc<Shared>,
     /// Set to stop the tending thread.
@@ -138,7 +140,7 @@ impl Server {
             open: AtomicUsize::new(0),
         });
         let stop = Arc::new(Notify::new());
-        runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));
+        let accepting = runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));
         let tending = Arc::new(AtomicBool::new(true));
         let (on, boxes) = (Arc::clone(&tending), Arc::clone(&shared));
         let thread = std::thread::Builder::new()
@@ -154,6 +156,7 @@ impl Server {
             runtime,
             addr,
             stop,
+            accepting,
             shared,
             tending,
             tender: Some(thread),
@@ -181,8 +184,9 @@ impl Server {
     /// then stops the rest; returns how many were still open.
     pub(crate) fn drain(mut self, grace: Duration) -> usize {
         self.stop.notify_one();
-        let shared = Arc::clone(&self.shared);
+        let (shared, accepting) = (Arc::clone(&self.shared), self.accepting);
         let left = self.runtime.block_on(async move {
+            drop(accepting.await);
             let waited = tokio::time::timeout(grace, async {
                 while shared.open.load(Ordering::Acquire) > 0 {
                     tokio::time::sleep(Duration::from_millis(50)).await;
