@@ -118,12 +118,13 @@ pub(crate) fn sleep_parked(
     id: BoxId,
     handle: &BoxHandle,
 ) -> Result<SleepOutcome, CommandError> {
+    // Parking takes the Proxy away, and the check runs in the Box.
+    suspend_check::record(cx, store, id);
     park_tunnel(cx, id)?;
     if let Err(e) = close_agent_pane(cx, store, id) {
         let _ = restore_tunnel(cx, id);
         return Err(e);
     }
-    suspend_check::record(cx, store, id);
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, id);
