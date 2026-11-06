@@ -44,7 +44,23 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V6__workflow_run_threads.sql",
             include_str!("../migrations/V6__workflow_run_threads.sql"),
         ),
+        (
+            "V7__run_thread_without_box.sql",
+            include_str!("../migrations/V7__run_thread_without_box.sql"),
+        ),
     ])
+}
+
+/// The migrations, for tests of other modules.
+#[cfg(test)]
+pub(crate) fn schema_for_tests() -> Vec<Migration> {
+    schema().unwrap()
+}
+
+/// [`legacy`], for tests of other modules.
+#[cfg(test)]
+pub(crate) fn legacy_for_tests(conn: &Connection) -> rusqlite::Result<Legacy> {
+    legacy(conn)
 }
 
 /// A Slack thread the front answers in.

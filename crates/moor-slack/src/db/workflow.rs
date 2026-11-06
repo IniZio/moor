@@ -38,8 +38,8 @@ pub(crate) struct RunThread {
     pub(crate) channel: String,
     /// Timestamp of the root message of the thread that added the workflow.
     pub(crate) origin_ts: String,
-    /// The Box's id.
-    pub(crate) box_id: i64,
+    /// The Box's id, once the run has a Box.
+    pub(crate) box_id: Option<i64>,
     /// The Box's branch.
     pub(crate) branch: Option<String>,
 }
@@ -289,43 +289,109 @@ impl Db {
             .map(drop)
     }
 
-    /// Opens the run thread whose first message is `ts` and adopts its Box into it, owned by
-    /// the workflow's owner. The owed row stays, marked opened, so a later change
-    /// of the same run owes nothing again.
+    /// Opens the run thread whose first message is `ts`, owned by the workflow's owner, and
+    /// adopts its Box into it when the Box is known. The owed row stays, marked opened, so a
+    /// later change of the same run owes nothing again.
     pub(crate) fn open_run_thread(
         &self,
         t: &RunThread,
         ts: &str,
         now: i64,
     ) -> rusqlite::Result<()> {
-        let Ok(box_name) = BoxName::parse_allow_bare(&t.box_name) else {
-            return Ok(());
-        };
         let thread = SlackThread {
             channel: t.channel.clone(),
             thread_ts: ts.to_owned(),
             owner: t.owner.clone(),
         };
-        let boxed = SlackBox {
-            channel: t.channel.clone(),
-            thread_ts: ts.to_owned(),
+        self.atomically(|| {
+            self.insert_thread(&thread, now)?;
+            self.conn.execute(
+                "UPDATE workflow_run_threads SET opened = 1, thread_ts = ?2 WHERE box_name = ?1",
+                params![t.box_name, ts],
+            )?;
+            self.adopt_run_box(&t.box_name, now)
+        })
+    }
+
+    /// Records the id and branch of the Box of an owed run thread, and adopts the Box when
+    /// the thread is open. Call inside a transaction.
+    pub(crate) fn learn_run_box(
+        &self,
+        boxed: &str,
+        (id, branch): (i64, Option<&str>),
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE workflow_run_threads SET box_id = ?2, branch = ?3 \
+             WHERE box_name = ?1 AND box_id IS NULL",
+            params![boxed, id, branch],
+        )?;
+        self.adopt_run_box(boxed, now)
+    }
+
+    /// Whether an owed run thread for `boxed` already knows its Box id; none when no thread
+    /// is owed.
+    pub(crate) fn run_thread_has_box(&self, boxed: &str) -> rusqlite::Result<Option<bool>> {
+        self.conn
+            .query_row(
+                "SELECT box_id IS NOT NULL FROM workflow_run_threads WHERE box_name = ?1",
+                params![boxed],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// The thread that was opened for the run of `boxed`, if it was.
+    pub(crate) fn run_thread_at(&self, boxed: &str) -> rusqlite::Result<Option<(String, String)>> {
+        self.conn
+            .query_row(
+                "SELECT channel, thread_ts FROM workflow_run_threads \
+                 WHERE box_name = ?1 AND thread_ts IS NOT NULL",
+                params![boxed],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+    }
+
+    /// Adopts the Box of `boxed`'s run thread into it once both the thread and the Box id are
+    /// known. The one place a run's Box is adopted.
+    fn adopt_run_box(&self, boxed: &str, now: i64) -> rusqlite::Result<()> {
+        let found = self
+            .conn
+            .query_row(
+                "SELECT owner, repo, channel, thread_ts, box_id, branch FROM workflow_run_threads \
+                 WHERE box_name = ?1 AND thread_ts IS NOT NULL AND box_id IS NOT NULL",
+                params![boxed],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, i64>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let (Some((owner, repo, channel, thread_ts, id, branch)), Ok(box_name)) =
+            (found, BoxName::parse_allow_bare(boxed))
+        else {
+            return Ok(());
+        };
+        let row = SlackBox {
+            channel,
+            thread_ts,
             box_name,
-            repo: t.repo.clone(),
+            repo,
             prompt: "workflow run".to_owned(),
             base: None,
             node: None,
-            requested_by: t.owner.clone(),
+            requested_by: owner,
             parent: None,
             state: BoxState::Starting,
         };
-        self.atomically(|| {
-            self.insert_thread(&thread, now)?;
-            self.adopt(&boxed, BoxId::new(t.box_id), t.branch.as_deref(), now)?;
-            self.conn.execute(
-                "UPDATE workflow_run_threads SET opened = 1 WHERE box_name = ?1",
-                params![t.box_name],
-            )
-        })
-        .map(drop)
+        self.adopt(&row, BoxId::new(id), branch.as_deref(), now)
+            .map(drop)
     }
 }

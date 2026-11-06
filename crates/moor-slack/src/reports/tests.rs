@@ -47,13 +47,27 @@ fn run(seq: i64, (front, key): (&str, Option<&str>), outcome: &str, boxed: Optio
     v
 }
 
+/// A run of workflow `sec` that fired for Box `planned`, which does not exist yet.
+fn fired(seq: i64, planned: &str) -> Value {
+    let mut v = ours(seq, "starting", None);
+    v["planned_box"] = json!(planned);
+    v
+}
+
+/// A refusal of the run that fired for Box `planned`.
+fn refused_run(seq: i64, planned: &str) -> Value {
+    let mut v = ours(seq, "refused", None);
+    v["planned_box"] = json!(planned);
+    v
+}
+
 fn ours(seq: i64, outcome: &str, boxed: Option<&str>) -> Value {
     run(seq, ("slack", Some("C1/1.0")), outcome, boxed)
 }
 
 /// The controller's stream and what Slack was sent.
 struct World {
-    changes: Vec<Value>,
+    changes: RefCell<Vec<Value>>,
     asked: RefCell<Vec<Option<i64>>>,
     /// `(channel, thread, text)`; no thread for a top-level message.
     posts: RefCell<Vec<(String, Option<String>, String)>>,
@@ -67,7 +81,7 @@ struct World {
 impl World {
     fn new(changes: Vec<Value>) -> Self {
         Self {
-            changes,
+            changes: RefCell::new(changes),
             asked: RefCell::new(Vec::new()),
             posts: RefCell::new(Vec::new()),
             logged: RefCell::new(Vec::new()),
@@ -81,8 +95,8 @@ impl World {
             Request::WorkflowRuns(r) => {
                 self.asked.borrow_mut().push(r.after);
                 let after = r.after.unwrap_or(0);
-                let new: Vec<_> = self
-                    .changes
+                let all = self.changes.borrow();
+                let new: Vec<_> = all
                     .iter()
                     .filter(|c| c["seq"].as_i64() > Some(after))
                     .collect();
@@ -429,4 +443,144 @@ fn a_controller_that_cannot_be_read_leaves_the_cursor_alone() {
     };
     assert!(poll(&db, "U1", &mut fx).is_err());
     assert_eq!(db.workflow_cursor("U1").unwrap(), 0);
+}
+
+/// The posts so far, then again after polling with a reopened db, which must add none.
+fn assert_repolling_repeats_nothing(dir: &std::path::Path, world: &World) {
+    let before = world.posts.borrow().len();
+    let boxes = open(dir).fed_boxes().unwrap().len();
+    world.poll(&open(dir)).unwrap();
+    world.poll(&open(dir)).unwrap();
+    assert_eq!(world.posts.borrow().len(), before);
+    assert_eq!(open(dir).fed_boxes().unwrap().len(), boxes);
+}
+
+#[test]
+fn a_run_that_has_only_fired_gets_its_thread_with_no_box_yet() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![fired(1, "sec-1")]);
+    world.poll(&db).unwrap();
+    let tops = world.tops();
+    assert_eq!(tops.len(), 1, "{tops:?}");
+    let missing = [
+        "<@U1>",
+        "`sec`",
+        "`acme/api`",
+        "https://slack.com/archives/C1/p10",
+    ]
+    .into_iter()
+    .filter(|want| !tops[0].contains(want))
+    .collect::<Vec<_>>();
+    assert!(missing.is_empty(), "{missing:?} not in {}", tops[0]);
+    assert!(!tops[0].contains("works here"), "no Box is promised");
+    assert_eq!(db.thread("C1", "100.1").unwrap().unwrap().owner, "U1");
+    assert!(db.fed_boxes().unwrap().is_empty());
+    assert_repolling_repeats_nothing(dir.path(), &world);
+}
+
+#[test]
+fn the_box_that_starts_later_joins_the_thread_without_a_second_post() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![fired(1, "sec-1")]);
+    world.poll(&db).unwrap();
+    *world.changes.borrow_mut() = vec![ours(2, "started", Some("sec-1"))];
+    world.poll(&db).unwrap();
+    assert_eq!(world.posts.borrow().len(), 1);
+    assert_adopted_in_new_thread(&db);
+    *world.changes.borrow_mut() = vec![ours(3, "finished", Some("sec-1"))];
+    assert_repolling_repeats_nothing(dir.path(), &world);
+    assert_eq!(world.posts.borrow().len(), 1);
+}
+
+#[test]
+fn a_box_that_starts_before_the_first_post_goes_through_still_ends_in_one_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![fired(1, "sec-1")]);
+    world.top_fails.set(1);
+    world.poll(&db).unwrap();
+    assert!(world.posts.borrow().is_empty());
+    *world.changes.borrow_mut() = vec![ours(2, "started", Some("sec-1"))];
+    world.poll(&db).unwrap();
+    assert_eq!(world.tops().len(), 1);
+    assert_adopted_in_new_thread(&db);
+    assert_eq!(db.workflow_cursor("U1").unwrap(), 2);
+    assert_repolling_repeats_nothing(dir.path(), &world);
+}
+
+#[test]
+fn a_refusal_after_the_run_fired_goes_in_its_thread_even_after_an_earlier_streak() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![ours(1, "refused", None), fired(2, "sec-1")]);
+    world.poll(&db).unwrap();
+    *world.changes.borrow_mut() = vec![ours(1, "refused", None), refused_run(3, "sec-1")];
+    world.poll(&db).unwrap();
+    let said = world.said();
+    assert_eq!(said.len(), 3, "{said:?}");
+    assert!(said[0].starts_with("top: "));
+    assert!(said[1].starts_with("1.0: ") && said[1].contains("repo not found"));
+    assert!(
+        said[2].starts_with("100.1: ") && said[2].contains("No Box was started"),
+        "{said:?}"
+    );
+    assert_repolling_repeats_nothing(dir.path(), &world);
+}
+
+#[test]
+fn a_refusal_with_no_thread_goes_to_the_origin_once_per_streak() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let world = World::new(vec![
+        refused_run(1, "sec-1"),
+        refused_run(2, "sec-2"),
+        refused_run(3, "sec-3"),
+    ]);
+    world.poll(&db).unwrap();
+    let said = world.said();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(said[0].starts_with("1.0: ") && said[0].contains("will not say this again"));
+    assert_repolling_repeats_nothing(dir.path(), &world);
+}
+
+#[test]
+fn a_store_at_v6_keeps_its_owed_and_opened_run_threads_through_v7() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let v6: Vec<_> = crate::db::schema_for_tests()
+        .into_iter()
+        .filter(|m| m.version() <= 6)
+        .collect();
+    let mut conn = rusqlite::Connection::open(&path).unwrap();
+    moor_migrate::migrate(&mut conn, &v6, crate::db::legacy_for_tests).unwrap();
+    conn.execute_batch(
+        "INSERT INTO slack_threads (channel, thread_ts, owner, created_at) VALUES ('C1', '1.0', 'U1', 1), ('C1', '100.1', 'U1', 1);
+         INSERT INTO slack_boxes (box_name, channel, thread_ts, n, repo, prompt, requested_by, state, box_id, created_at)
+           VALUES ('sec-1', 'C1', '100.1', 1, 'acme/api', 'p', 'U1', 'bound', 9, 1);
+         INSERT INTO workflow_run_threads (box_name, owner, workflow, repo, channel, origin_ts, box_id, branch, attempts, opened)
+           VALUES ('sec-1', 'U1', 'sec', 'acme/api', 'C1', '1.0', 9, 'b', 0, 1),
+                  ('sec-2', 'U1', 'sec', 'acme/api', 'C1', '1.0', 5, NULL, 2, 0);",
+    )
+    .unwrap();
+    drop(conn);
+    let db = open(dir.path());
+    assert_eq!(
+        db.run_thread_at("sec-1").unwrap(),
+        Some(("C1".into(), "100.1".into()))
+    );
+    assert_eq!(db.run_thread_at("sec-2").unwrap(), None);
+    assert_eq!(db.run_thread_has_box("sec-2").unwrap(), Some(true));
+    let owed = db.owed_run_threads("U1", 5).unwrap();
+    assert_eq!(owed.len(), 1);
+    assert_eq!(
+        (owed[0].0.box_name.as_str(), owed[0].0.box_id, owed[0].1),
+        ("sec-2", Some(5), 2)
+    );
+    let mut idless = owed[0].0.clone();
+    idless.box_name = "sec-3".into();
+    idless.box_id = None;
+    db.owe_run_thread(&idless).unwrap();
+    assert_eq!(db.run_thread_has_box("sec-3").unwrap(), Some(false));
 }

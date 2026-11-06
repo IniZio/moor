@@ -230,8 +230,12 @@ fn handle(db: &Db, owner: &str, change: &ChangeView, fx: &mut Fx<'_>) -> Result<
     };
     let owed = (channel, thread_ts, said);
     db.atomically(|| {
-        if let Some(thread) = &owe {
-            db.owe_run_thread(thread)?;
+        match &owe {
+            Some(RunStep::Owe(thread)) => db.owe_run_thread(thread)?,
+            Some(RunStep::Learn(name, id, branch)) => {
+                db.learn_run_box(name, (*id, branch.as_deref()), (fx.clock)())?;
+            }
+            None => {}
         }
         record(db, owner, change, &owed)?;
         db.set_workflow_cursor(owner, seq)
@@ -255,6 +259,16 @@ fn record(
         let at = (*channel, *thread_ts);
         return line.map_or(Ok(()), |l| db.enqueue_line(owner, at, None, l));
     };
+    if let Some(planned) = run
+        .planned_box
+        .as_deref()
+        .filter(|_| run.outcome == "refused")
+    {
+        if db.run_thread_known(planned)? {
+            let line = refused_in_thread(workflow, run);
+            return db.enqueue_line(owner, (channel, thread_ts), Some(planned), &line);
+        }
+    }
     let timed_out = run.outcome == "timed_out";
     let boxed = run.box_name.as_deref().filter(|_| timed_out);
     let fresh = if let Some(kind) = kind {
@@ -295,6 +309,17 @@ fn run_line(workflow: &str, run: &LastRunView) -> Say {
         ),
         _ => Say::Nothing,
     }
+}
+
+/// The line for a run that fired a thread of its own and then could not start; it is that
+/// run's only report, so it is never held back as a repeat.
+fn refused_in_thread(workflow: &str, run: &LastRunView) -> String {
+    format!(
+        "Workflow {} could not start on {}: {}. No Box was started for this run. Fix that, or ask me to disable the workflow.",
+        code(workflow),
+        code(&run.repo),
+        escape(run.detail.as_deref().unwrap_or("no reason given"))
+    )
 }
 
 /// The line for a workflow the controller disabled.
@@ -345,13 +370,13 @@ fn flush(db: &Db, owner: &str, fx: &mut Fx<'_>) {
     }
 }
 
-/// Where `line` is posted: its Box's thread when it has a Box, else the thread that added the
+/// Where `line` is posted: its run's thread when it has one, else the thread that added the
 /// workflow. None while the Box's thread is still owed, so the line waits for it.
 fn line_thread(db: &Db, line: &Outbox) -> rusqlite::Result<Option<(String, String)>> {
     let Some(name) = &line.box_name else {
         return Ok(Some((line.channel.clone(), line.thread_ts.clone())));
     };
-    if let Some(at) = db.box_thread(name)? {
+    if let Some(at) = db.run_thread_at(name)?.or(db.box_thread(name)?) {
         return Ok(Some(at));
     }
     if db.run_thread_pending(name, GIVE_UP)? {
@@ -361,7 +386,7 @@ fn line_thread(db: &Db, line: &Outbox) -> rusqlite::Result<Option<(String, Strin
 }
 
 mod threads;
-use threads::{open_threads, run_thread};
+use threads::{open_threads, run_thread, RunStep};
 
 #[cfg(test)]
 mod tests;

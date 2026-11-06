@@ -69,17 +69,18 @@ clears the reason and restarts the count.
 
 ## In Slack
 
-A workflow added in a Slack thread reports back to Slack. Each run that starts
-a Box gets a new top-level message in the thread's channel. It mentions the
-person who owns the workflow, names the workflow and repo, and links the thread
-that added the workflow. That message is a thread of its own, and the run's Box
-works there: its status, artifacts, questions and the agent's final message all
-land in it. The owner can reply in it to steer the Box, like in any thread. A
-run that timed out says so there.
+A workflow added in a Slack thread reports back to Slack. When a run fires, a
+new top-level message appears in the thread's channel, before its Box has
+finished setting up. It mentions the person who owns the workflow, names the
+workflow and repo, and links the thread that added the workflow. That message is
+a thread of its own. Once the Box exists, it works there: its status, artifacts,
+questions and the agent's final message all land in it. The owner can reply in
+it to steer the Box, like in any thread. A run that is refused after it fired
+says why in that thread, and a run that timed out says so there.
 
-Nothing about a run goes in the thread that added the workflow. It hears only
-runs that were skipped or refused, once per streak for each repo, and a workflow
-the controller disabled.
+Nothing else about a run goes in the thread that added the workflow. It hears
+only runs that were skipped or refused before they fired, once per streak for
+each repo, and a workflow the controller disabled.
 
 ## See what happened
 
@@ -99,3 +100,6 @@ started to finished or timed out. Each entry has a `seq`. Pass the reply's
 | `timed_out` | Stopped at the timeout. |
 | `skipped_overlap` | The previous run was unfinished. |
 | `refused` | The start was refused. `detail` says why. |
+
+A run that is starting or was refused also has `planned_box`, the name its Box
+has or would have. `box` appears only once that Box exists.
