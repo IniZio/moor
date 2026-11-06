@@ -16,11 +16,15 @@ use tokio::process::Command;
 pub use reach::{carry, dial, splice, Sshd};
 
 mod cache;
+mod checkpoint;
+mod crabbox;
 mod memory;
 mod reach;
 mod rows;
 mod sweep;
 
+pub use checkpoint::checkpoint_op;
+use crabbox::Crabbox;
 use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
 use rows::{held_memory, leases};
@@ -59,10 +63,14 @@ pub struct Pool {
 /// The features are empty when crabbox cannot say.
 pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
     let pool = machine.pool.as_ref()?;
+    let features = features(pool).await;
+    let checkpoints_off = checkpoint::off(&machine.home, pool, &features).await;
     Some(Offer {
         max_boxes: pool.max.and_then(|m| u32::try_from(m).ok()),
         cache_gb: pool.cache_gb,
-        features: features(pool).await,
+        features,
+        checkpoints: checkpoints_off.is_none(),
+        checkpoints_off,
         mem_mib: host_mem_mib(),
         cpus: std::thread::available_parallelism()
             .ok()
@@ -148,6 +156,7 @@ pub async fn lease_op(home: &Path, pool: &Pool, op: Op) -> Reply {
             let boot = Boot { cache, class };
             lease(home, pool, verb, slug.as_deref(), key.as_deref(), &boot).await
         }
+        Op::Checkpoint { act } => checkpoint_op(home, pool, act).await,
         _ => Reply::Refused {
             reason: "not a lease".to_owned(),
         },
@@ -310,80 +319,6 @@ const POOL_DIR: &str = "moor-pool";
 /// Everything the host keeps for the lease `slug`, which checked has made safe as a dir name.
 fn box_dir(home: &Path, slug: &str) -> PathBuf {
     home.join(POOL_DIR).join(slug)
-}
-
-/// crabbox on this host, for one lease or, with no slug, for the pool.
-struct Crabbox<'a> {
-    /// The account's home.
-    home: &'a Path,
-    /// The pool.
-    pool: &'a Pool,
-    /// The lease's slug.
-    slug: Option<&'a str>,
-}
-
-impl Crabbox<'_> {
-    /// Runs `crabbox VERB --provider P FLAG SLUG`, or `FLAG` alone with no slug, within
-    /// `within`; its stdout when it exits with a code in `ok`.
-    async fn run(
-        &self,
-        verb: &str,
-        flag: &str,
-        within: Duration,
-        ok: &[i32],
-    ) -> Result<String, String> {
-        self.run_with(verb, &[flag], within, ok, &[]).await
-    }
-
-    /// [`Self::run`] with `flags` in place of its one flag and `env` added to crabbox's.
-    async fn run_with(
-        &self,
-        verb: &str,
-        flags: &[&str],
-        within: Duration,
-        ok: &[i32],
-        env: &[(&str, String)],
-    ) -> Result<String, String> {
-        let base = self.home.join(POOL_DIR);
-        let mine = self.slug.map(|slug| box_dir(self.home, slug));
-        // Only a warmup makes a lease's dir, so a call on a lease that is gone leaves nothing
-        // behind; crabbox itself says whether the lease exists.
-        let (dir, ceiling) = match mine {
-            Some(mine) if verb == "warmup" || mine.join("lease").is_dir() => {
-                (mine.join("lease"), mine)
-            }
-            _ => (base.clone(), base),
-        };
-        std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
-        let mut cmd = Command::new(&self.pool.crabbox);
-        cmd.args([verb, "--provider", &self.pool.provider])
-            .args(flags);
-        if let Some(slug) = self.slug {
-            cmd.arg(slug);
-        }
-        cmd.current_dir(&dir)
-            .env("HOME", self.home)
-            .env("GIT_CEILING_DIRECTORIES", ceiling)
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .envs(self.pool.cache_gb.map(|gb| (CACHE_CAP, gb.to_string())))
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
-        let out = tokio::time::timeout(within, cmd.output())
-            .await
-            .map_err(|_| format!("crabbox {verb} ran past {}s", within.as_secs()))?
-            .map_err(|e| format!("cannot run crabbox: {e}"))?;
-        match out.status.code() {
-            Some(code) if ok.contains(&code) => {
-                Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-            }
-            code => {
-                let err = String::from_utf8_lossy(&out.stderr);
-                let cut = err.len().saturating_sub(TAIL);
-                let tail = err.get(cut..).unwrap_or(&err).trim();
-                Err(format!("crabbox {verb} failed ({code:?}): {tail}"))
-            }
-        }
-    }
 }
 
 #[cfg(test)]

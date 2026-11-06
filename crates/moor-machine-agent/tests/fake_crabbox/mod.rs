@@ -15,7 +15,7 @@ echo "$1 ${CRABBOX_CACHE_STORE_MAX_GB-unset}" >> "$HOME/cap.log"
 for a in "$@"; do
   case "$a" in
     --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;
-    --provider|--id|--slug|--json|--configured) ;;
+    --provider|--id|--slug|--json|--configured|--name|--mode) ;;
     --*) echo "flag provided but not defined: $a" >&2; exit 2 ;;
   esac
 done
@@ -25,6 +25,17 @@ case "$1" in
     echo "ssh '-F' '/dev/null' '-o' 'StrictHostKeyChecking=$strict' '-o' 'UserKnownHostsFile=$HOME/kh' '-o' 'ProxyCommand=cat' 'vm@vm7'" ;;
   providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;
   list) cat "$HOME/leases.json" 2>/dev/null || echo '[]' ;;
+  doctor) if [ -e "$HOME/doctor-fail" ]; then
+      echo "checkpoint: cloud-hypervisor v52.0 needs v52.0-moor.1"; exit 1
+    fi ;;
+  checkpoint) case "$2" in
+    create) cat "$HOME/create.json" 2>/dev/null \
+        || echo '{"id":"chk_1","native":{"bytes":9,"uniqueBytes":5,"parentCheckpointId":"chk_0"}}' ;;
+    fork) if [ -e "$HOME/fork-fail" ]; then echo "network exploded" >&2; exit 2; fi
+      cat "$HOME/fork.json" 2>/dev/null || echo '{"slug":"'"$5"'"}' ;;
+    delete) if [ -e "$HOME/delete-fail" ]; then echo "provider exploded" >&2; exit 2; fi
+      if [ -e "$HOME/delete-gone" ]; then echo "checkpoint $3 not found" >&2; exit 2; fi ;;
+  esac ;;
   pause) if [ -e "$HOME/no-pause" ]; then
       echo "provider=$3 does not support pause" >&2; exit 2
     fi ;;

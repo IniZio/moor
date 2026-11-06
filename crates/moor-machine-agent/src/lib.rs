@@ -272,7 +272,7 @@ async fn connect(
     let hello = Frame::Hello {
         machine_id: state.machine_id,
         version: VERSION.to_owned(),
-        offer: pool::offer(machine).await,
+        offer: pool::offer(machine).await.map(Box::new),
     };
     link::send(&mut ws, &hello).await.map_err(Turned::Failed)?;
     let nonce = match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {

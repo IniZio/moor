@@ -49,3 +49,37 @@ async fn a_dial_without_a_timeout_reaches_the_vm_as_before() {
     let reply = ask(&w, &json!({"op": "dial", "slug": SLUG})).await.1;
     assert_eq!(reply, Reply::Started);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pool_host_serves_checkpoint_verbs_over_the_link() {
+    let (w, home) = (world().await, tempfile::tempdir().unwrap());
+    let _agent = host(&w, home.path(), false).await;
+    let create = json!({"op": "checkpoint",
+        "act": {"verb": "checkpoint-create", "slug": SLUG, "name": "n"}});
+    let reply = serde_json::to_value(ask(&w, &create).await.1).unwrap();
+    assert_eq!(reply["answer"], "checkpoint", "{reply}");
+    assert_eq!(reply["id"], "chk_1", "{reply}");
+    let disk = json!({"op": "checkpoint", "act": {"verb": "disk"}});
+    let reply = serde_json::to_value(ask(&w, &disk).await.1).unwrap();
+    assert_eq!(reply["answer"], "disk", "{reply}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_that_is_no_pool_host_refuses_checkpoint_verbs() {
+    let (w, home) = (world().await, tempfile::tempdir().unwrap());
+    let h = home.path();
+    let machine = moor_machine_agent::Machine {
+        home: h.to_owned(),
+        shell: "/bin/sh".into(),
+        hooks: h.join("hooks"),
+        pool: None,
+        allow_exec: false,
+        sweep_grace: Duration::ZERO,
+    };
+    let _agent = linked_machine(&w, machine).await;
+    let disk = json!({"op": "checkpoint", "act": {"verb": "disk"}});
+    let Reply::Refused { reason } = ask(&w, &disk).await.1 else {
+        panic!("not refused");
+    };
+    assert!(reason.contains("does not serve checkpoint"), "{reason}");
+}

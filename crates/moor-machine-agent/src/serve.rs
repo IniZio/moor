@@ -17,6 +17,9 @@ use crate::pool::{self, Pool};
 use crate::status::{self, Recent};
 use crate::sweep;
 
+mod names;
+use names::{kind, target};
+
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
 
@@ -91,7 +94,7 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut c
 /// Serves `op` when this machine's mode allows it; why it failed.
 async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match (machine.pool.as_ref(), op) {
-        (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. })) => {
+        (Some(pool), op @ (Op::Lease { .. } | Op::Checkpoint { .. } | Op::Dial { .. })) => {
             serve_pool(&machine.home, pool, ch, op).await
         }
         (
@@ -132,7 +135,7 @@ fn not_served(pool_host: bool, op: &Op) -> String {
 /// Serves a lease or a dial for `pool`; why it failed.
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
-        op @ Op::Lease { .. } => pool::lease_op(home, pool, op).await,
+        op @ (Op::Lease { .. } | Op::Checkpoint { .. }) => pool::lease_op(home, pool, op).await,
         Op::Dial { slug, timeout_secs } => {
             match pool::dial(home, pool, &slug, timeout_secs.map(Duration::from_secs)).await {
                 Ok(sshd) => {
@@ -182,43 +185,10 @@ fn refusal(reply: &Reply) -> Option<String> {
     }
 }
 
-/// The Box id or lease slug `op` names.
-fn target(op: &Op) -> Option<String> {
-    match op {
-        Op::Exec { box_id, .. }
-        | Op::Hook { box_id, .. }
-        | Op::Relay { box_id, .. }
-        | Op::Sync { box_id, .. }
-        | Op::Pull { box_id, .. }
-        | Op::Listen { box_id, .. }
-        | Op::Remove { box_id } => Some(box_id.to_string()),
-        Op::Lease { slug, .. } => slug.clone(),
-        Op::Dial { slug, .. } => Some(slug.clone()),
-        Op::Sweep { .. } | Op::Status => None,
-    }
-}
-
 /// Answers `reply` on `ch` and closes it.
 pub(crate) async fn end(mut ch: Channel, reply: Reply) {
     let _ = ops::write_line(&mut ch, &reply).await;
     let _ = ch.shutdown().await;
-}
-
-/// The op's name on the wire.
-const fn kind(op: &Op) -> &'static str {
-    match op {
-        Op::Exec { .. } => "exec",
-        Op::Hook { .. } => "hook",
-        Op::Relay { .. } => "relay",
-        Op::Sync { .. } => "sync",
-        Op::Pull { .. } => "pull",
-        Op::Listen { .. } => "listen",
-        Op::Lease { .. } => "lease",
-        Op::Dial { .. } => "dial",
-        Op::Sweep { .. } => "sweep",
-        Op::Remove { .. } => "remove",
-        Op::Status => "status",
-    }
 }
 
 /// What a request starts.
@@ -276,6 +246,7 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
         | Op::Sweep { .. }
         | Op::Remove { .. }
         | Op::Lease { .. }
+        | Op::Checkpoint { .. }
         | Op::Dial { .. }
         | Op::Status => Err(refused("not a command".to_owned())),
         Op::Listen {

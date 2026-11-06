@@ -23,14 +23,15 @@ fn a_hello_with_an_offer_round_trips() {
     let frame = Frame::Hello {
         machine_id: 7,
         version: "0.1.0".to_owned(),
-        offer: Some(Offer {
+        offer: Some(Box::new(Offer {
             max_boxes: Some(4),
             cache_gb: Some(20),
             features: vec!["cache-volume".to_owned()],
             mem_mib: Some(31_232),
             cpus: Some(16),
             reserve_mib: None,
-        }),
+            ..Offer::default()
+        })),
     };
     let text = serde_json::to_string(&frame).unwrap();
     assert!(text.contains("\"max_boxes\":4"), "{text}");

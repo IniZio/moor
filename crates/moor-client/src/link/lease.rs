@@ -25,6 +25,52 @@ pub enum Verb {
     Authorize,
 }
 
+/// What to do with a pool host's checkpoints, each naming only what it needs. A host answers only
+/// when its offer says it can.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "verb", deny_unknown_fields)]
+pub enum CheckpointAct {
+    /// Save lease `slug`, which keeps running, as a checkpoint called `name`.
+    CheckpointCreate {
+        /// `moor-<controller>-<id>`.
+        slug: String,
+        /// The checkpoint's name.
+        name: String,
+    },
+    /// Boot lease `slug` from checkpoint `id`.
+    CheckpointFork {
+        /// The checkpoint.
+        id: String,
+        /// `moor-<controller>-<id>`.
+        slug: String,
+        /// The cache volumes it mounts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<Cache>,
+        /// The machine class it boots.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        class: Option<String>,
+    },
+    /// Delete checkpoint `id`; one already gone counts as deleted.
+    CheckpointDelete {
+        /// The checkpoint.
+        id: String,
+    },
+    /// Read the filesystem checkpoints are kept on.
+    Disk {},
+}
+
+impl CheckpointAct {
+    /// The lease or checkpoint it names.
+    #[must_use]
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Self::CheckpointCreate { slug, .. } | Self::CheckpointFork { slug, .. } => Some(slug),
+            Self::CheckpointDelete { id } => Some(id),
+            Self::Disk {} => None,
+        }
+    }
+}
+
 /// The host's answer to a lease request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "answer")]
@@ -44,6 +90,24 @@ pub enum Answer {
     Leases {
         /// Each lease.
         leases: Vec<Lease>,
+    },
+    /// The checkpoint a create saved.
+    Checkpoint {
+        /// crabbox's id for it.
+        id: String,
+        /// What it adds to the host's disk, when reported.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bytes: Option<u64>,
+        /// The checkpoint it is a delta over; none over the base image.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
+    },
+    /// The filesystem checkpoints are kept on.
+    Disk {
+        /// What is free, in MiB.
+        free_mib: u64,
+        /// Its size, in MiB.
+        total_mib: u64,
     },
 }
 

@@ -139,6 +139,11 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         class: Option<String>,
     },
+    /// Act on a pool host's checkpoints; only a pool host serves it.
+    Checkpoint {
+        /// What to do.
+        act: lease::CheckpointAct,
+    },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {
         /// `moor-<controller>-<id>`.
@@ -165,30 +170,6 @@ pub enum Op {
     },
     /// Report the agent's state; read-only, so every agent serves it.
     Status,
-}
-
-/// A Box lifecycle hook, a file of that name in the agent's hooks dir.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Hook {
-    /// Before a Box's first call that needs its facts; its last stdout line is the facts.
-    Prepare,
-    /// When a prepared Box falls asleep.
-    Suspend,
-    /// Once the Box is no longer open.
-    Release,
-}
-
-impl Hook {
-    /// Its file's name.
-    #[must_use]
-    pub const fn file(self) -> &'static str {
-        match self {
-            Self::Prepare => "prepare",
-            Self::Suspend => "suspend",
-            Self::Release => "release",
-        }
-    }
 }
 
 /// The agent's answer, the line after the request.
@@ -394,7 +375,10 @@ impl Tail {
     }
 }
 
+mod hook;
 mod quote;
+
+pub use hook::Hook;
 
 #[cfg(test)]
 mod tests;

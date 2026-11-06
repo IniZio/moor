@@ -104,3 +104,54 @@ fn a_dial_takes_a_timeout_and_still_refuses_an_unknown_field() {
     assert!(serde_json::from_str::<super::Op>(stray).is_err());
     assert!(serde_json::from_str::<PoolOp>(stray).is_err());
 }
+
+#[test]
+fn a_checkpoint_op_carries_one_verb_and_refuses_a_stray_field() {
+    use crate::link::broker::PoolOp;
+    use crate::link::lease::{Answer, CheckpointAct};
+    let acts = [
+        (
+            r#"{"op":"checkpoint","act":{"verb":"checkpoint-create","slug":"moor-1a2b3c4d-7","name":"n"}}"#,
+            CheckpointAct::CheckpointCreate {
+                slug: "moor-1a2b3c4d-7".to_owned(),
+                name: "n".to_owned(),
+            },
+        ),
+        (
+            r#"{"op":"checkpoint","act":{"verb":"checkpoint-fork","id":"chk_1","slug":"moor-1a2b3c4d-7"}}"#,
+            CheckpointAct::CheckpointFork {
+                id: "chk_1".to_owned(),
+                slug: "moor-1a2b3c4d-7".to_owned(),
+                cache: None,
+                class: None,
+            },
+        ),
+        (
+            r#"{"op":"checkpoint","act":{"verb":"checkpoint-delete","id":"chk_1"}}"#,
+            CheckpointAct::CheckpointDelete {
+                id: "chk_1".to_owned(),
+            },
+        ),
+        (
+            r#"{"op":"checkpoint","act":{"verb":"disk"}}"#,
+            CheckpointAct::Disk {},
+        ),
+    ];
+    for (json, act) in acts {
+        let op = super::Op::Checkpoint { act };
+        assert_eq!(serde_json::to_string(&op).unwrap(), json);
+        assert_eq!(serde_json::from_str::<super::Op>(json).unwrap(), op);
+        let pooled: PoolOp = serde_json::from_str(json).unwrap();
+        assert_eq!(super::Op::from(pooled), op);
+    }
+    let stray = r#"{"op":"checkpoint","act":{"verb":"disk","slug":"x"}}"#;
+    assert!(serde_json::from_str::<super::Op>(stray).is_err());
+    assert!(serde_json::from_str::<PoolOp>(stray).is_err());
+    let answer = Answer::Disk {
+        free_mib: 1,
+        total_mib: 2,
+    };
+    let reply = super::Reply::Leased(answer);
+    let text = serde_json::to_string(&reply).unwrap();
+    assert_eq!(serde_json::from_str::<super::Reply>(&text).unwrap(), reply);
+}
