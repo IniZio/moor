@@ -51,17 +51,28 @@ spec:
           securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
           command: [moor, proxy, serve-egress]
           args:
-            - --state-dir=/var/lib/moor/egress-state
-            - --listen=0.0.0.0:{{ .Values.egress.port }}
-            - --ledger=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
-            - --ledger-ca=/var/lib/moor/egress/ledger-ca.pem
-            - --grace={{ .Values.egress.graceSecs }}
+            - --state-dir
+            - /var/lib/moor/egress-state
+            - --listen
+            - 0.0.0.0:{{ .Values.egress.port }}
+            - --ledger
+            - tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+            - --ledger-ca
+            - /var/lib/moor/egress/ledger-ca.pem
+            - --grace
+            - {{ .Values.egress.graceSecs | quote }}
           env:
             - name: MOOR_EGRESS_KEY
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-egress, key: egress-key }
           ports:
             - { name: egress, containerPort: {{ .Values.egress.port }} }
+          # The Proxy stops accepting at SIGTERM; until the Service and ingress drop the pod,
+          # new tunnels would still reach it and be refused.
+          lifecycle:
+            preStop:
+              exec:
+                command: [sleep, "10"]
           readinessProbe:
             httpGet: { path: /ready, port: egress }
             periodSeconds: 5
