@@ -1,18 +1,11 @@
-//! A Box's cache volumes: the plan its acquire carries and the seal its close runs.
-//!
-//! Close derives the plan again from what start used: the `.moor.yaml` stored with the Box, the
-//! operator config and the state dir's salt. So a close after a controller restart seals the
-//! same volumes, and no plan is stored.
+//! A Box's cache volumes: the plan its acquire carries and its provisioning derives again.
 
-use std::time::Duration;
-
-use moor_core::cache::{not_kept, seal_failed, AgentCache, CacheLayers, CachePlan, Origin};
+use moor_core::cache::{AgentCache, CacheLayers, CachePlan, Origin};
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::seam::driver::{BoxStep, DriverCaps, ExecOutcome, StepDone};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::DriverCaps;
 use moor_core::user::UserId;
-use moor_core::{BoxHandle, ProviderId, Warning};
+use moor_core::{ProviderId, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::node::seat_of;
@@ -21,9 +14,6 @@ use crate::store::{BoxRow, Store};
 
 /// The feature a machine's agent reports when its crabbox mounts cache volumes.
 const CACHE_VOLUME: &str = "cache-volume";
-
-/// Time allowed for the seal script; pruning a large Docker data root takes a while.
-const SEAL_DEADLINE: Duration = Duration::from_mins(5);
 
 /// Why a Box whose plan holds volumes starts without them.
 #[derive(Clone, Copy)]
@@ -247,69 +237,4 @@ pub(crate) fn derived(
         .ok()
         .and_then(|caps| plan(cx, store, row, cfg, provider, caps).ok())
         .unwrap_or_else(CachePlan::none)
-}
-
-/// Whether `row`'s plan on `provider` keeps the work tree, derived again as the start derived it.
-pub(crate) fn keeps_work_tree(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    cfg: &BoxSettings,
-    provider: &ProviderId,
-) -> bool {
-    derived(cx, store, row, cfg, provider).work_tree().is_some()
-}
-
-/// Runs the seal script of `row`'s plan in the Box, after teardown and before release. A volume
-/// whose seal fails gets no marker, so the provider does not keep it; this only warns and never
-/// fails the close.
-pub(crate) fn seal(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    cfg: &BoxSettings,
-    handle: &BoxHandle,
-    provider: &ProviderId,
-) {
-    let Ok(caps) = cx.driver().caps(provider) else {
-        return;
-    };
-    let script = plan(cx, store, row, cfg, provider, caps)
-        .ok()
-        .and_then(|p| p.seal_script(row.base.as_deref()));
-    let Some(script) = script else {
-        return;
-    };
-    let steps = [BoxStep::Run(script)];
-    let done = cx
-        .driver()
-        .batch(handle, &[], &steps, Deadline(SEAL_DEADLINE));
-    let message = match done.into_iter().next() {
-        Some(Ok(StepDone::Ran {
-            outcome: ExecOutcome::Exited { code: 0 },
-            stdout,
-        })) => {
-            for n in not_kept(&stdout) {
-                cx.warn(Warning {
-                    code: "work_tree_not_kept".to_owned(),
-                    message: format!("the work tree is not kept: {}", n.reason),
-                });
-            }
-            let failed = seal_failed(&stdout);
-            if failed.is_empty() {
-                return;
-            }
-            format!(
-                "the seal of cache volume {} failed, so it is not kept; moor emptied it in the \
-                 Box, but partial contents may remain if that failed too",
-                failed.join(", ")
-            )
-        }
-        Some(Err(e)) => format!("the cache seal did not run, so no sealed volume is kept: {e}"),
-        _ => "the cache seal did not finish, so no sealed volume is kept".to_owned(),
-    };
-    cx.warn(Warning {
-        code: "cache_seal_failed".to_owned(),
-        message: format!("{message}; the Box is released anyway"),
-    });
 }

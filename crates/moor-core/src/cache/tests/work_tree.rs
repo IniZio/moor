@@ -7,14 +7,14 @@ fn work_tree(p: &CachePlan) -> Option<&PlannedVolume> {
 }
 
 #[test]
-fn a_repo_box_keeps_its_work_tree_sealed_in_a_group_of_its_own() {
+fn a_repo_box_keeps_its_work_tree_in_a_group_of_its_own() {
     let p = plan(&layers("", ""));
     let v = work_tree(&p).expect("a repo Box plans its work tree");
     let paths: Vec<&str> = v.paths.iter().map(CachePath::as_str).collect();
     assert_eq!(paths, ["~/moor/repos/r"]);
     assert_eq!(v.group, format!("{}w", p.scope().unwrap()));
     assert_eq!(v.key, format!("{}-worktree", v.group));
-    assert!(!v.seal().is_empty(), "the work tree is sealed");
+    assert!(v.restore().is_empty(), "the refresh cleans the tree");
     assert_eq!(v.size_gb.map(NonZeroU32::get), Some(40));
     assert_eq!(p.work_tree(), Some("repos/r"));
     let docker = p
@@ -24,7 +24,7 @@ fn a_repo_box_keeps_its_work_tree_sealed_in_a_group_of_its_own() {
         .unwrap();
     assert_ne!(
         docker.group, v.group,
-        "a failed docker seal never throws the tree away"
+        "a failed docker restore never empties the tree"
     );
 }
 

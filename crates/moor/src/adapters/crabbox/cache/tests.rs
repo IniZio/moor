@@ -61,12 +61,12 @@ fn the_env_value_is_the_wire_contract_exactly() {
     assert_eq!(
         fields,
         ["group", "name", "key", "paths", "sizeGB"],
-        "the contract order; never a seal"
+        "the contract order"
     );
 }
 
 #[test]
-fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
+fn a_volume_with_restore_steps_is_sent_in_a_group_of_its_own() {
     let p = plan(
         "cache: {presets: [pnpm, bun, podman, gradle, dart, rust, go, maven, cocoapods, bundler, android, android-sdk]}",
         "",
@@ -79,9 +79,9 @@ fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
         {"group": npm.group, "name": "cache", "key": format!("{}-cache", npm.group),
          "paths": ["~/.cache"], "sizeGB": 20},
         {"group": group, "name": "docker", "key": format!("{group}-docker"),
-         "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0, "sealed": true},
+         "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0},
         {"group": tree, "name": "worktree", "key": format!("{tree}-worktree"),
-         "paths": ["~/moor/repos/r"], "sizeGB": 40, "sealed": true},
+         "paths": ["~/moor/repos/r"], "sizeGB": 40},
     ]);
     assert_eq!(got, want);
 }

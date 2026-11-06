@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 
-use super::{overlap, presets, CacheName, CachePath, OnFail, Volume, WorkTree};
+use super::{overlap, presets, CacheName, CachePath, Volume, WorkTree};
 
 /// Most volumes one layer may declare.
 const MAX_VOLUMES: usize = 8;
@@ -46,9 +46,9 @@ pub struct VolumeDecl {
     /// Size hint in GB; the provider's default when unset.
     #[serde(default)]
     pub size_gb: Option<NonZeroU32>,
-    /// Shell steps run in the Box at close, before the volume is kept.
+    /// Shell steps run in a new Box that restored the volume, before anything else.
     #[serde(default)]
-    pub seal: Vec<String>,
+    pub restore: Vec<String>,
 }
 
 /// The `cache:` section.
@@ -67,7 +67,7 @@ impl CacheConfig {
     /// Checks every value; the error names the key below `cache` and why.
     ///
     /// # Errors
-    /// An unknown preset name, too many volumes, an invalid name or path, a blank seal step,
+    /// An unknown preset name, too many volumes, an invalid name or path, a blank restore step,
     /// or two volumes with one name or overlapping paths.
     pub fn check(&self) -> Result<(), (String, String)> {
         if let Presets::Drop(names) = &self.presets {
@@ -103,16 +103,16 @@ impl CacheConfig {
             .map(|(i, d)| {
                 let name = CacheName::parse(&d.name).map_err(|e| (at(i, "name"), e.to_string()))?;
                 let path = CachePath::parse(&d.path).map_err(|e| (at(i, "path"), e.to_string()))?;
-                if let Some(s) = d.seal.iter().position(|s| s.trim().is_empty()) {
-                    let why = "seal entry must not be empty".to_owned();
-                    return Err((format!("volumes[{i}].seal[{s}]"), why));
+                if let Some(s) = d.restore.iter().position(|s| s.trim().is_empty()) {
+                    let why = "restore entry must not be empty".to_owned();
+                    return Err((format!("volumes[{i}].restore[{s}]"), why));
                 }
                 Ok(Volume {
                     name,
                     paths: vec![path],
                     size_gb: d.size_gb,
-                    seal: d.seal.clone(),
-                    on_fail: OnFail::Clear,
+                    restore: d.restore.clone(),
+                    after: None,
                 })
             })
             .collect()

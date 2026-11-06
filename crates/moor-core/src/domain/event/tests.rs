@@ -315,6 +315,10 @@ fn all_events() -> Vec<Event> {
         }),
         Event::DiskLost,
         Event::CachesNotSaved,
+        Event::Timing(TimingEvent::CacheEmptied {
+            volume: s("docker"),
+            reason: s("blob abc does not match its hash"),
+        }),
     ]
 }
 
@@ -417,6 +421,7 @@ const fn event_index(e: &Event) -> usize {
         Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered { .. }) => 78,
         Event::DiskLost => 79,
         Event::CachesNotSaved => 80,
+        Event::Timing(TimingEvent::CacheEmptied { .. }) => 81,
     }
 }
 
@@ -424,7 +429,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 81);
+    assert_eq!(all.len(), 82);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

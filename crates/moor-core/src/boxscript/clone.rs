@@ -91,7 +91,7 @@ impl CloneStep {
 /// empty directory, so a workdir with no `.git` is cloned into a temp dir under `.moor/` whose
 /// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
 /// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
-/// and the script stops at the clone step. `.moor/`, `.crabbox/` and the cache seal marker are
+/// and the script stops at the clone step. `.moor/`, `.crabbox/` and an old cache's marker file are
 /// excluded so moor's and crabbox's files never show as changes.
 ///
 /// Each submodule with no checkout is then fetched on its own, nested ones too. One that fails is

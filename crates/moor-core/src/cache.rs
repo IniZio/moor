@@ -10,7 +10,7 @@ mod config;
 mod layers;
 mod path;
 pub mod presets;
-mod seal;
+mod restore;
 #[cfg(test)]
 mod tests;
 mod work_tree;
@@ -26,7 +26,7 @@ pub use agent::{AgentCache, NAME as AGENT};
 pub use config::{CacheConfig, Presets, VolumeDecl};
 pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
-pub use seal::{failed as seal_failed, not_kept, NotKept, NOT_KEPT, SEAL_FAILED};
+pub use restore::{emptied, Emptied, EMPTIED};
 pub use work_tree::{WorkTree, WorkTreeSize, NAME as WORK_TREE};
 
 use crate::name::ForgeRepo;
@@ -66,20 +66,10 @@ pub struct Volume {
     paths: Vec<CachePath>,
     /// Size hint in GB.
     size_gb: Option<NonZeroU32>,
-    /// Shell steps run in the Box at close.
-    seal: Vec<String>,
-    /// What a failed seal does to the volume.
-    on_fail: OnFail,
-}
-
-/// What a failed seal does to its volume; either way the volume gets no marker, so the provider
-/// does not keep it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OnFail {
-    /// Empty it in the Box.
-    Clear,
-    /// Leave it as it is: it holds the user's work, and the Box may stay open if release fails.
-    Keep,
+    /// Shell steps run in a new Box that restored it; one that fails empties it.
+    restore: Vec<String>,
+    /// Shell run after the steps, pass or fail. Only a preset has it.
+    after: Option<&'static str>,
 }
 
 impl Volume {
@@ -225,7 +215,7 @@ fn group(salt: &CacheSalt, origin: Origin, user: UserId, repo: Option<&ForgeRepo
 /// One volume as the Driver receives it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedVolume {
-    /// The scope id, with `x` appended for a volume with a seal so that it is kept alone; the
+    /// The scope id, with `x` appended for a volume with restore steps so that it is kept alone; the
     /// volumes of one group share one store.
     pub group: String,
     /// Name, unique in the plan.
@@ -236,23 +226,17 @@ pub struct PlannedVolume {
     pub paths: Vec<CachePath>,
     /// Size hint in GB; the provider's default when unset.
     pub size_gb: Option<NonZeroU32>,
-    /// Shell steps run in the Box at close.
-    seal: Vec<String>,
-    /// What a failed seal does to the volume.
-    on_fail: OnFail,
+    /// Shell steps run in a new Box that restored it; one that fails empties it.
+    restore: Vec<String>,
+    /// Shell run after the steps, pass or fail.
+    after: Option<&'static str>,
 }
 
 impl PlannedVolume {
-    /// Shell steps run in the Box at close, in order.
+    /// Shell steps run in a new Box that restored it, in order.
     #[must_use]
-    pub fn seal(&self) -> &[String] {
-        &self.seal
-    }
-
-    /// What a failed seal does to the volume.
-    #[must_use]
-    pub const fn on_fail(&self) -> OnFail {
-        self.on_fail
+    pub fn restore(&self) -> &[String] {
+        &self.restore
     }
 }
 
@@ -282,8 +266,8 @@ impl CachePlan {
     }
 
     /// Keys every volume of `layers` to its scope for `user` and `repo`; a Box without a repo
-    /// gets the operator's volumes only. The work tree's group ends in `w` and any other sealed
-    /// volume's in `x`, so neither seal can make the provider throw the other away.
+    /// gets the operator's volumes only. The work tree's group ends in `w`, the agent's in `a` and
+    /// any other volume with restore steps in `x`, so one bad group never empties another.
     ///
     /// # Errors
     /// As [`CacheLayers::declared`].
@@ -305,7 +289,7 @@ impl CachePlan {
                 group.push('w');
             } else if d.origin == Origin::Agent {
                 group.push('a');
-            } else if !d.volume.seal.is_empty() {
+            } else if !d.volume.restore.is_empty() {
                 group.push('x');
             }
             PlannedVolume {
@@ -314,8 +298,8 @@ impl CachePlan {
                 name: d.volume.name,
                 paths: d.volume.paths,
                 size_gb: d.volume.size_gb,
-                seal: d.volume.seal,
-                on_fail: d.volume.on_fail,
+                restore: d.volume.restore,
+                after: d.volume.after,
             }
         });
         let volumes: Vec<PlannedVolume> = planned.collect();
@@ -336,7 +320,7 @@ impl CachePlan {
         &self.volumes
     }
 
-    /// The scope of the Box itself: the repo group's hash without the sealed suffix. None for a
+    /// The scope of the Box itself: the repo group's hash without a suffix. None for a
     /// Box without a repo or without volumes.
     #[must_use]
     pub fn scope(&self) -> Option<&str> {
@@ -351,7 +335,7 @@ impl CachePlan {
     }
 
     /// What a provider keeps for this plan: each volume's group, name, paths, size and whether
-    /// it seals, then the scope. Empty for a cold plan. A checkpoint holds the cache disks of
+    /// it has restore steps, then the scope. Empty for a cold plan. A checkpoint holds the cache disks of
     /// the plan it was taken under, so only a Box with the same identity can start from it.
     #[must_use]
     pub fn identity(&self) -> String {
@@ -359,12 +343,8 @@ impl CachePlan {
         for v in &self.volumes {
             let paths: Vec<&str> = v.paths.iter().map(CachePath::as_str).collect();
             let size = v.size_gb.map_or(0, NonZeroU32::get);
-            let sealed = !v.seal.is_empty();
-            let _ = writeln!(
-                out,
-                "{:?}",
-                (&v.group, v.name.as_str(), paths, size, sealed)
-            );
+            let steps = !v.restore.is_empty();
+            let _ = writeln!(out, "{:?}", (&v.group, v.name.as_str(), paths, size, steps));
         }
         if let Some(scope) = self.scope.as_deref().filter(|_| !out.is_empty()) {
             let _ = writeln!(out, "scope {scope:?}");
@@ -372,7 +352,7 @@ impl CachePlan {
         out
     }
 
-    /// Declared volumes left out because they met a sealed preset.
+    /// Declared volumes left out because they met a preset with restore steps.
     #[must_use]
     pub fn dropped(&self) -> &[Dropped] {
         &self.dropped
@@ -384,12 +364,9 @@ impl CachePlan {
         self.volumes.is_empty()
     }
 
-    /// The script to run in the Box at close, after teardown; none when no volume has seal steps.
-    /// A volume whose seal fails is named on stdout: one it empties as [`seal_failed`] reads it,
-    /// one it keeps as [`not_kept`] reads it, with why. `base` is the Box's base commit, which
-    /// the work tree's seal counts as pushed.
+    /// The script to run first in a new Box; none when no volume has restore steps.
     #[must_use]
-    pub fn seal_script(&self, base: Option<&str>) -> Option<String> {
-        seal::script(&self.volumes, base)
+    pub fn restore_script(&self) -> Option<String> {
+        restore::script(&self.volumes)
     }
 }

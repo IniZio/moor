@@ -61,7 +61,6 @@ fn a_lease_carries_its_cache_both_ways() {
             key: "0123456789abcdef-cargo".to_owned(),
             paths: vec!["~/.cargo/registry".to_owned()],
             size_gb: 4,
-            sealed: true,
         }],
         scope: Some("0123456789abcdef".to_owned()),
     }));

@@ -1,14 +1,16 @@
-//! The cache plan a start hands the Driver, and the seal a later close runs from it.
+//! The cache plan a start hands the Driver, and the restore its provisioning runs from it.
 
 use moor_core::cache::CachePlan;
 use moor_core::config::parse_user;
+use moor_core::seam::driver::ExecOutcome;
 use moor_core::view::StartView;
 use moor_core::{BoxId, BoxName, CloseReq, Warning};
 use serde_json::json;
 
 use super::*;
 
-const YAML: &str = "cache: {volumes: [{name: sdk, path: /opt/sdk, seal: [rm -rf /opt/sdk/tmp]}]}\n";
+const YAML: &str =
+    "cache: {volumes: [{name: sdk, path: /opt/sdk, restore: [rm -rf /opt/sdk/tmp]}]}\n";
 
 fn names(plan: &CachePlan) -> Vec<&str> {
     plan.volumes().iter().map(|v| v.name.as_str()).collect()
@@ -138,7 +140,7 @@ fn a_volume_over_docker_data_is_refused_and_the_box_keeps_the_rest() {
     assert!(!got.contains(&"mine"), "{got:?}");
     let [warned]: [String; 1] = refusals(&w).try_into().unwrap();
     assert!(
-        warned.starts_with("cache_refused: repo cache volume mine meets the sealed docker"),
+        warned.starts_with("cache_refused: repo cache volume mine meets the docker"),
         "{warned}"
     );
 }
@@ -155,14 +157,13 @@ fn a_volume_over_docker_data_is_refused_with_presets_off() {
     assert!(warned.starts_with("cache_refused: "), "{warned}");
 }
 
-/// The scripts of every exec that ran a seal, in order.
-fn seals(w: &World) -> Vec<String> {
+fn restored_execs(w: &World) -> usize {
     w.driver
         .execs()
         .into_iter()
         .filter_map(|(_, spec, _)| spec.argv.last().cloned())
-        .filter(|s| s.contains("moor_cache_clear"))
-        .collect()
+        .filter(|s| s.contains("moor_cache_restore"))
+        .count()
 }
 
 fn close(cx: &Cx) {
@@ -174,52 +175,89 @@ fn close(cx: &Cx) {
 }
 
 #[test]
-fn a_close_after_a_controller_restart_seals_the_plan_the_start_used() {
+fn a_box_restores_its_caches_before_it_refreshes_and_clones() {
     let w = world(FakeDriver::new().cache_volumes());
     let plan = started(&w);
-    let restarted = Cx::fake(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-    );
-    close(&restarted);
-    assert_eq!(seals(&w), [plan.seal_script(Some(BASE)).unwrap()]);
-    let calls = w.driver.calls();
-    let at = |p: &str| calls.iter().rposition(|c| c.starts_with(p)).unwrap();
+    let (_, script) = clone_exec(&w);
+    let restore = script.find(&plan.restore_script().unwrap()).expect(&script);
     assert!(
-        at("exec") < at("release"),
-        "the seal runs before the release"
+        restore < script.find("moor_tree_refresh\n").unwrap(),
+        "{script}"
     );
+    assert_eq!(restored_execs(&w), 1);
 }
 
 #[test]
-fn a_failed_seal_warns_and_the_close_still_releases() {
+fn a_close_runs_nothing_for_the_caches_and_releases() {
     let w = world(FakeDriver::new().cache_volumes());
     started(&w);
-    w.cx.take_warnings();
-    w.driver.set_run_stdout("moor: cache seal failed: docker\n");
+    let before = w.driver.execs().len();
     close(&w.cx);
-    let got = w.cx.take_warnings();
-    let failed: Vec<&Warning> = got
-        .iter()
-        .filter(|w| w.code.starts_with("cache_"))
-        .collect();
-    assert_eq!(failed.len(), 1, "{got:?}");
-    let message = &failed.first().unwrap().message;
-    assert_eq!(failed.first().unwrap().code, "cache_seal_failed");
-    for says in ["docker", "not kept", "partial contents may remain"] {
-        assert!(message.contains(says), "{message}");
-    }
+    let scripts = w.driver.execs();
+    let after = scripts.get(before..).unwrap();
+    assert!(
+        !after
+            .iter()
+            .filter_map(|(_, spec, _)| spec.argv.last())
+            .any(|s| s.contains("moor_cache_")),
+        "{after:?}"
+    );
     assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
 
 #[test]
-fn a_cold_box_runs_no_seal() {
+fn a_box_with_no_repo_still_restores_its_caches() {
+    let config = parse_user(
+        "u.yaml",
+        "cache: {volumes: [{name: tools, path: ~/tools, restore: [\"true\"]}]}\n",
+    )
+    .unwrap();
+    let w = world_with(FakeDriver::new().cache_volumes(), config);
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(restored_execs(&w), 1);
+}
+
+#[test]
+fn a_cold_box_runs_no_restore() {
     let w = world(FakeDriver::new());
     started(&w);
-    close(&w.cx);
-    assert!(seals(&w).is_empty());
+    assert_eq!(restored_execs(&w), 0);
+}
+
+#[test]
+fn an_emptied_volume_warns_and_records_and_the_box_starts() {
+    let printed = "moor: cache emptied docker: blob abc does not match its hash\n";
+    let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
+    script_base_yaml(&w, Some(YAML));
+    let view = run(&w.cx, &repo_req("demo")).unwrap();
+    let got = w.cx.take_warnings();
+    let warned: Vec<&Warning> = got.iter().filter(|w| w.code == "cache_emptied").collect();
+    let [warned]: [&Warning; 1] = warned.try_into().unwrap();
+    assert_eq!(
+        warned.message,
+        "cache volume docker was emptied: blob abc does not match its hash; the Box goes on \
+         without it"
+    );
+    let events = super::warm::events(&w, BoxId::new(view.boxed.id), "cache_emptied");
+    assert_eq!(
+        events,
+        [json!({"volume": "docker", "reason": "blob abc does not match its hash"})]
+    );
+}
+
+#[test]
+fn an_emptied_volume_is_reported_even_when_the_clone_fails() {
+    let printed = "moor: cache emptied docker: bad\n";
+    let w = world(
+        FakeDriver::new()
+            .cache_volumes()
+            .exec_stdout([printed])
+            .exec_results([Ok(ExecOutcome::Exited { code: 1 })]),
+    );
+    script_base_yaml(&w, Some(YAML));
+    assert!(run(&w.cx, &repo_req("demo")).is_err());
+    let got = w.cx.take_warnings();
+    assert!(got.iter().any(|w| w.code == "cache_emptied"), "{got:?}");
 }
 
 /// The Box and the script of the clone exec, the one that runs `git clone`.
@@ -249,27 +287,6 @@ fn a_box_without_the_work_tree_clones_with_no_refresh() {
         run(&w.cx, &repo_req("demo")).unwrap();
         assert!(!clone_exec(&w).1.contains("moor_tree_refresh"));
     }
-}
-
-#[test]
-fn a_work_tree_the_seal_did_not_keep_warns_why_and_nothing_else() {
-    let w = world(FakeDriver::new().cache_volumes());
-    started(&w);
-    w.cx.take_warnings();
-    w.driver
-        .set_run_stdout("moor: cache not kept: worktree: 2 unpushed commits\n");
-    close(&w.cx);
-    let got = w.cx.take_warnings();
-    let [warned]: [&Warning; 1] = got
-        .iter()
-        .filter(|w| w.code.starts_with("cache_") || w.code.starts_with("work_tree"))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    assert_eq!(warned.code, "work_tree_not_kept");
-    let message = &warned.message;
-    assert_eq!(message, "the work tree is not kept: 2 unpushed commits");
-    assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
 
 /// Starts the `demo` repo Box with the refresh printing `printed`; returns the reply and the

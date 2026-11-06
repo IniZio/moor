@@ -92,6 +92,17 @@ pub fn latest(events: &[Happened]) -> Option<String> {
     events.iter().rev().find_map(|e| step(&e.kind, &e.payload))
 }
 
+/// A `checkpoint_evicted` event as a step.
+fn checkpoint_evicted(payload: &Value) -> String {
+    let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
+    format!(
+        "deleted setup checkpoint {} of {} ({}) for disk",
+        text("checkpoint"),
+        text("repo"),
+        text("reason")
+    )
+}
+
 /// Event `kind` as a step, or `None` for one that says nothing about getting the Box up.
 fn step(kind: &str, payload: &Value) -> Option<String> {
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
@@ -121,13 +132,13 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             format!("started from setup checkpoint {place}, skipping {saved} of setup")
         }
         "cache_cold" => format!("starting without cache volumes: {}", text("detail")),
-        "checkpoint_taken" => checkpoint_taken(payload),
-        "checkpoint_evicted" => format!(
-            "deleted setup checkpoint {} of {} ({}) for disk",
-            text("checkpoint"),
-            text("repo"),
+        "cache_emptied" => format!(
+            "emptied cache volume {}: {}",
+            text("volume"),
             text("reason")
         ),
+        "checkpoint_taken" => checkpoint_taken(payload),
+        "checkpoint_evicted" => checkpoint_evicted(payload),
         "warm_start_failed" => format!(
             "could not start from setup checkpoint {}: {}; setting up from scratch",
             num(payload, "layer"),

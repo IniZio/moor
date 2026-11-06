@@ -99,6 +99,13 @@ pub enum TimingEvent {
         /// The reason in a sentence.
         detail: String,
     },
+    /// A restored cache volume failed a restore step, so the Box emptied it and went on.
+    CacheEmptied {
+        /// The volume.
+        volume: String,
+        /// Why, as the step printed it.
+        reason: String,
+    },
     /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
     CheckpointTaken {
         /// Setup lines the checkpoint holds; 0 is the clone alone.
@@ -143,6 +150,7 @@ impl TimingEvent {
             Self::WarmStarted { .. } => "warm_started",
             Self::WarmStartFailed { .. } => "warm_start_failed",
             Self::CacheCold { .. } => "cache_cold",
+            Self::CacheEmptied { .. } => "cache_emptied",
             Self::CheckpointTaken { .. } => "checkpoint_taken",
             Self::CheckpointEvicted { .. } => "checkpoint_evicted",
         }

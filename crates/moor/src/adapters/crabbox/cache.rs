@@ -21,7 +21,6 @@ fn volumes(plan: &CachePlan) -> Vec<CacheVolume> {
             key: v.key.clone(),
             paths: v.paths.iter().map(|p| p.as_str().to_owned()).collect(),
             size_gb: v.size_gb.map_or(0, std::num::NonZeroU32::get),
-            sealed: !v.seal().is_empty(),
         })
         .collect()
 }

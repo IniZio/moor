@@ -1,7 +1,7 @@
 //! The agent's install directory as a cache volume, kept per user, so a later Box of the same
 //! user finds the agent already downloaded whatever repo it serves.
 
-use super::{CacheName, CachePath, OnFail, Volume};
+use super::{CacheName, CachePath, Volume};
 
 /// The volume's name.
 pub const NAME: &str = "agent";
@@ -27,7 +27,7 @@ pub(super) fn volume(agent: &AgentCache) -> Option<Volume> {
         name: CacheName::parse(NAME).ok()?,
         paths,
         size_gb: None,
-        seal: vec![agent.check.clone()],
-        on_fail: OnFail::Clear,
+        restore: vec![agent.check.clone()],
+        after: None,
     })
 }

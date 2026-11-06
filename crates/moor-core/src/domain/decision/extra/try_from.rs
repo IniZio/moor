@@ -82,6 +82,9 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::CacheCold { reason, detail }) => {
                 Ok(Self::CacheCold { reason, detail })
             }
+            Event::Timing(TimingEvent::CacheEmptied { volume, reason }) => {
+                Ok(Self::CacheEmptied { volume, reason })
+            }
             Event::Timing(TimingEvent::CheckpointTaken {
                 layer,
                 key,

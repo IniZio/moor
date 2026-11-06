@@ -226,6 +226,24 @@ fn a_checkpoint_says_how_long_it_paused_the_box_or_why_it_failed() {
 }
 
 #[test]
+fn an_emptied_cache_reads_as_a_step_and_is_not_a_failure() {
+    let events = [
+        event("started", json!({}), 0),
+        event(
+            "cache_emptied",
+            json!({"volume": "docker", "reason": "blob abc does not match its hash"}),
+            1,
+        ),
+    ];
+    let p = Progress::of(&events, T0 + 2);
+    assert_eq!(
+        p.steps.last().unwrap(),
+        "    +1s  emptied cache volume docker: blob abc does not match its hash"
+    );
+    assert_eq!(failure(&events), None);
+}
+
+#[test]
 fn a_cold_cache_reads_as_a_step_and_is_not_a_failure() {
     let events = [
         event("started", json!({}), 0),

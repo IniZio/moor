@@ -158,7 +158,6 @@ async fn a_fork_boots_in_a_new_lease_dir_with_its_cache_and_class() {
                 key: "g-n".to_owned(),
                 paths: vec!["~/c".to_owned()],
                 size_gb: 0,
-                sealed: false,
             }],
             scope: Some("0123456789abcdef".to_owned()),
         }),

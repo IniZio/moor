@@ -2,8 +2,7 @@ use super::*;
 use crate::config::{parse_repo, parse_user};
 
 mod agent;
-mod seal;
-mod seal_work_tree;
+mod restore;
 mod work_tree;
 
 fn salt(b: u8) -> CacheSalt {
@@ -213,26 +212,26 @@ fn the_presets_of_one_group_ask_for_the_largest_group_a_provider_grants() {
     let asked: u32 = p
         .volumes()
         .iter()
-        .filter(|v| v.seal().is_empty())
+        .filter(|v| v.restore().is_empty())
         .map(|v| v.size_gb.map_or(0, std::num::NonZeroU32::get))
         .sum();
     assert_eq!(asked, PROVIDER_CAP_GB);
 }
 
 #[test]
-fn only_docker_and_the_work_tree_have_a_seal() {
+fn only_docker_has_restore_steps() {
     let p = plan(&layers("", ""));
-    let sealed: Vec<&str> = p
+    let cleaned: Vec<&str> = p
         .volumes()
         .iter()
-        .filter(|v| !v.seal().is_empty())
+        .filter(|v| !v.restore().is_empty())
         .map(|v| v.name.as_str())
         .collect();
-    assert_eq!(sealed, ["docker", "worktree"]);
+    assert_eq!(cleaned, ["docker"]);
 }
 
 #[test]
-fn a_sealed_volume_gets_a_group_of_its_own() {
+fn a_volume_with_restore_steps_gets_a_group_of_its_own() {
     let p = plan(&layers("", ""));
     let group = |name: &str| {
         let v = p
@@ -441,20 +440,20 @@ fn salt_round_trips_through_hex_and_never_prints() {
     assert_eq!(format!("{s:?}"), "CacheSalt(..)");
 }
 
-fn docker_stays_sealed(p: &CachePlan) {
+fn docker_stays_cleaned(p: &CachePlan) {
     let docker = p
         .volumes()
         .iter()
         .find(|v| v.name.as_str() == "docker")
         .expect("the docker preset is kept");
     assert!(docker.group.ends_with('x'), "{}", docker.group);
-    assert!(!docker.seal().is_empty());
+    assert!(!docker.restore().is_empty());
     let paths: Vec<&str> = docker.paths.iter().map(CachePath::as_str).collect();
     assert_eq!(paths, ["~/docker", "/var/lib/containerd"]);
 }
 
 #[test]
-fn a_declared_volume_on_a_sealed_preset_is_dropped_and_docker_stays_sealed() {
+fn a_declared_volume_on_a_cleaned_preset_is_dropped_and_docker_stays_cleaned() {
     let own = |path: &str| format!("cache: {{volumes: [{{name: mine, path: {path}}}]}}");
     let cases = [
         (own("~/docker"), String::new(), Origin::Repo),
@@ -464,7 +463,7 @@ fn a_declared_volume_on_a_sealed_preset_is_dropped_and_docker_stays_sealed() {
     ];
     for (repo_yaml, user_yaml, origin) in cases {
         let p = plan(&layers(&repo_yaml, &user_yaml));
-        docker_stays_sealed(&p);
+        docker_stays_cleaned(&p);
         assert!(
             !names(&p).contains(&"mine".to_owned()),
             "{repo_yaml}{user_yaml}"
@@ -485,14 +484,14 @@ fn dropping_one_volume_keeps_the_others_and_ignores_it_in_clash_checks() {
         "cache: {volumes: [{name: mine, path: ~/docker}, {name: tools, path: /opt/tools}]}",
         "cache: {volumes: [{name: more, path: ~/docker/x}]}",
     ));
-    docker_stays_sealed(&p);
+    docker_stays_cleaned(&p);
     assert!(names(&p).ends_with(&["tools".into()]), "{:?}", names(&p));
     let gone: Vec<&str> = p.dropped().iter().map(|d| d.volume.as_str()).collect();
     assert_eq!(gone, ["mine", "more"]);
 }
 
 #[test]
-fn an_unsealed_preset_still_yields_to_a_declared_volume() {
+fn a_preset_without_steps_still_yields_to_a_declared_volume() {
     let p = plan(&layers(
         "cache: {volumes: [{name: mine, path: ~/.cache/npm}]}",
         "",
@@ -541,8 +540,8 @@ fn a_dropped_volume_says_who_declared_it_and_which_preset_won() {
     ));
     assert_eq!(
         p.dropped().first().unwrap().to_string(),
-        "operator cache volume mine meets the sealed docker preset, which keeps its directory, \
-         so it is dropped"
+        "operator cache volume mine meets the docker preset, which cleans its directory on \
+         restore, so it is dropped"
     );
 }
 

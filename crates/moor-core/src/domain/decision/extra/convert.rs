@@ -79,6 +79,9 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::CacheCold { reason, detail } => {
                 Self::Timing(TimingEvent::CacheCold { reason, detail })
             }
+            ExtraEvent::CacheEmptied { volume, reason } => {
+                Self::Timing(TimingEvent::CacheEmptied { volume, reason })
+            }
             ExtraEvent::CheckpointTaken {
                 layer,
                 key,

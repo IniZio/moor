@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use moor_core::config::Flags;
 use moor_core::decide::close::{
     close_gate, close_gate_with_reason, BoxCheck, CloseFacts, ClosePlan, Refusal,
 };
@@ -21,8 +20,6 @@ use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, BoxWork, BOXWORK_DEADLINE};
-use crate::ops::common::cache;
-use crate::ops::common::facts::settings_of;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::provision::planned_root;
 use crate::ops::common::reports;
@@ -268,17 +265,6 @@ fn facts(row: &BoxRow, box_check: BoxCheck) -> CloseFacts {
     }
 }
 
-/// Seals the cache volumes of a ready Box after its teardown, from the `.moor.yaml` stored with it.
-fn seal_caches(cx: &Cx, store: &Store, row: &BoxRow) {
-    let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
-    let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
-        return;
-    };
-    if let Ok(cfg) = settings_of(cx, row, &Flags::default()) {
-        cache::seal(cx, store, row, &cfg, handle, &b.provider);
-    }
-}
-
 /// Collects from the Box, tears it down and releases it; returns whether the Box is now deleted.
 ///
 /// Under `force`, a machine the provider no longer lists is marked Gone with one warning,
@@ -316,7 +302,6 @@ fn wind_down(
         return Ok(false);
     }
     teardown::teardown(cx, row, force)?;
-    seal_caches(cx, store, row);
     release::release(cx, store, row, plan.reason.clone())
 }
 
