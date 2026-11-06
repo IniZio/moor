@@ -12,6 +12,7 @@ use tokio::process::Command;
 
 use super::memory::disk_mib;
 use super::{box_dir, cache, checked, checked_class, room, Crabbox, Pool, POOL_DIR};
+use crate::settings;
 
 /// How long a save or a fork may take, since it copies a VM's memory and disk.
 const CHECKPOINT: Duration = Duration::from_mins(10);
@@ -27,6 +28,10 @@ const REASON: usize = 300;
 
 /// Why the pool does not serve checkpoints, for `features` of its provider; none when it does.
 pub(super) async fn off(home: &Path, pool: &Pool, features: &[String]) -> Option<String> {
+    let config = settings::config_path(home);
+    if let Some(key) = settings::opted_out(&config, &pool.provider) {
+        return Some(format!("{key} is false in {}", config.display()));
+    }
     for feature in [SAVES, FORKS] {
         if !features.iter().any(|f| f == feature) {
             return Some(format!(
@@ -52,13 +57,34 @@ pub(super) async fn off(home: &Path, pool: &Pool, features: &[String]) -> Option
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    let words = format!("{said}\n{err}");
+    let reasons = doctor_failures(&said, &err);
+    let words = if reasons.is_empty() {
+        format!("{said}\n{err}")
+    } else {
+        reasons.join("; ")
+    };
     let words = words.trim();
     let cut = (words.len().saturating_sub(REASON)..=words.len())
         .find(|at| words.is_char_boundary(*at))
         .unwrap_or_default();
     let tail = words.get(cut..).unwrap_or_default();
     Some(format!("crabbox doctor failed: {tail}"))
+}
+
+/// What failed in doctor's output, each once: the adapter's own `FAIL` lines, which the provider
+/// check carries among its passing ones, and crabbox's `failed` checks other than that carrier.
+fn doctor_failures<'a>(said: &'a str, err: &'a str) -> Vec<&'a str> {
+    let all = || said.lines().chain(err.lines());
+    let adapter = all().filter(|l| l.starts_with("FAIL "));
+    let carrier = |l: &&str| l.starts_with("failed") && l.contains("external provider command");
+    let crabbox = all().filter(|l| l.starts_with("failed") && !carrier(l));
+    let mut found: Vec<&str> = Vec::new();
+    for line in adapter.chain(crabbox) {
+        if !found.contains(&line) {
+            found.push(line);
+        }
+    }
+    found
 }
 
 /// Serves `act` under `home`.

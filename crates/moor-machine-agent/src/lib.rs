@@ -27,6 +27,7 @@ mod listen;
 pub mod pool;
 mod release;
 mod serve;
+pub mod settings;
 mod status;
 mod sweep;
 

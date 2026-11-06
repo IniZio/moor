@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use moor_client::link::lease::{Boot, Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
+use moor_machine_agent::settings::{self, Ensured};
 use moor_machine_agent::{enroll, run_with, state_dir, update, Enroll, Machine, Pool};
 
 /// Command line.
@@ -219,6 +220,9 @@ fn run_here(
     allow_exec: bool,
     auto_update: bool,
 ) -> Result<(), String> {
+    if let Some(provider) = &pool.runtime {
+        apply_settings(provider);
+    }
     let machine = Machine {
         pool: pool.pool(cache_gb),
         allow_exec,
@@ -228,6 +232,20 @@ fn run_here(
     rt.block_on(run_with(&state_dir(), machine, auto_update, &|line| {
         say(line);
     }))
+}
+
+/// Adds what warm starts need to the crabbox user config, saying what changed; a failure only
+/// leaves this host's Boxes starting cold.
+fn apply_settings(provider: &str) {
+    let path = settings::config_path(&Machine::from_env().home);
+    match settings::ensure(&path, provider) {
+        Ok(Ensured::Added) => say(&format!(
+            "turned on checkpoints in {}; set them to false there to opt out",
+            path.display()
+        )),
+        Ok(Ensured::Kept) => {}
+        Err(e) => say(&format!("cannot turn on checkpoints: {e}")),
+    }
 }
 
 /// Installs release `version` in place of this executable and says what changed.
@@ -292,6 +310,9 @@ fn say(line: &str) {
 
 /// Enrolls this machine, signing in through the browser unless `paste`.
 fn enroll_here(req: &Enroll, paste: bool) -> ExitCode {
+    if let Some(provider) = &req.pool {
+        apply_settings(provider);
+    }
     let mut ui = Terminal { browser: !paste };
     match enroll(req, &state_dir(), REDIRECT_PORT, &mut ui) {
         Ok(state) => {
