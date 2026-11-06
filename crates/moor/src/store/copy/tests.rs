@@ -176,10 +176,18 @@ fn a_source_not_at_this_builds_latest_migration_is_refused() {
             .and_where(Expr::col("version").eq(latest)),
     )
     .unwrap();
+    let previous: i64 = conn
+        .row(
+            Query::select()
+                .expr(Expr::col("version").max())
+                .from("refinery_schema_history"),
+            |r| r.get(0),
+        )
+        .unwrap();
     drop(conn);
     let target = Target::parse("postgres://moor@127.0.0.1:1/none").unwrap();
     let err = copy_to_postgres(&path, &target).unwrap_err().to_string();
-    assert!(err.contains(&format!("migration {}", latest - 1)), "{err}");
+    assert!(err.contains(&format!("migration {previous}")), "{err}");
     assert!(err.contains("moor store migrate"), "{err}");
 }
 

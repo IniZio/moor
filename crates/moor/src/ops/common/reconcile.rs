@@ -98,6 +98,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
     if row.lifecycle != BoxLifecycle::Ready {
         return;
     }
+    let _ = store.set_suspend_check(id, None);
     if row.session.is_quiet() {
         let _ = store.apply(d);
         return;

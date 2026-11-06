@@ -13,6 +13,8 @@ pub enum ExtraEvent {
     },
     /// The Box's machine was gone and a new one replaced it, without the old disk.
     DiskLost,
+    /// A close deleted the Box without waking it, so its caches were not saved.
+    CachesNotSaved,
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.

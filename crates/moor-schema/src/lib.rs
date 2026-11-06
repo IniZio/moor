@@ -13,6 +13,7 @@ mod insertion_order;
 mod proxy_key;
 mod proxy_state;
 mod resume_memory;
+mod suspend_check;
 pub mod tables;
 mod workflow_changes;
 mod workflows;
@@ -56,6 +57,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V53__forward_port",
         write: forward_port::write,
+    },
+    Step {
+        name: "V54__suspend_check",
+        write: suspend_check::write,
     },
 ];
 

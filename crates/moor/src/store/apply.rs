@@ -277,6 +277,16 @@ fn write_box(
     };
     if let Some(input) = &d.box_input {
         sets.push((Boxes::DriverState, step.to.as_str().into()));
+        // A guest that may run again can change, so what was checked before no longer stands.
+        if matches!(input, BoxInput::Wake | BoxInput::Acquired { .. }) {
+            for column in [
+                Boxes::SuspendAhead,
+                Boxes::SuspendDirty,
+                Boxes::SuspendCheckedAt,
+            ] {
+                sets.push((column, None::<i64>.into()));
+            }
+        }
         sets.extend(input_handle_sets(input, &sets));
     }
     sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));

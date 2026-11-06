@@ -22,6 +22,7 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::resume_gate::demand;
+use crate::ops::common::suspend_check;
 use crate::store::{BoxRow, Store};
 
 /// How long the same failure to suspend a Box goes unrepeated in its events, in seconds.
@@ -183,6 +184,8 @@ pub(crate) fn on_report(
         },
         &demand(store, node, &memory, now)?,
     );
+    // Saved now, so a suspend below judges this report and not the one before it.
+    store.set_pressure(&node.name, &p)?;
     for s in picks {
         let done = if s.last_resort {
             suspend_working(cx, store, s.id, &s.reason)?
@@ -277,6 +280,7 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Ok(handle) = ready_handle(&row) else {
         return Ok(false);
     };
+    suspend_check::record(cx, store, id);
     park_tunnel(cx, id)?;
     let slept = cx.driver().sleep(&handle).map_err(|e| e.to_string());
     if let Some(error) = why_not_slept(slept) {

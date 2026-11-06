@@ -19,6 +19,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
+use crate::ops::common::suspend_check;
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
 
@@ -122,6 +123,7 @@ pub(crate) fn sleep_parked(
         let _ = restore_tunnel(cx, id);
         return Err(e);
     }
+    suspend_check::record(cx, store, id);
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, id);
