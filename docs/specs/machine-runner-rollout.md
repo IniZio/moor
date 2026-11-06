@@ -49,8 +49,10 @@ controller op for machine M ──▶ store: link row ──▶ dial pod A ─�
 - The runner keeps its wire protocol and keys. The controller dials the runner
   over TCP with the runner key, by the address in the link row, instead of
   `runner.sock`.
-- Holds move to the store, keyed by machine and owner, with the holding pod and
-  a lease time. A pod that is gone past its lease holds nothing.
+- Resource holds stay in the runner that holds the machine's link, since every
+  call for that machine passes through it. They end with its link. While a
+  runner drains, its counted calls finish there and the next runner counts
+  anew, a bounded overlap.
 
 ### Handover on SIGTERM, make before break
 
@@ -95,13 +97,15 @@ replica folds the Slack stream while another stands by.
 ## Data shape
 
 ```
-machine_links  machine_id, runner_addr, generation, linked_at, draining_since
-machine_holds  machine_id, owner, kind, runner_addr, leased_until
+machine_links  machine_id, runner_addr, since, heard_at, draining_since
 ```
 
-Both tables hold many machines, many runners and many owners. A link row is
-written by the controller when a runner reports, so the runner needs no store
-client.
+The table holds many machines and many runners. A row is written by the
+controller when a runner reports, so the runner needs no store client. The
+runner names itself with `--advertise`. A row reads as linked, draining or
+offline, and only a linked row heard within 60 s routes. A newer link held by
+another runner wins over an older one. No generation column: a runner's own
+count restarts with it and cannot order links across runners; `since` can.
 
 ## Decisions
 
@@ -110,7 +114,7 @@ client.
 | Any-replica runner with a link registry, not single-active plus standby | A WebSocket cannot be handed to a standby. A redial to any ready pod is the takeover, and a leader adds nothing. |
 | Make before break on SIGTERM | Zero downtime for a machine means its new link is up before its old streams end. |
 | No op replay | Exec is not idempotent. The controller already reports a cut link; a 30 s drain makes that rare. |
-| Holds in the store with a lease | A runner restart must not free every hold; a dead pod must not keep them. |
+| Holds stay in the runner that holds the link | The registry sends every call for a machine to one runner, so its count is the only count. A store lease would make every heavy call wait on the controller. |
 | Keep `runner.sock` for VM and host installs | One binary, one protocol; the socket is a transport choice behind the same wire. |
 | Slack is its own slice | Its state is still per pod. |
 
@@ -120,11 +124,14 @@ client.
    `relink` to agents, streams finish within 30 s). Agent relinks at once on
    `relink` and resets its backoff. Key check retries for 10 s. Measured on a
    nightly: unlink per machine from about 10 s to about one redial.
-2. **Link registry and holds in the store.** Runner reports carry its address;
-   the controller writes `machine_links` and `machine_holds`; machine ops route
-   by the row. Transport stays `runner.sock` in the pod.
+2. **Link registry in the store.** Runner reports carry its address and whether
+   it drains; the controller writes `machine_links`; machine ops route by the
+   row. Transport stays `runner.sock` in the pod. Stacks on 1, since both end
+   the runner's links on SIGTERM.
 3. **Runner over TCP.** The controller dials the runner by address with the
-   runner key; the runner Deployment, Service and PDB in the chart; the k3s
+   runner's service key (`MOOR_MACHINE_SERVICE_KEY`, the key the shared Proxy
+   already sends); the runner Deployment and PDB in the chart, with the
+   existing machine Service and network policy repointed at it; the k3s
    rollout probe from #769 extended with a linked fake agent and an exec in
    flight through the roll.
 4. **Slack.** State to the store, lease, own Deployment.
