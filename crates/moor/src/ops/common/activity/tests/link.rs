@@ -215,8 +215,8 @@ fn a_box_reached_on_a_later_try_reattaches() {
     assert_eq!(engine.reattached().len(), 1);
 }
 
-#[test]
-fn the_agent_of_an_asleep_box_ends_without_asking_the_box() {
+/// A Box whose pane ended with exit 1 once `suspend` put it to sleep, read and settled twice.
+fn polled_asleep(suspend: BoxLifecycleInput, quiet: bool) -> (Cx, Arc<FakeEngine>, BoxId) {
     let dir = tempfile::tempdir().unwrap().keep();
     let engine = Arc::new(
         FakeEngine::new()
@@ -227,26 +227,48 @@ fn the_agent_of_an_asleep_box_ends_without_asking_the_box() {
     let (cx, _) = cx(&dir, &engine);
     let id = attached_box(&cx);
     let store = cx.store().unwrap();
+    if quiet {
+        store
+            .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+            .unwrap();
+    }
     store
-        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .apply(
+            Decision::new(id)
+                .lifecycle(suspend)
+                .box_input(BoxInput::Sleep),
+        )
         .unwrap();
+    for _ in 0..2 {
+        let reading = run_once(&cx, id);
+        settle(&cx, store, &row(&cx, id), &reading).unwrap();
+    }
+    (cx, engine, id)
+}
+
+#[test]
+fn a_box_suspended_mid_turn_keeps_its_session_while_its_status_is_polled() {
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: "last-resort suspend".to_owned(),
+    };
+    let (cx, engine, id) = polled_asleep(suspend, false);
+    let store = cx.store().unwrap();
+    assert!(store.live_session(id).unwrap().is_some());
+    assert_eq!(kinds(&cx, id, WATCHED), []);
+    assert_eq!(kinds(&cx, id, &["idled", "turn_done"]), []);
+    assert_eq!(engine.fates_left(), 8, "an asleep Box is not asked");
+    assert!(!row(&cx, id).session.is_quiet());
+}
+
+#[test]
+fn a_quiet_box_asleep_keeps_its_session_too() {
     let sleep = BoxLifecycleInput::Sleep {
         auto: true,
         reason: None,
     };
-    store
-        .apply(
-            Decision::new(id)
-                .lifecycle(sleep)
-                .box_input(BoxInput::Sleep),
-        )
-        .unwrap();
-    let reading = run_once(&cx, id);
-    settle(&cx, store, &row(&cx, id), &reading).unwrap();
-    let seen = kinds(&cx, id, WATCHED);
-    assert!(!seen.iter().any(|(k, _)| k == "agent_unreachable"));
-    let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
-    assert_eq!(ended.1.get("exit").unwrap(), 1);
+    let (cx, engine, id) = polled_asleep(sleep, true);
+    assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert_eq!(kinds(&cx, id, WATCHED), []);
     assert_eq!(engine.fates_left(), 8);
 }
 

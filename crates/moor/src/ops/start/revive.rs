@@ -14,6 +14,7 @@ use super::{launch, reopen, watch};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::settings_of;
+use crate::ops::common::link::{self, Fate};
 use crate::ops::common::provision::reread;
 use crate::store::{BoxRow, SessionRow, Store};
 
@@ -35,30 +36,61 @@ const CAP_EVENTS: usize = 100;
 /// Recent events searched for a tunnel restart.
 const TUNNEL_EVENTS: usize = 50;
 
-/// Starts the agent again after a Box wake when its pane did not survive.
+/// What a wake found of the agent of a Box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AfterWake {
+    /// It kept running, with its processes; its pane lived or a new one attached.
+    Intact,
+    /// It was gone and was started again, so its processes are lost.
+    Relaunched,
+    /// Nothing was asked of it, or the Box did not answer, so this says nothing.
+    Unknown,
+}
+
+/// Starts the agent again after a Box wake only when the Box says it is gone.
 ///
-/// The caller holds the Box lock. A live agent, or a Box with no live session or not Working, is
-/// left alone. The stored agent session is resumed, else the stored prompt starts a fresh agent; a
-/// Box with neither stays as is.
+/// The caller holds the Box lock. A live agent keeps its terminal: a lost pane is attached anew,
+/// since a launch kills what the terminal holds. A Box with no live session or not Working is left
+/// alone. The stored agent session is resumed, else the stored prompt starts a fresh agent; a Box
+/// with neither stays as is.
 /// The new pane is watched as `start` watches it, so an agent that dies at launch, such as one
 /// stopped because the Proxy CA could not be written, is recorded as a launch failure.
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.
-pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+pub(crate) fn revive_after_wake(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+) -> Result<AfterWake, CommandError> {
     let row = reread(store, id)?;
     if row.lifecycle != BoxLifecycle::Ready {
-        return Ok(());
+        return Ok(AfterWake::Unknown);
     }
     let ended_pane = match store.live_session(id)? {
-        Some(s) if launch::working(&row) => match ended(cx, &s) {
-            Some(end) => Some((s, end)),
-            None => return Ok(()),
-        },
-        Some(_) => return Ok(()),
+        Some(s) if launch::working(&row) => {
+            let Some(end) = ended(cx, &s) else {
+                return Ok(AfterWake::Intact);
+            };
+            let pane_exit = match end {
+                Ended::Exited(code) => Some(code),
+                Ended::Gone => None,
+            };
+            match link::recover(cx, store, &row, &s, pane_exit)? {
+                Fate::Reattached => return Ok(AfterWake::Intact),
+                Fate::Unreachable => return Ok(AfterWake::Unknown),
+                Fate::Ended(_) => Some((s, end)),
+            }
+        }
+        Some(_) => return Ok(AfterWake::Unknown),
         None => None,
     };
-    revive(cx, store, &row, ended_pane.as_ref(), "wake").map(drop)
+    let view = revive(cx, store, &row, ended_pane.as_ref(), "wake")?;
+    Ok(if view.launched {
+        AfterWake::Relaunched
+    } else {
+        AfterWake::Unknown
+    })
 }
 
 /// Starts the agent again, resuming its stored agent session, for a steer that found it exited.

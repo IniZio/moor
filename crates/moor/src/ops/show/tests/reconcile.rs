@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn reconcile_sleeps_a_working_box_its_host_stopped() {
+fn reconcile_queues_a_working_box_its_host_stopped_to_resume_first() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
@@ -21,8 +21,35 @@ fn reconcile_sleeps_a_working_box_its_host_stopped() {
     driver.stop_behind(&handle);
     assert_eq!(box_state(&cx), BoxState::Asleep);
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    assert_eq!(row.lifecycle, BoxLifecycle::Pending);
+    assert_eq!(row.session, SessionState::Working);
     assert_eq!(row.boxed.unwrap().handle, Some(handle));
+    let store = cx.store().unwrap();
+    assert!(store.resume_first(id).unwrap().is_some());
+    assert!(store.newest_event_of(id, "idled").unwrap().is_none());
+    let said = store.newest_event_of(id, "asleep").unwrap().unwrap();
+    assert_eq!(
+        said.payload.get("reason").and_then(|r| r.as_str()),
+        Some(moor_core::decide::reconcile::STOPPED_REASON)
+    );
+}
+
+#[test]
+fn reconcile_only_sleeps_a_quiet_box_its_host_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = cx(dir.path(), &driver);
+    let id = working(&cx, &driver, "a", None);
+    let store = cx.store().unwrap();
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    assert_eq!(box_state(&cx), BoxState::Asleep);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    assert!(store.resume_first(id).unwrap().is_none());
 }
 
 #[test]

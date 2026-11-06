@@ -2,16 +2,22 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
+use moor_core::seam::engine::{AgentFate, EngineError, Steer};
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::BoxId;
 
 use super::dead_agent::{ca_stopped, recorded_failure, CA};
-use super::relaunch::{gone, obs, set_agent_session, started};
-use super::World;
-use crate::ops::start::revive_after_wake;
+use super::relaunch::{gone, obs, prompt_req, session, set_agent_session, started};
+use super::{world, World};
+use crate::ops::common::wake::wake_and_revive;
+use crate::ops::start::{revive_after_wake, run};
 use crate::store::db::DbExt as _;
+use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use moor_schema::tables::Launches;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
@@ -203,4 +209,214 @@ fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_messag
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
     assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
+}
+
+/// As [`started`], with the Box answering `fates` when asked after its agent.
+fn answering(fates: Vec<Result<AgentFate, EngineError>>) -> (World, Arc<FakeEngine>, BoxId) {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2")))
+            .fates(fates),
+    );
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let first = run(&w.cx, &prompt_req("ship it")).unwrap();
+    let id = BoxId::new(first.boxed.id);
+    set_agent_session(&w, id, "agent-1");
+    (w, engine, id)
+}
+
+fn silent() -> Vec<Result<AgentFate, EngineError>> {
+    let failed = EngineError::Failed {
+        step: "fate",
+        message: "ssh: connection refused".to_owned(),
+    };
+    vec![Err(failed); 4]
+}
+
+#[test]
+fn a_live_agent_after_wake_is_reattached_without_a_launch() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
+    gone(&w);
+    revive(&w, id);
+    assert_eq!(
+        engine.launches().len(),
+        1,
+        "a launch kills the holder's terminal"
+    );
+    assert_eq!(engine.reattached().len(), 1);
+    assert!(relaunched(&w, id).is_empty());
+    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    assert_eq!(live.pane.as_deref(), Some("reattached-1"));
+}
+
+#[test]
+fn a_dead_agent_after_wake_relaunches_only_once_the_box_says_so() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: Some(9) })]);
+    gone(&w);
+    revive(&w, id);
+    assert_eq!(engine.fates_left(), 0, "the Box was asked first");
+    assert_eq!(engine.launches().len(), 2);
+    assert!(engine.reattached().is_empty());
+}
+
+#[test]
+fn a_box_that_does_not_answer_after_wake_launches_nothing_yet() {
+    let (w, engine, id) = answering(silent());
+    gone(&w);
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 1);
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+}
+
+/// Suspends `id` mid-turn for `reason`, ten seconds ago, then wakes it with its pane gone.
+fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
+    let store = w.cx.store().unwrap();
+    let suspend = BoxLifecycleInput::Suspend {
+        reason: reason.to_owned(),
+    };
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(suspend)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
+    let at = w.cx.clock().now().as_millis() / 1000;
+    store.set_resume_first(id, Some(at)).unwrap();
+    w.cx.clock().sleep(Duration::from_secs(10));
+    gone(w);
+    let row = store.box_row(id).unwrap().unwrap();
+    wake_and_revive(&w.cx, store, &row).unwrap();
+}
+
+fn notes(engine: &FakeEngine) -> Vec<String> {
+    engine
+        .steers()
+        .into_iter()
+        .filter_map(|(_, s)| match s {
+            Steer::Text(t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+const CRITICAL: &str = "last-resort suspend: memory critical on hv";
+
+#[test]
+fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
+    woken_after_suspend(&w, id, CRITICAL);
+    assert_eq!(
+        notes(&engine),
+        [
+            "This Box was suspended for 10s because host memory was critical. Its processes and \
+          files are intact, but network connections open at that moment were dropped (API calls, \
+          downloads, git pushes). Carry on with what you were doing. Re-run anything that failed."
+        ]
+    );
+}
+
+#[test]
+fn the_note_says_processes_were_lost_when_the_agent_was_relaunched() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    woken_after_suspend(&w, id, CRITICAL);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(
+        notes(&engine),
+        [
+            "This Box was suspended for 10s because host memory was critical. Its processes were \
+          lost and its agent was started again, so anything that was running has stopped; its \
+          files are kept. Carry on with what you were doing. Re-run anything that failed."
+        ]
+    );
+}
+
+#[test]
+fn the_note_names_a_stopped_machine_rather_than_memory() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    woken_after_suspend(&w, id, moor_core::decide::reconcile::STOPPED_REASON);
+    let said = notes(&engine);
+    let first = said.first().map(String::as_str).unwrap_or_default();
+    assert!(
+        first.starts_with(
+            "This Box was down for 10s: its machine stopped, as when its host restarts. \
+             Its processes were lost"
+        ),
+        "{first}"
+    );
+}
+
+#[test]
+fn no_note_goes_out_until_the_box_answers_and_the_mark_stays() {
+    let (w, engine, id) = answering(silent());
+    woken_after_suspend(&w, id, CRITICAL);
+    assert_eq!(notes(&engine), Vec::<String>::new());
+    let store = w.cx.store().unwrap();
+    assert!(store.resume_first(id).unwrap().is_some());
+}
+
+#[test]
+fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
+    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    let store = w.cx.store().unwrap();
+    let handle = store
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .boxed
+        .unwrap()
+        .handle
+        .unwrap();
+    w.driver.stop_behind(&handle);
+    crate::ops::common::reconcile::run(&w.cx);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert!(store.resume_first(id).unwrap().is_some());
+    gone(&w);
+    wake_and_revive(&w.cx, store, &row).unwrap();
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(
+        engine.launches().get(1).and_then(|l| l.resume.as_deref()),
+        Some("agent-1")
+    );
+    assert!(store.resume_first(id).unwrap().is_none());
+    let said = notes(&engine);
+    assert!(
+        said.first()
+            .is_some_and(|n| n.contains("processes were lost")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_stopped_box_whose_machine_is_gone_gets_a_new_one_and_leaves_the_queue() {
+    let (w, _engine, id) = answering(vec![]);
+    let store = w.cx.store().unwrap();
+    let handle = store
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .boxed
+        .unwrap()
+        .handle
+        .unwrap();
+    w.driver.stop_behind(&handle);
+    crate::ops::common::reconcile::run(&w.cx);
+    w.driver.forget(&handle);
+    crate::ops::common::reconcile::run(&w.cx);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(
+        row.boxed.map(|b| b.state),
+        Some(moor_core::domain::boxes::BoxState::Gone)
+    );
+    let node = store.box_spec(id).unwrap().node.unwrap();
+    crate::ops::common::promote::promote_waiting(&w.cx, store, &node, "test");
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_ne!(
+        row.lifecycle,
+        moor_core::domain::box_state::BoxLifecycle::Pending,
+        "{:?}",
+        w.cx.take_warnings()
+    );
 }
