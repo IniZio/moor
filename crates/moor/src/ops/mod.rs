@@ -10,8 +10,7 @@ mod artifacts;
 pub(crate) mod attach;
 pub(crate) mod authz;
 mod binding;
-mod box_mirror;
-mod box_put;
+pub(crate) mod box_rsync;
 mod close;
 pub(crate) mod close_failed;
 pub(crate) mod common;
@@ -68,6 +67,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
         req @ (Request::ArtifactRead(_)
         | Request::Attach(_)
+        | Request::BoxRsync(_)
         | Request::Exec(_)
         | Request::As(_)
         | Request::Whoami(_)
@@ -121,8 +121,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
-        Request::BoxMirror(r) => to_value(&box_mirror::run(cx, &r)?),
-        Request::BoxPut(r) => to_value(&box_put::run(cx, &r)?),
         Request::MachineHold(r) => to_value(&machine_hold::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
@@ -152,6 +150,10 @@ fn socket_only(req: &Request) -> CommandError {
         Request::Exec(_) => (
             ErrorKind::Refused,
             "exec streams a command's stdio both ways, so only the controller socket serves it",
+        ),
+        Request::BoxRsync(_) => (
+            ErrorKind::Refused,
+            "box-rsync streams rsync both ways, so only the controller socket serves it",
         ),
         Request::As(_) => (
             ErrorKind::Usage,

@@ -113,7 +113,7 @@ fn release_suspends_the_box_first_and_a_new_claim_does_not_sync() {
     let release = seen(&rig).last().cloned().unwrap();
     assert_eq!(release, json!({"op": "release", "suspended": true}));
     rig.call_with("machine_claim", json!({}), &MISSING).unwrap();
-    assert_eq!(rig.mirror_excludes.lock().unwrap().len(), 1);
+    assert_eq!(rig.mirrors(), 1);
 }
 
 #[test]

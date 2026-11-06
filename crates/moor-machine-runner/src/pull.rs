@@ -1,19 +1,18 @@
-//! `pull`: one file from the machine to the Box's work tree. rsync over ssh, or the agent's
-//! link for a linked machine, brings it to a staging file on the host, then the controller's
-//! `box-put` writes it into the Box.
+//! `pull`: one file from the machine to the Box's work tree. The agent's link brings it to a
+//! staging file in the runner's state directory, then rsync through the controller writes it
+//! into the Box.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use moor_client::link::ops::{Op, MAX_PULL};
-use moor_client::Client;
 use moor_core::name::BoxPath;
-use moor_core::request::{BoxPutReq, Request};
 use moor_core::BoxId;
 use rmcp::ErrorData;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 
+use crate::box_rsh::{self, Dial};
 use crate::caller::{Caller, Reach};
 use crate::link::{self, Answer};
 use crate::Agents;
@@ -63,10 +62,9 @@ impl Drop for Staged {
     }
 }
 
-/// Copies the file to a staging file under `stage`, then has the controller write it into the
-/// caller's Box.
+/// Copies the file to a staging file under `stage`, then writes it into the caller's Box.
 pub(crate) async fn serve(
-    client: Client,
+    dial: Dial,
     agents: Option<Agents>,
     stage: PathBuf,
     caller: Caller,
@@ -95,7 +93,7 @@ pub(crate) async fn serve(
             ));
         }
         let (box_id, dest) = (caller.box_id, args.dest.clone());
-        tokio::task::spawn_blocking(move || put(&client, &staged, box_id, dest))
+        tokio::task::spawn_blocking(move || put(&dial, &staged, box_id, dest))
             .await
             .map_err(|e| e.to_string())?
     };
@@ -130,32 +128,23 @@ async fn over_link(
     Ok(())
 }
 
-/// Has the controller write `staged` into Box `box_id` at `dest`.
-fn put(
-    client: &Client,
-    staged: &Staged,
-    box_id: BoxId,
-    dest: String,
-) -> Result<PullOutput, String> {
-    let request = Request::BoxPut(BoxPutReq {
-        id: box_id,
-        src: staged.0.display().to_string(),
-        dest: dest.clone(),
-    });
-    let response = client
-        .request(request, |_| {})
-        .map_err(|e| format!("the controller did not take the file: {e}"))?;
-    if let Some(error) = response.error {
+/// Writes `staged` into Box `box_id` at `dest`, mode 0644, making its directories.
+fn put(dial: &Dial, staged: &Staged, box_id: BoxId, dest: String) -> Result<PullOutput, String> {
+    let bytes = std::fs::metadata(&staged.0)
+        .map_err(|e| format!("could not read {}: {e}", staged.0.display()))?
+        .len();
+    let out = box_rsh::rsync(dial, box_id)?
+        .args(["--mkpath", "--perms", "--chmod=F644", "--"])
+        .arg(&staged.0)
+        .arg(format!("box:{dest}"))
+        .output()
+        .map_err(|e| format!("could not run rsync: {e}"))?;
+    if !out.status.success() {
         return Err(format!(
-            "the controller refused to write the file: {}",
-            error.message
+            "rsync into the Box failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let bytes = response
-        .value
-        .as_ref()
-        .and_then(|v| v.get("bytes"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
     Ok(PullOutput { dest, bytes })
 }

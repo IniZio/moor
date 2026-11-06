@@ -189,6 +189,18 @@ impl Moor {
         ops::exec::run(&self.cx, req, pipes)
     }
 
+    /// Runs the machine runner's rsync `req` in its Box with rsync's stdio on `pipes`.
+    ///
+    /// # Errors
+    /// [`CommandError`] when the transfer could not start or passed its deadline.
+    pub fn box_rsync(
+        &self,
+        req: &moor_core::BoxRsyncReq,
+        pipes: moor_core::seam::proc::Pipes<'_>,
+    ) -> Result<moor_core::view::ExecView, CommandError> {
+        ops::box_rsync::run(&self.cx, req, pipes, ops::box_rsync::DEADLINE)
+    }
+
     /// This engine doing only what `grant` lets its request do.
     #[must_use]
     pub(crate) fn granted(self, grant: Grant) -> Self {

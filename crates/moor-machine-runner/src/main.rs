@@ -10,7 +10,7 @@ use moor_client::Client;
 use moor_core::request::RunnerAddr;
 use moor_machine_runner::{
     bind_broker, bind_forwards, listen_remote, serve, serve_agents, serve_broker, serve_forwards,
-    Agents, Config, Relay,
+    Agents, Config, Dial, Relay,
 };
 
 /// Serves the tools a Box uses to work on its attached machine.
@@ -57,7 +57,7 @@ struct Args {
     /// unset.
     #[arg(long, value_name = "ADDR")]
     advertise: Option<String>,
-    /// Directory for the runner's per-Box host mirrors.
+    /// Directory for the runner's per-Box mirrors and staged pulls.
     #[arg(long)]
     state_dir: PathBuf,
     /// A capped resource each machine has, as NAME=CAP; repeat for more.
@@ -175,35 +175,37 @@ fn advertised(args: &Args, socket: &Path) -> RunnerAddr {
     RunnerAddr::new(args.advertise.clone().unwrap_or_else(socket))
 }
 
-/// The client for the controller, and the path the runner's own sockets sit beside:
+/// How the runner dials the controller, and the path the runner's own sockets sit beside:
 /// `--socket`, or one in `--state-dir` when the runner dials `--controller`.
-fn controller(args: &Args) -> Result<(Client, PathBuf), String> {
+fn controller(args: &Args) -> Result<(Dial, PathBuf), String> {
     let Some(url) = &args.controller else {
         let socket = args.socket.clone().ok_or("give --socket or --controller")?;
-        return Ok((Client::new(&socket), socket));
+        return Ok((Dial::Socket(socket.clone()), socket));
     };
     let ca = args
         .controller_ca
-        .as_deref()
+        .clone()
         .ok_or("--controller needs --controller-ca")?;
-    let key = args.service_key.as_deref().filter(|k| !k.is_empty());
+    let key = args.service_key.clone().filter(|k| !k.is_empty());
     let key = key.ok_or("--controller needs --service-key")?;
     let beside = args.state_dir.join("runner.sock");
-    Ok((Client::runner(url, ca, key)?, beside))
+    let url = url.clone();
+    Ok((Dial::Tls { url, ca, key }, beside))
 }
 
-/// The client for the controller, and the agents' links when `--agents` takes them.
-async fn linked(args: &Args) -> Result<(Client, Option<Agents>), String> {
-    let (client, socket) = controller(args)?;
+/// The dial and client for the controller, and the agents' links when `--agents` takes them.
+async fn linked(args: &Args) -> Result<(Dial, Client, Option<Agents>), String> {
+    let (dial, socket) = controller(args)?;
+    let client = dial.client()?;
     let Some(addr) = args.agents else {
-        return Ok((client, None));
+        return Ok((dial, client, None));
     };
     let runner = advertised(args, &socket);
     let agents = take_links(addr, (client.clone(), &socket), runner).await?;
     if let (Some(addr), Some(key)) = (args.links, &args.service_key) {
         listen_remote(addr, agents.clone(), key.clone()).await?;
     }
-    Ok((client, Some(agents)))
+    Ok((dial, client, Some(agents)))
 }
 
 /// Listens for machine agents on `addr` and serves their links in the background.
@@ -243,10 +245,16 @@ async fn take_links(
 }
 
 /// The runner's settings from its flags.
-fn config(args: Args, controller: Client, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
+fn config(
+    args: Args,
+    (dial, controller): (Dial, Client),
+    agents: Option<Agents>,
+    relays: Vec<Relay>,
+) -> Config {
     Config {
         agents,
         controller,
+        dial,
         state_dir: args.state_dir,
         service_host: args.service_host,
         resources: args.resources.into_iter().collect(),
@@ -277,8 +285,11 @@ fn keyed_listen(args: &Args) -> Result<(), String> {
 #[tokio::main]
 async fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().collect();
-    if raw.get(1).map(String::as_str) == Some("rsh") {
-        std::process::exit(moor_machine_runner::rsh(raw.get(2..).unwrap_or_default()).await);
+    let rest = raw.get(2..).unwrap_or_default();
+    match raw.get(1).map(String::as_str) {
+        Some("rsh") => std::process::exit(moor_machine_runner::rsh(rest).await),
+        Some("box-rsh") => std::process::exit(moor_machine_runner::box_rsh(rest)),
+        _ => {}
     }
     let args = Args::parse();
     let relays = match keyed_listen(&args).and_then(|()| relays(&args)) {
@@ -305,7 +316,7 @@ async fn main() -> ExitCode {
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner listening on {addr}");
     }
-    let (client, linked) = match linked(&args).await {
+    let (dial, client, linked) = match linked(&args).await {
         Ok(linked) => linked,
         Err(e) => {
             eprintln!("moor-machine-runner: {e}");
@@ -313,7 +324,7 @@ async fn main() -> ExitCode {
         }
     };
     let draining = linked.clone();
-    let serving = serve(listener, config(args, client, linked, relays));
+    let serving = serve(listener, config(args, (dial, client), linked, relays));
     tokio::pin!(serving);
     tokio::select! {
         served = &mut serving => return ended(served),

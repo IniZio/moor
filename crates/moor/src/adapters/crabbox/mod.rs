@@ -12,7 +12,6 @@ mod exec;
 mod handle;
 mod lease;
 mod link;
-mod mirror;
 mod parse;
 mod peek;
 mod pin;
@@ -41,8 +40,8 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
-    DriverError, ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, MirrorStats, Released,
-    RunEnd, SleepOutcome, StepDone, TunnelHandle,
+    DriverError, ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, Released, RunEnd,
+    SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -233,17 +232,6 @@ impl Driver for Crabbox {
     fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
         self.require_version()?;
         cp::copy_out(self, handle, from, to)
-    }
-
-    fn mirror_out(
-        &self,
-        handle: &BoxHandle,
-        from: &BoxPath,
-        to: &Path,
-        exclude: &[String],
-    ) -> Result<MirrorStats, DriverError> {
-        self.require_version()?;
-        mirror::mirror_out(self, handle, from, to, exclude)
     }
 
     fn stream_files(

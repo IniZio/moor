@@ -5,9 +5,8 @@
     reason = "test assertions index decoded frames"
 )]
 
-use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -18,24 +17,24 @@ use super::operator_only::nameless;
 /// A Box id no Box has, so the requests that write on the host find nothing to write.
 const NO_BOX: i64 = 4242;
 
-/// The machine runner's own state directory in `world`, made as the runner makes it.
-fn runner_state(world: &World) -> PathBuf {
-    let dir = world.served.dir.path().join("state").join("machine-runner");
-    std::fs::create_dir_all(dir.join("pulls")).expect("runner state");
-    dir
-}
+/// The command the runner's rsync hands its remote shell to mirror a Box.
+const MIRROR: [&str; 6] = [
+    "rsync",
+    "--server",
+    "--sender",
+    "-logDtpre.iLsfxCIvu",
+    ".",
+    "./",
+];
 
-fn runners_requests(own: &Path) -> Vec<Value> {
-    let mirror = own.join("mirrors").join(NO_BOX.to_string());
-    let staged = own.join("pulls").join("1-0");
+fn runners_requests() -> Vec<Value> {
     vec![
         json!({"cmd": "show"}),
         json!({"cmd": "show", "name": B_BOX}),
         json!({"cmd": "machine-keys"}),
         json!({"cmd": "machine-links", "runner": "/run/runner.sock", "links": []}),
         json!({"cmd": "machine-hold", "id": NO_BOX, "op": "release"}),
-        json!({"cmd": "box-mirror", "id": NO_BOX, "dest": mirror}),
-        json!({"cmd": "box-put", "id": NO_BOX, "src": staged, "dest": "d"}),
+        json!({"cmd": "box-rsync", "box": NO_BOX, "argv": MIRROR}),
     ]
 }
 
@@ -43,7 +42,7 @@ fn runners_requests(own: &Path) -> Vec<Value> {
 fn the_runner_socket_answers_the_runners_requests_as_the_operator_socket_does() {
     let world = World::new();
     let runner = world.served.runner();
-    for request in runners_requests(&runner_state(&world)) {
+    for request in runners_requests() {
         let got = ask(&runner, &request);
         assert_eq!(got, ask(&world.served.main, &request), "{request}");
     }
@@ -60,8 +59,7 @@ fn the_runner_socket_refuses_every_other_request_but_version() {
         "machine-hold",
         "machine-keys",
         "machine-links",
-        "box-mirror",
-        "box-put",
+        "box-rsync",
     ];
     let mut unknown = Vec::new();
     for kind in every_kind()
@@ -98,65 +96,18 @@ fn the_runner_socket_is_owner_only_in_an_owner_only_dir() {
     assert_eq!(mode(runner.parent().expect("dir")), 0o700);
 }
 
-/// The host paths a runner may not name: the controller's own files, a `..` out, a symlink out.
-fn not_the_runners_paths(world: &World) -> Vec<String> {
-    let own = runner_state(world);
-    let state = world.served.dir.path().join("state");
-    symlink(&state, own.join("escape")).expect("link");
-    [
-        state.join("moor.db"),
-        PathBuf::from("/etc/passwd"),
-        own.join("..").join("moor.db"),
-        own.join("escape").join("moor.db"),
-    ]
-    .iter()
-    .map(|p| p.display().to_string())
-    .collect()
-}
-
 #[test]
-fn the_runner_socket_refuses_host_paths_outside_the_runners_state_dir() {
+fn a_mirror_or_put_by_host_path_is_no_request_on_any_socket() {
     let world = World::new();
     let runner = world.served.runner();
-    for path in not_the_runners_paths(&world) {
-        for request in [
-            json!({"cmd": "box-mirror", "id": NO_BOX, "dest": path}),
-            json!({"cmd": "box-put", "id": NO_BOX, "src": path, "dest": "d"}),
-        ] {
-            let got = ask(&runner, &request);
-            assert_eq!(got["error"]["kind"], "refused", "{request}: {got}");
+    for request in [
+        json!({"cmd": "box-mirror", "id": NO_BOX, "dest": "/m"}),
+        json!({"cmd": "box-put", "id": NO_BOX, "src": "/s", "dest": "d"}),
+    ] {
+        for socket in [&runner, &world.served.main] {
+            let got = ask(socket, &request);
+            assert_eq!(got["frame"], "error", "{request}: {got}");
+            assert!(got.to_string().contains("unknown variant"), "{got}");
         }
     }
-}
-
-#[test]
-fn the_operator_socket_still_names_any_host_path() {
-    let world = World::new();
-    for path in not_the_runners_paths(&world) {
-        let got = ask(
-            &world.served.main,
-            &json!({"cmd": "box-mirror", "id": NO_BOX, "dest": path}),
-        );
-        assert_ne!(got["error"]["kind"], "refused", "{path}: {got}");
-    }
-}
-
-#[test]
-fn a_configured_runner_state_dir_replaces_the_default() {
-    let dir = tempfile::tempdir().expect("tmp");
-    let own = dir.path().join("elsewhere");
-    std::fs::create_dir_all(&own).expect("own");
-    let served = Served::start_fronts(dir, &format!("runner_state_dir: {}\n", own.display()), &[]);
-    let default = served.dir.path().join("state").join("machine-runner");
-    std::fs::create_dir_all(&default).expect("default");
-    let mirror = |root: &Path| {
-        let dest = root.join("mirrors").join(NO_BOX.to_string());
-        ask(
-            &served.runner(),
-            &json!({"cmd": "box-mirror", "id": NO_BOX, "dest": dest}),
-        )
-    };
-    let got = mirror(&own);
-    assert_ne!(got["error"]["kind"], "refused", "{got}");
-    refused(&mirror(&default), "is outside");
 }

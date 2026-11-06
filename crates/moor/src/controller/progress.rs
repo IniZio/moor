@@ -89,12 +89,7 @@ pub(crate) fn respond_with_progress(
 pub(super) const fn reports_progress(request: &Request) -> bool {
     matches!(
         request,
-        Request::Start(_)
-            | Request::Close(_)
-            | Request::Retry(_)
-            | Request::CloseFailed(_)
-            | Request::BoxMirror(_)
-            | Request::BoxPut(_)
+        Request::Start(_) | Request::Close(_) | Request::Retry(_) | Request::CloseFailed(_)
     )
 }
 

@@ -11,25 +11,28 @@ fn machine_file(rig: &Rig, rel: &str, contents: &str) {
 }
 
 #[test]
-fn a_pulled_file_reaches_the_controller_as_a_box_put() {
+fn a_pulled_file_lands_in_the_box_by_rsync_naming_no_path_of_the_runner() {
     let rig = Rig::start();
     machine_file(&rig, "logs/build.log", "built ok");
     let got = rig
         .call(
             "pull",
-            json!({"path": "logs/build.log", "dest": "out/build.log"}),
+            json!({"path": "logs/build.log", "dest": "out/my build.log"}),
         )
         .unwrap();
-    assert_eq!(got, json!({"dest": "out/build.log", "bytes": 8}));
-    let puts = rig.puts.lock().unwrap();
-    assert_eq!(puts.len(), 1);
-    let (req, bytes) = &puts[0];
-    assert_eq!(req["id"], 7);
-    assert_eq!(req["dest"], "out/build.log");
-    assert_eq!(bytes, b"built ok");
-    let src = std::path::Path::new(req["src"].as_str().unwrap());
-    assert!(src.starts_with(rig.state()), "{}", src.display());
-    assert!(!src.exists());
+    assert_eq!(got, json!({"dest": "out/my build.log", "bytes": 8}));
+    let landed = rig.tree.join("out/my build.log");
+    assert_eq!(std::fs::read_to_string(&landed).unwrap(), "built ok");
+    let mode = std::os::unix::fs::PermissionsExt::mode(&landed.metadata().unwrap().permissions());
+    assert_eq!(mode & 0o777, 0o644);
+    let rsyncs = rig.rsyncs.lock().unwrap().clone();
+    assert_eq!(rsyncs.len(), 1);
+    assert_eq!(rsyncs[0]["box"], 7);
+    assert_eq!(rsyncs[0]["argv"][1], "--server");
+    let staged = std::fs::read_dir(rig.state().join("pulls"))
+        .unwrap()
+        .count();
+    assert_eq!(staged, 0, "the staging file is gone");
 }
 
 #[test]
@@ -40,7 +43,10 @@ fn an_absolute_path_in_the_box_copy_is_pulled_as_is() {
     std::fs::write(&shot, "png").unwrap();
     let args = json!({"path": shot.display().to_string(), "dest": "1.png"});
     rig.call("pull", args).unwrap();
-    assert_eq!(rig.puts.lock().unwrap()[0].1, b"png");
+    assert_eq!(
+        std::fs::read_to_string(rig.tree.join("1.png")).unwrap(),
+        "png"
+    );
 }
 
 #[test]
@@ -53,7 +59,7 @@ fn a_bad_dest_is_refused_and_nothing_is_sent() {
             .unwrap_err();
         assert!(err.contains("dest"), "{bad:?}: {err}");
     }
-    assert!(rig.puts.lock().unwrap().is_empty());
+    assert_eq!(rig.puts(), 0);
 }
 
 #[test]
@@ -66,5 +72,5 @@ fn a_missing_or_directory_machine_path_is_refused_and_nothing_is_sent() {
             .unwrap_err();
         assert!(!err.is_empty(), "{path}");
     }
-    assert!(rig.puts.lock().unwrap().is_empty());
+    assert_eq!(rig.puts(), 0);
 }

@@ -39,6 +39,7 @@ use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
 pub use crate::agents::{serve_agents, Agents};
+pub use crate::box_rsh::{box_rsh, Dial};
 pub use crate::broker::{bind_broker, serve_broker};
 pub use crate::forwards::{bind_forwards, serve_forwards};
 pub use crate::remote::listen_remote;
@@ -47,6 +48,7 @@ pub use crate::{config::Config, relay::Relay};
 
 mod agents;
 mod beat;
+mod box_rsh;
 mod broker;
 mod caller;
 mod claim;
@@ -96,6 +98,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let runner = Runner {
         rsh: rsh::listen(&config.state_dir, config.agents.as_ref())?,
         client: config.controller,
+        dial: config.dial,
         mirrors,
         syncing: Arc::default(),
         holds: Arc::clone(&holds),
@@ -137,7 +140,9 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
 struct Runner {
     /// Client for the controller's operator socket.
     client: Client,
-    /// Parent of the per-Box host mirrors.
+    /// How a helper reaches the controller, for rsync to and from a Box.
+    dial: Dial,
+    /// Parent of the per-Box mirrors.
     mirrors: PathBuf,
     /// One lock per Box id, so two syncs of a Box never write its mirror at once.
     syncing: Arc<Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>>,
@@ -187,10 +192,10 @@ impl Runner {
             .before_sync(&caller)
             .await
             .map_err(|e| internal(&e))?;
-        let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
+        let (dial, mirrors) = (self.dial.clone(), self.mirrors.clone());
         let (rsh, noted) = (self.rsh.clone(), caller.clone());
         let copy = tokio::task::spawn_blocking(move || {
-            sync::run(&client, &mirrors, rsh.as_ref(), &caller, &args)
+            sync::run(&dial, &mirrors, rsh.as_ref(), &caller, &args)
         });
         tokio::select! {
             done = copy => {
@@ -216,8 +221,7 @@ impl Runner {
     ) -> Result<Json<PullOutput>, ErrorData> {
         let caller = caller(&context)?;
         let stage = self.mirrors.with_file_name("pulls");
-        let client = self.client.clone();
-        let pull = pull::serve(client, self.agents.clone(), stage, caller, args);
+        let pull = pull::serve(self.dial.clone(), self.agents.clone(), stage, caller, args);
         let progress = Progress::of(&context);
         tokio::select! {
             done = pull => done.map(Json),

@@ -46,7 +46,7 @@ fn controller(f: Fx) -> (PathBuf, JoinHandle<()>, tempfile::TempDir) {
                         unblock: &|| drop(waker.shutdown(Shutdown::Read)),
                         stopping: &|| false,
                     };
-                    Some(answer(stream(link, |pipes| moor.exec(&req, pipes))))
+                    Some(answer("exec", stream(link, |pipes| moor.exec(&req, pipes))))
                 }
                 other => Some(Response::ok(other.cmd(), None)),
             },

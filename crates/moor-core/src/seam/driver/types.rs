@@ -62,12 +62,3 @@ pub enum SleepOutcome {
     /// The Box stays up; the reason is worded for people.
     CannotSleep(String),
 }
-
-/// What one mirror sent, from rsync's stats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MirrorStats {
-    /// Regular files transferred.
-    pub files: u64,
-    /// Bytes that came over the link.
-    pub bytes: u64,
-}

@@ -40,7 +40,7 @@ pub(crate) struct Fx {
     pub(crate) cx: Cx,
     pub(crate) driver: Arc<FakeDriver>,
     pub(in crate::ops::run) proc: Arc<ScriptedProc>,
-    pub(in crate::ops::run) id: BoxId,
+    pub(crate) id: BoxId,
 }
 
 /// A command that kills its run's group leader in the Box, so the run leaves no exit code. The

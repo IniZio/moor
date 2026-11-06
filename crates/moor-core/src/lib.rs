@@ -30,9 +30,9 @@ pub mod workflow;
 
 pub use name::{BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha};
 pub use request::{
-    ArtifactReadReq, ArtifactsReq, AttachReq, BoxMirrorReq, BoxPutReq, BoxReq, BoxTarget, CloseReq,
-    CpReq, EnvReq, ExecReq, GateReq, HoldOp, HoldValue, InspectReq, MachineHoldReq, Request,
-    RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
+    ArtifactReadReq, ArtifactsReq, AttachReq, BoxReq, BoxRsyncReq, BoxTarget, CloseReq, CpReq,
+    EnvReq, ExecReq, GateReq, HoldOp, HoldValue, InspectReq, MachineHoldReq, Request, RunReq,
+    ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{
     CloseRefusal, ErrorDetail, ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA,

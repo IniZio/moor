@@ -7,7 +7,6 @@ use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::host_path;
 use crate::store::{BoxRow, SessionRecord, Store};
 
 /// The one refusal for a Box the caller may not act on and for a Box that does not exist, so
@@ -17,11 +16,9 @@ pub(crate) const NOT_YOURS: &str = "not your Box";
 /// The refusal for a `cp` from anyone but the operator: it writes on the controller host.
 pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 
-/// The refusal for a `box-mirror` from anyone but the operator: it writes on the host.
-pub(crate) const MIRROR_OPERATOR_ONLY: &str = "box-mirror to the host is operator-only";
-
-/// The refusal for a `box-put` from anyone but the operator: it reads a host file.
-pub(crate) const PUT_OPERATOR_ONLY: &str = "box-put from the host is operator-only";
+/// The refusal for a `box-rsync` from anyone but the runner and the operator.
+pub(crate) const RSYNC_OPERATOR_ONLY: &str =
+    "box-rsync is the machine runner's, which is operator-only";
 
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
@@ -41,8 +38,8 @@ pub(crate) const HOLD_OPERATOR_ONLY: &str =
 
 /// The refusal for any other request on the machine runner's socket.
 pub(crate) const NOT_THE_RUNNERS: &str =
-    "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links, \
-     box-mirror and box-put";
+    "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links \
+     and box-rsync";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -79,10 +76,9 @@ pub(crate) fn authorize(
     request: &Request,
 ) -> Result<Grant, CommandError> {
     if matches!(caller, Ok(Caller::Runner)) {
-        return runners(cx, request).map(|()| Grant {
+        return runners(request).map(|()| Grant {
             viewer: Viewer::Operator,
             pins: Pins::new(),
-            host_dir: cx.env().runner_state().map(ToOwned::to_owned),
         });
     }
     let viewer = viewer(cx, caller, asserted)?;
@@ -98,32 +94,18 @@ pub(crate) fn authorize(
             return Err(CommandError::new(ErrorKind::Refused, why));
         }
     }
-    Ok(Grant {
-        viewer,
-        pins,
-        host_dir: None,
-    })
+    Ok(Grant { viewer, pins })
 }
 
 /// Refuses every request the machine runner does not send; it sends those for every user's
-/// Boxes and machines, as the operator would, but names host paths only in its own directory.
-fn runners(cx: &Cx, request: &Request) -> Result<(), CommandError> {
-    let own = |what: &str, path: &str| {
-        let root = cx.env().runner_state().ok_or_else(|| {
-            CommandError::new(
-                ErrorKind::Refused,
-                "the machine runner has no state directory",
-            )
-        })?;
-        host_path::inside(what, path, root).map(drop)
-    };
+/// Boxes and machines, as the operator would.
+fn runners(request: &Request) -> Result<(), CommandError> {
     match request {
         Request::Show(_)
         | Request::MachineHold(_)
         | Request::MachineKeys {}
-        | Request::MachineLinks(_) => Ok(()),
-        Request::BoxMirror(req) => own("the destination", &req.dest),
-        Request::BoxPut(req) => own("the source", &req.src),
+        | Request::MachineLinks(_)
+        | Request::BoxRsync(_) => Ok(()),
         _ => Err(CommandError::new(ErrorKind::Refused, NOT_THE_RUNNERS)),
     }
 }
@@ -138,8 +120,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::WebhookClaim(_) | Request::WebhookReport(_) => {
             Some(crate::ops::webhook_outbox::FRONT_ONLY)
         }
-        Request::BoxMirror(_) => Some(MIRROR_OPERATOR_ONLY),
-        Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
+        Request::BoxRsync(_) => Some(RSYNC_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),
         Request::MachineLinks(_) => Some(LINKS_OPERATOR_ONLY),

@@ -48,9 +48,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
-        "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),
+        "box-rsync" => json!({"cmd": kind, "box": 1, "argv": ["rsync"]}),
         "machine-hold" => json!({"cmd": kind, "id": 1, "op": "release"}),
-        "box-put" => json!({"cmd": kind, "id": 1, "src": "/s", "dest": "d"}),
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
         _ => return None,
     })

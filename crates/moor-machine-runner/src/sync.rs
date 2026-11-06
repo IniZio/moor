@@ -1,16 +1,15 @@
-//! `sync`: Box work tree to a host mirror (through the controller), then the mirror to the
-//! machine: rsync over ssh, or for a linked machine over its agent's link.
+//! `sync`: Box work tree to a mirror in the runner's state directory, by rsync through the
+//! controller, then the mirror to the machine over its agent's link.
 
 use std::path::Path;
 use std::process::Command;
 
-use moor_client::Client;
 use moor_core::config::check_excludes;
-use moor_core::request::{BoxMirrorReq, Request};
 use serde::{Deserialize, Serialize};
 
 use moor_client::link::ops;
 
+use crate::box_rsh::{self, Dial};
 use crate::caller::{Caller, Reach};
 use crate::rsh::{Rsh, Syncing, SOCKET_ENV};
 
@@ -38,14 +37,14 @@ pub(crate) struct SyncOutput {
     pub(crate) machine: String,
     /// The Box's copy on the machine, under the machine user's home.
     pub(crate) path: String,
-    /// Files the host mirror took from the Box; unchanged files are not counted.
+    /// Files the mirror took from the Box; unchanged files are not counted.
     pub(crate) files_from_box: u64,
 }
 
 /// Mirrors the caller's Box into `mirrors/<box id>`, then that mirror onto the machine, except
 /// the caller's `sync_exclude` and the call's `exclude`, which both hops honor.
 pub(crate) fn run(
-    client: &Client,
+    dial: &Dial,
     mirrors: &Path,
     rsh: Option<&Rsh>,
     caller: &Caller,
@@ -58,26 +57,7 @@ pub(crate) fn run(
         .chain(&args.exclude)
         .cloned()
         .collect();
-    let request = Request::BoxMirror(BoxMirrorReq {
-        id: caller.box_id,
-        dest: mirror.display().to_string(),
-        exclude: exclude.clone(),
-    });
-    let response = client
-        .request(request, |_| {})
-        .map_err(|e| format!("the controller did not mirror the Box: {e}"))?;
-    if let Some(error) = response.error {
-        return Err(format!(
-            "the controller refused to mirror the Box: {}",
-            error.message
-        ));
-    }
-    let files_from_box = response
-        .value
-        .as_ref()
-        .and_then(|v| v.get("files"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
+    let files_from_box = mirror_box(dial, caller, &exclude, &mirror)?;
     let remote = caller.remote_dir();
     let mut rsync = rsync(&exclude);
     let (target, _syncing) = reach(&mut rsync, rsh, caller, &remote)?;
@@ -99,6 +79,42 @@ pub(crate) fn run(
         path: format!("~/{remote}"),
         files_from_box,
     })
+}
+
+/// Makes `mirror` an exact copy of the caller's Box's work tree but `.git` and `exclude`; the
+/// files it took. A mirror lost with the runner's state comes back whole on the next sync.
+fn mirror_box(
+    dial: &Dial,
+    caller: &Caller,
+    exclude: &[String],
+    mirror: &Path,
+) -> Result<u64, String> {
+    std::fs::create_dir_all(mirror)
+        .map_err(|e| format!("could not create {}: {e}", mirror.display()))?;
+    let out = box_rsh::rsync(dial, caller.box_id)?
+        .args(["-a", "--delete", "--stats", "--exclude=.git"])
+        .args(exclude.iter().map(|p| format!("--exclude={p}")))
+        .arg("--")
+        .arg("box:./")
+        .arg(format!("{}/", mirror.display()))
+        .output()
+        .map_err(|e| format!("could not run rsync: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "rsync from the Box failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let stats = String::from_utf8_lossy(&out.stdout);
+    Ok(stats
+        .lines()
+        .find_map(|l| {
+            l.trim()
+                .strip_prefix("Number of regular files transferred:")
+        })
+        .and_then(|v| v.trim().replace(',', "").parse().ok())
+        .unwrap_or(0))
 }
 
 /// Points `rsync` at the caller's machine's agent link through the runner's rsh helper, which serves the sync while the returned [`Syncing`] is held.

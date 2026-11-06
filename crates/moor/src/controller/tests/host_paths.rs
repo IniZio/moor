@@ -141,17 +141,22 @@ fn no_request_names_a_host_directory_for_the_controller_to_read() {
 }
 
 #[test]
-fn a_front_box_mirror_is_refused() {
+fn a_front_box_rsync_is_refused_even_on_its_own_box() {
     let (served, store) = served();
     let user = enroll_ann(&served);
     let id = ready_box(&store, user);
-    let dest = served.dir.path().join("mirror");
-    let mirror = json!({"cmd": "box-mirror", "id": id.get(), "dest": dest});
-    let got = ask(&served.front("slack"), &acting(ANN, &mirror));
-    refused(&got, "box-mirror to the host is operator-only");
-    assert!(
-        !dest.exists(),
-        "the refused mirror wrote {}",
-        dest.display()
+    let argv = [
+        "rsync",
+        "--server",
+        "--sender",
+        "-logDtpre.iLsfxCIvu",
+        ".",
+        "./",
+    ];
+    let rsync = json!({"cmd": "box-rsync", "box": id.get(), "argv": argv});
+    let got = ask(&served.front("slack"), &acting(ANN, &rsync));
+    refused(
+        &got,
+        "box-rsync is the machine runner's, which is operator-only",
     );
 }

@@ -1,17 +1,17 @@
 //! The fake controller a rig's runner talks to over its socket.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use moor_core::controller::{ServerFrame, PROTOCOL};
+use moor_core::controller::{parse_frame, write_bytes, ClientFrame, ServerFrame, PROTOCOL};
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
-use super::{FakeHolds, FakeLink, Puts, MACHINE_ID};
+use super::{FakeHolds, FakeLink, Rsyncs, MACHINE_ID};
 
 /// What a `machine-hold` claim is answered: the next of `answers`, or slot 0 on minion.
 fn hold_answer(holds: &mut FakeHolds, req: &Value, suspended: bool) -> Value {
@@ -56,15 +56,16 @@ fn show_value(open: &[i64], asleep: &[i64]) -> Value {
 pub(super) struct Fake {
     pub(super) open: Arc<Mutex<Vec<i64>>>,
     pub(super) asleep: Arc<Mutex<Vec<i64>>>,
-    pub(super) mirror_excludes: Arc<Mutex<Vec<Value>>>,
-    pub(super) puts: Puts,
+    pub(super) rsyncs: Rsyncs,
+    /// The runner's state directory, which no request may name.
+    pub(super) runner_state: PathBuf,
     pub(super) holds: Arc<Mutex<FakeHolds>>,
     pub(super) link: FakeLink,
     pub(super) show_fails: Arc<AtomicBool>,
     pub(super) shows_refused: Arc<AtomicUsize>,
 }
 
-/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
+/// Serves `box-rsync` the way the controller does, on `tree` as the Box's work tree, and
 /// `show` listing the Boxes in `open`.
 pub(super) fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
     let listener = UnixListener::bind(socket).unwrap();
@@ -91,6 +92,17 @@ fn serve_connection(stream: UnixStream, tree: &Path, fake: &Fake) {
         }
         let frame: Value = serde_json::from_str(&line).unwrap();
         let id = frame["id"].as_str().unwrap_or("1").to_owned();
+        let state = fake.runner_state.display().to_string();
+        assert!(
+            !line.contains(&state),
+            "a request named the runner's state: {line}"
+        );
+        if request(&frame).unwrap()["cmd"] == "box-rsync" {
+            let req = request(&frame).unwrap().clone();
+            fake.rsyncs.lock().unwrap().push(req.clone());
+            rsync(reader, writer, &id, &req, tree);
+            return;
+        }
         let answer = answer(&frame, tree, fake);
         reply(&mut writer, &id, answer);
     }
@@ -130,36 +142,65 @@ fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
         let suspended = tree.with_file_name("remote").join("suspended").exists();
         let value = hold_answer(&mut fake.holds.lock().unwrap(), req, suspended);
         Response::ok("machine-hold", Some(value))
-    } else if req["cmd"] == "box-put" {
-        let bytes = std::fs::read(req["src"].as_str().unwrap()).unwrap();
-        let value = json!({"path": "/work/x", "bytes": bytes.len(), "confirmation": "wrote"});
-        fake.puts.lock().unwrap().push((req.clone(), bytes));
-        Response::ok("box-put", Some(value))
     } else {
-        assert_eq!(req["cmd"], "box-mirror", "{frame}");
-        assert_eq!(req["id"], 7, "{frame}");
-        fake.mirror_excludes
-            .lock()
-            .unwrap()
-            .push(req["exclude"].clone());
-        mirror(tree, req["dest"].as_str().unwrap())
+        panic!("the fake controller serves no {frame}");
     }
 }
 
-/// Serves `box-mirror`: copies `tree` to `dest` with a local rsync.
-fn mirror(tree: &Path, dest: &str) -> Response {
-    std::fs::create_dir_all(dest).unwrap();
-    let ok = Command::new("rsync")
-        .args(["-a", "--delete", "--exclude=.git"])
-        .arg(format!("{}/", tree.display()))
-        .arg(format!("{dest}/"))
-        .status()
-        .unwrap()
-        .success();
-    assert!(ok, "fake controller rsync");
-    let value = json!({"from": "/work", "to": dest, "files": 1, "bytes": 1,
-        "confirmation": "mirrored"});
-    Response::ok("box-mirror", Some(value))
+/// Runs the runner's `rsync --server` on `tree`, its stdio relayed over the connection as the
+/// controller relays it, then answers with its exit code.
+fn rsync(
+    mut reader: BufReader<UnixStream>,
+    mut writer: UnixStream,
+    id: &str,
+    req: &Value,
+    tree: &Path,
+) {
+    let argv: Vec<String> = serde_json::from_value(req["argv"].clone()).unwrap();
+    let (path, head) = argv.split_last().unwrap();
+    let path = path.replace('\\', "");
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new(&head[0])
+            .args(&head[1..])
+            .arg(tree.join(path.trim_start_matches('/')))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut stdin = child.stdin.take();
+    let wanted = id.to_owned();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            match parse_frame(line.trim_end()) {
+                Ok(ClientFrame::Bytes { id, len }) if id == wanted => {
+                    let mut buf = vec![0; len];
+                    reader.read_exact(&mut buf).unwrap();
+                    if let Some(input) = stdin.as_mut() {
+                        let _ = input.write_all(&buf);
+                    }
+                }
+                _ => stdin = None,
+            }
+            line.clear();
+        }
+    });
+    let mut out = child.stdout.take().unwrap();
+    let mut buf = vec![0; 64 * 1024];
+    loop {
+        let n = out.read(&mut buf).unwrap();
+        if n == 0 {
+            break;
+        }
+        write_bytes(&mut writer, id, &buf[..n]).unwrap();
+    }
+    let code = child.wait().unwrap().code();
+    reply(
+        &mut writer,
+        id,
+        Response::ok("box-rsync", Some(json!({ "exit": code }))),
+    );
 }
 
 /// Writes one response frame carrying `envelope`.

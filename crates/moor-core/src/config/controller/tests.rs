@@ -284,27 +284,6 @@ fn a_front_lists_tcp_ports_and_no_port_zero() {
 }
 
 #[test]
-fn the_runner_state_dir_is_an_absolute_or_home_path() {
-    let ok = |text: &str| {
-        parse_controller("c.yaml", text)
-            .unwrap_or_else(|e| panic!("{e}"))
-            .runner_state_dir
-    };
-    assert_eq!(ok(""), None);
-    assert_eq!(
-        ok("runner_state_dir: /var/lib/runner\n").as_deref(),
-        Some("/var/lib/runner")
-    );
-    assert_eq!(
-        ok("runner_state_dir: ~/runner\n").as_deref(),
-        Some("~/runner")
-    );
-    for bad in ["runner_state_dir: runner\n", "runner_state_dir: ' '\n"] {
-        assert_eq!(err(bad).path, "runner_state_dir", "{bad}");
-    }
-}
-
-#[test]
 fn setup_failed_close_defaults_to_a_day_and_zero_turns_it_off() {
     assert_eq!(
         ControllerConfig::default().close_setup_failed_after(),

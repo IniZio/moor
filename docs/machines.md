@@ -64,7 +64,7 @@ moor-machine-runner --socket <state dir>/runner/runner.sock \
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `box-mirror` and `box-put`. The runner needs no access to the controller's own socket. |
+| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links` and `box-rsync`. The runner needs no access to the controller's own socket. |
 | `--controller tls://HOST:PORT` | none | The controller's `ledger_tls` listener, in place of `--socket`, for a runner in another pod. It serves the same requests. Needs `--controller-ca`, `--service-key` and `--advertise`. |
 | `--controller-ca PEM` | none | The CA that signed the controller's certificate. |
 | `--service-key KEY` | `$MOOR_MACHINE_SERVICE_KEY` | The key the runner presents to `--controller` and checks on `--links`. |
@@ -183,10 +183,12 @@ held no machine.
 ## Tools
 
 `sync` copies the Box's work tree to `~/moor/<box id>` on the machine in two
-hops. First, the runner asks the controller for a
-[`box-mirror`](cli.md#box-mirror) into `<state dir>/mirrors/<box id>` on the
-host. Then it runs `rsync -a --delete --exclude=.git` over the link from that
-mirror to the machine. Both hops send only what changed since the last sync. Files
+hops. First, the runner runs rsync from the Box into `mirrors/<box id>` in its
+own `--state-dir`. That rsync reaches the Box through the controller's
+[`box-rsync`](cli.md#box-rsync), over the runner's own connection to the
+controller, so the runner and the controller share no disk. Then the runner runs
+`rsync -a --delete --exclude=.git` over the link from that mirror to the
+machine. Both hops send only what changed since the last sync. Files
 that are gone from the Box also go from the machine. The hops leave out `.git`
 and every pattern in the Box's [sync excludes](config.md#sync-excludes). The
 Proxy sends those patterns in `X-Moor-Machine-Exclude`. By default they leave
@@ -202,16 +204,20 @@ those paths to the host mirror. The machine neither receives them nor loses
 them to `--delete`. Use `exclude` for what the machine builds for itself, such
 as `node_modules` installed there. Otherwise a Box on another platform
 overwrites it. The runner refuses, by name, a pattern that is empty, starts
-with `-`, or holds a newline or NUL. The first hop is unchanged.
+with `-`, or holds a newline or NUL.
+
+The mirrors live only in the runner's state directory, which the chart makes an
+`emptyDir`. The first sync of a Box after the runner restarts copies its whole
+work tree again. Later syncs send only what changed.
 
 `pull` copies one file from the machine into the Box's work tree. Use it for
 something the machine made, such as a screenshot that a relayed tool saved, or
 a build log. `path` is absolute on the machine or relative to
 `~/moor/<box id>`. `dest` is relative to the work tree. It cannot be empty or
-absolute, or contain `..`. The runner copies the file to a staging file on the
-host over the link. Then it asks the controller to write the file with
-[`box-put`](cli.md#box-put). The file can be at most 32 MiB. The file replaces
-an existing file at `dest`. `pull` returns `dest` and `bytes`.
+absolute, or contain `..`. The runner copies the file over the link to a staging file
+in its state directory. The link carries at most 32 MiB. Then the runner rsyncs
+the file into the Box through [`box-rsync`](cli.md#box-rsync), with mode 0644,
+making any missing directories. The file replaces an existing file at `dest`. `pull` returns `dest` and `bytes`.
 
 `exec` takes `command` and `timeout_secs` (default 600, at most 3600). It runs
 `<command>` in `~/moor/<box id>` on the machine through the machine user's

@@ -20,8 +20,8 @@ fn start_controller(dir: &Path, tree: &Path, listing_fails: bool, open: &[i64]) 
     let fake = Fake {
         open: Arc::new(Mutex::new(open.to_vec())),
         asleep: Arc::new(Mutex::new(Vec::new())),
-        mirror_excludes: Arc::new(Mutex::new(Vec::new())),
-        puts: Arc::new(Mutex::new(Vec::new())),
+        rsyncs: Arc::new(Mutex::new(Vec::new())),
+        runner_state: dir.join("state"),
         holds: Arc::new(Mutex::new(FakeHolds::default())),
         link: FakeLink::default(),
         show_fails: Arc::new(AtomicBool::new(listing_fails)),
@@ -57,8 +57,8 @@ pub fn caller(
     ]
 }
 
-/// `box-put` requests with the bytes of their `src`.
-pub type Puts = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
+/// The `box-rsync` requests the fake controller served.
+pub type Rsyncs = Arc<Mutex<Vec<Value>>>;
 
 /// The fake controller's `machine-hold`: the answers it gives claims, in turn, the last one
 /// again and again, and each request it served, with whether `~/suspended` existed by then.
@@ -71,7 +71,7 @@ pub struct FakeHolds {
 
 pub struct Rig {
     dir: tempfile::TempDir,
-    /// The fake Box's work tree, which the fake controller mirrors.
+    /// The fake Box's work tree, on which the fake controller runs the runner's rsync.
     pub tree: PathBuf,
     /// The fake machine user's home.
     pub remote: PathBuf,
@@ -79,10 +79,8 @@ pub struct Rig {
     pub open: Arc<Mutex<Vec<i64>>>,
     /// The open Box ids the fake controller reports asleep.
     pub asleep: Arc<Mutex<Vec<i64>>>,
-    /// The `exclude` of each `box-mirror` request the fake controller served.
-    pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
-    /// Each `box-put` request the fake controller served, with the bytes of its `src`.
-    pub puts: Puts,
+    /// Each `box-rsync` request the fake controller served.
+    pub rsyncs: Rsyncs,
     /// The fake controller's `machine-hold`.
     pub holds: Arc<Mutex<FakeHolds>>,
     /// The fake controller's side of an agent link.
@@ -166,8 +164,8 @@ impl Rig {
         let Fake {
             open,
             asleep,
-            mirror_excludes,
-            puts,
+            rsyncs,
+            runner_state: _,
             holds,
             link,
             show_fails,
@@ -179,8 +177,7 @@ impl Rig {
             remote,
             open,
             asleep,
-            mirror_excludes,
-            puts,
+            rsyncs,
             holds,
             link,
             show_fails,
@@ -509,4 +506,21 @@ fn initialize() -> Value {
 pub struct FakeLink {
     pub pubkey: Arc<Mutex<Option<String>>>,
     pub links: Arc<Mutex<Option<Value>>>,
+}
+
+impl Rig {
+    /// The `box-rsync` requests that mirrored the Box, which send from it.
+    pub fn mirrors(&self) -> usize {
+        let rsyncs = self.rsyncs.lock().unwrap();
+        rsyncs
+            .iter()
+            .filter(|r| r["argv"].to_string().contains("--sender"))
+            .count()
+    }
+
+    /// The `box-rsync` requests that put a file into the Box.
+    pub fn puts(&self) -> usize {
+        let all = self.rsyncs.lock().unwrap().len();
+        all - self.mirrors()
+    }
 }

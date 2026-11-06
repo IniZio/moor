@@ -26,7 +26,7 @@ mod frames;
 
 use artifact_read::read_artifact;
 use attach::attach;
-use exec::exec;
+use exec::piped;
 use frames::{hello_reply, hello_required, stray};
 
 /// Whom one connection speaks for, the vault key its user requests use, and its place in the
@@ -132,7 +132,9 @@ fn answer(
     match request {
         Request::ArtifactRead(req) => Some(read_artifact(env, grant, id, &req, out)),
         Request::Attach(req) => Some(attach(env, peer, grant, id, &req, (input, out))),
-        Request::Exec(req) => Some(exec(env, peer, grant, id, &req, (input, out))),
+        request @ (Request::Exec(_) | Request::BoxRsync(_)) => {
+            Some(piped(env, peer, grant, id, &request, (input, out)))
+        }
         request => match request.into_user() {
             Ok((_, cmd)) => Some(answer_user(env, peer, asserted, &cmd)),
             Err(request) => match requester(peer, asserted, &request) {
@@ -264,8 +266,8 @@ fn start_watch<W: Write>(
     }
 }
 
-/// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`
-/// or `exec` that ran hands the connection to its relay.
+/// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`,
+/// `exec` or `box-rsync` that ran hands the connection to its relay.
 fn request_reply(
     conn: &Admitted,
     answer: &impl Fn(&str, Request, Duplex<'_>) -> Option<Response>,
@@ -273,7 +275,10 @@ fn request_reply(
     request: Request,
     duplex: Duplex<'_>,
 ) -> (ServerFrame, bool) {
-    let attach = matches!(request, Request::Attach(_) | Request::Exec(_));
+    let attach = matches!(
+        request,
+        Request::Attach(_) | Request::Exec(_) | Request::BoxRsync(_)
+    );
     match conn
         .answering()
         .and_then(|_answering| answer(&id, request, duplex))

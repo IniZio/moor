@@ -17,27 +17,15 @@ pub struct CpReq {
     pub dest: String,
 }
 
-/// Arguments of `box-mirror`.
+/// Arguments of `box-rsync`: the machine runner's rsync, run in the Box as `rsync --server`
+/// with its stdio streamed both ways over the connection, as `exec` streams a command's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BoxMirrorReq {
+pub struct BoxRsyncReq {
     /// The Box's store id.
+    #[serde(rename = "box")]
     pub id: BoxId,
-    /// Destination directory on the host, absolute.
-    pub dest: String,
-    /// rsync patterns left out of the mirror besides `.git`.
-    #[serde(default)]
-    pub exclude: Vec<String>,
-}
-
-/// Arguments of `box-put`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoxPutReq {
-    /// The Box's store id.
-    pub id: BoxId,
-    /// Regular file on the host, absolute.
-    pub src: String,
-    /// Where the file lands, relative to the Box's work tree.
-    pub dest: String,
+    /// The command rsync hands its remote shell: `rsync --server …` naming one path in the
+    /// Box's work tree.
+    pub argv: Vec<String>,
 }
