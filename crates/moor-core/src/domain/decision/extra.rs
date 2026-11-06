@@ -6,7 +6,7 @@ use crate::name::RunId;
 /// An event a caller may pass; every other kind is derived from state steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtraEvent {
-    /// The driver refused to sleep an idle box, so it keeps running.
+    /// The driver refused or failed to sleep a box, so it keeps running.
     StaysUp {
         /// The driver's reason.
         reason: String,

@@ -73,22 +73,33 @@ moor-machine-agent run --runtime cloudhypervisor --reserve-mib 8192
 
 Boxes already running can still run a node short of memory. Each report also
 checks for that, and suspends at most one Box per node, with at least 30
-seconds between suspensions there.
+seconds between suspensions there. A Box that cannot be suspended, because its
+lock is held or the provider fails, does not end the attempt: the next one in
+order is tried on the same report. A provider failure is recorded on the Box as
+a `stays_up` event, which says why it was being suspended; the same failure
+repeats there at most every 10 minutes.
 
 Pressure is sustained when PSI `some avg10` is 10 or more on three reports in a
 row, or when `MemAvailable` falls below the host reserve. The node then
 suspends its longest-idle Box, with the status `memory pressure on NODE`. It
-never suspends a working Box for sustained pressure. The node list shows since
+never suspends a working Box for sustained PSI alone. The node list shows since
 when pressure has lasted.
 
 Memory is critical when PSI `full avg10` is 5 or more, or `MemAvailable` falls
-below 1024 MiB. An idle Box goes first then too. When none is left, the node
-suspends the Box that started most recently among the working ones, as a last
-resort, with the status `last-resort suspend: memory critical on NODE`. That
-Box waits Pending and resumes before any other Box waiting on the node. When it
-wakes, its agent is told once that it was suspended, for how long, and that
-network connections open at that moment were dropped. Its processes and files
-are intact, though its wall clock jumps.
+below 1024 MiB. Critical memory, or `MemAvailable` below the reserve with at
+least two Boxes running, suspends a working Box as a last resort once no idle
+Box is left to try. The early trigger exists because a suspension takes time: at
+1 GiB/s, a 23 GiB snapshot started with 7 GiB of headroom survives about 217
+MiB/s of growth elsewhere, and one started with 1 GiB only 31 MiB/s. Among
+working Boxes the most recently started goes first. A Box with a run in flight
+goes only when no other is left, since the suspension drops the run's
+connection. The only running Box is never suspended while it works. The status
+is `last-resort suspend: memory critical on NODE` or `last-resort suspend:
+memory below the host reserve on NODE`, ending `, with a run in flight` when
+that applies. That Box waits Pending and resumes before any other Box waiting on
+the node. When it wakes, its agent is told once that it was suspended, for how
+long, and that network connections open at that moment were dropped. Its
+processes and files are intact, though its wall clock jumps.
 
 Every Box still finishes. Pressure only decides when it runs.
 

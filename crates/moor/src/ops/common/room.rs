@@ -17,11 +17,14 @@ use moor_core::seam::driver::SleepOutcome;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::{sleep_handle, sleep_parked};
+use crate::ops::common::autosleep::{ready_handle, sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::{now, recorded};
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::store::{BoxRow, Store};
+
+/// How long the same failure to suspend a Box goes unrepeated in its events, in seconds.
+const FAILURE_REPEAT_SECS: i64 = 600;
 
 /// Suspends the longest-idle Box on `node` when it is short of memory, so that a Box waiting
 /// for it starts once the node reports the memory freed. Nothing when its report is stale, its
@@ -64,7 +67,8 @@ fn resident(store: &Store, row: &BoxRow) -> Result<Resident, CommandError> {
     })
 }
 
-/// Suspends Box `id` for `reason` if it is still idle and its lock is free; false otherwise.
+/// Suspends Box `id` for `reason` if it is still idle and its lock is free; false otherwise. A
+/// failure to suspend it is recorded on the Box.
 fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)
     else {
@@ -79,10 +83,9 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     let Ok(handle) = sleep_handle(cx, &row) else {
         return Ok(false);
     };
-    if !matches!(
-        sleep_parked(cx, store, id, &handle)?,
-        SleepOutcome::Slept | SleepOutcome::Native
-    ) {
+    let slept = sleep_parked(cx, store, id, &handle).map_err(|e| e.error.to_string());
+    if let Some(error) = why_not_slept(slept) {
+        tell_suspend_failed(cx, store, id, reason, &error)?;
         return Ok(false);
     }
     store.apply(
@@ -150,10 +153,11 @@ pub(crate) fn on_report(
             boxes.push(Candidate {
                 resident: resident(store, &row)?,
                 started_at: row.created_at.as_millis() / 1000,
+                in_flight: store.in_flight_run(id)?.is_some(),
             });
         }
     }
-    let pick = relieve(
+    let picks = relieve(
         &node.name,
         &p.readings,
         reserve,
@@ -164,7 +168,7 @@ pub(crate) fn on_report(
         },
         &demand(store, node, memory.shortfall(now))?,
     );
-    if let Some(s) = pick {
+    for s in picks {
         let done = if s.last_resort {
             suspend_working(cx, store, s.id, &s.reason)?
         } else {
@@ -175,6 +179,7 @@ pub(crate) fn on_report(
             if s.last_resort {
                 store.set_resume_first(s.id, Some(now))?;
             }
+            break;
         }
     }
     store.set_pressure(&node.name, &p)?;
@@ -250,9 +255,10 @@ fn demand(store: &Store, node: &Node, short: Option<Shortfall>) -> Result<Demand
     Ok(Demand { short, waiter })
 }
 
-/// Suspends working Box `id` for `reason` and leaves it waiting for room, if it still works and
+/// Suspends running Box `id` for `reason` and leaves it waiting for room, if nothing changed and
 /// its lock is free; false otherwise. Its agent pane stays open, since the suspension keeps the
-/// agent's process.
+/// agent's process, while a run in flight loses its connection. A failure to suspend it is
+/// recorded on the Box.
 fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)
     else {
@@ -261,18 +267,18 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };
-    if !working(&resident(store, &row)?) {
+    let now = resident(store, &row)?;
+    if !working(&now) && !suspendable(&now) {
         return Ok(false);
     }
-    let Ok(handle) = sleep_handle(cx, &row) else {
+    let Ok(handle) = ready_handle(&row) else {
         return Ok(false);
     };
     park_tunnel(cx, store, id)?;
-    if !matches!(
-        cx.driver().sleep(&handle),
-        Ok(SleepOutcome::Slept | SleepOutcome::Native)
-    ) {
+    let slept = cx.driver().sleep(&handle).map_err(|e| e.to_string());
+    if let Some(error) = why_not_slept(slept) {
         restore_tunnel(cx, store, id, true)?;
+        tell_suspend_failed(cx, store, id, reason, &error)?;
         return Ok(false);
     }
     store.apply(
@@ -288,4 +294,33 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
             }),
     )?;
     Ok(true)
+}
+
+/// Why a sleep that ended as `slept` left the Box up; `None` when it slept.
+fn why_not_slept(slept: Result<SleepOutcome, String>) -> Option<String> {
+    match slept {
+        Ok(SleepOutcome::Slept | SleepOutcome::Native) => None,
+        Ok(SleepOutcome::CannotSleep(why)) => Some(why),
+        Err(e) => Some(e),
+    }
+}
+
+/// Records that suspending Box `id` for `why` failed with `error`. A report retries every 10
+/// seconds, so the same failure is recorded again only after [`FAILURE_REPEAT_SECS`].
+fn tell_suspend_failed(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    why: &str,
+    error: &str,
+) -> Result<(), CommandError> {
+    let text = format!("could not suspend ({why}): {error}");
+    let told = store.last_event_of(id, "stays_up")?.is_some_and(|ev| {
+        ev.payload.get("reason").and_then(|r| r.as_str()) == Some(&text)
+            && now(cx).saturating_sub(ev.ts.as_millis() / 1000) < FAILURE_REPEAT_SECS
+    });
+    if !told {
+        store.apply(Decision::new(id).event(ExtraEvent::StaysUp { reason: text }))?;
+    }
+    Ok(())
 }
