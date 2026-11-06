@@ -270,27 +270,35 @@ fn keyed_listen(args: &Args) -> Result<(), String> {
     ))
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// The relays and the stop signal, or why the runner cannot start.
+fn checked(args: &Args) -> Result<(Vec<Relay>, impl std::future::Future<Output = ()>), String> {
+    keyed_listen(args)?;
+    let relays = relays(args)?;
+    let stopped = stop_signal().map_err(|e| format!("cannot handle SIGTERM: {e}"))?;
+    Ok((relays, stopped))
+}
+
+/// The exit code of an rsync remote-shell helper, when the runner was started as one.
+async fn subcommand() -> Option<i32> {
     let raw: Vec<String> = std::env::args().collect();
     let rest = raw.get(2..).unwrap_or_default();
     match raw.get(1).map(String::as_str) {
-        Some("rsh") => std::process::exit(moor_machine_runner::rsh(rest).await),
-        Some("box-rsh") => std::process::exit(moor_machine_runner::box_rsh(rest)),
-        _ => {}
+        Some("rsh") => Some(moor_machine_runner::rsh(rest).await),
+        Some("box-rsh") => Some(moor_machine_runner::box_rsh(rest)),
+        _ => None,
+    }
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    if let Some(code) = subcommand().await {
+        std::process::exit(code);
     }
     let args = Args::parse();
-    let relays = match keyed_listen(&args).and_then(|()| relays(&args)) {
-        Ok(r) => r,
+    let (relays, stopped) = match checked(&args) {
+        Ok(started) => started,
         Err(e) => {
             eprintln!("moor-machine-runner: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let stopped = match stop_signal() {
-        Ok(stopped) => stopped,
-        Err(e) => {
-            eprintln!("moor-machine-runner: cannot handle SIGTERM: {e}");
             return ExitCode::FAILURE;
         }
     };
