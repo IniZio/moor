@@ -2,7 +2,7 @@
 
 use moor_core::decide::pressure::Reading;
 use moor_core::decide::schedule::{Node, Online, Scope};
-use moor_core::request::MachineLink;
+use moor_core::request::MachineLinksReq;
 use moor_core::user::Viewer;
 use moor_core::view::node::{NodeListValue, NodeScope, NodeView};
 use moor_core::view::user::MachineLinksValue;
@@ -23,14 +23,22 @@ pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
     Ok(cx.store()?.nodes(&shared)?)
 }
 
-/// `machine-links`: records the agent links, relieves each personal node under memory pressure,
+/// `machine-links`: records one runner's agent links, relieves each personal node under memory pressure,
 /// then starts the Boxes pending on each personal node whose link is up.
 ///
 /// # Errors
 /// A store failure.
-pub(crate) fn set_links(cx: &Cx, links: &[MachineLink]) -> Result<MachineLinksValue, CommandError> {
+pub(crate) fn set_links(
+    cx: &Cx,
+    report: &MachineLinksReq,
+) -> Result<MachineLinksValue, CommandError> {
     let store = cx.store()?;
-    let links = store.set_machine_links(links)?;
+    let links = store.set_machine_links(
+        &report.runner,
+        report.draining,
+        &report.links,
+        cx.clock().now(),
+    )?;
     for node in all(cx)? {
         let Scope::Personal { machine_id, .. } = node.scope else {
             continue;

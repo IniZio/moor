@@ -199,7 +199,13 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         state_dir.clone(),
     )?;
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
-    let links = state_dir.as_deref().map(links::under);
+    let links = state_dir.as_deref().map(|dir| {
+        links::under(
+            dir,
+            env.shared::<Store>().cloned(),
+            Arc::clone(&clock) as Arc<dyn Clock>,
+        )
+    });
     let crabbox = Crabbox::new(
         Arc::clone(&proc),
         Arc::clone(&clock) as Arc<dyn Clock>,

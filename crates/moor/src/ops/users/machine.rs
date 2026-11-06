@@ -102,6 +102,12 @@ pub(super) fn status(cx: &Cx, user: UserId, name: &str) -> Result<serde_json::Va
             crate::stamp::utc(link.since.as_millis() / 1000)
         )));
     }
+    if store
+        .machine_runner(link.machine_id, cx.clock().now())?
+        .is_none()
+    {
+        return Err(refused(format!("machine {name} is not linked")));
+    }
     let links = cx
         .machine_links()
         .ok_or_else(|| refused("this controller has no machine runner to ask".to_owned()))?;

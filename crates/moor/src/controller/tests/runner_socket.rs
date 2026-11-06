@@ -32,7 +32,7 @@ fn runners_requests(own: &Path) -> Vec<Value> {
         json!({"cmd": "show"}),
         json!({"cmd": "show", "name": B_BOX}),
         json!({"cmd": "machine-keys"}),
-        json!({"cmd": "machine-links", "links": []}),
+        json!({"cmd": "machine-links", "runner": "/run/runner.sock", "links": []}),
         json!({"cmd": "machine-hold", "id": NO_BOX, "op": "release"}),
         json!({"cmd": "box-mirror", "id": NO_BOX, "dest": mirror}),
         json!({"cmd": "box-put", "id": NO_BOX, "src": staged, "dest": "d"}),

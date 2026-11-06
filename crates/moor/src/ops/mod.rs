@@ -109,7 +109,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         }),
         Request::MachineLinks(r) => {
             cx.store()?.set_box_memory(&r.box_memory)?;
-            to_value(&nodes::set_links(cx, &r.links)?)
+            to_value(&nodes::set_links(cx, &r)?)
         }
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),

@@ -25,6 +25,24 @@ fn status_cmd(name: &str) -> UserCmd {
     }
 }
 
+/// Machine `machine_id`'s link, up or down.
+fn link(machine_id: i64, online: bool) -> MachineLink {
+    MachineLink {
+        machine_id,
+        online,
+        since: Ts::from_millis(1_000_000),
+        version: Some("1.2.3".into()),
+        protocol: Some(2),
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
+        memory: None,
+    }
+}
+
 /// Enrolls `name` for `who`, records its link, and returns its id.
 fn linked(f: &Fixture, who: &str, name: &str, online: bool) -> i64 {
     let enroll = UserCmd::MachineEnroll {
@@ -39,20 +57,12 @@ fn linked(f: &Fixture, who: &str, name: &str, online: bool) -> i64 {
     let machine_id = made["machine_id"].as_i64().unwrap();
     f.cx.store()
         .unwrap()
-        .set_machine_links(&[MachineLink {
-            machine_id,
-            online,
-            since: Ts::from_millis(1_000_000),
-            version: Some("1.2.3".into()),
-            protocol: Some(2),
-            max_boxes: None,
-            cache_gb: None,
-            features: Vec::new(),
-            mem_mib: None,
-            cpus: None,
-            reserve_mib: None,
-            memory: None,
-        }])
+        .set_machine_links(
+            &crate::testing::runner(),
+            false,
+            &[link(machine_id, online)],
+            f.cx.clock().now(),
+        )
         .unwrap();
     machine_id
 }
@@ -116,4 +126,29 @@ fn an_offline_machine_is_refused_with_since_when() {
         err.error.to_string(),
         "machine minion is offline since 1970-01-01T00:16:40Z"
     );
+}
+
+#[test]
+fn a_machine_whose_runner_drains_or_went_quiet_is_not_linked() {
+    let mut f = fixture();
+    let asked = Arc::new(Asked::default());
+    f.cx = f.cx.with_machine_links(Arc::clone(&asked) as _);
+    let machine_id = linked(&f, "authgear:a", "minion", true);
+    let now = f.cx.clock().now();
+    let quiet = Ts::from_millis(now.as_millis() - 61_000);
+    let store = f.cx.store().unwrap();
+    for (draining, at) in [(true, now), (false, quiet)] {
+        store
+            .set_machine_links(
+                &crate::testing::runner(),
+                draining,
+                &[link(machine_id, true)],
+                at,
+            )
+            .unwrap();
+        let err = run(&f.cx, &f.vault, &id("authgear:a"), &status_cmd("minion")).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Refused);
+        assert_eq!(err.error.to_string(), "machine minion is not linked");
+    }
+    assert!(asked.0.lock().unwrap().is_empty());
 }
