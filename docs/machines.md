@@ -84,10 +84,11 @@ once. The runner counts a resource for each machine name across all Boxes.
 Only the runner process tracks holds, so a runner restart frees them all. With
 no `--resource` flags, the runner holds nothing.
 
-On SIGTERM the runner stops taking links and tells each linked agent to relink.
-The agent dials again at once, lets the calls still running on its old link
-finish there, then closes it. The runner exits when every link has closed, or
-after 30 seconds, cutting whatever still runs. A hello that comes while the
+On SIGTERM the runner tells each linked agent, and each agent that dials it
+after, to relink. The agent dials again every second while it is told to relink
+or its old link is still open. It lets the calls still running on its old link finish there, then closes it. The
+runner exits when every link has closed, or after 30 seconds, cutting whatever
+still runs. Each dial gives up after 5 seconds. A hello that comes while the
 controller cannot check keys waits up to 8 seconds for it before it is refused.
 
 The runner stores and passes no secret. It reaches each machine only through

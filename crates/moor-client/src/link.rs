@@ -35,6 +35,9 @@ pub const NAMESPACE: &str = "moor-machine-link";
 /// How often each end pings; three silent periods end the link.
 pub const KEEPALIVE: Duration = Duration::from_secs(15);
 
+/// How long a dial may take to connect and upgrade, so a dropped SYN fails instead of hanging.
+pub const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// How often an agent hosting Boxes reports its host's memory.
 pub const REPORT_EVERY: Duration = Duration::from_secs(10);
 
@@ -154,8 +157,9 @@ pub enum Frame {
         /// Why, for the agent's log.
         reason: String,
     },
-    /// Runner, beside yamux once the link is up: this runner is stopping, so dial again now and
-    /// let this link's streams finish. An agent that does not know it skips it.
+    /// Runner: this runner is stopping, so dial again shortly. Beside yamux once the link is up,
+    /// the agent keeps the link until its streams finish; in place of a challenge, the hello was
+    /// not taken. An agent that does not know it skips it or dials again later.
     Relink {},
 }
 
@@ -333,12 +337,19 @@ pub type Dialed = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// Dials `server`'s link.
 ///
 /// # Errors
-/// The address is bad, or the connection or upgrade fails.
+/// The address is bad, or the connection or upgrade fails or takes over [`DIAL_TIMEOUT`].
 pub async fn dial(server: &str) -> Result<Dialed, String> {
     let url = url(server)?;
     let tls = Connector::Rustls(Arc::new(crate::remote::tls_config()?));
-    let (ws, _) = tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(tls))
+    let dialing = tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(tls));
+    let (ws, _) = tokio::time::timeout(DIAL_TIMEOUT, dialing)
         .await
+        .map_err(|_| {
+            format!(
+                "cannot reach {url}: no answer in {}s",
+                DIAL_TIMEOUT.as_secs()
+            )
+        })?
         .map_err(|e| format!("cannot reach {url}: {e}"))?;
     Ok(ws)
 }

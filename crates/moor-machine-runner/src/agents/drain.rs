@@ -11,8 +11,9 @@ use super::Agents;
 const SETTLE: Duration = Duration::from_millis(500);
 
 impl Agents {
-    /// Stops taking links and tells every linked agent to dial again, then resolves once each
-    /// link has ended, or after `budget`. An agent ends its old link when its streams finish.
+    /// Tells every linked agent, and every agent that dials from now on, to dial again; resolves
+    /// once each link has ended, or after `budget`. An agent ends its old link when its streams
+    /// finish.
     pub async fn drain(&self, budget: Duration) {
         let mut report = self.links.report.subscribe();
         self.links.stopping.send_replace(true);

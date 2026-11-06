@@ -117,3 +117,62 @@ async fn a_hello_while_the_controller_is_away_is_admitted_once_it_answers() {
     let (_ws, _, answer) = handshake(&w, MACHINE, &w.key).await;
     assert!(matches!(answer, Frame::Welcome { .. }), "{answer:?}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn after_relink_refused_dials_retry_every_second_while_the_old_link_is_open() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let w = World {
+        server: format!("http://{}", listener.local_addr().unwrap()),
+        key: key.clone(),
+        links: Arc::default(),
+        dir: tempfile::tempdir().unwrap(),
+        agents: moor_machine_runner::Agents::new(&home.path().join("none.sock")),
+    };
+    let dir = agent_dir(&w, MACHINE, &key);
+    let machine = moor_machine_agent::Machine {
+        home: home.path().to_owned(),
+        shell: "/bin/sh".into(),
+        hooks: home.path().join("hooks"),
+        pool: None,
+        allow_exec: true,
+        sweep_grace: Duration::ZERO,
+    };
+    let state = dir.path().to_owned();
+    let agent = tokio::spawn(async move { run(&state, machine, &|_| {}).await });
+
+    let old = take(&listener).await;
+    let (ask, asks) = mpsc::channel(1);
+    tokio::spawn(link::drive(
+        old.socket,
+        link::Mode::Server,
+        asks,
+        |_| {},
+        std::future::pending(),
+    ));
+    let (opened, ch) = oneshot::channel();
+    ask.send(opened).await.unwrap();
+    let mut ch = ch.await.unwrap().unwrap();
+    let marker = home.path().join("started");
+    let script = format!("touch {}; sleep 30", marker.display());
+    let op = json!({"op": "exec", "box_id": 7, "env": [], "script": script, "timeout_secs": 60});
+    ops::write_line(&mut ch, &op).await.unwrap();
+    poll(|| marker.exists().then_some(())).await;
+
+    old.tell.send(Frame::Relink {}).await.unwrap();
+    let asked = Instant::now();
+    for _ in 0..3 {
+        let (refused, _) = listener.accept().await.unwrap();
+        drop(refused);
+    }
+    let _new = tokio::time::timeout(Duration::from_secs(10), take(&listener))
+        .await
+        .expect("the agent dialed a fourth time");
+    let took = asked.elapsed();
+    assert!(
+        took < Duration::from_millis(4500),
+        "admitted after {took:?}"
+    );
+    agent.abort();
+}

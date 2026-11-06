@@ -6,17 +6,25 @@ use std::sync::Arc;
 
 use moor_client::link::{self, Frame};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 use crate::{listen, pool, serve, status, Machine, Pool};
 
-/// Serves the runner's streams on `carried` until it ends, and why; none once the runner asked
-/// for a new link, with this one left to close once its streams finish.
+/// How a held link ended.
+pub(crate) enum Ended {
+    /// It closed, and why.
+    Closed(String),
+    /// The runner asked for a new link; this one serves its open streams until it closes.
+    Relinked(JoinHandle<String>),
+}
+
+/// Serves the runner's streams on `carried` until it closes or the runner asks for a new link.
 pub(crate) async fn hold(
     carried: link::Carried,
     machine: &Arc<Machine>,
     boxes: &Arc<listen::Boxes>,
     recent: &Arc<status::Recent>,
-) -> Option<String> {
+) -> Ended {
     let (open, asks) = mpsc::channel(16);
     let reporting = machine
         .pool
@@ -46,18 +54,19 @@ pub(crate) async fn hold(
         drained,
     ));
     let mut ends = Ends(Some(driving.abort_handle()));
-    let ended = tokio::select! {
+    let closed = tokio::select! {
         why = &mut driving => Some(why.unwrap_or_else(|e| e.to_string())),
         () = relink(carried.heard) => None,
     };
     if let Some(r) = reporting {
         r.abort();
     }
-    if ended.is_none() {
-        let _ = drain.send(());
-        ends.0 = None;
+    if let Some(why) = closed {
+        return Ended::Closed(why);
     }
-    ended
+    let _ = drain.send(());
+    ends.0 = None;
+    Ended::Relinked(driving)
 }
 
 /// Ends the link's yamux when dropped, as when the agent stops, unless it was let go to drain.
