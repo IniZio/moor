@@ -46,16 +46,16 @@ fn failed(e: &StoreError) -> ProxyHostError {
 
 impl KeptProxy {
     /// The Box's row, reserved first when it has none. A row is kept as it is, with its ports and
-    /// its delivered token, so a controller restart never makes a Box's forwarder start again.
+    /// its delivered token, so a controller restart never makes a Box's forwarder start again;
+    /// only a row from before the egress forwarder is given a forward port.
     fn row(&self, box_id: BoxId) -> Result<ProxyRow, ProxyHostError> {
         let store = &self.deps.store;
-        if let Some(row) = store.proxy(box_id).map_err(|e| failed(&e))? {
-            return Ok(row);
+        match store.proxy(box_id).map_err(|e| failed(&e))? {
+            Some(row) if row.forward_port.is_some() => return Ok(row),
+            Some(_) => store.give_forward_port(box_id, self.rng.as_ref()),
+            None => store.reserve(box_id, self.rng.as_ref()).map(drop),
         }
-        store
-            .reserve(box_id, self.rng.as_ref())
-            .map(drop)
-            .map_err(|e| failed(&e))?;
+        .map_err(|e| failed(&e))?;
         store
             .proxy(box_id)
             .map_err(|e| failed(&e))?

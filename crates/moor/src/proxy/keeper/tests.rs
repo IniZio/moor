@@ -400,3 +400,84 @@ fn an_ended_keeper_finishes_its_open_before_end_returns_and_keeps_nothing() {
     assert!(!kept.tick(), "an ended keeper does not tick again");
     assert_eq!(w.driver.tunnels().len(), 1, "and opens nothing more");
 }
+
+/// The controller's Proxy host over `w`, delivering a stand-in forwarder for the direct route.
+fn kept_proxy(w: &World) -> super::KeptProxy {
+    let binary = w.dir.path().join("moor-egress-forward");
+    std::fs::write(&binary, b"forwarder-bytes").unwrap();
+    let deps = Deps {
+        store: w.store.clone(),
+        driver: Arc::clone(&w.driver) as Arc<dyn Driver>,
+        clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
+        egress: None,
+        runner: w.dir.path().join("runner.sock"),
+        log: w.log.clone(),
+    };
+    super::KeptProxy {
+        deps: Arc::new(deps),
+        rng: Arc::new(FakeRng::default()),
+        vault_key: Some(crate::testing::cx::test_vault_key(w.dir.path())),
+        state_dir: None,
+        keepers: Box::leak(Box::<super::Keepers>::default()),
+        route: crate::proxy::route::EgressRoute::parse("wss://egress.test/egress").unwrap(),
+        key: zeroize::Zeroizing::new(b"egress-key".to_vec()),
+        binary,
+    }
+}
+
+#[test]
+fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it() {
+    use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec};
+    use moor_core::BoxPath;
+    use moor_schema::tables::Proxy;
+    use sea_query::{Expr, ExprTrait as _, Query};
+
+    use crate::store::db::DbExt as _;
+
+    let w = World::new([]);
+    let before = w.store.proxy(w.id).unwrap().unwrap();
+    w.store
+        .writer()
+        .run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::ForwardPort, Option::<i64>::None)
+                .and_where(Expr::col(Proxy::Box).eq(w.id.get())),
+        )
+        .unwrap();
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    w.driver
+        .put_file(&w.handle(), &environ, b"HOME=/home/box\0", 0o400)
+        .unwrap();
+    let host = kept_proxy(&w);
+    let spec = ProxySpec {
+        box_id: w.id,
+        box_handle: Some(w.handle()),
+        box_repo: None,
+        other_repos: Vec::new(),
+        rules: Vec::new(),
+        user: moor_core::user::UserId::new(1),
+    };
+    let ep = host.ensure(&spec).unwrap();
+    let after = w.store.proxy(w.id).unwrap().unwrap();
+    assert!(
+        after.forward_port.is_some(),
+        "the old row got a forward port"
+    );
+    assert_eq!(ep.forward_port, after.forward_port);
+    assert_eq!(
+        (after.box_port, after.egress_port),
+        (before.box_port, before.egress_port),
+        "its other ports are kept"
+    );
+    let delivered: Vec<String> = w
+        .driver
+        .puts()
+        .into_iter()
+        .map(|(_, path, _, _)| path.as_str().to_owned())
+        .collect();
+    assert!(
+        delivered.contains(&"/home/box/.moor/egress-forward.json".to_owned()),
+        "{delivered:?}"
+    );
+}
