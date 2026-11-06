@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
+use moor_core::request::RunnerAddr;
 use moor_machine_runner::{
     bind_broker, serve, serve_agents, serve_broker, serve_forwards, Agents, Config, Relay,
 };
@@ -30,6 +31,10 @@ struct Args {
     /// The controller's socket for the machine runner, `<state>/runner/runner.sock`.
     #[arg(long, env = "MOOR_RUNNER_SOCKET")]
     socket: PathBuf,
+    /// The address this runner reports to the controller as holding its links; `--socket` when
+    /// unset.
+    #[arg(long, value_name = "ADDR")]
+    advertise: Option<String>,
     /// Directory for the runner's per-Box host mirrors.
     #[arg(long)]
     state_dir: PathBuf,
@@ -142,15 +147,21 @@ fn resource(s: &str) -> Result<(String, usize), String> {
     Ok((name.to_owned(), cap))
 }
 
+/// The address `--advertise` names, else the controller socket's path.
+fn advertised(args: &Args) -> RunnerAddr {
+    let socket = || args.socket.to_string_lossy().into_owned();
+    RunnerAddr::new(args.advertise.clone().unwrap_or_else(socket))
+}
+
 /// Listens for machine agents on `addr` and serves their links in the background.
-async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
+async fn take_links(addr: SocketAddr, socket: &Path, runner: RunnerAddr) -> Result<Agents, String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("cannot listen for agents on {addr}: {e}"))?;
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner taking agent links on {addr}");
     }
-    let agents = Agents::new(socket);
+    let agents = Agents::new(socket, runner);
     let (forwards, uid) = forward_socket(socket)?;
     let serving = agents.clone();
     tokio::spawn(async move {
@@ -254,7 +265,7 @@ async fn main() -> ExitCode {
         eprintln!("moor-machine-runner listening on {addr}");
     }
     let linked = match args.agents {
-        Some(addr) => match take_links(addr, &args.socket).await {
+        Some(addr) => match take_links(addr, &args.socket, advertised(&args)).await {
             Ok(agents) => Some(agents),
             Err(e) => {
                 eprintln!("moor-machine-runner: {e}");

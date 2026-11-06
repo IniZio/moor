@@ -47,13 +47,13 @@ impl std::fmt::Debug for Agents {
 }
 
 impl Agents {
-    /// None linked yet; every change is reported to the controller at `socket`, which also
-    /// names this runner to it.
+    /// None linked yet; every change is reported to the controller at `socket`, naming this
+    /// runner as `runner`.
     #[must_use]
-    pub fn new(socket: &Path) -> Self {
+    pub fn new(socket: &Path, runner: RunnerAddr) -> Self {
         let client = Client::new(socket);
         let (tx, rx) = watch::channel(MachineLinksReq {
-            runner: RunnerAddr::new(socket.to_string_lossy()),
+            runner,
             draining: false,
             links: Vec::new(),
             box_memory: Vec::new(),

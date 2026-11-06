@@ -65,6 +65,7 @@ moor-machine-runner --socket <state dir>/runner/runner.sock \
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `box-mirror` and `box-put`. The runner needs no access to the controller's own socket. |
+| `--advertise ADDR` | `--socket` | The address the runner reports to the controller as holding its machines' links. |
 | `--state-dir` | | Where the runner keeps one host mirror and one record for each Box. |
 | `--listen` | `127.0.0.1:7700` | The address the Proxy routes to. |
 | `--agents ADDR` | none | Where machine agents dial in, at `/machines/link`. Without it, no machine can be reached. |
@@ -97,11 +98,11 @@ The runner stores and passes no secret. It reaches each machine only through
 the link its agent opened.
 
 The runner reports its links to the controller on every change and every 20
-seconds, naming itself, and the store records which runner holds each
-machine's link. The controller sends a machine's leases and status to that
-runner only. A link reads as `machine M is not linked` when no runner holds it,
-when its runner is shutting down, or when its runner has not reported for a
-minute.
+seconds, naming itself by `--advertise`, and the store records which runner
+holds each machine's link. The controller sends a machine's leases and status
+to that runner only. A link reads as `machine M is not linked` when no runner
+holds it, when its runner is shutting down, or when its runner has not reported
+for a minute.
 
 ## Seeing a machine's state
 
