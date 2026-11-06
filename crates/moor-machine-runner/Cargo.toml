@@ -68,6 +68,7 @@ moor-machine-agent = { path = "../moor-machine-agent" }
 moor-testkit = { path = "../moor-testkit" }
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
 ureq = { version = "3", default-features = false, features = ["json"] }
 
 [lints.rust]

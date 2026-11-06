@@ -5,14 +5,15 @@
     reason = "tests"
 )]
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::Shutdown;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{Shutdown, TcpListener};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
-use moor_client::forward::{Forward, Forwarding};
+use moor_client::forward::{Carried, Forward, Forwarding};
+use moor_client::link::reach::{Dial, Hello, Keyed};
 use moor_core::cache::CachePlan;
 use moor_core::name::BoxName;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -21,7 +22,9 @@ use moor_core::{BoxHandle, BoxId, ProviderId};
 use moor_client::link::reach::Runner;
 
 use super::{keep, MachineLink, Via};
-use crate::testing::driver::FakeDriver;
+use crate::testing::driver::{eventually, FakeDriver, LOCAL_PORT_OFFSET};
+
+const KEY: &str = "machine-service-key";
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
     fake.acquire(&AcquireReq {
@@ -82,13 +85,13 @@ fn opens_a_tunnel_per_port_then_asks_the_runner_to_serve_them() {
     let seen = runner(&socket, Forwarding::Up);
     let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let mut link = MachineLink::open(&driver, &h, &via(&at), &[8081, 3001]).expect("open");
+    let link = MachineLink::open(&driver, &h, &via(&at), &[8081, 3001]).expect("open");
     assert!(link.alive());
     let ports: Vec<u16> = driver.tunnels().iter().map(|t| t.box_port).collect();
     assert_eq!(ports, [8081, 3001]);
     let (req, _conn) = seen.recv().expect("runner asked");
     assert_eq!((req.box_id, req.machine_id), (7, 3));
-    assert_eq!(req.ports, [(8081, 28081), (3001, 23001)]);
+    assert_eq!(req.ports, [8081, 3001]);
 }
 
 #[test]
@@ -105,6 +108,10 @@ fn a_dead_link_is_reopened_and_close_ends_every_tunnel() {
     assert_eq!(driver.tunnels().len(), first, "a live link is left alone");
     let (_, held) = seen.recv().expect("runner asked");
     held.shutdown(Shutdown::Both).expect("runner lets go");
+    assert!(
+        eventually(|| !link.as_ref().is_some_and(MachineLink::alive)),
+        "the closed carrier was never noticed"
+    );
     keep(&mut link, Some(&at), open).expect("reopened");
     assert_eq!(
         driver.tunnels().len(),
@@ -209,4 +216,86 @@ fn a_refused_forward_carries_the_runner_reason() {
         .err()
         .expect("refused");
     assert_eq!((err.port, err.error.as_str()), (None, "mini is not linked"));
+}
+
+fn read_line<T: serde::de::DeserializeOwned>(conn: &mut impl Read) -> T {
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    while conn.read(&mut byte).expect("read") == 1 && byte[0] != b'\n' {
+        line.push(byte[0]);
+    }
+    serde_json::from_slice(&line).expect("line")
+}
+
+fn write_line(conn: &mut impl Write, value: &impl serde::Serialize) {
+    let mut out = serde_json::to_vec(value).expect("line");
+    out.push(b'\n');
+    conn.write_all(&out).expect("write");
+}
+
+/// Echoes every connection on a loopback port above the fake driver's tunnel offset; the Box
+/// port whose tunnel lands there.
+fn box_port_tunnel() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let host = listener.local_addr().expect("addr").port();
+    thread::spawn(move || {
+        for conn in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut out = conn.try_clone().expect("clone");
+                let _ = std::io::copy(&mut &conn, &mut out);
+            });
+        }
+    });
+    host.checked_sub(LOCAL_PORT_OFFSET)
+        .expect("an ephemeral port above the offset")
+}
+
+#[test]
+fn a_named_connection_is_dialed_back_across_the_network_and_piped_to_its_tunnel() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let at = Runner::Remote {
+        addr: listener.local_addr().expect("addr").to_string(),
+        key: KEY.to_owned(),
+    };
+    let box_port = box_port_tunnel();
+    let keyed = Keyed {
+        v: 1,
+        key: KEY.to_owned(),
+    };
+
+    let runner = thread::spawn(move || {
+        let (mut carrier, _) = listener.accept().expect("carrier");
+        assert_eq!(read_line::<Hello>(&mut carrier), Hello::Forwards(keyed));
+        let req: Forward = read_line(&mut carrier);
+        write_line(&mut carrier, &Forwarding::Up);
+        write_line(
+            &mut carrier,
+            &Carried::Conn {
+                n: 9,
+                port: box_port,
+            },
+        );
+        let (mut back, _) = listener.accept().expect("dial back");
+        let hello: Hello = read_line(&mut back);
+        back.write_all(b"ping").expect("machine bytes");
+        let mut got = [0u8; 4];
+        back.read_exact(&mut got).expect("box bytes");
+        (req, hello, got, carrier)
+    });
+    let driver = FakeDriver::new().reverse_tunnels();
+    let h = boxed(&driver);
+    let link = MachineLink::open(&driver, &h, &via(&at), &[box_port]).expect("open");
+    let (req, hello, got, _carrier) = runner.join().expect("runner");
+    assert_eq!(req.ports, [box_port], "the forward names Box ports only");
+    let dial = Dial {
+        v: 1,
+        key: KEY.to_owned(),
+        n: 9,
+    };
+    assert_eq!(hello, Hello::Conn(dial));
+    assert_eq!(
+        &got, b"ping",
+        "the bytes went through the Box port's tunnel and back"
+    );
+    assert!(link.alive());
 }

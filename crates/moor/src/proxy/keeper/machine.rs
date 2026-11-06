@@ -80,7 +80,7 @@ impl Kept {
         // opens on the next tick.
         let (_, runner) = reach.filter(|(id, _)| *id == enrolled)?;
         let now = runner.as_ref().ok().map(|(named, _)| named);
-        let fresh = !slot.link.as_mut().is_some_and(|l| l.holds(now));
+        let fresh = !slot.link.as_ref().is_some_and(|l| l.holds(now));
         let opened = keep(&mut slot.link, now, || {
             let (named, dialed) = runner.as_ref().map_err(|error| ForwardFailed {
                 port: None,

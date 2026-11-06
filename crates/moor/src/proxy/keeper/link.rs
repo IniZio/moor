@@ -2,12 +2,17 @@
 //! Box's ports at the same numbers on its own loopback.
 //!
 //! Each Box port gets a driver local tunnel to a free host loopback port. One held connection to
-//! the machine runner then serves every one of them back as the Box port on the machine's
-//! loopback.
+//! the machine runner, the carrier, has the machine listen on every Box port and names each
+//! connection the machine accepts; the keeper dials the runner back for it and pipes it to the
+//! port's tunnel.
 
-use std::io::{self, BufRead, BufReader, Read};
+use std::collections::HashMap;
+use std::io::{self, BufRead, BufReader};
+use std::net::{Ipv4Addr, Shutdown, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use moor_client::forward::{Forward, Forwarding};
+use moor_client::forward::{Carried, Forward, Forwarding};
 use moor_client::link::reach::{Runner, Service, StdConn};
 use moor_core::seam::driver::{Driver, LocalTunnel};
 use moor_core::seam::proc::Deadline;
@@ -47,6 +52,14 @@ pub(crate) struct MachineLink {
     carrier: StdConn,
     /// The runner it is open on, as the link row named it.
     runner: Runner,
+    /// Set once the runner closed the carrier.
+    ended: Arc<AtomicBool>,
+}
+
+impl Drop for MachineLink {
+    fn drop(&mut self) {
+        let _ = self.carrier.shutdown(Shutdown::Both);
+    }
 }
 
 impl MachineLink {
@@ -71,43 +84,98 @@ impl MachineLink {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let forwards: Vec<(u16, u16)> = ports
-            .iter()
-            .zip(&tunnels)
-            .map(|(p, t)| (*p, t.host_port))
-            .collect();
         let failed = |error: String| ForwardFailed { port: None, error };
         let req = Forward {
             box_id: via.box_id,
             machine_id: via.machine_id,
-            ports: forwards,
+            ports: ports.to_vec(),
         };
-        let carrier = ask_runner(via.dialed, &req).map_err(failed)?;
+        let (carrier, lines) = ask_runner(via.dialed, &req).map_err(failed)?;
+        let to = ports
+            .iter()
+            .copied()
+            .zip(tunnels.iter().map(|t| t.host_port));
+        let ended = Arc::new(AtomicBool::new(false));
+        let dial = DialBack {
+            runner: via.dialed.clone(),
+            tunnels: to.collect(),
+            ended: Arc::clone(&ended),
+        };
+        std::thread::Builder::new()
+            .name("moor-machine-forwards".to_owned())
+            .spawn(move || dial.serve(lines))
+            .map_err(|e| failed(e.to_string()))?;
         Ok(Self {
             tunnels,
             carrier,
             runner: via.named.clone(),
+            ended,
         })
     }
 
     /// True while every tunnel and what serves them still run.
-    pub(crate) fn alive(&mut self) -> bool {
-        let carried = matches!(
-            self.carrier.read(&mut [0u8; 1]),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock
-        );
-        carried && self.tunnels.iter().all(|t| t.tunnel.alive())
+    pub(crate) fn alive(&self) -> bool {
+        !self.ended.load(Ordering::SeqCst) && self.tunnels.iter().all(|t| t.tunnel.alive())
     }
 
     /// True while it is alive and open on `now`, the runner the link row names; an unknown
     /// runner keeps it, so a store hiccup cuts no forwards.
-    pub(crate) fn holds(&mut self, now: Option<&Runner>) -> bool {
+    pub(crate) fn holds(&self, now: Option<&Runner>) -> bool {
         self.alive() && now.is_none_or(|now| *now == self.runner)
     }
 }
 
-/// Sends `req` to `runner`; the connection to hold while the forwards are up.
-fn ask_runner(runner: &Runner, req: &Forward) -> Result<StdConn, String> {
+/// What answers the connections a carrier names.
+struct DialBack {
+    /// The runner to dial back.
+    runner: Runner,
+    /// The host port of each Box port's tunnel.
+    tunnels: HashMap<u16, u16>,
+    /// Set once the carrier ends.
+    ended: Arc<AtomicBool>,
+}
+
+impl DialBack {
+    /// Dials back for each connection `lines` names until the carrier ends.
+    fn serve(self, mut lines: BufReader<StdConn>) {
+        let mut line = String::new();
+        while lines.read_line(&mut line).is_ok_and(|read| read > 0) {
+            if let Ok(Carried::Conn { n, port }) = serde_json::from_str(&line) {
+                if let Some(&host) = self.tunnels.get(&port) {
+                    let runner = self.runner.clone();
+                    std::thread::spawn(move || pipe(&runner, n, host));
+                }
+            }
+            line.clear();
+        }
+        self.ended.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Dials `runner` back for connection `n` and copies both ways between it and host port
+/// `host`, the Box port's tunnel.
+fn pipe(runner: &Runner, n: u64, host: u16) {
+    let Ok(back) = crate::proxy::links::connect(runner, Service::Conn(n), RUNNER_CONNECT) else {
+        return;
+    };
+    let Ok(tunnel) = TcpStream::connect((Ipv4Addr::LOCALHOST, host)) else {
+        return;
+    };
+    let (Ok(mut back_rx), Ok(mut tunnel_tx)) = (back.try_clone(), tunnel.try_clone()) else {
+        return;
+    };
+    let up = std::thread::spawn(move || {
+        let _ = io::copy(&mut back_rx, &mut tunnel_tx);
+        let _ = tunnel_tx.shutdown(Shutdown::Write);
+    });
+    let (mut back, mut tunnel) = (back, tunnel);
+    let _ = io::copy(&mut tunnel, &mut back);
+    let _ = back.shutdown(Shutdown::Write);
+    let _ = up.join();
+}
+
+/// Sends `req` to `runner`; the connection to hold while the forwards are up, and its lines.
+fn ask_runner(runner: &Runner, req: &Forward) -> Result<(StdConn, BufReader<StdConn>), String> {
     let unreachable = |e: io::Error| format!("the machine runner went away: {e}");
     let mut conn = crate::proxy::links::connect(runner, Service::Forwards, RUNNER_CONNECT)?;
     conn.set_read_timeout(Some(RUNNER_ANSWER.0))
@@ -115,14 +183,13 @@ fn ask_runner(runner: &Runner, req: &Forward) -> Result<StdConn, String> {
     let mut line = serde_json::to_vec(req).map_err(|e| e.to_string())?;
     line.push(b'\n');
     io::Write::write_all(&mut conn, &line).map_err(unreachable)?;
+    let mut lines = BufReader::new(conn.try_clone().map_err(unreachable)?);
     let mut answer = String::new();
-    BufReader::new(&mut conn)
-        .read_line(&mut answer)
-        .map_err(unreachable)?;
+    lines.read_line(&mut answer).map_err(unreachable)?;
     match serde_json::from_str(&answer) {
         Ok(Forwarding::Up) => {
-            conn.set_nonblocking(true).map_err(unreachable)?;
-            Ok(conn)
+            conn.set_read_timeout(None).map_err(unreachable)?;
+            Ok((conn, lines))
         }
         Ok(Forwarding::Refused { reason }) => Err(reason),
         Err(_) => Err("the machine runner answered something else".to_owned()),
@@ -139,7 +206,7 @@ pub(crate) fn keep(
     now: Option<&Runner>,
     open: impl FnOnce() -> Result<MachineLink, ForwardFailed>,
 ) -> Result<(), ForwardFailed> {
-    if link.as_mut().is_some_and(|l| l.holds(now)) {
+    if link.as_ref().is_some_and(|l| l.holds(now)) {
         return Ok(());
     }
     *link = None;

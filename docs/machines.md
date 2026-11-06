@@ -112,6 +112,12 @@ ssh words are built. A link reads as `machine M is not linked` when no runner
 holds it, when its runner is shutting down, or when its runner has not reported
 for a minute.
 
+A port forward asks the runner for the Box's ports and holds that connection.
+The machine listens on each port on its loopback. For each connection it
+accepts, the runner sends a `conn` line on the held connection. The controller
+then dials the runner once for that connection and pipes it to its own tunnel
+to the Box port. A connection with no dial within 30 seconds is closed.
+
 ## Seeing a machine's state
 
 `moor user machine ls` prints one line per machine of yours: its name, whether
