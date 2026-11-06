@@ -29,6 +29,9 @@ pub(crate) const EGRESS_KEY: &str = "MOOR_EGRESS_KEY";
 /// The variable naming the shared egress Proxy's `/egress` address, `wss://`, that Boxes dial.
 /// Unset, the controller runs the shared Proxy itself and each Box reaches it over its tunnel.
 pub(crate) const EGRESS_URL: &str = "MOOR_EGRESS_URL";
+/// The key the shared egress Proxy sends the machine service, which checks it before it trusts
+/// the Box the request names.
+pub(crate) const MACHINE_SERVICE_KEY: &str = "MOOR_MACHINE_SERVICE_KEY";
 
 /// The variable naming the egress forwarder binary the controller delivers into Boxes; unset,
 /// `moor-egress-forward` beside `moor`.

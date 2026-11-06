@@ -190,6 +190,37 @@ fn a_machine_service_named_by_dns_is_looked_up_when_a_box_calls_it() {
 }
 
 #[test]
+fn the_machine_service_gets_the_service_key_and_never_one_the_box_sent() {
+    let w = World::new();
+    let service = Plain::start();
+    let mut cfg = w.config(10.0, 10.0, 64);
+    cfg.guard_exempt.push(service.addr);
+    cfg.machine = Some(MachineRoute {
+        key: Some("the-key".into()),
+        ..MachineRoute::parse(&format!("{MACHINE}={}", service.addr)).unwrap()
+    });
+    let server = Server::start(cfg).unwrap();
+    let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &format!(
+            "GET http://{MACHINE}/mcp HTTP/1.1\r\nHost: {MACHINE}\r\nX-Moor-Service-Key: forged\r\n\r\n"
+        ),
+    );
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    let heads = service.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert!(
+        head.ends_with("X-Moor-Service-Key: the-key\r\n\r\n"),
+        "{head}"
+    );
+    assert!(!head.contains("forged"), "{head}");
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
 fn a_machine_service_flag_takes_an_ip_or_a_dns_name_with_a_port() {
     for ok in [
         "m=127.0.0.1:7700",

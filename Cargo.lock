@@ -3389,6 +3389,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ssh-key",
+ "subtle",
  "tempfile",
  "tokio",
  "ureq",

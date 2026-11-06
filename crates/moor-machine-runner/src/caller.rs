@@ -6,6 +6,20 @@ use moor_core::config::check_exclude;
 use moor_core::BoxId;
 use rmcp::ErrorData;
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq as _;
+
+/// Header carrying the key a Proxy outside the runner's host proves itself with.
+const SERVICE_KEY: &str = "X-Moor-Service-Key";
+/// The key every caller must send in [`SERVICE_KEY`], once the runner is started with one.
+static KEY: std::sync::OnceLock<Box<str>> = std::sync::OnceLock::new();
+
+/// Makes every later request name its Box only alongside `key`. The identity headers come
+/// from whichever Proxy reached the runner, so once it listens beyond loopback they are
+/// trusted only from a caller holding the key.
+pub(crate) fn require_key(key: &str) -> Result<(), String> {
+    KEY.set(key.into())
+        .map_err(|_| "the service key is already set".to_owned())
+}
 
 /// Header carrying the calling Box's numeric store id.
 const BOX: &str = "X-Moor-Box";
@@ -140,6 +154,7 @@ fn machine_id(headers: &HeaderMap) -> Result<Option<i64>, ErrorData> {
 
 /// The calling Box's id from the request headers.
 fn box_id(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
+    keyed(headers, KEY.get().map(AsRef::as_ref))?;
     let raw = headers
         .get(BOX)
         .and_then(|v| v.to_str().ok())
@@ -151,6 +166,17 @@ fn box_id(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
         .filter(|n| *n > 0)
         .map(BoxId::new)
         .ok_or_else(|| refused(format!("header {BOX} is not a Box id: {raw}")))
+}
+
+/// Refuses `headers` unless they carry `key`, compared in constant time; none lets any through.
+fn keyed(headers: &HeaderMap, key: Option<&str>) -> Result<(), ErrorData> {
+    let Some(key) = key else { return Ok(()) };
+    let sent = headers.get(SERVICE_KEY).map_or(&[][..], |v| v.as_bytes());
+    if bool::from(sent.ct_eq(key.as_bytes())) {
+        Ok(())
+    } else {
+        Err(refused(format!("missing or wrong header {SERVICE_KEY}")))
+    }
 }
 
 /// An MCP error for a request the runner will not serve.

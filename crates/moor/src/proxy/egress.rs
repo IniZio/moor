@@ -79,12 +79,20 @@ pub(crate) const PATH: &str = "/egress";
 /// The machine service plain requests for `host` go to, as `--machine-service HOST=ADDR` names
 /// it. `upstream` is `host:port` and may be a DNS name, looked up on each connection, so the
 /// Proxy can run in another pod than the service.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MachineRoute {
     /// Name a Box requests over `http://`, compared without case.
     pub(crate) host: String,
     /// Where those requests go.
     pub(crate) upstream: String,
+    /// Sent in `X-Moor-Service-Key` on each request, so the service trusts the Box headers.
+    pub(crate) key: Option<Arc<str>>,
+}
+
+impl std::fmt::Debug for MachineRoute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}={}", self.host, self.upstream)
+    }
 }
 
 impl MachineRoute {
@@ -94,6 +102,7 @@ impl MachineRoute {
         (!host.is_empty() && wire::authority_ok(upstream)).then(|| Self {
             host: host.to_owned(),
             upstream: upstream.to_owned(),
+            key: None,
         })
     }
 
