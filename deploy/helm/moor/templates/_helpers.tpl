@@ -46,6 +46,17 @@ app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{ printf "moor machine service:%s" (required "egress.key is required when egress.enabled" .Values.egress.key) | sha256sum }}
 {{- end -}}
 
+{{/* Where Boxes dial the egress Proxy: egress.url, else /egress on the gate ingress, which must then exist. */}}
+{{- define "moor.egressUrl" -}}
+{{- if .Values.egress.url -}}
+{{ .Values.egress.url }}
+{{- else if and .Values.gate.enabled .Values.gate.ingress.enabled -}}
+wss://{{ required "host is required" .Values.host }}/egress
+{{- else -}}
+{{ fail "egress.enabled needs gate.ingress.enabled, which serves /egress, or egress.url naming where Boxes reach the egress Service" }}
+{{- end -}}
+{{- end -}}
+
 {{/* The name the ledger certificate is issued for and the egress pods dial. */}}
 {{- define "moor.ledgerHost" -}}
 {{ .Release.Name }}-ledger.{{ .Release.Namespace }}.svc

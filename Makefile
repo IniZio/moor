@@ -74,6 +74,8 @@ chart:
 	helm lint --strict $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml
 	helm template moor $(CHART) $(CHART_VALUES) >/dev/null
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
 
 # The two gates that CI runs before any test, so a push that fails one never reaches the tests.
 prepush:

@@ -38,6 +38,14 @@ spec:
     spec:
       hostUsers: false
       automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "moor.egressLabels" . | nindent 20 }}
       # Open tunnels get the whole --grace to finish before Kubernetes kills the pod.
       terminationGracePeriodSeconds: {{ add .Values.egress.graceSecs 30 }}
       securityContext:
@@ -85,8 +93,10 @@ spec:
             preStop:
               exec:
                 command: [sleep, "10"]
+          # Ready only once it has learned the open Boxes from the ledger, so a rollout during a
+          # controller deploy waits and the old pods keep serving.
           readinessProbe:
-            httpGet: { path: /ready, port: egress }
+            httpGet: { path: /synced, port: egress }
             periodSeconds: 5
           {{- with .Values.egress.resources }}
           resources: {{- toYaml . | nindent 12 }}
@@ -104,6 +114,16 @@ spec:
               - { key: ledger-ca.pem, path: ledger-ca.pem }
         - name: egress-state
           emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-egress
+  labels: {{- include "moor.egressLabels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {{- include "moor.egressLabels" . | nindent 6 }}
 ---
 apiVersion: v1
 kind: Service

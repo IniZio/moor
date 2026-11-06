@@ -124,7 +124,7 @@ spec:
             {{- end }}
             {{- if .Values.egress.enabled }}
             - name: MOOR_EGRESS_URL
-              value: {{ .Values.egress.url | default (printf "wss://%s/egress" (required "host is required" .Values.host)) | quote }}
+              value: {{ include "moor.egressUrl" . | quote }}
             - name: MOOR_EGRESS_KEY
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-secrets, key: egress-key }
