@@ -163,6 +163,19 @@ impl Memory {
         })
     }
 
+    /// Whether a Box needing `needed_mib` could not fit even with every running Box gone, given
+    /// the MiB they hold. Not knowing what they hold, or a Box still starting, says no.
+    #[must_use]
+    pub const fn beyond_reach(&self, needed_mib: u64, held_mib: Option<u64>) -> bool {
+        match held_mib {
+            Some(held) if self.starting == 0 => {
+                self.available_mib.saturating_add(held)
+                    < needed_mib.saturating_add(ALONE_MARGIN_MIB)
+            }
+            _ => false,
+        }
+    }
+
     /// Why an asleep Box does not resume at `now`, unix seconds; `None` when it may.
     ///
     /// It needs `ask.needed_mib` free above the reserve, or, with nothing running,

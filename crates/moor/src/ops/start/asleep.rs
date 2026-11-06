@@ -43,6 +43,9 @@ pub(super) fn wake(
             return Err(e);
         }
         relaunch::store_prompt(store, req, id)?;
+        if req.prompt.is_some() {
+            store.set_held_prompt(id, req.prompt.as_deref())?;
+        }
         return Ok(Woken::Queued);
     }
     if machine_asleep {

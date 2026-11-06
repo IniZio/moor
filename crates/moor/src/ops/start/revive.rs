@@ -181,7 +181,7 @@ pub(crate) fn launch_after_retry(
     let req = StartReq {
         name: row.name.clone(),
         prompt: row.prompt.clone(),
-        issue: None,
+        issue: row.issue.clone(),
         base: None,
         model: None,
         node: None,

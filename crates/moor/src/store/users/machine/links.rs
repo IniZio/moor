@@ -142,6 +142,21 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// The MiB of host memory Box `id` holds, as its provider last reported; none when it did not say.
+    pub(crate) fn box_host_memory(&self, id: BoxId) -> Result<Option<u64>, StoreError> {
+        let conn = self.reader()?;
+        let stored = conn
+            .row(
+                Query::select()
+                    .column(MachineBoxMemory::HostMemoryMib)
+                    .from(MachineBoxMemory::Table)
+                    .and_where(Expr::col(MachineBoxMemory::BoxId).eq(id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(mib(stored))
+    }
+
     /// The MiB Box `id` needs to resume, as its provider last reported; none when it did not say.
     pub(crate) fn resume_memory_mib(&self, id: BoxId) -> Result<Option<u64>, StoreError> {
         let conn = self.reader()?;

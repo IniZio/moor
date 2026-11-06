@@ -1,6 +1,6 @@
 //! The one queue on a node: what lets a Box resume, and in what order Boxes leave it.
 
-use moor_core::domain::box_state::BoxLifecycle::{self, Pending, Ready};
+use moor_core::domain::box_state::BoxLifecycle::{self, Asleep, Pending, Ready};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::request::BoxHostMemory;
 use moor_core::seam::driver::DriverError;
@@ -79,7 +79,7 @@ fn a_ceiling_far_above_real_use_resumes_beside_a_light_box_once_its_provider_say
 fn only_asleep_boxes_and_too_little_memory_leave_the_head_waiting_with_its_reason_and_place() {
     let (w, hv) = live_world(32_768);
     let first = asleep(&w, "first", CEILING);
-    let second = asleep(&w, "second", 1024);
+    let second = asleep(&w, "second", 16 * 1024);
     tick(&w, hv, 8192, 0, 0);
     assert!(wake_up(&w, first).is_err());
     assert!(wake_up(&w, second).is_err());
@@ -287,4 +287,117 @@ fn a_close_with_room_still_wakes_and_closes_the_box() {
     };
     close::run(&w.cx, &req).unwrap();
     assert_eq!(lifecycle(&w, shut), Closed);
+}
+
+/// What the provider reports each of `boxes` holds on the host.
+fn holding(w: &World, hv: i64, boxes: &[(BoxId, u64)]) {
+    let store = w.cx.store().unwrap();
+    let controller = store.controller_id().unwrap();
+    let rows: Vec<BoxHostMemory> = boxes
+        .iter()
+        .map(|(id, mib)| BoxHostMemory {
+            machine_id: hv,
+            controller: controller.clone(),
+            box_id: *id,
+            host_memory_mib: *mib,
+            resume_memory_mib: None,
+        })
+        .collect();
+    store.set_box_memory(&rows).unwrap();
+}
+
+/// A head too big for `hv`, a small Box behind it, both waiting, and one Box up holding `held`.
+fn stuck_queue(held: Option<u64>) -> (World, i64, BoxId, BoxId, BoxId) {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let small = asleep(&w, "small", 1024);
+    let up = started(&w, "up");
+    let (w, _) = agents_report(w, &[], &[up]);
+    if let Some(mib) = held {
+        holding(&w, hv, &[(up, mib)]);
+    }
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    assert!(wake_up(&w, small).is_err());
+    (w, hv, big, small, up)
+}
+
+#[test]
+fn a_small_box_passes_a_head_that_could_not_fit_even_with_nothing_running() {
+    let (w, hv, big, small, _) = stuck_queue(Some(1024));
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Pending, Ready]);
+}
+
+#[test]
+fn no_box_passes_a_head_that_stopping_the_running_boxes_would_fit() {
+    let (w, hv, big, small, _) = stuck_queue(Some(16 * 1024));
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Pending, Pending]);
+}
+
+#[test]
+fn no_box_passes_when_a_running_box_does_not_say_what_it_holds() {
+    let (w, hv, big, small, _) = stuck_queue(None);
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Pending, Pending]);
+}
+
+#[test]
+fn passing_stops_once_the_head_could_fit() {
+    let (w, hv, big, small, up) = stuck_queue(Some(1024));
+    holding(&w, hv, &[(up, 16 * 1024)]);
+    tick(&w, hv, with_free(8192), 0, 0);
+    assert_eq!(states(&w, &[big, small]), [Pending, Pending]);
+}
+
+#[test]
+fn nothing_is_suspended_for_a_head_that_could_not_fit_even_so() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let other = started(&w, "other");
+    idle(&w, other);
+    let (w, _) = agents_report(w, &[other], &[]);
+    holding(&w, hv, &[(other, 1024)]);
+    tick(&w, hv, with_free(1024), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    for _ in 0..4 {
+        tick(&w, hv, with_free(1024), 0, 0);
+    }
+    assert_eq!(lifecycle(&w, other), Ready);
+}
+
+#[test]
+fn an_idle_box_is_still_suspended_for_a_head_that_stopping_it_would_fit() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    let other = started(&w, "other");
+    idle(&w, other);
+    let (w, _) = agents_report(w, &[other], &[]);
+    holding(&w, hv, &[(other, 20 * 1024)]);
+    tick(&w, hv, with_free(1024), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    tick(&w, hv, with_free(1024), 0, 0);
+    assert_eq!(lifecycle(&w, other), Asleep);
+}
+
+#[test]
+fn asleep_since_stays_when_a_waiting_box_is_only_given_a_reason() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    tick(&w, hv, with_free(1024), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    let at = |w: &World| {
+        w.cx.store()
+            .unwrap()
+            .box_row(big)
+            .unwrap()
+            .unwrap()
+            .boxed
+            .unwrap()
+            .updated_at
+    };
+    let before = at(&w);
+    tick(&w, hv, with_free(1024), 0, 0);
+    assert_eq!(at(&w), before);
 }

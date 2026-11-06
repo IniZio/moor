@@ -70,8 +70,38 @@ fn revive(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<bool, Comm
         let up_at = now(cx);
         let after = revive_after_wake(cx, store, row.id)?;
         tell_after_suspend(cx, store, row, up_at, after)?;
+        give_held_prompt(cx, store, row, after)?;
     }
     Ok(woke.any)
+}
+
+/// Gives the agent what a start that had to queue asked of it, once. An agent that started fresh
+/// already had it as its first prompt, and one the Box did not answer for keeps it waiting.
+pub(crate) fn give_held_prompt(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    after: AfterWake,
+) -> Result<(), CommandError> {
+    let Some(text) = store.held_prompt(row.id)? else {
+        return Ok(());
+    };
+    let fresh = row.agent_session_id.as_deref().is_none_or(str::is_empty);
+    match after {
+        AfterWake::Unknown => return Ok(()),
+        AfterWake::Relaunched if fresh => {}
+        AfterWake::Intact | AfterWake::Relaunched => {
+            if let Err(e) = crate::ops::steer::tell(cx, store, row, text) {
+                cx.warn(Warning {
+                    code: "note_failed".to_owned(),
+                    message: format!("cannot give {} its prompt: {}", row.name.as_str(), e.error),
+                });
+                return Ok(());
+            }
+        }
+    }
+    store.set_held_prompt(row.id, None)?;
+    Ok(())
 }
 
 /// Tells the agent of a Box that stopped mid-turn, once, what that cost it and to carry on. The

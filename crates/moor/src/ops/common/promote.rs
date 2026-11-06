@@ -14,9 +14,9 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
-use crate::ops::common::resume_gate::{room_to_wake, Turn};
+use crate::ops::common::resume_gate::{beyond_reach, room_to_wake, Turn};
 use crate::ops::common::wake::{wait_for_room, wake_in_turn};
-use crate::ops::start::revive_after_wake;
+use crate::ops::start::{launch_after_retry, revive_after_wake};
 use crate::store::{BoxRow, Store};
 
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
@@ -24,7 +24,7 @@ pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
 /// Starts or wakes the Boxes pending on `node`, in queue order, while it has room for them. On a
 /// node that reports memory the pass ends at the first Box that still waits for room, so none
-/// behind it jumps ahead.
+/// behind it jumps ahead, unless that Box is beyond reach.
 ///
 /// Returns the names of the Boxes that left Pending, in order. Best effort: a Box that cannot
 /// be started, or an error that stops the pass, becomes a warning and the pass ends with what it did.
@@ -48,7 +48,11 @@ fn promote_into(
     promoted: &mut Vec<BoxName>,
 ) -> Result<(), CommandError> {
     let (all, _) = crate::ops::common::node::nodes(cx)?;
-    let reports_memory = all.iter().any(|n| &n.name == node && n.memory.is_some());
+    let reporting = all
+        .iter()
+        .find(|n| &n.name == node)
+        .filter(|n| n.memory.is_some());
+    let reports_memory = reporting.is_some();
     for id in store.pending_on(node)? {
         let Some(row) = store.box_row(id)? else {
             continue;
@@ -73,8 +77,16 @@ fn promote_into(
                     break;
                 }
             }
-            Promotion::WaitsForRoom if reports_memory => break,
-            Promotion::WaitsForRoom | Promotion::Skipped => {}
+            Promotion::WaitsForRoom => {
+                let passable = match reporting.and_then(|n| Some((n, n.memory?))) {
+                    Some((n, memory)) => beyond_reach(store, n, &memory, &row)?,
+                    None => true,
+                };
+                if !passable {
+                    break;
+                }
+            }
+            Promotion::Skipped => {}
         }
     }
     Ok(())
@@ -143,7 +155,8 @@ fn promote_one(
     } else if gone {
         replace_machine(cx, store, &row, cfg)
     } else {
-        provision(cx, store, id, Entry::Waiting, cfg).map(|_| ())
+        provision(cx, store, id, Entry::Waiting, cfg)
+            .and_then(|_| launch_after_retry(cx, store, id).map(drop))
     };
     if let Err(e) = started {
         let still_waits =

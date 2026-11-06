@@ -549,6 +549,7 @@ mod disk_alert;
 mod keeper;
 mod pressure;
 mod queue;
+mod queued_prompt;
 mod stored_check;
 
 #[test]

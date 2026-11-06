@@ -289,7 +289,9 @@ fn write_box(
         }
         sets.extend(input_handle_sets(input, &sets));
     }
-    sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
+    if d.box_input.is_some() {
+        sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
+    }
     if sets.iter().any(|(c, _)| *c == Boxes::Handle) {
         super::proxy::forget_egress_delivery(tx, id)?;
     }

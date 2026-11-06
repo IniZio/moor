@@ -123,6 +123,36 @@ impl Store {
         Ok(())
     }
 
+    /// Holds `prompt` for Box `id`'s agent until a wake can give it; `None` clears it.
+    pub(crate) fn set_held_prompt(
+        &self,
+        id: BoxId,
+        prompt: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::HeldPrompt, prompt)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+        )?;
+        Ok(())
+    }
+
+    /// The prompt held for Box `id`'s agent.
+    pub(crate) fn held_prompt(&self, id: BoxId) -> Result<Option<String>, StoreError> {
+        let conn = self.reader()?;
+        let held = conn
+            .row(
+                Query::select()
+                    .column(Boxes::HeldPrompt)
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(held.flatten())
+    }
+
     /// Stores what Box `id` holds, or that nothing is known of it.
     pub(crate) fn set_suspend_check(
         &self,
