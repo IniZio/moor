@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 /// The scheme of a TLS ledger address.
@@ -24,6 +24,17 @@ pub(crate) enum Endpoint {
     Tls(Tls),
 }
 
+/// The PEM files a Proxy dials a TLS ledger with.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TlsFiles<'a> {
+    /// The CA bundle the controller's certificate must chain to.
+    pub(crate) ca: &'a Path,
+    /// The client certificate the Proxy presents, which the ledger CA signed.
+    pub(crate) cert: &'a Path,
+    /// The private key of `cert`.
+    pub(crate) key: &'a Path,
+}
+
 /// A TLS ledger address and the client config that checks it.
 #[derive(Clone)]
 pub(crate) struct Tls {
@@ -31,7 +42,7 @@ pub(crate) struct Tls {
     host: ServerName<'static>,
     /// The port to dial.
     port: u16,
-    /// Trusts only the CA bundle it was given.
+    /// Trusts only the CA bundle it was given, and presents the client certificate.
     config: Arc<ClientConfig>,
 }
 
@@ -47,16 +58,20 @@ pub(crate) trait Duplex: Read + Write + Send {}
 impl<T: Read + Write + Send> Duplex for T {}
 
 impl Endpoint {
-    /// `ledger`, a unix socket path or `tls://host:port`. `ca` is the PEM bundle that checks a
-    /// TLS controller's certificate; a TLS address needs it and a socket path takes none.
-    pub(crate) fn parse(ledger: &str, ca: Option<&Path>) -> Result<Self, String> {
+    /// `ledger`, a unix socket path or `tls://host:port`. A TLS address needs `tls`, and a
+    /// socket path takes none.
+    pub(crate) fn parse(ledger: &str, tls: Option<TlsFiles<'_>>) -> Result<Self, String> {
         let Some(addr) = ledger.strip_prefix(TLS) else {
-            if ca.is_some() {
-                return Err("a CA bundle only applies to a tls:// ledger".to_owned());
+            if tls.is_some() {
+                return Err(
+                    "a CA bundle and client certificate only apply to a tls:// ledger".to_owned(),
+                );
             }
             return Ok(Self::Unix(ledger.into()));
         };
-        let ca = ca.ok_or("a tls:// ledger needs a CA bundle to check the controller")?;
+        let tls = tls.ok_or(
+            "a tls:// ledger needs a CA bundle to check the controller and a client certificate to present",
+        )?;
         let (host, port) = addr
             .rsplit_once(':')
             .ok_or_else(|| format!("{ledger}: no port"))?;
@@ -69,7 +84,7 @@ impl Endpoint {
         Ok(Self::Tls(Tls {
             host,
             port,
-            config: Arc::new(client_config(ca)?),
+            config: Arc::new(client_config(tls)?),
         }))
     }
 
@@ -113,8 +128,9 @@ impl Tls {
     }
 }
 
-/// A client config that trusts only the certificates in the PEM file `ca`.
-fn client_config(ca: &Path) -> Result<ClientConfig, String> {
+/// A client config that trusts only the certificates in `tls.ca` and presents `tls.cert`.
+fn client_config(tls: TlsFiles<'_>) -> Result<ClientConfig, String> {
+    let TlsFiles { ca, cert, key } = tls;
     let bad = |e: &dyn std::fmt::Display| format!("CA bundle {}: {e}", ca.display());
     let certs = CertificateDer::pem_file_iter(ca)
         .map_err(|e| bad(&e))?
@@ -125,8 +141,21 @@ fn client_config(ca: &Path) -> Result<ClientConfig, String> {
     if added == 0 {
         return Err(bad(&"holds no certificate"));
     }
+    let chain = CertificateDer::pem_file_iter(cert)
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|e| format!("client certificate {}: {e}", cert.display()))?;
+    if chain.is_empty() {
+        return Err(format!(
+            "client certificate {} holds no certificate",
+            cert.display()
+        ));
+    }
+    let key = PrivateKeyDer::from_pem_file(key)
+        .map_err(|e| format!("client key {}: {e}", key.display()))?;
     ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .with_safe_default_protocol_versions()
-        .map_err(|e| bad(&e))
-        .map(|b| b.with_root_certificates(roots).with_no_client_auth())
+        .map_err(|e| bad(&e))?
+        .with_root_certificates(roots)
+        .with_client_auth_cert(chain, key)
+        .map_err(|e| format!("the client key does not fit its certificate: {e}"))
 }

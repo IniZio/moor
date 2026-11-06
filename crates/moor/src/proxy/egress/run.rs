@@ -1,11 +1,12 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
 //! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
-//! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--machine-service HOST=ADDR`, `--grace SECS`,
+//! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--ledger-cert PEM`, `--ledger-key PEM`,
+//! `--machine-service HOST=ADDR`, `--grace SECS`,
 //! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N` and `--warm-every SECS`, and the ledger key in
 //! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
 //! through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
-//! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
+//! `--ledger-ca`, presenting the client certificate `--ledger-cert` with its key `--ledger-key`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
 //! or SIGINT, or once its Unix socket is removed or replaced, it drains, then exits.
 
 use std::ffi::OsString;
@@ -23,7 +24,7 @@ use super::{Config, Listen, MachineRoute, Rate, Server, Warm};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY};
 use crate::ledger_dir;
-use crate::proxy::ledger::Endpoint;
+use crate::proxy::ledger::{Endpoint, TlsFiles};
 
 /// How long open tunnels get to finish after SIGTERM, unless `--grace` says otherwise.
 const GRACE: Duration = Duration::from_secs(300);
@@ -45,6 +46,10 @@ pub(crate) struct Args {
     pub(crate) ledger: Option<String>,
     /// The CA bundle that checks a TLS ledger's certificate.
     pub(crate) ledger_ca: Option<PathBuf>,
+    /// The client certificate a TLS ledger checks.
+    pub(crate) ledger_cert: Option<PathBuf>,
+    /// The private key of `ledger_cert`.
+    pub(crate) ledger_key: Option<PathBuf>,
     /// The machine service plain requests for its host go to.
     pub(crate) machine: Option<MachineRoute>,
     /// How long open tunnels get after SIGTERM.
@@ -69,6 +74,8 @@ impl Args {
             listen: None,
             ledger: None,
             ledger_ca: None,
+            ledger_cert: None,
+            ledger_key: None,
             machine: None,
             grace: GRACE,
             rate: 20.0,
@@ -91,6 +98,8 @@ impl Args {
                 "--listen" => args.listen = Some(Listen::Tcp(value.parse().map_err(|_| bad())?)),
                 "--ledger" => args.ledger = Some(value),
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
+                "--ledger-cert" => args.ledger_cert = Some(value.into()),
+                "--ledger-key" => args.ledger_key = Some(value.into()),
                 "--machine-service" => {
                     args.machine = Some(MachineRoute::parse(&value).ok_or_else(bad)?);
                 }
@@ -123,8 +132,12 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
             .to_string_lossy()
             .into_owned()
     });
-    let ledger = Endpoint::parse(&ledger, args.ledger_ca.as_deref())
-        .map_err(|e| format!("--ledger: {e}"))?;
+    let tls = match (&args.ledger_ca, &args.ledger_cert, &args.ledger_key) {
+        (Some(ca), Some(cert), Some(key)) => Some(TlsFiles { ca, cert, key }),
+        (None, None, None) => None,
+        _ => return Err("--ledger-ca, --ledger-cert and --ledger-key go together".to_owned()),
+    };
+    let ledger = Endpoint::parse(&ledger, tls).map_err(|e| format!("--ledger: {e}"))?;
     let env = Env::capture();
     let machine = args.machine.map(|m| keyed(m, &env)).transpose()?;
     let key = env

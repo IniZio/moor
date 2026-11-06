@@ -53,7 +53,8 @@ pub struct ControllerConfig {
     pub ledger_tls: Option<LedgerTls>,
 }
 
-/// The `ledger_tls` entry: the ledger on TCP, behind the controller's certificate.
+/// The `ledger_tls` entry: the ledger on TCP, behind the controller's certificate, answering
+/// only clients whose certificate `client_ca` signed.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LedgerTls {
@@ -63,6 +64,8 @@ pub struct LedgerTls {
     pub cert: PathBuf,
     /// The PEM private key of `cert`; `~` allowed.
     pub key: PathBuf,
+    /// The PEM CA bundle a client's certificate must chain to; `~` allowed.
+    pub client_ca: PathBuf,
 }
 
 /// One front's entry under `fronts:`.

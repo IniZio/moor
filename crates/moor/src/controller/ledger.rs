@@ -16,7 +16,8 @@ use moor_client::tls::{bridge, RUNNER_HELLO};
 use moor_core::config::LedgerTls;
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::{ServerConfig, ServerConnection, StreamOwned};
+use rustls::server::WebPkiClientVerifier;
+use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 use serde::Deserialize;
 use zeroize::Zeroizing;
 
@@ -80,7 +81,11 @@ impl TlsLedger {
                  shared egress Proxy and machine runners"
             ));
         }
-        let config = server_config(&env.expand_home(&tls.cert), &env.expand_home(&tls.key))?;
+        let config = server_config(
+            &env.expand_home(&tls.cert),
+            &env.expand_home(&tls.key),
+            &env.expand_home(&tls.client_ca),
+        )?;
         let listener = TcpListener::bind(tls.listen)
             .map_err(|e| format!("cannot listen on {} for the ledger: {e}", tls.listen))?;
         Ok(Some(Self {
@@ -260,8 +265,10 @@ impl Write for UntilHello {
     }
 }
 
-/// A server config presenting the PEM certificate chain at `cert` with the PEM key at `key`.
-fn server_config(cert: &Path, key: &Path) -> Result<ServerConfig, String> {
+/// A server config presenting the PEM certificate chain at `cert` with the PEM key at `key`,
+/// which finishes a handshake only with a client whose certificate chains to the PEM bundle at
+/// `client_ca`.
+fn server_config(cert: &Path, key: &Path, client_ca: &Path) -> Result<ServerConfig, String> {
     let chain = CertificateDer::pem_file_iter(cert)
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|e| format!("ledger_tls.cert {}: {e}", cert.display()))?;
@@ -273,10 +280,26 @@ fn server_config(cert: &Path, key: &Path) -> Result<ServerConfig, String> {
     }
     let key = PrivateKeyDer::from_pem_file(key)
         .map_err(|e| format!("ledger_tls.key {}: {e}", key.display()))?;
-    ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let bad_ca =
+        |e: &dyn std::fmt::Display| format!("ledger_tls.client_ca {}: {e}", client_ca.display());
+    let mut roots = RootCertStore::empty();
+    for cert in CertificateDer::pem_file_iter(client_ca).map_err(|e| bad_ca(&e))? {
+        roots
+            .add(cert.map_err(|e| bad_ca(&e))?)
+            .map_err(|e| bad_ca(&e))?;
+    }
+    if roots.is_empty() {
+        return Err(bad_ca(&"holds no certificate"));
+    }
+    let verifier =
+        WebPkiClientVerifier::builder_with_provider(Arc::new(roots), Arc::clone(&provider))
+            .build()
+            .map_err(|e| bad_ca(&e))?;
+    ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|e| e.to_string())?
-        .with_no_client_auth()
+        .with_client_cert_verifier(verifier)
         .with_single_cert(chain, key)
         .map_err(|e| format!("ledger_tls: the key does not fit the certificate: {e}"))
 }
