@@ -39,6 +39,11 @@ pub fn left_out_submodules(output: &str) -> Vec<&str> {
 /// clone exec's deadline, so a large submodule costs a warning and not the Box.
 const SUBMODULE_BUDGET_SECS: u64 = 20 * 60;
 
+/// git for submodule commands. A Box has no ssh key and only https reaches the Proxy, so an ssh
+/// GitHub URL in `.gitmodules` goes over https for this command and its children.
+pub(super) const SUBMODULE_GIT: &str = "git -c url.https://github.com/.insteadOf=git@github.com: \
+     -c url.https://github.com/.insteadOf=ssh://git@github.com/";
+
 /// The step that stopped the clone script; the discriminant is the script's exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloneStep {
@@ -126,7 +131,7 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   if git rev-parse -q --verify {local} >/dev/null; then
     git checkout -q {branch} -- || exit {checkout}
   else
-    git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q -- origin {base} || exit {fetch}
+    git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q --no-recurse-submodules -- origin {base} || exit {fetch}
     if git rev-parse -q --verify {tracking} >/dev/null; then
       from={from}
     else
@@ -158,7 +163,7 @@ moor_submodule_fetch() {{
   [ "$left" -gt 0 ] || {{ echo 'out of time'; return 1; }}
   limit=
   command -v timeout >/dev/null && limit="timeout -k 10 $left"
-  err=$($limit git submodule update -q --init $filter -- "$1" 2>&1 </dev/null) && return 0
+  err=$($limit {SUBMODULE_GIT} submodule update -q --init $filter -- "$1" 2>&1 </dev/null) && return 0
   code=$?
   case $code in 124|137) echo 'out of time'; return 1;; esac
   printf '%s\n' "$err" | grep -m1 '^fatal:' || echo "git exited $code"
