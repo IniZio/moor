@@ -208,6 +208,20 @@ fn config(args: Args, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
     }
 }
 
+/// Refuses a `--listen` that is not loopback without a service key, so no caller off the host
+/// names a Box unchecked.
+fn keyed_listen(args: &Args) -> Result<(), String> {
+    if args.listen.ip().is_loopback() || args.service_key.as_deref().is_some_and(|k| !k.is_empty())
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "--listen {} is not loopback, so it needs --service-key or {}",
+        args.listen,
+        moor_machine_runner::SERVICE_KEY_ENV
+    ))
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().collect();
@@ -215,7 +229,7 @@ async fn main() -> ExitCode {
         std::process::exit(moor_machine_runner::rsh(raw.get(2..).unwrap_or_default()).await);
     }
     let args = Args::parse();
-    let relays = match relays(&args) {
+    let relays = match keyed_listen(&args).and_then(|()| relays(&args)) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("moor-machine-runner: {e}");
@@ -229,14 +243,6 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if !args.listen.ip().is_loopback() && args.service_key.as_deref().is_none_or(str::is_empty) {
-        eprintln!(
-            "moor-machine-runner: --listen {} is not loopback, so it needs --service-key or {}",
-            args.listen,
-            moor_machine_runner::SERVICE_KEY_ENV
-        );
-        return ExitCode::FAILURE;
-    }
     let listener = match tokio::net::TcpListener::bind(args.listen).await {
         Ok(l) => l,
         Err(e) => {
