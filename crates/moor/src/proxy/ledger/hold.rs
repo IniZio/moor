@@ -30,13 +30,15 @@ pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
     let name = claim.machine.name;
     let awake = match claim.state {
         MachineHoldState::Held => {
+            let runner = store.machine_runner(claim.machine_id, store.now());
             return Hold::Held(Held {
                 box_id,
                 name,
                 machine_id: claim.machine_id,
                 slot: claim.slot,
                 sync_exclude: claim.sync_exclude,
-            })
+                runner: runner.ok().flatten(),
+            });
         }
         MachineHoldState::Waiting => true,
         MachineHoldState::Asleep => {

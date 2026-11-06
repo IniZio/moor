@@ -108,6 +108,22 @@ fn release_runs_on_the_machine_with_the_facts_once_the_box_closes() {
 }
 
 #[test]
+fn a_holder_only_request_is_misdirected_unless_this_runner_holds_the_link() {
+    let m = Linked::start(&[]);
+    let only = ("X-Moor-Holder-Only", "1");
+    let held = [HEADERS.as_slice(), &[only]].concat();
+    assert_eq!(m.rig.status(&held), 200);
+    let mut other = held.clone();
+    other[2] = ("X-Moor-Machine-Id", "8");
+    assert_eq!(m.rig.status(&other), 421, "another runner holds machine 8");
+    assert_eq!(
+        m.rig.status(&other[..4]),
+        200,
+        "the Proxy's last try is served"
+    );
+}
+
+#[test]
 fn a_machine_whose_agent_dropped_its_link_is_reported_offline() {
     let mut m = Linked::start(&[]);
     m.rig.machine_agent.take().unwrap().shutdown_background();

@@ -21,7 +21,10 @@ moor-client = { path = "../moor-client", features = ["link"] }
 moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = { version = "0.3", default-features = false }
+bytes = "1"
 http = "1"
+http-body-util = "0.1"
+hyper = "1"
 hyper-util = { version = "0.1", features = [
   "server",
   "server-auto",

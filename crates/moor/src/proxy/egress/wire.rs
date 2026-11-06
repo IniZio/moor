@@ -18,15 +18,15 @@ use zeroize::Zeroizing;
 
 use super::boxes::{Refused, Route};
 use super::{Shared, PATH, PLAIN, SYNCED, TARGET};
-use crate::proxy::front::{connect_head, hold_or_missing, plain_request, refusal};
+use crate::proxy::front::{connect_head, plain_request, refusal};
 use crate::store::token_hash;
+
+mod machine;
 
 /// Largest request or answer head read.
 const MAX_HEAD: usize = 8 * 1024;
 /// How long a peer may take to send its head, and the Box's proxy to answer the CONNECT.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(30);
-/// How long the machine service gets to accept a connection before the tunnel is a 502.
-const MACHINE_DIAL: Duration = Duration::from_secs(3);
 /// Largest WebSocket message or frame taken from the forwarder.
 const MAX_MESSAGE: usize = 1 << 20;
 /// Bytes read from the target per message.
@@ -92,58 +92,44 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
 /// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
 /// the connection and relays the tunnel.
 async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
-    let service = shared.machine.as_ref().filter(|_| ask.machine);
-    let opened = match service {
-        Some(service) => timeout(MACHINE_DIAL, TcpStream::connect(service.upstream.as_str()))
-            .await
-            .ok()
-            .and_then(Result::ok)
-            .map(|s| (s, Vec::new()))
-            .ok_or((502, "the machine service is not answering")),
-        None => open(&ask.route, &ask.target)
-            .await
-            .map_err(|status| (status, "the Box's proxy refused")),
-    };
-    let (mut upstream, rest) = match opened {
+    if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
+        return machine::tunnel(stream, service, ask).await;
+    }
+    let (mut upstream, rest) = match open(&ask.route, &ask.target).await {
         Ok(opened) => opened,
-        Err((status, why)) => return answer(&mut stream, status, why).await,
+        Err(status) => return answer(&mut stream, status, "the Box's proxy refused").await,
     };
     let Some(mut ws) = upgrade(stream, &ask.key).await else {
         return;
     };
-    let key = shared.machine.as_ref().and_then(|m| m.key.as_deref());
-    let marked = ask.machine.then_some((&ask.route, key));
-    if ask.plain && !send_plain(&mut ws, &mut upstream, &ask.target, marked).await {
+    if ask.plain && !send_plain(&mut ws, &mut upstream, &ask.target).await {
         return;
     }
     relay(ws, upstream, rest).await;
 }
 
-/// Reads the plain request from `ws` and writes it to `upstream` in origin form, marked with what
-/// the Box of `machine` holds; a request that is not one plain request for `target` gets a 403
-/// in the tunnel. Whether the tunnel goes on.
+/// Reads the plain request from `ws` and writes it to `upstream` in origin form; a request that
+/// is not one plain request for `target` gets a 403 in the tunnel. Whether the tunnel goes on.
 async fn send_plain<S: Peer>(
     ws: &mut WebSocketStream<S>,
     upstream: &mut TcpStream,
     target: &str,
-    machine: Option<(&Route, Option<&str>)>,
 ) -> bool {
     let Some((head, early)) = ws_head(ws).await else {
         return false;
     };
-    let hold =
-        machine.map(|(r, _)| tokio::task::block_in_place(|| hold_or_missing(&r.served.ledger)));
-    let Some(mut request) = plain_request(&head, target, hold.as_ref()) else {
-        drop(ws.send(Message::binary(refusal().into_bytes())).await);
-        drop(ws.close(None).await);
+    let Some(mut request) = plain_request(&head, target, None) else {
+        refuse(ws).await;
         return false;
     };
-    if let Some(key) = machine.and_then(|(_, key)| key) {
-        request.truncate(request.len().saturating_sub(2));
-        request.extend_from_slice(format!("X-Moor-Service-Key: {key}\r\n\r\n").as_bytes());
-    }
     request.extend_from_slice(&early);
     upstream.write_all(&request).await.is_ok()
+}
+
+/// Answers a request that is not one plain request for its tunnel's target with a 403.
+async fn refuse<S: Peer>(ws: &mut WebSocketStream<S>) {
+    drop(ws.send(Message::binary(refusal().into_bytes())).await);
+    drop(ws.close(None).await);
 }
 
 /// The plain request head the forwarder sends first, and the bytes after it.

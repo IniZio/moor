@@ -126,6 +126,14 @@ impl BoxLedger {
         }
     }
 
+    /// Drops the runner from the last answer, after it failed a request, so that while the
+    /// controller is unavailable the Box's requests go to the machine service again.
+    pub(crate) fn forget_holder(&self) {
+        if let Some(Hold::Held(held)) = &mut self.last().hold {
+            held.runner = None;
+        }
+    }
+
     /// Records the audit event `event`, after any kept while the controller was unreachable.
     ///
     /// An event the controller refuses is dropped; one it cannot be reached for is kept.
