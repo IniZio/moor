@@ -89,7 +89,7 @@ pub enum Event {
         /// The Box handle kept for manual release.
         handle: Option<String>,
     },
-    /// The driver refused to sleep an idle box, so it keeps running.
+    /// The driver refused or failed to sleep a box, so it keeps running.
     StaysUp {
         /// The driver's reason.
         reason: String,

@@ -36,6 +36,7 @@ fn of(id: i64, session: SessionState, idle_ms: Option<i64>, started_at: i64) -> 
             idle_since: idle_ms.map(Ts::from_millis),
         },
         started_at,
+        in_flight: false,
     }
 }
 
@@ -53,6 +54,12 @@ fn waiting(id: i64) -> Candidate {
     c
 }
 
+fn running_a_command(id: i64, started_at: i64) -> Candidate {
+    let mut c = working(id, started_at);
+    c.in_flight = true;
+    c
+}
+
 fn starting(id: i64) -> Candidate {
     let mut c = of(id, SessionState::Starting, None, 2_000);
     c.resident.lifecycle = BoxLifecycle::SettingUp;
@@ -60,6 +67,10 @@ fn starting(id: i64) -> Candidate {
 }
 
 fn pick(readings: &[Reading], boxes: &[Candidate], suspended_at: Option<i64>) -> Option<Suspend> {
+    picks(readings, boxes, suspended_at).into_iter().next()
+}
+
+fn picks(readings: &[Reading], boxes: &[Candidate], suspended_at: Option<i64>) -> Vec<Suspend> {
     let now = readings.last().map_or(0, |r| r.at);
     relieve(
         &node(),
@@ -93,6 +104,8 @@ fn pick_for(
         Cooldown { suspended_at, now },
         demand,
     )
+    .into_iter()
+    .next()
 }
 
 fn quiet() -> Vec<Reading> {
@@ -229,4 +242,90 @@ fn the_cooldown_holds_a_waiter_suspension_off_too() {
 fn pressure_wins_the_reason_when_both_hold() {
     let got = pick_for(&crowded(Some("c")), &pressed(3), &[idle(1, 10)], None).unwrap();
     assert_eq!(got.reason, "memory pressure on hv");
+}
+
+fn order(got: &[Suspend]) -> Vec<(i64, bool)> {
+    got.iter().map(|s| (s.id.get(), s.last_resort)).collect()
+}
+
+#[test]
+fn below_the_reserve_with_two_busy_boxes_suspends_the_newest_without_waiting_for_critical() {
+    let got = picks(
+        &[reading(0, RESERVE - 1, 0, 0)],
+        &[working(1, 10), working(2, 30)],
+        None,
+    );
+    assert_eq!(order(&got), [(2, true), (1, true)]);
+    assert_eq!(
+        got.first().map(|s| s.reason.as_str()),
+        Some("last-resort suspend: memory below the host reserve on hv")
+    );
+}
+
+#[test]
+fn at_the_reserve_a_working_box_keeps_running() {
+    let boxes = [working(1, 10), working(2, 30)];
+    assert_eq!(pick(&[reading(0, RESERVE, 0, 0)], &boxes, None), None);
+}
+
+#[test]
+fn the_only_running_box_is_never_suspended_while_it_works() {
+    let boxes = [working(1, 10)];
+    assert_eq!(pick(&[reading(0, RESERVE - 1, 0, 0)], &boxes, None), None);
+    assert_eq!(pick(&[reading(0, 512, 0, 900)], &boxes, None), None);
+    let running = [running_a_command(1, 10)];
+    assert_eq!(pick(&[reading(0, 512, 0, 0)], &running, None), None);
+}
+
+#[test]
+fn a_box_waiting_on_a_question_counts_as_running_but_is_not_picked() {
+    let got = picks(
+        &[reading(0, RESERVE - 1, 0, 0)],
+        &[working(1, 10), waiting(2)],
+        None,
+    );
+    assert_eq!(order(&got), [(1, true)]);
+}
+
+#[test]
+fn a_box_with_a_run_in_flight_comes_after_every_other_working_box() {
+    let got = picks(
+        &[reading(0, RESERVE - 1, 0, 0)],
+        &[running_a_command(1, 90), working(2, 10), working(3, 30)],
+        None,
+    );
+    assert_eq!(order(&got), [(3, true), (2, true), (1, true)]);
+    assert_eq!(
+        got.last().map(|s| s.reason.as_str()),
+        Some("last-resort suspend: memory below the host reserve on hv, with a run in flight")
+    );
+}
+
+#[test]
+fn a_refused_idle_box_falls_through_to_the_next_idle_box_then_to_the_working_ones() {
+    let got = picks(
+        &[reading(0, RESERVE - 1, 0, 0)],
+        &[working(1, 10), idle(2, 50), idle(3, 20)],
+        None,
+    );
+    assert_eq!(order(&got), [(3, false), (2, false), (1, true)]);
+}
+
+#[test]
+fn an_idle_box_with_a_run_in_flight_is_tried_only_as_a_last_resort() {
+    let mut busy_idle = idle(1, 10);
+    busy_idle.in_flight = true;
+    let got = picks(
+        &[reading(0, RESERVE - 1, 0, 0)],
+        &[busy_idle.clone(), working(2, 30)],
+        None,
+    );
+    assert_eq!(order(&got), [(2, true), (1, true)]);
+    assert_eq!(picks(&pressed(3), &[busy_idle, working(2, 30)], None), []);
+}
+
+#[test]
+fn sustained_psi_alone_leaves_working_boxes_out_of_the_order() {
+    let got = picks(&pressed(3), &[working(1, 10), idle(2, 5)], None);
+    assert_eq!(order(&got), [(2, false)]);
 }

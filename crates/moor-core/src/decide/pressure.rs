@@ -1,11 +1,14 @@
 //! Relieving a node under memory pressure: which one Box to suspend on a report, if any.
 
+use std::cmp::Reverse;
+
 use serde::{Deserialize, Serialize};
 
-use crate::decide::preempt::{longest_idle, Resident};
+use crate::decide::preempt::{suspendable, Resident};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::name::{BoxId, NodeName};
+use crate::seam::clock::Ts;
 
 /// PSI `some avg10`, in hundredths, that counts as pressure when it holds.
 pub const SUSTAINED_PSI_CENTI: u32 = 1000;
@@ -15,6 +18,9 @@ pub const SUSTAINED_REPORTS: usize = 3;
 pub const CRITICAL_FULL_CENTI: u32 = 500;
 /// `MemAvailable` below which the host is critical, in MiB.
 pub const CRITICAL_AVAILABLE_MIB: u64 = 1024;
+/// Boxes that must run on a node before a working one may be suspended: the only one never is,
+/// since the queue it would join has nothing ahead of it but itself.
+pub const LAST_RESORT_RUNNING: usize = 2;
 /// How long a node suspends nothing more after a suspension, in seconds.
 pub const COOLDOWN_SECS: i64 = 30;
 
@@ -41,6 +47,8 @@ pub struct Candidate {
     pub resident: Resident,
     /// When it started.
     pub started_at: i64,
+    /// Whether a run is in flight in it, which suspending it would drop.
+    pub in_flight: bool,
 }
 
 /// What a node's waiting Boxes ask of it.
@@ -98,11 +106,13 @@ pub fn critical(last: &Reading) -> bool {
         || last.available_mib < CRITICAL_AVAILABLE_MIB
 }
 
-/// The Box to suspend on `node` after its latest report, if any.
+/// The Boxes to try suspending on `node` after its latest report, in order; the first that
+/// suspends ends the attempt, and one refused falls through to the next.
 ///
-/// The longest-idle one under pressure or when a Box waits on a short node, else, when the host is
-/// critical, the most recently started working one. Nothing within [`COOLDOWN_SECS`] of the last
-/// suspension.
+/// Under pressure, or when a Box waits on a short node, the idle ones, longest idle first. Then,
+/// when the host is critical or has less than `reserve_mib` available and at least two Boxes run,
+/// the working ones, newest first, those with a run in flight last. Nothing within
+/// [`COOLDOWN_SECS`] of the last suspension.
 #[must_use]
 pub fn relieve(
     node: &NodeName,
@@ -111,41 +121,66 @@ pub fn relieve(
     boxes: &[Candidate],
     cooldown: Cooldown,
     demand: &Demand,
-) -> Option<Suspend> {
+) -> Vec<Suspend> {
     let Cooldown { suspended_at, now } = cooldown;
-    let last = readings.last()?;
+    let Some(last) = readings.last() else {
+        return Vec::new();
+    };
     if suspended_at.is_some_and(|at| now.saturating_sub(at) < COOLDOWN_SECS) {
-        return None;
+        return Vec::new();
     }
     let critical = critical(last);
     let pressed = sustained(readings, reserve_mib) || critical;
     let waiter = demand.waiter.as_deref().filter(|_| demand.short);
     if !pressed && waiter.is_none() {
-        return None;
+        return Vec::new();
     }
-    let residents: Vec<Resident> = boxes.iter().map(|c| c.resident.clone()).collect();
-    if let Some(id) = longest_idle(&residents) {
-        return Some(Suspend {
-            id,
-            last_resort: false,
-            reason: match waiter {
-                Some(w) if !pressed => format!("made room for {w}"),
-                _ => format!("memory pressure on {node}"),
-            },
-        });
-    }
-    if !critical {
-        return None;
-    }
-    boxes
+    let reason = match waiter {
+        Some(w) if !pressed => format!("made room for {w}"),
+        _ => format!("memory pressure on {node}"),
+    };
+    let mut idle: Vec<&Candidate> = boxes
         .iter()
-        .filter(|c| working(&c.resident))
-        .max_by_key(|c| (c.started_at, c.resident.id))
+        .filter(|c| suspendable(&c.resident) && !c.in_flight)
+        .collect();
+    idle.sort_by_key(|c| (c.resident.idle_since.map(Ts::as_millis), c.resident.id));
+    let mut picks: Vec<Suspend> = idle
+        .into_iter()
         .map(|c| Suspend {
             id: c.resident.id,
-            last_resort: true,
-            reason: format!("last-resort suspend: memory critical on {node}"),
+            last_resort: false,
+            reason: reason.clone(),
         })
+        .collect();
+    let running = boxes
+        .iter()
+        .filter(|c| c.resident.lifecycle == BoxLifecycle::Ready)
+        .count();
+    if running >= LAST_RESORT_RUNNING && (critical || last.available_mib < reserve_mib) {
+        let why = if critical {
+            "memory critical"
+        } else {
+            "memory below the host reserve"
+        };
+        let mut busy: Vec<&Candidate> = boxes
+            .iter()
+            .filter(|c| working(&c.resident) || (c.in_flight && suspendable(&c.resident)))
+            .collect();
+        busy.sort_by_key(|c| (c.in_flight, Reverse((c.started_at, c.resident.id))));
+        picks.extend(busy.into_iter().map(|c| Suspend {
+            id: c.resident.id,
+            last_resort: true,
+            reason: format!(
+                "last-resort suspend: {why} on {node}{}",
+                if c.in_flight {
+                    ", with a run in flight"
+                } else {
+                    ""
+                }
+            ),
+        }));
+    }
+    picks
 }
 
 /// Whether `r` is up with its agent mid-turn, not waiting on a person.

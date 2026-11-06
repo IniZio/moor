@@ -159,6 +159,15 @@ pub(crate) fn refuse(why: String) -> CommandError {
 
 /// The handle of the ready Box when no run is in flight, or a refusal.
 pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandError> {
+    let handle = ready_handle(row)?;
+    if cx.store()?.in_flight_run(row.id)?.is_some() {
+        return Err(refuse("a run is in flight".to_owned()));
+    }
+    Ok(handle)
+}
+
+/// The handle of the ready Box, or a refusal.
+pub(crate) fn ready_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let b = row
         .boxed
         .as_ref()
@@ -168,14 +177,9 @@ pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandEr
         BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone".to_owned())),
         _ => return Err(refuse("the Box is not ready".to_owned())),
     }
-    let handle = b
-        .handle
+    b.handle
         .clone()
-        .ok_or_else(|| refuse("the Box has not been acquired".to_owned()))?;
-    if cx.store()?.in_flight_run(row.id)?.is_some() {
-        return Err(refuse("a run is in flight".to_owned()));
-    }
-    Ok(handle)
+        .ok_or_else(|| refuse("the Box has not been acquired".to_owned()))
 }
 
 #[cfg(test)]
