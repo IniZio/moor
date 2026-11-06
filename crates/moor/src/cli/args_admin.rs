@@ -76,6 +76,9 @@ pub(super) struct ControllerAttachArgs {
 /// Arguments of `link-dial`.
 #[derive(Debug, Args)]
 pub(super) struct LinkDialArgs {
+    /// The runner that holds the pool host's link: its socket path, or `host:port`.
+    #[arg(long, value_name = "ADDR")]
+    runner: String,
     /// The pool host's machine id.
     machine_id: i64,
     /// The lease, `moor-<controller>-<id>`.
@@ -103,6 +106,7 @@ impl AdminCmd {
             Self::Store(StoreCmd::Migrate) => Action::StoreMigrate,
             Self::Store(StoreCmd::Copy(a)) => Action::StoreCopy { to: a.to },
             Self::LinkDial(a) => Action::LinkDial {
+                runner: a.runner,
                 machine_id: a.machine_id,
                 slug: a.slug,
             },

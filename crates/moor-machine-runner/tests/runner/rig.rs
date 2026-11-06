@@ -93,6 +93,8 @@ pub struct Rig {
     pub shows_refused: Arc<AtomicUsize>,
     /// The port the runner takes agent links on.
     pub agents: u16,
+    /// The port the runner takes a controller's dials on, when started with `--links`.
+    pub links: Option<u16>,
     /// The fake machine's agent, linked while it runs.
     pub machine_agent: Option<tokio::runtime::Runtime>,
     /// What the fake machine's agent logged.
@@ -153,7 +155,7 @@ impl Rig {
         std::fs::create_dir_all(machine::hooks_dir(dir.path())).unwrap();
         let fake = start_controller(dir.path(), &tree, listing_fails, open);
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
-        let (runner, port, agents) = spawn(dir.path(), &args);
+        let (runner, port, agents, links) = spawn(dir.path(), &args);
         let (machine_agent, agent_log) =
             machine::start_agent(dir.path(), &remote, agents, &fake.link, sweep_grace);
         let http = ureq::Agent::config_builder()
@@ -184,6 +186,7 @@ impl Rig {
             show_fails,
             shows_refused,
             agents,
+            links,
             machine_agent: Some(machine_agent),
             agent_log,
             args,
@@ -198,7 +201,7 @@ impl Rig {
     /// Stops the runner and starts a new one with the same flags and state dir.
     pub fn restart(&mut self) {
         self.runner = Runner(None);
-        (self.runner, self.port, self.agents) = spawn(self.dir.path(), &self.args);
+        (self.runner, self.port, self.agents, self.links) = spawn(self.dir.path(), &self.args);
     }
 
     /// Sends the runner SIGTERM.
@@ -432,7 +435,7 @@ impl Rig {
 
 /// Starts a runner in the rig at `dir`; it, the port it listens on, and the one it takes agent
 /// links on.
-fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16) {
+fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16, Option<u16>) {
     let path = format!(
         "{}:{}",
         dir.join("bin").display(),
@@ -467,8 +470,13 @@ fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16) {
     line.clear();
     stderr.read_line(&mut line).unwrap();
     let agents = line.trim().rsplit(':').next().unwrap().parse().unwrap();
+    let links = args.iter().any(|a| a == "--links").then(|| {
+        line.clear();
+        stderr.read_line(&mut line).unwrap();
+        line.trim().rsplit(':').next().unwrap().parse().unwrap()
+    });
     std::thread::spawn(move || std::io::copy(&mut stderr, &mut std::io::sink()));
-    (runner, port, agents)
+    (runner, port, agents, links)
 }
 
 /// A runner process, killed when dropped, so a rig that panics part-way never leaves it behind.

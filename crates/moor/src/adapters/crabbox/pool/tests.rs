@@ -77,8 +77,8 @@ impl PoolHosts for FakeHost {
             .unwrap_or(Ok(Answer::Done))
     }
 
-    fn dial_command(&self, machine_id: i64, slug: &str) -> String {
-        format!("moor link-dial {machine_id} {slug}")
+    fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {
+        Ok(format!("moor link-dial {machine_id} {slug}"))
     }
 }
 

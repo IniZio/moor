@@ -82,7 +82,14 @@ impl Rig {
             driver: Arc::clone(&self.driver) as Arc<dyn Driver>,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
             egress: None,
-            runner: self.dir.path().join("runner.sock"),
+            runners: crate::proxy::links::Runners::new(
+                self.dir.path(),
+                None,
+                Arc::new(crate::testing::clock::FakeClock::new(
+                    moor_core::seam::clock::Ts::from_millis(1_000),
+                )),
+                None,
+            ),
             log: Arc::new(Mutex::new(std::io::sink())),
         };
         KEEPERS.hold(&Arc::new(deps), self.id, 41_000)

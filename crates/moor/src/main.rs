@@ -98,11 +98,16 @@ fn main() -> ExitCode {
         } => return run_exec(&scoped(env, &opts), req, i),
         Parsed::LinkDial {
             opts,
+            runner,
             machine_id,
             slug,
         } => {
             let env = scoped(env, &opts);
-            return ExitCode::from(moor::link_dial::on_stdio(&env, machine_id, &slug));
+            return ExitCode::from(moor::link_dial::on_stdio(
+                &env,
+                &runner,
+                (machine_id, &slug),
+            ));
         }
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Events {

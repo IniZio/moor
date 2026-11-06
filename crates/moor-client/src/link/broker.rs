@@ -1,15 +1,14 @@
-//! The machine runner's links broker, a local socket to the agents linked to the runner.
+//! The machine runner's links broker: a socket on its host, or a hello on its listener, that
+//! reaches the agents linked to the runner.
 //!
 //! Through it the controller asks a pool host for a lease or a dial into a lease's VM, and any
 //! agent for its status.
 
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
-use tokio::net::UnixStream;
 
 use super::lease;
 use super::ops::{self, Op, Reply};
+use super::reach::{Conn, Runner, Service};
 use super::status::Status;
 
 /// The broker's socket, beside the runner's socket to the controller.
@@ -103,10 +102,10 @@ pub enum Brokered {
     },
 }
 
-/// Asks the broker at `socket` to do `verb` to `slug` on machine `machine_id`; a warmup
+/// Asks `runner`'s broker to do `verb` to `slug` on machine `machine_id`; a warmup
 /// boots with `boot`.
 pub async fn lease(
-    socket: &Path,
+    runner: &Runner,
     machine_id: i64,
     verb: lease::Verb,
     slug: Option<&str>,
@@ -114,7 +113,7 @@ pub async fn lease(
 ) -> Result<lease::Answer, String> {
     let slug = slug.map(str::to_owned);
     leased(
-        socket,
+        runner,
         machine_id,
         PoolOp::Lease {
             verb,
@@ -127,10 +126,10 @@ pub async fn lease(
     .await
 }
 
-/// Asks the broker at `socket` to let OpenSSH public `key` sign in to `slug`'s VM on machine
+/// Asks `runner`'s broker to let OpenSSH public `key` sign in to `slug`'s VM on machine
 /// `machine_id`.
 pub async fn authorize(
-    socket: &Path,
+    runner: &Runner,
     machine_id: i64,
     slug: &str,
     key: &str,
@@ -142,49 +141,44 @@ pub async fn authorize(
         cache: None,
         class: None,
     };
-    leased(socket, machine_id, op).await
+    leased(runner, machine_id, op).await
 }
 
 /// Sends lease `op` to machine `machine_id`; its answer.
-async fn leased(socket: &Path, machine_id: i64, op: PoolOp) -> Result<lease::Answer, String> {
-    match ask(socket, machine_id, op).await?.1 {
+async fn leased(runner: &Runner, machine_id: i64, op: PoolOp) -> Result<lease::Answer, String> {
+    match ask(runner, machine_id, op).await?.1 {
         Reply::Leased(answer) => Ok(answer),
         other => Err(refusal(machine_id, other)),
     }
 }
 
-/// Asks the broker at `socket` to dial `slug`'s sshd on machine `machine_id`, finding it within
+/// Asks `runner`'s broker to dial `slug`'s sshd on machine `machine_id`, finding it within
 /// `timeout_secs` when given; the stream to it.
 pub async fn dial(
-    socket: &Path,
+    runner: &Runner,
     machine_id: i64,
     slug: &str,
     timeout_secs: Option<u64>,
-) -> Result<UnixStream, String> {
+) -> Result<Conn, String> {
     let slug = slug.to_owned();
     let op = PoolOp::Dial { slug, timeout_secs };
-    match ask(socket, machine_id, op).await? {
+    match ask(runner, machine_id, op).await? {
         (conn, Reply::Started) => Ok(conn),
         (_, other) => Err(refusal(machine_id, other)),
     }
 }
 
-/// Asks the broker at `socket` for machine `machine_id`'s status.
-pub async fn status(socket: &Path, machine_id: i64) -> Result<Status, String> {
-    match ask(socket, machine_id, PoolOp::Status).await?.1 {
+/// Asks `runner`'s broker for machine `machine_id`'s status.
+pub async fn status(runner: &Runner, machine_id: i64) -> Result<Status, String> {
+    match ask(runner, machine_id, PoolOp::Status).await?.1 {
         Reply::Status(status) => Ok(*status),
         other => Err(refusal(machine_id, other)),
     }
 }
 
 /// Sends `op` and reads the agent's reply, with the connection it came on.
-async fn ask(socket: &Path, machine_id: i64, op: PoolOp) -> Result<(UnixStream, Reply), String> {
-    let mut conn = UnixStream::connect(socket).await.map_err(|e| {
-        format!(
-            "the links broker at {} is unreachable: {e}",
-            socket.display()
-        )
-    })?;
+async fn ask(runner: &Runner, machine_id: i64, op: PoolOp) -> Result<(Conn, Reply), String> {
+    let mut conn = runner.connect(Service::Links).await?;
     ops::write_line(&mut conn, &Ask { machine_id, op })
         .await
         .map_err(|e| format!("the links broker hung up: {e}"))?;

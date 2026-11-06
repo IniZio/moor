@@ -204,6 +204,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             dir,
             env.shared::<Store>().cloned(),
             Arc::clone(&clock) as Arc<dyn Clock>,
+            env.get(crate::env::MACHINE_SERVICE_KEY),
         )
     });
     let crabbox = Crabbox::new(

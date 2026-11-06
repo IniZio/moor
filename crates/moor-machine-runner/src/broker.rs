@@ -8,7 +8,8 @@ use std::path::Path;
 
 use moor_client::link::broker::{Ask, Brokered, PoolOp, SOCKET};
 use moor_client::link::ops::{self, Op, Reply};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::UnixListener;
 
 use crate::Agents;
 
@@ -48,15 +49,25 @@ pub async fn serve_broker(listener: UnixListener, agents: Agents, uid: u32) -> i
         let (conn, _) = listener.accept().await?;
         if conn.peer_cred().is_ok_and(|c| c.uid() == uid) {
             let agents = agents.clone();
-            tokio::spawn(async move { carry(conn, &agents).await });
+            tokio::spawn(async move { carry(conn, &agents, true).await });
         }
     }
 }
 
-/// Serves one ask: the agent's reply, then for a started dial the bytes both ways until
-/// either side closes.
-async fn carry(mut conn: UnixStream, agents: &Agents) {
+/// Serves one ask, refused unless `admitted`: the agent's reply, then for a started dial the
+/// bytes both ways until either side closes.
+pub(crate) async fn carry<S>(mut conn: S, agents: &Agents, admitted: bool)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    // The ask is read even when refused, so closing leaves no unread bytes to reset the answer.
     let (answer, stream) = match ops::read_line::<_, Ask>(&mut conn).await {
+        Ok(_) if !admitted => (
+            Brokered::Refused {
+                reason: WRONG_KEY.to_owned(),
+            },
+            None,
+        ),
         Ok(ask) => relay(agents, ask).await,
         Err(e) => (
             Brokered::Refused {
@@ -72,6 +83,9 @@ async fn carry(mut conn: UnixStream, agents: &Agents) {
         let _ = tokio::io::copy_bidirectional(&mut conn, &mut stream).await;
     }
 }
+
+/// Why a connection whose hello carried another key is refused.
+pub(crate) const WRONG_KEY: &str = "the machine service key is wrong";
 
 /// Sends `ask` on its machine's link; the answer, and the stream when a dial started.
 async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link::Channel>) {

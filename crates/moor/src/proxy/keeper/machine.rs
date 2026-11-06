@@ -71,7 +71,7 @@ impl Kept {
         }
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
         let via = Via {
-            socket: &self.deps.runner,
+            runners: &self.deps.runners,
             box_id: self.box_id.get(),
             machine_id: enrolled,
         };

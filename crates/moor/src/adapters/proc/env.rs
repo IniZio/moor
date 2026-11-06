@@ -1,12 +1,14 @@
 //! Environment snapshot handed to spawned children.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::OsStrExt as _;
 use std::process::Command;
 
 use moor_core::seam::proc::{Tool, BASE_ENV, CRABBOX_ENV, CRABBOX_ENV_PREFIX};
+use moor_core::secret::Secret;
 
 use super::ToolPaths;
-use crate::env::Env;
+use crate::env::{Env, MACHINE_SERVICE_KEY};
 
 /// Program for `tool`: `MOOR_<TOOL>_BIN`, then config, then the default name.
 pub(super) fn resolve(env: &Env, tools: &ToolPaths, tool: Tool) -> OsString {
@@ -22,12 +24,22 @@ pub(super) fn resolve(env: &Env, tools: &ToolPaths, tool: Tool) -> OsString {
 type Vars = Vec<(String, String)>;
 
 /// Variables captured at construction.
-#[derive(Debug)]
 pub(super) struct Snapshot {
     /// Variables every child inherits.
     base: Vars,
     /// Extra variables only crabbox inherits.
     crabbox: Vars,
+    /// The machine service key, which ssh hands its `moor link-dial` `ProxyCommand`.
+    link_key: Option<Secret>,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("base", &self.base)
+            .field("crabbox", &self.crabbox)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Snapshot {
@@ -45,7 +57,14 @@ impl Snapshot {
                     .map(|(k, v)| (k.to_owned(), v.to_owned())),
             )
             .collect();
-        Self { base, crabbox }
+        let link_key = env
+            .get(MACHINE_SERVICE_KEY)
+            .map(|k| Secret::new(k.as_bytes().to_vec()));
+        Self {
+            base,
+            crabbox,
+            link_key,
+        }
     }
 
     /// Sets the variables `tool` inherits.
@@ -53,6 +72,9 @@ impl Snapshot {
         cmd.envs(self.base.iter().map(|(k, v)| (k, v)));
         if tool == Tool::Crabbox {
             cmd.envs(self.crabbox.iter().map(|(k, v)| (k, v)));
+        }
+        if let (Tool::Ssh | Tool::Rsync, Some(key)) = (tool, &self.link_key) {
+            cmd.env(MACHINE_SERVICE_KEY, OsStr::from_bytes(key.expose()));
         }
     }
 }

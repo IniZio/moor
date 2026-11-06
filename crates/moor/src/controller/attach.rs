@@ -6,6 +6,7 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::thread;
 
+use moor_client::link::reach::StdConn;
 use moor_client::ATTACH_REFUSED_EXIT;
 
 use crate::env::Env;
@@ -60,10 +61,11 @@ pub fn attach(
 
 /// Copy stdin to the socket on a thread and the socket to `output`, flushing per chunk.
 pub(crate) fn bridge(
-    stream: UnixStream,
+    stream: impl Into<StdConn>,
     mut input: impl Read + Send + 'static,
     mut output: impl Write,
 ) -> std::io::Result<()> {
+    let stream = stream.into();
     let mut up = stream.try_clone()?;
     // Detached: it may block on stdin forever after the controller closes.
     thread::spawn(move || {

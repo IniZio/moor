@@ -19,6 +19,7 @@ use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 pub mod broker;
 pub mod lease;
 pub mod ops;
+pub mod reach;
 pub mod status;
 mod stream;
 pub mod sweep;

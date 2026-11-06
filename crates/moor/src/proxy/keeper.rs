@@ -22,7 +22,7 @@ mod tunnel;
 
 use std::collections::HashMap;
 use std::fmt::Arguments;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -54,8 +54,8 @@ pub(crate) struct Deps {
     /// The shared egress Proxy's socket each Box's tunnel reaches; `None` when Boxes dial it
     /// themselves.
     pub(crate) egress: Option<PathBuf>,
-    /// The machine runner's forward socket.
-    pub(crate) runner: PathBuf,
+    /// The machine runners, found by each machine's link row.
+    pub(crate) runners: crate::proxy::links::Runners,
     /// Where failures are logged.
     pub(crate) log: Sink,
 }
@@ -359,11 +359,6 @@ impl Kept {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         lock(&self.inner)
     }
-}
-
-/// The machine runner's forward socket under `state_dir`.
-pub(crate) fn runner_socket(state_dir: &Path) -> PathBuf {
-    crate::runner_dir::of(state_dir).join(moor_client::forward::SOCKET)
 }
 
 /// The Box as a keeper sees it; `None` when it is gone.

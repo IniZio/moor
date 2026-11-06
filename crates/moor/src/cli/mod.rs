@@ -88,6 +88,8 @@ pub enum Parsed {
     LinkDial {
         /// Global options.
         opts: GlobalOpts,
+        /// The runner that holds the pool host's link.
+        runner: String,
         /// The pool host's machine id.
         machine_id: i64,
         /// The lease.
@@ -148,8 +150,16 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
             req,
             interactive,
         },
-        Ok((opts, Action::LinkDial { machine_id, slug })) => Parsed::LinkDial {
+        Ok((
             opts,
+            Action::LinkDial {
+                runner,
+                machine_id,
+                slug,
+            },
+        )) => Parsed::LinkDial {
+            opts,
+            runner,
             machine_id,
             slug,
         },

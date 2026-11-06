@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use moor_client::link::broker::{self, SOCKET};
 use moor_client::link::lease::{Answer, Boot, Verb};
+use moor_client::link::reach::Runner;
 use moor_machine_agent::{run, Machine, Pool, State};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
@@ -54,7 +55,17 @@ impl Host {
 
     /// As `start`, with the pool's `max`, `cache_gb`, and what `providers describe` prints.
     fn start_with(max: Option<usize>, cache_gb: Option<u32>, describe: Option<&str>) -> Self {
-        let mut rig = Rig::start();
+        Self::on(Rig::start(), max, cache_gb, describe)
+    }
+
+    /// As `start`, on a runner that also takes a controller's dials with [`KEY`].
+    fn remote() -> Self {
+        let args = ["--links", "127.0.0.1:0", "--service-key", KEY];
+        Self::on(Rig::with_args(&args), None, None, None)
+    }
+
+    /// The pool host linked to the runner of `rig`.
+    fn on(mut rig: Rig, max: Option<usize>, cache_gb: Option<u32>, describe: Option<&str>) -> Self {
         // The rig links an ordinary machine under the same id; the pool host replaces it.
         if let Some(agent) = rig.machine_agent.take() {
             agent.shutdown_background();
@@ -113,6 +124,11 @@ impl Host {
         }
     }
 
+    /// The runner as the controller on its host reaches it.
+    fn runner(&self) -> Runner {
+        Runner::Local(self.rig.dir().join("runner.sock"))
+    }
+
     fn socket(&self) -> PathBuf {
         self.rig.dir().join(SOCKET)
     }
@@ -144,9 +160,9 @@ fn a_pool_hosts_offer_reaches_its_reported_link() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
     let host = Host::start();
-    let socket = host.socket();
+    let runner = host.runner();
     let answer = broker::lease(
-        &socket,
+        &runner,
         MACHINE_ID,
         Verb::Warmup,
         Some("moor-1a2b3c4d-7"),
@@ -163,7 +179,7 @@ async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
         "{calls}"
     );
     let answer = broker::lease(
-        &socket,
+        &runner,
         MACHINE_ID,
         Verb::Info,
         Some("moor-1a2b3c4d-7"),
@@ -181,7 +197,7 @@ async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
 async fn a_dial_through_the_broker_carries_bytes_both_ways() {
     let host = Host::start();
     let warmed = broker::lease(
-        &host.socket(),
+        &host.runner(),
         MACHINE_ID,
         Verb::Warmup,
         Some("moor-1a2b3c4d-7"),
@@ -189,7 +205,7 @@ async fn a_dial_through_the_broker_carries_bytes_both_ways() {
     )
     .await;
     assert_eq!(warmed, Ok(Answer::Done));
-    let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-1a2b3c4d-7", None)
+    let mut vm = broker::dial(&host.runner(), MACHINE_ID, "moor-1a2b3c4d-7", None)
         .await
         .unwrap();
     for hello in [&b"SSH-2.0-hello\n"[..], b"second\n"] {
@@ -228,7 +244,7 @@ async fn the_broker_refuses_every_op_but_lease_dial_and_status() {
 async fn a_pool_host_reports_its_status_through_the_broker() {
     let host = Host::start();
     let warmed = broker::lease(
-        &host.socket(),
+        &host.runner(),
         MACHINE_ID,
         Verb::Warmup,
         Some("moor-1a2b3c4d-7"),
@@ -237,7 +253,7 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
     .await;
     assert_eq!(warmed, Ok(Answer::Done));
     let bad = broker::lease(
-        &host.socket(),
+        &host.runner(),
         MACHINE_ID,
         Verb::Info,
         Some("box-1"),
@@ -247,7 +263,7 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
     assert!(bad.is_err());
     let leases = r#"[{"name":"moor-1a2b3c4d-7","state":"running"}]"#;
     std::fs::write(host.home.join("leases.json"), leases).unwrap();
-    let status = broker::status(&host.socket(), MACHINE_ID).await.unwrap();
+    let status = broker::status(&host.runner(), MACHINE_ID).await.unwrap();
     assert!(!status.version.is_empty());
     let pool = status.pool.unwrap();
     assert_eq!(pool.provider, "fake");
@@ -277,7 +293,7 @@ async fn a_machine_with_no_link_is_named_offline() {
     .await;
     assert_eq!(answer["broker"], "offline", "{answer}");
     assert_eq!(answer["machine_id"], 99);
-    let err = broker::lease(&host.socket(), 99, Verb::List, None, Boot::default())
+    let err = broker::lease(&host.runner(), 99, Verb::List, None, Boot::default())
         .await
         .unwrap_err();
     assert!(err.contains("machine 99 is offline"), "{err}");
@@ -318,4 +334,84 @@ fn the_broker_socket_is_private_and_a_loose_one_stops_the_runner() {
         0o666,
         "the loose socket is left for its owner to look at"
     );
+}
+
+/// The machine service key the [`Host::remote`] runner checks.
+const KEY: &str = "machine-service-key";
+
+impl Host {
+    /// The runner as a controller in another pod reaches it, presenting `key`.
+    fn remote_runner(&self, key: &str) -> Runner {
+        Runner::Remote {
+            addr: format!("127.0.0.1:{}", self.rig.links.unwrap()),
+            key: key.to_owned(),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_controller_reaches_the_machine_through_the_runner_across_the_network_that_holds_it() {
+    let host = Host::remote();
+    let mut idle = Rig::with_args(&["--links", "127.0.0.1:0", "--service-key", KEY]);
+    if let Some(agent) = idle.machine_agent.take() {
+        agent.shutdown_background();
+    }
+    idle.online(false);
+    let elsewhere = Runner::Remote {
+        addr: format!("127.0.0.1:{}", idle.links.unwrap()),
+        key: KEY.to_owned(),
+    };
+    let err = broker::status(&elsewhere, MACHINE_ID).await.unwrap_err();
+    assert!(err.contains("is offline"), "{err}");
+
+    let runner = host.remote_runner(KEY);
+    let warmed = broker::lease(
+        &runner,
+        MACHINE_ID,
+        Verb::Warmup,
+        Some("moor-1a2b3c4d-7"),
+        Boot::default(),
+    )
+    .await;
+    assert_eq!(warmed, Ok(Answer::Done));
+    let status = broker::status(&runner, MACHINE_ID).await.unwrap();
+    assert!(status.pool.is_some(), "{status:?}");
+    let mut vm = broker::dial(&runner, MACHINE_ID, "moor-1a2b3c4d-7", None)
+        .await
+        .unwrap();
+    vm.write_all(b"SSH-2.0-hello\n").await.unwrap();
+    let mut back = [0u8; 14];
+    tokio::time::timeout(Duration::from_secs(10), vm.read_exact(&mut back))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&back, b"SSH-2.0-hello\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_controller_with_the_wrong_key_is_refused_links_and_forwards() {
+    use moor_client::forward::{Forward, Forwarding};
+    use moor_client::link::ops;
+    use moor_client::link::reach::Service;
+
+    let host = Host::remote();
+    let wrong = host.remote_runner("not-the-key");
+    let err = broker::status(&wrong, MACHINE_ID).await.unwrap_err();
+    assert!(err.contains("the machine service key is wrong"), "{err}");
+
+    let mut conn = wrong.connect(Service::Forwards).await.unwrap();
+    let ask = Forward {
+        box_id: 7,
+        machine_id: MACHINE_ID,
+        ports: vec![(8080, 1)],
+    };
+    ops::write_line(&mut conn, &ask).await.unwrap();
+    let answer: Forwarding = ops::read_line(&mut conn).await.unwrap();
+    assert_eq!(
+        answer,
+        Forwarding::Refused {
+            reason: "the machine service key is wrong".to_owned()
+        }
+    );
+    assert_eq!(fake_crabbox::calls(&host.home), "");
 }

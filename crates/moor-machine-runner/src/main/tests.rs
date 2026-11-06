@@ -30,3 +30,13 @@ fn a_tls_controller_takes_the_place_of_the_socket_and_needs_its_ca_key_and_addre
     assert!(parse(&[&full[..], &["--socket", "/r.sock"]].concat()).is_err());
     assert!(parse(&[]).is_err(), "neither --socket nor --controller");
 }
+
+#[test]
+fn the_controller_listener_needs_agent_links_and_the_key() {
+    let base = ["--socket", "/r.sock", "--links", "0.0.0.0:7701"];
+    let agents = ["--agents", "0.0.0.0:7702"];
+    let key = ["--service-key", "k"];
+    assert!(parse(&[&base[..], &agents, &key].concat()).is_ok());
+    assert!(parse(&[&base[..], &agents].concat()).is_err(), "no key");
+    assert!(parse(&[&base[..], &key].concat()).is_err(), "no agents");
+}
