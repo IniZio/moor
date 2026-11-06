@@ -233,7 +233,7 @@ spec:
           command: [moor-machine-runner]
           args:
             {{- if .Values.egress.enabled }}
-            # The egress pods relay Boxes' machine service requests here; a NetworkPolicy admits only them.
+            # The egress pods relay Boxes' machine service requests here, with the service key.
             - --listen=0.0.0.0:7700
             {{- else }}
             - --listen=127.0.0.1:7700
@@ -245,6 +245,11 @@ spec:
             {{- end }}
           env:
             - { name: MOOR_RUNNER_SOCKET, value: /var/lib/moor/pv/state/runner/runner.sock }
+            {{- if .Values.egress.enabled }}
+            - name: MOOR_MACHINE_SERVICE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: machine-service-key }
+            {{- end }}
           ports:
             - { name: agents, containerPort: {{ .Values.runner.agentsPort }} }
             {{- if .Values.egress.enabled }}

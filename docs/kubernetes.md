@@ -128,10 +128,12 @@ offline until the certificate needs renewing.
 
 With `runner.enabled` too, the runner's machine service listens on the pod's
 address, behind the Service `<release>-machine` on port 7700, and the egress
-pods send Boxes' `machine.moor.internal` requests there. The service trusts the
-`X-Moor-*` headers the Proxy sets, so the NetworkPolicy admits only the egress
-pods to it. On a cluster whose network plugin ignores NetworkPolicy, any pod
-can reach the ledger port and the machine service.
+pods send Boxes' `machine.moor.internal` requests there. The service names the
+calling Box from the `X-Moor-*` headers the Proxy sets, so it trusts them only
+alongside `X-Moor-Service-Key`, a key the chart derives from `egress.key` and
+gives the runner and the egress pods. The NetworkPolicy also admits only the
+egress pods to the ledger and machine ports, on clusters whose network plugin
+enforces it.
 
 ## Upgrades
 

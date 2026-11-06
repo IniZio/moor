@@ -9,6 +9,9 @@ type: Opaque
 stringData:
   egress-key: {{ required "egress.key is required when egress.enabled" .Values.egress.key | quote }}
   ledger-ca.pem: {{ required "egress.ledgerTls.ca is required when egress.enabled" .Values.egress.ledgerTls.ca | quote }}
+  {{- if .Values.runner.enabled }}
+  machine-service-key: {{ include "moor.machineServiceKey" . | quote }}
+  {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,6 +72,11 @@ spec:
             - name: MOOR_EGRESS_KEY
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-egress, key: egress-key }
+            {{- if .Values.runner.enabled }}
+            - name: MOOR_MACHINE_SERVICE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: machine-service-key }
+            {{- end }}
           ports:
             - { name: egress, containerPort: {{ .Values.egress.port }} }
           # The Proxy stops accepting at SIGTERM; until the Service and ingress drop the pod,
