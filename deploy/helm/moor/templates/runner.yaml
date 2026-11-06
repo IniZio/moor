@@ -1,5 +1,6 @@
 {{- if include "moor.runnerSeparate" . }}
 {{- $uid := int .Values.controller.uid -}}
+{{- $tls := .Values.egress.ledgerTls | default dict -}}
 {{- if eq (int .Values.runner.linksPort) (int .Values.runner.agentsPort) }}{{ fail "runner.linksPort must differ from runner.agentsPort" }}{{ end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -19,7 +20,7 @@ spec:
     metadata:
       labels: {{- include "moor.runnerLabels" . | nindent 8 }}
       annotations:
-        checksum/egress: {{ list .Values.egress.key .Values.egress.ledgerTls.ca | toJson | sha256sum | quote }}
+        checksum/egress: {{ list .Values.egress.key $tls.ca $tls.runnerClientCert | toJson | sha256sum | quote }}
         {{- range $k, $v := .Values.podAnnotations }}
         {{ $k }}: {{ $v | quote }}
         {{- end }}
