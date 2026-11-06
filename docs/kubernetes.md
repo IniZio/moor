@@ -126,8 +126,12 @@ openssl x509 -req -in ledger.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 
 Put `ledger.crt`, `ledger.key` and `ca.crt` in the values. Keep `ca.key`
 offline until the certificate needs renewing.
 
-The machine runner's service (`machines.service`) is reached only from inside
-the controller's pod. With `egress.enabled`, a Box's requests to it fail.
+With `runner.enabled` too, the runner's machine service listens on the pod's
+address, behind the Service `<release>-machine` on port 7700, and the egress
+pods send Boxes' `machine.moor.internal` requests there. The service trusts the
+`X-Moor-*` headers the Proxy sets, so the NetworkPolicy admits only the egress
+pods to it. On a cluster whose network plugin ignores NetworkPolicy, any pod
+can reach the ledger port and the machine service.
 
 ## Upgrades
 

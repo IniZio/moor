@@ -232,7 +232,12 @@ spec:
           securityContext: {{- include "moor.containerSecurity" . | nindent 12 }}
           command: [moor-machine-runner]
           args:
+            {{- if .Values.egress.enabled }}
+            # The egress pods relay Boxes' machine service requests here; a NetworkPolicy admits only them.
+            - --listen=0.0.0.0:7700
+            {{- else }}
             - --listen=127.0.0.1:7700
+            {{- end }}
             - --agents=0.0.0.0:{{ .Values.runner.agentsPort }}
             - --state-dir=/var/lib/moor/pv/state/machine-runner
             {{- with .Values.runner.extraArgs }}
@@ -242,6 +247,9 @@ spec:
             - { name: MOOR_RUNNER_SOCKET, value: /var/lib/moor/pv/state/runner/runner.sock }
           ports:
             - { name: agents, containerPort: {{ .Values.runner.agentsPort }} }
+            {{- if .Values.egress.enabled }}
+            - { name: machine, containerPort: 7700 }
+            {{- end }}
           {{- with .Values.runner.resources }}
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}

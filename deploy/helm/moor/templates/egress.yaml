@@ -61,6 +61,10 @@ spec:
             - /var/lib/moor/egress/ledger-ca.pem
             - --grace
             - {{ .Values.egress.graceSecs | quote }}
+            {{- if .Values.runner.enabled }}
+            - --machine-service
+            - machine.moor.internal={{ .Release.Name }}-machine.{{ .Release.Namespace }}.svc:7700
+            {{- end }}
           env:
             - name: MOOR_EGRESS_KEY
               valueFrom:
@@ -114,9 +118,22 @@ spec:
   selector: {{- include "moor.labels" . | nindent 4 }}
   ports:
     - { name: ledger, port: {{ .Values.egress.ledgerPort }}, targetPort: ledger }
+{{- if .Values.runner.enabled }}
 ---
-# The ledger answers only the egress key, and only the egress pods reach its port. The other
-# controller pod ports stay open to anything that reached them before.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-machine
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "moor.labels" . | nindent 4 }}
+  ports:
+    - { name: machine, port: 7700, targetPort: machine }
+{{- end }}
+---
+# Only the egress pods reach the ledger and the machine service, which trusts the X-Moor-* headers
+# the Proxy sets. The other controller pod ports stay open to anything that reached them before.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -132,6 +149,9 @@ spec:
             matchLabels: {{- include "moor.egressLabels" . | nindent 14 }}
       ports:
         - { port: ledger, protocol: TCP }
+        {{- if .Values.runner.enabled }}
+        - { port: machine, protocol: TCP }
+        {{- end }}
     {{- if or .Values.gate.enabled .Values.runner.enabled }}
     - ports:
         {{- if .Values.gate.enabled }}
