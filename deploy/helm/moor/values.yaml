@@ -92,8 +92,7 @@ mcp:
 
 # The shared egress Proxy, `moor proxy serve-egress`, in a Deployment of its own: every Box's
 # credential hosts go through it at wss://<host>/egress, so a controller deploy leaves Box egress up.
-# Off, the controller runs the Proxy inside its own pod and each deploy cuts it. docs/kubernetes.md
-# says how to make the key and the ledger certificate.
+# Off, the controller runs the Proxy inside its own pod and each deploy cuts it.
 egress:
   enabled: false
   replicas: 2
@@ -104,10 +103,12 @@ egress:
   graceSecs: 300
   # The controller serves its ledger on this port, over TLS, to the egress pods.
   ledgerPort: 7443
-  # Secret: the key Box tokens are signed with, MOOR_EGRESS_KEY.
+  # Secret, optional: the key Box tokens are signed with, MOOR_EGRESS_KEY. Empty makes one on
+  # first install and keeps it in the Secret <release>-egress.
   key: ""
-  # Secret: PEM certificate and key the controller's ledger presents, issued for
-  # <release>-ledger.<namespace>.svc, and the CA the egress pods check it against.
+  # Secret, optional, all three or none: the PEM certificate and key the controller's ledger
+  # presents, issued for <release>-ledger.<namespace>.svc, and the CA that signed them. Empty
+  # makes them on first install, like key.
   ledgerTls:
     cert: ""
     key: ""

@@ -109,30 +109,27 @@ The Proxy reaches the controller's ledger over TLS at
 to the egress pods. The egress pods get the egress key and the CA, never the
 database URL, the vault key or the provider keys.
 
-It needs three more secrets, which the chart refuses to render without:
+The chart makes the egress secrets itself. On first install it creates the
+Secret `<release>-egress` with the key Box tokens are signed with, a CA, and
+the ledger's certificate for `<release>-ledger.<namespace>.svc`, valid for ten
+years. Each upgrade reads them back, so they stay the same. An uninstall leaves
+the Secret behind, since running Boxes hold tokens signed with the key.
 
-| Key | What it is |
-| --- | --- |
-| `egress.key` | The key Box tokens are signed with: `openssl rand -hex 32`. |
-| `egress.ledgerTls.cert`, `egress.ledgerTls.key` | The certificate the ledger presents, issued for `<release>-ledger.<namespace>.svc`, and its key, in PEM. |
-| `egress.ledgerTls.ca` | The PEM CA that signed it, which the egress pods trust. |
+To bring your own, set `egress.key` and all of `egress.ledgerTls.cert`,
+`egress.ledgerTls.key` and `egress.ledgerTls.ca` (PEM). Values you set win over
+the kept ones.
 
-Make the CA and the certificate with openssl, for release `moor` in namespace
-`moor`:
+To rotate them, delete the Secret and upgrade, then restart the controller
+and the egress pods:
 
 ```sh
-name=moor-ledger.moor.svc
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-  -subj "/CN=moor ledger CA" -keyout ca.key -out ca.crt
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
-  -subj "/CN=$name" -keyout ledger.key -out ledger.csr
-openssl x509 -req -in ledger.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
-  -extfile <(printf 'subjectAltName=DNS:%s\nextendedKeyUsage=serverAuth\n' "$name") \
-  -out ledger.crt
+kubectl -n <namespace> delete secret <release>-egress
+helm upgrade ...
+kubectl -n <namespace> rollout restart deployment/<release> deployment/<release>-egress
 ```
 
-Put `ledger.crt`, `ledger.key` and `ca.crt` in the values. Keep `ca.key`
-offline until the certificate needs renewing.
+Boxes' old tokens stop working. Each Box gets a new token the next time the
+controller delivers its forwarder.
 
 With `runner.enabled` too, the runner's machine service listens on the pod's
 address, behind the Service `<release>-machine` on port 7700, and the egress

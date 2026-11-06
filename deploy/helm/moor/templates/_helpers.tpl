@@ -41,11 +41,6 @@ app.kubernetes.io/name: moor-egress
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end -}}
 
-{{/* The key the egress pods prove themselves to the runner's machine service with, derived from egress.key so no other secret needs keeping. */}}
-{{- define "moor.machineServiceKey" -}}
-{{ printf "moor machine service:%s" (required "egress.key is required when egress.enabled" .Values.egress.key) | sha256sum }}
-{{- end -}}
-
 {{/* Where Boxes dial the egress Proxy: egress.url, else /egress on the gate ingress, which must then exist. */}}
 {{- define "moor.egressUrl" -}}
 {{- if .Values.egress.url -}}

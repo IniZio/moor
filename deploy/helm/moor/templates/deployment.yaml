@@ -75,7 +75,7 @@ spec:
                 if [ -e "/src/secrets/$f" ]; then install -m 0600 "/src/secrets/$f" "/var/lib/moor/config/$f"; fi
               done
               {{- if .Values.egress.enabled }}
-              install -m 0600 /src/secrets/ledger-tls.crt /src/secrets/ledger-tls.key /var/lib/moor/config/
+              install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /var/lib/moor/config/
               {{- end }}
               {{- if .Values.slack.enabled }}
               cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
@@ -90,6 +90,9 @@ spec:
           volumeMounts:
             - { name: config-src, mountPath: /src/config, readOnly: true }
             - { name: secrets-src, mountPath: /src/secrets, readOnly: true }
+            {{- if .Values.egress.enabled }}
+            - { name: egress-src, mountPath: /src/egress, readOnly: true }
+            {{- end }}
             - { name: moor-config, mountPath: /var/lib/moor/config }
             - { name: slack-config, mountPath: /var/lib/moor/slack }
             - { name: state, mountPath: /pv }
@@ -127,7 +130,7 @@ spec:
               value: {{ include "moor.egressUrl" . | quote }}
             - name: MOOR_EGRESS_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: egress-key }
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: egress-key }
             {{- end }}
             {{- with .Values.controller.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -248,7 +251,7 @@ spec:
             {{- if .Values.egress.enabled }}
             - name: MOOR_MACHINE_SERVICE_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: machine-service-key }
+                secretKeyRef: { name: {{ .Release.Name }}-egress, key: machine-service-key }
             {{- end }}
           ports:
             - { name: agents, containerPort: {{ .Values.runner.agentsPort }} }
@@ -268,6 +271,15 @@ spec:
           configMap: { name: {{ .Release.Name }}-config }
         - name: secrets-src
           secret: { secretName: {{ .Release.Name }}-secrets, defaultMode: 0440 }
+        {{- if .Values.egress.enabled }}
+        - name: egress-src
+          secret:
+            secretName: {{ .Release.Name }}-egress
+            defaultMode: 0440
+            items:
+              - { key: ledger-tls.crt, path: ledger-tls.crt }
+              - { key: ledger-tls.key, path: ledger-tls.key }
+        {{- end }}
         - name: moor-config
           emptyDir: { medium: Memory, sizeLimit: 1Mi }
         - name: slack-config
