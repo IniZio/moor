@@ -239,15 +239,9 @@ fn brief_is_notes_for_the_agent() {
 }
 
 #[test]
-fn brief_longer_than_the_cap_is_rejected() {
-    let at_cap = "a".repeat(4000);
-    assert_eq!(ok(&format!("brief: {at_cap}")).brief, Some(at_cap));
-    let over = "a".repeat(4001);
-    rejects(
-        &format!("brief: {over}"),
-        "brief",
-        "at most 4000 characters",
-    );
+fn a_long_brief_is_accepted() {
+    let long = "a".repeat(20000);
+    assert_eq!(ok(&format!("brief: {long}")).brief, Some(long));
 }
 
 #[test]
