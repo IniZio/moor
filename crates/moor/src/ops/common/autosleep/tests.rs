@@ -22,7 +22,7 @@ use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
 
 /// Time enough to pass the default `box.sleep_after`.
-const LONG: Duration = Duration::from_mins(31);
+const LONG: Duration = Duration::from_mins(6);
 
 struct Fx {
     _dir: tempfile::TempDir,
@@ -160,7 +160,7 @@ fn a_native_sleep_counts_as_slept() {
 #[test]
 fn a_box_not_idle_long_enough_is_left_alone() {
     let f = idle();
-    pass(&f, Duration::from_mins(29));
+    pass(&f, Duration::from_mins(4));
     auto_sleep(&f);
     assert_eq!(
         states(&f),

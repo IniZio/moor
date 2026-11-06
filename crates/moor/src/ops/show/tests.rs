@@ -142,7 +142,7 @@ fn show_lists_open_boxes_with_no_selection() {
 
 #[test]
 fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))] {
         let dir = tempfile::tempdir().unwrap();
         let driver = Arc::new(FakeDriver::new().sleep_kind(kind));
         let cx = cx(dir.path(), &driver);

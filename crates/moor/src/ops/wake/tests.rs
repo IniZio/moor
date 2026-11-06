@@ -209,7 +209,7 @@ fn wake_refuses_while_another_op_holds_the_box_lock() {
 
 #[test]
 fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))] {
         let f = fx_with(FakeDriver::new().sleep_kind(kind));
         asleep(&f);
         let v = run(&f.cx, &req()).unwrap();

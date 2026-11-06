@@ -451,7 +451,7 @@ fn a_busy_agent_times_out_at_the_default_bound() {
 }
 
 const SLEEP_LABELS: [(SleepKind, Option<&str>); 2] =
-    [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))];
+    [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))];
 
 #[test]
 fn sleep_label_follows_provider_sleep_support() {
