@@ -200,12 +200,15 @@ closes the head.
 
 ### Closing an asleep Box
 
-Just before a Box is suspended, moor checks it for unpushed work, for up to 10
-seconds, and keeps the answer. A suspended guest cannot change, so the answer
+Just before an idle Box is suspended, moor checks it for unpushed work, for up to
+10 seconds, and keeps the answer. A suspended guest cannot change, so the answer
 stands until the Box next runs: any wake or new machine clears it, and so does
 finding a Box stopped that moor did not suspend. A check that cannot answer stores
 nothing and does not hold up the suspend, and critical memory skips the check.
-Work done in the moment between the check and the snapshot is not counted.
+
+A Box whose agent is working or that has a run in flight is not checked and keeps
+no answer, since it could write between the check and the snapshot. An idle Box's
+background jobs could still write in that moment, and that work is not counted.
 
 A close never takes a place in the queue or suspends another Box:
 

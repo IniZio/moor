@@ -18,8 +18,8 @@ use crate::store::{BoxRow, Store, SuspendCheck};
 /// Longest a suspend waits to learn what the Box holds.
 const CHECK_WITHIN: Duration = Duration::from_secs(10);
 
-/// Records what Box `id` holds, or that nothing is known of it when the check cannot answer or
-/// memory is too short to spend time asking. Never stops the suspend that follows.
+/// Records what Box `id` holds, or that nothing is known of it when it is at work, the check
+/// cannot answer, or memory is too short to spend time asking. Never stops the suspend that follows.
 pub(crate) fn record(cx: &Cx, store: &Store, id: BoxId) {
     let answer = answer(cx, store, id).and_then(|check| Ok(store.set_suspend_check(id, check)?));
     if let Err(e) = answer {
@@ -38,7 +38,10 @@ fn answer(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<SuspendCheck>, Com
     let Some(boxed) = row.boxed.as_ref() else {
         return Ok(None);
     };
-    if memory_critical(store, &row)? {
+    // An agent or run at work could write between the check and the snapshot, and a stored clean
+    // lets a close delete the Box unwoken.
+    let at_work = !row.session.is_quiet() || store.in_flight_run(id)?.is_some();
+    if at_work || memory_critical(store, &row)? {
         return Ok(None);
     }
     let (ahead, dirty) = match probe_within(cx, &row, boxed, CHECK_WITHIN) {
