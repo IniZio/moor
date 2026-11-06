@@ -21,9 +21,11 @@ pub(super) fn judge(
             machine_id,
             version,
             offer,
-        }) if stamped.is_none_or(|s| s == version) => {
-            Ok((machine_id, version, offer.unwrap_or_default()))
-        }
+        }) if stamped.is_none_or(|s| s == version) => Ok((
+            machine_id,
+            version,
+            offer.map_or_else(Offer::default, |o| *o),
+        )),
         _ => Err(Some(Frame::UpdateRequired {
             version: own.to_owned(),
         })),
