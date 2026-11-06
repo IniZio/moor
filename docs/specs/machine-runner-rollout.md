@@ -82,8 +82,8 @@ answers, instead of backing off.
   `terminationGracePeriodSeconds: 40`, a PodDisruptionBudget with
   `minAvailable: 1`, readiness when the agents port accepts and the controller
   answers.
-- Service for `/machines/link` to the runner pods. A headless Service gives the
-  controller each pod's address.
+- Service for `/machines/link` to the runner pods. The controller dials the pod
+  address each link row names, so no headless Service.
 - The runner rolls on every nightly, since it shares the image tag. That is
   fine once a roll is a one-second relink.
 
@@ -118,25 +118,137 @@ count restarts with it and cannot order links across runners; `since` can.
 | Keep `runner.sock` for VM and host installs | One binary, one protocol; the socket is a transport choice behind the same wire. |
 | Slack is its own slice | Its state is still per pod. |
 
+## Runner over the network
+
+In one pod, the runner and the controller share a volume: three Unix sockets
+and two host paths. As separate pods, each becomes a TCP connection that opens
+with the machine service key (`MOOR_MACHINE_SERVICE_KEY`), and the runner's one
+durable file set moves to the store. VM and host installs keep the sockets.
+
+```
+runner     ──tls <release>-ledger:7443, hello{runner, key}──▶ controller
+             show, machine-hold, machine-keys, machine-links, machine-box, box-rsync
+controller ──tcp runner_addr, hello{key, links | forwards | conn n}──▶ runner pod
+```
+
+### Runner to controller
+
+The runner dials the ledger's TLS listener and opens with a runner hello. The
+controller hands that stream to the loop that serves `runner.sock`, as
+`Caller::Runner`, so the requests, their authz and the drain keep their code.
+The ledger's own hello still serves store calls only.
+
+### Mirror and put without a shared disk
+
+```
+runner:  rsync -a --delete -e 'moor-machine-runner box-rsh <box>' box:<workdir>/ mirrors/<box>/
+box-rsh  ──tls 7443──▶ controller: box-rsync {box, argv}, then bytes frames both ways
+controller: Box lock, wake, the Box's ssh words + argv ──▶ rsync --server in the Box
+runner:  mirrors/<box>/ ──rsh over the agent link──▶ machine        (as today)
+```
+
+A put is the same call the other way: the runner rsyncs its staged file to
+`box:<workdir>/<dest>` with `--chmod=F644`. The controller takes only an
+`rsync --server` argv whose path lies beneath the Box's work tree. The bytes
+frames are the ones the `attach` relay already sends (binary, 64 KiB each).
+
+Deleted: `box-mirror` and `box-put` (the runner is their only sender), the
+grant's host directory, and the PVC subPath mounts.
+
+Limits: the mirror lives in the runner pod's `emptyDir`, so a Box's first sync
+after a runner roll copies its whole tree; later syncs send only changes. A put
+loses its 32 MiB cap and keeps the 10 minute deadline a mirror has.
+
+### Box ports to the machine
+
+```
+keeper     ──tcp runner_addr, forwards{box, machine, box ports}──▶ runner ──agent──▶ machine listens
+machine connects to port p ──▶ runner ──"conn n p" on that carrier──▶ keeper
+keeper     ──tcp runner_addr, hello{conn n}──▶ runner pipes the agent stream
+keeper     pipes it to its own tunnel to Box port p
+```
+
+Every connection runs from the controller pod to the runner, the direction the
+key already guards, and no Box port opens on the pod network. The keeper's
+owner must agree to three changes: a forward names Box ports only; the keeper
+reads `conn` lines on its carrier and dials back once per connection; it finds
+the runner by the link row, not by `runner_socket`. A carrier cut by a drain
+already reopens on the next keeper tick, now against the new row.
+
+Deleted: the runner's dial to the controller's loopback ports, and the
+`(box_port, host_port)` pairs.
+
+### Box records in the store
+
+```
+machine_boxes  box_id, machine_id, slot, reach, facts, prepared, suspended_at, evicted, updated_at
+```
+
+`reach` and `facts` are JSON text: the controller stores them and never reads
+them. One runner request, `machine-box`, gets, puts and drops a row and lists a
+machine's rows. Closing a Box drops its row. Any replica then wakes a Box that
+another prepared. Deleted: `boxes/` in the runner's state directory.
+
+### link-dial
+
+`dial_command` becomes `moor link-dial --runner <addr> <machine> <slug>`, with
+the address from the link row when the ssh words are built. The key comes from
+the controller's environment, which ssh passes to its ProxyCommand. A relink to
+another runner ends the old stream within the drain, and the next ssh call
+reads the new row. `wire/links.rs` routes to the row's address, not the single
+local runner. Deleted: `MOOR_STATE_DIR` in the command.
+
+### Chart
+
+- `<release>-runner` Deployment as in Chart above, two replicas by default.
+  Ports: agents (`/machines/link`), 7700 (MCP), 7701 (controller dials).
+- `--advertise=$(POD_IP):7701` from the downward API.
+- The `<release>-machine` Service from #1138 selects the runner pods. Network
+  policy: 7701 from the controller pod only, 7700 from the egress pods, 7443
+  from the egress and runner pods.
+- `MOOR_MACHINE_SERVICE_KEY` from the release secret; the ledger CA mounted as
+  the egress pods mount it.
+- `emptyDir` for `mirrors/` and `tmp/`. No PVC.
+
+### Decisions
+
+| Decision | Reason |
+| --- | --- |
+| Runner hello on the ledger's TLS listener, not a new listener | Port, cert, Service and policy exist; the hello hands off to the runner loop, so the ledger stays store-only. |
+| `box-rsync` over bytes frames, mirror in the runner pod | rsync stays incremental and binary over framing `attach` already uses, with no shared disk. |
+| Keeper dials back per connection | No Box port leaves loopback; the Box's ssh master stays with the driver. |
+| Box records in the store, not a PVC per runner | A PVC binds a Box to one pod; any replica must read it. |
+| Advertise the pod IP | The link row already names the pod. |
+
 ## PRs, in order
 
-1. **Drain and relink, single pod.** Runner drains on SIGTERM (stop admitting,
-   `relink` to agents, streams finish within 30 s). Agent relinks at once on
-   `relink` and resets its backoff. Key check retries for 10 s. Measured on a
-   nightly: unlink per machine from about 10 s to about one redial.
-2. **Link registry in the store.** Runner reports carry its address and whether
-   it drains; the controller writes `machine_links`; machine ops route by the
-   row. Transport stays `runner.sock` in the pod. Stacks on 1, since both end
-   the runner's links on SIGTERM.
-3. **Runner over TCP.** The controller dials the runner by address with the
-   runner's service key (`MOOR_MACHINE_SERVICE_KEY`, the key the shared Proxy
-   already sends); the runner Deployment and PDB in the chart, with the
-   existing machine Service and network policy repointed at it; the k3s
-   rollout probe from #769 extended with a linked fake agent and an exec in
-   flight through the roll.
-4. **Slack.** State to the store, lease, own Deployment.
+1. **Drain and relink, single pod.** Done on `feat/machine-link-registry`.
+2. **Link registry in the store.** Done on the same branch.
+3. **Runner dials the controller over TLS.** Runner hello on the ledger
+   listener, runner `--controller tls://…` with CA and key. Check: a test
+   runner over TLS gets `show` and `machine-keys`; a wrong key is refused.
+   About 400 lines.
+4. **Box records in the store.** `machine_boxes` migration (SQLite and
+   Postgres), `machine-box`, `boxes/` deleted. Check: prepare a Box, restart
+   the runner on an empty state directory, wake it; no second `prepare`.
+   About 500 lines.
+5. **box-rsync.** Mirror and put through `box-rsh`; `box-mirror`, `box-put`
+   and the host directory grant deleted. Check: sync and pull tests with the
+   runner's state directory unreadable by the controller. About 600 lines.
+6. **Controller dials the runner by address.** Runner listener on 7701 with
+   the key hello for links; `wire/links.rs` and link-dial route by the row.
+   Check: two runners in a test, a machine linked to the second; lease, dial
+   and ssh reach it. About 500 lines.
+7. **Forwards dial back.** The keeper change above, reviewed by the keeper's
+   owner. Check: a Box port reached from the machine through a runner in
+   another network namespace than the keeper. About 400 lines.
+8. **Runner Deployment.** The chart above. Check: the k3s roll-probe with
+   `RUNNER_EXEC='deploy/moor-runner -c runner'`, three runner rolls and three
+   controller rolls, ops every 0.5 s and an exec in flight: zero failed ops,
+   the exec completes, and the agent shows `not linked` for at most one redial.
+9. **Slack.** State to the store, lease, own Deployment.
 
-## To measure in PR 1 and 3
+## To measure in PR 1 and 8
 
 - Seconds a machine shows `not linked` across a nightly deploy.
 - Machine ops failed across a runner roll with one exec in flight.
