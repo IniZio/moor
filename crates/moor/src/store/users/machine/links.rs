@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use moor_core::name::BoxId;
 use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
@@ -110,11 +111,15 @@ impl Store {
                         MachineBoxMemory::MachineId,
                         MachineBoxMemory::BoxId,
                         MachineBoxMemory::HostMemoryMib,
+                        MachineBoxMemory::ResumeMemoryMib,
                     ])
                     .values_panic([
                         b.machine_id.into(),
                         b.box_id.get().into(),
                         i64::try_from(b.host_memory_mib).unwrap_or(i64::MAX).into(),
+                        b.resume_memory_mib
+                            .and_then(|m| i64::try_from(m).ok())
+                            .into(),
                     ]),
             )?;
         }
@@ -135,6 +140,21 @@ impl Store {
             |r| Ok::<_, db::Error>((r.get::<_, i64>(0)?, mib(r.get(1)?).unwrap_or(0))),
         )?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The MiB Box `id` needs to resume, as its provider last reported; none when it did not say.
+    pub(crate) fn resume_memory_mib(&self, id: BoxId) -> Result<Option<u64>, StoreError> {
+        let conn = self.reader()?;
+        let stored = conn
+            .row(
+                Query::select()
+                    .column(MachineBoxMemory::ResumeMemoryMib)
+                    .from(MachineBoxMemory::Table)
+                    .and_where(Expr::col(MachineBoxMemory::BoxId).eq(id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(mib(stored.flatten()))
     }
 
     /// The stored link of each of `user`'s machines that has one, by machine name.

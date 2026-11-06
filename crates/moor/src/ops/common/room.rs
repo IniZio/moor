@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::decide::disk::{judge, Change, Report, State};
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
 use moor_core::decide::pressure::{
-    relieve, sustained, working, Candidate, Cooldown, Demand, Reading,
+    relieve, sustained, working, Candidate, Cooldown, Reading, SETTLE_SECS,
 };
 use moor_core::decide::schedule::{Memory, Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -19,8 +19,9 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{ready_handle, sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::BoxLock;
-use crate::ops::common::node::{now, recorded};
+use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
+use crate::ops::common::resume_gate::demand;
 use crate::store::{BoxRow, Store};
 
 /// How long the same failure to suspend a Box goes unrepeated in its events, in seconds.
@@ -35,22 +36,52 @@ pub(crate) fn make_room_on(
     node: &Node,
     for_box: &str,
 ) -> Result<(), CommandError> {
-    let short = node.memory.and_then(|m| m.shortfall(now(cx)));
-    if !matches!(short, Some(Shortfall::Low { .. } | Shortfall::Pressure))
-        || node.max_boxes.is_some_and(|max| node.used >= max)
-    {
+    node.memory
+        .and_then(|m| m.shortfall(now(cx)))
+        .map_or(Ok(()), |short| {
+            suspend_idlest(cx, store, node, short, for_box)
+        })
+}
+
+/// Suspends the longest-idle settled Box on `node` for `for_box` when `short` is a shortage of
+/// memory a suspension can help.
+pub(super) fn suspend_idlest(
+    cx: &Cx,
+    store: &Store,
+    node: &Node,
+    short: Shortfall,
+    for_box: &str,
+) -> Result<(), CommandError> {
+    if !helps(node, short) {
         return Ok(());
     }
     let mut residents = Vec::new();
     for id in store.ready_on(&node.name)? {
         if let Some(row) = store.box_row(id)? {
-            residents.push(resident(store, &row)?);
+            let settled =
+                resumed_at(store, id)?.is_none_or(|at| now(cx).saturating_sub(at) >= SETTLE_SECS);
+            if settled {
+                residents.push(resident(store, &row)?);
+            }
         }
     }
     if let Some(id) = longest_idle(&residents) {
         suspend(cx, store, id, &format!("made room for {for_box}"))?;
     }
     Ok(())
+}
+
+/// Whether suspending a Box on `node` can help with `short`: not when its Box count is full.
+pub(super) fn helps(node: &Node, short: Shortfall) -> bool {
+    matches!(short, Shortfall::Low { .. } | Shortfall::Pressure)
+        && node.max_boxes.is_none_or(|max| node.used < max)
+}
+
+/// When Box `id` last resumed, unix seconds.
+fn resumed_at(store: &Store, id: BoxId) -> Result<Option<i64>, CommandError> {
+    Ok(store
+        .last_event_of(id, "woke")?
+        .map(|ev| ev.ts.as_millis() / 1000))
 }
 
 /// A Box on a node as the suspend choice sees it.
@@ -104,23 +135,6 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     Ok(true)
 }
 
-/// Before an asleep Box resumes: why its node has no room for it, after suspending an idle Box
-/// there to make some; `None` when it may wake now.
-pub(crate) fn room_to_wake(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-) -> Result<Option<String>, CommandError> {
-    let Some(node) = recorded(cx, store, row)? else {
-        return Ok(None);
-    };
-    let Some(short) = node.memory.and_then(|m| m.shortfall(now(cx))) else {
-        return Ok(None);
-    };
-    make_room_on(cx, store, &node, row.name.as_str())?;
-    Ok(Some(short.reason(&node.name)))
-}
-
 /// On a new memory report from `node`: keeps it, tracks whether pressure is sustained, and
 /// suspends at most one Box there to relieve it. A working Box suspended as a last resort waits
 /// for room and resumes first.
@@ -154,6 +168,7 @@ pub(crate) fn on_report(
                 resident: resident(store, &row)?,
                 started_at: row.created_at.as_millis() / 1000,
                 in_flight: store.in_flight_run(id)?.is_some(),
+                resumed_at: resumed_at(store, id)?,
             });
         }
     }
@@ -166,7 +181,7 @@ pub(crate) fn on_report(
             suspended_at: p.suspended_at,
             now,
         },
-        &demand(store, node, memory.shortfall(now))?,
+        &demand(store, node, &memory, now)?,
     );
     for s in picks {
         let done = if s.last_resort {
@@ -241,18 +256,6 @@ fn tell_disk(store: &Store, node: &NodeName, change: Change) -> Result<(), Comma
         store.apply(Decision::new(id).event(event))?;
     }
     Ok(())
-}
-
-/// What the Boxes waiting on `node` ask of it, given its memory `short`fall. Nothing when its Box
-/// count is full, since a suspension would not help them.
-fn demand(store: &Store, node: &Node, short: Option<Shortfall>) -> Result<Demand, CommandError> {
-    let short = matches!(short, Some(Shortfall::Low { .. } | Shortfall::Pressure))
-        && node.max_boxes.is_none_or(|max| node.used < max);
-    let waiter = match store.pending_on(&node.name)?.first() {
-        Some(id) if short => store.box_row(*id)?.map(|row| row.name.as_str().to_owned()),
-        _ => None,
-    };
-    Ok(Demand { short, waiter })
 }
 
 /// Suspends running Box `id` for `reason` and leaves it waiting for room, if nothing changed and

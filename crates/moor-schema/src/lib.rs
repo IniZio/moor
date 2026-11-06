@@ -9,6 +9,7 @@ use moor_migrate::{Backend, Script, Step};
 mod baseline;
 mod insertion_order;
 mod proxy_key;
+mod resume_memory;
 pub mod tables;
 mod workflow_changes;
 mod workflows;
@@ -36,6 +37,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V49__workflow_changes",
         write: workflow_changes::write,
+    },
+    Step {
+        name: "V50__resume_memory",
+        write: resume_memory::write,
     },
 ];
 

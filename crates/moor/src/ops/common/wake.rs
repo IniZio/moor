@@ -17,7 +17,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::node::now;
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
-use crate::ops::common::room::room_to_wake;
+use crate::ops::common::resume_gate::{room_to_wake, Turn};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store};
@@ -38,7 +38,7 @@ pub(crate) fn wake_box_if_asleep(
     store: &Store,
     row: &BoxRow,
 ) -> Result<bool, CommandError> {
-    wake(cx, store, row).map(|w| w.any)
+    wake(cx, store, row, Turn::JoinsQueue).map(|w| w.any)
 }
 
 /// Like `wake_box_if_asleep`, then restores the tunnel and relaunches a gone agent.
@@ -47,7 +47,18 @@ pub(crate) fn wake_box_if_asleep(
 /// back first because the agent reaches the model through the Proxy. When the
 /// tunnel or the relaunch fails the Box stays awake and the error is returned.
 pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let woke = wake_with_tunnel(cx, store, row)?;
+    revive(cx, store, row, Turn::JoinsQueue)
+}
+
+/// `wake_and_revive` for a promotion, which goes down the queue itself and so reaches a Box only
+/// when those ahead have left it or failed on their own account.
+pub(crate) fn wake_in_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    revive(cx, store, row, Turn::Reached)
+}
+
+/// Wakes the Box and restores its tunnel and agent.
+fn revive(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<bool, CommandError> {
+    let woke = wake_with_tunnel(cx, store, row, turn)?;
     if woke.box_resumed {
         revive_after_wake(cx, store, row.id)?;
         tell_after_last_resort(cx, store, row)?;
@@ -81,8 +92,13 @@ fn tell_after_last_resort(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
 }
 
 /// Wake the Box and machine, then restore the tunnel when the machine was resumed.
-fn wake_with_tunnel(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
-    let woke = wake(cx, store, row)?;
+fn wake_with_tunnel(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    turn: Turn,
+) -> Result<Woke, CommandError> {
+    let woke = wake(cx, store, row, turn)?;
     if woke.box_resumed {
         // The Box stays awake when the tunnel cannot return; the op fails instead.
         restore_tunnel(cx, store, row.id, false)?;
@@ -99,7 +115,7 @@ struct Woke {
 }
 
 /// Wake the Box and machine when Asleep and report what was woken.
-fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
+fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, CommandError> {
     let box_asleep = row
         .boxed
         .as_ref()
@@ -121,7 +137,7 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
-            if let Some(reason) = room_to_wake(cx, store, row)? {
+            if let Some(reason) = room_to_wake(cx, store, row, turn)? {
                 return Err(wait_for_room(store, row, reason)?);
             }
             cx.driver().wake(handle)?;

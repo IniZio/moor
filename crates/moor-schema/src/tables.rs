@@ -75,7 +75,7 @@ tables! {
     BoxMachines { Box, User, State, Machine, Labels, Ports, Slot, SyncExclude, Since, Until,
         Enrolled }
     NodePressure { Node, Readings, HighSince, SuspendedAt }
-    MachineBoxMemory { MachineId, BoxId, HostMemoryMib }
+    MachineBoxMemory { MachineId, BoxId, HostMemoryMib, ResumeMemoryMib }
     SetupCheckpoints { Provider, LayerKey, Checkpoint, Repo, Bytes, CreatedAt, LastUsedAt, Workdir,
         SetupMs, User, Chain, ChainAt, Parent, Evicting }
     SetupCheckpointPins { BoxId, Provider, LayerKey, Layer }

@@ -54,13 +54,38 @@ free, needs 2 GiB`, `memory pressure on NODE`, or `no recent memory report from
 NODE`. A node whose agent never reports memory admits by Box count alone.
 
 When a start does not fit, the node suspends its one longest-idle Box and the
-start waits for the next report. It never suspends a Box that is working, one
+start waits for the next report. A start also waits when Boxes already queue on
+the node, however much is free, with the status `NODE is making room; N Boxes
+ahead`. It never suspends a Box that is working, one
 waiting on a question, or one still starting. With no idle Box, nothing is
 suspended. A suspended Box's status says which Box it made room for. While a
 Box waits for capacity on a node, each memory report there also suspends its
 longest-idle Box, at most one per 30 seconds, by the same rules, with the status
 `made room for BOX`. A wake that does not fit makes room the same way, leaves
 its Box Pending with the reason, and a later report with room wakes it.
+
+### Resuming
+
+Every resume passes one gate, whether a report promotes the Box or a person or
+agent asks for it. An asleep Box resumes only when:
+
+- its last report is under 60 seconds old, PSI `some avg10` is under 10, and the
+  disk is above its floor, as for a new Box,
+- no Box has come up since the last report, which would not count it yet, and
+- `MemAvailable` less the host reserve, less 2 GiB for each Box still setting up,
+  leaves what the Box needs, or nothing runs on the node and `MemAvailable` is at
+  least 1 GiB more than what it needs.
+
+What a Box needs is `resumeMemoryMiB`, when its crabbox provider lists that for
+the lease of a suspended VM. Without it, it is the Box's whole guest memory. A
+guest's ceiling can be far above its real use: a Box with a 23 GiB ceiling that
+really uses 6 GiB would otherwise stay asleep beside any other Box on a 30 GiB
+host. A Box whose size moor never learned asks what a new Box does, reserve and
+all.
+
+A Box that resumed stays out of the suspend order for 30 seconds, about three
+reports, so that what it faults back in shows first. Critical memory ignores
+this, since running out is worse than a flap.
 
 `--reserve-mib` sets the reserve kept back for the host. It defaults to 4096 MiB
 plus 10% of the host's memory:
@@ -140,9 +165,23 @@ it with `--node`. A full node does not send the Box elsewhere.
 
 A start on a node that is full, by Box count or by memory, waits there. The Box is Pending, with the reason
 in its status, and it starts when a Box on that node closes, the node's link
-comes back, or a memory report shows room. Boxes on a node start in the order
-they asked, after any Box suspended as a last resort; a memory report starts at
-most one, and the next report counts it.
+comes back, or a memory report shows room.
+
+On a node that reports memory, one queue holds starts and resumes: Boxes
+suspended as a last resort first, then other resumes, then new starts, each
+oldest first. A memory report takes at most one Box from it, and the next report
+counts that Box. The pass stops at the first Box that still needs room, so a
+small Box does not pass a big one ahead of it, and a wake asked for now waits
+behind what is ahead of it. `moor show` gives a waiting Box's place in line. A Box
+at the head that fails for its own reason, such as a provider error, does not
+hold the others back.
+
+Nothing makes room for the head except what already frees memory: idle Boxes are
+suspended for it and working ones finish. So if only asleep Boxes remain and other
+work on the host leaves too little memory, the head waits there, with its reason
+and place, and every Box behind it waits too, until the host has room or someone
+closes the head. Closing an asleep Box wakes it first, so such a close waits in
+the same line.
 
 ## Choosing a node
 

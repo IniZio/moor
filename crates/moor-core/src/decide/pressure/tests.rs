@@ -1,4 +1,4 @@
-use super::{relieve, Candidate, Cooldown, Demand, Reading, Suspend, COOLDOWN_SECS};
+use super::{relieve, Candidate, Cooldown, Demand, Reading, Suspend, COOLDOWN_SECS, SETTLE_SECS};
 use crate::decide::preempt::Resident;
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
@@ -37,6 +37,7 @@ fn of(id: i64, session: SessionState, idle_ms: Option<i64>, started_at: i64) -> 
         },
         started_at,
         in_flight: false,
+        resumed_at: None,
     }
 }
 
@@ -328,4 +329,40 @@ fn an_idle_box_with_a_run_in_flight_is_tried_only_as_a_last_resort() {
 fn sustained_psi_alone_leaves_working_boxes_out_of_the_order() {
     let got = picks(&pressed(3), &[working(1, 10), idle(2, 5)], None);
     assert_eq!(order(&got), [(2, false)]);
+}
+
+fn resumed(mut c: Candidate, at: i64) -> Candidate {
+    c.resumed_at = Some(at);
+    c
+}
+
+#[test]
+fn a_box_is_not_picked_until_its_resume_has_settled() {
+    let now = 100;
+    let low = [reading(now, RESERVE - 1, 0, 0)];
+    let boxes = [
+        resumed(idle(1, 10), now - SETTLE_SECS + 1),
+        resumed(working(2, 50), now - SETTLE_SECS + 1),
+        working(3, 10),
+    ];
+    assert_eq!(order(&picks(&low, &boxes, None)), [(3, true)]);
+    let settled = [
+        resumed(idle(1, 10), now - SETTLE_SECS),
+        resumed(working(2, 50), now - SETTLE_SECS),
+        working(3, 10),
+    ];
+    assert_eq!(
+        order(&picks(&low, &settled, None)),
+        [(1, false), (2, true), (3, true)]
+    );
+}
+
+#[test]
+fn critical_memory_may_pick_a_box_that_just_resumed() {
+    let now = 100;
+    let boxes = [resumed(working(1, 50), now - 1), working(2, 10)];
+    assert_eq!(
+        order(&picks(&[reading(now, 512, 0, 0)], &boxes, None)),
+        [(1, true), (2, true)]
+    );
 }

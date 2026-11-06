@@ -1,13 +1,13 @@
 use super::*;
 
 /// The next report from `hv`, ten seconds after the last, with PSI `some` and `full`.
-fn tick(w: &World, hv: i64, available_mib: u64, some: u32, full: u32) {
+pub(super) fn tick(w: &World, hv: i64, available_mib: u64, some: u32, full: u32) {
     w.cx.clock().sleep(std::time::Duration::from_secs(10));
     report_psi(w, hv, available_mib, Some(some), Some(full));
 }
 
 /// Makes the agents of `idle` report Idle and those of `busy` Busy; the engine, to read steers.
-fn agents_report(
+pub(super) fn agents_report(
     mut w: World,
     idle: &[BoxId],
     busy: &[BoxId],
@@ -50,7 +50,7 @@ fn notes(engine: &crate::testing::engine::FakeEngine) -> Vec<String> {
         .collect()
 }
 
-fn wake_up(w: &World, id: BoxId) -> Result<(), crate::error::CommandError> {
+pub(super) fn wake_up(w: &World, id: BoxId) -> Result<(), crate::error::CommandError> {
     let box_name = w.cx.store().unwrap().box_row(id).unwrap().unwrap().name;
     crate::ops::wake::run(&w.cx, &moor_core::BoxReq { box_name }).map(|_| ())
 }
@@ -158,6 +158,7 @@ fn critical_memory_suspends_the_newest_working_box_which_resumes_first_and_is_to
     assert_eq!(lifecycle(&w, old), BoxLifecycle::Pending);
     assert_told_of_the_critical_suspension(&notes(&engine));
 
+    tick(&w, hv, 32_768, 0, 0);
     put_to_sleep(&w, c);
     wake_up(&w, c).unwrap();
     assert_eq!(
@@ -222,10 +223,10 @@ fn a_short_node_with_nothing_waiting_keeps_its_idle_boxes_up() {
 }
 
 /// Below the 4 GiB reserve, above the critical 1 GiB.
-const BELOW_RESERVE: u64 = 3072;
+pub(super) const BELOW_RESERVE: u64 = 3072;
 
 /// A node `hv` whose driver is `driver`.
-fn live_world_on(driver: FakeDriver) -> (World, i64) {
+pub(super) fn live_world_on(driver: FakeDriver) -> (World, i64) {
     let yaml = "nodes: {ci: {runtime: local-container, max_boxes: 1}}\nbox: {node: ci}";
     let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());
     let hv = enrolled(&w, "hv", Some(true), None);

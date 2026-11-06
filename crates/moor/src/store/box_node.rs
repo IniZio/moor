@@ -142,7 +142,8 @@ impl Store {
         Ok(n > 0)
     }
 
-    /// Pending Boxes waiting for `node`: those suspended as a last resort first, then oldest first.
+    /// The queue for `node`: Boxes suspended as a last resort, then other resumes, then new
+    /// starts, each oldest first.
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
         let rows = conn.rows(
@@ -152,6 +153,15 @@ impl Store {
                 .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
                 .and_where(Expr::col(Boxes::State).eq(BoxLifecycle::Pending.as_str()))
                 .order_by_expr(Expr::col(Boxes::ResumeFirstAt).is_null(), Order::Asc)
+                .order_by_expr(
+                    Expr::case(
+                        Expr::col(Boxes::DriverState).eq(BoxState::Asleep.as_str()),
+                        0,
+                    )
+                    .finally(1)
+                    .into(),
+                    Order::Asc,
+                )
                 .order_by(Boxes::Id, Order::Asc),
             |r| r.get::<_, i64>(0),
         )?;

@@ -93,13 +93,16 @@ fn held_machine(
 ) -> Result<Option<HeldMachineView>, CommandError> {
     let place = store.wait_place(id)?;
     let Some(h) = store.claimed_machine(id)? else {
-        return Ok(place.map(|p| HeldMachineView {
-            name: p.name,
-            slot: 0,
-            ports: p.ports,
-            state: MachineHoldState::Waiting,
-            position: Some(p.position),
-        }));
+        if let Some(p) = place {
+            return Ok(Some(HeldMachineView {
+                name: p.name,
+                slot: 0,
+                ports: p.ports,
+                state: MachineHoldState::Waiting,
+                position: Some(p.position),
+            }));
+        }
+        return node_queue_place(store, id);
     };
     let state = match (h.state, box_asleep) {
         (MachineHoldState::Asleep, false) => MachineHoldState::Waiting,
@@ -113,6 +116,21 @@ fn held_machine(
             .filter(|_| state == MachineHoldState::Waiting)
             .map(|p| p.position),
         state,
+    }))
+}
+
+/// Where Box `id` stands in the queue on its node, when it waits there.
+fn node_queue_place(store: &Store, id: BoxId) -> Result<Option<HeldMachineView>, CommandError> {
+    let Some(node) = store.box_spec(id)?.node else {
+        return Ok(None);
+    };
+    let at = store.pending_on(&node)?.iter().position(|b| *b == id);
+    Ok(at.map(|at| HeldMachineView {
+        name: node.as_str().to_owned(),
+        slot: 0,
+        ports: Vec::new(),
+        state: MachineHoldState::Waiting,
+        position: Some(u32::try_from(at + 1).unwrap_or(u32::MAX)),
     }))
 }
 

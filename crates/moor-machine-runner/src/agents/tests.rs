@@ -35,6 +35,7 @@ fn report(boxes: &[(&str, u64)]) -> Report {
             .map(|(slug, mib)| BoxMemory {
                 slug: (*slug).to_owned(),
                 host_memory_mib: *mib,
+                resume_memory_mib: None,
             })
             .collect(),
     }

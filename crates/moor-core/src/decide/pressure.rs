@@ -21,6 +21,9 @@ pub const CRITICAL_AVAILABLE_MIB: u64 = 1024;
 /// Boxes that must run on a node before a working one may be suspended: the only one never is,
 /// since the queue it would join has nothing ahead of it but itself.
 pub const LAST_RESORT_RUNNING: usize = 2;
+/// How long after resuming a Box stays off the suspend order, three reports, so what it faults
+/// back in shows before it can be picked again.
+pub const SETTLE_SECS: i64 = 30;
 /// How long a node suspends nothing more after a suspension, in seconds.
 pub const COOLDOWN_SECS: i64 = 30;
 
@@ -49,6 +52,8 @@ pub struct Candidate {
     pub started_at: i64,
     /// Whether a run is in flight in it, which suspending it would drop.
     pub in_flight: bool,
+    /// When it last resumed; `None` when it never has.
+    pub resumed_at: Option<i64>,
 }
 
 /// What a node's waiting Boxes ask of it.
@@ -111,8 +116,9 @@ pub fn critical(last: &Reading) -> bool {
 ///
 /// Under pressure, or when a Box waits on a short node, the idle ones, longest idle first. Then,
 /// when the host is critical or has less than `reserve_mib` available and at least two Boxes run,
-/// the working ones, newest first, those with a run in flight last. Nothing within
-/// [`COOLDOWN_SECS`] of the last suspension.
+/// the working ones, newest first, those with a run in flight last. A Box within [`SETTLE_SECS`]
+/// of resuming is left out unless memory is critical. Nothing within [`COOLDOWN_SECS`] of the
+/// last suspension.
 #[must_use]
 pub fn relieve(
     node: &NodeName,
@@ -139,8 +145,15 @@ pub fn relieve(
         Some(w) if !pressed => format!("made room for {w}"),
         _ => format!("memory pressure on {node}"),
     };
+    // Running out outweighs a flap, so critical memory may pick a Box that just resumed.
+    let settled = |c: &&Candidate| {
+        critical
+            || c.resumed_at
+                .is_none_or(|at| now.saturating_sub(at) >= SETTLE_SECS)
+    };
     let mut idle: Vec<&Candidate> = boxes
         .iter()
+        .filter(settled)
         .filter(|c| suspendable(&c.resident) && !c.in_flight)
         .collect();
     idle.sort_by_key(|c| (c.resident.idle_since.map(Ts::as_millis), c.resident.id));
@@ -162,12 +175,22 @@ pub fn relieve(
         } else {
             "memory below the host reserve"
         };
-        let mut busy: Vec<&Candidate> = boxes
-            .iter()
-            .filter(|c| working(&c.resident) || (c.in_flight && suspendable(&c.resident)))
-            .collect();
-        busy.sort_by_key(|c| (c.in_flight, Reverse((c.started_at, c.resident.id))));
-        picks.extend(busy.into_iter().map(|c| Suspend {
+        let settled: Vec<&Candidate> = boxes.iter().filter(settled).collect();
+        picks.extend(last_resorts(&settled, why, node));
+    }
+    picks
+}
+
+/// The Boxes among `boxes` that suspending would cost work, newest first and those with a run in
+/// flight last, for `why` on `node`.
+fn last_resorts(boxes: &[&Candidate], why: &str, node: &NodeName) -> Vec<Suspend> {
+    let mut busy: Vec<&&Candidate> = boxes
+        .iter()
+        .filter(|c| working(&c.resident) || (c.in_flight && suspendable(&c.resident)))
+        .collect();
+    busy.sort_by_key(|c| (c.in_flight, Reverse((c.started_at, c.resident.id))));
+    busy.into_iter()
+        .map(|c| Suspend {
             id: c.resident.id,
             last_resort: true,
             reason: format!(
@@ -178,9 +201,8 @@ pub fn relieve(
                     ""
                 }
             ),
-        }));
-    }
-    picks
+        })
+        .collect()
 }
 
 /// Whether `r` is up with its agent mid-turn, not waiting on a person.

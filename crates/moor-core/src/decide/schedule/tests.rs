@@ -1,6 +1,6 @@
 //! Tests for the node scheduler.
 
-use super::{schedule, BoxSpec, Memory, Node, Online, Scope, Verdict};
+use super::{behind_the_queue, schedule, BoxSpec, Memory, Node, Online, Scope, Verdict};
 use crate::name::NodeName;
 use crate::user::UserId;
 
@@ -431,4 +431,39 @@ fn a_full_count_still_waits_on_a_node_with_headroom() {
     n.max_boxes = Some(1);
     n.used = 1;
     assert!(pending(judged(n)).contains("is full"));
+}
+
+#[test]
+fn a_new_box_joins_the_queue_on_a_node_that_reports_memory() {
+    let bound = Verdict::Bind {
+        node: name("hv"),
+        runtime: "crabbox".to_owned(),
+        machine_id: None,
+    };
+    let silent = |waiting| Node {
+        waiting,
+        ..node("hv", Scope::Shared, &[])
+    };
+    let reporting = |waiting| Node {
+        memory: Some(Memory {
+            total_mib: 32_768,
+            reserve_mib: None,
+            available_mib: 32_768,
+            psi_centi: None,
+            reported_at: 0,
+            starting: 0,
+            disk_free_mib: None,
+            disk_total_mib: None,
+        }),
+        ..silent(waiting)
+    };
+    assert_eq!(
+        behind_the_queue(bound.clone(), &reporting(2)),
+        Verdict::Pending {
+            node: name("hv"),
+            reason: "hv is making room; 2 Boxes ahead".to_owned(),
+        }
+    );
+    assert_eq!(behind_the_queue(bound.clone(), &reporting(0)), bound);
+    assert_eq!(behind_the_queue(bound.clone(), &silent(2)), bound);
 }

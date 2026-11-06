@@ -13,14 +13,15 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
-use crate::ops::common::wake::wake_and_revive;
+use crate::ops::common::wake::wake_in_turn;
 use crate::store::Store;
 
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
-/// Starts the Boxes pending on `node`, or wakes the asleep ones waiting for room, oldest first,
-/// while it has room for them.
+/// Starts or wakes the Boxes pending on `node`, in queue order, while it has room for them. On a
+/// node that reports memory the pass ends at the first Box that still waits for room, so none
+/// behind it jumps ahead.
 ///
 /// Returns the names of the Boxes that left Pending, in order. Best effort: a Box that cannot
 /// be started, or an error that stops the pass, becomes a warning and the pass ends with what it did.
@@ -61,20 +62,32 @@ fn promote_into(
                 continue;
             }
         };
-        if let Some(name) =
-            cx.for_box(row.user, || promote_one(cx, store, id, &row.name, op, &cfg))?
-        {
-            promoted.push(name);
-            // A Box that came up since the node's last report is not in it yet; the next report counts it.
-            if reports_memory {
-                break;
+        match cx.for_box(row.user, || promote_one(cx, store, id, &row.name, op, &cfg))? {
+            Promotion::Left(name) => {
+                promoted.push(name);
+                // A Box that came up since the node's last report is not in it yet; the next report counts it.
+                if reports_memory {
+                    break;
+                }
             }
+            Promotion::WaitsForRoom if reports_memory => break,
+            Promotion::WaitsForRoom | Promotion::Skipped => {}
         }
     }
     Ok(())
 }
 
-/// Promotes one waiting Box under its Box lock; `None` when it stays waiting.
+/// What promoting one waiting Box came to.
+enum Promotion {
+    /// It left Pending.
+    Left(BoxName),
+    /// Its node has no room for it yet.
+    WaitsForRoom,
+    /// It could not be tried, or failed for a reason of its own, which holds no other Box back.
+    Skipped,
+}
+
+/// Promotes one waiting Box under its Box lock.
 fn promote_one(
     cx: &Cx,
     store: &Store,
@@ -82,7 +95,7 @@ fn promote_one(
     name: &BoxName,
     op: &str,
     cfg: &BoxSettings,
-) -> Result<Option<BoxName>, CommandError> {
+) -> Result<Promotion, CommandError> {
     let _lock = match BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, PROMOTE_WAIT) {
         Ok(lock) => lock,
         Err(e) => {
@@ -90,33 +103,38 @@ fn promote_one(
                 code: "promote_skipped".to_owned(),
                 message: format!("cannot promote {}: {}", name.as_str(), e.error),
             });
-            return Ok(None);
+            return Ok(Promotion::Skipped);
         }
     };
     let row = reread(store, id)?;
     if row.lifecycle != BoxLifecycle::Pending || row.intent.is_some() {
-        return Ok(None);
+        return Ok(Promotion::Skipped);
     }
     let asleep = row
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
     let started = if asleep {
-        wake_and_revive(cx, store, &row).map(|_| ())
+        wake_in_turn(cx, store, &row).map(|_| ())
     } else {
         provision(cx, store, id, Entry::Waiting, cfg).map(|_| ())
     };
     if let Err(e) = started {
         let still_waits =
             e.kind == ErrorKind::Refused && reread(store, id)?.lifecycle == BoxLifecycle::Pending;
-        if !still_waits {
-            cx.warn(Warning {
-                code: "promote_failed".to_owned(),
-                message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
-            });
+        if still_waits {
+            return Ok(Promotion::WaitsForRoom);
         }
-        return Ok(None);
+        cx.warn(Warning {
+            code: "promote_failed".to_owned(),
+            message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
+        });
+        return Ok(Promotion::Skipped);
     }
     let after = reread(store, id)?;
-    Ok((after.lifecycle != BoxLifecycle::Pending).then_some(after.name))
+    Ok(if after.lifecycle == BoxLifecycle::Pending {
+        Promotion::WaitsForRoom
+    } else {
+        Promotion::Left(after.name)
+    })
 }
