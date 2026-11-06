@@ -21,7 +21,7 @@ use zeroize::Zeroizing;
 
 use super::{Config, Listen, MachineRoute, Rate, Server};
 use crate::adapters::clock::SystemClock;
-use crate::env::{Env, EGRESS_KEY};
+use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY};
 use crate::ledger_dir;
 use crate::proxy::ledger::Endpoint;
 
@@ -117,6 +117,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let ledger = Endpoint::parse(&ledger, args.ledger_ca.as_deref())
         .map_err(|e| format!("--ledger: {e}"))?;
     let env = Env::capture();
+    let machine = args.machine.map(|m| keyed(m, &env)).transpose()?;
     let key = env
         .get(EGRESS_KEY)
         .filter(|k| !k.is_empty())
@@ -145,7 +146,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         log: Arc::new(Mutex::new(std::io::stderr())),
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
-        machine: args.machine,
+        machine,
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.listening()));
@@ -154,6 +155,20 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let left = server.drain(args.grace);
     say(format_args!("drained; {left} tunnels were still open"));
     Ok(0)
+}
+
+/// `route` with the key `MOOR_MACHINE_SERVICE_KEY` holds, which it sends the service.
+fn keyed(route: MachineRoute, env: &Env) -> Result<MachineRoute, String> {
+    let key = env.get(MACHINE_SERVICE_KEY).filter(|k| !k.is_empty());
+    if key.is_some_and(|k| !k.bytes().all(|b| b.is_ascii_graphic())) {
+        return Err(format!(
+            "{MACHINE_SERVICE_KEY} must be printable with no spaces"
+        ));
+    }
+    Ok(MachineRoute {
+        key: key.map(Arc::from),
+        ..route
+    })
 }
 
 /// Returns once `stop` is set, or once the Unix socket the Proxy listens on is removed or

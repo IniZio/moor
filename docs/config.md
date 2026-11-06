@@ -313,6 +313,10 @@ and port, or moor refuses the config. Without `machines.service`, `host` is a
 host like any other. The shared egress Proxy routes the service the same way
 when it is started with `moor proxy serve-egress --machine-service HOST=ADDR`,
 where `ADDR` is `host:port` and the host may be a DNS name, looked up on each request.
+When the service listens beyond loopback, start `moor-machine-runner` with
+`--service-key` (or `MOOR_MACHINE_SERVICE_KEY`) and give the Proxy the same key in
+`MOOR_MACHINE_SERVICE_KEY`. The Proxy then sends it as `X-Moor-Service-Key`, and the
+runner refuses any request naming a Box without it.
 
 Every Box's agent also gets the service as the MCP server `machine`, at
 `http://<host>/mcp`. An entry named `machine` in `mcp_servers` replaces it.

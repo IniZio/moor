@@ -17,6 +17,10 @@ struct Args {
     /// Address to listen on; the Box's Proxy routes the service host here.
     #[arg(long, default_value = "127.0.0.1:7700")]
     listen: SocketAddr,
+    /// The key every caller must send in `X-Moor-Service-Key`; set it when `--listen` is not
+    /// loopback, so only the egress Proxy holding it can name a Box.
+    #[arg(long, env = "MOOR_MACHINE_SERVICE_KEY", hide_env_values = true)]
+    service_key: Option<String>,
     /// Address to accept machine agents' links on, at `/machines/link`; none accepts no links.
     #[arg(long, value_name = "ADDR")]
     agents: Option<SocketAddr>,
@@ -200,6 +204,7 @@ fn config(args: Args, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
         relays,
         relay_idle: Duration::from_secs(args.relay_idle_secs),
         keep_alive: Duration::from_secs(args.keep_alive_secs),
+        service_key: args.service_key.filter(|k| !k.is_empty()),
     }
 }
 

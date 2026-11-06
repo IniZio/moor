@@ -103,7 +103,8 @@ async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
     let Some(mut ws) = upgrade(stream, &ask.key).await else {
         return;
     };
-    let marked = ask.machine.then_some(&ask.route);
+    let key = shared.machine.as_ref().and_then(|m| m.key.as_deref());
+    let marked = ask.machine.then_some((&ask.route, key));
     if ask.plain && !send_plain(&mut ws, &mut upstream, &ask.target, marked).await {
         return;
     }
@@ -117,17 +118,22 @@ async fn send_plain<S: Peer>(
     ws: &mut WebSocketStream<S>,
     upstream: &mut TcpStream,
     target: &str,
-    machine: Option<&Route>,
+    machine: Option<(&Route, Option<&str>)>,
 ) -> bool {
     let Some((head, early)) = ws_head(ws).await else {
         return false;
     };
-    let hold = machine.map(|r| tokio::task::block_in_place(|| hold_or_missing(&r.served.ledger)));
+    let hold =
+        machine.map(|(r, _)| tokio::task::block_in_place(|| hold_or_missing(&r.served.ledger)));
     let Some(mut request) = plain_request(&head, target, hold.as_ref()) else {
         drop(ws.send(Message::binary(refusal().into_bytes())).await);
         drop(ws.close(None).await);
         return false;
     };
+    if let Some(key) = machine.and_then(|(_, key)| key) {
+        request.truncate(request.len().saturating_sub(2));
+        request.extend_from_slice(format!("X-Moor-Service-Key: {key}\r\n\r\n").as_bytes());
+    }
     request.extend_from_slice(&early);
     upstream.write_all(&request).await.is_ok()
 }

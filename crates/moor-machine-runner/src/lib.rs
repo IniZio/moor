@@ -68,6 +68,9 @@ mod sync;
 /// # Errors
 /// Returns the error that stopped the listener.
 pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
+    if let Some(key) = config.service_key.as_deref() {
+        caller::require_key(key).map_err(io::Error::other)?;
+    }
     let mirrors = config.state_dir.join("mirrors");
     let hooks = Arc::new(Hooks {
         min_free_gb: config.min_free_gb,
