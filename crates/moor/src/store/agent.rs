@@ -6,7 +6,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
 use moor_schema::tables::{Launches, Sessions};
-use sea_query::{Expr, ExprTrait as _, Order, Query};
+use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::apply::insert_event;
 use super::select::newest_session;
@@ -71,6 +71,19 @@ impl Store {
                 session_from_row,
             )
             .optional()?)
+    }
+
+    /// When the first agent of `box_id` started, if one ever did.
+    pub(crate) fn first_launch_at(&self, box_id: BoxId) -> Result<Option<Ts>, StoreError> {
+        let conn = self.reader()?;
+        let at: Option<i64> = conn.row(
+            Query::select()
+                .expr(Func::min(Expr::col(Launches::StartedAt)))
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Box).eq(box_id.get())),
+            |r| r.get(0),
+        )?;
+        Ok(at.map(Ts::from_millis))
     }
 
     /// What holds the terminal of the newest agent of `box_id`, ended or not.

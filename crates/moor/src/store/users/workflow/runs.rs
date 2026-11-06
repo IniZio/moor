@@ -174,26 +174,30 @@ impl Store {
         })
     }
 
-    /// Turns the started run of `workflow` and `repo` due at `due_at` into a refusal with
-    /// `detail`, dropping its Box from the run. False, with nothing changed, when it is not
-    /// started.
-    pub(crate) fn refuse_started_run(
+    /// Refuses the run of `workflow` and `repo` due at `due_at` with `detail`, dropping its Box
+    /// from the run, when it is still in the state it was seen in: only claimed when
+    /// `claimed_only`, else started. False, with nothing changed, otherwise, so a start that
+    /// settled in the meantime keeps its outcome.
+    pub(crate) fn refuse_run(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
-        detail: &str,
+        (detail, claimed_only): (&str, bool),
     ) -> Result<bool, StoreError> {
-        let changed = self.writer().run(
-            Query::update()
-                .table(WorkflowRuns::Table)
-                .value(WorkflowRuns::Outcome, REFUSED)
-                .value(WorkflowRuns::Box, Option::<i64>::None)
-                .value(WorkflowRuns::Detail, detail)
-                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
-                .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED)),
-        )?;
-        Ok(changed == 1)
+        let seen = if claimed_only { STARTING } else { STARTED };
+        self.numbered(|tx, seq| {
+            Ok(tx.run(
+                Query::update()
+                    .table(WorkflowRuns::Table)
+                    .value(WorkflowRuns::Outcome, REFUSED)
+                    .value(WorkflowRuns::Box, Option::<i64>::None)
+                    .value(WorkflowRuns::Detail, detail)
+                    .value(WorkflowRuns::Seq, seq)
+                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                    .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(seen)),
+            )?)
+        })
     }
 
     /// The runs of `workflow` that are being started or have a Box that has not ended.
@@ -288,13 +292,11 @@ impl Store {
     }
 
     /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `outcome`, which is
-    /// Started or Refused, recorded at `at`. A started run's timeout counts from `at`, not from
-    /// the claim. False, with nothing changed, unless the run is still claimed.
+    /// Started or Refused. False, with nothing changed, unless the run is still claimed.
     pub(crate) fn resolve_workflow_start(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
         outcome: &WorkflowOutcome,
-        at: Ts,
     ) -> Result<bool, StoreError> {
         let (name, box_id, detail, _) = outcome_cols(outcome);
         self.numbered(|tx, seq| {
@@ -304,7 +306,6 @@ impl Store {
                     .value(WorkflowRuns::Outcome, name)
                     .value(WorkflowRuns::Box, box_id)
                     .value(WorkflowRuns::Detail, detail)
-                    .value(WorkflowRuns::RecordedAt, at.as_millis())
                     .value(WorkflowRuns::Seq, seq)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
                     .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))

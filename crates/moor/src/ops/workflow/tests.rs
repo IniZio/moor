@@ -24,7 +24,7 @@ use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
-const DAY: i64 = 86_400_000;
+pub(super) const DAY: i64 = 86_400_000;
 /// The first 09:00 UTC after the fake clock's start.
 const FIRST_DUE: i64 = 9 * 3_600_000;
 
@@ -35,6 +35,10 @@ struct Rig {
 }
 
 fn rig() -> Rig {
+    rig_with(UserConfig::default())
+}
+
+fn rig_with(config: UserConfig) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = Arc::new((1..=6).fold(FakeDriver::new(), |d, n| {
@@ -46,7 +50,7 @@ fn rig() -> Rig {
         driver,
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
-        UserConfig::default(),
+        config,
     )
     .with_forge(forge.clone());
     Rig {
@@ -538,4 +542,4 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
     assert_eq!(r.runs(id).len(), 3, "each due time started its own Box");
 }
 
-mod start_clock;
+mod start_limit;

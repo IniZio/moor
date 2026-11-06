@@ -57,11 +57,19 @@ even when its Box stays open.
 
 ## Timeouts and the breaker
 
-A run still working after `timeout_minutes` is stopped. Moor ends its agent
-session and keeps the Box open, so you can inspect it. The run is recorded as
-timed out. The clock starts when the Box is ready and its agent has started, so
-time spent queued for a machine or setting up does not count. After a controller
-restart, a run whose Box was already made counts from the restart.
+A run has two time limits.
+
+The start limit is one hour, from the firing until the run's agent has started.
+It covers waiting for a machine and setting the Box up. A run whose agent has
+not started by then is refused, and its Box is closed so the agent can never
+start later. If the Box is still being set up, that setup is stopped. The run
+counts as a failed start, and the next firing is not held back.
+
+The run limit is `timeout_minutes`, counted from when the agent started, so slow
+setup does not use it up. A run still working after that is stopped: Moor ends
+its agent session and keeps the Box open, so you can inspect it. The run is
+recorded as timed out. After a controller restart both limits keep counting from
+the same moments, the firing and the agent's start.
 
 Three refused or timed-out runs in a row for one repo disable the workflow. A
 skipped run neither counts nor resets the streak. A finished run resets it.

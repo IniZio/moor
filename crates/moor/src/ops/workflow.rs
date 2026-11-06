@@ -19,7 +19,9 @@ use moor_core::{BoxId, BoxName, StartReq};
 use crate::cx::Cx;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
-use settle::{box_facts, broken_detail, expire_runs, finish_runs};
+use settle::{
+    box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs, finish_runs,
+};
 
 /// How many of a repo's latest unskipped runs the breaker reads; it needs only a streak of 3.
 const HISTORY: u64 = 20;
@@ -84,6 +86,7 @@ fn tick_one(
     let now = cx.clock().now();
     finish_runs(store, w, now)?;
     expire_runs(cx, store, w, now, out)?;
+    enforce_start_limit(cx, store, w, now, out)?;
     let history = history(store, w)?;
     if let Some(trip) = workflow_breaker(w, &history.unskipped) {
         if store.disable_workflow(w.id, &trip.reason)? {
@@ -262,12 +265,21 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
             detail: e.error.to_string(),
         },
     };
-    let at = cx.clock().now();
     let settled = cx.store().map_err(|e| e.error.to_string()).and_then(|s| {
-        s.resolve_workflow_start(job.key(), &outcome, at)
+        s.resolve_workflow_start(job.key(), &outcome)
             .map_err(|e| e.to_string())
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
+    if matches!(settled, Ok(false)) {
+        // The run was settled without this start, so its Box must not go on.
+        let late = cx.store().map_err(|e| e.error.to_string());
+        if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.name)) {
+            out.push(format!(
+                "could not close the late Box {}: {why}",
+                job.name.as_str()
+            ));
+        }
+    }
     if let Err(e) = settled {
         out.push(format!(
             "could not record the start of {}: {e}",
@@ -335,7 +347,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             },
         };
         let key = (run.workflow, &run.repo, run.due_at);
-        if let Err(e) = store.resolve_workflow_start(key, &outcome, now) {
+        if let Err(e) = store.resolve_workflow_start(key, &outcome) {
             out.push(format!(
                 "could not settle a claimed run of {}: {e}",
                 run.repo

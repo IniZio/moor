@@ -1,8 +1,8 @@
 //! Tests for the workflow tick decider.
 
 use super::{
-    workflow_breaker, workflow_due, workflow_expired, PriorRun, WorkflowExpiry, WorkflowRepoFacts,
-    WorkflowVerdict,
+    workflow_breaker, workflow_due, workflow_expired, workflow_start_overdue, PriorRun,
+    WorkflowExpiry, WorkflowRepoFacts, WorkflowVerdict,
 };
 use crate::name::BoxId;
 use crate::name::ForgeRepo;
@@ -349,7 +349,8 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
     let mut w = daily();
     w.timeout = TimeoutMinutes::new(30).unwrap();
     let open = [started("a/b", DAY0, 7)];
-    let at = |ms| workflow_expired(&w, &open, ts(ms));
+    let agent = |_| Some(ts(DAY0));
+    let at = |ms| workflow_expired(&w, &open, &agent, ts(ms));
     assert!(at(DAY0 + 30 * 60_000 - 1).is_empty());
     let expiry = WorkflowExpiry {
         repo: repo("a/b"),
@@ -361,7 +362,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
 }
 
 #[test]
-fn the_timeout_counts_from_the_start_not_the_due_time() {
+fn the_timeout_counts_from_the_agent_start_not_the_due_time() {
     let w = daily();
     let late = run(
         "a/b",
@@ -371,9 +372,10 @@ fn the_timeout_counts_from_the_start_not_the_due_time() {
             box_id: BoxId::new(7),
         },
     );
+    let agent = |_| Some(ts(DAY0 + HOUR));
     let ms = |m: i64| ts(DAY0 + HOUR + m * 60_000);
-    assert!(workflow_expired(&w, std::slice::from_ref(&late), ms(179)).is_empty());
-    assert_eq!(workflow_expired(&w, &[late], ms(180)).len(), 1);
+    assert!(workflow_expired(&w, std::slice::from_ref(&late), &agent, ms(179)).is_empty());
+    assert_eq!(workflow_expired(&w, &[late], &agent, ms(180)).len(), 1);
 }
 
 #[test]
@@ -385,7 +387,30 @@ fn only_started_runs_expire() {
         refused("a/b", 2),
         skipped("a/b", 3),
     ];
-    assert!(workflow_expired(&w, &runs, ts(DAY0)).is_empty());
+    assert!(workflow_expired(&w, &runs, &|_| Some(ts(0)), ts(DAY0)).is_empty());
+}
+
+#[test]
+fn a_run_whose_agent_never_started_does_not_expire() {
+    let w = daily();
+    let open = [started("a/b", DAY0, 7)];
+    assert!(workflow_expired(&w, &open, &|_| None, ts(DAY0 + 5 * DAY)).is_empty());
+}
+
+#[test]
+fn a_run_is_overdue_an_hour_after_its_claim_unless_its_agent_started() {
+    let claimed = run("a/b", DAY0, DAY0, WorkflowOutcome::Starting);
+    let queued = started("a/b", DAY0 + 1, 7);
+    let open = [claimed, queued];
+    let none = |_: BoxId| None;
+    assert!(workflow_start_overdue(&open, &none, ts(DAY0 + HOUR - 1)).is_empty());
+    let late = workflow_start_overdue(&open, &none, ts(DAY0 + HOUR + 1));
+    assert_eq!(late.len(), 2);
+    let ids: Vec<_> = late.iter().map(|b| (b.claimed_only, b.box_id)).collect();
+    assert_eq!(ids, [(true, None), (false, Some(BoxId::new(7)))]);
+    let running = |_: BoxId| Some(ts(DAY0 + 10));
+    let late = workflow_start_overdue(&open, &running, ts(DAY0 + 9 * HOUR));
+    assert_eq!(late.len(), 1, "only the claim that never got a Box");
 }
 
 fn breaker(runs: &[WorkflowRun]) -> bool {
