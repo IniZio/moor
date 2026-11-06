@@ -18,6 +18,9 @@ pub(crate) enum Turn {
     Reached,
     /// Something asked for it now, so it goes behind whatever the queue holds ahead of it.
     JoinsQueue,
+    /// A close wants it awake just long enough to check it. That is no demand to run: it wakes
+    /// only if it fits now, and otherwise joins no queue and costs no other Box its room.
+    OnlyIfRoom,
 }
 
 /// How many Boxes in the queue on `node` stand ahead of `row`. One not in the queue yet goes after
@@ -83,7 +86,7 @@ pub(crate) fn room_to_wake(
     let Some(memory) = node.memory else {
         return Ok(None);
     };
-    if turn == Turn::JoinsQueue {
+    if turn != Turn::Reached {
         let ahead = ahead_of(store, &node, row)?;
         if ahead > 0 {
             return Ok(Some(format!(
@@ -95,7 +98,9 @@ pub(crate) fn room_to_wake(
     let Some(short) = resume_shortfall(store, &node, &memory, row, now(cx))? else {
         return Ok(None);
     };
-    suspend_idlest(cx, store, &node, short, row.name.as_str())?;
+    if turn != Turn::OnlyIfRoom {
+        suspend_idlest(cx, store, &node, short, row.name.as_str())?;
+    }
     Ok(Some(short.reason(&node.name)))
 }
 

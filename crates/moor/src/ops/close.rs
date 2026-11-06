@@ -30,7 +30,7 @@ use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::box_view;
-use crate::ops::common::wake::wake_box_if_asleep;
+use crate::ops::common::wake::wake_to_close;
 use crate::store::{BoxRow, DriverRow, Store};
 
 /// How long a forced close waits for the start it interrupted to stop.
@@ -185,7 +185,7 @@ fn box_check(
         return Ok(BoxCheck::Skipped);
     }
     // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
-    match wake_box_if_asleep(cx, store, row) {
+    match wake_to_close(cx, store, row) {
         Ok(true) => {
             if let Some(fresh) = store.box_row(row.id)? {
                 *row = fresh;
