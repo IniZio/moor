@@ -208,6 +208,19 @@ fn config(args: Args, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
     }
 }
 
+/// Refuses a `--listen` beyond loopback without a service key, where any caller could name a Box.
+fn keyed_beyond_loopback(args: &Args) -> Result<(), String> {
+    if args.listen.ip().is_loopback() || args.service_key.as_deref().is_some_and(|k| !k.is_empty())
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "--listen {} is not loopback, so it needs --service-key or {}",
+        args.listen,
+        moor_machine_runner::SERVICE_KEY_ENV
+    ))
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().collect();
@@ -229,12 +242,8 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if !args.listen.ip().is_loopback() && args.service_key.as_deref().is_none_or(str::is_empty) {
-        eprintln!(
-            "moor-machine-runner: --listen {} is not loopback, so it needs --service-key or {}",
-            args.listen,
-            moor_machine_runner::SERVICE_KEY_ENV
-        );
+    if let Err(e) = keyed_beyond_loopback(&args) {
+        eprintln!("moor-machine-runner: {e}");
         return ExitCode::FAILURE;
     }
     let listener = match tokio::net::TcpListener::bind(args.listen).await {
