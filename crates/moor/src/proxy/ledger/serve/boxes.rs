@@ -8,7 +8,7 @@ use serde::Serialize;
 use zeroize::Zeroizing;
 
 use super::super::hold::hold_of;
-use super::super::{BoxView, Call, Fault};
+use super::super::{AwakeTokens, BoxView, Call, Fault};
 use super::encode;
 use super::start;
 use crate::store::{Store, StoreError};
@@ -79,15 +79,18 @@ pub(super) fn token_box(store: &Store, token_hash: &str) -> Result<Option<BoxId>
     Ok(view(store, box_id)?.filter(|v| v.open).map(|_| box_id))
 }
 
-/// The token hash and Box of every open Box with an egress token.
-pub(super) fn open_tokens(store: &Store) -> Result<Vec<(String, BoxId)>, StoreError> {
-    let mut open = Vec::new();
+/// The token hash and Box of every open, awake Box with an egress token. A Box whose row cannot
+/// be read is left out, so one bad row never keeps the egress Proxy from the rest.
+pub(super) fn awake_tokens(store: &Store) -> Result<AwakeTokens, StoreError> {
+    let mut awake = AwakeTokens::default();
     for (hash, box_id) in store.egress_tokens()? {
-        if view(store, box_id)?.is_some_and(|v| v.open) {
-            open.push((hash, box_id));
+        match view(store, box_id) {
+            Ok(Some(v)) if v.open && !v.asleep => awake.tokens.push((hash, box_id)),
+            Ok(_) => {}
+            Err(e) => awake.unread.push((box_id, e.to_string())),
         }
     }
-    Ok(open)
+    Ok(awake)
 }
 
 /// The Box as the shared egress Proxy sees it.

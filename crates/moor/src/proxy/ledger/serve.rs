@@ -147,8 +147,8 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         (Bound::Egress(None), Call::TokenBox { token_hash }) => {
             encode(&boxes::token_box(store, &token_hash).map_err(Fault::from))
         }
-        (Bound::Egress(None), Call::OpenTokens) => {
-            encode(&boxes::open_tokens(store).map_err(Fault::from))
+        (Bound::Egress(None), Call::AwakeTokens) => {
+            encode(&boxes::awake_tokens(store).map_err(Fault::from))
         }
         (Bound::Egress(Some(box_id)), call) => boxes::for_egress((store, vault), *box_id, call),
         (Bound::Fronts, _) => encode(&Err::<(), _>(Fault::Refused(

@@ -2,7 +2,7 @@
 //!
 //! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
 //! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--machine-service HOST=ADDR`, `--grace SECS`,
-//! `--rate N`, `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger key in
+//! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N` and `--warm-every SECS`, and the ledger key in
 //! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
 //! through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
 //! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
@@ -19,7 +19,7 @@ use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
 
-use super::{Config, Listen, MachineRoute, Rate, Server};
+use super::{Config, Listen, MachineRoute, Rate, Server, Warm};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY};
 use crate::ledger_dir;
@@ -29,6 +29,8 @@ use crate::proxy::ledger::Endpoint;
 const GRACE: Duration = Duration::from_secs(300);
 /// Pause between audit deliveries and closed-Box sweeps.
 const TEND: Duration = Duration::from_secs(2);
+/// A warming pass that takes longer leaves the replica not Ready.
+const WARM_DEADLINE: Duration = Duration::from_secs(8);
 /// Pause between looks at the stop flag.
 const POLL: Duration = Duration::from_millis(100);
 
@@ -55,6 +57,8 @@ pub(crate) struct Args {
     pub(crate) lookup_rate: f64,
     /// Most tunnels one token may hold open at once.
     pub(crate) tunnels: usize,
+    /// Pause between passes that ready every awake Box; none readies each on first use only.
+    pub(crate) warm_every: Option<Duration>,
 }
 
 impl Args {
@@ -71,6 +75,7 @@ impl Args {
             burst: 100.0,
             lookup_rate: 200.0,
             tunnels: 64,
+            warm_every: None,
         };
         let mut words = words.iter().map(|w| w.to_string_lossy().into_owned());
         while let Some(flag) = words.next() {
@@ -94,6 +99,10 @@ impl Args {
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
                 "--lookup-rate" => args.lookup_rate = value.parse().map_err(|_| bad())?,
                 "--tunnels" => args.tunnels = value.parse().map_err(|_| bad())?,
+                "--warm-every" => {
+                    let secs: u64 = value.parse().map_err(|_| bad())?;
+                    args.warm_every = (secs > 0).then(|| Duration::from_secs(secs));
+                }
                 other => return Err(format!("unknown argument {other}")),
             }
         }
@@ -147,6 +156,10 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
         machine,
+        warm: args.warm_every.map(|every| Warm {
+            every,
+            deadline: WARM_DEADLINE,
+        }),
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.listening()));

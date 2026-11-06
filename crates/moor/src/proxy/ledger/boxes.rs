@@ -30,6 +30,15 @@ pub(crate) struct BoxView {
     pub(crate) asleep: bool,
 }
 
+/// The open, awake Boxes the shared egress Proxy readies ahead of their first request.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AwakeTokens {
+    /// Each Box's token hash.
+    pub(crate) tokens: Vec<(String, BoxId)>,
+    /// Boxes whose row could not be read, left out, with why.
+    pub(crate) unread: Vec<(BoxId, String)>,
+}
+
 /// A Box's interception CA as the ledger hands it to the Box's engine.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct CaPair {
