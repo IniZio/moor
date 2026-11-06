@@ -12,9 +12,6 @@ pub use machine::RepoMachine;
 
 mod machine;
 
-/// The most characters the `brief` of a repo config may hold.
-pub const BRIEF_MAX_CHARS: usize = 4000;
-
 /// `compose:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -130,20 +127,13 @@ impl RepoConfig {
         Ok(())
     }
 
-    /// Rejects a blank `brief` and one longer than [`BRIEF_MAX_CHARS`].
+    /// Rejects a blank `brief`.
     fn validate_brief(&self) -> Result<(), ConfigError> {
         let Some(text) = &self.brief else {
             return Ok(());
         };
         if text.trim().is_empty() {
             return Err(ConfigError::new("brief", "brief must not be empty"));
-        }
-        let len = text.chars().count();
-        if len > BRIEF_MAX_CHARS {
-            return Err(ConfigError::new(
-                "brief",
-                format!("brief must be at most {BRIEF_MAX_CHARS} characters, found {len}"),
-            ));
         }
         Ok(())
     }
