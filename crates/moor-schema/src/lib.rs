@@ -17,6 +17,7 @@ mod proxy_state;
 mod resume_memory;
 mod suspend_check;
 pub mod tables;
+mod warm_starts;
 mod workflow_changes;
 mod workflows;
 
@@ -71,6 +72,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V56__link_runner",
         write: link_runner::write,
+    },
+    Step {
+        name: "V58__warm_starts",
+        write: warm_starts::write,
     },
 ];
 

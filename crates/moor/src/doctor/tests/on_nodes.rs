@@ -22,6 +22,7 @@ fn node(name: &str) -> NodeView {
         mem_psi_centi: Some(0),
         mem_report_age_secs: Some(5),
         pressure_since: None,
+        warm_starts: None,
         box_memory_mib: None,
         labels: Vec::new(),
     }

@@ -329,16 +329,16 @@ pub trait Driver: Send + Sync {
         Err(DriverError::Unsupported("checkpoints"))
     }
 
-    /// Deletes checkpoint `id` and what the provider keeps of it.
+    /// Deletes checkpoint `id`, recorded under `home`, and what the provider keeps of it.
     ///
     /// # Errors
     /// As [`Driver::checkpoint`].
-    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
-        let _ = id;
+    fn delete_checkpoint(&self, home: &ProviderId, id: &str) -> Result<(), DriverError> {
+        let _ = (home, id);
         Err(DriverError::Unsupported("checkpoints"))
     }
 
-    /// The disk `provider` keeps its checkpoints on; none when the provider cannot say.
+    /// The disk holding checkpoints recorded under `provider`; none when the provider cannot say.
     ///
     /// # Errors
     /// A [`DriverError`] when the provider cannot be asked.

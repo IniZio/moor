@@ -39,6 +39,7 @@ fn link(machine_id: i64, online: bool) -> MachineLink {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     }
 }

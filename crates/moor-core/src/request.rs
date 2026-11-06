@@ -26,7 +26,7 @@ pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionR
 mod machine;
 pub use machine::{
     BoxHostMemory, HoldOp, HoldValue, MachineEnrollReq, MachineHoldReq, MachineLink,
-    MachineLinksReq, MachineRemoveReq, MachineStatusReq, MemoryReport, RunnerAddr,
+    MachineLinksReq, MachineRemoveReq, MachineStatusReq, MemoryReport, RunnerAddr, WarmStarts,
 };
 mod names;
 pub use names::{Grant, Named, Pins};

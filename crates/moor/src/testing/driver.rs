@@ -331,7 +331,7 @@ impl Driver for FakeDriver {
         self.checkpointed(handle, name)
     }
 
-    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
+    fn delete_checkpoint(&self, _: &ProviderId, id: &str) -> Result<(), DriverError> {
         self.deleted(id)
     }
 

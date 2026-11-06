@@ -164,7 +164,7 @@ fn a_delete_names_the_checkpoint() {
         "delete",
         Reply::Ok("checkpoint deleted id=chk_1\n".to_owned()),
     );
-    c.delete_checkpoint("chk_1").unwrap();
+    c.delete_checkpoint(&ProviderId::new("x"), "chk_1").unwrap();
     assert_eq!(
         p.calls().pop().unwrap().args,
         ["checkpoint", "delete", "chk_1"]

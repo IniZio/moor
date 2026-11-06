@@ -170,6 +170,7 @@ fn link_insert(
             MachineLinks::DiskFreeMib,
             MachineLinks::DiskTotalMib,
             MachineLinks::RunnerAddr,
+            MachineLinks::WarmStarts,
         ])
         .values_panic([
             link.machine_id.into(),
@@ -198,6 +199,12 @@ fn link_insert(
                 .and_then(|m| m.disk_total_mib.and_then(|d| i64::try_from(d).ok()))
                 .into(),
             runner.as_str().into(),
+            link.warm_starts
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| StoreError::Corrupt(format!("link warm starts: {e}")))?
+                .into(),
         ])
         .take())
 }
@@ -216,8 +223,9 @@ fn is_enrolled(conn: &dyn Db, machine_id: i64) -> Result<bool, StoreError> {
     Ok(found.is_some_and(|n| n > 0))
 }
 
-/// The columns [`link_row`] reads, the machine's name, then the runner holding the link, when
-/// it last reported and since when it drains, from the links and their machines.
+/// The columns [`link_row`] reads, the machine's name, the runner holding the link, when it last
+/// reported and since when it drains, then whether its agent serves checkpoints, from the links
+/// and their machines.
 fn link_select() -> SelectStatement {
     let link = |c| (MachineLinks::Table, c);
     Query::select()
@@ -252,6 +260,7 @@ fn link_select() -> SelectStatement {
             ]
             .map(link),
         )
+        .column(link(MachineLinks::WarmStarts))
         .from(MachineLinks::Table)
         .left_join(
             UserMachinesV2::Table,
@@ -280,6 +289,14 @@ fn link_row(r: &db::Row<'_>) -> db::Result<MachineLink> {
         mem_mib: mib(r.get(8)?),
         cpus: r.get(9)?,
         reserve_mib: mib(r.get(10)?),
+        warm_starts: r
+            .get::<_, Option<String>>(21)?
+            .map(|text| serde_json::from_str(&text))
+            .transpose()
+            .map_err(|e| db::Error::Convert {
+                index: 21,
+                source: Box::new(e),
+            })?,
         memory: match (mib(r.get(11)?), r.get::<_, Option<i64>>(13)?) {
             (Some(available_mib), Some(at)) => Some(MemoryReport {
                 at: Ts::from_millis(at),

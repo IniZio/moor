@@ -92,7 +92,7 @@ fn set_up_in_machine(
     };
     let provider = held.provider.as_str();
     let plan = cache::derived(cx, store, row, cfg, &held.provider);
-    let mut layered = layers::plan(cx, row, provider, cfg, &plan);
+    let mut layered = layers::plan(cx, store, row, provider, cfg, &plan);
     let forked = match layered.as_mut() {
         Some(layered) if fork => layers::resume(cx, store, row, handle, cfg, layered)?,
         Some(layered) => {

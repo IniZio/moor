@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_client::link::broker;
-use moor_client::link::lease::{Answer, Boot, Verb};
+use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
 use moor_client::link::reach::{self, Runner, Service, StdConn};
 use moor_client::link::status::Status;
 use moor_core::boxscript::quote;
@@ -90,6 +90,15 @@ impl Runners {
             (Verb::Authorize, ..) => Err("an authorize needs a lease and a key".to_owned()),
             _ => blocking(broker::lease(&runner, machine_id, verb, slug, boot.clone())),
         }
+    }
+
+    /// Asks machine `machine_id`'s agent to act on its checkpoints.
+    ///
+    /// # Errors
+    /// The broker or the agent's failure.
+    pub(crate) fn checkpoint(&self, machine_id: i64, act: CheckpointAct) -> Result<Answer, String> {
+        let runner = self.runner(machine_id)?;
+        blocking(broker::checkpoint(&runner, machine_id, act))
     }
 
     /// Machine `machine_id`'s agent status.

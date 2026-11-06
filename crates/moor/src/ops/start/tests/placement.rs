@@ -1,5 +1,4 @@
-//! Where a start lands: a shared node, or the requester's first personal node by default; a full
-//! node keeps the Box Pending on it until a Box there closes or its link comes back.
+//! Where a start lands, and how a full node keeps it Pending until a Box closes or its link is back.
 
 use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::request::MachineLink;
@@ -50,6 +49,7 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
@@ -228,6 +228,7 @@ pub(super) fn cached_world(features: &[&str], online: bool) -> World {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
@@ -280,6 +281,7 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
         mem_mib: Some(65_536),
         cpus: None,
         reserve_mib: Some(4096),
+        warm_starts: None,
         memory: Some(moor_core::request::MemoryReport {
             at: w.cx.clock().now(),
             available_mib,
@@ -307,6 +309,7 @@ fn report_disk(w: &World, hv: i64, disk: Option<(u64, u64)>) {
         mem_mib: Some(65_536),
         cpus: None,
         reserve_mib: Some(4096),
+        warm_starts: None,
         memory: Some(moor_core::request::MemoryReport {
             at: w.cx.clock().now(),
             available_mib: 32_768,

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::request::WarmStarts;
 use crate::user::UserId;
 
 /// Who may use a node.
@@ -67,6 +68,10 @@ pub struct NodeView {
     /// Since when its host has been under sustained memory pressure, unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pressure_since: Option<i64>,
+    /// Whether a Box on it can start from a checkpoint; none on a shared node, or for an agent
+    /// that never said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warm_starts: Option<WarmStarts>,
     /// MiB of its host the Boxes it hosts hold by their last reports; none when no Box reported one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub box_memory_mib: Option<u64>,

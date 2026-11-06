@@ -103,6 +103,7 @@ fn link(store: &Store, clock: &FakeClock, addr: &str, machine_id: i64) {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     let runner = RunnerAddr::new(addr);
@@ -175,6 +176,31 @@ fn a_machine_is_reached_through_the_runner_its_link_row_names_with_the_key() {
             "'/bin/moor' link-dial --runner '{addr}' {machine_id} moor-7"
         ))
     );
+}
+
+#[test]
+fn a_checkpoint_act_goes_to_the_runner_its_link_row_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, machine_id) = enrolled(dir.path());
+    let disk = Answer::Disk {
+        free_mib: 7,
+        total_mib: 70,
+    };
+    let (addr, served) = remote_once(Brokered::Agent {
+        reply: Reply::Leased(disk.clone()),
+    });
+    link(&store, &clock, &addr, machine_id);
+    let hosts = runners(dir.path(), Some(store), clock);
+    let hosts: &dyn crate::adapters::crabbox::PoolHosts = &hosts;
+    let got = hosts
+        .checkpoint(machine_id, CheckpointAct::Disk {})
+        .unwrap();
+    assert_eq!(got, disk);
+    let (_, ask) = served.join().unwrap();
+    let want = PoolOp::Checkpoint {
+        act: CheckpointAct::Disk {},
+    };
+    assert_eq!((ask.machine_id, ask.op), (machine_id, want));
 }
 
 #[test]

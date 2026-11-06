@@ -184,7 +184,7 @@ pub(crate) fn provision(
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     let provider = req.provider.as_str();
-    let mut layered = layers::plan(cx, &started, provider, cfg, &req.cache);
+    let mut layered = layers::plan(cx, store, &started, provider, cfg, &req.cache);
     let warm = match layered.as_mut() {
         Some(layered) => layers::warm(cx, store, id, &req, layered)?,
         None => None,
@@ -370,6 +370,7 @@ mod acquired;
 mod clone;
 mod delivered;
 mod disk;
+pub(crate) use disk::relieve_disk;
 mod failed;
 pub(crate) mod interrupted;
 mod layers;

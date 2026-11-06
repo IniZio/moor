@@ -53,6 +53,7 @@ pub(super) fn read(i: &Inputs<'_>) -> Read {
             mem_psi_centi: None,
             mem_report_age_secs: None,
             pressure_since: None,
+            warm_starts: None,
             box_memory_mib: None,
             labels: n.labels.clone(),
         })

@@ -41,6 +41,7 @@ mod lease_dirs;
 mod lease_handle;
 mod machine;
 mod named_node;
+mod node_warm;
 mod others;
 mod parent;
 mod placement;

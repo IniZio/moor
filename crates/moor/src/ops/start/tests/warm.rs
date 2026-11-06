@@ -78,6 +78,15 @@ pub(super) fn after_a_partial_setup(driver: FakeDriver) -> (World, BoxId) {
 
 /// Like [`after_a_partial_setup`] for a repo whose `.moor.yaml` is `yaml`.
 pub(super) fn after_a_partial_setup_of(driver: FakeDriver, yaml: &str) -> (World, BoxId) {
+    after_a_partial_setup_with(driver, yaml, |_| {})
+}
+
+/// Like [`after_a_partial_setup_of`], with `prepare` run on the world before its first Box.
+pub(super) fn after_a_partial_setup_with(
+    driver: FakeDriver,
+    yaml: &str,
+    prepare: impl FnOnce(&World),
+) -> (World, BoxId) {
     let driver = driver
         .with_checkpoints()
         .exec_ends_once_when("three-c", ExecOutcome::Exited { code: 1 });
@@ -95,6 +104,7 @@ pub(super) fn after_a_partial_setup_of(driver: FakeDriver, yaml: &str) -> (World
     w.driver.on_exec_of("two-b", move || {
         clock.sleep(Duration::from_secs(25));
     });
+    prepare(&w);
     let first = start(&w, "first", "abc123", yaml);
     (w, first)
 }

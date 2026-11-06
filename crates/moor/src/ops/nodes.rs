@@ -2,7 +2,7 @@
 
 use moor_core::decide::pressure::Reading;
 use moor_core::decide::schedule::{Node, Online, Scope};
-use moor_core::request::MachineLinksReq;
+use moor_core::request::{MachineLinksReq, WarmStarts};
 use moor_core::user::Viewer;
 use moor_core::view::node::{NodeListValue, NodeScope, NodeView};
 use moor_core::view::user::MachineLinksValue;
@@ -12,6 +12,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::node::{configured, now};
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::provision::relieve_disk;
 use crate::ops::common::room::on_report;
 
 /// Every node, shared and personal.
@@ -66,6 +67,7 @@ pub(crate) fn set_links(
                     ),
                 });
             }
+            relieve_disk(cx, store, &node, link);
         }
         promote_waiting(cx, store, &node.name, "link");
     }
@@ -91,6 +93,7 @@ fn view(
     pressure_since: Option<i64>,
     disk_low: bool,
     box_memory_mib: Option<u64>,
+    warm_starts: Option<WarmStarts>,
 ) -> NodeView {
     let (scope, owner) = match &node.scope {
         Scope::Shared => (NodeScope::Shared, None),
@@ -116,9 +119,25 @@ fn view(
         mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
         mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
         pressure_since,
+        warm_starts,
         box_memory_mib,
         labels: node.labels.clone(),
     }
+}
+
+/// What personal node `node`'s agent says of warm starts; none for a shared one.
+fn warm_starts_of(cx: &Cx, node: &Node) -> Option<WarmStarts> {
+    let Scope::Personal {
+        owner, machine_id, ..
+    } = node.scope
+    else {
+        return None;
+    };
+    let links = cx.store().ok()?.user_machine_links(owner).ok()?;
+    let (_, link) = links
+        .into_iter()
+        .find(|(_, l)| l.machine_id == machine_id)?;
+    link.warm_starts
 }
 
 /// `node-list`: the nodes the context's viewer sees, shared ones first.
@@ -142,7 +161,9 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
                     .store()
                     .and_then(|s| Ok(s.pressure(&n.name)?))
                     .is_ok_and(|p| p.readings.last().is_some_and(|r| r.disk_low));
-                view(n, now(cx), since.get(n.name.as_str()).copied(), low, boxes)
+                let warm = warm_starts_of(cx, n);
+                let since = since.get(n.name.as_str()).copied();
+                view(n, now(cx), since, low, boxes, warm)
             })
             .collect(),
     })

@@ -53,6 +53,7 @@ fn a_personal_node_whose_link_drops_before_the_plan_records_why_the_box_is_cold(
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        warm_starts: None,
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
