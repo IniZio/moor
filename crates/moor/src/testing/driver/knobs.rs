@@ -106,6 +106,12 @@ impl FakeDriver {
             .collect())
     }
 
+    /// Fails the next `times` takeovers with `e`.
+    pub(crate) fn adopt_fails(self, times: usize, e: &DriverError) -> Self {
+        self.st().flight.adopt_errors = vec![e.clone(); times];
+        self
+    }
+
     /// Fails the next acquire with `e`, on a driver already in use.
     pub(crate) fn fail_next_acquire(&self, e: DriverError) {
         self.st().fail_acquire = Some(e);

@@ -1,7 +1,7 @@
 //! The fake's acquire: the Box it hands out and the notes it reports first.
 
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
-use moor_core::BoxHandle;
+use moor_core::seam::driver::{AcquireReq, Acquired, BoxListing, DriverError};
+use moor_core::{BoxHandle, ProviderId};
 
 use super::script::layout;
 use super::FakeDriver;
@@ -13,6 +13,8 @@ pub(super) struct Flight {
     pub(super) goes_on: bool,
     /// The handle of the acquire going on.
     pub(super) at: Option<String>,
+    /// What the next takeovers fail with.
+    pub(super) adopt_errors: Vec<DriverError>,
 }
 
 impl FakeDriver {
@@ -65,8 +67,35 @@ impl FakeDriver {
         req: &AcquireReq,
         note: &mut dyn FnMut(&str),
     ) -> Result<Acquired, DriverError> {
-        self.st().note("adopt".to_owned());
+        {
+            let mut s = self.st();
+            s.note("adopt".to_owned());
+            if !s.flight.adopt_errors.is_empty() {
+                return Err(s.flight.adopt_errors.remove(0));
+            }
+        }
         self.land(req, note)
+    }
+
+    /// The Boxes a listing of `provider` shows.
+    pub(super) fn listed(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
+        let mut s = self.st();
+        s.note("list".to_owned());
+        if s.by_handle {
+            return Err(DriverError::Unsupported("listed by handle"));
+        }
+        if let Some(e) = s.fail_list.take().or_else(|| s.fail_list_always.clone()) {
+            return Err(e);
+        }
+        Ok(s.providers
+            .iter()
+            .filter(|(h, p)| p == provider && s.live.contains(h))
+            .map(|(h, _)| BoxListing {
+                handle: BoxHandle::new(h.clone()),
+                provider: Some(provider.clone()),
+                asleep: s.stopped.contains(h),
+            })
+            .collect())
     }
 
     /// Ends the acquire going on, handing `note` its notes.

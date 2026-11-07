@@ -7,7 +7,7 @@ use moor_core::domain::event::ProviderStep;
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError, Forked};
 
-use super::{failed, planned, release, target, Crabbox, PoolHosts};
+use super::{failed, lost_or_failed, planned, target, undone, Crabbox, PoolHosts};
 use crate::adapters::crabbox::{cache, size_of};
 
 /// The failure of an answer that does not fit a checkpoint verb.
@@ -65,7 +65,7 @@ pub(in crate::adapters::crabbox) fn fork(
     let steps = match placed
         .hosts
         .checkpoint(placed.machine, act)
-        .map_err(failed)?
+        .map_err(lost_or_failed)?
     {
         Answer::Forked { timing } => ProviderStep::parse_all(timing.iter().map(String::as_str)),
         // An agent older than this controller answers a fork with no steps.
@@ -80,10 +80,7 @@ pub(in crate::adapters::crabbox) fn fork(
     });
     match reached {
         Ok(()) => Ok(Forked { handle, steps }),
-        Err(e) => {
-            let _ = release(cb, &handle);
-            Err(e)
-        }
+        Err(e) => Err(undone(cb, &handle, e)),
     }
 }
 

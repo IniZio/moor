@@ -125,6 +125,64 @@ fn a_cut_acquire_that_cannot_be_released_is_not_tried_again() {
     assert_eq!(w.driver.acquired_nonces().len(), 0);
 }
 
+/// What a lost link looks like to the driver.
+fn link_lost() -> DriverError {
+    DriverError::Transport {
+        stderr_tail: "machine 1 is not linked".to_owned(),
+    }
+}
+
+/// A world whose host warms a VM its next acquire loses the link to.
+fn link_cut(driver: FakeDriver) -> World {
+    let w = world(driver.cut_acquires_go_on().fail_acquire(link_lost()));
+    script_base_yaml(&w, None);
+    w
+}
+
+#[test]
+fn an_acquire_cut_by_a_lost_link_is_taken_over_by_the_same_process() {
+    let w = link_cut(FakeDriver::new().adopt_fails(30, &link_lost()));
+    run(&w.cx, &start_req()).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    let events = w.cx.store().unwrap().events(row.id, 80).unwrap();
+    assert!(!events.iter().any(|e| e.kind == "setup_failed"));
+}
+
+#[test]
+fn a_link_that_stays_down_fails_the_start_with_its_reason_and_warns_of_the_lease() {
+    let driver = FakeDriver::new()
+        .adopt_fails(300, &link_lost())
+        .fail_release_always(link_lost());
+    let w = link_cut(driver);
+    assert!(run(&w.cx, &start_req()).is_err());
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
+    let events = w.cx.store().unwrap().events(row.id, 80).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    assert!(failed.payload.to_string().contains("not linked"));
+    let warned = w.cx.take_warnings();
+    assert!(warned.iter().any(|w| w.code == "box_release_failed"));
+}
+
+#[test]
+fn a_drain_leaves_an_acquire_cut_by_a_lost_link_to_the_next_process() {
+    let w = link_cut(FakeDriver::new().adopt_fails(1, &link_lost()));
+    w.cx.env().draining().cancel();
+    assert!(run(&w.cx, &start_req()).is_err());
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
+    let store = w.cx.store().unwrap();
+    assert!(!store
+        .events(row.id, 80)
+        .unwrap()
+        .iter()
+        .any(|e| e.kind == "setup_failed"));
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Ready);
+}
+
 #[test]
 fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
     let w = cut_off(FakeDriver::new());

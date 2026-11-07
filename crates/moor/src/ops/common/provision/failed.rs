@@ -4,7 +4,7 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, IntentChange};
 use moor_core::seam::driver::{AcquireReq, DriverError, Released};
-use moor_core::{BoxHandle, BoxId};
+use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::{reread, Entry};
 use crate::cx::Cx;
@@ -37,11 +37,21 @@ pub(super) fn failed(
     if let Err(write) = store.apply(lost) {
         return write.into();
     }
-    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
-        let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
-        if let Err(write) = store.apply(gone) {
-            return write.into();
+    match cx.driver().release(&attempted) {
+        Ok(Released::AlreadyGone) => {
+            let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
+            if let Err(write) = store.apply(gone) {
+                return write.into();
+            }
         }
+        Ok(Released::Deleted) => {}
+        Err(e) => cx.warn(Warning {
+            code: "box_release_failed".to_owned(),
+            message: format!(
+                "could not release {}: {e}; closing the Box stops it",
+                attempted.as_str()
+            ),
+        }),
     }
     let out = CommandError::from(err);
     match reread(store, id) {

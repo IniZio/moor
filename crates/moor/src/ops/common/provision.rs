@@ -2,8 +2,8 @@
 
 use moor_core::config::{BoxSettings, Flags};
 
-use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::seam::driver::AcquireReq;
@@ -30,7 +30,7 @@ pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_noted, setup_ended, step_outcome};
-use self::progress::{acquire_timed, adopt_timed};
+use self::progress::{acquire_timed, adopt_timed, goes_on_after};
 use self::rerun::start_ready;
 pub(crate) use self::retry::resume_setup;
 use self::retry::{kept_box_retry, retry_in_box};
@@ -168,7 +168,7 @@ pub(crate) fn provision(
     } else {
         acquire_timed
     };
-    let acquired = warm.map_or_else(|| acquire(cx, store, id, &req), Ok);
+    let acquired = warm.unwrap_or_else(|| acquire(cx, store, id, &req));
     match acquired {
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
@@ -183,6 +183,10 @@ pub(crate) fn provision(
                 return Err(CommandError::new(ErrorKind::Failed, setup::FORCED_CLOSE));
             }
             Ok(done)
+        }
+        // The next process takes it over, as the intent stays.
+        Err(e) if cx.env().draining().is_cancelled() && goes_on_after(cx, &req, &e) => {
+            Err(setup::Released.into())
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }

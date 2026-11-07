@@ -129,6 +129,30 @@ fn a_pool_lease_is_taken_over_by_an_adopt_not_another_warmup() {
 }
 
 #[test]
+fn a_host_out_of_reach_is_a_lost_link_and_a_refusal_is_not() {
+    for (said, lost) in [
+        ("machine 42 is not linked", true),
+        (
+            "machine 42 is offline: its link closed: the stream ended: eof",
+            true,
+        ),
+        (
+            "the machine runner at /s/links.sock is unreachable: refused",
+            true,
+        ),
+        ("the stream ended: unexpected end of file", true),
+        (
+            "machine 42 refused: crabbox warmup failed: the stream ended",
+            false,
+        ),
+        ("no room", false),
+    ] {
+        let got = super::lost_or_failed(said.to_owned());
+        assert_eq!(matches!(got, DriverError::Transport { .. }), lost, "{said}");
+    }
+}
+
+#[test]
 fn acquire_warms_up_lets_the_key_in_and_builds_its_own_words() {
     let (host, cb) = rig();
     let got = cb.acquire(&req()).unwrap();

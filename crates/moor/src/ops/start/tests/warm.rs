@@ -178,6 +178,21 @@ fn a_new_box_whose_first_line_changed_does_not_reuse_the_layers_above() {
 }
 
 #[test]
+fn a_fork_cut_by_a_lost_link_is_taken_over_and_only_the_lines_above_it_run() {
+    let cut = DriverError::Transport {
+        stderr_tail: "the stream ended: unexpected end of file".to_owned(),
+    };
+    let driver = FakeDriver::new().cut_acquires_go_on().fork_fails_once(cut);
+    let (w, _) = after_a_partial_setup(driver);
+    let second = start(&w, "second", "abc123", LINES);
+    assert!(events(&w, second, "warm_start_failed").is_empty());
+    assert!(events(&w, second, "setup_failed").is_empty());
+    assert_eq!(events(&w, second, "warm_started").len(), 1);
+    assert!(w.driver.calls().iter().any(|c| c == "adopt"));
+    assert!(!lines_on(&w, second).contains(&"one-a"));
+}
+
+#[test]
 fn a_failed_fork_sets_the_box_up_from_scratch_and_says_why() {
     let failure = DriverError::Failed {
         summary: "snapshot missing".to_owned(),
