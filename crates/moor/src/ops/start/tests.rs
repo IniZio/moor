@@ -77,6 +77,7 @@ mod user_mcp;
 mod warm;
 mod warm_commits;
 mod warm_saved;
+mod warm_trees;
 mod workdir;
 
 /// A world of fakes plus the context over them.
