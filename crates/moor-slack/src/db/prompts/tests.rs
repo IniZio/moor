@@ -25,6 +25,7 @@ fn with_box(dir: &std::path::Path, names: &[&str]) -> Db {
             prompt: "fix".into(),
             base: None,
             node: None,
+            cold: false,
             requested_by: "U1".into(),
             parent: None,
             state: BoxState::Starting,

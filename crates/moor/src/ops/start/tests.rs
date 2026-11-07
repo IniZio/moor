@@ -77,6 +77,7 @@ mod transcript;
 mod user_mcp;
 mod warm;
 mod warm_commits;
+mod warm_limits;
 mod warm_profile;
 mod warm_roll;
 mod warm_saved;
@@ -168,6 +169,7 @@ fn req(name: &str) -> StartReq {
         model: None,
         node: None,
         no_agent: false,
+        cold: false,
         resume: false,
         repo: None,
         parent: None,
@@ -180,6 +182,7 @@ fn req(name: &str) -> StartReq {
 fn agentless_req(name: &str) -> StartReq {
     StartReq {
         no_agent: true,
+        cold: false,
         ..req(name)
     }
 }

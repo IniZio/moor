@@ -96,6 +96,7 @@ fn start() -> Request {
         model: None,
         node: None,
         no_agent: false,
+        cold: false,
         resume: false,
         repo: None,
         parent: None,

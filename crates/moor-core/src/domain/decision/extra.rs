@@ -148,6 +148,8 @@ pub enum ExtraEvent {
         /// The last lines of its log.
         tail: String,
     },
+    /// The start asked for no setup kept from earlier Boxes.
+    ColdAsked,
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {
         /// Setup lines the checkpoint held.

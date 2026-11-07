@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::layers::{failed_layer, nearest, LayerKey};
+use moor_core::domain::layers::{chain_past_limits, failed_layer, nearest, LayerKey};
 use moor_core::seam::driver::{AcquireReq, Acquired};
 use moor_core::{BoxHandle, BoxId, Warning};
 
@@ -32,6 +32,56 @@ fn deepest_kept(
     Ok(None)
 }
 
+/// Marks the disk as the fork of `kept`, layer `layer`, and returns the commit it holds when that
+/// is not the Box's, so its lines run again and a save rolls the chain forward.
+fn stand_on_fork(
+    layered: &mut Layered,
+    layer: usize,
+    place: &Place,
+    kept: &CheckpointRow,
+) -> Option<String> {
+    let rerun_from = (place.base != layered.base).then(|| place.base.clone());
+    match &rerun_from {
+        Some(commit) => {
+            layered.disk = Disk::Rerun {
+                commit: commit.clone(),
+            };
+            layered.spent_ms.store(place.setup_ms, Ordering::Relaxed);
+            layered.roll = Some(RollFrom {
+                depth: kept.depth,
+                root_at: kept.chain_at,
+            });
+        }
+        None => layered.stand_on(layer, place.setup_ms),
+    }
+    rerun_from
+}
+
+/// Retires the chain of `kept`, deepest of Box `id`'s layers, when it is past its limits, and says
+/// so; whether it was.
+fn chain_expired(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    layered: &Layered,
+    (layer, kept): (usize, &CheckpointRow),
+) -> Result<bool, CommandError> {
+    let age_ms = store.now().as_millis() - kept.chain_at.as_millis();
+    let Some(why) = chain_past_limits(age_ms, kept.depth) else {
+        return Ok(false);
+    };
+    store.retire_chain(&layered.home, &layered.lineage.chain, None)?;
+    make_room(cx, store, id, &layered.home)?;
+    cx.warn(Warning {
+        code: "checkpoint_chain_expired".to_owned(),
+        message: format!("setup runs from its start: {why}"),
+    });
+    let layer = u32::try_from(layer).unwrap_or(u32::MAX);
+    let told = ExtraEvent::WarmStartFailed { layer, error: why };
+    store.apply(Decision::new(id).event(told))?;
+    Ok(true)
+}
+
 /// Starts Box `id` on a fork of the deepest layer kept with a place. At the Box's base only the
 /// lines above it run, and at another commit every line runs. None when no layer is kept, or when
 /// the fork fails: that is recorded and warned about, and the Box is acquired and set up from
@@ -44,11 +94,14 @@ pub(in super::super) fn warm(
     layered: &mut Layered,
 ) -> Result<Option<Acquired>, CommandError> {
     let lines = layered.keys.len() - 1;
-    let deepest = deepest_kept(store, layered)?;
+    let deepest = deepest_kept(store, layered)?.filter(|_| !layered.replacing);
     let Some((layer, key, kept, place)) = deepest else {
         make_room(cx, store, id, &layered.home)?;
         return Ok(None);
     };
+    if chain_expired(cx, store, id, layered, (layer, &kept))? {
+        return Ok(None);
+    }
     store.pin_checkpoint(id, &layered.home, &key, layer)?;
     make_room(cx, store, id, &layered.home)?;
     if !store.use_checkpoint(&layered.home, &key)? {
@@ -74,20 +127,7 @@ pub(in super::super) fn warm(
         }
     };
     let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
-    let rerun_from = (place.base != layered.base).then(|| place.base.clone());
-    match &rerun_from {
-        Some(commit) => {
-            layered.disk = Disk::Rerun {
-                commit: commit.clone(),
-            };
-            layered.spent_ms.store(place.setup_ms, Ordering::Relaxed);
-            layered.roll = Some(RollFrom {
-                depth: kept.depth,
-                root_at: kept.chain_at,
-            });
-        }
-        None => layered.stand_on(layer, place.setup_ms),
-    }
+    let rerun_from = stand_on_fork(layered, layer, &place, &kept);
     layered.finished = finished;
     let lines = u32::try_from(lines).unwrap_or(u32::MAX);
     store.apply(Decision::new(id).event(ExtraEvent::WarmStarted {
@@ -191,6 +231,13 @@ fn nearest_of_own_base(
     Ok(layer.and_then(|at| Some((at, kept.into_iter().nth(at).flatten()?))))
 }
 
+/// The layer whose line Box `row` failed last; the top when it names none.
+fn failed_at(store: &Store, row: &BoxRow, cfg: &BoxSettings) -> Result<usize, CommandError> {
+    let failed = store.newest_events_of(row.id, "setup_failed", 1)?.pop();
+    let line = failed.and_then(|e| e.payload.get("line")?.as_str().map(str::to_owned));
+    Ok(line.map_or(cfg.setup.len(), |line| failed_layer(&cfg.setup, &line)))
+}
+
 /// Moves Box `row` from the machine `old` onto a new one forked from the nearest checkpoint of its
 /// own base at or below its failed layer, and releases `old`. Returns the new handle; none when
 /// no such checkpoint is kept or the fork fails, and the setup runs in `old` from its start.
@@ -202,12 +249,11 @@ pub(in super::super) fn resume(
     cfg: &BoxSettings,
     layered: &mut Layered,
 ) -> Result<Option<BoxHandle>, CommandError> {
-    let failed = store
-        .newest_events_of(row.id, "setup_failed", 1)?
-        .pop()
-        .and_then(|e| e.payload.get("line")?.as_str().map(str::to_owned))
-        .map_or(cfg.setup.len(), |line| failed_layer(&cfg.setup, &line));
     make_room(cx, store, row.id, &layered.home)?;
+    if layered.replacing {
+        return Ok(None);
+    }
+    let failed = failed_at(store, row, cfg)?;
     let Some((layer, saved)) = nearest_of_own_base(store, layered, failed)? else {
         return Ok(None);
     };

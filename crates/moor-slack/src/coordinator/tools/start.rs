@@ -12,7 +12,7 @@ use crate::db::{BoxState, ChannelRepo, OpenTurn, SlackBox};
 pub(super) fn start(
     scope: &Scope<'_>,
     prompt: &str,
-    (repo, base, node): (Option<&str>, Option<&str>, Option<&str>),
+    (repo, base, node, cold): (Option<&str>, Option<&str>, Option<&str>, bool),
 ) -> rusqlite::Result<Reply> {
     let (db, channel, thread_ts) = (scope.db, scope.channel, scope.thread_ts);
     let Some(turn) = db.open_turn(channel, thread_ts)? else {
@@ -43,6 +43,7 @@ pub(super) fn start(
         prompt: prompt.to_owned(),
         base: base.map(str::to_owned),
         node: node.map(str::to_owned),
+        cold,
         requested_by: by.clone(),
         parent: db.root_session(channel, thread_ts)?.map(SessionId::new),
         state: BoxState::Starting,

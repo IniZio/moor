@@ -32,6 +32,7 @@ use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
 
 mod asleep;
+mod cold;
 mod launch;
 mod needs;
 mod preflight;
@@ -81,6 +82,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     }
     settle_all(cx, store, &|| false)?;
     if let Some(row) = store.open_box_by_name(&req.name)? {
+        cold::warn_ignored(cx, req);
         return attach(cx, store, req, &row, user);
     }
     if req.resume {
@@ -112,6 +114,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Err(e) => return raced(cx, store, (req, user), e),
     };
     store.set_box_spec(id, &spec)?;
+    cold::record(store, req, id)?;
     if let Some(gathered) = facts.profile.take() {
         profile::record(cx, store, id, gathered)?;
     }

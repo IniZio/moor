@@ -230,6 +230,11 @@ pub(super) fn plan(
         pinned_base: (!cfg.across_commits).then_some(base),
     };
     let keys = chain(&identity, &cfg.setup);
+    let cold_asked = store
+        .newest_events_of(row.id, "cold_asked", 1)
+        .ok()?
+        .pop()
+        .is_some();
     let finished_key = keys
         .last()
         .and_then(|top| finished::key_of(cx, store, row, cfg, top));
@@ -237,7 +242,7 @@ pub(super) fn plan(
         finished_key,
         finished: false,
         roll: None,
-        replacing: false,
+        replacing: cold_asked,
         lineage: Lineage {
             user,
             repo,

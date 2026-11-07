@@ -387,6 +387,7 @@ impl Db {
             prompt: "workflow run".to_owned(),
             base: None,
             node: None,
+            cold: false,
             requested_by: owner,
             parent: None,
             state: BoxState::Starting,

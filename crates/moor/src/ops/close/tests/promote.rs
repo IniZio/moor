@@ -159,6 +159,7 @@ fn start_req(name: &str) -> StartReq {
         model: None,
         node: None,
         no_agent: false,
+        cold: false,
         resume: false,
         repo: None,
         parent: None,

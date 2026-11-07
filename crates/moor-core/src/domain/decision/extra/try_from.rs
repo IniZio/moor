@@ -94,6 +94,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::WarmRerunFailed { line, tail }) => {
                 Ok(Self::WarmRerunFailed { line, tail })
             }
+            Event::Timing(TimingEvent::ColdAsked) => Ok(Self::ColdAsked),
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
             }

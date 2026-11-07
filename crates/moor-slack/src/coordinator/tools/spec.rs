@@ -32,7 +32,8 @@ pub(crate) const SPECS: [Spec; 15] = [
                     "prompt": {"type": "string", "description": "What the Box's agent should do, in plain words."},
                     "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."},
                     "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."},
-                    "node": {"type": "string", "description": "A node you may use; omit for your default."}
+                    "node": {"type": "string", "description": "A node you may use; omit for your default."},
+                    "cold": {"type": "boolean", "description": "Set the Box up from scratch, past any setup kept from earlier Boxes. Only when asked for."}
                 },
                 "required": ["prompt"],
                 "additionalProperties": false

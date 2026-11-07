@@ -211,6 +211,7 @@ fn start_req(box_name: &str, prompt: Option<&str>, repo: &str, parent: i64) -> R
         model: None,
         node: None,
         no_agent: false,
+        cold: false,
         resume: false,
         repo: Some(ForgeRepo::parse(repo).unwrap()),
         parent: Some(SessionId::new(parent)),

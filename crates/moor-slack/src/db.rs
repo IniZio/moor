@@ -48,6 +48,10 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V7__run_thread_without_box.sql",
             include_str!("../migrations/V7__run_thread_without_box.sql"),
         ),
+        (
+            "V8__box_cold.sql",
+            include_str!("../migrations/V8__box_cold.sql"),
+        ),
     ])
 }
 

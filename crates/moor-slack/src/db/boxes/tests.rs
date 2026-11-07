@@ -15,6 +15,7 @@ fn asked(name: &str, by: &str) -> SlackBox {
         prompt: format!("prompt of {name}"),
         base: None,
         node: None,
+        cold: false,
         requested_by: by.into(),
         parent: None,
         state: BoxState::Starting,
