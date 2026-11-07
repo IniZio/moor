@@ -1,15 +1,19 @@
 //! Re-runs the steps that never finished on a ready Box whose last start ended in setup-failed.
 
+use moor_core::box_key::BoxKey;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
+use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::WorkspaceRef;
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
 use moor_core::config::Flags;
 use moor_core::BoxId;
 
-use super::interrupted::release_warned;
+use super::interrupted::{launch_was_cut, release_warned};
 use super::lease::planned_root;
 use super::rerun::record_interrupted;
 use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
@@ -20,6 +24,9 @@ use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
 use crate::ops::start::launch_after_retry;
 use crate::store::{BoxRow, Store};
+
+/// Longest one question to the Box about its agent may take.
+const FATE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The handle and workdir of the machine `row` holds, when it is ready.
 fn machine(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
@@ -67,6 +74,9 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         .interruptible(cx.env().cancel());
     let row = super::reread(store, id)?;
     let me = std::process::id();
+    if row.intent.is_none() && launch_was_cut(store, &row)? {
+        return finish_launch(cx, store, &row);
+    }
     let acquiring = row.intent == Some(Intent::Provisioning { pid: me });
     if acquiring && row.lifecycle != BoxLifecycle::SettingUp {
         return release_cut(cx, store, &row);
@@ -88,6 +98,40 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         launch_after_retry(cx, store, id)?;
     }
     Ok(())
+}
+
+/// Ends the launch a restart cut off in `row`. An agent already in the Box is attached to, as a
+/// second launch would replace it and start its work over. A Box that cannot say launches nothing,
+/// and the next process asks again.
+fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let (Some((handle, workdir)), Some(ws)) = (machine(row), row.workspace_id.as_deref()) else {
+        return Ok(());
+    };
+    setup::await_reachable(cx, handle)?;
+    let session = SessionRef {
+        id: BoxKey::new(row.id).session_ref(),
+        handle: handle.clone(),
+        workdir,
+        pane: None,
+        holder: cx.engine().new_holder(),
+    };
+    let unknown = |e: EngineError| CommandError::new(ErrorKind::Failed, e.to_string());
+    match cx
+        .engine()
+        .agent_fate(&session, Deadline(FATE_WAIT))
+        .map_err(unknown)?
+    {
+        AgentFate::Running => {
+            let ws = WorkspaceRef::new(ws);
+            let pane = cx
+                .engine()
+                .reattach(&session, &ws, &row.name)
+                .map_err(unknown)?;
+            store.begin_session(row.id, &session.id, Some(pane.as_str()), session.holder)?;
+            Ok(())
+        }
+        AgentFate::Ended { .. } => launch_after_retry(cx, store, row.id).map(drop),
+    }
 }
 
 /// Stops the lease a working Box's cut-off acquire left going on its host; this can wait for that

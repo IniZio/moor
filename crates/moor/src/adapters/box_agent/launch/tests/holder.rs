@@ -270,3 +270,14 @@ fn a_box_with_a_holder_counts_its_agent_present_only_with_both() {
     assert!(present("true"));
     assert!(!present("false"), "no agent");
 }
+
+#[test]
+fn opening_a_holder_replaces_any_agent_under_its_name_so_a_box_holds_one() {
+    for (holder, kill) in [
+        (&super::super::holder::HC, "herdr-core kill"),
+        (&super::super::holder::TMUX, "tmux kill-session"),
+    ] {
+        let opened = (holder.open)("/x/exit", "agent");
+        assert!(opened.starts_with(kill), "{opened}");
+    }
+}

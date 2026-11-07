@@ -23,7 +23,7 @@ use crate::ops::common::box_exec;
 use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread, warm_disk_note};
 use crate::ops::common::resume;
-use crate::ops::common::step::timed_result;
+use crate::ops::common::step::timed;
 use crate::ops::common::view::rfc3339;
 use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{BoxRow, Store};
@@ -155,6 +155,22 @@ pub(super) fn begin(
     launch: &LaunchReq,
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
+    // The step starts first, so a process cut off from here on is not read as `--no-agent`.
+    timed(cx, store, row.id, PostCloneStep::Launch, || {
+        let out = launch_agent(cx, store, row, launch, cfg);
+        let ok = out.as_ref().is_ok_and(|view| view.launched);
+        (out, ok)
+    })
+}
+
+/// Opens the agent's Proxy and launches it, recording what came of that.
+fn launch_agent(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    launch: &LaunchReq,
+    cfg: &BoxSettings,
+) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
     let repo = row.repo.as_ref().map(|r| &r.repo);
@@ -181,10 +197,7 @@ pub(super) fn begin(
         Ok(leases) => leases,
         Err(e) => return record_failure(cx, store, id, &e),
     };
-    let launched = timed_result(cx, store, id, PostCloneStep::Launch, || {
-        cx.engine().launch(launch)
-    });
-    match launched {
+    match cx.engine().launch(launch) {
         Ok(session) => {
             for lease in leases {
                 store.hold_lease(lease)?;

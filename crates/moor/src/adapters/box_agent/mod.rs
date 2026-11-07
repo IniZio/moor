@@ -122,6 +122,10 @@ impl Engine for BoxAgent {
         profile_writer::all_sources(manifest)
     }
 
+    fn new_holder(&self) -> AgentHolder {
+        self.holder
+    }
+
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         launch::launch(
             self.driver.as_ref(),
