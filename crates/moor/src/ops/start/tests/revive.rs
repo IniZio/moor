@@ -121,7 +121,7 @@ fn nothing_to_resume_and_no_prompt_launches_nothing() {
 
 const UP: ProxyStatus = ProxyStatus::Ready { box_port: 40123 };
 
-fn elapsed_ms(w: &World, since: i64) -> i64 {
+pub(super) fn elapsed_ms(w: &World, since: i64) -> i64 {
     w.cx.clock().now().as_millis() - since
 }
 
@@ -212,7 +212,9 @@ fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_messag
 }
 
 /// As [`started`], with the Box answering `fates` when asked after its agent.
-fn answering(fates: Vec<Result<AgentFate, EngineError>>) -> (World, Arc<FakeEngine>, BoxId) {
+pub(super) fn answering(
+    fates: Vec<Result<AgentFate, EngineError>>,
+) -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Ok(session("p-1")))
@@ -227,7 +229,7 @@ fn answering(fates: Vec<Result<AgentFate, EngineError>>) -> (World, Arc<FakeEngi
     (w, engine, id)
 }
 
-fn silent() -> Vec<Result<AgentFate, EngineError>> {
+pub(super) fn silent() -> Vec<Result<AgentFate, EngineError>> {
     let failed = EngineError::Failed {
         step: "fate",
         message: "ssh: connection refused".to_owned(),
@@ -271,7 +273,7 @@ fn a_box_that_does_not_answer_after_wake_launches_nothing_yet() {
 }
 
 /// Suspends `id` mid-turn for `reason`, ten seconds ago, then wakes it with its pane gone.
-fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
+pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
     let store = w.cx.store().unwrap();
     let suspend = BoxLifecycleInput::Suspend {
         reason: reason.to_owned(),
@@ -291,7 +293,7 @@ fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
     wake_and_revive(&w.cx, store, &row).unwrap();
 }
 
-fn notes(engine: &FakeEngine) -> Vec<String> {
+pub(super) fn notes(engine: &FakeEngine) -> Vec<String> {
     engine
         .steers()
         .into_iter()
@@ -302,7 +304,7 @@ fn notes(engine: &FakeEngine) -> Vec<String> {
         .collect()
 }
 
-const CRITICAL: &str = "last-resort suspend: memory critical on hv";
+pub(super) const CRITICAL: &str = "last-resort suspend: memory critical on hv";
 
 #[test]
 fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
