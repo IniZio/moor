@@ -1,13 +1,23 @@
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use sha2::{Digest, Sha256};
 
-use super::{fetch, plain_semver, target};
+use super::{fetch, plain_semver, target, PublicKey, RELEASE_KEY};
 
 const T: &str = "x86_64-unknown-linux-musl";
+
+/// The key the test mirror signs with.
+static SIGNER: LazyLock<minisign::KeyPair> =
+    LazyLock::new(|| minisign::KeyPair::generate_unencrypted_keypair().unwrap());
+
+/// The key the agent checks the test mirror's releases against.
+fn trusted() -> PublicKey {
+    PublicKey::from_base64(&SIGNER.pk.to_base64()).unwrap()
+}
 
 /// Publishes `binary` as release `version` under `dir`, with `sum` as its checksum when given.
 fn publish(dir: &Path, version: &str, binary: &[u8], sum: Option<&str>) -> String {
@@ -29,6 +39,9 @@ fn publish(dir: &Path, version: &str, binary: &[u8], sum: Option<&str>) -> Strin
         format!("{sum}  {asset}\n"),
     )
     .unwrap();
+    let (pk, sk) = (&SIGNER.pk, &SIGNER.sk);
+    let sig = minisign::sign(Some(pk), sk, &tarball[..], None, None).unwrap();
+    fs::write(release.join(format!("{asset}.minisig")), sig.to_string()).unwrap();
     format!("file://{}", dir.display())
 }
 
@@ -36,7 +49,7 @@ fn publish(dir: &Path, version: &str, binary: &[u8], sum: Option<&str>) -> Strin
 fn a_matching_checksum_unpacks_the_binary() {
     let (mirror, stage) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let base = publish(mirror.path(), "9.9.9", b"new agent", None);
-    let bin = fetch(&base, "9.9.9", T, stage.path()).unwrap();
+    let bin = fetch(&base, "9.9.9", T, stage.path(), &trusted()).unwrap();
     assert_eq!(fs::read(bin).unwrap(), b"new agent");
 }
 
@@ -44,7 +57,7 @@ fn a_matching_checksum_unpacks_the_binary() {
 fn a_wrong_checksum_is_refused_and_nothing_is_unpacked() {
     let (mirror, stage) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let base = publish(mirror.path(), "9.9.9", b"new agent", Some(&"0".repeat(64)));
-    let err = fetch(&base, "9.9.9", T, stage.path()).unwrap_err();
+    let err = fetch(&base, "9.9.9", T, stage.path(), &trusted()).unwrap_err();
     assert!(err.contains("does not match its checksum"), "{err}");
     assert_eq!(fs::read_dir(stage.path()).unwrap().count(), 0);
 }
@@ -53,7 +66,7 @@ fn a_wrong_checksum_is_refused_and_nothing_is_unpacked() {
 fn a_missing_asset_names_what_it_could_not_download() {
     let (mirror, stage) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let base = format!("file://{}", mirror.path().display());
-    let err = fetch(&base, "9.9.9", T, stage.path()).unwrap_err();
+    let err = fetch(&base, "9.9.9", T, stage.path(), &trusted()).unwrap_err();
     assert!(err.contains("cannot download"), "{err}");
     assert!(
         err.contains("v9.9.9/moor-machine-agent-x86_64-unknown-linux-musl.tar.gz"),
@@ -87,4 +100,9 @@ fn only_a_plain_semver_names_a_release() {
     ] {
         assert!(plain_semver(bad).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn the_compiled_in_release_key_is_a_minisign_public_key() {
+    assert!(PublicKey::decode(RELEASE_KEY).is_ok());
 }

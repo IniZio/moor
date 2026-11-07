@@ -13,6 +13,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use flate2::write::GzEncoder;
@@ -27,6 +28,10 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tokio::sync::{mpsc, oneshot};
 
 const NEW: &[u8] = b"#!/bin/sh\necho swapped\n";
+
+/// The key this test's mirror signs its releases with, which the agent is told to trust.
+static SIGNER: LazyLock<minisign::KeyPair> =
+    LazyLock::new(|| minisign::KeyPair::generate_unencrypted_keypair().unwrap());
 
 fn target() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -70,14 +75,41 @@ fn publish(dir: &Path, version: &str, binary: &[u8], sum: Option<&str>) {
         format!("{sum}  {asset}\n"),
     )
     .unwrap();
+    sign(&release.join(asset), &SIGNER);
+}
+
+/// Writes `asset`'s minisign signature by `key` beside it.
+fn sign(asset: &Path, key: &minisign::KeyPair) {
+    let bytes = fs::read(asset).unwrap();
+    let sig = minisign::sign(Some(&key.pk), &key.sk, &bytes[..], None, None).unwrap();
+    fs::write(signature(asset), sig.to_string()).unwrap();
+}
+
+fn signature(asset: &Path) -> PathBuf {
+    asset.with_extension("gz.minisig")
+}
+
+/// The tarball of release `version` under `mirror`.
+fn tarball(mirror: &Path, version: &str) -> PathBuf {
+    mirror
+        .join(format!("v{version}"))
+        .join(format!("moor-machine-agent-{}.tar.gz", target()))
+}
+
+/// Signs release `version` under `mirror` again, by a key the agent does not trust.
+fn sign_by_another_key(mirror: &Path, version: &str) {
+    let other = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    sign(&tarball(mirror, version), &other);
 }
 
 fn agent(exe: &Path, mirror: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new(exe);
-    cmd.args(args).env(
-        "MOOR_AGENT_RELEASES",
-        format!("file://{}", mirror.display()),
-    );
+    cmd.args(args)
+        .env(
+            "MOOR_AGENT_RELEASES",
+            format!("file://{}", mirror.display()),
+        )
+        .env("MOOR_AGENT_RELEASE_KEY", SIGNER.pk.to_base64());
     cmd
 }
 
@@ -117,6 +149,40 @@ fn a_bad_checksum_is_refused_and_the_old_binary_stays() {
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("does not match its checksum"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(fs::read(&exe).unwrap(), before);
+}
+
+#[test]
+fn an_unsigned_release_is_refused_and_the_old_binary_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mirror, exe) = (dir.path().join("mirror"), agent_copy(dir.path()));
+    let before = fs::read(&exe).unwrap();
+    publish(&mirror, "9.9.9", NEW, None);
+    fs::remove_file(signature(&tarball(&mirror, "9.9.9"))).unwrap();
+    let out = agent(&exe, &mirror, &["update", "--version", "9.9.9"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains(".minisig"), "{}", stderr(&out));
+    assert_eq!(fs::read(&exe).unwrap(), before);
+}
+
+#[test]
+fn a_release_signed_by_another_key_is_refused_and_the_old_binary_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mirror, exe) = (dir.path().join("mirror"), agent_copy(dir.path()));
+    let before = fs::read(&exe).unwrap();
+    publish(&mirror, "9.9.9", NEW, None);
+    sign_by_another_key(&mirror, "9.9.9");
+    let out = agent(&exe, &mirror, &["update", "--version", "9.9.9"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is not signed by the release key"),
         "{}",
         stderr(&out)
     );
@@ -470,6 +536,32 @@ async fn a_failed_background_update_leaves_the_agent_linked_on_its_release() {
         "{}",
         logged(&log)
     );
+    let mut status = opener.send(json!({"op": "status"})).await;
+    let reply: ops::Reply = ops::read_line(&mut status).await.unwrap();
+    assert!(matches!(reply, ops::Reply::Status(_)), "{reply:?}");
+    assert!(agent.try_wait().unwrap().is_none(), "{}", logged(&log));
+    assert_eq!(fs::read(&exe).unwrap(), before);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wrongly_signed_release_leaves_a_linked_agent_running_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mirror, exe) = (dir.path().join("mirror"), agent_copy(dir.path()));
+    let before = fs::read(&exe).unwrap();
+    publish(&mirror, "9.9.9", NEW, None);
+    sign_by_another_key(&mirror, "9.9.9");
+    let (server, mut links) = welcoming_server(&["9.9.9"]).await;
+    let mut cmd = agent(&exe, &mirror, &["run", "--auto-update"]);
+    cmd.env("XDG_STATE_HOME", enrolled(dir.path(), &server));
+    let log = dir.path().join("agent.log");
+    let mut agent = spawn(cmd, &log);
+    let opener = links.recv().await.unwrap();
+    until("the update is refused", || {
+        logged(&log).contains("this agent keeps running 0.2.0")
+    })
+    .await;
+    let said = logged(&log);
+    assert!(said.contains("is not signed by the release key"), "{said}");
     let mut status = opener.send(json!({"op": "status"})).await;
     let reply: ops::Reply = ops::read_line(&mut status).await.unwrap();
     assert!(matches!(reply, ops::Reply::Status(_)), "{reply:?}");
