@@ -63,6 +63,11 @@ struct Args {
     /// `/auth/*` is off without it, and the issuer must allow `<public-url>/auth/callback`.
     #[arg(long, env = "MOOR_GATE_PUBLIC_URL")]
     public_url: Option<String>,
+    /// Secrets of 32 or more characters, comma-separated, that seal the sign-in cookies. Every
+    /// gate replica needs the same value; the first seals and all open, to rotate. Without it
+    /// each gate seals under a key of its own, so sign-in works on one replica only.
+    #[arg(long, env = "MOOR_GATE_COOKIE_KEY", hide_env_values = true)]
+    cookie_key: Option<String>,
     /// Seconds a SIGTERM waits for connections in flight before the gate exits.
     #[arg(long, env = "MOOR_GATE_DRAIN_TIMEOUT_SECS", default_value_t = 600)]
     drain_timeout_secs: u64,
@@ -119,7 +124,12 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let login = match args.public_url.as_deref().map(Login::new).transpose() {
+    let sign_in = |url: &str| {
+        args.cookie_key
+            .as_deref()
+            .map_or_else(|| Login::new(url), |keys| Login::with_keys(url, keys))
+    };
+    let login = match args.public_url.as_deref().map(sign_in).transpose() {
         Ok(login) => login.map(Arc::new),
         Err(why) => {
             moor_gate_log(&why);

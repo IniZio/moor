@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::net::TcpStream;
-use std::time::Instant;
+use std::time::SystemTime;
 
 use moor_core::request::{
     Request as ControllerRequest, SecretValue, WebhookSetupFinishReq, WebhookSetupShowReq,
@@ -25,7 +25,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         clippy::disallowed_methods,
         reason = "session expiry; the store takes the time as an argument"
     )]
-    let now = Instant::now();
+    let now = SystemTime::now();
     let path = req.target.split_once('?').map_or(req.target, |(p, _)| p);
     let Some(id) = setup_id(path) else {
         return not_found(&mut stream);

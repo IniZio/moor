@@ -3281,7 +3281,9 @@ dependencies = [
 name = "moor-gate"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
+ "chacha20poly1305",
  "clap",
  "form_urlencoded",
  "http",
@@ -3302,6 +3304,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "signal-hook 0.4.4",
  "tempfile",
  "tokio",
