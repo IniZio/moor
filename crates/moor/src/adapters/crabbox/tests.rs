@@ -74,6 +74,7 @@ impl Crabbox {
     pub(crate) fn with_scratch_leases(mut self) -> Self {
         let dir = Arc::new(tempfile::tempdir().expect("temp state dir"));
         self.leases = Some(dir.path().join("leases"));
+        crate::keys::scratch_ssh_key(dir.path());
         self.scratch = Some(dir);
         self
     }

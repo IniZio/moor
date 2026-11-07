@@ -215,6 +215,27 @@ fn first_start_creates_the_vault_key_beside_the_config() {
 }
 
 #[test]
+fn a_new_vault_key_over_a_store_of_sealed_keys_stops_the_start_instead_of_making_new_ones() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let cfg = config(tmp.path(), "fronts:\n  slack:\n    proxy_rules: [claude]\n");
+    drop(start(&env(tmp.path()), &cfg).expect("first start"));
+    let pool = tmp.path().join("state").join("pool").join("id_ed25519");
+    let kept = std::fs::read_to_string(&pool).expect("ssh key");
+    std::fs::remove_file(tmp.path().join("vault.key")).expect("lose the vault key");
+    std::fs::remove_file(&pool).expect("lose the cache");
+
+    let stop = start(&env(tmp.path()), &cfg).err().expect("refused");
+    assert_eq!(stop.code, 3);
+    assert!(
+        stop.message.contains("vault cannot open"),
+        "{}",
+        stop.message
+    );
+    assert!(!pool.exists(), "no new ssh key was made");
+    assert!(!kept.is_empty());
+}
+
+#[test]
 fn a_vault_key_that_is_not_owner_only_stops_the_start() {
     let tmp = tempfile::tempdir().expect("tmp");
     let cfg = config(tmp.path(), "");

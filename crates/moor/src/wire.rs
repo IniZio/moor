@@ -35,6 +35,7 @@ use crate::cx::{Cx, CxParts, MachineLinks};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Database, Store};
+use crate::vault::Vault;
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -159,6 +160,14 @@ pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
         store.purge_front_leases()?;
     }
     Ok(())
+}
+
+/// See [`crate::keys::settle`]; an env with no store or state dir has none.
+pub(crate) fn settle_keys(env: &Env, vault: &Vault, front_ca: bool) -> Result<(), String> {
+    let (Some(store), Some(state)) = (env.shared::<Store>(), env.state_dir()) else {
+        return Ok(());
+    };
+    crate::keys::settle(store, vault, &state, front_ca)
 }
 
 /// The socket of front `ns`'s Proxy for `state_dir`.

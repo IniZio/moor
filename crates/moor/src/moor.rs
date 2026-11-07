@@ -63,6 +63,11 @@ impl Moor {
         wire::end_front_leases(env)
     }
 
+    /// Settles the controller's keys in the store and the state dir.
+    pub(crate) fn settle_keys(env: &Env, vault: &Vault, front_ca: bool) -> Result<(), String> {
+        wire::settle_keys(env, vault, front_ca)
+    }
+
     /// The socket of front `ns`'s Proxy for the state dir `state_dir`, which its shim bridges.
     pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
         wire::front_proxy_socket(state_dir, ns)
@@ -76,10 +81,10 @@ impl Moor {
         wire::prepare_front_proxy_socket(state_dir, ns)
     }
 
-    /// The CA certificate the front Proxy signs with, made when missing.
+    /// The CA certificate the front Proxy signs with.
     ///
     /// # Errors
-    /// Why the CA could not be read or made.
+    /// Why the CA could not be read.
     pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
         wire::front_proxy_ca(state_dir)
     }

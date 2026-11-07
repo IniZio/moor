@@ -77,6 +77,16 @@ impl Vault {
             .map_err(|_| VaultError::Open("the CA key was sealed for another Box".into()))
     }
 
+    /// Encrypts one of the controller's own values, bound to its `label`.
+    pub(crate) fn seal_kept(&self, label: &str, plain: &Secret) -> Result<Vec<u8>, VaultError> {
+        self.seal_bound(&kept_head(label), plain)
+    }
+
+    /// Decrypts a value that [`Vault::seal_kept`] bound to `label`.
+    pub(crate) fn open_kept(&self, label: &str, sealed: &[u8]) -> Result<Secret, VaultError> {
+        self.open_bound(&kept_head(label), sealed)
+    }
+
     /// Encrypts `plain` after `head`, which [`Vault::open_bound`] checks.
     fn seal_bound(&self, head: &[u8], plain: &Secret) -> Result<Vec<u8>, VaultError> {
         let mut bound = Vec::with_capacity(head.len() + plain.expose().len());
@@ -119,6 +129,11 @@ fn row_head(user: UserId, name: &SecretName) -> Vec<u8> {
 /// What a Box's CA key is bound to; no user's secret has this head, as theirs starts with a digit.
 fn ca_head(box_id: BoxId) -> Vec<u8> {
     format!("box-ca {}\n", box_id.get()).into_bytes()
+}
+
+/// What a controller value is bound to; no user secret or Box CA has this head.
+fn kept_head(label: &str) -> Vec<u8> {
+    format!("controller {label}\n").into_bytes()
 }
 
 /// [`Vault::load_or_create`] with the uid that must own the file.

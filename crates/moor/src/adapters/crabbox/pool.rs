@@ -5,7 +5,6 @@
 use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
 use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
@@ -171,12 +170,12 @@ impl Crabbox {
 
     /// `<state>/pool`, made 0700: the controller key and each Box's known hosts.
     fn pool_dir(&self) -> Result<PathBuf, DriverError> {
-        let dir = self
-            .leases
-            .as_deref()
-            .and_then(Path::parent)
-            .ok_or_else(|| failed("moor has no state dir for pool keys"))?
-            .join("pool");
+        let dir = crate::keys::pool_dir(
+            self.leases
+                .as_deref()
+                .and_then(Path::parent)
+                .ok_or_else(|| failed("moor has no state dir for pool keys"))?,
+        );
         DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -185,27 +184,14 @@ impl Crabbox {
         Ok(dir)
     }
 
-    /// The controller's key pair, made once; its private key path.
+    /// The controller's private key, written from the store at start; never made here.
     fn controller_key(&self) -> Result<PathBuf, DriverError> {
         let key = self.pool_dir()?.join("id_ed25519");
         if !key.exists() {
-            let made = Command::new("ssh-keygen")
-                .args([
-                    "-q",
-                    "-t",
-                    "ed25519",
-                    "-N",
-                    "",
-                    "-C",
-                    "moor-controller",
-                    "-f",
-                ])
-                .arg(&key)
-                .stdin(Stdio::null())
-                .status();
-            if !made.is_ok_and(|s| s.success()) {
-                return Err(failed("cannot make the controller's ssh key"));
-            }
+            return Err(failed(format!(
+                "the controller's ssh key {} is not in place",
+                key.display()
+            )));
         }
         Ok(key)
     }

@@ -26,7 +26,7 @@ use users::Users;
 const TICK: Duration = Duration::from_millis(200);
 
 /// Common name of the front Proxy's CA.
-const CA_NAME: &str = "moor front proxy";
+pub(crate) const CA_NAME: &str = "moor front proxy";
 
 /// What the front Proxy runs with.
 pub(crate) struct Deps {
@@ -49,13 +49,13 @@ pub(crate) fn ca_dir(state_dir: &Path) -> PathBuf {
     state_dir.join("proxy").join("fronts")
 }
 
-/// The CA certificate every front trusts, created when missing.
+/// The CA certificate every front trusts.
 ///
 /// # Errors
-/// Why the CA could not be read or made.
+/// Why the CA could not be read.
 pub(crate) fn ca_cert(state_dir: &Path) -> std::io::Result<PathBuf> {
     let dir = ca_dir(state_dir);
-    ca::load_or_create_in(&dir, CA_NAME)?;
+    ca::load_in(&dir)?;
     Ok(ca::cert_in(&dir))
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn serve(deps: &Deps, fronts: &[(String, Vec<ResolvedRule>)]) -> u8 {
             "moor front proxy: {line}"
         );
     };
-    let ca = match ca::load_or_create_in(&ca_dir(&deps.state_dir), CA_NAME) {
+    let ca = match ca::load_in(&ca_dir(&deps.state_dir)) {
         Ok(ca) => Arc::new(ca),
         Err(e) => {
             say(&format!("cannot load the CA: {e}"));
