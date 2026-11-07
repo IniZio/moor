@@ -99,6 +99,7 @@ true
 {{- define "moor.stateless" -}}
 {{- if and .Values.database.url .Values.blobs.s3 -}}
 {{- if and .Values.slack.enabled (not .Values.slack.separate) }}{{ fail "a controller without the volume needs slack.separate: the Slack sidecar keeps slack.db on it" }}{{ end -}}
+{{- if not .Values.egress.enabled }}{{ fail "a controller without the volume needs egress.enabled: its own egress Proxy keeps the key Box tokens are signed with on it" }}{{ end -}}
 true
 {{- end -}}
 {{- end -}}

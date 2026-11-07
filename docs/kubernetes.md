@@ -272,7 +272,8 @@ With `blobs.s3` and `database.url` both set, the controller pod mounts no volume
 `emptyDir`, the chart no longer renders `moor-state`, and the pod rolls with `maxSurge: 1` and
 `maxUnavailable: 1`. The new pod waits on the database lock and is not Ready until the old one exits, so
 `maxUnavailable: 0` would never finish. Slack must then run with `slack.separate`, since the sidecar keeps
-`slack.db` on the volume. The chart refuses to render otherwise.
+`slack.db` on the volume. `egress.enabled` must be on too, since a controller's own egress Proxy keeps the key
+Box tokens are signed with on the volume. The chart refuses to render otherwise.
 
 A roll loses the rest of the state directory. The next pod remakes sockets, lock files, crabbox claims and
 `pool/known_hosts`. Setup, clone and run logs of earlier pods are gone.
