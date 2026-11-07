@@ -359,6 +359,52 @@ async fn a_wss_upstream_is_verified_against_the_given_roots() {
     );
 }
 
+/// A forwarder with no token of its own, on a stand-in Proxy at `proxy`.
+async fn lease_forwarder(proxy: SocketAddr) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let upstream =
+        Upstream::passing_leases(format!("ws://{proxy}/egress"), RootCertStore::empty()).unwrap();
+    tokio::spawn(serve(listener, Arc::new(upstream)));
+    addr
+}
+
+#[tokio::test]
+async fn with_no_token_each_clients_proxy_password_goes_on_as_authorization() {
+    let (proxy, mut seen) = echo_proxy().await;
+    let fwd = lease_forwarder(proxy).await;
+    let (mut c, head) = send(
+        fwd,
+        b"CONNECT api.example.com:443 HTTP/1.1\r\nHost: x\r\n\
+          Proxy-Authorization: Basic bGVhc2U6dG9r\r\n\r\n",
+    )
+    .await;
+    assert_eq!(head, "HTTP/1.1 200 Connection established\r\n\r\n");
+    c.write_all(b"ping").await.unwrap();
+    assert_eq!(read_n(&mut c, 4).await, b"ping");
+    let seen = seen.recv().await.unwrap();
+    assert_eq!(seen.auth.as_deref(), Some("Basic bGVhc2U6dG9r"));
+}
+
+#[tokio::test]
+async fn with_no_token_a_client_without_a_proxy_password_gets_407() {
+    let (proxy, _seen) = echo_proxy().await;
+    let fwd = lease_forwarder(proxy).await;
+    let (_c, head) = send(
+        fwd,
+        b"CONNECT api.example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n",
+    )
+    .await;
+    assert!(head.starts_with("HTTP/1.1 407"), "{head}");
+}
+
+#[test]
+fn a_config_with_no_token_passes_leases() {
+    assert!(
+        Config::parse(r#"{"listen":"127.0.0.1:1","upstream":"wss://moor.example/egress"}"#).is_ok()
+    );
+}
+
 #[test]
 fn the_config_names_its_listener_upstream_and_token() {
     let config = Config::parse(
