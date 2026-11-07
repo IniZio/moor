@@ -17,6 +17,14 @@ impl Hooks {
             .transpose()
     }
 
+    /// Whether the controller says Box `id` is closed or gone.
+    pub(crate) async fn is_closed(&self, id: i64) -> Result<bool, String> {
+        let op = MachineBoxOp::Get {
+            box_id: BoxId::new(id),
+        };
+        self.value(op).await.map(|v| v.closed)
+    }
+
     /// Writes Box `id`'s record whole.
     pub(super) async fn keep(&self, id: i64, record: &Record) -> Result<(), String> {
         self.ask(MachineBoxOp::Put(record.to_row(id)?))
@@ -52,6 +60,11 @@ impl Hooks {
 
     /// Sends `machine-box` with `op`; the records it answers.
     async fn ask(&self, op: MachineBoxOp) -> Result<Vec<MachineBox>, String> {
+        self.value(op).await.map(|v| v.boxes)
+    }
+
+    /// Sends `machine-box` with `op`; its whole answer.
+    async fn value(&self, op: MachineBoxOp) -> Result<MachineBoxValue, String> {
         let client = self.client.clone();
         let request = Request::MachineBox(MachineBoxReq { op });
         let response = tokio::task::spawn_blocking(move || client.request(request, |_| {}))
@@ -66,7 +79,6 @@ impl Hooks {
         }
         let value = response.value.unwrap_or_default();
         serde_json::from_value::<MachineBoxValue>(value)
-            .map(|v| v.boxes)
             .map_err(|e| format!("the controller's Box records are malformed: {e}"))
     }
 }

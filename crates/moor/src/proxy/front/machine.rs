@@ -6,7 +6,7 @@
 use moor_core::request::RunnerAddr;
 use moor_core::BoxId;
 
-use crate::proxy::ledger::BoxLedger;
+use crate::proxy::ledger::{BoxLedger, LedgerError};
 
 /// Prefix of the headers the Proxy owns; the Box's own are dropped.
 const OWN_PREFIX: &str = "x-moor-";
@@ -48,7 +48,10 @@ pub(crate) struct Held {
 pub(crate) fn hold_or_missing(ledger: &BoxLedger) -> Hold {
     ledger.hold().unwrap_or_else(|e| Hold::Missing {
         box_id: ledger.box_id(),
-        reason: format!("the Box's machine could not be read: {e}; try again later"),
+        reason: match e {
+            LedgerError::Refused(why) => why,
+            e => format!("the Box's machine could not be read: {e}; try again later"),
+        },
     })
 }
 
