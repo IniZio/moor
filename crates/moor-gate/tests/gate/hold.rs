@@ -29,6 +29,9 @@ use tungstenite::{Message, WebSocket};
 
 use super::{sign, CLIENT_ID};
 
+mod cap;
+mod survives;
+
 const FRONT_KEY: &str = "gate-front-key";
 const CUT: &str = "repo/cut";
 
@@ -93,6 +96,8 @@ fn pki(dir: &Path) -> (TlsPki, Arc<ServerConfig>) {
 enum Answer {
     Hello,
     Restarting,
+    /// Takes the connection and says nothing, as a controller coming up may.
+    Silent,
 }
 
 /// A fake controller's state, which outlives each time it is up.
@@ -130,7 +135,11 @@ fn line(tls: &mut impl Read) -> Option<String> {
 }
 
 /// Serves one connection: the TLS hello, then the controller socket's protocol.
-fn serve_one(tcp: TcpStream, fake: &Fake) {
+fn serve_one(mut tcp: TcpStream, fake: &Fake) {
+    if *fake.answer.lock().unwrap() == Answer::Silent {
+        let _ = std::io::copy(&mut tcp, &mut std::io::sink());
+        return;
+    }
     let conn = ServerConnection::new(Arc::clone(&fake.config)).unwrap();
     let mut tls = StreamOwned::new(conn, tcp);
     let Some(hello) = line(&mut tls) else {
@@ -151,7 +160,7 @@ fn serve_one(tcp: TcpStream, fake: &Fake) {
         if frame["frame"] == "hello" {
             let answer = *fake.answer.lock().unwrap();
             let out = match answer {
-                Answer::Hello => ServerFrame::Hello {
+                Answer::Hello | Answer::Silent => ServerFrame::Hello {
                     protocol: frame["protocol"].as_u64().unwrap().try_into().unwrap(),
                 },
                 Answer::Restarting => ServerFrame::Error {
@@ -247,6 +256,13 @@ struct Held {
 }
 
 fn held_with(key: &str, hold: Redial) -> Held {
+    held_served(key, hold, |listener, gate| {
+        std::thread::spawn(move || moor_gate::serve(&listener, &gate));
+    })
+}
+
+/// A gate over TLS that `serve` starts serving.
+fn held_served(key: &str, hold: Redial, serve: impl FnOnce(TcpListener, Arc<Gate>)) -> Held {
     let dir = tempfile::tempdir().unwrap();
     let (files, config) = pki(dir.path());
     let (listener, port, lock) = listen();
@@ -266,7 +282,7 @@ fn held_with(key: &str, hold: Redial) -> Held {
         controller,
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });
-    std::thread::spawn(move || moor_gate::serve(&listener, &config));
+    serve(listener, config);
     Held {
         gate,
         fake,
@@ -537,4 +553,20 @@ fn a_gate_with_a_wrong_front_key_is_refused_at_once() {
     let (_, head) = w.front();
     assert!(head.starts_with("HTTP/1.1 502"), "{head}");
     assert!(began.elapsed() < Duration::from_secs(5), "it was held");
+}
+
+#[test]
+fn readiness_does_not_wait_for_the_controller() {
+    let mut w = held_with(FRONT_KEY, holding(LONG));
+    w.away();
+    let began = Instant::now();
+    let mut res = w
+        .agent
+        .get(format!("http://{}/.well-known/moor", w.gate))
+        .call()
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    assert!(began.elapsed() < Duration::from_secs(5), "it was held");
+    let doc: Value = serde_json::from_str(&res.body_mut().read_to_string().unwrap()).unwrap();
+    assert_eq!(doc["client_id"], CLIENT_ID);
 }

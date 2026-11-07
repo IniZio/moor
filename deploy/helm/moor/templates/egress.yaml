@@ -8,6 +8,13 @@
 {{- $names := list "ledger-ca.pem" "ledger-ca.key" "ledger-tls.crt" "ledger-tls.key" "egress-client.crt" "egress-client.key" "runner-client.crt" "runner-client.key" -}}
 {{- $pem := dict -}}
 {{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
+{{- $roles := list "egress" "runner" -}}
+{{- if include "moor.gateSeparate" . -}}
+{{- $names = concat $names (list "gate-client.crt" "gate-client.key") -}}
+{{- $_ := set $given "gate-client.crt" .Values.gate.clientCert -}}
+{{- $_ := set $given "gate-client.key" .Values.gate.clientKey -}}
+{{- $roles = append $roles "gate" -}}
+{{- end -}}
 {{- $keptPairs := and (get $was "ledger-tls.crt") (get $was "ledger-tls.key") (get $was "egress-client.crt") (get $was "egress-client.key") (get $was "runner-client.crt") (get $was "runner-client.key") -}}
 {{- if or $tls.cert $tls.key $tls.ca $tls.caKey $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey -}}
 {{- if not (and $tls.cert $tls.key $tls.ca) -}}
@@ -40,7 +47,10 @@
 {{- $_ := set $pem "ledger-tls.crt" $cert.Cert -}}
 {{- $_ := set $pem "ledger-tls.key" $cert.Key -}}
 {{- end -}}
-{{- range $role := list "egress" "runner" -}}
+{{- if and (include "moor.gateSeparate" .) (not (get $pem "ledger-ca.key")) (not (and (get $pem "gate-client.crt") (get $pem "gate-client.key"))) -}}
+{{- fail "gate.separate with your own ledger CA needs egress.ledgerTls.caKey, or gate.clientCert and gate.clientKey" -}}
+{{- end -}}
+{{- range $role := $roles -}}
 {{- if not (and (get $pem (printf "%s-client.crt" $role)) (get $pem (printf "%s-client.key" $role))) -}}
 {{- $cert := genSignedCert (printf "moor %s" $role) nil nil 3650 $ca -}}
 {{- $_ := set $pem (printf "%s-client.crt" $role) $cert.Cert -}}
@@ -64,6 +74,9 @@ stringData:
   {{ . }}: {{ get $pem . | default "" | quote }}
   {{- end }}
   machine-service-key: {{ printf "moor machine service:%s" $key | sha256sum | quote }}
+  {{- if include "moor.gateSeparate" . }}
+  gate-front-key: {{ printf "moor gate front:%s" $key | sha256sum | quote }}
+  {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

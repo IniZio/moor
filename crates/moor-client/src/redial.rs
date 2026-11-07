@@ -162,6 +162,14 @@ pub fn redial<T, E>(
 }
 
 impl Client {
+    /// Replaces how long one TLS dial and its hello may take. Nothing has been asked by then, so
+    /// giving up on a dial that gets no answer leaves nothing run.
+    #[must_use]
+    pub const fn with_dial_limit(mut self, limit: Duration) -> Self {
+        self.dial = limit;
+        self
+    }
+
     /// Waits, under this client's redial policy, until the controller answers a hello. A
     /// `restarting` answer keeps waiting. Nothing is asked, so nothing can run.
     ///
