@@ -73,6 +73,8 @@ pub struct Client {
     timeouts: Timeouts,
     /// When a call whose request did not run dials again.
     redial: Redial,
+    /// Longest one TLS dial and its hello take.
+    dial: Duration,
     /// The identity every request and watch asserts; none speaks as the socket's own peer.
     identity: Option<Identity>,
 }
@@ -89,6 +91,7 @@ impl Client {
             link,
             timeouts: Timeouts::default(),
             redial: Redial::default(),
+            dial: remote::CONNECT_TIMEOUT,
             identity: None,
         }
     }
@@ -271,7 +274,7 @@ impl Client {
 
     /// Connects to the socket, or to the server.
     fn connect(&self) -> Attempt<UnixStream, ClientError> {
-        self.link.connect()
+        self.link.connect(self.dial)
     }
 
     /// Completes the hello exchange on a connected stream. Nothing has been asked yet, so a

@@ -27,7 +27,7 @@ use super::{Attempt, Client, ClientError};
 const FRONT_PATH: &str = "/front";
 
 /// Time allowed to connect and complete the handshakes.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+pub(super) const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the pump waits on the server before it looks at the client's side.
 const TICK: Duration = Duration::from_millis(10);
@@ -60,12 +60,13 @@ pub(super) enum Link {
 }
 
 impl Link {
-    /// Dials the controller, on its socket or through the server.
-    pub(super) fn connect(&self) -> Attempt<UnixStream, ClientError> {
+    /// Dials the controller, on its socket or through the server. `limit` bounds a TLS dial and
+    /// its hello.
+    pub(super) fn connect(&self, limit: Duration) -> Attempt<UnixStream, ClientError> {
         let socket = match self {
             Self::Socket(socket) => socket,
             Self::Remote(remote) => return remote.connect(),
-            Self::Tls(tls) => return tls.connect(),
+            Self::Tls(tls) => return tls.connect(limit),
         };
         match UnixStream::connect(socket) {
             Ok(stream) => Attempt::Done(stream),
@@ -181,7 +182,7 @@ impl Remote {
             ));
         }
         let port = uri.port_u16().unwrap_or(if secure { 443 } else { 80 });
-        let tcp = dial(host, port).map_err(Failure::Down)?;
+        let tcp = dial(host, port, CONNECT_TIMEOUT).map_err(Failure::Down)?;
         let stream = if secure {
             Stream::Tls(Box::new(tls(host, tcp).map_err(Failure::Bad)?))
         } else {
@@ -252,17 +253,17 @@ fn loopback(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
 }
 
-/// Connects TCP to `host:port`.
-pub(super) fn dial(host: &str, port: u16) -> Result<TcpStream, String> {
+/// Connects TCP to `host:port`, with `limit` on the connect and on each later read and write.
+pub(super) fn dial(host: &str, port: u16, limit: Duration) -> Result<TcpStream, String> {
     let addrs = (host.trim_start_matches('[').trim_end_matches(']'), port)
         .to_socket_addrs()
         .map_err(|e| format!("{host}: {e}"))?;
     let mut last = format!("{host}: no address");
     for addr in addrs {
-        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
+        match TcpStream::connect_timeout(&addr, limit) {
             Ok(tcp) => {
-                tcp.set_read_timeout(Some(CONNECT_TIMEOUT))
-                    .and_then(|()| tcp.set_write_timeout(Some(CONNECT_TIMEOUT)))
+                tcp.set_read_timeout(Some(limit))
+                    .and_then(|()| tcp.set_write_timeout(Some(limit)))
                     .map_err(|e| e.to_string())?;
                 return Ok(tcp);
             }

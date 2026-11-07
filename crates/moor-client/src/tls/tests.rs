@@ -133,7 +133,10 @@ fn a_runner_with_the_ledger_cas_client_certificate_completes_its_hello() {
     let (_tmp, dir) = dir();
     let (port, served) = listener(&dir);
     let config = client_config(&files(&dir, "runner")).expect("config");
-    assert!(matches!(runner(port, config).connect(), Attempt::Done(_)));
+    assert!(matches!(
+        runner(port, config).connect(std::time::Duration::from_secs(5)),
+        Attempt::Done(_)
+    ));
     assert_eq!(served.join().unwrap(), Ok(()));
 }
 
@@ -144,7 +147,7 @@ fn a_runner_without_a_client_certificate_is_refused_at_the_handshake() {
     let config = trusting(&dir.join("ledger-ca.pem"))
         .unwrap()
         .with_no_client_auth();
-    let dialed = runner(port, config).connect();
+    let dialed = runner(port, config).connect(std::time::Duration::from_secs(5));
     let why = served
         .join()
         .unwrap()
@@ -161,7 +164,7 @@ fn a_runner_whose_certificate_another_ca_signed_is_refused_at_the_handshake() {
     let (_tmp, dir) = dir();
     let (port, served) = listener(&dir);
     let config = client_config(&files(&dir, "stranger")).expect("config");
-    let dialed = runner(port, config).connect();
+    let dialed = runner(port, config).connect(std::time::Duration::from_secs(5));
     let why = served
         .join()
         .unwrap()
