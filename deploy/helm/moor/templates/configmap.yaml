@@ -13,6 +13,10 @@ data:
       {{- if .Values.slack.enabled }}
       slack:
         proxy_rules: [claude]
+        {{- if include "moor.slackSeparate" . }}
+        remote:
+          key_file: /var/lib/moor/config/slack-front.key
+        {{- end }}
       {{- end }}
       {{- if .Values.gate.enabled }}
       authgear: {}
@@ -35,6 +39,10 @@ data:
   slack.yaml: |
     app_token_file: /var/lib/moor/slack/app-token
     bot_token_file: /var/lib/moor/slack/bot-token
+  {{- end }}
+  {{- if include "moor.slackSeparate" . }}
+  slack-forward.json: |
+    {"listen":"127.0.0.1:{{ .Values.slack.proxyPort }}","upstream":{{ include "moor.egressUrl" . | quote }}}
   {{- end }}
   config.yaml: |
     {{- with .Values.controller.nodes }}

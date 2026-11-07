@@ -231,6 +231,24 @@ The Service `<release>-machine` then selects the runner pods, and the ingress se
 `<release>-runner-agents`. The controller dials a runner pod on `runner.linksPort`, 7702 by default, since
 7701 is the agents port.
 
+## Slack Deployment
+
+`slack.separate: true`, with `slack.enabled` and `egress.enabled`, moves Slack out of the controller pod into
+`<release>-slack`, one replica with `Recreate`, on a PVC of its own, `slack.persistence.size`, 1 GiB by default.
+It holds `slack.db` and each thread's workdir, and it starts empty. Turning the flag on loses what the sidecar's
+`slack.db` knew, which stays unread on the state volume:
+
+- Existing threads lose their context. Their Boxes stay open on the controller, but those threads no longer
+  follow them, so status, artifacts and questions stop appearing there.
+- Questions a Box asked before the switch can no longer be answered from Slack.
+- Each channel's repos are gone, so add them again with `/moor repo`.
+- Workflows added before the switch keep running, but their runs are no longer reported in Slack.
+
+The pod dials the controller's ledger with `slack-client.crt` and `.key` and the key `slack-front-key`, all from
+the Secret `<release>-egress`. A `forward` container listens on loopback on `slack.proxyPort`, 4480 by default,
+and carries each turn's traffic to the shared egress Proxy at the address Boxes dial. The pod holds no user's
+secret.
+
 ## Upgrades
 
 The pod uses the `Recreate` strategy, so the old controller stops before the
@@ -243,3 +261,6 @@ the old one is gone, so a longer drain makes each upgrade's outage longer. Read
 
 With `runner.separate`, a controller upgrade leaves the runner pods up, and rolling the runner pods one at a
 time relinks each machine within a redial of its agent.
+
+With `slack.separate`, a controller upgrade costs Slack one redial. A Slack upgrade replaces its one pod: Socket
+Mode reconnects in the new pod and Slack resends what the old pod did not acknowledge.

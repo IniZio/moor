@@ -1,0 +1,138 @@
+{{- if include "moor.slackSeparate" . }}
+{{- $uid := int .Values.controller.uid -}}
+{{- $tls := .Values.egress.ledgerTls | default dict -}}
+# Its state outlives every pod; one process writes slack.db, so the Deployment recreates.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-slack
+  labels: {{- include "moor.slackLabels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.slack.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-slack
+  labels: {{- include "moor.slackLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "moor.slackLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "moor.slackLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum | quote }}
+        checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum | quote }}
+        checksum/egress: {{ list .Values.egress.key $tls.ca $tls.slackClientCert | toJson | sha256sum | quote }}
+        {{- range $k, $v := .Values.podAnnotations }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      hostUsers: false
+      automountServiceAccountToken: false
+      # Long enough for the request in flight; Slack resends what the old pod did not ack.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $uid }}
+        runAsGroup: {{ $uid }}
+        fsGroup: {{ $uid }}
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: config
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - sh
+            - -ec
+            - |
+              cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
+              cp /src/config/slack-forward.json /var/lib/moor/slack/forward.json
+              install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
+              install -m 0600 /src/secrets/slack-bot-token /var/lib/moor/slack/bot-token
+              install -m 0600 /src/egress/slack-front.key /src/egress/slack-client.crt /src/egress/slack-client.key /src/egress/ledger-ca.pem /var/lib/moor/slack/
+          volumeMounts:
+            - { name: config-src, mountPath: /src/config, readOnly: true }
+            - { name: secrets-src, mountPath: /src/secrets, readOnly: true }
+            - { name: egress-src, mountPath: /src/egress, readOnly: true }
+            - { name: slack-config, mountPath: /var/lib/moor/slack }
+      containers:
+        - name: slack
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command: [moor-slack]
+          args:
+            - --config=/var/lib/moor/slack/config.yaml
+            - --state-dir=/var/lib/moor/slack-state
+            - --controller=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+            - --controller-ca=/var/lib/moor/slack/ledger-ca.pem
+            - --controller-cert=/var/lib/moor/slack/slack-client.crt
+            - --controller-key=/var/lib/moor/slack/slack-client.key
+            - --front-key-file=/var/lib/moor/slack/slack-front.key
+          env:
+            - { name: HOME, value: /var/lib/moor/slack-state }
+            - { name: MOOR_FRONT_PROXY_PORT, value: {{ .Values.slack.proxyPort | quote }} }
+          {{- with .Values.slack.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: slack-state, mountPath: /var/lib/moor/slack-state, subPath: state }
+            - { name: slack-config, mountPath: /var/lib/moor/slack, readOnly: true }
+            - { name: slack-tmp, mountPath: /tmp }
+        # Carries each turn's CONNECT to the shared egress Proxy, the turn's lease as its credential.
+        - name: forward
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command: [moor-egress-forward, --config, /var/lib/moor/slack/forward.json]
+          volumeMounts:
+            - { name: slack-config, mountPath: /var/lib/moor/slack, readOnly: true }
+      volumes:
+        - name: config-src
+          configMap:
+            name: {{ .Release.Name }}-config
+            items:
+              - { key: slack.yaml, path: slack.yaml }
+              - { key: slack-forward.json, path: slack-forward.json }
+        - name: secrets-src
+          secret:
+            secretName: {{ .Release.Name }}-secrets
+            defaultMode: 0440
+            items:
+              - { key: slack-app-token, path: slack-app-token }
+              - { key: slack-bot-token, path: slack-bot-token }
+        - name: egress-src
+          secret:
+            secretName: {{ .Release.Name }}-egress
+            defaultMode: 0440
+            items:
+              - { key: ledger-ca.pem, path: ledger-ca.pem }
+              - { key: slack-client.crt, path: slack-client.crt }
+              - { key: slack-client.key, path: slack-client.key }
+              - { key: slack-front-key, path: slack-front.key }
+        - name: slack-config
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: slack-tmp
+          emptyDir: {}
+        - name: slack-state
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-slack }
+{{- end }}

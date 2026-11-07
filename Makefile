@@ -86,6 +86,12 @@ chart:
 	  --set egress.ledgerTls.caKey=not-rsa 2>&1 | grep -q 'caKey must be a PKCS#1 RSA key'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set runner.separate=true --set egress.ledgerTls=null >/dev/null
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set slack.separate=true --set egress.ledgerTls=null >/dev/null
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set slack.separate=true --set egress.enabled=false 2>&1 | grep -q 'slack.separate needs egress.enabled'
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set slack.separate=true --set egress.ledgerTls.slackClientKey= 2>&1 | grep -q 'slack.separate with your own ca needs caKey'
 	tools/chart-render.sh
 
 # The two gates that CI runs before any test, so a push that fails one never reaches the tests.
