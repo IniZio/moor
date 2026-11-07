@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::claim::now;
 use crate::forwards::{accepted, Routes};
-use hello::{judge, STAMPED, VERSION};
+use hello::{judge, MIN_AGENT_VERSION, STAMPED, VERSION};
 
 mod drain;
 mod hello;
@@ -199,7 +199,11 @@ where
         .flatten()
         .and_then(Result::ok)
         .ok_or(None)?;
-    let (machine_id, version, offer) = judge(STAMPED, first.to_text().unwrap_or_default())?;
+    let (machine_id, version, offer) = judge(
+        STAMPED,
+        MIN_AGENT_VERSION,
+        first.to_text().unwrap_or_default(),
+    )?;
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     let nonce = bytes.iter().fold(String::new(), |mut hex, b| {
