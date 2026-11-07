@@ -2,19 +2,26 @@
 
 Phase 6 of zero-downtime deploys (#768). A deploy or node drain gives MCP clients and herdr no failed request.
 
-The decision is one controller, with gate replicas in front. The gate holds requests across a short gap. The drain hands Box work to the next process instead of waiting for it. The PVC and `Recreate` stay until the number below says otherwise.
+The decision is one controller, with gate replicas in front. The gate holds requests across a short gap. The drain hands Box work to the next process instead of waiting for it. After the gate work, the PVC and `Recreate` go.
 
 ## The volume
 
-`moor-state` is 10 GiB, `ReadWriteOnce`, on `longhorn`, and the cluster has 7 nodes. So a node drain means a detach and a reattach across nodes.
+`moor-state` is 10 GiB, `ReadWriteOnce`, on `longhorn`, and the cluster has 7 nodes. So a move across nodes means a detach and a reattach.
 
-| | |
+Measured on agentic with a 1 GiB idle Longhorn volume and a pod moved between two nodes, n=5.
+
+| Step | Time |
 | --- | --- |
-| Measured detach and reattach | Pending |
-| Detach fits inside the 30 s hold, with margin | The PVC stays, and "Without the volume" is dropped |
-| Otherwise | "Without the volume" goes ahead |
+| Old pod gone | 5.0–5.5 s |
+| New pod Ready after that | 25.3–31.6 s |
+| Total | 30.6–36.5 s |
 
-A hard node failure can pin an `ReadWriteOnce` volume for minutes. That is outside the charter's "done when".
+- The image was cached from move 3 on, and moves 3 to 5 are no faster. So image pull does not explain it (inferred).
+- This is a lower bound, since moor's volume is 10 GiB and the chart adds its own start time.
+- The move does not fit inside a 30 s hold, so the volume goes. See "Without the volume".
+- `Recreate` does not keep the new pod on the old node, so a deploy may pay this too. That is unmeasured.
+
+Until the volume goes, a hard node failure can pin it for minutes. That is outside the charter's "done when".
 
 ## What a roll does today
 
@@ -84,10 +91,10 @@ The controller log was not read, since this host's kubeconfig only names a local
 
 | Duty | Where | What a second replica or a roll breaks | Proposed home |
 | --- | --- | --- | --- |
-| One-controller flock | [`controller/mod.rs:155-158`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L155-L158), [`:165`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L165) | A second replica refuses to start. A roll is fine. | Stays |
-| Box lock | [`ops/common/boxlock.rs:43-48`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/boxlock.rs#L43-L48) | flock on the PVC guards one host only. A roll drops it, which is safe. | Stays |
+| One-controller flock | [`controller/mod.rs:155-158`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L155-L158), [`:165`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L165) | A second replica refuses to start. A roll is fine. | Lease row, file lock on SQLite |
+| Box lock | [`ops/common/boxlock.rs:43-48`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/boxlock.rs#L43-L48) | flock on the PVC guards one host only. A roll drops it, which is safe. | Stays, on `emptyDir` |
 | Forced-close table | [`ops/common/boxlock.rs:27`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/boxlock.rs#L27) | Per process. A close cannot stop a start on another replica. | Stays |
-| Run follow claim | [`store/follow.rs:3`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/follow.rs#L3) | flock on the PVC. A roll frees it. | Stays |
+| Run follow claim | [`store/follow.rs:3`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/follow.rs#L3) | flock on the PVC. A roll frees it. | Stays, on `emptyDir` |
 | Intent with a pid | [`ops/common/provision.rs:158-160`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision.rs#L158-L160), [`ops/common/provision/retry.rs:51`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/retry.rs#L51) | Pids mean nothing across pods. | Stays, as the op table |
 | Interrupted-start pass | [`ops/common/provision/interrupted.rs:24-33`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/interrupted.rs#L24-L33) | A second replica would claim live setups, and any start fails or claims them. A roll is its purpose. | Stays |
 | Setup in flight | [`ops/common/setup/attach.rs:82-100`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/setup/attach.rs#L82-L100) | #1174, above. | Stays, follower waits and hands over |
@@ -108,11 +115,11 @@ The controller log was not read, since this host's kubeconfig only names a local
 | Shared egress Proxy | [`deploy/helm/moor/templates/egress.yaml:75-79`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/egress.yaml#L75-L79) | Already its own Deployment. Serves from cache in the gap. | Done |
 | Machine runner, link rows | [`deploy/helm/moor/templates/runner.yaml:12`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/runner.yaml#L12), [`store/users/machine/links.rs:273`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/users/machine/links.rs#L273) | Already its own Deployment, off in nightly values. | Done, turn on after the drain change |
 | Store writes | [`store/db/postgres.rs:25`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/db/postgres.rs#L25) | One advisory write lock. Safe with any writer count. | Stays |
-| State-dir files | [`ops/common/setup.rs:40`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/setup.rs#L40), [`ops/run.rs:308`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/run.rs#L308), [`ops/common/artifacts.rs:183`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/artifacts.rs#L183), [`ops/common/reports.rs:269`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/reports.rs#L269) | The PVC is `ReadWriteOnce`, so a second pod on another node cannot mount it. Only some files are durable. | Stays on the PVC |
-| crabbox leases and keys | [`deploy/helm/moor/templates/deployment.yaml:116-119`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L116-L119) | Same PVC. Must outlive the pod. | Stays on the PVC |
-| Pod strategy | [`deploy/helm/moor/templates/deployment.yaml:9-10`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L9-L10), [`deploy/helm/moor/templates/pvc.yaml:9`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/pvc.yaml#L9) | `Recreate`, one volume. | Stays |
-| MCP sessions | [`moor-gate/src/mcp.rs:20`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/mcp.rs#L20), [`:96`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/mcp.rs#L96) | In memory. An unknown id gets 404. | Store, through rmcp `SessionStore` |
-| Listen subscriptions | [`moor-gate/src/tools/listen.rs:178`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/tools/listen.rs#L178) | Tied to the session's stream. | Client subscribes again, unverified |
+| State-dir files | [`ops/common/setup.rs:40`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/setup.rs#L40), [`ops/run.rs:308`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/run.rs#L308), [`ops/common/artifacts.rs:183`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/artifacts.rs#L183), [`ops/common/reports.rs:269`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/reports.rs#L269) | The PVC is `ReadWriteOnce`, so a second pod on another node cannot mount it. Only some files are durable. | See "Without the volume" |
+| crabbox leases and keys | [`deploy/helm/moor/templates/deployment.yaml:116-119`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L116-L119) | Same PVC. Must outlive the pod. | `emptyDir` |
+| Pod strategy | [`deploy/helm/moor/templates/deployment.yaml:9-10`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L9-L10), [`deploy/helm/moor/templates/pvc.yaml:9`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/pvc.yaml#L9) | `Recreate`, one volume. | `RollingUpdate`, once the volume is gone |
+| MCP sessions | [`moor-gate/src/mcp.rs:88`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/mcp.rs#L88) | None. Legacy session mode is off, so the gate is stateless and no session store runs. | Stays |
+| Listen streams | [`moor-gate/src/tools/listen.rs:178`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/tools/listen.rs#L178), [`moor-listen/src/watch.rs:156`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-listen/src/watch.rs#L156), [`moor-listen/src/watch.rs:272`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-listen/src/watch.rs#L272) | A gate roll ends the stream. moor-listen reconnects and re-reads each resource. Whether that covers every event in the gap is unchecked. | Stays |
 | Gate sign-in | [`moor-gate/src/login.rs:92-94`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/login.rs#L92-L94) | Pending sign-ins and sessions are in memory. #768 decided stateless, not built. A callback on another replica fails. | Cookie, per #768 |
 | `/front` relay | [`moor-gate/src/http.rs:165-170`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/http.rs#L165-L170), [`moor-gate/src/relay.rs:18`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/relay.rs#L18) | Per connection. A controller gap answers 503. | Gate holds, then relays |
 | herdr attach | [`moor-herdr/src/card.rs:24`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-herdr/src/card.rs#L24) | Re-attaches by itself at 1, 2, 4 s. The pane shows `reconnecting…`. | Stays |
@@ -127,19 +134,17 @@ No. A second active replica needs the same handover, plus the durable files and 
 
 | | A. One controller, gate in front | B. N active | C. Leader plus hot standby |
 | --- | --- | --- | --- |
-| Shape | Gate 2 replicas, rolling. Controller `Recreate`. | Any replica serves. Leases for singletons. | Standby takes a lease on SIGTERM. |
+| Shape | Gate 2 replicas, rolling. One controller, then a waiter on a lease row. | Any replica serves. Leases for singletons. | Standby takes a lease on SIGTERM. |
 | Box work on a roll | Handed to the next process | Handed to another replica | Handed to the standby |
-| Volume | PVC stays | PVC gone, as in "Without the volume" | PVC gone, for the same reason |
-| Cost | 6 PRs, about 2000 lines (guess) | A's work plus about 15 PRs (guess) | Most of B |
-| Client gap | Controller gap of about 3 s (guess), held by the gate | None | Under 1 s (guess), held by the gate |
+| Volume | PVC gone after the gate work | PVC gone | PVC gone |
+| Cost | 5 PRs, then 4 for the volume, about 3200 lines (guess) | A's work plus about 15 PRs (guess) | Most of B |
+| Client gap | Takeover, held by the gate. About 3 s on local storage only (#769). Unmeasured on a real roll. | None | Under 1 s (guess), held by the gate |
 | Still drops | A request cut at the drain cap. Pane `reconnecting…` during the gap. Forward blip. | Forward blip | A request cut at the drain cap. Forward blip. |
-| Unknown | Volume detach on a real multi-node drain | Not assessed | Not assessed |
+| Unknown | Takeover time on a real roll | Not assessed | Not assessed |
 
-A is the decision. It meets "no failed request" with what exists, and B can still follow, since A's handover is part of B.
+A is the decision. B can still follow, since A's handover is part of B.
 
 The gate can hold because moor already knows when a request never ran. A refused connect or a `restarting` frame proves it, and [`moor-client/src/redial.rs:8`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-client/src/redial.rs#L8) retries only those. A generic proxy cannot tell this for a POST.
-
-If a real node drain's volume detach beats the 30 s hold, A answers 503 with `Retry-After` for the rest. That result starts "Without the volume", not B.
 
 ```mermaid
 sequenceDiagram
@@ -163,8 +168,7 @@ sequenceDiagram
 | Thing | Use |
 | --- | --- |
 | `boxes.intent`, detached runs, `resume_setup` | The resumable op table already exists. No new table. |
-| `moor-client` redial | The hold. Raise `refused` from 5 s to 30 s for the gate. |
-| rmcp 3.7 `SessionStore` | Restores an MCP session on another replica. `session_store` on the server config. |
+| `moor-client` redial | The hold. Raise `refused` from 5 s to the hold for the gate. |
 | Front hello over ledger TLS | The gate reaches the controller with no shared volume. |
 | Kubernetes Lease API, rejected | Needs RBAC, and the chart sets `automountServiceAccountToken: false`. |
 | Durable workflow engine, rejected | Setup is one row and one detached run. It would add a service for that. |
@@ -183,7 +187,7 @@ sequenceDiagram
 
 ## Without the volume
 
-The fallback, unverified by any run. It starts only if the detach number fails the rule above.
+The plan after the gate work, not yet run. The lease table is V61.
 
 ### Controller lock
 
@@ -202,8 +206,7 @@ An advisory lock is rejected because a hung holder keeps a session lock. A poole
 
 - **Migrations.** The flock comes before the store opens today, [`controller/mod.rs:154-158`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L154-L158). A lease row needs its table first, so a waiter migrates while the old binary still runs. Migrations must stay expand-only (#768).
 - **Rollout.** `maxUnavailable: 0` would deadlock with a waiter that is not Ready, so use `maxUnavailable: 1`. The old pod gets SIGTERM as the new one starts. A bad image therefore still costs an outage.
-- **Hold.** Crash takeover at 30 s equals the 30 s hold, so the hold must exceed it.
-- **Not a step.** `RollingUpdate` alone on the PVC gains little once the drain is capped.
+- **Hold.** Crash takeover at 30 s must fit inside the hold, so the hold must exceed 30 s.
 
 ### Durable files
 
@@ -212,17 +215,16 @@ An advisory lock is rejected because a hung holder keeps a session lock. A poole
 | Controller ssh key, [`adapters/crabbox/pool.rs:190`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/adapters/crabbox/pool.rs#L190) | Vault row, as Box CAs are today, [`vault.rs:70`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/vault.rs#L70) |
 | Front CA, [`proxy/fronts.rs:49`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/proxy/fronts.rs#L49) | Vault row |
 | Artifacts, reports, transcripts | Blob seam. Transcript events keep a key, not a path, [`ops/common/transcript.rs:285`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/transcript.rs#L285). |
-| crabbox claim JSON and testbox key | Vault rows, restored at start |
+| crabbox claims and state | `emptyDir`. `leases/<slug>` is remade at the same path. |
 | `slack.db` and host session directories | Slack's work. The volume cannot go until they move. |
 | Sockets, locks, `ssh/`, setup and clone logs | `emptyDir`. No reader after the step ends. |
 
-The blob seam has filesystem, S3 and GCS backends, using `opendal` with its `blocking` feature. A URL in config picks one, so moor names no vendor. RustFS is only a dev endpoint, per the handbook's blob storage guide.
+The blob seam has filesystem, S3 and GCS backends, and its library is still open. A URL in config picks one, so moor names no vendor. RustFS is only a dev endpoint, per the handbook's blob storage guide.
 
-crabbox keeps both files under `XDG_CONFIG_HOME` while moor leaves `XDG_STATE_HOME` unset, so restore there. Restore by file is untested. A crabbox fork with export and import is the fallback.
+crabbox state needs no restore on the evidence so far.
 
-### PRs
-
-Lease and liveness, keys in vault, blob seam, crabbox state, chart `emptyDir` plus a copy Job. About 1900 lines (guess). It needs a RustFS bucket from an admin.
+- **Local cloud-hypervisor.** `crabbox run --id` worked with the claim and state dir wiped, and no key regenerated (measured).
+- **agent37.** The ssh key is the fixed Secret `crabbox.sshKey`, with no per-lease keys. This is read from the chart, README and binary strings, with no live run.
 
 ## PRs, in order
 
@@ -230,17 +232,19 @@ Lease and liveness, keys in vault, blob seam, crabbox state, chart `emptyDir` pl
 2. **Drain releases Box work.** Start and Retry stop holding the drain. A cut acquire runs once more. Drain cap 30 s. The check is a k3s roll-probe with a setup line in flight, showing the no-Box pod gap. About 400 lines.
 3. **Stateless gate sign-in.** Cookie per #768. The check is a sign-in that begins on one gate and calls back on another. About 400 lines.
 4. **Gate holds and dials over TLS.** Front hello, redial budget, hold on `/mcp` and `/front` before any 503. The check is a controller away for 20 s, with every call answered and no 503. About 400 lines.
-5. **MCP sessions in the store.** `SessionStore` over a front request, table in V61. The check is initialize on one gate and call on another, with no 404. About 300 lines.
-6. **Gate Deployment.** Two replicas, rolling, no PVC. The check is a k3s roll-probe, helm upgrade and eviction, n=5 each, with MCP every 0.2 s and a herdr pane. It needs zero failed calls, zero refused handshakes, pane back with no key. About 250 lines.
+5. **Gate Deployment.** Two replicas, rolling, no PVC. Its roll probe proves no 404 with a real client across two gates. The check is a k3s roll-probe, helm upgrade and eviction, n=5 each, with MCP every 0.2 s and a herdr pane. It needs zero failed calls, zero refused handshakes, pane back with no key. About 250 lines.
+6. **Lease and liveness.** Lease row, heartbeat, liveness probe. The check is two processes on one Postgres, with a clean stop and a kill. About 400 lines.
+7. **Keys in vault.** Controller ssh key and front CA. The check is a roll with a machine Box that still connects. About 200 lines.
+8. **Blob seam.** Artifacts, reports, transcripts. It needs a RustFS bucket from an admin. The check is the existing tests on each backend. About 600 lines.
+9. **Chart with `emptyDir`.** A copy Job moves the volume's files. The check proves a live agent37 Box stays reachable across a pod replacement on an empty state dir. About 300 lines.
 
-PR 1 fixes #1174 alone, as #1184. Turn on `runner.separate` in nightly only after PR 2.
+PR 1 fixes #1174 alone, as #1184. PR 2 is #1195. Turn on `runner.separate` in nightly only after PR 2.
 
 ## Open questions
 
 | Question | Recommendation |
 | --- | --- |
-| Hold requests 30 s, then 503? | Yes |
-| Store MCP sessions, not rely on clients re-initializing after 404? | Store |
+| Hold requests 45 s, above the 30 s crash takeover, then 503? | Yes |
 
 ## Out of scope
 
