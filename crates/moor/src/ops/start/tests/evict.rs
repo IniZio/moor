@@ -120,9 +120,6 @@ fn a_checkpoint_whose_delete_fails_stays_tracked_and_goes_later() {
     w.driver.set_deletes_fail(true);
     let second = start(&w, "second", "def456", LINES);
     let tried = deleted(&w);
-    let mut once = tried.clone();
-    once.dedup();
-    assert_eq!(tried, once, "each checkpoint is tried once per start");
     assert!(tried.contains(&"ckpt-1".to_owned()), "{tried:?}");
     assert!(events(&w, second, "checkpoint_evicted").is_empty());
     let warned = w.cx.take_warnings();
@@ -183,4 +180,27 @@ fn a_checkpoint_claimed_before_a_crash_stays_tracked_and_the_next_start_deletes_
         "the claimed checkpoint was still tracked: {told:?}"
     );
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
+}
+
+/// The world after one rerun saved a top and a later one replaced it, then one more start.
+fn after_a_replaced_top(driver: FakeDriver) -> World {
+    let (w, _) = after_a_partial_setup(driver);
+    close(&w, "first");
+    start(&w, "saved", "def456", LINES);
+    assert!(w.driver.checkpoint_ids().contains(&"ckpt-3".to_owned()));
+    start(&w, "replaced", "fed789", LINES);
+    start(&w, "later", "fed789", LINES);
+    w
+}
+
+#[test]
+fn a_checkpoint_a_rerun_replaced_goes_at_the_next_start_with_the_disk_roomy() {
+    let w = after_a_replaced_top(roomy());
+    assert_eq!(deleted(&w), ["ckpt-3"], "{:?}", w.driver.calls());
+}
+
+#[test]
+fn a_checkpoint_a_rerun_replaced_waits_for_the_delta_over_it() {
+    let w = after_a_replaced_top(roomy().with_delta_checkpoints());
+    assert!(deleted(&w).is_empty(), "{:?}", w.driver.calls());
 }

@@ -270,8 +270,14 @@ fn run_and_record(
             ..Fields::default()
         }))?;
     }
-    let (dotfiles, installed) =
-        steps_after_lines(cx, store, id, (on_fork, target), (cfg, &proxy), &run)?;
+    let (dotfiles, installed) = steps_after_lines(
+        cx,
+        store,
+        id,
+        (on_fork, target, cloned.at_base),
+        (cfg, &proxy),
+        &run,
+    )?;
     let mut done = dotfiles_noted(id, &dotfiles);
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {

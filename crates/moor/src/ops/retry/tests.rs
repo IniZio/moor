@@ -318,6 +318,8 @@ fn lineage(clone: &LayerKey) -> Lineage {
         user: REQUESTER_USER,
         repo: "o/n".to_owned(),
         chain: clone.clone(),
+        depth: 0,
+        root_at: None,
     }
 }
 

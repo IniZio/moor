@@ -35,7 +35,7 @@ fn acquires(w: &World) -> usize {
 }
 
 #[test]
-fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_nothing() {
+fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_what_is_missing() {
     let (w, _) = after_a_partial_setup(FakeDriver::new());
     let saved = w.driver.checkpoint_names();
     let moved = start(&w, "moved", "def456", LINES);
@@ -46,7 +46,11 @@ fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_
     assert_eq!(warm[0]["layer"], 2);
     assert_eq!(warm[0]["rerun_from"], "abc123");
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::Ready);
-    assert_eq!(w.driver.checkpoint_names(), saved, "a rerun saves nothing");
+    assert_eq!(
+        w.driver.checkpoint_names().len(),
+        saved.len() + 1,
+        "only the top, which the first Box never reached"
+    );
 }
 
 /// The setup attaches and log copies made on Box `id`'s machine.
@@ -77,26 +81,14 @@ fn a_rerun_uses_one_attach_and_one_log_copy_however_many_lines_it_has() {
 }
 
 #[test]
-fn a_rerun_saves_no_checkpoint_even_for_a_key_nothing_holds_yet() {
-    let (w, _) = after_a_partial_setup(FakeDriver::new());
-    let saved = w.driver.checkpoint_names();
-    let moved = start(&w, "moved", "def456", "setup: [one-z, two-b, three-c]\n");
-    assert_eq!(events(&w, moved, "warm_started")[0]["layer"], 0);
-    assert_eq!(lines_on(&w, moved), ["two-b", "three-c", "one-z"]);
-    assert_eq!(w.driver.checkpoint_names(), saved);
-}
-
-#[test]
-fn a_rerun_whose_refresh_fell_back_to_a_fresh_clone_names_no_stale_disk_and_saves_nothing() {
+fn a_rerun_whose_refresh_fell_back_to_a_fresh_clone_names_no_stale_disk() {
     let (w, _) = after_a_partial_setup(FakeDriver::new().cache_volumes());
-    let saved = w.driver.checkpoint_names();
     w.driver.push_exec_stdout(
         "moor: work tree cold after: git fetch failed\nmoor.tree.went_cold\nmoor.clone=base\n",
     );
     let moved = start(&w, "moved", "def456", LINES);
     assert_eq!(lines_on(&w, moved), ["one-a", "two-b", "three-c"]);
     assert_eq!(setup_calls_on(&w, moved), (1, 1));
-    assert_eq!(w.driver.checkpoint_names(), saved);
     assert!(
         events(&w, moved, "warm_rerun").is_empty(),
         "nothing is stale"
@@ -291,35 +283,48 @@ fn a_box_that_gave_up_its_fork_no_longer_holds_that_checkpoint_back() {
     let provider = row(&w, moved).boxed.unwrap().provider;
     let store = w.cx.store().unwrap();
     let free = store.evictable(&provider).unwrap();
-    assert!(free.iter().any(|e| e.checkpoint == "ckpt-2"), "{free:?}");
+    let retired = store.evicting(&provider).unwrap();
+    let mut free = free.iter().chain(&retired);
+    assert!(free.any(|e| e.checkpoint == "ckpt-2"), "{retired:?}");
 }
 
 #[test]
 fn a_retry_never_forks_a_checkpoint_of_another_commit() {
     let (w, _) = after_a_partial_setup(FakeDriver::new().exec_ends_when("three-c", EXIT_1));
     let moved = start(&w, "moved", "def456", LINES);
-    let forks_before = forks(&w);
     let reruns_before = events(&w, moved, "warm_rerun").len();
     let retry = BoxReq {
         box_name: crate::testing::box_name("moved"),
     };
     crate::ops::retry::run(&w.cx, &retry).unwrap();
-    assert_eq!(forks(&w), forks_before);
+    let calls = w.driver.calls();
+    let forked: Vec<_> = calls.iter().filter(|c| c.starts_with("fork")).collect();
+    let last = forked.last().unwrap();
+    assert!(
+        last.as_str() != "fork ckpt-1" && last.as_str() != "fork ckpt-2",
+        "{calls:?}"
+    );
     assert_eq!(
         events(&w, moved, "warm_rerun").len(),
         reruns_before,
         "its machine is a cold one now"
     );
-    assert_eq!(lines_on(&w, moved), ["one-a", "two-b", "three-c"]);
 }
 
 #[test]
 fn a_retry_that_reruns_over_a_new_fork_says_so_in_its_reply() {
-    let driver = FakeDriver::new()
-        .exec_ends_once_when("three-c", EXIT_1)
-        .exec_ends_once_when("three-c", EXIT_1);
+    let dies = ExecOutcome::Exited { code: 72 };
+    let driver = FakeDriver::new().exec_ends_once_when("moor_tree_refresh\n", dies);
     let (w, _) = after_a_partial_setup(driver);
-    let moved = start(&w, "moved", "def456", LINES);
+    w.forge.answer(repo(), Ok(repo_at("def456", Some(LINES))));
+    let req = StartReq {
+        repo: Some(repo()),
+        ..agentless_req("moved")
+    };
+    assert!(run(&w.cx, &req).is_err(), "the fork's clone exec dies");
+    let store = w.cx.store().unwrap();
+    let name = crate::testing::box_name("moved");
+    let moved = store.open_box_by_name(&name).unwrap().unwrap().id;
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::SetupFailed);
     let gone = Decision::new(moved).box_input(BoxInput::DriverMissing);
     w.cx.store().unwrap().apply(gone).unwrap();

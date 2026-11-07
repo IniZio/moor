@@ -153,7 +153,7 @@ impl Store {
     /// The checkpoints under `provider` claimed for deleting and still tracked, as a deleter cut
     /// short leaves them.
     pub(crate) fn evicting(&self, provider: &ProviderId) -> Result<Vec<Evictable>, StoreError> {
-        let filter = Expr::col(("c", Checkpoints::Evicting)).eq(1);
+        let filter = Expr::col(("c", Checkpoints::Evicting)).ne(0);
         self.to_evict(provider, filter)
     }
 
@@ -262,7 +262,7 @@ impl Store {
                     .from_table(Checkpoints::Table)
                     .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                     .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
-                    .and_where(Expr::col(Checkpoints::Evicting).eq(1))
+                    .and_where(Expr::col(Checkpoints::Evicting).ne(0))
                     .returning_col(Checkpoints::LayerKey),
                 |r| r.get(0),
             )

@@ -169,6 +169,8 @@ fn on_another_machine(w: &World, machine: i64) {
         user: REQUESTER_USER,
         repo: "o/r".to_owned(),
         chain: key.clone(),
+        depth: 0,
+        root_at: None,
     };
     let made = Checkpoint {
         id: "theirs".to_owned(),

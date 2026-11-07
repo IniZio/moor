@@ -76,23 +76,14 @@ pub(crate) fn warm_disk_note(store: &Store, id: BoxId) -> Option<String> {
     Some(disk.note())
 }
 
-/// Gives up the fork `target` holds after line run `run` failed on it, then sets the Box up once
-/// more on a new machine. The failure may come from what the old disk held, so a line that also
-/// fails there is the one the Box reports.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the Box, its store, whether it advances, its fork, layers, settings and failed run"
-)]
-pub(super) fn cold_again(
+/// Tells that line run `run` failed on the fork `target` holds, and lets go of that machine.
+fn give_up_fork(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-    advance: bool,
     target: &SetupTarget<'_>,
-    layered: &Layered,
-    cfg: &BoxSettings,
     run: &SetupRun,
-) -> Result<Provisioned, CommandError> {
+) -> Result<(), CommandError> {
     let seen = run.view();
     let line = seen.line.unwrap_or_default();
     cx.warn(Warning {
@@ -114,6 +105,27 @@ pub(super) fn cold_again(
             store.drop_lease(lease.id)?;
         }
     }
+    Ok(())
+}
+
+/// Gives up the fork `target` holds after line run `run` failed on it, then sets the Box up once
+/// more on a new machine. The failure may come from what the old disk held, so a line that also
+/// fails there is the one the Box reports.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Box, its store, whether it advances, its fork, layers, settings and failed run"
+)]
+pub(super) fn cold_again(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    advance: bool,
+    target: &SetupTarget<'_>,
+    layered: &Layered,
+    cfg: &BoxSettings,
+    run: &SetupRun,
+) -> Result<Provisioned, CommandError> {
+    give_up_fork(cx, store, id, target, run)?;
     let row = reread(store, id)?;
     let req = layered.machine_req(cx, store, &row, cfg)?;
     let planned = cx.driver().planned_handle(&req);
@@ -139,7 +151,10 @@ pub(super) fn cold_again(
     hold_root(store, id, root, &planned, &got)?;
     record_acquired(store, id, &got, None)?;
     hold_workdir(store, id, &got)?;
-    let fresh = layers::plan(cx, store, &row, target.provider, cfg, layered.cache());
+    let mut fresh = layers::plan(cx, store, &row, target.provider, cfg, layered.cache());
+    if let Some(fresh) = fresh.as_mut() {
+        fresh.replace_layers();
+    }
     let next = SetupTarget::new(
         &got,
         target.provider,
@@ -147,5 +162,13 @@ pub(super) fn cold_again(
         target.log_dir,
         fresh.as_ref(),
     );
-    run_and_record(cx, store, id, advance, &next, cfg)
+    let done = run_and_record(cx, store, id, advance, &next, cfg)?;
+    // Only a pass here shows the old disk was the cause; a line that fails here too is the commit's
+    // fault, and the chain serves the commit that fixes it.
+    if done.failed_step().is_none() {
+        if let Some(fresh) = &fresh {
+            fresh.retire_older(store)?;
+        }
+    }
+    Ok(done)
 }
