@@ -55,9 +55,11 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
             key: req.key.as_deref(),
         })
         .map_err(refuse_invalid)?;
-    if base.is_some() && created {
+    if base.is_some() {
         if let Err(e) = own_dir::create(cx.state_dir()?, Path::new(&workdir)) {
-            let _ended = cx.store()?.end_host_session(session);
+            if created {
+                let _ended = cx.store()?.end_host_session(session);
+            }
             return Err(CommandError::new(
                 ErrorKind::Failed,
                 format!("create {workdir}: {e}"),
