@@ -40,6 +40,19 @@ impl Crabbox<'_> {
         ok: &[i32],
         env: &[(&str, String)],
     ) -> Result<String, String> {
+        let printed = self.run_both(verb, flags, within, ok, env).await?;
+        Ok(printed.0)
+    }
+
+    /// Like [`Self::run_with`], with what it said on stderr as well.
+    pub(super) async fn run_both(
+        &self,
+        verb: &str,
+        flags: &[&str],
+        within: Duration,
+        ok: &[i32],
+        env: &[(&str, String)],
+    ) -> Result<(String, String), String> {
         let base = self.home.join(POOL_DIR);
         let mine = self.slug.map(|slug| box_dir(self.home, slug));
         // Only a warmup makes a lease's dir, so a call on a lease that is gone leaves nothing
@@ -53,7 +66,8 @@ impl Crabbox<'_> {
         let mut args = vec![verb, "--provider", &self.pool.provider];
         args.extend(flags);
         args.extend(self.slug);
-        self.spawn(&args, (&dir, &ceiling), within, ok, env).await
+        self.spawn_both(&args, (&dir, &ceiling), within, ok, env)
+            .await
     }
 
     /// Runs `crabbox ARGS` in `dir`, with git looking no further up than `ceiling`, within

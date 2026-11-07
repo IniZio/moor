@@ -123,6 +123,51 @@ fn only_pause_publish_asks_crabbox_to_save_the_caches() {
     );
 }
 
+/// What the agent logs when crabbox's pause says `said` and succeeds.
+fn pause_log(said: &[u8]) -> String {
+    let home = warmed();
+    std::fs::write(home.path().join("pause.stderr"), said).unwrap();
+    let out = agent(home.path(), &["lease", "pause-publish", "moor-1a2b3c4d-7"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stderr).unwrap()
+}
+
+#[test]
+fn a_successful_pause_logs_what_crabbox_said_with_the_slug() {
+    let log = pause_log(b"vm paused\n\ncache group g1: sync failed: exit 3\n");
+    assert_eq!(
+        log,
+        "moor-machine-agent: pause moor-1a2b3c4d-7: vm paused\n\
+         moor-machine-agent: pause moor-1a2b3c4d-7: cache group g1: sync failed: exit 3\n"
+    );
+}
+
+#[test]
+fn a_pause_that_said_nothing_logs_nothing() {
+    assert_eq!(pause_log(b""), "");
+}
+
+#[test]
+fn a_pause_log_keeps_the_end_of_a_long_stderr_and_stays_bounded() {
+    let mut said = b"the start\n".to_vec();
+    said.extend("\u{e9}".repeat(100_000).as_bytes());
+    said.extend(b"\nthe end\n");
+    let log = pause_log(&said);
+    assert!(log.ends_with("the end\n"), "{log}");
+    assert!(!log.contains("the start"), "{log}");
+    assert!(log.len() < 2300, "{}", log.len());
+}
+
+#[test]
+fn a_pause_log_cannot_be_steered_by_control_characters_or_invalid_text() {
+    let log = pause_log(b"\x1b[31mred\rforged\xff\n");
+    assert_eq!(log.lines().count(), 1, "{log}");
+    assert!(!log.contains(['\x1b', '\r']), "{log}");
+    assert!(log.contains("red forged"), "{log}");
+}
+
 #[test]
 fn pause_publish_on_a_provider_that_cannot_answers_unsupported() {
     let home = warmed();
