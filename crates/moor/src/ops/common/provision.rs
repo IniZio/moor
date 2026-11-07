@@ -6,7 +6,6 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
-use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
@@ -29,8 +28,8 @@ use self::delivered::record_delivered;
 use self::failed::failed;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
-use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
+use self::outcome::{dotfiles_noted, dotfiles_warned, setup_ended, step_outcome};
 use self::progress::acquire_timed;
 use self::rerun::start_ready;
 pub(crate) use self::retry::resume_setup;
@@ -272,12 +271,7 @@ fn run_and_record(
     } else {
         after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?
     };
-    let mut done = Decision::new(id);
-    if let DotfilesRun::Failed { tail } = &dotfiles {
-        done = done.event(ExtraEvent::SetupFailed {
-            line: format!("dotfiles: {tail}"),
-        });
-    }
+    let mut done = dotfiles_noted(id, &dotfiles);
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {
             ms,
@@ -285,10 +279,7 @@ fn run_and_record(
         });
     }
     let install_failed = installed.is_err();
-    let outcome = match (run.outcome(), installed) {
-        (SetupOutcome::Ok, Err(cause)) => SetupOutcome::Failed { line: cause },
-        (outcome, _) => outcome,
-    };
+    let outcome = step_outcome(&run, installed);
     let failed_at = if matches!(outcome, SetupOutcome::Failed { .. }) {
         Field::Set(cx.clock().now().as_millis())
     } else {
@@ -308,32 +299,6 @@ fn run_and_record(
         work_tree: cloned.work_tree,
         install_failed,
     })
-}
-
-/// Adds how setup ended to `done`: `advance` moves the Box to working, and a failed step moves it
-/// to setup-failed, from working too.
-fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision {
-    match (advance, outcome) {
-        (true, SetupOutcome::Ok) => done
-            .lifecycle(BoxLifecycleInput::Ready {
-                setup: SetupOutcome::Ok,
-            })
-            .session(SessionInput::Started),
-        (_, SetupOutcome::Failed { line }) => step_failed(done, advance, line),
-        (false, SetupOutcome::Ok) => done,
-    }
-}
-
-/// Moves the Box to setup-failed for a failed step of coming up, `cause` naming the step and its
-/// error; `advance` says the Box was being set up rather than already working.
-pub(super) fn step_failed(done: Decision, advance: bool, cause: String) -> Decision {
-    if advance {
-        return done.lifecycle(BoxLifecycleInput::SetupFailed { cause, which: None });
-    }
-    // The working Box's agent has no machine or no install, so its Session ends and a retry
-    // starts a new one.
-    done.lifecycle(BoxLifecycleInput::WorkingSetupFailed { cause })
-        .session(SessionInput::End)
 }
 
 /// Runs the steps after the setup lines. A failed agent install is warned and returned as the
