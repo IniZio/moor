@@ -71,6 +71,7 @@ struct State {
     cache: knobs::CacheState,
     runs: runs::RunState,
     layers: checkpoints::LayerKnobs,
+    trees: Option<trees::Trees>,
 }
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/repo`
@@ -197,6 +198,9 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
+        if s.trees.is_some() {
+            return trees::exec_in_tree(s, handle.as_str(), spec);
+        }
         let scripted = s.log_text(spec);
         let argv = spec.argv.join(" ");
         let ends = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str()));
@@ -229,6 +233,10 @@ impl Driver for FakeDriver {
         }
         if let Some(e) = s.fail_copy_out.take() {
             return Err(e);
+        }
+        if let Some(trees) = s.trees.clone() {
+            let rel = from.as_str().rsplit("/repo/").next().unwrap_or_default();
+            return trees.copy_out(handle.as_str(), rel, to);
         }
         if let Some(target) = &s.copy_symlink {
             let _ = std::fs::remove_file(to);
@@ -384,4 +392,5 @@ mod script;
 mod sleeps;
 #[cfg(test)]
 mod tests;
+mod trees;
 mod tunnel;

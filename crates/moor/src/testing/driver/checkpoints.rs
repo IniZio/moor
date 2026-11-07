@@ -208,6 +208,9 @@ impl FakeDriver {
         }
         s.layers.saved += 1;
         let id = format!("ckpt-{}", s.layers.saved);
+        if let Some(trees) = &s.trees {
+            trees.saved(handle.as_str(), &id)?;
+        }
         let parent = s
             .layers
             .base_of(handle.as_str())
@@ -288,6 +291,9 @@ impl FakeDriver {
         }
         s.next += 1;
         let handle = format!("box-{}", s.next);
+        if let Some(trees) = &s.trees {
+            trees.forked(id, &handle)?;
+        }
         s.layers.stand(&handle, id);
         s.live.push(handle.clone());
         s.providers.push((handle.clone(), req.provider.clone()));
