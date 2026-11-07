@@ -567,9 +567,16 @@ changing the text changes the key. State outside the work tree that derives from
 tracked files has the same risk. A daemon a line started keeps running from the
 checkpoint until its line restarts it.
 
-After a rerun, the start reply and the agent's brief name the disk's commit, how many
-tracked paths changed since, and the ignored paths the disk still holds. They warn
-that a setup line may have skipped rebuilding those paths. The event is `warm_rerun`.
+After a rerun, the start reply and the agent's brief name the oldest commit the disk's
+ignored files may come from. They say how many tracked paths changed since, and name the
+ignored paths the disk still holds. They warn that a setup line may have skipped rebuilding
+those paths. The event is `warm_rerun`.
+
+A rolled-forward checkpoint keeps that oldest commit. So a Box at the checkpoint's own commit
+also gets the note, though its lines do not run again. Only a disk set up from scratch at its
+commit gets none. A checkpoint that rolled forward before moor kept that commit cannot say how old its
+ignored files are. The next Box sets its chain up from scratch once, and warns
+`checkpoint_chain_expired`.
 
 A line that moves `HEAD` off the base commit, such as `git pull`, stops later checkpoints
 of that Box. The start warns `checkpoint_skipped`.

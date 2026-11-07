@@ -73,7 +73,7 @@ pub(in super::super) fn resume(
         ..Fields::default()
     });
     store.apply(moved)?;
-    layered.stand_on(layer, spent);
+    layered.stand_on(layer, saved.place.as_ref());
     release_old(cx, store, row.id, old)?;
     Ok(Some(new))
 }

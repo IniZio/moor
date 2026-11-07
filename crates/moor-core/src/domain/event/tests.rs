@@ -332,6 +332,7 @@ fn all_events() -> Vec<Event> {
             commit: s("abc"),
             changed: Some(3),
             ignored: vec![s("dist/")],
+            lines_kept: true,
         }),
         Event::Timing(TimingEvent::WarmRerunFailed {
             line: s("make"),

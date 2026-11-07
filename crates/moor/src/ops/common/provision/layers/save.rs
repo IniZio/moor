@@ -110,6 +110,7 @@ pub(super) fn save(
             workdir: target.workdir.clone(),
             setup_ms: layered.spent_ms.load(Ordering::Relaxed),
             base: layered.base.clone(),
+            stale_since: Some(layered.saved_stale_since()),
         };
         store
             .record_checkpoint(&layered.home, key, &layered.lineage_at(store.now()), &made)

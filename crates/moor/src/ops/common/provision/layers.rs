@@ -19,7 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
 use crate::ops::common::node::{checkpoint_home, seat_of};
 use crate::ops::common::setup::{Released, SetupRun};
-use crate::store::checkpoints::Lineage;
+use crate::store::checkpoints::{CheckpointRow, Lineage, Place};
 use crate::store::{BoxRow, Store};
 
 /// What a Box's disk holds of its setup.
@@ -60,6 +60,8 @@ pub(super) struct Layered {
     finished: bool,
     /// What a save rolls forward from, on a rerun this start forked.
     roll: Option<RollFrom>,
+    /// The oldest commit the forked disk's ignored files may come from; none on a fresh disk.
+    stale_since: Option<String>,
     /// Whether this Box's saves replace layers kept already, since it was set up from scratch to
     /// get past them.
     replacing: bool,
@@ -83,11 +85,27 @@ pub(super) struct Layered {
 }
 
 impl Layered {
-    /// Marks the disk as holding layer `layer`, which took `ms` to set up from scratch.
-    fn stand_on(&mut self, layer: usize, ms: u64) {
+    /// Marks the disk as a checkpoint `kept` of `commit`, another commit, which every line runs
+    /// again over and a save rolls forward from.
+    fn rerun_over(&mut self, commit: &str, place: &Place, kept: &CheckpointRow) {
+        self.disk = Disk::Rerun {
+            commit: commit.to_owned(),
+        };
+        self.spent_ms.store(place.setup_ms, Ordering::Relaxed);
+        self.stale_since.clone_from(&place.stale_since);
+        self.roll = Some(RollFrom {
+            depth: kept.depth,
+            root_at: kept.chain_at,
+        });
+    }
+
+    /// Marks the disk as holding layer `layer`, as `place` says it was set up.
+    fn stand_on(&mut self, layer: usize, place: Option<&Place>) {
         self.disk = Disk::OnLayer { layer };
         self.finished = false;
-        self.spent_ms.store(ms, Ordering::Relaxed);
+        self.spent_ms
+            .store(place.map_or(0, |p| p.setup_ms), Ordering::Relaxed);
+        self.stale_since = place.and_then(|p| p.stale_since.clone());
     }
 
     /// The key of layer `layer`, counting the one above the last line.
@@ -169,6 +187,24 @@ impl Layered {
         matches!(self.disk, Disk::OnLayer { .. })
     }
 
+    /// The oldest commit the ignored files of a forked disk may come from, when the Box is told of
+    /// it: a rerun's always, and a fork of its own commit's when that disk rolled forward.
+    pub(super) fn stale_from(&self) -> Option<&str> {
+        let since = self.stale_since.as_deref();
+        match &self.disk {
+            Disk::Fresh => None,
+            Disk::OnLayer { .. } => since.filter(|s| *s != self.base),
+            Disk::Rerun { commit } => Some(since.unwrap_or(commit)),
+        }
+    }
+
+    /// What a save records as the oldest commit its disk's ignored files may come from.
+    fn saved_stale_since(&self) -> String {
+        self.stale_since
+            .clone()
+            .unwrap_or_else(|| self.base.clone())
+    }
+
     /// The commit a forked disk holds; none on a disk set up from scratch.
     pub(super) fn forked_commit(&self) -> Option<&str> {
         match &self.disk {
@@ -242,6 +278,7 @@ pub(super) fn plan(
         finished_key,
         finished: false,
         roll: None,
+        stale_since: None,
         replacing: cold_asked,
         lineage: Lineage {
             user,

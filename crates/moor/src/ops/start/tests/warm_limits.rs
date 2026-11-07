@@ -127,6 +127,7 @@ fn at_depth(w: &World, first: BoxId, depth: u32) {
         workdir: BoxPath::restore("/work/cbx_1/repo").unwrap(),
         setup_ms: 1,
         base: "abc123".to_owned(),
+        stale_since: Some("abc123".to_owned()),
     };
     store.place_checkpoint(&provider, &key, &place).unwrap();
 }

@@ -4,13 +4,14 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::LayerKey;
-use moor_core::{BoxId, StartReq};
+use moor_core::{BoxId, BoxReq, StartReq};
 
 use super::warm::{events, row};
 use super::warm_commits::setup_calls_on;
 use super::warm_profile::{Profiled, PLUGINS, SETUP_SH};
 use super::warm_trees::{git, Scratch};
 use super::{agentless_req, repo};
+use crate::ops::common::provision::warm_disk_note;
 use crate::ops::start::run;
 use crate::store::checkpoints::CheckpointRow;
 use crate::testing::forge::repo_at;
@@ -280,4 +281,130 @@ fn a_disk_that_failed_its_rerun_takes_the_rest_of_its_chain_with_it() {
         "the old top is gone"
     );
     assert!(rerun_from(&s, c).is_null(), "it forked this commit's layer");
+}
+
+/// A line whose guard skips it once its output is there, whatever `src` holds now.
+const GUARD: &str = "setup: ['[ -f dist/out ] || { mkdir -p dist && cp src dist/out; }']\n";
+
+/// [`GUARD`] with a line after it, which gets a key no checkpoint holds.
+const GUARD_AND_MORE: &str =
+    "setup: ['[ -f dist/out ] || { mkdir -p dist && cp src dist/out; }', 'true']\n";
+
+/// A disk set up from scratch at its first commit with [`GUARD`], then rolled forward to a commit
+/// that changes `src`; returns the scratch repo and that first commit.
+fn rolled_over_a_guard() -> (Scratch, String) {
+    let scratch = Scratch::new();
+    let first = scratch.head();
+    scratch.start("a", GUARD);
+    scratch.commit("src", "two\n");
+    let (rolled, _) = scratch.start("b", GUARD_AND_MORE);
+    assert!(
+        !rerun_from(&scratch, rolled).is_null(),
+        "it reran and rolled forward"
+    );
+    (scratch, first)
+}
+
+#[test]
+fn a_rolled_forward_disk_keeps_its_stale_output_and_the_next_box_hears_nothing() {
+    let (scratch, first) = rolled_over_a_guard();
+    let (next, _) = scratch.start("c", GUARD_AND_MORE);
+    assert!(
+        rerun_from(&scratch, next).is_null(),
+        "it forks its own commit"
+    );
+    assert_eq!(setup_calls_on(&scratch.w, next), (0, 0));
+    assert_eq!(
+        scratch.file(next, "dist/out"),
+        "one\n",
+        "the output is still the first's"
+    );
+    let told = events(&scratch.w, next, "warm_rerun");
+    assert_eq!(told.len(), 1, "it is told of the disk");
+    assert_eq!(told[0]["commit"], first.as_str());
+    assert_eq!(told[0]["changed"], 1);
+    assert_eq!(told[0]["lines_kept"], true);
+    let note = warm_disk_note(scratch.w.cx.store().unwrap(), next).expect("a note");
+    let short = first.get(..12).unwrap();
+    assert!(note.contains(short) && note.contains("dist/"), "{note}");
+    assert!(note.contains("did not run again"), "{note}");
+}
+
+#[test]
+fn a_box_at_a_later_commit_hears_of_the_oldest_commit_not_the_roll_s() {
+    let (scratch, first) = rolled_over_a_guard();
+    scratch.commit("other", "z\n");
+    let (later, _) = scratch.start("d", GUARD_AND_MORE);
+    let told = events(&scratch.w, later, "warm_rerun");
+    assert_eq!(told[0]["commit"], first.as_str());
+    assert_eq!(told[0]["changed"], 2);
+    assert!(told[0].get("lines_kept").is_none(), "its lines ran again");
+}
+
+#[test]
+fn a_disk_set_up_from_scratch_at_its_commit_needs_no_note() {
+    let s = Scratch::new();
+    s.start("a", GUARD);
+    let (b, _) = s.start("b", GUARD);
+    assert_eq!(s.warm(b), 1);
+    assert!(events(&s.w, b, "warm_rerun").is_empty());
+}
+
+/// Makes every checkpoint of `scratch` look as one that rolled forward before moor kept the oldest
+/// commit its ignored files may come from.
+fn as_rolled_before_it_was_kept(scratch: &Scratch) {
+    use crate::store::db::DbExt as _;
+    use moor_schema::tables::SetupCheckpoints as Checkpoints;
+    use sea_query::{Expr, ExprTrait as _, Query};
+
+    let store = scratch.w.cx.store().unwrap();
+    let forget = Query::update()
+        .table(Checkpoints::Table)
+        .value(Checkpoints::StaleSince, Expr::val(None::<String>))
+        .take();
+    store.writer().run(forget).unwrap();
+    let rolled = Query::update()
+        .table(Checkpoints::Table)
+        .value(Checkpoints::Depth, 1)
+        .and_where(Expr::col(Checkpoints::Evicting).eq(0))
+        .take();
+    store.writer().run(rolled).unwrap();
+    scratch.w.cx.take_warnings();
+}
+
+#[test]
+fn a_disk_that_rolled_forward_before_moor_kept_its_oldest_commit_is_set_up_again_once() {
+    let (scratch, _) = rolled_over_a_guard();
+    as_rolled_before_it_was_kept(&scratch);
+    let (cold, _) = scratch.start("c", GUARD_AND_MORE);
+    assert_eq!(scratch.warm(cold), 0, "no Box forks a disk of unknown age");
+    let warned = scratch.w.cx.take_warnings();
+    let said = warned
+        .iter()
+        .any(|n| n.message.contains("rolled forward before"));
+    assert!(said, "{warned:?}");
+    assert_eq!(scratch.file(cold, "dist/out"), "two\n");
+    let (next, _) = scratch.start("d", GUARD_AND_MORE);
+    assert_eq!(scratch.warm(next), 1);
+    assert!(
+        events(&scratch.w, next, "warm_rerun").is_empty(),
+        "set up from scratch"
+    );
+}
+
+#[test]
+fn a_retry_never_forks_a_disk_of_unknown_age() {
+    let (scratch, _) = rolled_over_a_guard();
+    let lines = "setup: ['[ -f dist/out ] || { mkdir -p dist && cp src dist/out; }', \
+                 '[ -f \"$HOME/second\" ] || { touch \"$HOME/second\"; exit 1; }']\n";
+    let (failed, _) = scratch.start("c", lines);
+    assert_eq!(row(&scratch.w, failed).lifecycle, BoxLifecycle::SetupFailed);
+    as_rolled_before_it_was_kept(&scratch);
+    let forks = scratch.warm(failed);
+    let retry = BoxReq {
+        box_name: crate::testing::box_name("c"),
+    };
+    let v = crate::ops::retry::run(&scratch.w.cx, &retry).unwrap();
+    assert!(v.setup.ok, "{v:?}");
+    assert_eq!(scratch.warm(failed), forks, "the retry forks nothing");
 }

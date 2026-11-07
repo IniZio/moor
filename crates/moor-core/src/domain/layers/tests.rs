@@ -131,6 +131,7 @@ fn disk(changed: Option<u64>, ignored: &[&str]) -> WarmDisk {
         commit: "0123456789abcdef0123".to_owned(),
         changed,
         ignored: lines(ignored),
+        lines_kept: false,
     }
 }
 
@@ -264,6 +265,18 @@ fn the_finished_key_changes_with_what_it_holds() {
         key,
         super::finished_key(&chain(&bob, &lines(&["a"]))[1], &STEPS)
     );
+}
+
+#[test]
+fn the_note_says_whether_the_lines_ran_again() {
+    let reran = disk(Some(1), &[]).note();
+    assert!(reran.contains("every setup line ran again"), "{reran}");
+    let kept = WarmDisk {
+        lines_kept: true,
+        ..disk(Some(1), &[])
+    }
+    .note();
+    assert!(kept.contains("did not run again"), "{kept}");
 }
 
 #[test]

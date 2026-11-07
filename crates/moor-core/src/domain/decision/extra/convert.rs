@@ -83,10 +83,12 @@ impl From<ExtraEvent> for Event {
                 commit,
                 changed,
                 ignored,
+                lines_kept,
             } => Self::Timing(TimingEvent::WarmRerun {
                 commit,
                 changed,
                 ignored,
+                lines_kept,
             }),
             ExtraEvent::WarmRerunFailed { line, tail } => {
                 Self::Timing(TimingEvent::WarmRerunFailed { line, tail })
