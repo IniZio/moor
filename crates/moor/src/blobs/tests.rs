@@ -110,6 +110,20 @@ fn artifact_round_trip(blobs: Arc<dyn Blobs>) {
     assert_eq!(doc["storage"]["backend"], cx.blobs().unwrap().name());
 }
 
+fn report_round_trip(blobs: Arc<dyn Blobs>) {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, id) = cx_on(dir.path(), blobs);
+    let (store, blobs) = (cx.store().unwrap(), cx.blobs().unwrap());
+    let row = store.add_report(id, "plan", "one", blobs).unwrap().unwrap();
+    assert_eq!(row.version, 1);
+    assert_eq!(store.add_report(id, "plan", "one", blobs).unwrap(), None);
+    let two = store.add_report(id, "plan", "two", blobs).unwrap().unwrap();
+    assert_eq!(two.version, 2);
+    let got = |version| blobs.get(&BlobKey::report(id, "plan", version)).unwrap();
+    assert_eq!((got(1), got(2)), (b"one".to_vec(), b"two".to_vec()));
+    assert_eq!(two.path, blobs.locate(&BlobKey::report(id, "plan", 2)));
+}
+
 fn read_req(offset: u64, len: u64) -> ArtifactReadReq {
     ArtifactReadReq {
         target: BoxName::parse_allow_bare("a").unwrap().into(),
@@ -136,6 +150,12 @@ fn fs_takes_a_file_of_any_size() {
 fn fs_artifact_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     artifact_round_trip(Arc::new(FsBlobs::new(dir.path())));
+}
+
+#[test]
+fn fs_report_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    report_round_trip(Arc::new(FsBlobs::new(dir.path())));
 }
 
 /// Fails a put if another store write cannot get through while it runs.

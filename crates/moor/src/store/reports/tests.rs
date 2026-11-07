@@ -8,6 +8,7 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 
+use crate::blobs::fs::FsBlobs;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
@@ -33,7 +34,7 @@ fn first_add_is_version_one_with_content_on_disk() {
     let t = add(&store, "a");
     let reports = dir.path().join("reports");
     let row = store
-        .add_report(t, "plan", "hello", &reports)
+        .add_report(t, "plan", "hello", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(row.version, 1);
@@ -53,10 +54,15 @@ fn same_content_adds_nothing() {
     let store = open(dir.path());
     let t = add(&store, "a");
     store
-        .add_report(t, "plan", "x", dir.path())
+        .add_report(t, "plan", "x", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
-    assert_eq!(store.add_report(t, "plan", "x", dir.path()).unwrap(), None);
+    assert_eq!(
+        store
+            .add_report(t, "plan", "x", &FsBlobs::new(dir.path()))
+            .unwrap(),
+        None
+    );
     assert_eq!(store.reports(t).unwrap().len(), 1);
 }
 
@@ -66,11 +72,11 @@ fn changed_content_appends_a_version() {
     let store = open(dir.path());
     let t = add(&store, "a");
     let v1 = store
-        .add_report(t, "plan", "one", dir.path())
+        .add_report(t, "plan", "one", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     let v2 = store
-        .add_report(t, "plan", "two", dir.path())
+        .add_report(t, "plan", "two", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(v2.version, 2);
@@ -84,10 +90,18 @@ fn kinds_version_independently_and_list_in_order() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");
-    store.add_report(t, "summary", "s1", dir.path()).unwrap();
-    store.add_report(t, "plan", "p1", dir.path()).unwrap();
-    store.add_report(t, "summary", "s2", dir.path()).unwrap();
-    store.add_report(t, "plan", "p2", dir.path()).unwrap();
+    store
+        .add_report(t, "summary", "s1", &FsBlobs::new(dir.path()))
+        .unwrap();
+    store
+        .add_report(t, "plan", "p1", &FsBlobs::new(dir.path()))
+        .unwrap();
+    store
+        .add_report(t, "summary", "s2", &FsBlobs::new(dir.path()))
+        .unwrap();
+    store
+        .add_report(t, "plan", "p2", &FsBlobs::new(dir.path()))
+        .unwrap();
     let got: Vec<(String, i64)> = store
         .reports(t)
         .unwrap()
@@ -105,7 +119,9 @@ fn bad_kind_is_refused() {
     let store = open(dir.path());
     let t = add(&store, "a");
     for kind in ["", ".", "..", "a/b"] {
-        assert!(store.add_report(t, kind, "x", dir.path()).is_err());
+        assert!(store
+            .add_report(t, kind, "x", &FsBlobs::new(dir.path()))
+            .is_err());
     }
     assert!(store.reports(t).unwrap().is_empty());
 }
@@ -117,7 +133,10 @@ fn stored_reports_are_private() {
     let store = open(dir.path());
     let t = add(&store, "a");
     let reports = dir.path().join("reports");
-    let row = store.add_report(t, "plan", "x", &reports).unwrap().unwrap();
+    let row = store
+        .add_report(t, "plan", "x", &FsBlobs::new(dir.path()))
+        .unwrap()
+        .unwrap();
     let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&reports.join(t.get().to_string())), 0o700);
     assert_eq!(mode(Path::new(&row.path)), 0o600);

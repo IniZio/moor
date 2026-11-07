@@ -127,7 +127,7 @@ fn duplicate_is_not_readded() {
     let f = fx(driver_with(&[("result.md", "same")]));
     let store = f.cx.store().unwrap();
     store
-        .add_report(f.id, "result", "same", &reports_dir(&f))
+        .add_report(f.id, "result", "same", f.cx.blobs().unwrap())
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(kinds(&f), [("result".to_owned(), 1)]);
@@ -138,7 +138,7 @@ fn changed_content_adds_a_new_version() {
     let f = fx(driver_with(&[("result.md", "new text")]));
     let store = f.cx.store().unwrap();
     store
-        .add_report(f.id, "result", "old text", &reports_dir(&f))
+        .add_report(f.id, "result", "old text", f.cx.blobs().unwrap())
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(

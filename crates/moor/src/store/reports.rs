@@ -1,9 +1,6 @@
-//! Report versions kept per box; contents live as files, rows hold the path.
+//! Report versions kept per box; contents live in the blob store.
 
-use std::fs::{self, DirBuilder, OpenOptions, Permissions};
-use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-use std::path::Path;
+use std::io;
 
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -11,6 +8,7 @@ use moor_schema::tables::Reports;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{Store, StoreError};
+use crate::blobs::{BlobError, BlobKey, Blobs};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// One stored version of a Box's Report.
@@ -24,7 +22,7 @@ pub(crate) struct ReportRow {
     pub(crate) kind: String,
     /// Version number, starting at 1.
     pub(crate) version: i64,
-    /// Full path of the file holding this version.
+    /// Where a person finds this version; a reader goes by its key, not this.
     pub(crate) path: String,
     /// Title, if one was recorded.
     pub(crate) title: Option<String>,
@@ -33,14 +31,17 @@ pub(crate) struct ReportRow {
 }
 
 impl Store {
-    /// Stores `content` as the next version of `kind`, under `dir/<box id>/<kind>.v<version>.md`.
+    /// Stores `content` as the next version of `kind`.
     /// Returns None and writes nothing when the latest stored version holds the same content.
+    ///
+    /// The blob store is used outside any transaction, as it may be slow or gone and every store
+    /// write waits on the one write lock. The Box lock keeps out a second collect.
     pub(crate) fn add_report(
         &self,
         box_id: BoxId,
         kind: &str,
         content: &str,
-        dir: &Path,
+        blobs: &dyn Blobs,
     ) -> Result<Option<ReportRow>, StoreError> {
         if kind.is_empty() || kind.contains('/') || kind == "." || kind == ".." {
             return Err(StoreError::Io(io::Error::new(
@@ -48,33 +49,25 @@ impl Store {
                 format!("invalid report kind `{kind}`"),
             )));
         }
+        let latest = latest_in(&self.reader()?, box_id, kind)?;
+        if let Some(version) = latest {
+            match blobs.get(&BlobKey::report(box_id, kind, version)) {
+                Ok(old) if old == content.as_bytes() => return Ok(None),
+                Ok(_) | Err(BlobError::Missing | BlobError::NotPlain(_)) => {}
+                Err(e) => return Err(io::Error::from(e).into()),
+            }
+        }
+        let version = latest.map_or(1, |v| v + 1);
+        let key = BlobKey::report(box_id, kind, version);
+        blobs
+            .put(&key, content.as_bytes())
+            .map_err(io::Error::from)?;
+        let path = blobs.locate(&key);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
-        let latest = latest_in(&tx, box_id, kind)?;
-        if let Some((_, path)) = &latest {
-            if fs::read(path).is_ok_and(|old| old == content.as_bytes()) {
-                return Ok(None);
-            }
-        }
-        let version = latest.map_or(1, |(v, _)| v + 1);
-        let box_dir = dir.join(box_id.get().to_string());
-        DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&box_dir)?;
-        let file = box_dir.join(format!("{kind}.v{version}.md"));
-        let path = file.to_string_lossy().into_owned();
-        write_private(&file, content)?;
-        let stored = insert_in(&tx, box_id, kind, version, &path, now)
-            .and_then(|id| tx.commit().map(|()| id));
-        let id = match stored {
-            Ok(id) => id,
-            Err(e) => {
-                let _ = fs::remove_file(&file);
-                return Err(e.into());
-            }
-        };
+        let id = insert_in(&tx, box_id, kind, version, &path, now)?;
+        tx.commit()?;
         drop(conn);
         Ok(Some(ReportRow {
             id,
@@ -109,18 +102,18 @@ impl Store {
     }
 }
 
-/// The kind's newest stored version number and file path, if any.
-fn latest_in(db: &dyn Db, box_id: BoxId, kind: &str) -> Result<Option<(i64, String)>, StoreError> {
+/// The kind's newest stored version number, if any.
+fn latest_in(db: &dyn Db, box_id: BoxId, kind: &str) -> Result<Option<i64>, StoreError> {
     Ok(db
         .row(
             Query::select()
-                .columns([Reports::Version, Reports::Path])
+                .column(Reports::Version)
                 .from(Reports::Table)
                 .and_where(Expr::col(Reports::Box).eq(box_id.get()))
                 .and_where(Expr::col(Reports::Kind).eq(kind))
                 .order_by(Reports::Version, Order::Desc)
                 .limit(1),
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| r.get(0),
         )
         .optional()?)
 }
@@ -156,18 +149,6 @@ fn insert_in(
             .returning_col(Reports::Id),
         |r| r.get(0),
     )
-}
-
-/// Writes `content` to `file`, readable by the owner only.
-fn write_private(file: &Path, content: &str) -> io::Result<()> {
-    OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(file)?
-        .write_all(content.as_bytes())?;
-    fs::set_permissions(file, Permissions::from_mode(0o600))
 }
 
 /// Map a `reports` row selected in column order.

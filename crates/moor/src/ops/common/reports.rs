@@ -263,10 +263,7 @@ fn read_reports(
     if bad > 0 {
         skipped(cx, "an index line was unreadable and was skipped");
     }
-    let dir = cx
-        .state_dir()
-        .map_err(|e| e.error.to_string())?
-        .join("reports");
+    let blobs = cx.blobs().map_err(|e| e.error.to_string())?;
     for entry in accepted(cx, entries) {
         if let Some((within, began)) = tally.within {
             if cx.clock().instant().saturating_duration_since(began) >= within {
@@ -291,11 +288,14 @@ fn read_reports(
             skipped(cx, &too_big(&entry.name));
             continue;
         }
-        match store.add_report(row.id, kind, &text, &dir) {
+        match store.add_report(row.id, kind, &text, blobs) {
             Ok(Some(_)) => tally.stored += 1,
             Ok(None) => {}
-            Err(_) => {
-                skipped(cx, "a report could not be stored and was skipped");
+            Err(e) => {
+                skipped(
+                    cx,
+                    &format!("a report could not be stored: {e}; it was skipped"),
+                );
                 tally.missed += 1;
             }
         }
