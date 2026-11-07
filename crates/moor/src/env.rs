@@ -1,6 +1,6 @@
 //! Process environment and argv access; the only reader of either.
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -74,8 +74,8 @@ pub struct Env {
     remote_fronts: Arc<BTreeSet<String>>,
     /// The shortest gap a workflow's cron may have between firings.
     workflow_min_interval: Option<Duration>,
-    /// What the controller opened once for every request and tick, such as the state store.
-    shared: Option<Arc<dyn Any + Send + Sync>>,
+    /// What the controller opened once for every request and tick, such as the state store, by type.
+    shared: BTreeMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
 /// A request's stop flag, shared by everyone who holds a clone.
@@ -237,13 +237,13 @@ impl Env {
     /// Share `value` with every request and tick that runs in this environment.
     #[must_use]
     pub(crate) fn sharing<T: Any + Send + Sync>(mut self, value: T) -> Self {
-        self.shared = Some(Arc::new(value));
+        self.shared.insert(TypeId::of::<T>(), Arc::new(value));
         self
     }
 
     /// The shared value when it is a `T`; `None` outside a controller.
     pub(crate) fn shared<T: Any>(&self) -> Option<&T> {
-        self.shared.as_deref()?.downcast_ref()
+        self.shared.get(&TypeId::of::<T>())?.downcast_ref()
     }
 
     /// This environment for one request that stops when `cancel` is set.

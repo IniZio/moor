@@ -326,6 +326,22 @@ fn an_s3_store_without_credentials_is_refused_at_setup() {
 }
 
 #[test]
+fn a_controller_sharing_a_bucket_keeps_its_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = Env::from_pairs([
+        ("HOME", "/nowhere"),
+        ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
+        ("MOOR_BLOBS_ACCESS_KEY_ID", "id"),
+        ("MOOR_BLOBS_SECRET_ACCESS_KEY", "secret"),
+    ]);
+    let env = crate::Moor::open_store(env).unwrap();
+    let config = BlobsConfig::S3(s3_config("http://127.0.0.1:1", "p"));
+    let env = super::share(env, &config).unwrap();
+    assert!(env.shared::<crate::store::Store>().is_some());
+    assert!(env.shared::<Arc<dyn Blobs>>().is_some());
+}
+
+#[test]
 fn an_s3_store_reads_a_mounted_secret() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("access_key_id"), "id\n").unwrap();
