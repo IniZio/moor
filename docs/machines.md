@@ -506,10 +506,14 @@ guard and removing a closed Box's files need it. A personal node, started with
 `--runtime`, never runs `exec`, and the agent refuses `--allow-exec` with
 `--runtime`.
 
-A released controller lets in only an agent of its own release. An agent on
-any other release, older or newer, is told to become the controller's, so each
-deploy of a new release updates every agent. A controller built from source
-without a release lets in an agent of any release.
+A released controller lets in any agent at or above the oldest release that
+speaks its link, `MIN_AGENT_VERSION` in the runner, by semver precedence. A
+nightly orders below its release and by its number, so `0.3.0-nightly.191` is
+above `0.3.0-nightly.190` and below `0.3.0`. The floor is raised by hand only
+when a change to the link would break an older agent. An agent below it is
+told to become the controller's release. A controller older than the floor lets
+in its own release and newer. A controller built from source without a release
+lets in an agent of any release. The welcome names the controller's release.
 
 When the server needs another release of the agent, `run` exits and names the
 command to fix it, `moor-machine-agent update --version 1.2.3`. That command
