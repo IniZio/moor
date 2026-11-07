@@ -251,10 +251,39 @@ the Secret `<release>-egress`. A `forward` container listens on loopback on `sla
 and carries each turn's traffic to the shared egress Proxy at the address Boxes dial. The pod holds no user's
 secret.
 
+## Controller without the volume
+
+`blobs.s3` names a bucket for artifacts, Reports and transcripts:
+
+```yaml
+blobs:
+  s3:
+    endpoint: https://s3.example.com
+    bucket: moor
+    accessKey: ""   # secret
+    secretKey: ""   # secret
+```
+
+The keys go into the Secret `<release>-secrets` as `blobs-access-key` and `blobs-secret-key`, and reach the
+controller as `MOOR_BLOBS_ACCESS_KEY_ID` and `MOOR_BLOBS_SECRET_ACCESS_KEY`. The bucket must already exist.
+Read [Blob storage](config.md#blob-storage) for what the controller does with it.
+
+With `blobs.s3` and `database.url` both set, the controller pod mounts no volume. Its state directory is an
+`emptyDir`, the chart no longer renders `moor-state`, and the pod rolls with `maxSurge: 1` and
+`maxUnavailable: 1`. The new pod waits on the database lock and is not Ready until the old one exits, so
+`maxUnavailable: 0` would never finish. Slack must then run with `slack.separate`, since the sidecar keeps
+`slack.db` on the volume. The chart refuses to render otherwise.
+
+A roll loses the rest of the state directory. The next pod remakes sockets, lock files, crabbox claims and
+`pool/known_hosts`. Setup, clone and run logs of earlier pods are gone.
+
+The old `moor-state` stays in the namespace, kept by its resource policy. Delete it by hand once its blobs are
+in the bucket.
+
 ## Upgrades
 
 The pod uses the `Recreate` strategy, so the old controller stops before the
-new one starts. On stop the controller drains for up to
+new one starts. Without the volume, it rolls instead, as above. On stop the controller drains for up to
 `controller.drainTimeoutSecs`, 30 seconds by default, and the gate drains for
 the same time. The pod's grace period is the drain plus 30 seconds, so the
 drain finishes before Kubernetes kills the pod. The new pod starts only after

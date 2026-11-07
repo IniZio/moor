@@ -136,4 +136,25 @@ one_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress
 off_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set runner.separate=true)
 grep -q PodDisruptionBudget <<<"$off_pdb" && fail "renders a PodDisruptionBudget with the budget off"
 
+bucket=(--set blobs.s3.endpoint=https://s3.example.com --set blobs.s3.bucket=moor --set blobs.s3.accessKey=ak --set blobs.s3.secretKey=sk)
+stateless=$(helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true)
+controller_pod=$(awk '
+  /^kind:/ { kind = $2; name = "" }
+  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
+  kind == "Deployment" && name == "moor" { print }
+' <<<"$stateless")
+if grep -qE 'claimName: moor-state|name: state-aside' <<<"$controller_pod"; then
+  fail "a controller with a bucket and a database still mounts the volume"
+fi
+if grep -qE '^  name: moor-state$' <<<"$stateless"; then fail "a controller without the volume still renders its PVC"; fi
+grep -q 'rollingUpdate: { maxSurge: 1, maxUnavailable: 1 }' <<<"$controller_pod" ||
+  fail "a controller without the volume does not roll with a surge"
+grep -q 'key: blobs-secret-key' <<<"$controller_pod" || fail "the controller gets no bucket credentials"
+grep -q 'kind: s3' <<<"$stateless" || fail "the controller config names no bucket"
+if helm template moor "${chart[@]}" "${bucket[@]}" 2>&1 | grep -qv 'needs slack.separate'; then
+  fail "a controller without the volume renders with the Slack sidecar"
+fi
+on_volume=$(helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${bucket[@]}")
+grep -q 'claimName: moor-state' <<<"$on_volume" || fail "a SQLite controller with a bucket drops the volume"
+grep -q 'type: Recreate' <<<"$on_volume" || fail "a SQLite controller with a bucket rolls"
 echo "chart-render: ok"

@@ -8,6 +8,12 @@ data:
     state_dir: /var/lib/moor/pv/state
     settle_every_secs: {{ .Values.controller.settleEverySecs }}
     drain_timeout_secs: {{ .Values.controller.drainTimeoutSecs }}
+    {{- with .Values.blobs.s3 }}
+    blobs:
+      kind: s3
+      endpoint: {{ required "blobs.s3.endpoint is required" .endpoint | quote }}
+      bucket: {{ required "blobs.s3.bucket is required" .bucket | quote }}
+    {{- end }}
     {{- if or .Values.slack.enabled .Values.gate.enabled .Values.notify.enabled }}
     fronts:
       {{- if .Values.slack.enabled }}
