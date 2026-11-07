@@ -516,8 +516,13 @@ number of lines, the fork's time, the setup time that layer took from scratch, a
 hold `warm_start_failed` with the provider's error, and the start warns with
 `checkpoint_failed`.
 
-A Box at the checkpoint's own commit runs only the lines above that layer. A Box
-at another commit works differently:
+A Box at the checkpoint's own commit runs only the lines above that layer. moor fetches
+first and moves the tree to the Box's branch when GitHub has it, so pushed commits come
+back. It drops the source Box's branches and refs. It keeps untracked files and tracked
+changes, which a skipped line may have made. A tree that is not the base unchanged runs
+every line again in one script, and moor saves no checkpoint from it. A line that leaves an
+untracked file causes this on every such Box, so keep setup outputs ignored. A Box at
+another commit works differently:
 
 1. moor refreshes the tree as it refreshes a [kept work tree](#work-tree). Tracked
    files reset, untracked files go, and ignored files stay.
@@ -736,7 +741,7 @@ reuse their outputs. Docker Compose's default project name is the repo name.
 When the Box starts on a kept tree, moor refreshes the tree before anything
 else runs:
 
-1. It fetches.
+1. It fetches, and takes the remote's tags, so a tag moved there moves here too.
 2. It checks out the Box branch from the remote, or from the base when the
    remote has no such branch.
 3. It resets every tracked file, and removes untracked files and nested repos.

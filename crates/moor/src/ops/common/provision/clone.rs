@@ -3,10 +3,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{
-    at_base, clone_script, left_out_submodules, Checkout, CloneStep,
-};
-use moor_core::boxscript::refresh::{outcome, refresh_script};
+use moor_core::boxscript::clone::{at_base, clone_script, Checkout, CloneStep};
+use moor_core::boxscript::refresh::{outcome, refresh_with, went_cold, Work};
 use moor_core::boxscript::{resources, warm_disk};
 use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
@@ -22,7 +20,7 @@ use moor_core::view::WorkTreeView;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
 use super::layers::Layered;
-use super::others::clone_others;
+use super::others::{clone_others, warn_left_out};
 use super::outcome::clone_failed;
 use super::SetupTarget;
 use crate::cx::Cx;
@@ -46,6 +44,9 @@ pub(super) struct Cloned {
     pub(super) work_tree: Option<WorkTreeView>,
     /// Whether the work tree is the base commit with no changes.
     pub(super) at_base: bool,
+    /// Whether this Box's tree fell back to a fresh clone, on this attempt or an earlier one, which
+    /// lost whatever the disk's setup lines made in it.
+    pub(super) went_cold: bool,
     /// On a forked disk, how many tracked paths changed since its commit, and its ignored paths.
     pub(super) disk: (Option<u64>, Vec<String>),
 }
@@ -64,6 +65,8 @@ struct Plan {
     /// The Box's key when its work tree may hold another Box's files, which is refreshed once per
     /// Box before the clone.
     refresh: Option<String>,
+    /// What that refresh does with what the tree holds.
+    work: Work,
 }
 
 impl Plan {
@@ -74,6 +77,13 @@ impl Plan {
             base: &self.base,
             branch: &self.branch,
         }
+    }
+
+    /// The refresh to run before the clone, if any.
+    fn refresh_text(&self) -> String {
+        let key = self.refresh.as_deref();
+        let text = key.map(|k| refresh_with(&self.checkout(), k, self.work));
+        text.unwrap_or_default()
     }
 }
 
@@ -154,8 +164,14 @@ pub(super) fn clone_with_proxy(
 fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
-    let rerun = target.layered.is_some_and(Layered::reruns);
-    let refresh = (kept.work_tree().is_some() || rerun).then(|| target.handle.as_str().to_owned());
+    let forked = target.layered.and_then(Layered::forked_commit).is_some();
+    let own_commit = target.layered.is_some_and(Layered::holds_own_commit);
+    let work = if own_commit {
+        Work::Keep
+    } else {
+        Work::Discard
+    };
+    let refresh = (kept.work_tree().is_some() || forked).then(|| target.handle.as_str().to_owned());
     Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
@@ -163,6 +179,7 @@ fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Opti
             .branch
             .unwrap_or_else(|| box_key::branch(row.id, &row.name)),
         refresh,
+        work,
     })
 }
 
@@ -236,9 +253,7 @@ fn clone(
     let mut script = job.restore.clone().unwrap_or_default();
     script.push_str(&identity.map(Identity::script).unwrap_or_default());
     if let Some(plan) = plan {
-        if let Some(key) = &plan.refresh {
-            script.push_str(&refresh_script(&plan.checkout(), key));
-        }
+        script.push_str(&plan.refresh_text());
         script.push_str(&clone_script(&plan.checkout()));
         // One past what is named, so the note can say there are more.
         let probe = job.disk.map(|c| warm_disk::script(c, IGNORED_NAMED + 1));
@@ -333,17 +348,8 @@ fn report(
         delivered: text.and_then(resources::parse),
         work_tree: tree,
         at_base: text.is_some_and(at_base),
+        went_cold: text.is_some_and(went_cold),
         disk: text.map(warm_disk::parse).unwrap_or_default(),
-    }
-}
-
-/// Warns of each submodule a passing clone's `text` left out, its path after `repo`.
-pub(super) fn warn_left_out(cx: &Cx, repo: &str, text: &str) {
-    for left_out in left_out_submodules(text) {
-        cx.warn(Warning {
-            code: "submodule".to_owned(),
-            message: format!("submodule {repo}{left_out}; the Box runs without it"),
-        });
     }
 }
 

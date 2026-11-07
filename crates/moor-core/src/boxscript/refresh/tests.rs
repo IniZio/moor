@@ -457,3 +457,5 @@ fn the_outcome_names_what_the_script_printed() {
     let rerun = ok(&o, BOX2, &o.base);
     assert_eq!(super::outcome(&rerun), None, "{rerun}");
 }
+
+mod keeping_work;

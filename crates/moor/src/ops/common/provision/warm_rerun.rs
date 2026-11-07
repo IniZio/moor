@@ -5,7 +5,6 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::layers::WarmDisk;
-use moor_core::view::WorkTreeView;
 use moor_core::{BoxId, Warning};
 use serde::Deserialize as _;
 
@@ -22,27 +21,18 @@ use crate::ops::common::setup::SetupRun;
 use crate::store::lease::LeaseKind;
 use crate::store::Store;
 
-/// Whether the refresh fell back to a fresh clone, which replaced the old tree and its ignored
-/// files.
-const fn tree_went_cold(cloned: &Cloned) -> bool {
-    matches!(
-        cloned.work_tree,
-        Some(WorkTreeView::Cold | WorkTreeView::ColdAfter { .. })
-    )
-}
-
 /// What `target` goes on with after its clone, and the commit of the disk its lines run again
 /// over when they do. A checkpoint records its commit, so only a tree that is the base unchanged
-/// keeps its layers. A fork whose refresh fell back to a fresh clone lost the outputs its lines
-/// made, so it keeps none and all its lines run. A rerun keeps none either: it saves nothing, so
-/// one script spares it the attach and the log copy each line would cost.
+/// keeps its layers. A rerun keeps none either: it saves nothing, so one script spares it the
+/// attach and the log copy each line would cost. A fork whose refresh fell back to a fresh clone
+/// lost the outputs its lines made, so it keeps none and all its lines run.
 pub(super) fn after_clone<'a>(
     target: &SetupTarget<'a>,
     cloned: &Cloned,
 ) -> (SetupTarget<'a>, Option<&'a str>) {
     let forked = target.layered.and_then(Layered::forked_commit);
     let reruns = target.layered.is_some_and(Layered::reruns);
-    let keep = cloned.at_base && !reruns && !(forked.is_some() && tree_went_cold(cloned));
+    let keep = cloned.at_base && !reruns && !(forked.is_some() && cloned.went_cold);
     let target = target.keeping_layers(keep);
     let reran = forked.filter(|_| target.layered.is_none());
     (target, reran)
@@ -56,7 +46,7 @@ pub(super) fn record_disk(
     reran: Option<&str>,
     cloned: &Cloned,
 ) -> Result<Option<WarmDisk>, CommandError> {
-    let Some(commit) = reran.filter(|_| !tree_went_cold(cloned)) else {
+    let Some(commit) = reran.filter(|_| !cloned.went_cold) else {
         return Ok(None);
     };
     let (changed, ignored) = cloned.disk.clone();

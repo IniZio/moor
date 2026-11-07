@@ -50,7 +50,7 @@ fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_
 }
 
 /// The setup attaches and log copies made on Box `id`'s machine.
-fn setup_calls_on(w: &World, id: BoxId) -> (usize, usize) {
+pub(super) fn setup_calls_on(w: &World, id: BoxId) -> (usize, usize) {
     let handle = row(w, id).boxed.unwrap().handle.unwrap();
     let execs = w.driver.execs();
     let on = execs.iter().filter(|(h, _, _)| *h == handle);
@@ -87,11 +87,29 @@ fn a_rerun_saves_no_checkpoint_even_for_a_key_nothing_holds_yet() {
 }
 
 #[test]
-fn a_fork_whose_refresh_fell_back_to_a_fresh_clone_runs_every_line_and_saves_nothing() {
+fn a_rerun_whose_refresh_fell_back_to_a_fresh_clone_names_no_stale_disk_and_saves_nothing() {
     let (w, _) = after_a_partial_setup(FakeDriver::new().cache_volumes());
     let saved = w.driver.checkpoint_names();
-    w.driver
-        .push_exec_stdout("moor: work tree cold after: git fetch failed\nmoor.clone=base\n");
+    w.driver.push_exec_stdout(
+        "moor: work tree cold after: git fetch failed\nmoor.tree.went_cold\nmoor.clone=base\n",
+    );
+    let moved = start(&w, "moved", "def456", LINES);
+    assert_eq!(lines_on(&w, moved), ["one-a", "two-b", "three-c"]);
+    assert_eq!(setup_calls_on(&w, moved), (1, 1));
+    assert_eq!(w.driver.checkpoint_names(), saved);
+    assert!(
+        events(&w, moved, "warm_rerun").is_empty(),
+        "nothing is stale"
+    );
+}
+
+#[test]
+fn a_same_commit_fork_whose_refresh_fell_back_runs_every_line_and_saves_nothing() {
+    let (w, _) = after_a_partial_setup(FakeDriver::new());
+    let saved = w.driver.checkpoint_names();
+    w.driver.push_exec_stdout(
+        "moor: work tree cold after: git fetch failed\nmoor.tree.went_cold\nmoor.clone=base\n",
+    );
     let again = start(&w, "again", "abc123", LINES);
     assert_eq!(lines_on(&w, again), ["one-a", "two-b", "three-c"]);
     assert_eq!(w.driver.checkpoint_names(), saved);
@@ -188,7 +206,7 @@ fn a_box_at_the_checkpoint_s_own_commit_records_no_rerun() {
 }
 
 #[test]
-fn a_rerun_forces_a_refresh_of_the_tree_only_on_the_fork_that_needs_it() {
+fn every_fork_refreshes_its_tree_and_a_cold_box_does_not() {
     let (w, first) = after_a_partial_setup(FakeDriver::new());
     let again = start(&w, "again", "abc123", LINES);
     let moved = start(&w, "moved", "def456", LINES);
@@ -200,7 +218,7 @@ fn a_rerun_forces_a_refresh_of_the_tree_only_on_the_fork_that_needs_it() {
             .count()
     };
     assert_eq!(refreshes(first), 0, "a cold Box has no old tree");
-    assert_eq!(refreshes(again), 0, "the same commit skips as it did");
+    assert_eq!(refreshes(again), 1, "a fork must learn what was pushed");
     assert_eq!(refreshes(moved), 1);
 }
 
