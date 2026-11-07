@@ -154,6 +154,9 @@ grep -q 'kind: s3' <<<"$stateless" || fail "the controller config names no bucke
 if helm template moor "${chart[@]}" "${bucket[@]}" 2>&1 | grep -qv 'needs slack.separate'; then
   fail "a controller without the volume renders with the Slack sidecar"
 fi
+if helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true --set egress.enabled=false 2>&1 | grep -qv 'needs egress.enabled'; then
+  fail "a controller without the volume renders with its own egress Proxy"
+fi
 on_volume=$(helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${bucket[@]}")
 grep -q 'claimName: moor-state' <<<"$on_volume" || fail "a SQLite controller with a bucket drops the volume"
 grep -q 'type: Recreate' <<<"$on_volume" || fail "a SQLite controller with a bucket rolls"
