@@ -11,11 +11,11 @@ use moor_core::Warning;
 
 use moor_core::config::Flags;
 
-use super::{after_setup, step_failed};
+use super::after_setup;
+use super::outcome::{dotfiles_noted, step_failed};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
-use crate::ops::common::dotfiles::DotfilesRun;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::view::rfc3339;
 use crate::store::{BoxRow, Store};
@@ -70,12 +70,7 @@ fn finish_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError
         .transpose();
     let at = (handle, held.provider.as_str());
     let (dotfiles, installed) = after_setup(cx, store, at, row.id, &cfg, &proxy)?;
-    let mut done = Decision::new(row.id);
-    if let DotfilesRun::Failed { tail } = &dotfiles {
-        done = done.event(ExtraEvent::SetupFailed {
-            line: format!("dotfiles: {tail}"),
-        });
-    }
+    let mut done = dotfiles_noted(row.id, &dotfiles);
     let mut set = Fields {
         steps_pending_at: Field::Clear,
         ..Fields::default()
