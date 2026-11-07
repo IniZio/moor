@@ -283,6 +283,8 @@ fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
     w.driver
         .push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
     w.driver
+        .push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
+    w.driver
         .push_exec_result(Ok(ExecOutcome::Exited { code: 1 }));
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
@@ -294,6 +296,41 @@ fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
         "{:?}",
         failed.payload
     );
+}
+
+#[test]
+fn a_setup_followed_again_waits_for_the_machine_to_relink() {
+    let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    for _ in 0..30 {
+        w.driver.push_exec_result(Err(DriverError::Transport {
+            stderr_tail: "machine 1 is not linked".to_owned(),
+        }));
+    }
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(setup_attaches(&w), [attached.clone(), attached]);
+}
+
+#[test]
+fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
+    let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.cx.env().draining().cancel();
+    w.driver.push_exec_result(Err(DriverError::Transport {
+        stderr_tail: "machine 1 is not linked".to_owned(),
+    }));
+    assert!(resume_setup(&w.cx, store, BoxId::new(1)).is_err());
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
+    assert!(matches!(row.intent, Some(Intent::Setup { .. })));
+    let events = store.events(row.id, 50).unwrap();
+    assert!(!events.iter().any(|e| e.kind == "setup_failed"));
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert!(setup_attaches(&w).iter().all(|a| *a == attached));
 }
 
 #[test]

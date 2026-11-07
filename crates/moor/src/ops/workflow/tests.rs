@@ -292,6 +292,17 @@ fn a_refused_start_is_recorded_with_its_message_and_makes_no_box() {
 }
 
 #[test]
+fn a_start_refused_during_a_drain_leaves_its_claim_for_the_next_process() {
+    let r = rig();
+    r.put(180);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.cx.env().draining().cancel();
+    r.pass();
+    let claims = r.cx.store().unwrap().starting_workflow_runs().unwrap();
+    assert_eq!(claims.len(), 1);
+}
+
+#[test]
 fn a_run_past_its_timeout_ends_its_session_and_keeps_its_box() {
     let r = rig();
     r.answer_repo();

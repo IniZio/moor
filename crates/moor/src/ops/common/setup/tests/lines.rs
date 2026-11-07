@@ -48,7 +48,7 @@ fn run(steps: &[&str], stdout: &str, code: i32) -> (SetupRun, Vec<ExtraEvent>) {
         None,
         &|e| seen.lock().unwrap().push(e),
     );
-    (got, seen.into_inner().unwrap())
+    (got.unwrap(), seen.into_inner().unwrap())
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn an_attach_again_after_a_cut_reports_each_line_once() {
         ]);
     let r = rig(d.path(), driver);
     let seen = Mutex::new(Vec::new());
-    run_setup_with(
+    let _ = run_setup_with(
         &r.cx,
         &r.handle,
         ("p", RUN),

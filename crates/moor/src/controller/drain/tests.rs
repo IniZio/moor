@@ -564,3 +564,13 @@ fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
         "the keeper ended as the drain began"
     );
 }
+
+#[test]
+fn the_flag_set_with_the_drain_turns_on_when_it_begins() {
+    let flag = crate::env::Cancel::default();
+    let drain = Drain::default();
+    drain.set_with_drain(flag.clone());
+    assert!(!flag.is_cancelled());
+    drain.begin();
+    assert!(flag.is_cancelled());
+}

@@ -258,7 +258,7 @@ fn run_and_record(
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     record_delivered(cx, store, id, cfg, cloned.delivered)?;
-    let run = set_up_all(cx, store, id, target, cfg, &proxy);
+    let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
     if !run.failed() {
         store.apply(Decision::new(id).set(Fields {
             setup_failed_at: Field::Clear,

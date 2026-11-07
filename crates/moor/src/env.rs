@@ -56,6 +56,8 @@ pub struct Env {
     vault_key: Option<PathBuf>,
     /// Set when whoever asked for the request is gone; its streamed children then stop.
     cancel: Cancel,
+    /// Set once the controller running this drains, for what it can leave to the next one.
+    draining: Cancel,
     /// The rules each front's Proxy serves, by namespace, when a controller runs this.
     front_proxies: Arc<BTreeMap<String, Vec<String>>>,
     /// The fronts that deliver the users' webhooks, by namespace.
@@ -222,6 +224,11 @@ impl Env {
     /// The stop flag of the request this environment serves.
     pub(crate) const fn cancel(&self) -> &Cancel {
         &self.cancel
+    }
+
+    /// The flag the controller running this sets when its drain begins.
+    pub(crate) const fn draining(&self) -> &Cancel {
+        &self.draining
     }
 
     /// The Postgres URL the store lives in, when set and non-empty.
