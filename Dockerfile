@@ -11,8 +11,8 @@ ARG FETCH_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dca
 # The -moor line of crabbox: moor refuses any other build. The tag names the crabbox version
 # the commit was released as.
 ARG CRABBOX_REPO=https://github.com/IniZio/crabbox.git
-ARG CRABBOX_COMMIT=6852af4eba8a583accaa2eced7777127ababe41c
-ARG CRABBOX_VERSION=0.79.1-moor.16
+ARG CRABBOX_COMMIT=ee5e5205c9d95f54f7420bed587bc88b91efeeb4
+ARG CRABBOX_VERSION=0.79.1-moor.17
 
 ARG AGENT37_REPO=https://github.com/IniZio/crabbox-agent37.git
 ARG AGENT37_COMMIT=507f3ce84580ee014a24b8f166101cda56f4f376
