@@ -14,7 +14,7 @@ data:
       slack:
         proxy_rules: [claude]
       {{- end }}
-      {{- if include "moor.gateOverTls" . }}
+      {{- if include "moor.gateSeparate" . }}
       authgear:
         remote:
           key_file: /var/lib/moor/config/gate-front-key

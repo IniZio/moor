@@ -186,6 +186,8 @@ spec:
       app.kubernetes.io/instance: <release>
 ```
 
+With `gate.separate`, the same applies to `app.kubernetes.io/name: moor-gate`.
+
 An operator who may manage `networking.k8s.io` NetworkPolicies, on a cluster
 whose network plugin enforces them, can admit only the egress pods to the
 ledger and machine ports. Keep the gate and agent ports open if you use them:
@@ -240,6 +242,13 @@ the same time. The pod's grace period is the drain plus 30 seconds, so the
 drain finishes before Kubernetes kills the pod. The new pod starts only after
 the old one is gone, so a longer drain makes each upgrade's outage longer. Read
 [Deploy the controller with systemd](deploy.md) for what a drain waits on.
+
+`gate.separate: true`, with `egress.enabled`, moves the gate out of the
+controller pod into `gate.replicas` pods, two by default, with no volume. They
+dial the ledger listener with a generated certificate. A controller upgrade
+leaves them up, and they hold `/mcp` and `/front` for up to 30 s while the
+controller is away. Set `gate.drainSecs` above that hold. The chart keeps the
+machine runner reachable through `<release>-agents` when it is still a sidecar.
 
 With `runner.separate`, a controller upgrade leaves the runner pods up, and rolling the runner pods one at a
 time relinks each machine within a redial of its agent.

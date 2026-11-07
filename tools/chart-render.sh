@@ -47,24 +47,46 @@ if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml | gre
   fail "a file-backed controller has a liveness probe, but nothing feeds it"
 fi
 
-gate_tls=(--set gate.overTls.enabled=true --set gate.overTls.frontKey=k --set gate.overTls.clientCert=c --set gate.overTls.clientKey=k)
-over=$(helm template moor "${chart[@]}" "${gate_tls[@]}")
-grep -q -- '--controller=tls://moor-ledger\.' <<<"$over" || fail "gate.overTls renders no --controller"
-grep -q 'name: MOOR_GATE_FRONT_KEY' <<<"$over" || fail "gate.overTls renders no front key"
-grep -q 'key_file: /var/lib/moor/config/gate-front-key' <<<"$over" || fail "gate.overTls leaves the authgear front local"
-if grep -q -- '--front-socket=' <<<"$over"; then fail "gate.overTls still dials the front socket"; fi
-if grep -q 'subPath: state/fronts/authgear' <<<"$over"; then fail "gate.overTls still mounts the volume"; fi
-if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${gate_tls[@]}" 2>&1 | grep -qv 'gate.overTls needs egress.enabled'; then
-  fail "gate.overTls without egress.enabled renders"
+apart=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null)
+gate_pod=$(awk '
+  /^kind:/ { kind = $2; name = "" }
+  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
+  kind == "Deployment" && name == "moor-gate" { print }
+' <<<"$apart")
+[ -n "$gate_pod" ] || fail "gate.separate renders no gate Deployment"
+grep -q 'replicas: 2' <<<"$gate_pod" || fail "the gate Deployment does not run two replicas"
+grep -q 'type: RollingUpdate' <<<"$gate_pod" || fail "the gate Deployment does not roll"
+grep -q -- '--controller=tls://moor-ledger\.' <<<"$gate_pod" || fail "the gate pods dial no ledger"
+grep -q 'path: /.well-known/moor' <<<"$gate_pod" || fail "the gate pods have another readiness probe"
+grep -q 'name: MOOR_GATE_FRONT_KEY' <<<"$gate_pod" || fail "the gate pods hold no front key"
+if grep -qE 'persistentVolumeClaim|name: state|--front-socket' <<<"$gate_pod"; then
+  fail "the gate pods use the volume"
 fi
-
-# Every gate replica seals sign-in cookies with one shared key, whether given or made.
-key_env() { grep -c 'name: MOOR_GATE_COOKIE_KEY' <<<"$1" || true; }
-[ "$(key_env "$full")" = 1 ] || fail "the gate gets no cookie key with gate.login on"
-grep -q 'cookie-key: "[A-Za-z0-9]\{64\}"' <<<"$full" || fail "no generated cookie key in the gate Secret"
-given=$(helm template moor "${chart[@]}" --set gate.cookieKey=first-key-first-key-first-key-first\\,old-key)
-grep -q 'cookie-key: "first-key-first-key-first-key-first,old-key"' <<<"$given" ||
-  fail "gate.cookieKey does not reach the gate Secret"
-login_off=$(helm template moor "${chart[@]}" --set gate.login=false)
-[ "$(key_env "$login_off")" = 0 ] || fail "the gate gets a cookie key with gate.login off"
+grace=$(awk '/terminationGracePeriodSeconds:/ { print $2 }' <<<"$gate_pod")
+[ "$grace" -gt 40 ] || fail "the gate pods' grace $grace does not outlast the preStop and the hold"
+gate_keys=$(grep -E '^ +- \{ key: ' <<<"$gate_pod" | awk '{ print $4 }' | tr -d , | sort | tr '\n' ' ')
+[ "$gate_keys" = "gate-client.crt gate-client.key ledger-ca.pem " ] ||
+  fail "gate pods mount [$gate_keys], want the CA and their client certificate only"
+grep -q 'key_file: /var/lib/moor/config/gate-front-key' <<<"$apart" || fail "gate.separate leaves the authgear front local"
+if grep -E '^(apiVersion: policy/|kind: (NetworkPolicy|PodDisruptionBudget))' <<<"$apart"; then
+  fail "renders a policy kind with gate.separate"
+fi
+controller_pod=$(awk '
+  /^kind:/ { kind = $2; name = "" }
+  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
+  kind == "Deployment" && name == "moor" { print }
+' <<<"$apart")
+if grep -q 'command: \[moor-gate\]' <<<"$controller_pod"; then fail "gate.separate keeps the sidecar"; fi
+grep -q 'name: moor-agents$' <<<"$apart" || fail "gate.separate leaves the sidecar runner's agents without a Service"
+if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml --set gate.separate=true 2>&1 | grep -qv 'gate.separate needs egress.enabled'; then
+  fail "gate.separate without egress.enabled renders"
+fi
+helm template moor "${chart[@]}" --set gate.separate=true --set gate.clientCert=c --set gate.clientKey=k >/dev/null ||
+  fail "gate.separate refuses a given client certificate"
+if helm template moor "${chart[@]}" --set gate.separate=true 2>&1 | grep -qv 'your own ledger CA needs'; then
+  fail "gate.separate with your own CA and no way to a certificate renders"
+fi
+if helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set gate.drainSecs=30 2>&1 | grep -qv 'gate.drainSecs must outlast'; then
+  fail "a drain shorter than the hold renders"
+fi
 echo "chart-render: ok"
