@@ -39,6 +39,7 @@ mod launch_skipped;
 mod lease;
 mod lease_dirs;
 mod lease_handle;
+mod lost_machine;
 mod machine;
 mod named_node;
 mod node_warm;
@@ -301,7 +302,7 @@ fn open_name_attaches_without_touching_the_box() {
     let again = run(&w.cx, &agentless_req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "list"]);
     assert_eq!(w.surface.calls().len(), 1);
 }
 

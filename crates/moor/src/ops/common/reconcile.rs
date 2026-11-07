@@ -13,7 +13,7 @@ use crate::adapters::proc::plain::last_sentence;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::now;
-use crate::store::Store;
+use crate::store::{BoxRow, Store};
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
@@ -47,33 +47,55 @@ pub(crate) fn run(cx: &Cx) {
         return;
     };
     for (provider, facts) in by_provider(rows) {
-        match cx.driver().list(&provider) {
-            Ok(listing) => {
-                for d in reconcile(&facts, &listing) {
+        reconcile_provider(cx, store, &provider, &facts);
+    }
+}
+
+/// Reconciles the one Box `row`, when it holds a machine that reconcile can find missing or stopped.
+pub(crate) fn one(cx: &Cx, store: &Store, row: &BoxRow) {
+    let Some(b) = row
+        .boxed
+        .as_ref()
+        .filter(|b| matches!(b.state, BoxState::Ready | BoxState::Asleep))
+    else {
+        return;
+    };
+    let fact = BoxFact {
+        box_id: row.id,
+        state: b.state,
+        handle: b.handle.clone(),
+    };
+    reconcile_provider(cx, store, &b.provider, &[fact]);
+}
+
+/// Corrects `facts` from what `provider` lists; see [`run`].
+fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[BoxFact]) {
+    match cx.driver().list(provider) {
+        Ok(listing) => {
+            for d in reconcile(facts, &listing) {
+                apply(cx, store, d);
+            }
+        }
+        Err(DriverError::Unsupported(_)) => {
+            let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
+            if let Ok(listing) = cx.driver().list_handles(&handles) {
+                for d in stopped(facts, &listing) {
                     apply(cx, store, d);
                 }
             }
-            Err(DriverError::Unsupported(_)) => {
-                let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
-                if let Ok(listing) = cx.driver().list_handles(&handles) {
-                    for d in stopped(&facts, &listing) {
-                        apply(cx, store, d);
-                    }
-                }
-            }
-            Err(e) => {
-                note_starting(store, &facts, &e);
-                let cause = last_sentence(&e.to_string())
-                    .map(|c| format!(" ({c})"))
-                    .unwrap_or_default();
-                cx.warn(Warning {
-                    code: "reconcile_skipped".to_owned(),
-                    message: format!(
-                        "could not list boxes for provider {}{cause}; box states left as they were",
-                        provider.as_str()
-                    ),
-                });
-            }
+        }
+        Err(e) => {
+            note_starting(store, facts, &e);
+            let cause = last_sentence(&e.to_string())
+                .map(|c| format!(" ({c})"))
+                .unwrap_or_default();
+            cx.warn(Warning {
+                code: "reconcile_skipped".to_owned(),
+                message: format!(
+                    "could not list boxes for provider {}{cause}; box states left as they were",
+                    provider.as_str()
+                ),
+            });
         }
     }
 }
