@@ -244,16 +244,16 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
     Ok(())
 }
 
-/// Move the Box's state to match `reading`, copy the transcript at each turn end, and save the
-/// transcript of an agent first seen exited and end its session.
+/// Move the Box's state to match `reading`, copy the transcript at each turn end, save the
+/// transcript of an agent first seen exited and end its session, and return the fate it answered.
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
 /// An asleep Box is not moved: nothing was read from it, and a wake asks after its agent. A Box
-/// that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
-/// only when the reading `may_quiet` and is not busy; an Idle Box goes back to Working when the
-/// reading shows work. Nothing else decides quiet: a gone pane, an idle status or a dropped hook
-/// read never idles a Box. If the row changed since the read, the store refuses the step.
+/// that an op holds, or that has an intent set, is not moved. A Working Box goes Idle only when the
+/// reading `may_quiet` and is not busy; an Idle Box goes back to Working when the reading shows
+/// work. Nothing else decides quiet: a gone pane, an idle status or a dropped hook read never idles
+/// a Box. If the row changed since the read, the store refuses the step.
 ///
 /// # Errors
 /// A store failure other than a refused step.
@@ -262,9 +262,9 @@ pub(crate) fn settle(
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
-) -> Result<(), CommandError> {
+) -> Result<Option<Fate>, CommandError> {
     if row.asleep() {
-        return Ok(());
+        return Ok(None);
     }
     let fate = match (reading.pane, reading.session) {
         (PaneLiveness::Exited | PaneLiveness::Lost, Some(probed)) => {
@@ -275,7 +275,7 @@ pub(crate) fn settle(
     // A reattached agent still runs its turn: closing the turn or idling on the old pane drops what it says next.
     if matches!(fate, Some((Fate::Reattached, _))) {
         transcript::save_pending(cx, store, row)?;
-        return Ok(());
+        return Ok(Some(Fate::Reattached));
     }
     let turn_done = turn::note_turn_done(store, row, reading, cx.clock().now())?;
     match fate {
@@ -283,7 +283,7 @@ pub(crate) fn settle(
             transcript::save_on_exit(cx, store, row, probed)?;
             end_exited_session(cx, store, row, exit, probed)?;
         }
-        Some((Fate::Unreachable, _)) if reading.pane == PaneLiveness::Lost => return Ok(()),
+        Some((Fate::Unreachable, _)) if reading.pane == PaneLiveness::Lost => return Ok(None),
         _ => {}
     }
     register_session(cx, store, row, reading)?;
@@ -293,7 +293,7 @@ pub(crate) fn settle(
     if (turn_done || went_quiet) && reading.pane != PaneLiveness::Exited {
         transcript::save_on_turn(cx, store, row)?;
     }
-    Ok(())
+    Ok(fate.map(|(f, _)| f))
 }
 
 /// Ends the current session of an agent that ended with `exit`, once its transcript is saved.

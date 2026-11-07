@@ -27,6 +27,7 @@ use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::common::reconcile;
+use super::common::wake::{resume_owed, Seen};
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -299,10 +300,20 @@ pub(crate) fn settle_all(
 /// Moves one open Box with a ready machine between Working and Idle, then lets it auto-sleep.
 fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     let settled = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)
-        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|()| reading))
-        .and_then(|reading| held_prompt::give_on_sweep(cx, store, row, &reading).map(|()| reading));
+        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|f| (reading, f)))
+        .and_then(|(reading, f)| {
+            held_prompt::give_on_sweep(cx, store, row, &reading).map(|()| (reading, f))
+        });
     match settled {
-        Ok(reading) => autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading)),
+        Ok((reading, f)) => {
+            if let Err(e) = resume_owed(cx, store, row.id, Seen::of(&reading, f)) {
+                cx.warn(Warning {
+                    code: "settle_failed".to_owned(),
+                    message: format!("could not resume Box {}: {}", row.id.get(), e.error),
+                });
+            }
+            autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading));
+        }
         Err(e) => cx.warn(Warning {
             code: "settle_failed".to_owned(),
             message: format!("could not settle Box {}: {}", row.id.get(), e.error),

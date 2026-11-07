@@ -10,7 +10,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{BoxReq, ErrorKind, Warning};
+use moor_core::{BoxId, BoxReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -70,21 +70,20 @@ fn revive(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<bool, Comm
     let woke = wake_with_tunnel(cx, store, row, turn)?;
     if woke.box_resumed {
         await_guest(cx, store, row)?;
-        let up_at = now(cx);
         let after = revive_after_wake(cx, store, row.id)?;
-        tell_after_suspend(cx, store, row, up_at, after)?;
+        tell_after_suspend(cx, store, row, after)?;
         held_prompt::give_after_wake(cx, store, row, after)?;
     }
     Ok(woke.any)
 }
 
 /// Tells the agent of a Box that stopped mid-turn, once, what that cost it and to carry on. The
-/// mark stays until the Box answers, since only then is there something true to say.
+/// mark stays until the Box answers, since only then is there something true to say. The time
+/// down runs to the Box's last wake.
 fn tell_after_suspend(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    up_at: i64,
     after: AfterWake,
 ) -> Result<(), CommandError> {
     let Some(at) = store.resume_first(row.id)? else {
@@ -101,7 +100,9 @@ fn tell_after_suspend(
         }
         AfterWake::Unknown => return Ok(()),
     };
-    let secs = up_at.saturating_sub(at);
+    let woke = store.newest_event_of(row.id, "woke")?;
+    let up_at = woke.map_or_else(|| now(cx), |ev| ev.ts.as_millis() / 1000);
+    let secs = up_at.saturating_sub(at).max(0);
     let stopped = store.newest_event_of(row.id, "asleep")?.is_some_and(|ev| {
         ev.payload.get("reason").and_then(|r| r.as_str()) == Some(STOPPED_REASON)
     });
@@ -124,6 +125,18 @@ fn tell_after_suspend(
     }
     store.set_resume_first(row.id, None)?;
     Ok(())
+}
+
+/// Tells the agent just started again in a Box that stopped mid-turn, once, that its processes
+/// were lost, whichever op started it.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn tell_relaunched(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+    let Some(row) = store.box_row(id)? else {
+        return Ok(());
+    };
+    tell_after_suspend(cx, store, &row, AfterWake::Relaunched)
 }
 
 /// Wake the Box and machine, then restore the tunnel when the machine was resumed.
@@ -276,6 +289,9 @@ pub(crate) fn wake_box(
         woke,
     })
 }
+
+mod owed;
+pub(crate) use owed::{resume_owed, Seen};
 
 #[cfg(test)]
 mod tests;
