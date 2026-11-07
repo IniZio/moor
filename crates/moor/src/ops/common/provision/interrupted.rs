@@ -15,9 +15,9 @@ use crate::store::{BoxRow, Store};
 /// Why a Box whose acquire was cut off failed.
 const CAUSE: &str = "setup interrupted by a controller restart";
 
-/// Fails each open Box whose start no live process still runs, releasing what its acquire planned,
-/// and claims for this process each Box being set up whose setup lines can be followed again in
-/// its machine; returns the claimed Boxes, for [`super::resume_setup`].
+/// Settles each open Box whose start no live process still runs, and claims for this process each
+/// Box that can go on: its setup lines can be followed again in its machine, or its acquire was cut
+/// for the first time in this start. Returns the claimed Boxes, for [`super::resume_setup`].
 ///
 /// Called before the controller serves, so no start of this process is under way yet: an intent
 /// naming this pid is an earlier process's, as a restarted container reuses its pid.
@@ -33,7 +33,9 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
         }
         match intent {
             Intent::Provisioning { .. } => {
-                cx.for_box(row.user, || fail_acquire(cx, store, &row))?;
+                if cx.for_box(row.user, || cut_acquire(cx, store, &row, me))? {
+                    claimed.push(row.id);
+                }
             }
             Intent::Setup { .. } if followable(&row) => {
                 let mine = IntentChange::Set(Intent::Setup { pid: me });
@@ -56,14 +58,50 @@ fn followable(row: &BoxRow) -> bool {
         })
 }
 
-/// Records the cut-off acquire as failed and releases the machine it may have created.
-fn fail_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Starting) {
-        return Ok(());
+/// Settles a cut-off acquire; returns whether this process acquires once more.
+fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, CommandError> {
+    let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
+    match row.boxed.as_ref().map(|b| b.state) {
+        Some(BoxState::Starting) => {
+            let again = (setting_up && !cut_before(store, row)?).then_some(me);
+            fail_acquire(cx, store, row, again)?;
+            Ok(again.is_some())
+        }
+        // The process that claimed it to acquire again ended before it could.
+        Some(BoxState::Failed | BoxState::Gone) if setting_up => {
+            let lost = Decision::new(row.id)
+                .lifecycle(BoxLifecycleInput::SetupFailed {
+                    cause: CAUSE.to_owned(),
+                    which: None,
+                })
+                .intent(IntentChange::Clear);
+            store.apply(lost)?;
+            Ok(false)
+        }
+        _ => Ok(false),
     }
+}
+
+/// Whether an acquire of this start already failed, as only a cut one can and still be claimed.
+fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    let newest = |kind| -> Result<i64, CommandError> {
+        let found = store.newest_events_of(row.id, kind, 1)?;
+        Ok(found.first().map_or(0, |e| e.id))
+    };
+    Ok(newest("box_failed")? > newest("setting_up")?)
+}
+
+/// Records the cut-off acquire as failed and releases the machine it may have created. With
+/// `again` that process keeps the Box's start, so its setup has not failed.
+fn fail_acquire(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    again: Option<u32>,
+) -> Result<(), CommandError> {
     let planned = planned_root(store, row.id)?;
     let mut lost = Decision::new(row.id);
-    if row.lifecycle == BoxLifecycle::SettingUp {
+    if row.lifecycle == BoxLifecycle::SettingUp && again.is_none() {
         lost = lost.lifecycle(BoxLifecycleInput::SetupFailed {
             cause: CAUSE.to_owned(),
             which: None,
@@ -74,7 +112,9 @@ fn fail_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError
             cause: CAUSE.to_owned(),
             attempted: planned.clone(),
         })
-        .intent(IntentChange::Clear);
+        .intent(again.map_or(IntentChange::Clear, |pid| {
+            IntentChange::Set(Intent::Provisioning { pid })
+        }));
     store.apply(lost)?;
     let Some(handle) = planned else {
         return Ok(());

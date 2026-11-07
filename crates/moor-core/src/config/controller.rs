@@ -117,7 +117,7 @@ const DEFAULT_SETTLE_SECS: u64 = 5;
 const DEFAULT_CLOSE_SETUP_FAILED_SECS: u64 = 86_400;
 
 /// Seconds a drain waits when the config does not say: long enough for a `start` to finish.
-const DEFAULT_DRAIN_SECS: u64 = 600;
+const DEFAULT_DRAIN_SECS: u64 = 30;
 
 impl ControllerConfig {
     /// The time between settle passes.

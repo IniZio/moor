@@ -37,7 +37,7 @@ struct Args {
     #[arg(long, env = "MOOR_GATE_PUBLIC_URL")]
     public_url: Option<String>,
     /// Seconds a SIGTERM waits for connections in flight before the gate exits.
-    #[arg(long, env = "MOOR_GATE_DRAIN_TIMEOUT_SECS", default_value_t = 600)]
+    #[arg(long, env = "MOOR_GATE_DRAIN_TIMEOUT_SECS", default_value_t = 30)]
     drain_timeout_secs: u64,
 }
 

@@ -10,12 +10,13 @@ use moor_core::config::Flags;
 use moor_core::BoxId;
 
 use super::rerun::record_interrupted;
-use super::{layers, recorded_workdir, reread, run_and_record, Provisioned, SetupTarget};
+use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
+use crate::ops::start::launch_after_retry;
 use crate::store::{BoxRow, Store};
 
 /// The handle and workdir of the machine `row` holds, when it is ready.
@@ -55,29 +56,44 @@ pub(super) fn retry_in_box(
     set_up_in_machine(cx, store, row, cfg, true)
 }
 
-/// Follows again the setup a controller restart cut off in Box `id`, which this process claimed:
-/// each setup script that ran or is running is attached to rather than run again, and the Box
-/// moves on as the start would have. The Box lock is held meanwhile; a Box that is no longer
-/// claimed is left alone.
+/// Picks up the start a controller restart cut off in Box `id`, which this process claimed, and
+/// launches its agent as the start would have. An acquire runs again. Each setup script that ran
+/// or is running is attached to rather than run again. The Box lock is held meanwhile; a Box that
+/// is no longer claimed is left alone.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let row = super::reread(store, id)?;
-    let mine = Some(Intent::Setup {
-        pid: std::process::id(),
-    });
-    if row.intent != mine || row.lifecycle != BoxLifecycle::SettingUp {
+    let me = std::process::id();
+    if row.lifecycle != BoxLifecycle::SettingUp {
         return Ok(());
     }
-    let cfg = settings_of(cx, &row, &Flags::default())?;
-    if let Some((handle, _)) = machine(&row) {
+    let done = if row.intent == Some(Intent::Provisioning { pid: me }) {
+        let cfg = settings_of(cx, &row, &Flags::default())?;
+        super::provision(cx, store, id, Entry::Again, &cfg)?
+    } else if row.intent == Some(Intent::Setup { pid: me }) {
+        follow_setup(cx, store, &row)?
+    } else {
+        return Ok(());
+    };
+    if done.failed_step().is_none() {
+        launch_after_retry(cx, store, id)?;
+    }
+    Ok(())
+}
+
+/// Follows the setup that `row`'s earlier process left, once the Box answers. A failure that is
+/// not a drain's records the setup as interrupted.
+fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, CommandError> {
+    let cfg = settings_of(cx, row, &Flags::default())?;
+    if let Some((handle, _)) = machine(row) {
         setup::await_reachable(cx, handle)?;
     }
-    match set_up_in_machine(cx, store, &row, &cfg, false) {
-        Ok(_) => Ok(()),
+    match set_up_in_machine(cx, store, row, &cfg, false) {
+        Ok(done) => Ok(done),
         // The intent stays, so the next process claims this setup again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
         Err(e) => {
-            record_interrupted(cx, store, &reread(store, id)?)?;
+            record_interrupted(cx, store, &reread(store, row.id)?)?;
             Err(e)
         }
     }

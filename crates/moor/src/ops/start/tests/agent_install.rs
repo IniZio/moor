@@ -407,6 +407,32 @@ fn install_cut_off() -> (World, Arc<FakeEngine>) {
     (w, engine)
 }
 
+/// A world whose start died on its `nth` exec into the Box, then restarted.
+fn start_died_on_exec(nth: usize) -> (World, Arc<FakeEngine>) {
+    let (w, engine) = install_world("setup: [a]\n", None, true, FakeDriver::new());
+    let execs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    w.driver.on_exec(move || {
+        if execs.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == nth {
+            std::panic::resume_unwind(Box::new("process died mid-setup"));
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, &prompt_req()));
+    }));
+    assert!(crashed.is_err());
+    w.driver.on_exec(|| {});
+    (w, engine)
+}
+
+#[test]
+fn a_setup_followed_after_a_restart_launches_the_agent_with_its_prompt() {
+    let (w, engine) = start_died_on_exec(1);
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 1);
+}
+
 #[test]
 fn a_restart_during_the_install_is_not_a_failed_setup() {
     let (w, engine) = install_cut_off();

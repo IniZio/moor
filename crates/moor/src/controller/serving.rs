@@ -64,22 +64,21 @@ pub(super) fn serve_started(
     0
 }
 
-/// Follows again, on a thread of its own, the setups an earlier process left in `claimed`; the
-/// drain does not wait for it, as the setup goes on in the Box and the next process follows it.
+/// Picks up, each on a thread of its own, the starts an earlier process left in `claimed`; the
+/// drain does not wait for them, as the setup goes on in the Box and the next process follows it.
 fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink) {
-    if claimed.is_empty() {
-        return;
+    for id in claimed {
+        let (env, sink) = (Arc::clone(env), Arc::clone(sink));
+        std::thread::spawn(move || {
+            let lines = Moor::from_env(&env).map_or_else(
+                |e| vec![e.error.to_string()],
+                |moor| moor.resume_setups(&[id]),
+            );
+            for line in lines {
+                log(&sink, &format!("setup: {line}"));
+            }
+        });
     }
-    let (env, sink) = (Arc::clone(env), Arc::clone(sink));
-    std::thread::spawn(move || {
-        let lines = Moor::from_env(&env).map_or_else(
-            |e| vec![e.error.to_string()],
-            |moor| moor.resume_setups(&claimed),
-        );
-        for line in lines {
-            log(&sink, &format!("setup: {line}"));
-        }
-    });
 }
 
 /// Runs `reconcile` on its own thread after `after`; the drain waits for it, and none starts
