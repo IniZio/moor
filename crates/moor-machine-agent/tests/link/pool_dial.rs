@@ -64,6 +64,58 @@ async fn a_pool_host_serves_checkpoint_verbs_over_the_link() {
     assert_eq!(reply["answer"], "disk", "{reply}");
 }
 
+/// The `timing` a fork answers over the link when crabbox says `stderr`.
+async fn fork_timing(stderr: Option<&str>) -> Vec<String> {
+    let (w, home) = (world().await, tempfile::tempdir().unwrap());
+    let _agent = host(&w, home.path(), false).await;
+    if let Some(stderr) = stderr {
+        std::fs::write(home.path().join("fork.stderr"), stderr).unwrap();
+    }
+    let fork = json!({"op": "checkpoint",
+        "act": {"verb": "checkpoint-fork", "id": "chk_1", "slug": SLUG}});
+    let reply = serde_json::to_value(ask(&w, &fork).await.1).unwrap();
+    assert_eq!(reply["answer"], "forked", "{reply}");
+    serde_json::from_value(reply["timing"].clone()).unwrap()
+}
+
+fn step_names(timing: &[String]) -> Vec<&str> {
+    timing
+        .iter()
+        .map(|l| l.split(' ').nth(1).unwrap())
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fork_answers_its_timing_lines_and_drops_all_else_crabbox_said() {
+    let said = "waiting for ssh\n\
+                timing root-flatten ms=7641 bytes=5\n\
+                timing broken ms=soon\n\
+                timing fork-total ms=24115\n";
+    let timing = fork_timing(Some(said)).await;
+    assert_eq!(
+        step_names(&timing),
+        ["agent-room", "agent-crabbox", "root-flatten", "fork-total"],
+        "{timing:?}"
+    );
+    assert_eq!(timing[2], "timing root-flatten ms=7641 bytes=5");
+    let crabbox: u64 = timing[1].rsplit('=').next().unwrap().parse().unwrap();
+    assert!(crabbox < 60_000, "{timing:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fork_from_a_provider_with_no_timing_lines_answers_only_the_agents() {
+    let timing = fork_timing(None).await;
+    assert_eq!(step_names(&timing), ["agent-room", "agent-crabbox"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fork_caps_the_lines_it_sends_and_keeps_the_agents_own() {
+    let flood = "timing n ms=1\n".repeat(moor_core::domain::event::MAX_STEPS * 2);
+    let timing = fork_timing(Some(&flood)).await;
+    assert_eq!(timing.len(), moor_core::domain::event::MAX_STEPS);
+    assert_eq!(step_names(&timing)[..2], ["agent-room", "agent-crabbox"]);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_that_is_no_pool_host_refuses_checkpoint_verbs() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());

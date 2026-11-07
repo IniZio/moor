@@ -3,6 +3,7 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::config::EnrolledMachine;
+use moor_core::domain::event::ProviderStep;
 use moor_core::domain::layers::chain;
 use moor_core::name::NodeName;
 use moor_core::request::{MachineLink, MemoryReport, WarmStarts};
@@ -84,6 +85,35 @@ fn an_agent_that_serves_checkpoints_gets_a_saved_layer_forked_on_the_next_box() 
     let second = start(&w, "second", "abc123", LINES);
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
     assert_eq!(events(&w, second, "warm_started").len(), 1);
+}
+
+#[test]
+fn a_warm_start_records_the_steps_the_fork_reports_and_none_when_it_reports_none() {
+    let steps = vec![
+        ProviderStep::parse("timing root-flatten ms=7641 bytes=5").unwrap(),
+        ProviderStep::parse("timing fork-total ms=24115").unwrap(),
+    ];
+    let (w, _) = after_a_partial_setup_with(roomy().with_fork_steps(steps), LINES, |w| {
+        node(w, Some(WarmStarts::On));
+    });
+    let second = start(&w, "second", "abc123", LINES);
+    let event = &events(&w, second, "warm_started")[0];
+    assert_eq!(
+        event["steps"],
+        serde_json::json!([
+            {"name": "root-flatten", "ms": 7641, "detail": "bytes=5"},
+            {"name": "fork-total", "ms": 24115},
+        ]),
+        "{event}"
+    );
+
+    let (w, _) = after_a_partial_setup_with(roomy(), LINES, |w| {
+        node(w, Some(WarmStarts::On));
+    });
+    let second = start(&w, "second", "abc123", LINES);
+    let event = &events(&w, second, "warm_started")[0];
+    assert!(event.get("steps").is_none(), "{event}");
+    assert!(event.get("fork_ms").is_some(), "{event}");
 }
 
 #[test]

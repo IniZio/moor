@@ -124,6 +124,8 @@ pub enum ExtraEvent {
         saved_ms: u64,
         /// Time the fork took, in milliseconds.
         fork_ms: u64,
+        /// What the provider reports the fork spent that time on.
+        steps: Vec<crate::domain::event::ProviderStep>,
     },
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {

@@ -94,11 +94,33 @@ fn a_delta_checkpoint_reads_its_parent_and_counts_only_its_own_bytes() {
 }
 
 #[test]
+fn a_fork_reads_the_steps_crabbox_reports_and_drops_the_rest_of_its_stderr() {
+    let reply = Reply::OkSaying {
+        stdout: FORKED.to_owned(),
+        stderr: "waiting for ssh\ntiming root-flatten ms=7 bytes=5\ntiming bad\n".to_owned(),
+    };
+    let (_, c) = driver("fork", reply);
+    let steps = c.fork("cp-9", &req("local", None)).unwrap().steps;
+    let got: Vec<_> = steps
+        .iter()
+        .map(|s| (s.name.as_str(), s.ms, s.detail.as_str()))
+        .collect();
+    assert_eq!(got, [("root-flatten", 7, "bytes=5")]);
+}
+
+#[test]
+fn a_fork_with_no_steps_on_stderr_records_none() {
+    let (_, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
+    let forked = c.fork("cp-9", &req("local", None)).unwrap();
+    assert_eq!(forked.steps, []);
+}
+
+#[test]
 fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
     let (p, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
     let r = req("local", Some("small"));
     let got = c.fork("cp-9", &r).unwrap();
-    assert_eq!(got, c.planned_handle(&r));
+    assert_eq!(got.handle, c.planned_handle(&r));
     let call = p.calls().pop().unwrap();
     assert_eq!(
         call.args,

@@ -42,6 +42,7 @@ case "$1" in
     create) cat "$HOME/create.json" 2>/dev/null \
         || echo '{"id":"chk_1","native":{"bytes":9,"uniqueBytes":5,"parentCheckpointId":"chk_0"}}' ;;
     fork) if [ -e "$HOME/fork-fail" ]; then echo "network exploded" >&2; exit 2; fi
+      cat "$HOME/fork.stderr" >&2 2>/dev/null
       cat "$HOME/fork.json" 2>/dev/null || echo '{"slug":"'"$5"'"}' ;;
     delete) if [ -e "$HOME/delete-fail" ]; then echo "provider exploded" >&2; exit 2; fi
       if [ -e "$HOME/delete-gone" ]; then echo "checkpoint $3 not found" >&2; exit 2; fi ;;

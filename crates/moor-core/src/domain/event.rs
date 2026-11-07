@@ -385,7 +385,7 @@ pub use boxes::box_events;
 pub use checked::CheckedCred;
 pub use kind::{NodeDiskEvent, StallEvent, ASSERTED_KINDS, EVENT_KINDS};
 pub use machine::MachineEvent;
-pub use post_clone::{PostCloneStep, TimingEvent};
+pub use post_clone::{PostCloneStep, ProviderStep, StepName, TimingEvent, MAX_STEPS};
 pub use profile::{ProfileEvent, ProfileStep};
 pub use steps::{lifecycle_events, session_events};
 mod boxes;

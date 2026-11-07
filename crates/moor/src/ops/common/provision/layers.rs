@@ -117,8 +117,8 @@ pub(super) fn warm(
     }
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
     let began = cx.clock().now().as_millis();
-    let handle = match cx.driver().fork(&checkpoint, req) {
-        Ok(handle) => handle,
+    let forked = match cx.driver().fork(&checkpoint, req) {
+        Ok(forked) => forked,
         Err(e) => {
             let error = e.to_string();
             cx.warn(Warning {
@@ -140,9 +140,10 @@ pub(super) fn warm(
         layers: lines,
         saved_ms: place.setup_ms.saturating_sub(fork_ms),
         fork_ms,
+        steps: forked.steps,
     }))?;
     Ok(Some(Acquired {
-        handle,
+        handle: forked.handle,
         workdir: place.workdir,
     }))
 }
@@ -338,7 +339,7 @@ pub(super) fn resume(
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(row.id, LeaseKind::BoxRoot, planned.as_str())?;
     let new = match cx.driver().fork(&saved.checkpoint, &req) {
-        Ok(new) => new,
+        Ok(forked) => forked.handle,
         Err(e) => {
             cx.warn(Warning {
                 code: "checkpoint_failed".to_owned(),

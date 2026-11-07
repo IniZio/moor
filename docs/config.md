@@ -510,8 +510,9 @@ uses them.
 
 A new Box starts on a fork of the deepest checkpoint whose key matches its own
 layers, and runs only the lines above it. Its events then hold `warm_started`
-with the layer it started from, the number of lines, the fork's time and the
-setup time it skipped. When the fork fails, the Box is set up from scratch on a
+with the layer it started from, the number of lines, the fork's time, the
+setup time it skipped, and `steps`, the timed steps the provider reports of the
+fork. When the fork fails, the Box is set up from scratch on a
 new machine. Its events hold `warm_start_failed` with the provider's error,
 and the start warns with `checkpoint_failed`.
 

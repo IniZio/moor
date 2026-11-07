@@ -64,6 +64,12 @@ impl ScriptedProc {
         };
         match self.pick(spec, args)? {
             Some(Reply::Ok(out)) => ok(out),
+            Some(Reply::OkSaying { stdout, stderr }) => Ok(ProcOutput {
+                code: 0,
+                stdout,
+                stderr,
+                truncated: false,
+            }),
             Some(Reply::Bytes(b)) => ok(String::from_utf8_lossy(&b).into_owned()),
             Some(Reply::Reader(open)) => ok(String::from_utf8_lossy(&drain(open)).into_owned()),
             Some(Reply::Fail {
@@ -95,7 +101,9 @@ impl ScriptedProc {
         let (stdout, end): (Box<dyn Read + Send>, Result<(), ProcError>) = match self
             .pick(spec, &args)?
         {
-            Some(Reply::Ok(out)) => (Box::new(std::io::Cursor::new(out.into_bytes())), Ok(())),
+            Some(Reply::Ok(out) | Reply::OkSaying { stdout: out, .. }) => {
+                (Box::new(std::io::Cursor::new(out.into_bytes())), Ok(()))
+            }
             Some(Reply::Bytes(b)) => (Box::new(std::io::Cursor::new(b)), Ok(())),
             Some(Reply::Reader(open)) => (open(), Ok(())),
             Some(Reply::Fail {

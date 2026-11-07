@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
 use moor_core::box_key::{ControllerId, PoolSeat};
+use moor_core::domain::event::MAX_STEPS;
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
 use moor_core::seam::driver::{Driver, DriverCaps};
 
@@ -23,6 +24,7 @@ struct Host {
     refuse_acts: bool,
     refuse_authorize: bool,
     wrong_answer: bool,
+    fork_timing: Option<Vec<String>>,
 }
 
 impl PoolHosts for Host {
@@ -63,7 +65,11 @@ impl PoolHosts for Host {
                 free_mib: 7,
                 total_mib: 70,
             },
-            _ => Answer::Done,
+            CheckpointAct::CheckpointFork { .. } => self
+                .fork_timing
+                .clone()
+                .map_or(Answer::Done, |timing| Answer::Forked { timing }),
+            CheckpointAct::CheckpointDelete { .. } => Answer::Done,
         })
     }
 
@@ -129,7 +135,7 @@ fn a_save_goes_to_the_machine_of_the_box_and_comes_back_as_data() {
 fn a_fork_boots_on_the_seats_machine_then_authorizes_and_reads_the_vm() {
     let (host, cb, _dir) = rig(Host::default());
     let got = cb.fork("chk_1", &req()).unwrap();
-    assert_eq!(got.as_str(), handle().as_str());
+    assert_eq!(got.handle.as_str(), handle().as_str());
     let acts = host.acts.lock().unwrap();
     assert_eq!(
         acts.as_slice(),
@@ -145,6 +151,37 @@ fn a_fork_boots_on_the_seats_machine_then_authorizes_and_reads_the_vm() {
     );
     let verbs = host.verbs.lock().unwrap();
     assert_eq!(verbs.as_slice(), [Verb::Authorize, Verb::Info]);
+}
+
+#[test]
+fn a_fork_reads_the_steps_the_host_reports_and_drops_what_it_cannot_read() {
+    let mut lines = vec![
+        "timing agent-room ms=3".to_owned(),
+        "not a step".to_owned(),
+        "timing root-flatten ms=7641 bytes=5".to_owned(),
+    ];
+    lines.extend(vec!["timing n ms=1".to_owned(); MAX_STEPS * 2]);
+    let (_, cb, _dir) = rig(Host {
+        fork_timing: Some(lines),
+        ..Host::default()
+    });
+    let steps = cb.fork("chk_1", &req()).unwrap().steps;
+    assert_eq!(steps.len(), MAX_STEPS);
+    let got: Vec<_> = steps
+        .iter()
+        .take(2)
+        .map(|s| (s.name.as_str(), s.ms, s.detail.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [("agent-room", 3, ""), ("root-flatten", 7641, "bytes=5")]
+    );
+}
+
+#[test]
+fn a_fork_from_an_older_agent_has_no_steps() {
+    let (_, cb, _dir) = rig(Host::default());
+    assert_eq!(cb.fork("chk_1", &req()).unwrap().steps, []);
 }
 
 #[test]

@@ -1,5 +1,8 @@
 //! A saved Box, as data.
 
+use crate::domain::event::ProviderStep;
+use crate::name::BoxHandle;
+
 /// A saved copy of a Box's memory and disk that new Boxes can start from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Checkpoint {
@@ -11,6 +14,15 @@ pub struct Checkpoint {
     /// The checkpoint it is a delta over, which cannot go while this one stays; none over the
     /// base image.
     pub parent: Option<String>,
+}
+
+/// A Box a fork started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Forked {
+    /// The new Box.
+    pub handle: BoxHandle,
+    /// What the provider reports the fork spent its time on.
+    pub steps: Vec<ProviderStep>,
 }
 
 /// The filesystem a provider keeps its checkpoints on, in MiB.

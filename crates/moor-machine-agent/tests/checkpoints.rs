@@ -164,7 +164,10 @@ async fn a_fork_boots_in_a_new_lease_dir_with_its_cache_and_class() {
         class: Some("fast".to_owned()),
     };
     let reply = pool::checkpoint_op(home.path(), &pool, act).await;
-    assert_eq!(reply, Reply::Leased(Answer::Done));
+    assert!(
+        matches!(reply, Reply::Leased(Answer::Forked { .. })),
+        "{reply:?}"
+    );
     let dir = home.path().join("moor-pool").join(SLUG).join("lease");
     assert!(dir.is_dir());
     let log = fake_crabbox::calls(home.path());

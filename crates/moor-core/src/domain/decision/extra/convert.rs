@@ -67,11 +67,13 @@ impl From<ExtraEvent> for Event {
                 layers,
                 saved_ms,
                 fork_ms,
+                steps,
             } => Self::Timing(TimingEvent::WarmStarted {
                 layer,
                 layers,
                 saved_ms,
                 fork_ms,
+                steps,
             }),
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })

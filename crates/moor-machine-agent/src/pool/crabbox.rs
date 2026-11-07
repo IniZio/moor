@@ -61,11 +61,24 @@ impl Crabbox<'_> {
     pub(super) async fn spawn(
         &self,
         args: &[&str],
-        (dir, ceiling): (&Path, &Path),
+        place: (&Path, &Path),
         within: Duration,
         ok: &[i32],
         env: &[(&str, String)],
     ) -> Result<String, String> {
+        let printed = self.spawn_both(args, place, within, ok, env).await?;
+        Ok(printed.0)
+    }
+
+    /// Like [`Self::spawn`], with what it said on stderr as well.
+    pub(super) async fn spawn_both(
+        &self,
+        args: &[&str],
+        (dir, ceiling): (&Path, &Path),
+        within: Duration,
+        ok: &[i32],
+        env: &[(&str, String)],
+    ) -> Result<(String, String), String> {
         let verb = args.first().copied().unwrap_or_default();
         std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
         let mut cmd = Command::new(&self.pool.crabbox);
@@ -82,9 +95,10 @@ impl Crabbox<'_> {
             .map_err(|_| format!("crabbox {verb} ran past {}s", within.as_secs()))?
             .map_err(|e| format!("cannot run crabbox: {e}"))?;
         match out.status.code() {
-            Some(code) if ok.contains(&code) => {
-                Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-            }
+            Some(code) if ok.contains(&code) => Ok((
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )),
             code => {
                 let err = String::from_utf8_lossy(&out.stderr);
                 let cut = err.len().saturating_sub(TAIL);

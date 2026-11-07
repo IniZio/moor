@@ -2,6 +2,9 @@
 
 use serde::Serialize;
 
+mod provider_step;
+pub use provider_step::{ProviderStep, StepName, MAX_STEPS};
+
 /// A step after the clone whose time the Box's events tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -84,6 +87,9 @@ pub enum TimingEvent {
         saved_ms: u64,
         /// Time the fork took, in milliseconds.
         fork_ms: u64,
+        /// What the provider reports the fork spent that time on.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        steps: Vec<ProviderStep>,
     },
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {

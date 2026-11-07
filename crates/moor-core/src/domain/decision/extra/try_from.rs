@@ -70,11 +70,13 @@ impl TryFrom<Event> for ExtraEvent {
                 layers,
                 saved_ms,
                 fork_ms,
+                steps,
             }) => Ok(Self::WarmStarted {
                 layer,
                 layers,
                 saved_ms,
                 fork_ms,
+                steps,
             }),
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
