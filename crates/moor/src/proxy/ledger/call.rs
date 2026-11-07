@@ -25,6 +25,14 @@ pub(crate) enum Call {
         /// Which secret.
         name: SecretName,
     },
+    /// The front, user and rules of the live lease of a remote front whose token hashes to
+    /// `token_hash`.
+    FrontLeaseOf {
+        /// The hex SHA-256 of the token the request presented.
+        token_hash: String,
+    },
+    /// The CA every remote front's Proxy signs with, made on first call.
+    FrontCa,
     /// The Box as the shared egress Proxy sees it.
     View,
     /// What the Box holds, as the machine service reads it.

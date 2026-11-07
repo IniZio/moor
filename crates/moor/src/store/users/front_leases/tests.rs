@@ -61,7 +61,7 @@ fn release_and_purge_end_leases() {
     );
     assert!(store.delete_front_lease(b"h1", "slack", user).unwrap());
     assert_eq!(store.front_lease_user(b"h1", "slack").unwrap(), None);
-    store.purge_front_leases().unwrap();
+    store.purge_front_leases(&[]).unwrap();
     assert_eq!(store.front_lease_user(b"h2", "slack").unwrap(), None);
 }
 
@@ -99,4 +99,32 @@ fn a_user_holds_a_front_only_while_a_live_lease_of_it_stands() {
     );
     clock.sleep(Duration::from_secs(60));
     assert!(!store.front_lease_held(user, "slack").unwrap(), "expired");
+}
+
+#[test]
+fn a_purge_keeps_the_leases_of_remote_fronts_and_a_lease_is_found_by_its_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    let (user, _) = store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .unwrap();
+    let expires = clock.now().saturating_add(Duration::from_secs(60));
+    store
+        .add_front_lease(b"far", "slack", user, expires)
+        .unwrap();
+    store
+        .add_front_lease(b"near", "web", user, expires)
+        .unwrap();
+    store.purge_front_leases(&["slack".to_owned()]).unwrap();
+    assert_eq!(
+        store.front_lease_of(&hash(b"far")).unwrap(),
+        Some(("slack".to_owned(), user))
+    );
+    assert_eq!(store.front_lease_of(&hash(b"near")).unwrap(), None);
+    clock.sleep(Duration::from_secs(60));
+    assert_eq!(
+        store.front_lease_of(&hash(b"far")).unwrap(),
+        None,
+        "expired"
+    );
 }

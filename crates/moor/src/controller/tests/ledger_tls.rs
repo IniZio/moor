@@ -556,3 +556,36 @@ fn a_missing_or_empty_front_key_file_stops_the_start() {
     };
     assert!(stop.message.contains("is empty"), "{}", stop.message);
 }
+
+#[test]
+fn a_remote_fronts_lease_needs_no_proxy_here_and_brings_the_ca() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_file = dir.path().join("slack-front.key");
+    std::fs::write(&key_file, FRONT_KEY).unwrap();
+    let fronts = format!(
+        "fronts:\n  slack:\n    proxy_rules: [claude]\n    remote:\n      key_file: {}\n",
+        key_file.display()
+    );
+    let (running, addr, ca) = started(&dir, &fronts);
+    serve(running);
+    let front = ("slack", FRONT_KEY);
+    let ask = |request: &str| front_asks((addr, &ca), front, request).expect("answered");
+    let enrolled = ask(r#"{"cmd":"enroll","identity":"slack:T1:U1"}"#);
+    assert_eq!(enrolled["class"], "ok", "{enrolled}");
+    let set = serde_json::json!({
+        "cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": "sk-ant-oat01-x",
+    });
+    let set = ask(&set.to_string());
+    assert_eq!(set["class"], "ok", "{set}");
+    let status = ask(r#"{"cmd":"proxy-status","identity":"slack:T1:U1"}"#);
+    assert_eq!(status["value"]["running"], true, "{status}");
+    let lease = ask(r#"{"cmd":"proxy-lease","identity":"slack:T1:U1"}"#);
+    assert_eq!(lease["value"]["lease"], "granted", "{lease}");
+    let pem = lease["value"]["ca_pem"].as_str().unwrap_or_default();
+    assert!(pem.contains("CERTIFICATE"), "{lease}");
+    let socket = crate::Moor::front_proxy_socket(&dir.path().join("state"), "slack");
+    assert!(
+        !socket.exists(),
+        "no front Proxy runs here for a remote front"
+    );
+}

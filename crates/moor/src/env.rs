@@ -70,6 +70,8 @@ pub struct Env {
     front_proxies: Arc<BTreeMap<String, Vec<String>>>,
     /// The fronts that deliver the users' webhooks, by namespace.
     front_webhooks: Arc<BTreeSet<String>>,
+    /// The fronts that run elsewhere and dial `ledger_tls`.
+    remote_fronts: Arc<BTreeSet<String>>,
     /// The shortest gap a workflow's cron may have between firings.
     workflow_min_interval: Option<Duration>,
     /// What the controller opened once for every request and tick, such as the state store.
@@ -183,6 +185,28 @@ impl Env {
     /// The names of the rules front `ns`'s Proxy serves; none when it has no Proxy.
     pub(crate) fn front_proxy_rules(&self, ns: &str) -> &[String] {
         self.front_proxies.get(ns).map_or(&[], Vec::as_slice)
+    }
+
+    /// The key the shared egress Proxy checks tokens with; empty when it is off.
+    pub(crate) fn egress_key(&self) -> &[u8] {
+        self.get(EGRESS_KEY).unwrap_or_default().as_bytes()
+    }
+
+    /// Set the fronts that run elsewhere and dial `ledger_tls`, by namespace.
+    #[must_use]
+    pub fn with_remote_fronts(mut self, fronts: BTreeSet<String>) -> Self {
+        self.remote_fronts = Arc::new(fronts);
+        self
+    }
+
+    /// Whether front `ns` runs elsewhere, so its Proxy is the shared egress Proxy.
+    pub(crate) fn front_is_remote(&self, ns: &str) -> bool {
+        self.remote_fronts.contains(ns)
+    }
+
+    /// The fronts that run elsewhere.
+    pub(crate) fn remote_fronts(&self) -> impl Iterator<Item = &String> {
+        self.remote_fronts.iter()
     }
 
     /// Set the fronts that deliver the users' webhooks, by namespace.

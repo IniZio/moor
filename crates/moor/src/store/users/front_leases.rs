@@ -81,6 +81,25 @@ impl Store {
         Ok(user.map(UserId::new))
     }
 
+    /// The front and user of the live lease whose token hashes to `token_hash`.
+    pub(crate) fn front_lease_of(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<(String, UserId)>, StoreError> {
+        let row: Option<(String, i64)> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .columns([FrontLeases::Front, FrontLeases::User])
+                    .from(FrontLeases::Table)
+                    .and_where(Expr::col(FrontLeases::TokenHash).eq(token_hash))
+                    .and_where(Expr::col(FrontLeases::ExpiresAt).gt(self.now().as_millis())),
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(front, user)| (front, UserId::new(user))))
+    }
+
     /// Whether `user` holds a live lease of `front`'s Proxy.
     pub(crate) fn front_lease_held(&self, user: UserId, front: &str) -> Result<bool, StoreError> {
         let found: Option<i64> = self
@@ -116,10 +135,18 @@ impl Store {
         Ok(gone == 1)
     }
 
-    /// Ends every lease; a controller that starts has restarted every front that held one.
-    pub(crate) fn purge_front_leases(&self) -> Result<(), StoreError> {
-        self.writer()
-            .run(Query::delete().from_table(FrontLeases::Table))?;
+    /// Ends every lease of a front outside `remote`; a controller that starts has restarted
+    /// every such front, while a remote front runs on and its turn still holds its lease.
+    pub(crate) fn purge_front_leases<'a>(
+        &self,
+        remote: impl IntoIterator<Item = &'a String>,
+    ) -> Result<(), StoreError> {
+        let remote: Vec<&str> = remote.into_iter().map(String::as_str).collect();
+        self.writer().run(
+            Query::delete()
+                .from_table(FrontLeases::Table)
+                .and_where(Expr::col(FrontLeases::Front).is_not_in(remote)),
+        )?;
         Ok(())
     }
 }

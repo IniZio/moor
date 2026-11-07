@@ -158,7 +158,7 @@ impl Boxes {
 
     /// Takes one tunnel from the bucket of `token_hash`, or from the shared lookup bucket when the
     /// token is not confirmed yet.
-    fn spend(&self, token_hash: &str) -> Result<(), Refused> {
+    pub(super) fn spend(&self, token_hash: &str) -> Result<(), Refused> {
         let now = self.clock.instant();
         let mut known = lock(&self.known);
         let allowed = match known.get_mut(token_hash) {

@@ -42,13 +42,20 @@
 //! before the upgrade, and a CONNECT to it is `403`. A request that is not one plain request for
 //! the target gets a `403` reply in the tunnel.
 //!
+//! A remote front's turn takes the same path: its forwarder sends the lease as
+//! `Authorization: Basic`, and the tunnel goes through a proxy holding that front's rules for the
+//! lease's user. Only a token shaped as a lease takes this path, and it never reaches the machine
+//! service.
+//!
 //! `GET /ready` answers `200` while the Proxy takes new tunnels, with a body naming its key
 //! (`token::key_id`), so a controller can tell a Proxy under another key apart. On SIGTERM it stops listening,
 //! so the probe fails and new tunnels go to another replica, and open tunnels get up to the
 //! grace to finish.
 
 mod boxes;
+mod leases;
 mod limit;
+mod listen;
 pub(crate) mod run;
 mod served;
 #[cfg(test)]
@@ -62,9 +69,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
-use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 
-use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::Notify;
 use zeroize::Zeroizing;
 
@@ -74,6 +79,9 @@ use boxes::warm::keep_warm;
 pub(crate) use boxes::warm::Warm;
 use boxes::Boxes;
 pub(crate) use limit::Rate;
+pub(crate) use listen::Listen;
+use listen::Listener;
+use moor_core::config::proxy::ResolvedRule;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
@@ -119,67 +127,6 @@ pub(crate) const TARGET: &str = "x-moor-target";
 /// The header that marks a tunnel carrying one plain `http://` request.
 pub(crate) const PLAIN: &str = "x-moor-plain";
 
-/// Where the Proxy listens.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Listen {
-    /// A TCP address.
-    Tcp(SocketAddr),
-    /// A Unix socket only moor's user can open, which each Box's tunnel reaches on a dev host.
-    Unix(PathBuf),
-}
-
-impl std::fmt::Display for Listen {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Tcp(addr) => write!(f, "{addr}"),
-            Self::Unix(path) => write!(f, "{}", path.display()),
-        }
-    }
-}
-
-/// A bound listener.
-enum Listener {
-    /// On TCP.
-    Tcp(TcpListener),
-    /// On a Unix socket.
-    Unix(UnixListener),
-}
-
-impl Listen {
-    /// Binds it, replacing a stale socket file but never one a live Proxy listens on; what it is bound to, with the port a TCP
-    /// address of port 0 got.
-    async fn bind(&self) -> std::io::Result<(Listener, Self)> {
-        match self {
-            Self::Tcp(addr) => {
-                let l = TcpListener::bind(addr).await?;
-                let bound = l.local_addr()?;
-                Ok((Listener::Tcp(l), Self::Tcp(bound)))
-            }
-            Self::Unix(path) => {
-                if let Some(dir) = path.parent() {
-                    std::fs::DirBuilder::new()
-                        .recursive(true)
-                        .mode(0o700)
-                        .create(dir)?;
-                }
-                if std::os::unix::net::UnixStream::connect(path).is_ok() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::AddrInUse,
-                        "another Proxy listens on it",
-                    ));
-                }
-                match std::fs::remove_file(path) {
-                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                    _ => {}
-                }
-                let l = UnixListener::bind(path)?;
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-                Ok((Listener::Unix(l), self.clone()))
-            }
-        }
-    }
-}
-
 /// How the Proxy runs.
 pub(crate) struct Config {
     /// Where it listens.
@@ -211,12 +158,16 @@ pub(crate) struct Config {
     pub(crate) warm: Option<Warm>,
     /// Source of time.
     pub(crate) clock: Arc<dyn Clock>,
+    /// The rules a remote front's lease may name.
+    pub(crate) front_rules: Vec<ResolvedRule>,
 }
 
 /// What every connection shares.
 struct Shared {
     /// Each token's Box and its proxy.
     boxes: Boxes,
+    /// Each remote front's leases and their proxies.
+    leases: leases::Leases,
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
     /// The machine service, when one is configured.
@@ -259,8 +210,10 @@ impl Server {
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let (machine, warm) = (cfg.machine.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
+        let leases = leases::Leases::new(&cfg);
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
+            leases,
             open: AtomicUsize::new(0),
             machine,
             key_id,
@@ -349,6 +302,7 @@ impl Server {
         }
         self.runtime.shutdown_background();
         self.shared.boxes.stop();
+        self.shared.leases.stop();
         left
     }
 }

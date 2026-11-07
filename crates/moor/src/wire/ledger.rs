@@ -19,6 +19,7 @@ pub(crate) fn serve_ledger(
         let keys = Keys {
             fronts: fronts_key,
             egress: egress_key(env),
+            env: Some(env),
         };
         serve((store, vault), &keys, stream);
     }
@@ -30,6 +31,7 @@ pub(crate) fn serve_egress_ledger((env, vault): (&Env, &Vault), stream: impl Rea
         let keys = Keys {
             fronts: None,
             egress: egress_key(env),
+            env: Some(env),
         };
         serve((store, vault), &keys, stream);
     }
