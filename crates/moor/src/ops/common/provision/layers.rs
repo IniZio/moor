@@ -19,7 +19,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
 use crate::ops::common::node::{checkpoint_home, seat_of};
-use crate::ops::common::setup::SetupRun;
+use crate::ops::common::setup::{Released, SetupRun};
 use crate::store::checkpoints::{Lineage, Place};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
@@ -191,9 +191,9 @@ pub(super) fn run(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
-) -> SetupRun {
+) -> Result<SetupRun, Released> {
     let Some(layered) = target.layered else {
-        return SetupRun::Skipped;
+        return Ok(SetupRun::Skipped);
     };
     let total = cfg.setup.len();
     let (mut ms, mut tail) = (0, String::new());
@@ -206,7 +206,7 @@ pub(super) fn run(
             u32::try_from(i + 1).unwrap_or(u32::MAX),
             u32::try_from(total).unwrap_or(u32::MAX),
         );
-        match run_through_proxy(cx, store, id, target, &one, proxy, Some(place)) {
+        match run_through_proxy(cx, store, id, target, &one, proxy, Some(place))? {
             SetupRun::Ok { ms: took, tail: t } => {
                 ms += took;
                 tail = t;
@@ -221,17 +221,17 @@ pub(super) fn run(
                 ms: took,
                 tail,
             } => {
-                return SetupRun::Failed {
+                return Ok(SetupRun::Failed {
                     line,
                     exit,
                     ms: ms + took,
                     tail,
-                }
+                })
             }
             SetupRun::Skipped => {}
         }
     }
-    SetupRun::Ok { ms, tail }
+    Ok(SetupRun::Ok { ms, tail })
 }
 
 /// Checkpoints `layer` of the target's Box, unless a checkpoint of it is kept already.

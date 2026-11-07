@@ -8,7 +8,7 @@ use std::io;
 use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -18,6 +18,7 @@ use signal_hook::consts::SIGTERM;
 
 use super::fronts::Terminator;
 use super::{conn, log, Sink};
+use crate::env::Cancel;
 use crate::Moor;
 
 /// The connections one controller serves and the settle pass it runs, and whether it has
@@ -34,6 +35,8 @@ pub(crate) struct Drain {
     fronts: Mutex<Option<Terminator>>,
     /// Whether the Boxes' keepers end when the drain begins, rather than as the controller exits.
     keepers: AtomicBool,
+    /// Tells the requests in flight that the drain began.
+    draining: OnceLock<Cancel>,
 }
 
 /// The work the drain waits for: each connection with a handle that ends its reads while it
@@ -61,6 +64,11 @@ impl Drain {
     /// Has every Box's keeper end the moment the drain begins.
     pub(crate) fn end_keepers_with_drain(&self) {
         self.keepers.store(true, Ordering::Release);
+    }
+
+    /// Has `flag` set the moment the drain begins.
+    pub(crate) fn set_with_drain(&self, flag: Cancel) {
+        let _ = self.draining.set(flag);
     }
 
     /// Admits `stream` for serving, or `None` once the drain has begun.
@@ -95,6 +103,9 @@ impl Drain {
     pub(crate) fn begin(&self) {
         let live = self.live();
         self.begun.store(true, Ordering::Release);
+        if let Some(flag) = self.draining.get() {
+            flag.cancel();
+        }
         for stream in live.streams.iter().filter_map(|(_, s)| s.as_ref()) {
             stream.shutdown(Shutdown::Read).ok();
         }

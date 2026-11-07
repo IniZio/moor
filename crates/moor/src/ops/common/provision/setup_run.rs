@@ -10,7 +10,8 @@ use super::clone::SetupProxy;
 use super::others::named;
 use super::SetupTarget;
 use crate::cx::Cx;
-use crate::ops::common::{setup, step};
+use crate::ops::common::setup::{self, Released, SetupRun};
+use crate::ops::common::step;
 use crate::store::Store;
 
 /// Runs the setup lines through the Proxy; a Proxy that will not start fails the setup.
@@ -29,7 +30,7 @@ pub(super) fn run_through_proxy(
     cfg: &BoxSettings,
     proxy: &SetupProxy,
     place: Option<(u32, u32)>,
-) -> setup::SetupRun {
+) -> Result<SetupRun, Released> {
     match proxy {
         Ok(proxy) => {
             // The lines are reported from a thread that follows the script's output, which
@@ -70,10 +71,14 @@ pub(super) fn run_through_proxy(
             run
         }
         // Dotfiles report their own Proxy failure; no setup line was meant to run.
-        Err(_) if cfg.setup.is_empty() => setup::SetupRun::Skipped,
+        Err(_) if cfg.setup.is_empty() => Ok(SetupRun::Skipped),
         Err(reason) => {
             let name = store.box_row(id).ok().flatten().map(|r| r.name);
-            setup::proxy_failed(cx, name.as_ref().map_or("<box>", |n| n.as_str()), reason)
+            Ok(setup::proxy_failed(
+                cx,
+                name.as_ref().map_or("<box>", |n| n.as_str()),
+                reason,
+            ))
         }
     }
 }

@@ -90,7 +90,7 @@ fn run_setup(
     cfg: &BoxSettings,
 ) -> SetupRun {
     let logs = super::log_dir(state, BoxId::new(1));
-    run_setup_with(cx, handle, ("p", RUN), workdir, &logs, cfg, None, &|_| {})
+    run_setup_with(cx, handle, ("p", RUN), workdir, &logs, cfg, None, &|_| {}).unwrap()
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -472,4 +472,98 @@ fn duration_is_measured_with_the_clock_on_success_and_failure() {
 #[test]
 fn skipped_setup_has_no_duration() {
     assert_eq!(SetupRun::Skipped.ms(), None);
+}
+
+/// The ssh failure of an attach while the machine has no link.
+fn not_linked() -> Result<ExecOutcome, DriverError> {
+    Err(DriverError::Transport {
+        stderr_tail: "machine 1 is not linked".to_owned(),
+    })
+}
+
+#[test]
+fn a_line_outlasts_a_link_down_for_60_seconds_with_no_failure() {
+    let d = tempfile::tempdir().unwrap();
+    let results: Vec<_> = (0..60)
+        .map(|_| not_linked())
+        .chain([Ok(ExecOutcome::Exited { code: 0 })])
+        .collect();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let r = rig_on(
+        d.path(),
+        FakeDriver::new().exec_results(results),
+        Arc::clone(&clock),
+    );
+    let began = clock.instant();
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    assert!(matches!(got, SetupRun::Ok { .. }), "{got:?}");
+    assert!(clock.instant().duration_since(began) >= Duration::from_secs(60));
+    assert!(!r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
+    assert!(r.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_link_still_down_at_120_seconds_fails_with_the_reason_and_blames_no_line() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new()
+        .exec_results((0..300).map(|_| not_linked()))
+        .copy_text("moor setup: $ a\n");
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let r = rig_on(d.path(), driver, Arc::clone(&clock));
+    let began = clock.instant();
+    let got = run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a", "b"], &[]),
+    );
+    assert!(
+        matches!(&got, SetupRun::Failed { line, exit: None, .. }
+            if line != "a" && line.contains("machine 1 is not linked")),
+        "{got:?}"
+    );
+    assert!(clock.instant().duration_since(began) >= Duration::from_secs(120));
+    assert!(r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
+    let warning = only(r.cx.take_warnings());
+    assert_eq!(warning.code, "setup_failed");
+    assert!(warning.message.contains("machine 1 is not linked"));
+    assert!(!warning.message.contains("setup line `a`"));
+}
+
+#[test]
+fn a_link_that_returns_starts_the_wait_over() {
+    let d = tempfile::tempdir().unwrap();
+    let results: Vec<_> = (0..100)
+        .map(|_| not_linked())
+        .chain([Ok(ExecOutcome::Interrupted)])
+        .chain((0..100).map(|_| not_linked()))
+        .chain([Ok(ExecOutcome::Exited { code: 0 })])
+        .collect();
+    let r = rig(d.path(), FakeDriver::new().exec_results(results));
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    assert!(matches!(got, SetupRun::Ok { .. }), "{got:?}");
+}
+
+#[test]
+fn a_drain_during_a_link_gap_leaves_the_run_going_for_the_next_process() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([not_linked()]);
+    let r = rig(d.path(), driver);
+    r.cx.env().draining().cancel();
+    let logs = super::log_dir(d.path(), BoxId::new(1));
+    let got = run_setup_with(
+        &r.cx,
+        &r.handle,
+        ("p", RUN),
+        &r.workdir,
+        &logs,
+        &cfg(&["a"], &[]),
+        None,
+        &|_| {},
+    );
+    assert_eq!(got, Err(super::Released));
+    assert_eq!(r.driver.execs().len(), 1);
+    assert!(!r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
+    assert!(r.cx.take_warnings().is_empty());
 }

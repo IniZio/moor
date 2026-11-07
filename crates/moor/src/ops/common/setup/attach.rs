@@ -14,6 +14,7 @@ use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxPath;
 
 use super::lines::{self, follow_lines};
+use super::link::{keep_waiting, reached_the_box, unreachable, Left};
 use super::{private_dir, Failure};
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
@@ -22,7 +23,7 @@ use crate::ops::common::box_exec::{self, BoxProxy, Site};
 const REFOLLOWS: u32 = 5;
 
 /// Pause before attaching again after a cut.
-const REFOLLOW_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
+pub(super) const REFOLLOW_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Seconds a stopped setup run gets between TERM and KILL.
 const CANCEL_GRACE_SECS: u32 = 5;
@@ -44,6 +45,10 @@ pub(crate) fn run_id(attempt: i64, workdir: &BoxPath, place: Option<(u32, u32)>)
 /// until the run ends, its output into `output`. A cut channel attaches again and reads the
 /// log from its start, so only lines not reported yet reach `on_line`. A run given up on while
 /// it may still be going is stopped in the Box.
+///
+/// While the Box cannot be reached the follower attaches again for up to two minutes, then
+/// reports [`Left::LinkLost`]. Once this process drains it stops following and leaves the run
+/// to the next process: [`Left::Released`].
 pub(super) fn attach(
     cx: &Cx,
     site: &Site<'_>,
@@ -51,7 +56,69 @@ pub(super) fn attach(
     proxy: Option<&BoxProxy>,
     (run, output): (i64, &Path),
     on_line: &(dyn Fn(ExtraEvent) + Sync),
-) -> Result<ExecOutcome, Failure> {
+) -> Result<Result<ExecOutcome, Failure>, Left> {
+    let (spec, limit) = match attach_spec(cx, site, cfg, proxy, (run, output)) {
+        Ok(prepared) => prepared,
+        Err(e) => return Ok(Err(e)),
+    };
+    let started = cx.clock().instant();
+    let reported = Reported::default();
+    let deliver = |e: ExtraEvent| {
+        if reported.first(&e) {
+            on_line(e);
+        }
+    };
+    let mut cuts = 0;
+    let mut unreachable_since = None;
+    loop {
+        // A log left by an earlier attach would announce lines this one has not reached.
+        let _ = std::fs::remove_file(output);
+        let left = limit.saturating_sub(cx.clock().instant().saturating_duration_since(started));
+        let result = follow_lines(cx, cfg, output, &deliver, || {
+            cx.driver()
+                .exec(site.handle, &spec, Deadline(left))
+                .map_err(Failure::Exec)
+        });
+        let ended = matches!(
+            result,
+            Ok(ExecOutcome::Exited { .. }) | Err(Failure::Prepare(_))
+        );
+        let stopped = ended || cx.env().cancel().is_cancelled();
+        if let Some(reason) = unreachable(&result).filter(|_| !stopped) {
+            if reached_the_box(output) {
+                unreachable_since = None;
+            }
+            let since = *unreachable_since.get_or_insert_with(|| cx.clock().instant());
+            if let Err(left_it) = keep_waiting(cx, since, reason, left) {
+                if matches!(left_it, Left::LinkLost(_)) {
+                    let _ = cx.driver().cancel_run(site.handle, run, CANCEL_GRACE_SECS);
+                }
+                return Err(left_it);
+            }
+            cx.clock().sleep(REFOLLOW_AFTER);
+            continue;
+        }
+        unreachable_since = None;
+        let more = lines::cut(&result) && cuts < REFOLLOWS && !left.is_zero();
+        if stopped || !more {
+            if !ended {
+                let _ = cx.driver().cancel_run(site.handle, run, CANCEL_GRACE_SECS);
+            }
+            return Ok(result);
+        }
+        cuts += 1;
+        cx.clock().sleep(REFOLLOW_AFTER);
+    }
+}
+
+/// The exec that attaches to run `run` with its output into `output`, and its time limit.
+fn attach_spec(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    proxy: Option<&BoxProxy>,
+    (run, output): (i64, &Path),
+) -> Result<(ExecSpec, std::time::Duration), Failure> {
     let purpose = Purpose::Setup {
         lines: cfg.setup.len(),
     };
@@ -71,37 +138,7 @@ pub(super) fn attach(
         output: Some(Output::Log(output.to_path_buf())),
     };
     let Deadline(limit) = exec.deadline();
-    let started = cx.clock().instant();
-    let reported = Reported::default();
-    let deliver = |e: ExtraEvent| {
-        if reported.first(&e) {
-            on_line(e);
-        }
-    };
-    let mut cuts = 0;
-    loop {
-        // A log left by an earlier attach would announce lines this one has not reached.
-        let _ = std::fs::remove_file(output);
-        let left = limit.saturating_sub(cx.clock().instant().saturating_duration_since(started));
-        let result = follow_lines(cx, cfg, output, &deliver, || {
-            cx.driver()
-                .exec(site.handle, &spec, Deadline(left))
-                .map_err(Failure::Exec)
-        });
-        let ended = matches!(
-            result,
-            Ok(ExecOutcome::Exited { .. }) | Err(Failure::Prepare(_))
-        );
-        let more = lines::cut(&result) && cuts < REFOLLOWS && !left.is_zero();
-        if ended || !more || cx.env().cancel().is_cancelled() {
-            if !ended {
-                let _ = cx.driver().cancel_run(site.handle, run, CANCEL_GRACE_SECS);
-            }
-            return result;
-        }
-        cuts += 1;
-        cx.clock().sleep(REFOLLOW_AFTER);
-    }
+    Ok((spec, limit))
 }
 
 /// The highest line each kind of line event has reported, so an attach that reads the log from

@@ -265,6 +265,10 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
             detail: e.error.to_string(),
         },
     };
+    // A start the drain cut may have left its Box going, so the next process settles the claim.
+    if matches!(outcome, WorkflowOutcome::Refused { .. }) && cx.env().draining().is_cancelled() {
+        return cx.take_warnings().into_iter().map(|w| w.message).collect();
+    }
     let settled = cx.store().map_err(|e| e.error.to_string()).and_then(|s| {
         s.resolve_workflow_start(job.key(), &outcome)
             .map_err(|e| e.to_string())

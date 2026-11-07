@@ -69,8 +69,13 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         return Ok(());
     }
     let cfg = settings_of(cx, &row, &Flags::default())?;
+    if let Some((handle, _)) = machine(&row) {
+        setup::await_reachable(cx, handle)?;
+    }
     match set_up_in_machine(cx, store, &row, &cfg, false) {
         Ok(_) => Ok(()),
+        // The intent stays, so the next process claims this setup again.
+        Err(e) if cx.env().draining().is_cancelled() => Err(e),
         Err(e) => {
             record_interrupted(cx, store, &reread(store, id)?)?;
             Err(e)

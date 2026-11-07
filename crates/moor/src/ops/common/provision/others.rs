@@ -16,7 +16,7 @@ use super::setup_run::run_through_proxy;
 use super::SetupTarget;
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, Site};
-use crate::ops::common::setup::SetupRun;
+use crate::ops::common::setup::{Released, SetupRun};
 use crate::store::Store;
 use std::path::PathBuf;
 
@@ -214,16 +214,16 @@ pub(super) fn set_up_all(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
-) -> SetupRun {
+) -> Result<SetupRun, Released> {
     let run = if target.layered.is_some() {
-        layers::run(cx, store, id, target, cfg, proxy)
+        layers::run(cx, store, id, target, cfg, proxy)?
     } else {
-        run_through_proxy(cx, store, id, target, cfg, proxy, None)
+        run_through_proxy(cx, store, id, target, cfg, proxy, None)?
     };
     let trees = match trees(target) {
         Ok(trees) => trees,
-        Err(e) if !run.failed() => return failed_before_run(cx, e),
-        Err(_) => return run,
+        Err(e) if !run.failed() => return Ok(failed_before_run(cx, e)),
+        Err(_) => return Ok(run),
     };
     let mut run = run;
     for tree in trees {
@@ -235,7 +235,7 @@ pub(super) fn set_up_all(
             None => continue,
             Some(text) => match parse_repo(&format!("{repo}:.moor.yaml"), text) {
                 Ok(parsed) => parsed.setup,
-                Err(e) => return failed_before_run(cx, format!("{repo}: {e}")),
+                Err(e) => return Ok(failed_before_run(cx, format!("{repo}: {e}"))),
             },
         };
         let own = BoxSettings {
@@ -250,10 +250,10 @@ pub(super) fn set_up_all(
             layered: None,
             ..*target
         };
-        let next = run_through_proxy(cx, store, id, &at, &own, proxy, None);
+        let next = run_through_proxy(cx, store, id, &at, &own, proxy, None)?;
         run = combined(run, next, &repo.to_string());
     }
-    run
+    Ok(run)
 }
 
 /// `first` followed by `next` of repo `repo`, as one run.

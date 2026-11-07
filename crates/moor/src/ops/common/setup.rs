@@ -18,6 +18,8 @@ use crate::ops::common::box_exec::{BoxProxy, Site};
 
 use attach::attach;
 pub(crate) use attach::run_id;
+pub(crate) use link::{await_reachable, Released};
+use link::{link_lost, Left};
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -139,9 +141,9 @@ pub(crate) fn run_setup(
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
     on_line: &(dyn Fn(ExtraEvent) + Sync),
-) -> SetupRun {
+) -> Result<SetupRun, Released> {
     if cfg.setup.is_empty() {
-        return SetupRun::Skipped;
+        return Ok(SetupRun::Skipped);
     }
     let site = Site {
         handle,
@@ -153,17 +155,22 @@ pub(crate) fn run_setup(
     let result = attach(cx, &site, cfg, proxy, (run, &output), on_line);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let result = match result {
+        Ok(result) => result,
+        Err(Left::Released) => return Err(Released),
+        Err(Left::LinkLost(reason)) => return Ok(link_lost(cx, &reason, ms)),
+    };
     if let Some(stop) = read_stop(&output) {
         cx.warn(Warning {
             code: "setup_failed".to_owned(),
             message: format!("setup did not run: {stop}"),
         });
-        return SetupRun::Failed {
+        return Ok(SetupRun::Failed {
             line: stop,
             exit: exit_code(&result),
             ms,
             tail: String::new(),
-        };
+        });
     }
     let mut log = fetch_log(cx, handle, workdir, log_dir);
     if log.is_empty() {
@@ -171,7 +178,7 @@ pub(crate) fn run_setup(
     }
     let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
-        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms, tail },
+        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(SetupRun::Ok { ms, tail }),
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
         Err(Failure::Prepare(e)) => (e, None),
@@ -189,12 +196,12 @@ pub(crate) fn run_setup(
         code: "setup_failed".to_owned(),
         message: failure_message(&line, &reason, workdir, &log),
     });
-    SetupRun::Failed {
+    Ok(SetupRun::Failed {
         line,
         exit,
         ms,
         tail,
-    }
+    })
 }
 
 /// The exit code `result` carries, when the script exited.
@@ -347,6 +354,7 @@ fn failed_step(log: &str, steps: usize) -> usize {
 
 mod attach;
 mod lines;
+mod link;
 
 #[cfg(test)]
 mod tests;
