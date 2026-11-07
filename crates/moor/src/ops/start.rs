@@ -25,6 +25,7 @@ use super::common::node;
 use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
+use super::common::reconcile;
 use super::common::wake::give_held_prompt;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
@@ -230,6 +231,8 @@ fn attach(
     repo::check_kept(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
+    reconcile::one(cx, store, row);
+    let row = &reread(store, row.id)?;
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
