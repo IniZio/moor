@@ -1,15 +1,16 @@
 //! Browser sign-in: the authorization-code flow with PKCE against the issuer, and short
-//! in-memory sessions keyed by a cookie, for pages that must only reach a signed-in person.
+//! sessions, for pages that must only reach a signed-in person. A started sign-in and a
+//! session both live in sealed cookies, so any gate replica sharing the key can serve them.
 
 pub(crate) mod routes;
+mod seal;
 pub(crate) mod secrets;
 pub(crate) mod setup;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use oauth2::basic::BasicClient;
 use oauth2::url::Url;
@@ -20,13 +21,13 @@ use oauth2::{
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::Agent;
 
+use serde::{Deserialize, Serialize};
+
+use self::seal::Seal;
 use crate::{Person, Verifier};
 
 /// How long a started sign-in can be finished.
 const PENDING_TTL: Duration = Duration::from_mins(10);
-
-/// The most sign-ins waiting at once; the oldest goes first.
-const PENDING_MAX: usize = 1000;
 
 /// A session's absolute lifetime.
 const SESSION_TTL: Duration = Duration::from_mins(15);
@@ -34,32 +35,37 @@ const SESSION_TTL: Duration = Duration::from_mins(15);
 /// The most a token response may hold.
 const BODY_LIMIT: u64 = 1 << 20;
 
-/// Random bytes in a state, a session id and a CSRF token.
+/// Random bytes in a state and a CSRF token.
 const RANDOM_BYTES: u32 = 32;
 
-/// A sign-in waiting for the issuer to send the browser back.
+/// The cookie that carries a sign-in until the issuer sends the browser back.
+pub(crate) const PENDING_COOKIE: &str = "moor_login";
+
+/// What a cookie is sealed for, so one kind never opens as the other.
+const PENDING_PURPOSE: &str = "pending";
+/// See [`PENDING_PURPOSE`].
+const SESSION_PURPOSE: &str = "session";
+
+/// A sign-in waiting for the issuer to send the browser back, sealed in the browser's cookie.
+#[derive(Serialize, Deserialize)]
 struct Pending {
+    /// The `state` the authorize URL carried; the callback must bring it back.
+    state: String,
     /// The PKCE verifier.
     verifier: String,
     /// The same-origin path to land on.
     back: String,
     /// Where the code becomes tokens.
     token_endpoint: String,
-    /// When it started.
-    created: Instant,
 }
 
-/// A signed-in browser.
-#[derive(Clone)]
+/// A signed-in browser, sealed in its cookie.
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Session {
-    /// The cookie value.
-    pub(crate) id: String,
     /// Who signed in.
     pub(crate) person: Person,
     /// The token forms on this session must post back.
     csrf: String,
-    /// When it ends, however busy it is.
-    expires: Instant,
 }
 
 /// Where the issuer signs people in and where codes become tokens.
@@ -88,10 +94,8 @@ impl oauth2::SyncHttpClient for Http {
 pub struct Login {
     /// `<public-url>/auth/callback`.
     redirect: String,
-    /// Sign-ins waiting, by state.
-    pending: Mutex<HashMap<String, Pending>>,
-    /// Sessions, by id.
-    sessions: Mutex<HashMap<String, Session>>,
+    /// Seals and opens the sign-in and session cookies.
+    seal: Seal,
     /// The issuer's endpoints, once discovered.
     endpoints: Mutex<Option<Endpoints>>,
     /// Trades codes for tokens.
@@ -99,11 +103,28 @@ pub struct Login {
 }
 
 impl Login {
-    /// Sign-in for the gate served at `public_url`, such as `https://moor.example.com`.
+    /// Sign-in for the gate served at `public_url`, such as `https://moor.example.com`, under
+    /// a key of its own: cookies it seals open on this gate only.
     ///
     /// # Errors
     /// When `public_url` is not an `http` or `https` origin.
     pub fn new(public_url: &str) -> Result<Self, String> {
+        Self::build(public_url, Seal::random())
+    }
+
+    /// Like [`Login::new`], with cookies sealed under `keys`, so every gate given the same keys
+    /// serves each other's sign-ins. `keys` is one or more secrets of 32 or more characters
+    /// separated by commas. The first seals and all open, which lets a key be replaced without
+    /// ending sessions.
+    ///
+    /// # Errors
+    /// When `public_url` is not an `http` or `https` origin, or a key is too short.
+    pub fn with_keys(public_url: &str, keys: &str) -> Result<Self, String> {
+        Self::build(public_url, Seal::from_keys(keys)?)
+    }
+
+    /// Sign-in for `public_url` sealing under `seal`.
+    fn build(public_url: &str, seal: Seal) -> Result<Self, String> {
         let url = Url::parse(public_url).map_err(|e| format!("--public-url {public_url}: {e}"))?;
         if !matches!(url.scheme(), "https" | "http") || url.host_str().is_none() {
             return Err(format!(
@@ -123,8 +144,7 @@ impl Login {
             .build();
         Ok(Self {
             redirect: format!("{}/auth/callback", public_url.trim_end_matches('/')),
-            pending: Mutex::new(HashMap::new()),
-            sessions: Mutex::new(HashMap::new()),
+            seal,
             endpoints: Mutex::new(None),
             http: Http(Agent::new_with_config(config)),
         })
@@ -151,8 +171,14 @@ impl Login {
         Ok(found)
     }
 
-    /// Starts a sign-in that lands on `back`: the issuer's authorize URL to send the browser to.
-    fn start(&self, verifier: &Verifier, back: &str, now: Instant) -> Result<String, String> {
+    /// Starts a sign-in that lands on `back`: the issuer's authorize URL to send the browser
+    /// to, and the sealed cookie value the callback needs.
+    fn start(
+        &self,
+        verifier: &Verifier,
+        back: &str,
+        now: SystemTime,
+    ) -> Result<(String, String), String> {
         let endpoints = self.endpoints(verifier)?;
         let (challenge, pkce) = PkceCodeChallenge::new_random_sha256();
         let state = CsrfToken::new_random_len(RANDOM_BYTES);
@@ -165,51 +191,39 @@ impl Login {
             .set_pkce_challenge(challenge)
             .url();
         let waiting = Pending {
+            state: state.into_secret(),
             verifier: pkce.into_secret(),
             back: back.to_owned(),
             token_endpoint: endpoints.token,
-            created: now,
         };
-        self.remember(state.into_secret(), waiting, now);
-        Ok(url.to_string())
+        let cookie = self
+            .seal
+            .seal(PENDING_PURPOSE, &waiting, now, PENDING_TTL)?;
+        Ok((url.to_string(), cookie))
     }
 
-    /// Keeps `pending` under `state`, dropping expired sign-ins and then the oldest past the cap.
-    fn remember(&self, state: String, pending: Pending, now: Instant) {
-        let mut all = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        all.retain(|_, p| now.saturating_duration_since(p.created) < PENDING_TTL);
-        while all.len() >= PENDING_MAX {
-            let oldest = all
-                .iter()
-                .min_by_key(|(_, p)| p.created)
-                .map(|(k, _)| k.clone());
-            match oldest {
-                Some(key) => all.remove(&key),
-                None => break,
-            };
-        }
-        all.insert(state, pending);
+    /// The sign-in the `Cookie` headers carry, when it is the one `state` names and has not
+    /// expired.
+    fn take<'a>(
+        &self,
+        cookies: impl IntoIterator<Item = &'a str>,
+        state: &str,
+        now: SystemTime,
+    ) -> Option<Pending> {
+        let sealed = cookie_value(cookies, PENDING_COOKIE)?;
+        let pending: Pending = self.seal.open(PENDING_PURPOSE, sealed, now)?;
+        same(&pending.state, state).then_some(pending)
     }
 
-    /// Takes the sign-in `state` names, once, when it has not expired.
-    fn take(&self, state: &str, now: Instant) -> Option<Pending> {
-        let pending = self
-            .pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(state)?;
-        (now.saturating_duration_since(pending.created) < PENDING_TTL).then_some(pending)
-    }
-
-    /// Trades `code` for an access token, verifies it, and opens a session: it and the path
-    /// to land on.
+    /// Trades `code` for an access token, verifies it, and opens a session: its sealed cookie
+    /// value and the path to land on.
     fn finish(
         &self,
         verifier: &Verifier,
         pending: Pending,
         code: &str,
-        now: Instant,
-    ) -> Result<(Session, String), String> {
+        now: SystemTime,
+    ) -> Result<(String, String), String> {
         let token = BasicClient::new(ClientId::new(verifier.client_id().to_owned()))
             .set_token_uri(TokenUrl::new(pending.token_endpoint).map_err(|e| e.to_string())?)
             .set_redirect_uri(RedirectUrl::new(self.redirect.clone()).map_err(|e| e.to_string())?)
@@ -218,44 +232,41 @@ impl Login {
             .request(&self.http)
             .map_err(|e| format!("the token request failed: {e}"))?;
         let person = verifier.verify(token.access_token().secret())?;
-        Ok((self.open(person, now), pending.back))
+        Ok((self.open(person, now)?, pending.back))
     }
 
-    /// Opens a session for `person`.
-    fn open(&self, person: Person, now: Instant) -> Session {
+    /// The sealed cookie value of a new session for `person`.
+    fn open(&self, person: Person, now: SystemTime) -> Result<String, String> {
         let session = Session {
-            id: CsrfToken::new_random_len(RANDOM_BYTES).into_secret(),
             person,
             csrf: CsrfToken::new_random_len(RANDOM_BYTES).into_secret(),
-            expires: now + SESSION_TTL,
         };
-        let mut all = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-        all.retain(|_, s| s.expires > now);
-        all.insert(session.id.clone(), session.clone());
-        session
+        self.seal.seal(SESSION_PURPOSE, &session, now, SESSION_TTL)
     }
 
-    /// The live session the `Cookie` header values name.
+    /// The live session the `Cookie` header values carry.
     pub(crate) fn session<'a>(
         &self,
         cookies: impl IntoIterator<Item = &'a str>,
-        now: Instant,
+        now: SystemTime,
     ) -> Option<Session> {
-        let id = cookies
-            .into_iter()
-            .flat_map(|header| header.split(';'))
-            .find_map(|pair| pair.trim().strip_prefix(routes::COOKIE)?.strip_prefix('='))?;
-        let all = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-        all.get(id).filter(|s| s.expires > now).cloned()
+        let sealed = cookie_value(cookies, routes::COOKIE)?;
+        self.seal.open(SESSION_PURPOSE, sealed, now)
     }
+}
 
-    /// Ends `session`.
-    fn close(&self, session: &Session) {
-        self.sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&session.id);
-    }
+/// The value of cookie `name` among the `Cookie` header values.
+fn cookie_value<'a>(cookies: impl IntoIterator<Item = &'a str>, name: &str) -> Option<&'a str> {
+    cookies
+        .into_iter()
+        .flat_map(|header| header.split(';'))
+        .find_map(|pair| pair.trim().strip_prefix(name)?.strip_prefix('='))
+}
+
+/// Whether two secrets are equal, compared in constant time.
+fn same(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// The token a form on `session` carries in its `csrf` field.
@@ -265,6 +276,5 @@ pub(crate) fn csrf_token(session: &Session) -> &str {
 
 /// Whether a posted `csrf` field matches `session`'s token, compared in constant time.
 pub(crate) fn check_csrf(session: &Session, value: &str) -> bool {
-    let (want, got) = (session.csrf.as_bytes(), value.as_bytes());
-    want.len() == got.len() && want.iter().zip(got).fold(0, |acc, (a, b)| acc | (a ^ b)) == 0
+    same(&session.csrf, value)
 }

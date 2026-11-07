@@ -53,4 +53,14 @@ if grep -q 'subPath: state/fronts/authgear' <<<"$over"; then fail "gate.overTls 
 if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${gate_tls[@]}" 2>&1 | grep -qv 'gate.overTls needs egress.enabled'; then
   fail "gate.overTls without egress.enabled renders"
 fi
+
+# Every gate replica seals sign-in cookies with one shared key, whether given or made.
+key_env() { grep -c 'name: MOOR_GATE_COOKIE_KEY' <<<"$1" || true; }
+[ "$(key_env "$full")" = 1 ] || fail "the gate gets no cookie key with gate.login on"
+grep -q 'cookie-key: "[A-Za-z0-9]\{64\}"' <<<"$full" || fail "no generated cookie key in the gate Secret"
+given=$(helm template moor "${chart[@]}" --set gate.cookieKey=first-key-first-key-first-key-first\\,old-key)
+grep -q 'cookie-key: "first-key-first-key-first-key-first,old-key"' <<<"$given" ||
+  fail "gate.cookieKey does not reach the gate Secret"
+login_off=$(helm template moor "${chart[@]}" --set gate.login=false)
+[ "$(key_env "$login_off")" = 0 ] || fail "the gate gets a cookie key with gate.login off"
 echo "chart-render: ok"

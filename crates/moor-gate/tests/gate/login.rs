@@ -32,24 +32,64 @@ impl Reply {
         })
     }
 
+    /// Every `Set-Cookie` value, attributes included.
+    fn set_cookies(&self) -> Vec<&str> {
+        self.head
+            .lines()
+            .filter_map(|line| {
+                let (n, v) = line.split_once(": ")?;
+                n.eq_ignore_ascii_case("set-cookie").then_some(v)
+            })
+            .collect()
+    }
+
+    /// The `name=value` pair this reply sets for cookie `name`.
+    fn cookie(&self, name: &str) -> Option<String> {
+        let prefix = format!("{name}=");
+        let set = self.set_cookies();
+        let line = set.iter().find(|c| c.starts_with(&prefix))?;
+        Some(line.split(';').next()?.to_owned())
+    }
+
     pub(super) fn location(&self) -> &str {
         self.header("location").unwrap()
     }
 }
 
+const KEY: &str = "0123456789abcdef0123456789abcdef-one";
+
 /// A gate with sign-in on, served at its own loopback address.
 fn gate() -> (String, Issuer) {
     let issuer = Issuer::start(CLIENT_ID);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let public = format!("http://{}", listener.local_addr().unwrap());
+    let addr = serve(listener, &issuer, Login::new(&public).unwrap());
+    (addr, issuer)
+}
+
+/// A gate serving `login` on `listener`, behind `issuer`.
+fn serve(listener: TcpListener, issuer: &Issuer, login: Login) -> String {
     let addr = listener.local_addr().unwrap().to_string();
-    let login = Login::new(&format!("http://{addr}")).unwrap();
     let gate = Arc::new(Gate {
         controller: moor_client::Client::new("/nonexistent.sock"),
         mcp: None,
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });
     std::thread::spawn(move || moor_gate::serve_with(&listener, &gate, Some(&Arc::new(login))));
-    (addr, issuer)
+    addr
+}
+
+/// Two gates behind one public URL, as replicas are: `keys` seal the first, `other` the second.
+fn replicas(keys: &str, other: &str) -> (String, String, Issuer) {
+    let issuer = Issuer::start(CLIENT_ID);
+    let (a, b) = (
+        TcpListener::bind("127.0.0.1:0").unwrap(),
+        TcpListener::bind("127.0.0.1:0").unwrap(),
+    );
+    let public = format!("http://{}", a.local_addr().unwrap());
+    let first = serve(a, &issuer, Login::with_keys(&public, keys).unwrap());
+    let second = serve(b, &issuer, Login::with_keys(&public, other).unwrap());
+    (first, second, issuer)
 }
 
 pub(super) fn send(addr: &str, method: &str, target: &str, extra: &str, body: &str) -> Reply {
@@ -100,10 +140,10 @@ fn approve(authorize: &str) -> String {
 /// Signs in, landing on `/auth/me`: the session cookie pair.
 pub(super) fn sign_in(addr: &str) -> String {
     let start = get(addr, "/auth/login?return=/auth/me", None);
-    let landed = get(addr, &approve(start.location()), None);
+    let pending = start.cookie("moor_login").unwrap();
+    let landed = get(addr, &approve(start.location()), Some(&pending));
     assert_eq!(landed.status, 302, "{}", landed.body);
-    let cookie = landed.header("set-cookie").unwrap();
-    cookie.split(';').next().unwrap().to_owned()
+    landed.cookie("moor_session").unwrap()
 }
 
 pub(super) fn assert_page_headers(reply: &Reply) {
@@ -164,28 +204,40 @@ fn login_refuses_a_return_that_leaves_the_site() {
 fn a_finished_sign_in_sets_a_strict_session_cookie_and_returns() {
     let (addr, _) = gate();
     let start = get(&addr, "/auth/login?return=/auth/me%3Ftab%3D1", None);
-    let landed = get(&addr, &approve(start.location()), None);
+    let pending = start.cookie("moor_login").unwrap();
+    let landed = get(&addr, &approve(start.location()), Some(&pending));
     assert_eq!(landed.status, 302, "{}", landed.body);
     assert_eq!(landed.location(), "/auth/me?tab=1");
-    let cookie = landed.header("set-cookie").unwrap();
+    let cookie = landed
+        .set_cookies()
+        .into_iter()
+        .find(|c| c.starts_with("moor_session="))
+        .unwrap();
     let (pair, attrs) = cookie.split_once("; ").unwrap();
-    let id = pair.strip_prefix("moor_session=").unwrap();
-    assert!(id.len() >= 43, "{id}");
+    assert!(pair.len() >= 43, "{pair}");
     assert_eq!(attrs, "HttpOnly; Secure; SameSite=Lax; Path=/");
 }
 
 #[test]
-fn a_state_works_once() {
+fn a_callback_needs_the_cookie_of_its_own_sign_in() {
     let (addr, _) = gate();
     let start = get(&addr, "/auth/login?return=/auth/me", None);
+    let pending = start.cookie("moor_login").unwrap();
     let callback = approve(start.location());
-    assert_eq!(get(&addr, &callback, None).status, 302);
-    let again = get(&addr, &callback, None);
-    assert_eq!(again.status, 400);
-    assert!(again.header("set-cookie").is_none());
+    let bare = get(&addr, &callback, None);
+    assert_eq!(bare.status, 400);
+    assert!(bare.body.contains("Sign in again"), "{}", bare.body);
+    assert!(bare.cookie("moor_session").is_none());
+    let other = get(&addr, "/auth/login?return=/auth/me", None);
+    let swapped = get(&addr, &callback, other.cookie("moor_login").as_deref());
+    assert_eq!(swapped.status, 400);
+    let landed = get(&addr, &callback, Some(&pending));
+    assert_eq!(landed.status, 302);
+    assert!(landed.cookie("moor_session").is_some());
     assert_eq!(
-        get(&addr, "/auth/callback?code=x&state=unknown", None).status,
-        400
+        landed.cookie("moor_login").as_deref(),
+        Some("moor_login="),
+        "the sign-in cookie is cleared"
     );
 }
 
@@ -199,10 +251,72 @@ fn a_code_trades_only_with_its_own_verifier() {
     let crossed = get(
         &addr,
         &format!("/auth/callback?code={code}&state={state}"),
-        None,
+        b.cookie("moor_login").as_deref(),
     );
     assert_eq!(crossed.status, 502);
-    assert!(crossed.header("set-cookie").is_none());
+    assert!(crossed.cookie("moor_session").is_none());
+}
+
+#[test]
+fn a_sign_in_begun_on_one_gate_finishes_on_another() {
+    let (first, second, _) = replicas(KEY, KEY);
+    let start = get(&first, "/auth/login?return=/auth/me", None);
+    let pending = start.cookie("moor_login").unwrap();
+    let landed = get(&second, &approve(start.location()), Some(&pending));
+    assert_eq!(landed.status, 302, "{}", landed.body);
+    let session = landed.cookie("moor_session").unwrap();
+    for addr in [&first, &second] {
+        let me = get(addr, "/auth/me", Some(&session));
+        assert_eq!(me.status, 200, "{addr}");
+        assert!(me.body.contains("alice@example.com"), "{}", me.body);
+    }
+}
+
+#[test]
+fn gates_with_different_keys_refuse_each_others_sign_ins() {
+    let (first, second, _) = replicas(KEY, "another-key-another-key-another-key!");
+    let start = get(&first, "/auth/login?return=/auth/me", None);
+    let pending = start.cookie("moor_login").unwrap();
+    let refused = get(&second, &approve(start.location()), Some(&pending));
+    assert_eq!(refused.status, 400);
+    assert!(refused.cookie("moor_session").is_none());
+    let session = sign_in(&first);
+    assert_eq!(get(&second, "/auth/me", Some(&session)).status, 302);
+}
+
+#[test]
+fn a_key_added_in_front_keeps_older_sessions_open() {
+    let (first, second, _) = replicas(KEY, &format!("another-key-another-key-another-key!,{KEY}"));
+    let session = sign_in(&first);
+    assert_eq!(get(&second, "/auth/me", Some(&session)).status, 200);
+}
+
+#[test]
+fn a_tampered_cookie_is_refused() {
+    let (addr, _) = gate();
+    let start = get(&addr, "/auth/login?return=/auth/me", None);
+    let pending = start.cookie("moor_login").unwrap();
+    let callback = approve(start.location());
+    let session = sign_in(&addr);
+    let flip = |pair: &str| {
+        let (name, value) = pair.split_once('=').unwrap();
+        let mut bytes = value.as_bytes().to_vec();
+        let at = bytes.len() / 2;
+        bytes[at] = if bytes[at] == b'A' { b'B' } else { b'A' };
+        format!("{name}={}", String::from_utf8(bytes).unwrap())
+    };
+    let refused = get(&addr, &callback, Some(&flip(&pending)));
+    assert_eq!(refused.status, 400);
+    assert!(refused.body.contains("Sign in again"), "{}", refused.body);
+    let away = get(&addr, "/auth/me", Some(&flip(&session)));
+    assert_eq!(away.status, 302);
+    assert_eq!(away.location(), "/auth/login?return=/auth/me");
+    let swapped = get(
+        &addr,
+        "/auth/me",
+        Some(&pending.replace("moor_login", "moor_session")),
+    );
+    assert_eq!(swapped.status, 302, "a sign-in cookie is not a session");
 }
 
 #[test]
@@ -246,7 +360,6 @@ fn logout_needs_the_session_csrf_token() {
         .header("set-cookie")
         .unwrap()
         .starts_with("moor_session=;"));
-    assert_eq!(get(&addr, "/auth/me", Some(&cookie)).status, 302);
     assert_eq!(get(&addr, "/auth/me", Some(&other)).status, 200);
 }
 
