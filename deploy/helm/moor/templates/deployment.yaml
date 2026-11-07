@@ -77,7 +77,10 @@ spec:
               {{- if .Values.egress.enabled }}
               install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /src/egress/ledger-ca.pem /var/lib/moor/config/
               {{- end }}
-              {{- if .Values.slack.enabled }}
+              {{- if include "moor.slackSeparate" . }}
+              install -m 0600 /src/egress/slack-front.key /var/lib/moor/config/
+              {{- end }}
+              {{- if and .Values.slack.enabled (not (include "moor.slackSeparate" .)) }}
               cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
               install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
               install -m 0600 /src/secrets/slack-bot-token /var/lib/moor/slack/bot-token
@@ -155,7 +158,7 @@ spec:
           volumeMounts:
             - { name: moor-config, mountPath: /var/lib/moor/config }
             - { name: state, mountPath: /var/lib/moor/pv/state, subPath: state }
-        {{- if .Values.slack.enabled }}
+        {{- if and .Values.slack.enabled (not (include "moor.slackSeparate" .)) }}
         # The controller cannot sandbox a front on every node, so Slack runs beside it and sees
         # only its own front dir, its config and its state.
         - name: slack
@@ -286,6 +289,9 @@ spec:
               - { key: ledger-tls.crt, path: ledger-tls.crt }
               - { key: ledger-tls.key, path: ledger-tls.key }
               - { key: ledger-ca.pem, path: ledger-ca.pem }
+              {{- if include "moor.slackSeparate" . }}
+              - { key: slack-front-key, path: slack-front.key }
+              {{- end }}
         {{- end }}
         - name: moor-config
           emptyDir: { medium: Memory, sizeLimit: 1Mi }

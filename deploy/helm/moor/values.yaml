@@ -51,6 +51,15 @@ controller:
 
 slack:
   enabled: false
+  # true runs Slack as <release>-slack, one replica of its own on a PVC of its own, in place of a
+  # sidecar of the controller pod: a controller deploy then costs it one redial. Needs
+  # egress.enabled. The new PVC starts without the sidecar's slack.db.
+  separate: false
+  # separate only: the PVC holding slack.db and each thread's workdir.
+  persistence:
+    size: 1Gi
+  # separate only: the loopback port of the forwarder that carries a turn to the shared egress Proxy.
+  proxyPort: 4480
   appToken: ""
   botToken: ""
   resources: {}
@@ -126,6 +135,9 @@ egress:
     egressClientKey: ""
     runnerClientCert: ""
     runnerClientKey: ""
+    # slack.separate only, with your own ca and no caKey.
+    slackClientCert: ""
+    slackClientKey: ""
   resources: {}
 
 persistence:
