@@ -75,6 +75,7 @@ mod step_timing;
 mod transcript;
 mod user_mcp;
 mod warm;
+mod warm_saved;
 mod workdir;
 
 /// A world of fakes plus the context over them.

@@ -21,6 +21,18 @@ use crate::ops::common::setup::{Released, SetupRun};
 use crate::store::checkpoints::{Lineage, Place};
 use crate::store::{BoxRow, Store};
 
+/// What a Box's disk holds of its setup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Disk {
+    /// Nothing: a new machine, or one that holds no checkpoint.
+    Fresh,
+    /// A checkpoint, whose lines are not run again.
+    OnLayer {
+        /// The layer it holds.
+        layer: usize,
+    },
+}
+
 /// A Box's setup layers: their keys, where their checkpoints live and how far its disk is.
 pub(super) struct Layered {
     /// The clone's key, then one per setup line.
@@ -33,19 +45,28 @@ pub(super) struct Layered {
     lineage: Lineage,
     /// The Box the layers are for.
     id: BoxId,
-    /// The layer the Box's disk already holds; its lines are not run again.
-    from: usize,
+    /// What the Box's disk holds.
+    disk: Disk,
     /// The Box's cache plan, which its checkpoints hold the disks of.
     cache: CachePlan,
-    /// Milliseconds the layers the disk holds took to set up from scratch.
+    /// Milliseconds the layers the disk holds took on the machine that set them up from scratch;
+    /// each save records it, so a later Box learns what forking that layer spares it.
     spent_ms: AtomicU64,
 }
 
 impl Layered {
     /// Marks the disk as holding layer `layer`, which took `ms` to set up from scratch.
     fn stand_on(&mut self, layer: usize, ms: u64) {
-        self.from = layer;
+        self.disk = Disk::OnLayer { layer };
         self.spent_ms.store(ms, Ordering::Relaxed);
+    }
+
+    /// The layer whose lines are the first to run.
+    const fn from(&self) -> usize {
+        match self.disk {
+            Disk::OnLayer { layer } => layer,
+            Disk::Fresh => 0,
+        }
     }
 }
 
@@ -79,7 +100,7 @@ pub(super) fn plan(
         provider,
         home,
         id: row.id,
-        from: 0,
+        disk: Disk::Fresh,
         cache: cache.clone(),
         spent_ms: AtomicU64::new(0),
     })
@@ -90,7 +111,7 @@ pub(super) fn after_clone(cx: &Cx, store: &Store, target: &SetupTarget<'_>, ms: 
     let Some(layered) = target.layered else {
         return;
     };
-    if layered.from == 0 {
+    if layered.disk == Disk::Fresh {
         layered
             .spent_ms
             .store(ms.unwrap_or_default(), Ordering::Relaxed);
@@ -114,7 +135,7 @@ pub(super) fn run(
     };
     let total = cfg.setup.len();
     let (mut ms, mut tail) = (0, String::new());
-    for (i, line) in cfg.setup.iter().enumerate().skip(layered.from) {
+    for (i, line) in cfg.setup.iter().enumerate().skip(layered.from()) {
         let one = BoxSettings {
             setup: vec![line.clone()],
             ..cfg.clone()
