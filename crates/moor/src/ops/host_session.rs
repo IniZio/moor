@@ -56,10 +56,11 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
         })
         .map_err(refuse_invalid)?;
     if base.is_some() {
-        if let Err(e) = own_dir::create(cx.state_dir()?, Path::new(&workdir)) {
-            if created {
-                let _ended = cx.store()?.end_host_session(session);
-            }
+        let made = own_dir::create(cx.state_dir()?, Path::new(&workdir));
+        // A reopened Session is live and its caller holds it, so a dir that cannot be remade
+        // never refuses or ends it; only a new one fails here.
+        if let (Err(e), true) = (made, created) {
+            let _ended = cx.store()?.end_host_session(session);
             return Err(CommandError::new(
                 ErrorKind::Failed,
                 format!("create {workdir}: {e}"),
