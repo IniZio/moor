@@ -3294,6 +3294,7 @@ dependencies = [
  "moor-core",
  "moor-testkit",
  "oauth2",
+ "rcgen",
  "rmcp",
  "rusqlite",
  "rustix",

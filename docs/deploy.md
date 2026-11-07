@@ -167,9 +167,21 @@ On the restart, systemd sends SIGTERM and the controller drains, as
 `moor-gate` drains on SIGTERM or SIGINT as well. It stops accepting, lets
 requests in flight end for up to `--drain-timeout-secs`
 (`MOOR_GATE_DRAIN_TIMEOUT_SECS`, 600 by default), closes open `/front` and
-`/events` streams after 5 s so clients reconnect, and exits 0. While the
-controller's front socket is missing or refusing, the gate answers `503` with
-`Retry-After: 5` instead of a bare connection error.
+`/events` streams after 5 s so clients reconnect, and exits 0.
+
+While the controller is away, the gate holds `/mcp` and `/front` and dials
+again. A request that provably never ran reaches the controller once, when it
+is back. A request cut after it was sent is an error to the client, and the gate
+never sends it again. Once the hold runs out, the gate answers `503` with
+`Retry-After: 5`. Over `--controller` the hold is 30 s. On `--front-socket` a
+refused connect holds for 5 s, as any client's does, and a missing socket answers
+at once, since systemd keeps the socket through a restart.
+
+With `--controller tls://HOST:PORT`, `--controller-ca`, `--controller-cert`,
+`--controller-key` and `--front-key` (`MOOR_GATE_FRONT_KEY`), the gate dials the
+controller's `ledger_tls` listener with a front hello, so it needs no shared
+volume. The key is the content of `fronts.authgear.remote.key_file`. The chart
+sets these with `gate.overTls`.
 
 The CLI and the fronts dial again only when a request provably did not run:
 

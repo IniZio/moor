@@ -3,7 +3,6 @@
 //! whether they matched that record's sha256.
 
 use std::io;
-use std::path::Path;
 
 use moor_client::Client;
 use moor_core::artifact::valid_name;
@@ -107,18 +106,17 @@ pub(crate) struct Found {
 }
 
 /// The record of the Artifact `wanted` names, read as `person`.
-pub(crate) fn find(socket: &Path, person: &Person, wanted: &Wanted) -> Result<Found, Refusal> {
-    let client = Client::new(socket);
+pub(crate) fn find(client: &Client, person: &Person, wanted: &Wanted) -> Result<Found, Refusal> {
     let enroll = Request::Enroll(EnrollReq {
         identity: None,
         email: None,
     });
-    ask(&client, person, enroll)?;
+    ask(client, person, enroll)?;
     let list = Request::Artifacts(ArtifactsReq {
         target: wanted.r#box.clone().into(),
         all: true,
     });
-    let listed = ask(&client, person, list)?.value.unwrap_or_default();
+    let listed = ask(client, person, list)?.value.unwrap_or_default();
     let rows: Vec<ArtifactView> = serde_json::from_value(listed).map_err(|e| {
         Refusal::Failed(format!("the controller's artifact list is unreadable: {e}"))
     })?;
@@ -144,7 +142,7 @@ pub(crate) fn find(socket: &Path, person: &Person, wanted: &Wanted) -> Result<Fo
 
 /// Streams the whole of `found` to `on_bytes`, read as `person`.
 pub(crate) fn read(
-    socket: &Path,
+    controller: &Client,
     person: &Person,
     found: &Found,
     on_bytes: impl FnMut(&[u8]) -> io::Result<()>,
@@ -157,7 +155,7 @@ pub(crate) fn read(
         len: found.record.size,
     });
     let acting = rewrite::act(request, person).map_err(Refusal::Failed)?;
-    let reply = Client::new(socket)
+    let reply = controller
         .read(acting, on_bytes)
         .map_err(|e| Refusal::Failed(format!("the artifact did not arrive whole: {e}")))?;
     refused(&reply).map_or(Ok(()), Err)

@@ -1,8 +1,6 @@
 //! The MCP tools. Each maps to one request the controller already answers, sent as the
 //! token's person through the same rewrite `/front` uses.
 
-use std::path::PathBuf;
-
 use moor_client::Client;
 use moor_core::name::BoxName;
 use moor_core::request::{
@@ -39,8 +37,8 @@ use start::start_request;
 /// The tools; one copy per MCP session.
 #[derive(Clone)]
 pub(crate) struct Tools {
-    /// The controller's front socket for the gate's namespace.
-    pub(crate) front_socket: PathBuf,
+    /// Dials the controller as the gate's front.
+    pub(crate) controller: Client,
     /// The gate's public origin when it serves browser sign-in, for webhook setup links.
     pub(crate) public_url: Option<std::sync::Arc<str>>,
 }
@@ -214,9 +212,9 @@ impl Tools {
             Ok(request) => request,
             Err(why) => return failed(why),
         };
-        let socket = self.front_socket.clone();
+        let controller = self.controller.clone();
         let sent =
-            tokio::task::spawn_blocking(move || sender(&socket, &auth.person, request, reply))
+            tokio::task::spawn_blocking(move || sender(&controller, &auth.person, request, reply))
                 .await;
         match sent {
             Ok(Ok(value)) => CallToolResult::structured(value),
@@ -279,8 +277,7 @@ fn target(name: &str) -> Result<BoxTarget, String> {
 }
 
 /// The shape of [`send`] and [`send_early`].
-type SendFn =
-    fn(&std::path::Path, &Person, ControllerRequest, Reply) -> Result<serde_json::Value, String>;
+type SendFn = fn(&Client, &Person, ControllerRequest, Reply) -> Result<serde_json::Value, String>;
 
 /// How often [`send_early`] looks for the Box.
 const EARLY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
@@ -293,13 +290,13 @@ const EARLY_POLLS: u32 = 240;
 /// a Box that exists already, answers with its own result. Other requests go through [`send`].
 /// Either answer is shaped by `reply`.
 fn send_early(
-    socket: &std::path::Path,
+    controller: &Client,
     person: &Person,
     request: ControllerRequest,
     reply: Reply,
 ) -> Result<serde_json::Value, String> {
     let ControllerRequest::Start(start) = &request else {
-        return send(socket, person, request, reply);
+        return send(controller, person, request, reply);
     };
     let show = ControllerRequest::Show(ShowReq {
         target: Some(start.name.clone().into()),
@@ -309,15 +306,15 @@ fn send_early(
         artifacts: false,
         pane: false,
     });
-    if act_as(socket, person, show.clone()).is_ok() {
+    if act_as(controller, person, show.clone()).is_ok() {
         // The Box exists already: this start attaches or is refused as busy, and either answer
         // comes from the controller, so wait for it.
-        return send(socket, person, request, reply);
+        return send(controller, person, request, reply);
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    let (path, who, done) = (socket.to_path_buf(), person.clone(), reply.clone());
+    let (owned, who, done) = (controller.clone(), person.clone(), reply.clone());
     std::thread::spawn(move || {
-        let _ = tx.send(send(&path, &who, request, done));
+        let _ = tx.send(send(&owned, &who, request, done));
     });
     for _ in 0..EARLY_POLLS {
         match rx.recv_timeout(EARLY_POLL) {
@@ -327,7 +324,7 @@ fn send_early(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
-        if let Ok(shown) = send(socket, person, show.clone(), reply.clone()) {
+        if let Ok(shown) = send(controller, person, show.clone(), reply.clone()) {
             return Ok(shown);
         }
     }
@@ -336,21 +333,20 @@ fn send_early(
 
 /// Enrolls `person`, then runs `request` as them; the controller's value as is, or why not.
 pub(crate) fn act_as(
-    socket: &std::path::Path,
+    controller: &Client,
     person: &Person,
     request: ControllerRequest,
 ) -> Result<Value, String> {
-    send(socket, person, request, Reply::AsIs)
+    send(controller, person, request, Reply::AsIs)
 }
 
 /// Enrolls `person`, then runs `request` as them; the controller's value, or why not.
 fn send(
-    socket: &std::path::Path,
+    client: &Client,
     person: &Person,
     request: ControllerRequest,
     reply: Reply,
 ) -> Result<Value, String> {
-    let client = Client::new(socket);
     let enroll = ControllerRequest::Enroll(EnrollReq {
         identity: None,
         email: None,

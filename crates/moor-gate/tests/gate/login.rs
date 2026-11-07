@@ -44,7 +44,7 @@ fn gate() -> (String, Issuer) {
     let addr = listener.local_addr().unwrap().to_string();
     let login = Login::new(&format!("http://{addr}")).unwrap();
     let gate = Arc::new(Gate {
-        front_socket: "/nonexistent.sock".into(),
+        controller: moor_client::Client::new("/nonexistent.sock"),
         mcp: None,
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });

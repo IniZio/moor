@@ -3,7 +3,6 @@
 use std::io::Read;
 use std::net::TcpStream;
 
-use moor_client::Client;
 use moor_core::request::{MachineEnrollReq, Request};
 use moor_core::response::ExitClass;
 use serde::Deserialize;
@@ -91,17 +90,15 @@ fn enroll(
         pool: got.pool,
     });
     let acting = rewrite::act(request, &person).map_err(|why| ("403 Forbidden", why))?;
-    let reply = Client::new(&gate.front_socket)
-        .request(acting, |_| {})
-        .map_err(|e| {
-            crate::log(&format!("enrolling a machine failed: {e}"));
-            let status = if client_down(&e) {
-                UNAVAILABLE
-            } else {
-                "502 Bad Gateway"
-            };
-            (status, "the controller is unreachable".to_owned())
-        })?;
+    let reply = gate.controller.request(acting, |_| {}).map_err(|e| {
+        crate::log(&format!("enrolling a machine failed: {e}"));
+        let status = if client_down(&e) {
+            UNAVAILABLE
+        } else {
+            "502 Bad Gateway"
+        };
+        (status, "the controller is unreachable".to_owned())
+    })?;
     if reply.class != ExitClass::Ok {
         let why = reply
             .error

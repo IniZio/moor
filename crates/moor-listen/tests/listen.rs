@@ -112,9 +112,9 @@ fn world(boxes: &[&str]) -> World {
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = tcp.local_addr().unwrap().to_string();
     let url = format!("http://{gate}/mcp");
-    let mcp = moor_gate::Mcp::new(&url, socket.clone()).unwrap();
+    let mcp = moor_gate::Mcp::new(&url, moor_client::Client::new(&socket)).unwrap();
     let config = Arc::new(Gate {
-        front_socket: socket,
+        controller: moor_client::Client::new(socket),
         mcp: Some(mcp),
         verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
     });
