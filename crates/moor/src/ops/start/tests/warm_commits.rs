@@ -12,7 +12,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::ProviderStep;
 use moor_core::seam::driver::ExecOutcome;
-use moor_core::{BoxName, BoxReq, CloseReq, StartReq};
+use moor_core::{BoxId, BoxName, BoxReq, CloseReq, StartReq};
 
 use super::warm::{after_a_partial_setup, events, lines_on, row, start, LINES};
 use super::{agentless_req, repo, repo_req, world, World};
@@ -47,6 +47,33 @@ fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_
     assert_eq!(warm[0]["rerun_from"], "abc123");
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::Ready);
     assert_eq!(w.driver.checkpoint_names(), saved, "a rerun saves nothing");
+}
+
+/// The setup attaches and log copies made on Box `id`'s machine.
+fn setup_calls_on(w: &World, id: BoxId) -> (usize, usize) {
+    let handle = row(w, id).boxed.unwrap().handle.unwrap();
+    let execs = w.driver.execs();
+    let on = execs.iter().filter(|(h, _, _)| *h == handle);
+    let attaches = on.filter(|(_, s, _)| s.argv.join(" ").contains("moor setup: $"));
+    let copies = w.driver.copies();
+    let logs = copies
+        .iter()
+        .filter(|(h, from, _)| *h == handle && from.as_str().ends_with(".moor/setup.log"));
+    (attaches.count(), logs.count())
+}
+
+#[test]
+fn a_rerun_uses_one_attach_and_one_log_copy_however_many_lines_it_has() {
+    for lines in [1_usize, 3, 7] {
+        let list: Vec<String> = (0..lines).map(|i| format!("line-{i}")).collect();
+        let yaml = format!("setup: [{}]\n", list.join(", "));
+        let w = world(FakeDriver::new().with_checkpoints());
+        let cold = start(&w, "cold", "abc123", &yaml);
+        assert_eq!(setup_calls_on(&w, cold), (lines, lines), "a cold Box saves");
+        let moved = start(&w, "moved", "def456", &yaml);
+        assert_eq!(events(&w, moved, "warm_started").len(), 1);
+        assert_eq!(setup_calls_on(&w, moved), (1, 1), "{lines} lines");
+    }
 }
 
 #[test]
@@ -200,6 +227,8 @@ fn a_line_that_fails_on_a_rerun_warns_gives_up_the_fork_and_comes_up_cold() {
     let (w, _) = after_a_partial_setup(driver);
     w.cx.take_warnings();
     let before = acquires(&w);
+    w.driver
+        .set_copy_text("moor setup: $ one-a\nmoor setup: $ two-b\nmoor setup: $ three-c\n");
     let moved = start(&w, "moved", "def456", LINES);
     let failed = events(&w, moved, "warm_rerun_failed");
     assert_eq!(failed.len(), 1, "{failed:?}");
@@ -322,7 +351,7 @@ fn the_agent_of_a_rerun_box_is_told_of_the_disk_and_a_later_cold_machine_is_not(
         .push_exec_stdout("moor.clone=base\nmoor.warm.changed=2\nmoor.warm.ignored=dist/\n");
     w.forge.answer(repo(), Ok(repo_at("def456", Some(LINES))));
     let v = run(&w.cx, &repo_req("moved")).unwrap();
-    let id = moor_core::BoxId::new(v.boxed.id);
+    let id = BoxId::new(v.boxed.id);
     let rerun = events(&w, id, "warm_rerun");
     assert_eq!(rerun[0]["commit"], "abc123");
     assert_eq!(rerun[0]["changed"], 2);
@@ -346,7 +375,7 @@ fn a_cold_box_tells_its_agent_nothing_of_a_disk() {
     let w = world(FakeDriver::new().with_checkpoints());
     w.forge.answer(repo(), Ok(repo_at("abc123", Some(LINES))));
     let v = run(&w.cx, &repo_req("first")).unwrap();
-    let id = moor_core::BoxId::new(v.boxed.id);
+    let id = BoxId::new(v.boxed.id);
     let req = launch_req(&w.cx, &row(&w, id), None).unwrap();
     assert_eq!(req.disk_note, None);
 }

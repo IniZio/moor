@@ -330,3 +330,48 @@ fn a_same_commit_fork_with_no_kept_tree_keeps_what_the_line_left_untracked_and_r
     assert_eq!(s.file(next, "loose"), "made\n");
     assert_eq!(events(&s.w, next, "setup_line_started").len(), 1);
 }
+
+/// Three lines whose middle one runs the tracked script `check`.
+const THREE: &str = "setup: ['true', 'sh ./check', 'echo last > \"$HOME/last\"']\n";
+
+/// A scratch repo with a passing `check` and a Box that saved its layers.
+fn after_three_lines() -> Scratch {
+    let s = Scratch::new();
+    s.commit("check", "exit 0\n");
+    s.start("a", THREE);
+    s
+}
+
+#[test]
+fn a_rerun_in_one_script_reports_each_line() {
+    let s = after_three_lines();
+    s.commit("other", "changed\n");
+    let (next, v) = s.start("next", THREE);
+    assert_eq!(s.warm(next), 1);
+    assert!(v.setup.ok, "{v:?}");
+    let started = events(&s.w, next, "setup_line_started");
+    let mut seen: Vec<_> = started.iter().map(|e| e["index"].as_u64()).collect();
+    seen.sort_unstable();
+    assert_eq!(seen, [Some(1), Some(2), Some(3)], "{started:?}");
+    assert!(started.iter().all(|e| e["total"] == 3), "{started:?}");
+    let finished = events(&s.w, next, "setup_line_finished");
+    assert_eq!(finished.len(), 3, "{finished:?}");
+    assert!(finished.iter().all(|e| e["ok"] == true), "{finished:?}");
+}
+
+#[test]
+fn a_rerun_in_one_script_names_the_line_that_fails_and_tries_cold() {
+    let s = after_three_lines();
+    s.commit("check", "exit 3\n");
+    let (failing, v) = s.start("failing", THREE);
+    assert_eq!(s.warm(failing), 1);
+    let failed = events(&s.w, failing, "warm_rerun_failed");
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0]["line"], "sh ./check");
+    assert_eq!(row(&s.w, failing).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(v.setup.line.as_deref(), Some("sh ./check"));
+    assert!(
+        !s.home(failing).join("last").exists(),
+        "the cold try stopped there too"
+    );
+}
