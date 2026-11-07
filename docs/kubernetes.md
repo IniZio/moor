@@ -278,8 +278,21 @@ Box tokens are signed with on the volume. The chart refuses to render otherwise.
 A roll loses the rest of the state directory. The next pod remakes sockets, lock files, crabbox claims and
 `pool/known_hosts`. Setup, clone and run logs of earlier pods are gone.
 
-The old `moor-state` stays in the namespace, kept by its resource policy. Delete it by hand once its blobs are
-in the bucket.
+### Moving blobs off the volume
+
+`blobs.copyFromVolume: true` keeps `moor-state` rendered and runs the Job `<release>-blob-copy-<hash>`. It
+mounts the volume read-only and copies `artifacts/`, `reports/` and `transcripts/` to the same keys in the
+bucket with a pinned rclone image. Stored rows need no change. It never replaces a key the bucket holds,
+so a blob the new controller wrote first stays, and a rerun copies only what is missing. It deletes nothing.
+
+1. Set `blobs.s3`, `blobs.copyFromVolume: true` and deploy. The controller rolls onto an `emptyDir`.
+   The Job starts once the old pod lets go of the volume.
+2. Until the Job ends, reading an older artifact, Report or transcript answers that the blob is missing.
+3. Check `kubectl logs job/<release>-blob-copy-<hash>`. To copy again, delete the Job and deploy again.
+4. Drop `blobs.copyFromVolume` and deploy. The volume stays in the namespace, kept by its resource policy.
+   Delete it by hand once you no longer want it.
+
+The keys need list, read and write on the bucket.
 
 ## Upgrades
 

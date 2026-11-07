@@ -157,6 +157,15 @@ fi
 if helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true --set egress.enabled=false 2>&1 | grep -qv 'needs egress.enabled'; then
   fail "a controller without the volume renders with its own egress Proxy"
 fi
+if grep -qE 'blob-copy|kind: Job' <<<"$stateless"; then fail "renders the blob copy without blobs.copyFromVolume"; fi
+copy=$(helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true --set blobs.copyFromVolume=true)
+copy_job=$(awk '/^kind:/ { kind = $2 } kind == "Job" { print }' <<<"$copy")
+grep -q 'claimName: moor-state, readOnly: true' <<<"$copy_job" || fail "the blob copy does not read the volume read-only"
+grep -q -- '--ignore-existing' <<<"$copy_job" || fail "the blob copy may replace a blob the bucket already holds"
+grep -qE '^  name: moor-state$' <<<"$copy" || fail "the blob copy renders without the volume it reads"
+if grep -q 'claimName: moor-state' <<<"$(awk '/^kind:/ { kind = $2 } kind == "Deployment" { print }' <<<"$copy")"; then
+  fail "the controller mounts the volume while its blobs are copied"
+fi
 on_volume=$(helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${bucket[@]}")
 grep -q 'claimName: moor-state' <<<"$on_volume" || fail "a SQLite controller with a bucket drops the volume"
 grep -q 'type: Recreate' <<<"$on_volume" || fail "a SQLite controller with a bucket rolls"
