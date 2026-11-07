@@ -51,7 +51,7 @@ fn a_refused_connect_is_an_error_naming_the_status() {
 fn an_unreachable_proxy_is_an_error() {
     let gone = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let url = format!("http://{}", gone.local_addr().unwrap());
-    drop(gone);
+    std::thread::spawn(move || gone.incoming().for_each(drop));
     assert!(connect(&proxy(&url), "api.github.com", 443).is_err());
 }
 

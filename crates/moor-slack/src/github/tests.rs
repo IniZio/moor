@@ -62,7 +62,7 @@ fn a_401_or_403_refuses_and_anything_else_leaves_github_unasked() {
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
-    drop(listener);
+    std::thread::spawn(move || listener.incoming().for_each(drop));
     let got = GitHub::new(&base).check(&token("gho_secret_value"));
     let Err(CheckError::Unavailable(why)) = got else {
         panic!("{got:?}");
