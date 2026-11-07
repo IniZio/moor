@@ -3,7 +3,6 @@
 //! get 503, and a request cut after it was sent is never sent again.
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
@@ -18,6 +17,7 @@ use moor_core::controller::{FrameErrorKind, ServerFrame};
 use moor_core::response::Response;
 use moor_gate::{over_tls, Gate, Mcp, Verifier, HOLD};
 use moor_testkit::oidc::{now, Issuer};
+use moor_testkit::LockedPort;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer as CertIssuer, KeyPair, SanType};
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -229,19 +229,6 @@ impl Up {
     }
 }
 
-/// A port below the ephemeral range, so no bind to port 0 can take it, and locked in a file
-/// across every test here, so none takes it while its controller is away.
-fn listen() -> (TcpListener, u16, File) {
-    (20_000..32_000)
-        .find_map(|port| {
-            let lock = std::env::temp_dir().join(format!("moor-gate-hold-{port}.lock"));
-            let lock = File::create(lock).ok()?;
-            lock.try_lock().ok()?;
-            Some((TcpListener::bind(("127.0.0.1", port)).ok()?, port, lock))
-        })
-        .unwrap()
-}
-
 /// A gate over TLS in front of a fake controller.
 struct Held {
     gate: String,
@@ -251,7 +238,7 @@ struct Held {
     resource: String,
     issuer: Issuer,
     agent: ureq::Agent,
-    _port: File,
+    _port: LockedPort,
     _dir: tempfile::TempDir,
 }
 
@@ -265,7 +252,8 @@ fn held_with(key: &str, hold: Redial) -> Held {
 fn held_served(key: &str, hold: Redial, serve: impl FnOnce(TcpListener, Arc<Gate>)) -> Held {
     let dir = tempfile::tempdir().unwrap();
     let (files, config) = pki(dir.path());
-    let (listener, port, lock) = listen();
+    let (listener, lock) = LockedPort::listen();
+    let port = lock.port();
     let fake = Arc::new(Fake {
         answer: Mutex::new(Answer::Hello),
         shown: Mutex::default(),

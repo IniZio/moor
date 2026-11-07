@@ -6,7 +6,7 @@
 
 use std::fs::{self, Permissions};
 use std::io::{Read as _, Write as _};
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
@@ -246,10 +246,8 @@ fn a_refresh_leaves_a_call_in_flight_and_the_tunnel_running() {
 
     let socket = rig.dir.path().join("proxy.sock");
     let proxy = UnixListener::bind(&socket).unwrap();
-    let port = {
-        let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        free.local_addr().unwrap().port()
-    };
+    let reserved = moor_testkit::LockedPort::reserve();
+    let port = reserved.port();
     let tunnel = rig.cb.reverse_tunnel(&handle(), port, &socket).unwrap();
     thread::spawn(move || {
         for stream in proxy.incoming() {

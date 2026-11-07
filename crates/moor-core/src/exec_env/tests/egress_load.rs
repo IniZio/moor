@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use moor_testkit::LockedPort;
 use rustix::process::{kill_process, Pid, Signal};
 
 use super::super::egress::lines;
@@ -15,8 +16,12 @@ use super::super::egress::lines;
 /// resolve dependencies.
 const TUNNELS: usize = 200;
 
-/// The pid file of a tinyproxy the egress lines started, killed on drop.
-struct Tinyproxy(PathBuf);
+/// The pid file of a tinyproxy the egress lines started, killed on drop, and the ports it was
+/// given, kept reserved until then.
+struct Tinyproxy(
+    PathBuf,
+    #[allow(dead_code, reason = "held for its drop")] [LockedPort; 2],
+);
 
 impl Drop for Tinyproxy {
     fn drop(&mut self) {
@@ -34,25 +39,18 @@ impl Drop for Tinyproxy {
     }
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// Runs the egress lines with `home` as the Box home, which return once tinyproxy listens.
 fn start(home: &Path) -> (Tinyproxy, u16) {
-    let port = free_port();
+    let reserved = [LockedPort::reserve(), LockedPort::reserve()];
+    let (port, filter) = (reserved[0].port(), reserved[1].port());
     let out = Command::new("sh")
         .arg("-c")
-        .arg(lines(port, free_port(), &[]).join("\n"))
+        .arg(lines(port, filter, &[]).join("\n"))
         .env("HOME", home)
         .stdin(Stdio::null())
         .output()
         .unwrap();
-    let proxy = Tinyproxy(home.join(".moor/egress.pid"));
+    let proxy = Tinyproxy(home.join(".moor/egress.pid"), reserved);
     assert!(
         out.status.success(),
         "tinyproxy never listened on {port}: {}",

@@ -6,7 +6,7 @@
     reason = "tests"
 )]
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -209,9 +209,8 @@ async fn an_unreachable_proxy_is_502() {
 
 #[tokio::test]
 async fn a_proxy_back_after_a_controller_restart_gap_takes_the_connect() {
-    let gone = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = gone.local_addr().unwrap();
-    drop(gone);
+    let gone = moor_testkit::LockedPort::reserve();
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, gone.port()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let fwd = listener.local_addr().unwrap();
     let upstream = Upstream::new(format!("ws://{addr}/egress"), "tok", RootCertStore::empty());
@@ -231,9 +230,8 @@ async fn a_proxy_back_after_a_controller_restart_gap_takes_the_connect() {
 
 #[tokio::test]
 async fn a_proxy_back_within_the_retries_takes_the_connect() {
-    let gone = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = gone.local_addr().unwrap();
-    drop(gone);
+    let gone = moor_testkit::LockedPort::reserve();
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, gone.port()));
     let fwd = forwarder(format!("ws://{addr}/egress"), RootCertStore::empty()).await;
     let (tx, _seen) = mpsc::unbounded_channel();
     tokio::spawn(async move {
