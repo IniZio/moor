@@ -30,7 +30,8 @@ database:
   # Read connections the controller keeps open (MOOR_DATABASE_READERS).
   readers: 4
 
-blobs: {}
+blobs:
+  copyFromVolume: false
 
 controller:
   uid: 10001

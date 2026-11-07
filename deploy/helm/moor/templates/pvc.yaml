@@ -1,4 +1,4 @@
-{{- if not (include "moor.stateless" .) }}
+{{- if or (not (include "moor.stateless" .)) .Values.blobs.copyFromVolume }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
