@@ -6,7 +6,7 @@
 
 pub(crate) mod lease;
 pub(crate) mod run;
-mod users;
+pub(crate) mod users;
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use std::time::Duration;
 use moor_core::config::proxy::ResolvedRule;
 
 use super::front::{Front, FrontSocket, Route};
-use super::ledger::FrontsLedger;
+use super::ledger::{CaPair, FrontsLedger};
 use super::nono::ca;
 use super::Sink;
 use users::Users;
@@ -59,6 +59,17 @@ pub(crate) fn ca_cert(state_dir: &Path) -> std::io::Result<PathBuf> {
     Ok(ca::cert_in(&dir))
 }
 
+/// The CA every front trusts as a key and certificate, created when missing.
+///
+/// # Errors
+/// Why the CA could not be read or made.
+pub(crate) fn ca_pair(state_dir: &Path) -> std::io::Result<CaPair> {
+    let dir = ca_dir(state_dir);
+    ca::load_or_create_in(&dir, CA_NAME)?;
+    let (key_pem, cert_pem) = ca::read_in(&dir)?;
+    Ok(CaPair { key_pem, cert_pem })
+}
+
 /// The socket of front `ns`'s Proxy.
 pub(crate) fn socket_path(state_dir: &Path, ns: &str) -> PathBuf {
     FrontSocket::of_front(0, state_dir, ns).path().to_owned()
@@ -87,7 +98,11 @@ pub(crate) fn serve(deps: &Deps, fronts: &[(String, Vec<ResolvedRule>)]) -> u8 {
             return 1;
         }
     };
-    let users = Arc::new(Users::new(deps, ca));
+    let users = Arc::new(Users::new(
+        Arc::clone(&deps.ledger),
+        ca,
+        (deps.state_dir.clone(), deps.upstream_ca.clone()),
+    ));
     let mut listening = Vec::new();
     for (ns, rules) in fronts {
         let socket = FrontSocket::of_front(deps.owner, &deps.state_dir, ns);

@@ -153,10 +153,10 @@ pub fn migrate_store(env: &Env) -> Result<String, String> {
     })
 }
 
-/// Ends every front Proxy lease in the store.
+/// Ends the front Proxy leases of every front that does not run elsewhere.
 pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
     if let Some(store) = env.shared::<Store>() {
-        store.purge_front_leases()?;
+        store.purge_front_leases(env.remote_fronts())?;
     }
     Ok(())
 }

@@ -12,6 +12,11 @@ pub(crate) fn token(head: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         name.eq_ignore_ascii_case("proxy-authorization")
             .then_some(value.trim())
     })?;
+    basic_password(value)
+}
+
+/// The password of `value`, a `Basic` credential; none when it is not one or does not decode.
+pub(crate) fn basic_password(value: &str) -> Option<Zeroizing<Vec<u8>>> {
     let (scheme, encoded) = value.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("basic") {
         return None;

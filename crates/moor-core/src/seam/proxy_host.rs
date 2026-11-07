@@ -102,6 +102,12 @@ pub trait ProxyHost: Send + Sync {
     /// Whether the front Proxy accepts connections for front `front`.
     fn front_running(&self, front: &str) -> bool;
 
+    /// The PEM certificate of the CA every front's Proxy signs with, made when missing.
+    ///
+    /// # Errors
+    /// Why it could not be read or made.
+    fn front_ca_pem(&self) -> Result<String, String>;
+
     /// Stops the Box's Proxy and forgets it.
     ///
     /// # Errors

@@ -93,13 +93,26 @@ pub(crate) fn install(
     box_id: BoxId,
     (key_pem, cert_pem): (&[u8], &str),
 ) -> std::io::Result<BoxCa> {
-    let dir = ca_dir(state_dir, box_id);
-    DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
-    std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
+    install_in(&ca_dir(state_dir, box_id), (key_pem, cert_pem))
+}
+
+/// Writes the CA `key_pem` and `cert_pem` into `dir`, replacing what is there, and loads it back,
+/// checking that the key matches the certificate.
+pub(crate) fn install_in(dir: &Path, (key_pem, cert_pem): (&[u8], &str)) -> std::io::Result<BoxCa> {
+    DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
     let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
-    write_private(&dir, &key_path, key_pem)?;
-    write_private(&dir, &cert_path, cert_pem.as_bytes())?;
+    write_private(dir, &key_path, key_pem)?;
+    write_private(dir, &cert_path, cert_pem.as_bytes())?;
     load(&key_path, &cert_path)
+}
+
+/// The PEM key and PEM certificate of the CA in `dir`.
+pub(crate) fn read_in(dir: &Path) -> std::io::Result<(Vec<u8>, String)> {
+    Ok((
+        std::fs::read(dir.join(KEY_FILE))?,
+        std::fs::read_to_string(dir.join(CERT_FILE))?,
+    ))
 }
 
 /// Path of the CA certificate in `dir`.

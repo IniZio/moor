@@ -203,6 +203,9 @@ pub enum ProxyLeaseValue {
         token: SecretValue,
         /// Seconds until the lease expires.
         expires_in_secs: u64,
+        /// The PEM CA the Proxy signs with, for a front that finds it on no disk of its own.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ca_pem: Option<String>,
     },
     /// The user lacks the secret `name`, which a rule of the front's Proxy injects.
     NoSecret {

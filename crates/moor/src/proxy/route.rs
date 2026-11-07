@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_KEY, EGRESS_URL};
+use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_URL};
 
 /// The controller's own shared egress Proxy socket, under the state dir.
 const LOCAL_SOCKET: &str = "egress/egress.sock";
@@ -86,7 +86,7 @@ pub(crate) fn local_socket(state_dir: &Path) -> PathBuf {
 
 /// The key the shared egress Proxy checks token MACs with; empty when it is off.
 pub(crate) fn key(env: &Env) -> &[u8] {
-    env.get(EGRESS_KEY).unwrap_or_default().as_bytes()
+    env.egress_key()
 }
 
 /// The forwarder binary the controller delivers: `MOOR_EGRESS_FORWARD_BIN`, else
