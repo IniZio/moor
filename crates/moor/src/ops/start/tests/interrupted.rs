@@ -86,6 +86,46 @@ fn a_start_cut_off_by_a_restart_acquires_once_more() {
 }
 
 #[test]
+fn a_start_cut_while_the_host_still_warms_its_vm_survives_the_restart() {
+    let w = cut_off(FakeDriver::new().cut_acquires_go_on());
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert!(releases(&w).is_empty(), "the warmup goes on, so it is kept");
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.boxed.as_ref().map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(row.intent, None);
+    let events = store.events(row.id, 50).unwrap();
+    assert!(!events.iter().any(|e| e.kind == "setup_failed"));
+    assert!(!events.iter().any(|e| e.kind == "box_failed"));
+}
+
+#[test]
+fn a_takeover_that_fails_stops_the_lease_and_fails_the_setup() {
+    let w = cut_off(FakeDriver::new().cut_acquires_go_on());
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.driver.fail_next_acquire(DriverError::Failed {
+        summary: "no room".into(),
+    });
+    assert!(resume_setup(&w.cx, store, BoxId::new(1)).is_err());
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(releases(&w), ["release box-1"]);
+}
+
+#[test]
+fn a_cut_acquire_that_cannot_be_released_is_not_tried_again() {
+    let w = cut_off(FakeDriver::new().fail_release_always(DriverError::Failed {
+        summary: "provider down".into(),
+    }));
+    let store = w.cx.store().unwrap();
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(w.driver.acquired_nonces().len(), 0);
+}
+
+#[test]
 fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
     let w = cut_off(FakeDriver::new());
     let store = w.cx.store().unwrap();
@@ -144,9 +184,7 @@ fn a_failed_release_of_an_unfinished_box_refuses_the_close() {
     let w = cut_off(FakeDriver::new().fail_release_always(DriverError::Failed {
         summary: "provider down".into(),
     }));
-    let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
     let e = close_demo(&w).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("provider down"), "{}", e.error);

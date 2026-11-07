@@ -119,6 +119,16 @@ fn handle() -> BoxHandle {
 }
 
 #[test]
+fn a_pool_lease_is_taken_over_by_an_adopt_not_another_warmup() {
+    let (host, cb) = rig();
+    assert!(cb.acquire_outlives_caller(&handle()));
+    assert!(!cb.acquire_outlives_caller(&BoxHandle::new("p/moor-9-abc")));
+    let got = cb.adopt_noting(&req(), &mut |_| {}).unwrap();
+    assert_eq!(got.handle, handle());
+    assert_eq!(host.verbs(), [Verb::Adopt, Verb::Authorize, Verb::Info]);
+}
+
+#[test]
 fn acquire_warms_up_lets_the_key_in_and_builds_its_own_words() {
     let (host, cb) = rig();
     let got = cb.acquire(&req()).unwrap();

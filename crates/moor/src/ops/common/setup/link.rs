@@ -14,7 +14,7 @@ use crate::error::CommandError;
 
 /// How long a follower keeps attaching while the Box cannot be reached, which a machine's link
 /// being down between two runners looks like; the run in the Box goes on meanwhile.
-const LINK_WAIT: Duration = Duration::from_secs(120);
+pub(crate) const LINK_WAIT: Duration = Duration::from_secs(120);
 
 /// Longest one call that asks whether the Box answers may take.
 const REACHABLE_CALL: Duration = Duration::from_secs(10);

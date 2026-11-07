@@ -191,6 +191,21 @@ impl Driver for Crabbox {
         plain()
     }
 
+    fn acquire_outlives_caller(&self, handle: &BoxHandle) -> bool {
+        pool::is_pool_handle(handle)
+    }
+
+    fn adopt_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        if pool::is_pool_provider(&req.provider) {
+            return pool::adopt(self, req);
+        }
+        self.acquire_noting(req, note)
+    }
+
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
         self.stop(handle)
     }

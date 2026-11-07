@@ -59,6 +59,26 @@ pub trait Driver: Send + Sync {
     /// still name the half-made Box for release.
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;
 
+    /// Whether an acquire of `handle` goes on when its caller is cut off, so the next caller must
+    /// take it over with [`Driver::adopt_noting`] and not release or start another.
+    fn acquire_outlives_caller(&self, handle: &BoxHandle) -> bool {
+        let _ = handle;
+        false
+    }
+
+    /// Takes over the acquire a cut-off caller left going, as [`Driver::acquire_noting`] would
+    /// have ended.
+    ///
+    /// # Errors
+    /// As [`Driver::acquire`].
+    fn adopt_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        self.acquire_noting(req, note)
+    }
+
     /// Releases a Box; an already-gone Box is not an error.
     ///
     /// # Errors

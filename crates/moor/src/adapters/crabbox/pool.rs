@@ -64,9 +64,8 @@ impl Placed<'_> {
             .map_err(failed)
     }
 
-    /// Boots the lease's VM with `boot`.
-    fn warmup(&self, boot: &Boot) -> Result<(), DriverError> {
-        let verb = Verb::Warmup;
+    /// Boots the lease's VM with `boot`, by `verb`.
+    fn boot(&self, verb: Verb, boot: &Boot) -> Result<(), DriverError> {
         match self
             .hosts
             .lease(self.machine, verb, Some(self.slug), None, boot)
@@ -214,16 +213,36 @@ impl Crabbox {
 /// Leases a VM for `req` on its host and lets the controller's key in; a failure after the
 /// warmup stops the lease.
 pub(super) fn acquire(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, DriverError> {
+    boot_and_reach(cb, req, Verb::Warmup)
+}
+
+/// As [`acquire`], taking over the warmup or fork a cut-off caller left going on the host.
+pub(super) fn adopt(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, DriverError> {
+    boot_and_reach(cb, req, Verb::Adopt)
+}
+
+/// Whether `handle` names a lease on a user's pool host.
+pub(super) fn is_pool_handle(handle: &BoxHandle) -> bool {
+    split_handle(handle)
+        .0
+        .is_some_and(|p| is_pool_provider(&ProviderId::new(p)))
+}
+
+/// Has the host boot the VM with `verb`, then lets the controller's key in.
+fn boot_and_reach(cb: &Crabbox, req: &AcquireReq, verb: Verb) -> Result<Acquired, DriverError> {
     let handle = planned(req)?;
     let placed = cb.placed(&handle)?;
     cb.forget_targets(&handle);
     // A Box with no size leaves the class to the host's provider, as an older agent knows no
     // class to take.
     let class = req.class.as_deref().map(super::size_of).transpose()?;
-    placed.warmup(&Boot {
-        cache: super::cache::lease(&req.cache),
-        class: class.map(str::to_owned),
-    })?;
+    placed.boot(
+        verb,
+        &Boot {
+            cache: super::cache::lease(&req.cache),
+            class: class.map(str::to_owned),
+        },
+    )?;
     let reached = cb.controller_key().and_then(|key| {
         let public = fs::read_to_string(key.with_extension("pub"))
             .map_err(|e| failed(format!("cannot read the controller's public key: {e}")))?;

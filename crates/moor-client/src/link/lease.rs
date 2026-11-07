@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 pub enum Verb {
     /// Boot the VM, or find it booted.
     Warmup,
+    /// Take over a warmup or fork whose caller was cut off: wait for one still going, or find
+    /// its VM up, or boot the VM.
+    Adopt,
     /// How to sign in to the VM and which host keys it shows.
     Info,
     /// Pause the VM, keeping its disk and memory.
