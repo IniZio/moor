@@ -2,7 +2,8 @@
 //! instead of waiting on.
 
 use std::net::{Shutdown, TcpStream};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 /// The streams held open, and whether the drain has closed them.
 #[derive(Default)]
@@ -15,11 +16,13 @@ struct Open {
     held: Vec<(u64, TcpStream)>,
     /// Requests waiting for the controller.
     waiting: usize,
+    /// `/mcp` requests whose response has not begun.
+    unanswered: usize,
 }
 
 /// Every long-lived connection the gate serves.
 #[derive(Default)]
-pub(crate) struct Streams(Mutex<Open>);
+pub(crate) struct Streams(Mutex<Open>, Condvar);
 
 /// A stream counted as long-lived until this drops.
 pub(crate) struct Hold<'a> {
@@ -28,6 +31,9 @@ pub(crate) struct Hold<'a> {
     /// Its number.
     id: u64,
 }
+
+/// An `/mcp` request counted as unanswered until this drops.
+pub(crate) struct Unanswered<'a>(&'a Streams);
 
 /// A request counted as waiting for the controller until this drops.
 pub(crate) struct Waiting<'a>(&'a Streams);
@@ -50,6 +56,21 @@ impl Streams {
         open.held.push((id, handle));
         drop(open);
         Some(Hold { streams: self, id })
+    }
+
+    /// Counts an `/mcp` request as unanswered. Ending the MCP streams fails such a request with
+    /// a 500, so the drain waits for it first.
+    pub(crate) fn unanswered(&self) -> Unanswered<'_> {
+        self.open().unanswered += 1;
+        Unanswered(self)
+    }
+
+    /// Waits up to `bound` for every `/mcp` request to have its response begun.
+    pub(crate) fn wait_for_answers(&self, bound: Duration) {
+        drop(
+            self.1
+                .wait_timeout_while(self.open(), bound, |open| open.unanswered > 0),
+        );
     }
 
     /// Counts a request as waiting for the controller, unless [`crate::HOLD_CAP`] already are.
@@ -82,5 +103,12 @@ impl Drop for Hold<'_> {
 impl Drop for Waiting<'_> {
     fn drop(&mut self) {
         self.0.open().waiting -= 1;
+    }
+}
+
+impl Drop for Unanswered<'_> {
+    fn drop(&mut self) {
+        self.0.open().unanswered -= 1;
+        self.0 .1.notify_all();
     }
 }

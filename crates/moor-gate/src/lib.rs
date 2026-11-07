@@ -50,6 +50,10 @@ pub const HOLD: Redial = Redial {
     max_pause: Duration::from_secs(2),
 };
 
+/// Longest one dial of a held request waits. A connect to a pod that just went gets no answer at
+/// all, and without this limit a few of them would use up the hold.
+const HOLD_DIAL: Duration = Duration::from_secs(3);
+
 /// The most requests one gate holds at once; the next gets 503 with `Retry-After` straight away.
 ///
 /// A held request costs a thread, about 50 kB as measured, so this stays near 26 MB, and it
@@ -62,7 +66,9 @@ pub const HOLD_CAP: usize = 512;
 /// # Errors
 /// The address is not `tls://HOST:PORT`, or a PEM file cannot be read or does not fit.
 pub fn over_tls(controller: &str, pki: &TlsPki, key: &str, hold: Redial) -> Result<Client, String> {
-    Ok(Client::front(controller, pki, NAMESPACE, key)?.with_redial(hold))
+    Ok(Client::front(controller, pki, NAMESPACE, key)?
+        .with_redial(hold)
+        .with_dial_limit(HOLD_DIAL))
 }
 
 /// What one gate serves.
@@ -172,11 +178,12 @@ pub fn serve_until(
     let (mut open, mut timed_out) = wait_for_none(count, ended, streams_bound);
     if open > 0 && timed_out {
         streams.close_all();
+        let rest = drain_timeout.saturating_sub(streams_bound);
+        streams.wait_for_answers(rest);
         if let Some(mcp) = &gate.mcp {
             mcp.end_streams();
         }
-        (open, timed_out) =
-            wait_for_none(count, ended, drain_timeout.saturating_sub(streams_bound));
+        (open, timed_out) = wait_for_none(count, ended, rest);
     }
     if timed_out {
         log(&format!("drain timed out with {open} connections open"));
