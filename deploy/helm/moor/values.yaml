@@ -96,6 +96,10 @@ gate:
   port: 8443
   # Browser sign-in at /auth: register https://<host>/auth/callback on the Authgear client first.
   login: false
+  # Seals the sign-in cookies; every gate replica must hold the same one. Empty makes one on the
+  # first install and keeps it across upgrades. Comma-separated, the first seals and all open, so
+  # a new key goes in front of the old one for a rollover.
+  cookieKey: ""
   # Empty finds the keys through the issuer's discovery document.
   jwksUrl: ""
   # Dial the controller's ledger TLS listener with a front hello instead of the front socket on

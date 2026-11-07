@@ -237,6 +237,11 @@ spec:
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-secrets, key: gate-front-key }
             {{- end }}
+            {{- if .Values.gate.login }}
+            - name: MOOR_GATE_COOKIE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-gate, key: cookie-key }
+            {{- end }}
           args:
             - --listen=0.0.0.0:{{ .Values.gate.port }}
             {{- if include "moor.gateOverTls" . }}
