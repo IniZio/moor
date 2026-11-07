@@ -34,15 +34,17 @@ const fn tree_went_cold(cloned: &Cloned) -> bool {
 /// What `target` goes on with after its clone, and the commit of the disk its lines run again
 /// over when they do. A checkpoint records its commit, so only a tree that is the base unchanged
 /// keeps its layers. A fork whose refresh fell back to a fresh clone lost the outputs its lines
-/// made, so it keeps none and all its lines run.
+/// made, so it keeps none and all its lines run. A rerun keeps none either: it saves nothing, so
+/// one script spares it the attach and the log copy each line would cost.
 pub(super) fn after_clone<'a>(
     target: &SetupTarget<'a>,
     cloned: &Cloned,
 ) -> (SetupTarget<'a>, Option<&'a str>) {
     let forked = target.layered.and_then(Layered::forked_commit);
-    let keep = cloned.at_base && !(forked.is_some() && tree_went_cold(cloned));
+    let reruns = target.layered.is_some_and(Layered::reruns);
+    let keep = cloned.at_base && !reruns && !(forked.is_some() && tree_went_cold(cloned));
     let target = target.keeping_layers(keep);
-    let reran = forked.filter(|_| target.layered.is_none_or(Layered::reruns));
+    let reran = forked.filter(|_| target.layered.is_none());
     (target, reran)
 }
 

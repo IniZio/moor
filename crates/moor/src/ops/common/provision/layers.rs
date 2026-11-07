@@ -211,7 +211,7 @@ pub(super) fn run(
                 ms += took;
                 tail = t;
                 layered.spent_ms.fetch_add(took, Ordering::Relaxed);
-                if !layered.reruns() && checkpoint_after(i + 1, took, total) {
+                if checkpoint_after(i + 1, took, total) {
                     save(cx, store, target, layered, i + 1);
                 }
             }
