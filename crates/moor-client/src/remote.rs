@@ -55,8 +55,8 @@ pub(super) enum Link {
     Socket(PathBuf),
     /// A server reached over a signed-in WebSocket.
     Remote(Remote),
-    /// The controller's TLS listener, as the machine runner.
-    Runner(super::tls::Runner),
+    /// The controller's TLS listener, as a machine runner or a front.
+    Tls(super::tls::Tls),
 }
 
 impl Link {
@@ -65,7 +65,7 @@ impl Link {
         let socket = match self {
             Self::Socket(socket) => socket,
             Self::Remote(remote) => return remote.connect(),
-            Self::Runner(runner) => return runner.connect(),
+            Self::Tls(tls) => return tls.connect(),
         };
         match UnixStream::connect(socket) {
             Ok(stream) => Attempt::Done(stream),

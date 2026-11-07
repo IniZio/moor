@@ -8,7 +8,7 @@ pub mod settings;
 mod sync;
 mod user;
 
-pub use controller::{parse_controller, ControllerConfig, FrontEntry, LedgerTls};
+pub use controller::{parse_controller, ControllerConfig, FrontEntry, LedgerTls, RemoteFront};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 
 pub use user::{

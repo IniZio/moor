@@ -1,10 +1,12 @@
 //! The ledger's connections: the store calls of the Proxy processes, on the ledger socket and,
 //! for the shared egress Proxy in another pod, on a TLS listener. A machine runner in another
-//! pod reaches the runner socket's loop through that listener too.
+//! pod reaches the runner socket's loop through that listener too, and a front in another pod
+//! its front socket's loop.
 //!
 //! The ledger stays out of the drain: it accepts and answers until the process exits, so a
 //! Proxy keeps its lease and secrets for as long as this controller is alive.
 
+use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
@@ -12,8 +14,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_client::tls::{bridge, RUNNER_HELLO};
-use moor_core::config::LedgerTls;
+use moor_client::tls::{bridge, FRONT_HELLO, RUNNER_HELLO};
+use moor_core::config::{FrontEntry, LedgerTls};
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
@@ -66,21 +68,41 @@ pub(super) struct TlsLedger {
     config: Arc<ServerConfig>,
     /// The key a machine runner's hello presents; none takes no runner here.
     runner_key: Option<Arc<str>>,
+    /// The key each remote front's hello presents, by namespace.
+    front_keys: BTreeMap<String, Zeroizing<String>>,
+}
+
+/// The runner socket's and remote fronts' loops, which a hello hands its connection to.
+pub(super) struct Loops {
+    /// Serves a runner's connection.
+    pub(super) runner: Handler,
+    /// Serves each remote front's connection, by namespace.
+    pub(super) fronts: BTreeMap<String, Handler>,
+    /// What every such connection is admitted through.
+    pub(super) drain: Arc<Drain>,
+    /// Where failures go.
+    pub(super) sink: Sink,
 }
 
 impl TlsLedger {
     /// Loads the certificate and key `tls` names, with `~` expanded by `env`, and binds its
     /// address; none when the config sets no `tls`. The listener answers only the shared egress
-    /// Proxy and machine runners, so it needs the key of one of them.
-    pub(super) fn bind(env: &Env, tls: Option<&LedgerTls>) -> Result<Option<Self>, String> {
+    /// Proxy, machine runners and the remote fronts of `fronts`, and a remote front's Proxy is
+    /// the shared one, so it needs the key of the Proxy or the runners.
+    pub(super) fn bind(
+        env: &Env,
+        tls: Option<&LedgerTls>,
+        fronts: &BTreeMap<String, FrontEntry>,
+    ) -> Result<Option<Self>, String> {
         let Some(tls) = tls else { return Ok(None) };
         let runner_key = env.get(MACHINE_SERVICE_KEY).filter(|k| !k.is_empty());
         if env.get(EGRESS_KEY).is_none_or(str::is_empty) && runner_key.is_none() {
             return Err(format!(
                 "ledger_tls needs {EGRESS_KEY} or {MACHINE_SERVICE_KEY}: it serves only the \
-                 shared egress Proxy and machine runners"
+                 shared egress Proxy, machine runners and remote fronts"
             ));
         }
+        let front_keys = front_keys(env, fronts)?;
         let config = server_config(
             &env.expand_home(&tls.cert),
             &env.expand_home(&tls.key),
@@ -92,19 +114,26 @@ impl TlsLedger {
             listener,
             config: Arc::new(config),
             runner_key: runner_key.map(Arc::from),
+            front_keys,
         }))
     }
 
-    /// Serves on a thread of its own until the process exits; a runner's connection goes to
-    /// `runner` under `drain`, as one on the runner socket does.
+    /// The namespaces of the fronts this listener takes a hello from.
+    pub(super) fn front_namespaces(&self) -> impl Iterator<Item = &String> {
+        self.front_keys.keys()
+    }
+
+    /// Serves on a thread of its own until the process exits; a hello hands its connection to
+    /// the loop in `loops` it names, under that loop's drain.
     pub(super) fn serve_until_exit(
         self,
         (env, vault): (&Arc<Env>, &Arc<Vault>),
-        runner: (Handler, &Arc<Drain>),
+        loops: Loops,
         sink: &Sink,
     ) {
         let (env, vault, sink) = (Arc::clone(env), Arc::clone(vault), Arc::clone(sink));
-        let (handler, drain) = (runner.0, Arc::clone(runner.1));
+        let keys = Arc::new((self.runner_key, self.front_keys));
+        let loops = Arc::new(loops);
         std::thread::spawn(move || {
             for sock in self.listener.incoming() {
                 let started = sock.and_then(|sock| {
@@ -117,10 +146,9 @@ impl TlsLedger {
                 match started {
                     Ok(stream) => {
                         let (env, vault) = (Arc::clone(&env), Arc::clone(&vault));
-                        let key = self.runner_key.clone();
-                        let runner = (Arc::clone(&handler), Arc::clone(&drain), Arc::clone(&sink));
+                        let (keys, loops) = (Arc::clone(&keys), Arc::clone(&loops));
                         std::thread::spawn(move || {
-                            serve_one(stream, (&env, &vault), key.as_deref(), &runner);
+                            serve_one(stream, (&env, &vault), &keys, &loops);
                         });
                     }
                     Err(e) => log(&sink, &format!("ledger TLS accept failed: {e}")),
@@ -130,73 +158,129 @@ impl TlsLedger {
     }
 }
 
-/// A runner's hello: `{"runner":{"v":1,"key":<key>}}`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RunnerHello {
-    /// What the runner says.
-    runner: RunnerSays,
+/// The key file of each remote front in `fronts`, read.
+fn front_keys(
+    env: &Env,
+    fronts: &BTreeMap<String, FrontEntry>,
+) -> Result<BTreeMap<String, Zeroizing<String>>, String> {
+    fronts
+        .iter()
+        .filter_map(|(ns, front)| Some((ns, front.remote.as_ref()?)))
+        .map(|(ns, remote)| {
+            let path = env.expand_home(&remote.key_file);
+            let bad = |why: &dyn std::fmt::Display| {
+                format!("fronts.{ns}.remote.key_file {}: {why}", path.display())
+            };
+            let text = Zeroizing::new(std::fs::read_to_string(&path).map_err(|e| bad(&e))?);
+            let key = text.trim_end();
+            if key.is_empty() {
+                return Err(bad(&"is empty"));
+            }
+            Ok((ns.clone(), Zeroizing::new(key.to_owned())))
+        })
+        .collect()
 }
 
-/// The body of a runner's hello.
+/// A hello that hands its connection to a loop other than the ledger's.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RunnerSays {
-    /// The hello's protocol version.
-    v: u32,
-    /// The machine service key.
-    key: String,
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum Hello {
+    /// `{"runner":{"v":1,"key":<key>}}`.
+    Runner {
+        /// The hello's protocol version.
+        v: u32,
+        /// The machine service key.
+        key: String,
+    },
+    /// `{"front":{"v":1,"ns":<namespace>,"key":<key>}}`.
+    Front {
+        /// The hello's protocol version.
+        v: u32,
+        /// The front's namespace.
+        ns: String,
+        /// The front's key.
+        key: String,
+    },
 }
 
-/// Serves one connection: a runner's hello hands it to the runner socket's loop, and any other
-/// line goes to the ledger as its hello.
+/// Serves one connection: a runner's or a front's hello hands it to that one's loop, and any
+/// other line goes to the ledger as its hello.
 fn serve_one(
     mut stream: UntilHello,
     (env, vault): (&Env, &Vault),
-    runner_key: Option<&str>,
-    runner: &(Handler, Arc<Drain>, Sink),
+    keys: &(Option<Arc<str>>, BTreeMap<String, Zeroizing<String>>),
+    loops: &Loops,
 ) {
     let Some(line) = hello_line(&mut stream) else {
         return;
     };
-    if let Ok(hello) = serde_json::from_slice::<RunnerHello>(&line) {
-        serve_runner(stream, runner_key, &hello.runner, runner);
-    } else {
-        let head = io::Cursor::new(line);
-        Moor::serve_egress_ledger((env, vault), Replayed { head, stream });
+    match serde_json::from_slice::<Hello>(&line) {
+        Ok(Hello::Runner { v, key }) => {
+            let verdict = runner_verdict(v, keys.0.as_deref(), &key);
+            answer_hello(stream, &verdict.map(|()| &loops.runner), loops);
+        }
+        Ok(Hello::Front { v, ns, key }) => {
+            let verdict = front_verdict(v, &ns, keys.1.get(&ns), &key);
+            let handler = verdict.and_then(|()| {
+                loops
+                    .fronts
+                    .get(&ns)
+                    .ok_or_else(|| format!("no front {ns} runs here"))
+            });
+            answer_hello(stream, &handler, loops);
+        }
+        Err(_) => {
+            let head = io::Cursor::new(line);
+            Moor::serve_egress_ledger((env, vault), Replayed { head, stream });
+        }
     }
 }
 
-/// Answers a runner's hello and, when it presents `want`, serves the rest of the connection
-/// as a connection on the runner socket.
-fn serve_runner(
-    mut stream: UntilHello,
-    want: Option<&str>,
-    hello: &RunnerSays,
-    (handler, drain, sink): &(Handler, Arc<Drain>, Sink),
-) {
-    let verdict = match want {
-        _ if hello.v != RUNNER_HELLO => Err(format!(
-            "the runner speaks hello {}, the controller speaks {RUNNER_HELLO}",
-            hello.v
+/// Whether a runner's hello at `v` presents `got`, the key `want`.
+fn runner_verdict(v: u32, want: Option<&str>, got: &str) -> Result<(), String> {
+    match want {
+        _ if v != RUNNER_HELLO => Err(format!(
+            "the runner speaks hello {v}, the controller speaks {RUNNER_HELLO}"
         )),
         None => Err(format!("{MACHINE_SERVICE_KEY} is unset here")),
-        Some(want) if !same_key(want, &hello.key) => Err("not the machine service key".to_owned()),
+        Some(want) if !same_key(want, got) => Err("not the machine service key".to_owned()),
         Some(_) => Ok(()),
-    };
-    let answer = match &verdict {
-        Ok(()) => serde_json::json!({"Ok": null}),
+    }
+}
+
+/// Whether a front's hello at `v` for `ns` presents `got`, the key `want`. The refusal is the
+/// same for a namespace with no remote front, so a hello cannot probe which ones have one.
+fn front_verdict(
+    v: u32,
+    ns: &str,
+    want: Option<&Zeroizing<String>>,
+    got: &str,
+) -> Result<(), String> {
+    match want {
+        _ if v != FRONT_HELLO => Err(format!(
+            "the front speaks hello {v}, the controller speaks {FRONT_HELLO}"
+        )),
+        Some(want) if same_key(want.as_str(), got) => Ok(()),
+        _ => Err(format!("not the key of front {ns}")),
+    }
+}
+
+/// Answers a hello and, when `verdict` holds a loop, serves the rest of the connection there.
+fn answer_hello(mut stream: UntilHello, verdict: &Result<&Handler, String>, loops: &Loops) {
+    let answer = match verdict {
+        Ok(_) => serde_json::json!({"Ok": null}),
         Err(why) => serde_json::json!({"Err": {"refused": why}}),
     };
     let answered = writeln!(stream, "{answer}").and_then(|()| stream.flush());
-    if answered.is_err() || verdict.is_err() {
+    let Ok(handler) = verdict else { return };
+    if answered.is_err() {
         return;
     }
     match bridge(stream.0) {
         Ok(near) => {
-            drain::serve_one(near, handler, drain, sink);
+            drain::serve_one(near, handler, &loops.drain, &loops.sink);
         }
-        Err(e) => log(sink, &format!("runner connection setup failed: {e}")),
+        Err(e) => log(&loops.sink, &format!("TLS connection setup failed: {e}")),
     }
 }
 

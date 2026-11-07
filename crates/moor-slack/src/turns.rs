@@ -74,8 +74,8 @@ pub(crate) struct Turns {
     pub(crate) bot_token: Arc<Secret>,
     /// The controller and team; each turn speaks for the thread's owner.
     pub(crate) link: Link,
-    /// Absolute path of the controller socket, for the tool server.
-    pub(crate) socket: PathBuf,
+    /// The tool server's flags that say where the controller is.
+    pub(crate) tool_dial: Vec<String>,
     /// Absolute path of this binary, which the agent starts as the tool server.
     pub(crate) program: PathBuf,
     /// Most Boxes a thread has open at once.

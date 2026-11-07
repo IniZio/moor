@@ -9,7 +9,6 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
 
-use moor_client::Client;
 use moor_core::secret::Secret;
 
 use crate::api::{Api, BotIdentity};
@@ -18,6 +17,7 @@ use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
+use crate::dial::Dial;
 use crate::email::Emails;
 use crate::feed::Feed;
 use crate::github::GitHub;
@@ -40,8 +40,8 @@ use stop::finish;
 /// What the daemon needs from its command line and environment.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    /// Controller socket to dial.
-    pub socket: PathBuf,
+    /// Where to reach the controller.
+    pub controller: Dial,
     /// The front's config file.
     pub config: PathBuf,
     /// Directory for the front's own state, `slack.db`.
@@ -191,9 +191,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let bot_token = Arc::new(bot_token);
     let roleplay = roleplay(&cfg, &me, &api, &bot_token, log)?;
     let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
-    let socket = std::path::absolute(&settings.socket)
-        .map(|path| own_proc(&path))
-        .map_err(|e| format!("{}: {e}", settings.socket.display()))?;
+    let tool_dial = settings.controller.tool_args(crate::dial::tool_socket);
     let c = &cfg.coordinator;
     let turns = Turns {
         db_path: db_path.clone(),
@@ -205,7 +203,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         link: link.clone(),
-        socket,
+        tool_dial,
         program,
         max_open_boxes: c.max_open_boxes,
         idle_secs: i64::from(c.idle_minutes) * 60,
@@ -225,20 +223,6 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         link,
         roleplay,
     })
-}
-
-/// `path` with a leading `/proc/self` named as this process's `/proc/<pid>`. A front's socket
-/// is `/proc/self/fd/3`, a descriptor only this process holds; the agent does not hand it on,
-/// so the tool server it starts must dial this process's descriptor by pid.
-fn own_proc(path: &Path) -> PathBuf {
-    path.strip_prefix("/proc/self").map_or_else(
-        |_| path.to_owned(),
-        |rest| {
-            Path::new("/proc")
-                .join(std::process::id().to_string())
-                .join(rest)
-        },
-    )
 }
 
 /// Opens again the prompts whose answer an earlier run never sent.
@@ -265,7 +249,7 @@ fn connect(
         .auth_test(bot_token)
         .map_err(|e| format!("slack auth.test: {e}"))?;
     let team = Team::parse(&me.team)?;
-    Ok((Link::new(Client::new(&settings.socket), team), me))
+    Ok((Link::new(settings.controller.client()?, team), me))
 }
 
 /// The coordinator agent the config names, probed and logged, or why it cannot run.

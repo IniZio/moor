@@ -17,7 +17,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
 use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
-use super::{client_config, line, trusting, Runner, RunnerPki};
+use super::{client_config, line, trusting, Tls, TlsPki};
 use crate::{Attempt, ClientError};
 
 /// A CA in `dir` as `<name>-ca.pem`, and an issuer for it.
@@ -64,8 +64,8 @@ fn pki(dir: &Path) {
 }
 
 /// The runner's files, presenting certificate `cert`.
-fn files(dir: &Path, cert: &str) -> RunnerPki {
-    RunnerPki {
+fn files(dir: &Path, cert: &str) -> TlsPki {
+    TlsPki {
         ca: dir.join("ledger-ca.pem"),
         cert: dir.join(format!("{cert}.pem")),
         key: dir.join(format!("{cert}.key")),
@@ -112,12 +112,12 @@ fn listener(dir: &Path) -> (u16, JoinHandle<Result<(), String>>) {
 }
 
 /// A runner dialing `port` with `config`.
-fn runner(port: u16, config: rustls::ClientConfig) -> Runner {
-    Runner {
+fn runner(port: u16, config: rustls::ClientConfig) -> Tls {
+    Tls {
         host: "127.0.0.1".to_owned(),
         port,
         config: Arc::new(config),
-        key: Arc::from("service-key"),
+        hello: Arc::from(r#"{"runner":{"v":1,"key":"service-key"}}"#),
     }
 }
 

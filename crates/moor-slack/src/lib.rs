@@ -40,6 +40,7 @@ mod worker;
 pub use coordinator::claude::wiring::EGRESS_PROXY_VARS;
 pub use coordinator::mcp::{close_inherited, serve_tools, ToolSettings};
 pub use daemon::{run, Settings};
+pub use dial::Dial;
 
 /// Diagnostic sink for the daemon's log; each call is one line.
 pub type Log = Arc<dyn Fn(&str) + Send + Sync>;

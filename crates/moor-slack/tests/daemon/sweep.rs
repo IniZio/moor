@@ -157,7 +157,7 @@ fn the_sweep_runs_again_a_minute_after_the_first() {
     rig.link_token(USER, GOOD);
     let controller = rig.serve(moor_core::controller::PROTOCOL);
     let settings = moor_slack::Settings {
-        socket: rig.socket(),
+        controller: moor_slack::Dial::Socket(rig.socket()),
         config: rig.path("slack.yaml"),
         state_dir: rig.path("state-slack"),
         home: Some(rig.path("home")),
