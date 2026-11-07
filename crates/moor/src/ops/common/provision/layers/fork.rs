@@ -92,7 +92,12 @@ pub(in super::super) fn stand_on_warm_start(
         .filter(|w| Some(w.id) > began)
         .and_then(|w| w.payload.get("layer")?.as_u64());
     if let Some(layer) = layer.and_then(|l| usize::try_from(l).ok()) {
-        layered.stand_on(layer, 0);
+        let key = layered.keys.get(layer);
+        let kept = key
+            .map(|k| store.checkpoint(&layered.home, k))
+            .transpose()?;
+        let place = kept.flatten().and_then(|r| r.place);
+        layered.stand_on(layer, place.map_or(0, |p| p.setup_ms));
     }
     Ok(())
 }
