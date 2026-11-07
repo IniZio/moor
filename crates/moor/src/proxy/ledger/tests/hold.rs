@@ -18,7 +18,7 @@ use moor_schema::tables::UserMachinesV2;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::{box_ledger, OnLedger};
-use crate::proxy::front::Hold;
+use crate::proxy::front::{hold_or_missing, Hold};
 use crate::proxy::keeper::tests::ready_box;
 use crate::proxy::keeper::{Deps, KEEPERS};
 use crate::store::db::DbExt as _;
@@ -230,4 +230,16 @@ fn a_held_claim_names_the_runner_holding_the_link_and_none_once_it_drains_or_goe
     assert_eq!(r.holder().as_deref(), Some("10.0.0.8:7702"), "relinked");
     r.clock.sleep(std::time::Duration::from_secs(61));
     assert_eq!(r.holder(), None, "not heard from within a minute");
+}
+
+#[test]
+fn a_closed_box_is_told_so_and_not_to_try_again() {
+    let r = rig();
+    r.hold_mini();
+    let close = Decision::new(r.id).lifecycle(BoxLifecycleInput::Close { reason: None });
+    r.store.apply(close).unwrap();
+    let Hold::Missing { reason, .. } = hold_or_missing(&r.ledger) else {
+        unreachable!("a closed Box held a slot")
+    };
+    assert_eq!(reason, format!("Box {} is closed", r.id.get()));
 }

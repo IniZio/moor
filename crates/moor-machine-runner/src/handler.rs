@@ -9,7 +9,8 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{tool_handler, ErrorData, RoleServer, ServerHandler};
 
-use crate::{caller, claim, internal, missing, Runner};
+use crate::caller::Caller;
+use crate::{caller, claim, internal, missing, parts, Runner};
 
 #[allow(
     clippy::unused_async_trait_impl,
@@ -27,7 +28,8 @@ impl ServerHandler for Runner {
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let mut tools = router().list_all();
-        if !self.relays.is_empty() && missing(&context)?.is_none() {
+        let served = !self.relays.is_empty() && missing(&context)?.is_none();
+        if served && self.refusal(&context).await?.is_none() {
             let caller = caller(&context)?;
             match self.hooks.facts(&caller).await {
                 Ok(facts) => {
@@ -49,7 +51,11 @@ impl ServerHandler for Runner {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let claims = Runner::claim_router();
-        if let Some(reason) = missing(&context)?.filter(|_| !claims.has_route(&request.name)) {
+        let reason = match missing(&context)?.filter(|_| !claims.has_route(&request.name)) {
+            None => self.refusal(&context).await?,
+            reason => reason,
+        };
+        if let Some(reason) = reason {
             return Ok(
                 CallToolResult::error(vec![ContentBlock::text(format!("{reason}."))]).into(),
             );
@@ -66,6 +72,24 @@ impl ServerHandler for Runner {
         self.relays
             .call(&caller, &facts, &own, request, context)
             .await
+    }
+}
+
+impl Runner {
+    /// Why the calling Box gets no work done: a Proxy's stale word can still name a slot for a
+    /// Box that closed, whose release a call must not undo.
+    async fn refusal(
+        &self,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<Option<String>, ErrorData> {
+        let id = Caller::box_of(&parts(context)?.headers)?.get();
+        Ok(match self.hooks.is_closed(id).await {
+            Ok(false) => None,
+            Ok(true) => Some(format!("Box {id} is closed")),
+            Err(e) => Some(format!(
+                "could not tell whether Box {id} is open: {e}; try again later"
+            )),
+        })
     }
 }
 

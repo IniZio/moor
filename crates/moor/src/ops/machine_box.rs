@@ -1,5 +1,6 @@
 //! `machine-box`: the runner's record of each Box it set up on a machine.
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::request::MachineBoxOp;
 use moor_core::view::user::MachineBoxValue;
 
@@ -9,8 +10,14 @@ use crate::error::CommandError;
 /// Gets, puts, drops or lists records as `op` says; what it read or wrote.
 pub(super) fn run(cx: &Cx, op: MachineBoxOp) -> Result<MachineBoxValue, CommandError> {
     let store = cx.store()?;
+    let mut closed = false;
     let boxes = match op {
-        MachineBoxOp::Get { box_id } => store.machine_box(box_id)?.into_iter().collect(),
+        MachineBoxOp::Get { box_id } => {
+            closed = !store.box_row(box_id)?.is_some_and(|row| {
+                !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
+            });
+            store.machine_box(box_id)?.into_iter().collect()
+        }
         MachineBoxOp::Put(record) => {
             store.put_machine_box(&record)?;
             vec![record]
@@ -21,5 +28,8 @@ pub(super) fn run(cx: &Cx, op: MachineBoxOp) -> Result<MachineBoxValue, CommandE
         }
         MachineBoxOp::List { machine_id } => store.machine_boxes(machine_id)?,
     };
-    Ok(MachineBoxValue { boxes })
+    Ok(MachineBoxValue { boxes, closed })
 }
+
+#[cfg(test)]
+mod tests;

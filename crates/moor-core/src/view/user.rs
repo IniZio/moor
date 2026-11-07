@@ -117,6 +117,9 @@ pub struct MachineLinksValue {
 pub struct MachineBoxValue {
     /// The records.
     pub boxes: Vec<crate::request::MachineBox>,
+    /// Whether the Box a get names is closed or gone; never set by the other operations.
+    #[serde(default)]
+    pub closed: bool,
 }
 
 /// Value of `machine-add` and `machine-remove`.

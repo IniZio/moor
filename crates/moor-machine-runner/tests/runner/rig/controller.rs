@@ -69,9 +69,13 @@ pub(super) struct Fake {
 /// The `machine-box` records the fake controller keeps, by Box id.
 pub type Records = Arc<Mutex<std::collections::BTreeMap<i64, Value>>>;
 
-/// Serves `machine-box` as the store does: whole rows, got by Box, listed by machine.
-fn machine_box(records: &Records, op: &Value) -> Value {
+/// Serves `machine-box` as the store does: whole rows, got by Box with whether `open` lists it,
+/// listed by machine.
+fn machine_box(records: &Records, open: &[i64], op: &Value) -> Value {
     let mut records = records.lock().unwrap();
+    let closed = op
+        .get("get")
+        .is_some_and(|get| !open.contains(&get["box_id"].as_i64().unwrap()));
     let boxes: Vec<Value> = if let Some(row) = op.get("put") {
         records.insert(row["box_id"].as_i64().unwrap(), row.clone());
         vec![row.clone()]
@@ -92,7 +96,7 @@ fn machine_box(records: &Records, op: &Value) -> Value {
             .cloned()
             .collect()
     };
-    json!({ "boxes": boxes })
+    json!({ "boxes": boxes, "closed": closed })
 }
 
 /// Serves `box-rsync` the way the controller does, on `tree` as the Box's work tree, and
@@ -168,7 +172,9 @@ fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
         *fake.link.links.lock().unwrap() = Some(sent.clone());
         Response::ok("machine-links", Some(json!({ "links": sent })))
     } else if req["cmd"] == "machine-box" {
-        Response::ok("machine-box", Some(machine_box(&fake.boxes, &req["op"])))
+        let open = fake.open.lock().unwrap().clone();
+        let value = machine_box(&fake.boxes, &open, &req["op"]);
+        Response::ok("machine-box", Some(value))
     } else if req["cmd"] == "machine-hold" {
         assert_eq!(req["id"], 7, "{frame}");
         let suspended = tree.with_file_name("remote").join("suspended").exists();
