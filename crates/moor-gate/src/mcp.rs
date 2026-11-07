@@ -185,6 +185,7 @@ impl Mcp {
         gate: &Gate,
         streams: &Streams,
     ) -> Response<Body> {
+        let _unanswered = streams.unanswered();
         let authorization = req
             .headers()
             .get(header::AUTHORIZATION)

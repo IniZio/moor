@@ -12,6 +12,7 @@ use std::ops::DerefMut;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use rustix::event::{poll, PollFd, PollFlags};
 use rustix::io::Errno;
@@ -110,8 +111,8 @@ impl Client {
 impl Tls {
     /// Dials, says the hello and returns the client's end of the pumped connection. Nothing
     /// of the protocol has been sent yet, so any failure leaves nothing run.
-    pub(super) fn connect(&self) -> Attempt<UnixStream, ClientError> {
-        let tcp = match dial(&self.host, self.port) {
+    pub(super) fn connect(&self, limit: Duration) -> Attempt<UnixStream, ClientError> {
+        let tcp = match dial(&self.host, self.port, limit) {
             Ok(tcp) => tcp,
             Err(why) => return Attempt::Unrun(ClientError::Remote(why)),
         };
