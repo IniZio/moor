@@ -1,3 +1,19 @@
+{{- if and .Values.gate.enabled .Values.gate.login }}
+{{- $kept := (lookup "v1" "Secret" .Release.Namespace (printf "%s-gate" .Release.Name)).data | default dict -}}
+{{- $key := .Values.gate.cookieKey | default (get $kept "cookie-key" | b64dec) | default (randAlphaNum 64) -}}
+# Seals the sign-in cookies. Kept across upgrades so a roll never ends a session.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels: {{- include "moor.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  cookie-key: {{ $key | quote }}
+---
+{{- end }}
 {{- if .Values.gate.enabled }}
 apiVersion: v1
 kind: Service

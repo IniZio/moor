@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::time::Instant;
+use std::time::SystemTime;
 
 use oauth2::url::form_urlencoded;
 
-use super::{check_csrf, csrf_token, Login, Session};
+use super::{check_csrf, csrf_token, Login, Session, PENDING_COOKIE};
 use crate::{log, Gate};
 
 /// The session cookie's name.
@@ -40,7 +40,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         clippy::disallowed_methods,
         reason = "sign-in and session expiry; the store takes the time as an argument"
     )]
-    let now = Instant::now();
+    let now = SystemTime::now();
     let (path, query) = req.target.split_once('?').unwrap_or((req.target, ""));
     let query: HashMap<String, String> = form_urlencoded::parse(query.as_bytes())
         .into_owned()
@@ -57,18 +57,23 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
                 );
             };
             match login.start(&gate.verifier, back, now) {
-                Ok(url) => redirect(&mut stream, &url, ""),
+                Ok((url, sealed)) => {
+                    let cookie = format!(
+                        "Set-Cookie: {PENDING_COOKIE}={sealed}; HttpOnly; Secure; SameSite=Lax; Path=/auth\r\n"
+                    );
+                    redirect(&mut stream, &url, &cookie);
+                }
                 Err(why) => failed(&mut stream, &why),
             }
         }
-        ("GET", "/auth/callback") => callback(&mut stream, &query, gate, login, now),
+        ("GET", "/auth/callback") => callback(&mut stream, &req, &query, gate, login, now),
         ("GET", "/auth/me") => match session {
             Some(session) => me(&mut stream, &session),
             None => redirect(&mut stream, "/auth/login?return=/auth/me", ""),
         },
         ("POST", "/auth/logout") => {
             let form = read_form(&mut stream, req.leftover, req.length);
-            logout(&mut stream, login, session, form.as_ref());
+            logout(&mut stream, session, form.as_ref());
         }
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
     }
@@ -77,25 +82,27 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
 /// Finishes the sign-in the `state` names, setting the session cookie.
 fn callback(
     stream: &mut TcpStream,
+    req: &Request<'_>,
     query: &HashMap<String, String>,
     gate: &Gate,
     login: &Login,
-    now: Instant,
+    now: SystemTime,
 ) {
-    let pending = query.get("state").and_then(|s| login.take(s, now));
+    let pending = query
+        .get("state")
+        .and_then(|s| login.take(req.cookies.iter().copied(), s, now));
     let (Some(pending), Some(code)) = (pending, query.get("code")) else {
         return page(
             stream,
             "400 Bad Request",
             "",
-            "This sign-in link is expired or was already used. Sign in again.",
+            "This sign-in link is expired or did not start in this browser. Sign in again.",
         );
     };
     match login.finish(&gate.verifier, pending, code, now) {
         Ok((session, back)) => {
             let cookie = format!(
-                "Set-Cookie: {COOKIE}={}; HttpOnly; Secure; SameSite=Lax; Path=/\r\n",
-                session.id
+                "Set-Cookie: {COOKIE}={session}; HttpOnly; Secure; SameSite=Lax; Path=/\r\nSet-Cookie: {PENDING_COOKIE}=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/auth\r\n"
             );
             redirect(stream, &back, &cookie);
         }
@@ -103,16 +110,15 @@ fn callback(
     }
 }
 
-/// Ends `session` when the form carries its CSRF token.
+/// Clears the browser's session cookie when the form carries its CSRF token. A sealed
+/// cookie cannot be recalled, so one copied beforehand lasts until it expires.
 fn logout(
     stream: &mut TcpStream,
-    login: &Login,
     session: Option<Session>,
     form: Option<&HashMap<String, String>>,
 ) {
     match (session, form.and_then(|f| f.get("csrf"))) {
         (Some(session), Some(csrf)) if check_csrf(&session, csrf) => {
-            login.close(&session);
             let clear = format!(
                 "Set-Cookie: {COOKIE}=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/\r\n"
             );
