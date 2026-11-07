@@ -2,10 +2,11 @@
 //! that holds them.
 
 use moor_core::config::BoxSettings;
+use moor_core::domain::layers::SLOW_LINE_MS;
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::clone::SetupProxy;
-use super::layers::{after_finishing, Layered};
+use super::layers::{after_finishing, roll_forward, Layered};
 use super::outcome::dotfiles_warned;
 use super::SetupTarget;
 use crate::cx::Cx;
@@ -22,7 +23,7 @@ pub(super) fn steps_after_lines(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-    (on_fork, target): (&SetupTarget<'_>, &SetupTarget<'_>),
+    (on_fork, target, at_base): (&SetupTarget<'_>, &SetupTarget<'_>, bool),
     (cfg, proxy): (&BoxSettings, &SetupProxy),
     run: &SetupRun,
 ) -> Result<(DotfilesRun, Result<(), String>), CommandError> {
@@ -30,17 +31,29 @@ pub(super) fn steps_after_lines(
         return Ok((DotfilesRun::Skipped, Ok(())));
     }
     let at = (target.handle, target.provider);
+    let rolling = on_fork.layered.filter(|l| at_base && l.may_roll());
+    let slow = run.ms().is_some_and(|ms| ms > SLOW_LINE_MS);
     let holds_steps = on_fork.layered.is_some_and(Layered::finished);
     if holds_steps && agent_install::present(cx, at, id, cfg, proxy) {
         refresh_login(cx, at.0);
+        if let Some(l) = rolling.filter(|_| slow) {
+            roll_forward(cx, store, on_fork, l, l.above());
+        }
         return Ok((DotfilesRun::Skipped, Ok(())));
+    }
+    // A disk that holds the steps above its top line can never be saved as that line.
+    if let Some(l) = rolling.filter(|l| !holds_steps && (slow || !l.top_kept(store))) {
+        roll_forward(cx, store, on_fork, l, l.top());
     }
     let began = cx.clock().instant();
     let after = after_setup(cx, store, at, id, cfg, proxy)?;
     if after.went_well() {
         let spent = cx.clock().instant().saturating_duration_since(began);
         let ms = u64::try_from(spent.as_millis()).unwrap_or(u64::MAX);
-        after_finishing(cx, store, target, ms);
+        match rolling {
+            Some(l) => roll_forward(cx, store, on_fork, l, l.above()),
+            None => after_finishing(cx, store, target, ms),
+        }
     }
     Ok((after.dotfiles, after.installed))
 }

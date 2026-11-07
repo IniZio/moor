@@ -8,10 +8,13 @@ use std::process::Command;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::view::StartView;
 use moor_core::{BoxId, BoxReq, StartReq};
@@ -19,9 +22,11 @@ use moor_core::{BoxId, BoxReq, StartReq};
 use super::warm::{events, row};
 use super::warm_commits::setup_calls_on;
 use super::{agentless_req, repo, world, World};
+use crate::cx::Cx;
 use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::{resume_setup, warm_disk_note};
 use crate::ops::start::run;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
 
@@ -53,6 +58,24 @@ pub(super) fn git(repo: &Path, args: &[&str]) -> String {
 impl Scratch {
     pub(super) fn new() -> Self {
         Self::on(FakeDriver::new())
+    }
+
+    /// Moves the world's clock `secs` during every exec that mentions `needle`.
+    pub(super) fn slow_on(mut self, needle: &str, secs: u64) -> Self {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+        self.w.cx = Cx::fake_with_clock(
+            self.dir.path().join("state").as_path(),
+            self.w.driver.clone(),
+            self.w.surface.clone(),
+            self.w.proc.clone(),
+            UserConfig::default(),
+            clock.clone(),
+        )
+        .with_forge(self.w.forge.clone());
+        self.w.driver.on_exec_of(needle, move || {
+            clock.sleep(Duration::from_secs(secs));
+        });
+        self
     }
 
     pub(super) fn on(driver: FakeDriver) -> Self {
@@ -121,7 +144,7 @@ impl Scratch {
     }
 
     /// Pushes a commit of `text` to `path` on Box `id`'s branch, as its agent would; the commit.
-    fn push_to_branch_of(&self, id: BoxId, path: &str, text: &str) -> String {
+    pub(super) fn push_to_branch_of(&self, id: BoxId, path: &str, text: &str) -> String {
         let branch = row(&self.w, id).branch.unwrap();
         git(&self.repo, &["switch", "-qc", &branch]);
         let pushed = self.commit(path, text);
@@ -130,7 +153,7 @@ impl Scratch {
     }
 
     /// Takes Box `id`'s machine away and starts it again.
-    fn lose_machine_of(&self, id: BoxId, name: &str, yaml: &str) -> StartView {
+    pub(super) fn lose_machine_of(&self, id: BoxId, name: &str, yaml: &str) -> StartView {
         let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
         self.w.cx.store().unwrap().apply(gone).unwrap();
         self.start(name, yaml).1

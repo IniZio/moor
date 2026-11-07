@@ -245,7 +245,7 @@ A chain is the checkpoints of one user, repo, machine class and cache plan: the 
 each setup line over 20 seconds, and the last line. Each checkpoint is a delta over the one
 before. It holds the guest memory in use at the save and what changed on disk since,
 so a chain costs about what setup wrote to disk, plus the memory in use at each save.
-A Box at a new commit reuses the chain and saves nothing over it.
+A Box at a new commit reuses the chain, and may save its disk over the layer it forked.
 A just-booted 16 GiB VM on ext4 took 1.07 GiB for its first checkpoint and 0.60 GiB for
 the next, with `v52.0-moor.1`. A real setup costs more, and that is not yet measured.
 

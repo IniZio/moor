@@ -11,6 +11,10 @@ use sea_query::{Expr, ExprTrait as _, Query, Value};
 use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
+/// [`Checkpoints::Evicting`] of a checkpoint no Box may start from again, even if its delete fails;
+/// 1 is one claimed for deleting, which a failed delete gives back.
+const RETIRED: i64 = 2;
+
 /// One setup layer saved under a provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CheckpointRow {
@@ -26,6 +30,10 @@ pub(crate) struct CheckpointRow {
     pub(crate) last_used_at: Ts,
     /// Where a new Box may start from it; none until [`Store::place_checkpoint`] records it.
     pub(crate) place: Option<Place>,
+    /// When its chain was set up from scratch.
+    pub(crate) chain_at: Ts,
+    /// How many times its chain rolled forward since.
+    pub(crate) depth: u32,
 }
 
 /// What a new Box started from a checkpoint inherits: the saved disk's workdir and commit, and
@@ -49,11 +57,15 @@ pub(crate) struct Lineage {
     pub(crate) repo: String,
     /// The clone layer's key, shared by every layer of the chain.
     pub(crate) chain: LayerKey,
+    /// How many times the chain rolled forward to this checkpoint.
+    pub(crate) depth: u32,
+    /// When the chain was set up from scratch; none takes what the chain's rows say, or now.
+    pub(crate) root_at: Option<Ts>,
 }
 
 impl Store {
-    /// Records `made` as the checkpoint of layer `key` of `lineage` under `provider`, replacing
-    /// an earlier one and its place, unless that one is being deleted.
+    /// Records `made` as the checkpoint of layer `key` of `lineage` under `provider`. An earlier
+    /// one of that layer is retired, and goes once nothing depends on it.
     pub(crate) fn record_checkpoint(
         &self,
         provider: &ProviderId,
@@ -72,11 +84,15 @@ impl Store {
             .from(Checkpoints::Table)
             .and_where(Expr::col(Checkpoints::Provider).eq(provider))
             .and_where(Expr::col(Checkpoints::Chain).eq(chain))
+            .and_where(Expr::col(Checkpoints::Evicting).eq(0))
             .take();
-        let chain_at = tx
-            .row(chain_began, |r| r.get::<_, Option<i64>>(0))?
-            .unwrap_or(now);
-        let layer: [(Checkpoints, Value); 9] = [
+        let chain_at = match lineage.root_at {
+            Some(at) => at.as_millis(),
+            None => tx
+                .row(chain_began, |r| r.get::<_, Option<i64>>(0))?
+                .unwrap_or(now),
+        };
+        let layer: [(Checkpoints, Value); 10] = [
             (Checkpoints::Checkpoint, made.id.clone().into()),
             (Checkpoints::Repo, lineage.repo.clone().into()),
             (Checkpoints::Bytes, bytes.into()),
@@ -86,36 +102,30 @@ impl Store {
             (Checkpoints::Chain, chain.into()),
             (Checkpoints::ChainAt, chain_at.into()),
             (Checkpoints::Parent, made.parent.clone().into()),
+            (Checkpoints::Depth, i64::from(lineage.depth).into()),
         ];
-        // The unique index covers only checkpoints not being deleted, and a partial index
-        // cannot be an upsert's target once its predicate is a bound value, so replace or add.
-        let replaced = tx.run(
+        tx.run(
             Query::update()
                 .table(Checkpoints::Table)
-                .values(layer.iter().map(|(c, v)| (*c, Expr::val(v.clone()))))
-                .value(Checkpoints::Workdir, Expr::val(None::<String>))
-                .value(Checkpoints::SetupMs, Expr::val(None::<i64>))
-                .value(Checkpoints::Base, Expr::val(None::<String>))
+                .value(Checkpoints::Evicting, RETIRED)
                 .and_where(Expr::col(Checkpoints::Provider).eq(provider))
                 .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
-        if replaced == 0 {
-            tx.run(
-                Query::insert()
-                    .into_table(Checkpoints::Table)
-                    .columns(
-                        [Checkpoints::Provider, Checkpoints::LayerKey]
-                            .into_iter()
-                            .chain(layer.iter().map(|(c, _)| *c)),
-                    )
-                    .values_panic(
-                        [provider.into(), key.as_str().into()]
-                            .into_iter()
-                            .chain(layer.into_iter().map(|(_, v)| Expr::val(v))),
-                    ),
-            )?;
-        }
+        tx.run(
+            Query::insert()
+                .into_table(Checkpoints::Table)
+                .columns(
+                    [Checkpoints::Provider, Checkpoints::LayerKey]
+                        .into_iter()
+                        .chain(layer.iter().map(|(c, _)| *c)),
+                )
+                .values_panic(
+                    [provider.into(), key.as_str().into()]
+                        .into_iter()
+                        .chain(layer.into_iter().map(|(_, v)| Expr::val(v))),
+                ),
+        )?;
         tx.commit()?;
         drop(conn);
         Ok(())
@@ -140,6 +150,8 @@ impl Store {
                         Checkpoints::Workdir,
                         Checkpoints::SetupMs,
                         Checkpoints::Base,
+                        Checkpoints::ChainAt,
+                        Checkpoints::Depth,
                     ])
                     .from(Checkpoints::Table)
                     .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
@@ -155,6 +167,11 @@ impl Store {
                         created_at: Ts::from_millis(r.get(3)?),
                         last_used_at: Ts::from_millis(r.get(4)?),
                         place: place(r.get(5)?, r.get(6)?, r.get(7)?),
+                        chain_at: Ts::from_millis(r.get::<_, Option<i64>>(8)?.unwrap_or_default()),
+                        depth: r
+                            .get::<_, Option<i64>>(9)?
+                            .and_then(|d| u32::try_from(d).ok())
+                            .unwrap_or_default(),
                     })
                 },
             )
@@ -180,6 +197,30 @@ impl Store {
                 .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
+        Ok(())
+    }
+
+    /// Retires every checkpoint of chain `chain` under `provider`, but for those of commit `keep`.
+    pub(crate) fn retire_chain(
+        &self,
+        provider: &ProviderId,
+        chain: &LayerKey,
+        keep: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let mut q = Query::update();
+        q.table(Checkpoints::Table)
+            .value(Checkpoints::Evicting, RETIRED)
+            .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+            .and_where(Expr::col(Checkpoints::Chain).eq(chain.as_str()))
+            .and_where(Expr::col(Checkpoints::Evicting).eq(0));
+        if let Some(base) = keep {
+            q.and_where(
+                Expr::col(Checkpoints::Base)
+                    .ne(base)
+                    .or(Expr::col(Checkpoints::Base).is_null()),
+            );
+        }
+        self.writer().run(&mut q)?;
         Ok(())
     }
 

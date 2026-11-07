@@ -528,12 +528,25 @@ another commit works differently:
 1. moor refreshes the tree as it refreshes a [kept work tree](#work-tree). Tracked
    files reset, untracked files go, and ignored files stay.
 2. Every setup line runs again on that tree, so a line sees the new commit's files.
-3. moor saves no checkpoint from this Box, on a retry too. `warm_started` holds
-   `rerun_from`, the commit the disk holds.
+3. `warm_started` holds `rerun_from`, the commit the disk holds.
+
+moor saves that Box's disk over the layer it forked, at the Box's commit, in two cases:
+
+- The lines took over 20 seconds.
+- The Box's lines or profile have no layer yet, so every later Box would pay for them.
+
+It saves only when the tree is that commit with no changes. A tree a line left changed, or a
+HEAD a line moved, warns `checkpoint_skipped`. So a later Box forks near its own commit. The
+save costs one checkpoint pause per layer. A retry or a restart of such a Box saves nothing.
 
 When a line fails there, the start warns `warm_rerun_failed`, and the event of that
 name holds the line and its log tail. moor releases the fork and sets the Box up once
 from scratch on a new machine. A line that also fails there ends in `setup_failed`.
+
+When the line passes there, the old disk was the cause. That Box's checkpoints replace the
+layers kept, and moor retires the rest of the chain from other commits, so no later Box pays
+for it again. A line that also fails there is the commit's fault, and the chain stays for the
+commit that fixes it. A replaced checkpoint goes from the disk once nothing depends on it.
 
 **A guard can hide a new commit from its line.** This line skips its work once
 `dist/` exists, so the Box keeps the old commit's output and reports no error:
@@ -596,7 +609,7 @@ A marketplace off the forge therefore never keeps this layer.
 that installs `latest` stays at the version it got when moor saved the layer, however old that
 is. Pin versions in your profile, and push a commit when you want a newer one. A new profile
 commit forks the layer below, so no setup line runs again, and runs those steps once more. A Box
-at another commit in that case saves nothing, so it pays for them each time.
+at another commit in that case saves the new layer at its commit, so it pays once.
 
 A plugin that fails to install stays missing on that Box, and moor reports it. moor installs
 plugins with the repo's `env`, not the `env` of your profile.

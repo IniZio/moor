@@ -8,6 +8,7 @@ use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
 mod checkpoint_base;
+mod checkpoint_depth;
 mod egress_token;
 mod forward_port;
 mod held_prompt;
@@ -91,6 +92,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V61__checkpoint_base",
         write: checkpoint_base::write,
+    },
+    Step {
+        name: "V62__checkpoint_depth",
+        write: checkpoint_depth::write,
     },
 ];
 

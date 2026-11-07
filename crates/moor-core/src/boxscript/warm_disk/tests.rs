@@ -1,6 +1,6 @@
 //! The script run under `sh` with real git, in a partial clone with build outputs left behind.
 
-use super::{head_at, parse, script};
+use super::{head_at, parse, script, tree_at};
 use crate::testgit::Origin;
 
 const LIMIT: usize = 3;
@@ -87,4 +87,21 @@ fn head_at_refuses_when_it_can_read_neither_commit() {
     let not_a_repo = o.path("empty");
     std::fs::create_dir_all(&not_a_repo).unwrap();
     assert!(!o.sh(&not_a_repo, &head_at("0123456"), &[]).status.success());
+}
+
+#[test]
+fn tree_at_passes_only_on_that_commit_with_no_changes() {
+    let (o, first) = tree();
+    let t = o.tree();
+    assert!(o.sh(&t, &tree_at(&first), &[]).status.success());
+    std::fs::write(t.join("ignored.log"), "l").unwrap();
+    assert!(
+        o.sh(&t, &tree_at(&first), &[]).status.success(),
+        "ignored files are fine"
+    );
+    std::fs::write(t.join("loose"), "l").unwrap();
+    assert!(!o.sh(&t, &tree_at(&first), &[]).status.success());
+    std::fs::remove_file(t.join("loose")).unwrap();
+    o.git(&t, &["commit", "-qm", "moved", "--allow-empty"]);
+    assert!(!o.sh(&t, &tree_at(&first), &[]).status.success());
 }
