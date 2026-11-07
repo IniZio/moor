@@ -635,6 +635,14 @@ and `~/.android/adbkey`, are not kept.
 | `android` | `~/.android/cache`, `~/.android/build-cache` | The Android Gradle plugin's and `sdkmanager`'s caches |
 | `android-sdk` | `/opt/android-sdk` | moor exports `ANDROID_HOME` and `ANDROID_SDK_ROOT` there when the directory exists and the repo's `env` does not set them. [Android SDK](https://developer.android.com/tools/variables) |
 
+In every Box that uses the Proxy, CMake builds go through
+[ccache](https://ccache.dev/) when the Box has it. moor sets
+`CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` to `ccache` unless
+the variable is already set, so a value from your repo's `env` or setup wins.
+Set a variable to an empty string to turn it off, because CMake reads an empty
+launcher as none. ccache keeps its data in `~/.cache`, which the `cache` preset
+already keeps.
+
 moor also turns on [Gradle's build cache](https://docs.gradle.org/current/userguide/build_cache.html)
 in every Box that uses the Proxy, with or without a JDK yet, by keeping
 `org.gradle.caching=true` in a marked block of `~/.gradle/gradle.properties`.

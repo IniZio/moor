@@ -313,7 +313,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
-    lines.extend(android_lines(ANDROID_SDK));
+    lines.extend(build_env::lines());
     lines.extend(java::java_lines(p.egress_port, &ca));
     lines
 }
@@ -328,17 +328,6 @@ fn trust_anchors(ca: &str) -> String {
             )
         })
         .join(" && ")
-}
-
-/// Where the `android-sdk` cache preset keeps the Android SDK.
-const ANDROID_SDK: &str = "/opt/android-sdk";
-
-/// Lines that point Android tools at the SDK in `root`, a path with no shell metacharacters, for a variable the repo did not set and
-/// only when `root` exists, so a Box without the volume keeps finding its SDK where it did.
-fn android_lines(root: &str) -> Vec<String> {
-    vec![format!(
-        "if [ -d {root} ]; then export ANDROID_HOME=\"${{ANDROID_HOME:-{root}}}\" ANDROID_SDK_ROOT=\"${{ANDROID_SDK_ROOT:-{root}}}\"; fi"
-    )]
 }
 
 /// The line that unsets the prelude's own shell variables.
@@ -393,8 +382,12 @@ pub(crate) fn per_box_paths() -> [String; 3] {
     ]
 }
 
+mod build_env;
 mod egress;
 mod java;
+
+#[cfg(test)]
+use build_env::android_lines;
 
 #[cfg(test)]
 mod tests;

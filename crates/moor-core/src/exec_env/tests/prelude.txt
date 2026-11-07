@@ -36,6 +36,7 @@ export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
 export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
 export NODE_USE_ENV_PROXY=1
 if [ -d /opt/android-sdk ]; then export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}" ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/android-sdk}"; fi
+if command -v ccache >/dev/null 2>&1; then [ -n "${CMAKE_C_COMPILER_LAUNCHER+x}" ] || export CMAKE_C_COMPILER_LAUNCHER=ccache; [ -n "${CMAKE_CXX_COMPILER_LAUNCHER+x}" ] || export CMAKE_CXX_COMPILER_LAUNCHER=ccache; fi
 moor_g="${GRADLE_USER_HOME:-$HOME/.gradle}"; moor_p="$moor_g/gradle.properties"
 if command -v keytool >/dev/null 2>&1; then
 moor_ts="$moor_g/moor-proxy-truststore.p12"
