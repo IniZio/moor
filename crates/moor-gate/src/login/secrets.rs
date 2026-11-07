@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::net::TcpStream;
-use std::time::Instant;
+use std::time::SystemTime;
 
 use moor_core::request::{
     AsReq, Request as ControllerRequest, SecretSetReq, SecretValue, StartNeedsReq,
@@ -45,7 +45,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         clippy::disallowed_methods,
         reason = "session expiry; the store takes the time as an argument"
     )]
-    let now = Instant::now();
+    let now = SystemTime::now();
     let session = login.session(req.cookies.iter().copied(), now);
     match (req.method, session) {
         ("GET", Some(session)) => show(&mut stream, gate, &session, "200 OK", None),

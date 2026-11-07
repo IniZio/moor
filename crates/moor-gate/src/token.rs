@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use moor_core::user::{Email, Identity};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::Agent;
 
@@ -23,7 +23,7 @@ const REFETCH_EVERY: Duration = Duration::from_secs(10);
 const EMAIL_TTL: Duration = Duration::from_secs(300);
 
 /// Who a verified token speaks for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Person {
     /// `authgear:<sub>`.
     pub identity: Identity,
