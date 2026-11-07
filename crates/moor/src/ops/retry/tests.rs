@@ -309,6 +309,7 @@ fn place_at_base(w: &World, at: &BoxRow, provider: &ProviderId, key: &LayerKey) 
         workdir: BoxPath::restore("/work/cbx_1/repo").unwrap(),
         setup_ms: 1,
         base: at.base.clone().unwrap(),
+        stale_since: Some(at.base.clone().unwrap()),
     };
     let store = w.cx.store().unwrap();
     store.place_checkpoint(provider, key, &place).unwrap();

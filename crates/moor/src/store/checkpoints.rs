@@ -46,6 +46,10 @@ pub(crate) struct Place {
     pub(crate) setup_ms: u64,
     /// The commit the disk holds.
     pub(crate) base: String,
+    /// The oldest commit the disk's ignored files may come from: its own base when it was set up
+    /// from scratch, and the one it rolled forward from otherwise. None for a disk that rolled
+    /// forward before moor kept it, whose ignored files may come from any older commit.
+    pub(crate) stale_since: Option<String>,
 }
 
 /// Whose setup a checkpoint holds: a user's chain of layers over one repo.
@@ -152,12 +156,17 @@ impl Store {
                         Checkpoints::Base,
                         Checkpoints::ChainAt,
                         Checkpoints::Depth,
+                        Checkpoints::StaleSince,
                     ])
                     .from(Checkpoints::Table)
                     .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                     .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                     .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
                 |r| {
+                    let depth = r
+                        .get::<_, Option<i64>>(9)?
+                        .and_then(|d| u32::try_from(d).ok())
+                        .unwrap_or_default();
                     Ok(CheckpointRow {
                         checkpoint: r.get(0)?,
                         repo: r.get(1)?,
@@ -166,12 +175,9 @@ impl Store {
                             .and_then(|b| u64::try_from(b).ok()),
                         created_at: Ts::from_millis(r.get(3)?),
                         last_used_at: Ts::from_millis(r.get(4)?),
-                        place: place(r.get(5)?, r.get(6)?, r.get(7)?),
+                        place: place(r.get(5)?, r.get(6)?, r.get(7)?, (r.get(10)?, depth)),
                         chain_at: Ts::from_millis(r.get::<_, Option<i64>>(8)?.unwrap_or_default()),
-                        depth: r
-                            .get::<_, Option<i64>>(9)?
-                            .and_then(|d| u32::try_from(d).ok())
-                            .unwrap_or_default(),
+                        depth,
                     })
                 },
             )
@@ -193,6 +199,7 @@ impl Store {
                 .value(Checkpoints::Workdir, place.workdir.as_str())
                 .value(Checkpoints::SetupMs, ms)
                 .value(Checkpoints::Base, place.base.as_str())
+                .value(Checkpoints::StaleSince, place.stale_since.clone())
                 .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                 .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
@@ -242,12 +249,21 @@ impl Store {
     }
 }
 
-/// The place stored as `workdir`, `setup_ms` and `base`; none when any is missing or unreadable.
-fn place(workdir: Option<String>, setup_ms: Option<i64>, base: Option<String>) -> Option<Place> {
+/// The place stored as `workdir`, `setup_ms`, `base` and `stale_since`; none when any of the first
+/// three is missing or unreadable. A row from before `stale_since` at depth 0 was set up from
+/// scratch at its base, so it reads that. One rolled forward reads unknown.
+fn place(
+    workdir: Option<String>,
+    setup_ms: Option<i64>,
+    base: Option<String>,
+    (stale_since, depth): (Option<String>, u32),
+) -> Option<Place> {
+    let base = base?;
     Some(Place {
         workdir: BoxPath::restore(&workdir?).ok()?,
         setup_ms: u64::try_from(setup_ms?).ok()?,
-        base: base?,
+        stale_since: stale_since.or_else(|| (depth == 0).then(|| base.clone())),
+        base,
     })
 }
 

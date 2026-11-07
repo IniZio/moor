@@ -21,32 +21,34 @@ use crate::ops::common::setup::SetupRun;
 use crate::store::lease::LeaseKind;
 use crate::store::Store;
 
-/// What `target` goes on with after its clone, and the commit of the disk its lines run again
-/// over when they do. A checkpoint records its commit, so only a tree that is the base unchanged
+/// What `target` goes on with after its clone, the commit of the disk its lines run again over
+/// when they do, and the oldest commit its ignored files may come from when the Box is told. A checkpoint records its commit, so only a tree that is the base unchanged
 /// keeps its layers. A rerun keeps none either: it saves nothing, so one script spares it the
 /// attach and the log copy each line would cost. A fork whose refresh fell back to a fresh clone
 /// lost the outputs its lines made, so it keeps none and all its lines run.
 pub(super) fn after_clone<'a>(
     target: &SetupTarget<'a>,
     cloned: &Cloned,
-) -> (SetupTarget<'a>, Option<&'a str>) {
+) -> (SetupTarget<'a>, Option<&'a str>, Option<&'a str>) {
+    let original = target.layered;
     let forked = target.layered.and_then(Layered::forked_commit);
     let reruns = target.layered.is_some_and(Layered::reruns);
     let keep = cloned.at_base && !reruns && !(forked.is_some() && cloned.went_cold);
     let target = target.keeping_layers(keep);
     let reran = forked.filter(|_| target.layered.is_none());
-    (target, reran)
+    let stale = original.and_then(Layered::stale_from);
+    (target, reran, stale.or(reran))
 }
 
-/// Records the disk commit `reran` the Box's lines run again over, when they do. A tree that went
-/// cold has nothing stale left to name.
+/// Records `stale`, the oldest commit the ignored files of the Box's disk may come from, when the
+/// Box is told of it. A tree that went cold has nothing stale left to name.
 pub(super) fn record_disk(
     store: &Store,
     id: BoxId,
-    reran: Option<&str>,
+    (stale, reran): (Option<&str>, bool),
     cloned: &Cloned,
 ) -> Result<Option<WarmDisk>, CommandError> {
-    let Some(commit) = reran.filter(|_| !cloned.went_cold) else {
+    let Some(commit) = stale.filter(|_| !cloned.went_cold) else {
         return Ok(None);
     };
     let (changed, ignored) = cloned.disk.clone();
@@ -54,17 +56,19 @@ pub(super) fn record_disk(
         commit: commit.to_owned(),
         changed,
         ignored,
+        lines_kept: !reran,
     };
     store.apply(Decision::new(id).event(ExtraEvent::WarmRerun {
         commit: disk.commit.clone(),
         changed: disk.changed,
         ignored: disk.ignored.clone(),
+        lines_kept: disk.lines_kept,
     }))?;
     Ok(Some(disk))
 }
 
-/// What the agent of Box `id` is told about the disk its machine forked; none unless the Box's
-/// current machine reran its lines over a checkpoint of another commit.
+/// What the agent of Box `id` is told about the disk its machine forked; none unless that disk's
+/// ignored files may come from an older commit than the Box's.
 pub(crate) fn warm_disk_note(store: &Store, id: BoxId) -> Option<String> {
     let rerun = store.newest_events_of(id, "warm_rerun", 1).ok()?.pop()?;
     let machine = store.newest_events_of(id, "box_requested", 1).ok()?.pop();

@@ -86,10 +86,12 @@ impl TryFrom<Event> for ExtraEvent {
                 commit,
                 changed,
                 ignored,
+                lines_kept,
             }) => Ok(Self::WarmRerun {
                 commit,
                 changed,
                 ignored,
+                lines_kept,
             }),
             Event::Timing(TimingEvent::WarmRerunFailed { line, tail }) => {
                 Ok(Self::WarmRerunFailed { line, tail })

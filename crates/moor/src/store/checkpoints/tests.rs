@@ -287,12 +287,38 @@ fn a_row_from_before_the_base_column_gives_no_place_and_is_still_evictable() {
         workdir: BoxPath::restore("/work/old").unwrap(),
         setup_ms: 5,
         base: "abc".to_owned(),
+        stale_since: Some("abc".to_owned()),
     };
     store.place_checkpoint(&local, &keys[0], &place).unwrap();
     assert_eq!(
         store.checkpoint(&local, &keys[0]).unwrap().unwrap().place,
-        Some(place)
+        Some(place.clone())
     );
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::StaleSince, Expr::val(None::<String>)),
+        )
+        .unwrap();
+    let row = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
+    assert_eq!(
+        row.place,
+        Some(place),
+        "a row from before reads its own base"
+    );
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Depth, 1),
+        )
+        .unwrap();
+    let row = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
+    let stale = row.place.and_then(|p| p.stale_since);
+    assert_eq!(stale, None, "one that rolled forward cannot tell");
     store
         .writer()
         .run(
@@ -352,6 +378,7 @@ fn retiring_a_chain_can_keep_the_rows_of_one_commit() {
         workdir: BoxPath::restore("/work/w").unwrap(),
         setup_ms: 1,
         base: base.to_owned(),
+        stale_since: Some(base.to_owned()),
     };
     for (key, id, base) in [(&keys[0], "old", "x"), (&keys[1], "own", "y")] {
         store

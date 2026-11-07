@@ -262,14 +262,14 @@ fn run_and_record(
 ) -> Result<Provisioned, CommandError> {
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
     let on_fork = target;
-    let (target, reran) = &warm_rerun::after_clone(target, &cloned);
-    let (target, reran) = (target, *reran);
+    let (target, reran, stale) = &warm_rerun::after_clone(target, &cloned);
+    let (target, reran, stale) = (target, *reran, *stale);
     layers::after_clone(cx, store, target, cloned.ms);
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     record_delivered(cx, store, id, cfg, cloned.delivered)?;
-    let warm_disk = warm_rerun::record_disk(store, id, reran, &cloned)?;
+    let warm_disk = warm_rerun::record_disk(store, id, (stale, reran.is_some()), &cloned)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
     let retries = run.failed() && reran.is_some() && !cx.env().cancel().is_cancelled();
     if let Some(layered) = on_fork.layered.filter(|_| retries) {

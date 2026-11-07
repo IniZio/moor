@@ -1,15 +1,13 @@
 //! Moving a Box onto a fork of one of its kept layers: at its start, on a retry, and what a setup
 //! followed again after a restart stands on.
 
-use std::sync::atomic::Ordering;
-
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::layers::{chain_past_limits, failed_layer, nearest, LayerKey};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, Warning};
 
-use super::{Disk, Layered, RollFrom};
+use super::{Disk, Layered};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::disk::make_room;
@@ -43,23 +41,14 @@ fn stand_on_fork(
 ) -> Option<String> {
     let rerun_from = (place.base != layered.base).then(|| place.base.clone());
     match &rerun_from {
-        Some(commit) => {
-            layered.disk = Disk::Rerun {
-                commit: commit.clone(),
-            };
-            layered.spent_ms.store(place.setup_ms, Ordering::Relaxed);
-            layered.roll = Some(RollFrom {
-                depth: kept.depth,
-                root_at: kept.chain_at,
-            });
-        }
-        None => layered.stand_on(layer, place.setup_ms),
+        Some(commit) => layered.rerun_over(commit, place, kept),
+        None => layered.stand_on(layer, Some(place)),
     }
     rerun_from
 }
 
-/// Retires the chain of `kept`, deepest of Box `id`'s layers, when it is past its limits, and says
-/// so; whether it was.
+/// Retires the chain of `kept`, deepest of Box `id`'s layers, when it is past its limits or no one
+/// can tell how old its ignored files are, and says so; whether it was.
 fn chain_expired(
     cx: &Cx,
     store: &Store,
@@ -68,7 +57,12 @@ fn chain_expired(
     (layer, kept): (usize, &CheckpointRow),
 ) -> Result<bool, CommandError> {
     let age_ms = store.now().as_millis() - kept.chain_at.as_millis();
-    let Some(why) = chain_past_limits(age_ms, kept.depth) else {
+    let unknown = kept.place.as_ref().is_some_and(|p| p.stale_since.is_none());
+    let why = chain_past_limits(age_ms, kept.depth).or_else(|| {
+        let why = "its disk rolled forward before moor kept the oldest commit it may hold";
+        unknown.then(|| why.to_owned())
+    });
+    let Some(why) = why else {
         return Ok(false);
     };
     store.retire_chain(&layered.home, &layered.lineage.chain, None)?;
@@ -227,7 +221,7 @@ pub(in super::super) fn stand_on_warm_start(
             .transpose()?;
         let place = kept.flatten().and_then(|r| r.place);
         let finished = layered.finished;
-        layered.stand_on(layer, place.map_or(0, |p| p.setup_ms));
+        layered.stand_on(layer, place.as_ref());
         layered.finished = finished;
     }
     Ok(())
@@ -243,7 +237,7 @@ pub(super) fn nearest_of_own_base(
     for key in &layered.keys {
         let own_base = |r: &CheckpointRow| {
             let place = r.place.as_ref();
-            place.is_some_and(|p| p.base == layered.base)
+            place.is_some_and(|p| p.base == layered.base && p.stale_since.is_some())
         };
         kept.push(store.checkpoint(&layered.home, key)?.filter(own_base));
     }
