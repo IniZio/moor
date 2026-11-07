@@ -173,6 +173,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
             every,
             deadline: WARM_DEADLINE,
         }),
+        front_rules: moor_core::config::proxy::front_rules(),
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.listening()));

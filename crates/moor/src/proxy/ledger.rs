@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use boxes::{AwakeTokens, BoxLedger, BoxView, CaPair};
 use call::Call;
-pub(crate) use client::{EgressLedger, FrontsLedger};
+pub(crate) use client::{EgressLedger, FrontLease, FrontsLedger};
 pub(crate) use endpoint::{Endpoint, TlsFiles};
 pub(crate) use serve::{box_ca, serve, Keys};
 

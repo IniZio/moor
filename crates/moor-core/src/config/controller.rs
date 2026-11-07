@@ -150,6 +150,16 @@ impl ControllerConfig {
             .collect()
     }
 
+    /// The namespaces of the fronts that run elsewhere and dial `ledger_tls`.
+    #[must_use]
+    pub fn remote_fronts(&self) -> BTreeSet<String> {
+        self.fronts
+            .iter()
+            .filter(|(_, front)| front.remote.is_some())
+            .map(|(ns, _)| ns.clone())
+            .collect()
+    }
+
     /// The shortest gap a workflow's cron may have between two firings.
     #[must_use]
     pub fn workflow_min_interval(&self) -> Duration {

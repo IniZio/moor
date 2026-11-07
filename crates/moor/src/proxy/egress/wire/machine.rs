@@ -76,8 +76,13 @@ struct Plain {
 
 /// Dials the machine service for the Box of `ask`, upgrades the connection and relays the
 /// plain request and its answer.
-pub(super) async fn tunnel<S: Peer>(mut stream: S, service: &MachineRoute, ask: &Open) {
-    let Some(reached) = reach(service, &ask.route).await else {
+pub(super) async fn tunnel<S: Peer>(
+    mut stream: S,
+    service: &MachineRoute,
+    ask: &Open,
+    route: &Route,
+) {
+    let Some(reached) = reach(service, route).await else {
         return answer(&mut stream, 502, "the machine service is not answering").await;
     };
     let Some(mut ws) = upgrade(stream, &ask.key).await else {
@@ -94,7 +99,7 @@ pub(super) async fn tunnel<S: Peer>(mut stream: S, service: &MachineRoute, ask: 
         request,
         body,
     };
-    deliver(ws, reached, plain, service, ask).await;
+    deliver(ws, reached, plain, service, (ask, route)).await;
 }
 
 /// Sends `plain` to what `reached` dialled and relays the answer; a holder that no longer holds
@@ -104,11 +109,11 @@ async fn deliver<S: Peer>(
     reached: Reached,
     mut plain: Plain,
     service: &MachineRoute,
-    ask: &Open,
+    asked: (&Open, &Route),
 ) {
     let mut upstream = reached.stream;
     if reached.holder && whole_body(&mut ws, &plain.request, &mut plain.body).await {
-        match hand_off(&mut upstream, &mut plain, service, ask, &reached.addr).await {
+        match hand_off(&mut upstream, &mut plain, service, asked, &reached.addr).await {
             Ok(Some(rest)) => return relay(ws, upstream, rest).await,
             Ok(None) => {}
             Err(why) => return gateway_error(&mut ws, why).await,
@@ -126,7 +131,7 @@ async fn hand_off(
     upstream: &mut TcpStream,
     plain: &mut Plain,
     service: &MachineRoute,
-    ask: &Open,
+    asked: (&Open, &Route),
     failed: &str,
 ) -> Result<Option<Vec<u8>>, &'static str> {
     match try_holder(upstream, &plain.request, &plain.body).await {
@@ -134,7 +139,7 @@ async fn hand_off(
         Tried::Lost => return Err(LOST),
         Tried::Elsewhere => {}
     }
-    let (stream, request) = elsewhere(service, ask, failed, &plain.head)
+    let (stream, request) = elsewhere(service, asked, failed, &plain.head)
         .await
         .ok_or(NOT_ANSWERING)?;
     (*upstream, plain.request) = (stream, request);
@@ -145,11 +150,12 @@ async fn hand_off(
 /// `head` marked with what the Box holds now.
 async fn elsewhere(
     service: &MachineRoute,
-    ask: &Open,
+    asked: (&Open, &Route),
     failed: &str,
     head: &[u8],
 ) -> Option<(TcpStream, Vec<u8>)> {
-    let again = reask(service, &ask.route, failed).await?;
+    let (ask, route) = asked;
+    let again = reask(service, route, failed).await?;
     let request = marked(head, &ask.target, &again.hold, service.key.as_deref())?;
     Some((again.stream, request))
 }

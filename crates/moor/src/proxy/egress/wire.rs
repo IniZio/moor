@@ -3,6 +3,7 @@
 //!
 //! Request bytes carry the Box token, so nothing here logs them.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
@@ -14,14 +15,19 @@ use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
-use zeroize::Zeroizing;
 
 use super::boxes::{Refused, Route};
-use super::{Shared, PATH, PLAIN, SYNCED, TARGET};
+use super::{Shared, PATH, SYNCED};
 use crate::proxy::front::{connect_head, plain_request, refusal};
+use crate::proxy::token::is_lease;
 use crate::store::token_hash;
+use moor_core::Secret;
 
+mod ask;
 mod machine;
+
+pub(super) use ask::authority_ok;
+use ask::parse;
 
 /// Largest request or answer head read.
 const MAX_HEAD: usize = 8 * 1024;
@@ -36,20 +42,6 @@ const CHUNK: usize = 16 * 1024;
 pub(super) trait Peer: AsyncRead + AsyncWrite + Unpin + Send {}
 
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Peer for T {}
-
-/// What the forwarder asked for.
-struct Ask {
-    /// The request path.
-    path: String,
-    /// `Sec-WebSocket-Key`, when it asked to upgrade.
-    key: Option<String>,
-    /// The bearer token.
-    token: Option<Zeroizing<Vec<u8>>>,
-    /// `X-Moor-Target`, when it is `host:port`.
-    target: Option<String>,
-    /// Whether `X-Moor-Plain` marks one plain `http://` request.
-    plain: bool,
-}
 
 /// What a request head asks the connection to do.
 enum Checked {
@@ -67,12 +59,20 @@ struct Open {
     key: String,
     /// `host:port`.
     target: String,
-    /// The Box's proxy.
-    route: Route,
+    /// Where it goes.
+    to: To,
     /// Whether the tunnel carries one plain `http://` request.
     plain: bool,
     /// Whether the target is the machine service.
     machine: bool,
+}
+
+/// Where a tunnel goes.
+enum To {
+    /// A Box's proxy.
+    Box(Route),
+    /// The proxy of a remote front's user, and the token it checks.
+    Front(SocketAddr, Secret),
 }
 
 /// Serves one connection to its end.
@@ -92,10 +92,16 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
 /// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
 /// the connection and relays the tunnel.
 async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
-    if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
-        return machine::tunnel(stream, service, ask).await;
-    }
-    let (mut upstream, rest) = match open(&ask.route, &ask.target).await {
+    let (addr, internal) = match &ask.to {
+        To::Box(route) => {
+            if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
+                return machine::tunnel(stream, service, ask, route).await;
+            }
+            (route.served.addr, &route.served.internal)
+        }
+        To::Front(addr, internal) => (*addr, internal),
+    };
+    let (mut upstream, rest) = match open(addr, internal, &ask.target).await {
         Ok(opened) => opened,
         Err(status) => return answer(&mut stream, status, "the Box's proxy refused").await,
     };
@@ -190,7 +196,21 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
         return Err(refuse(401, "unknown token"));
     }
     let hash = token_hash(&token);
-    let route = admit(shared, &hash).map_err(|refused| match refused {
+    let lease = is_lease(&token);
+    if lease && machine {
+        return Err(refuse(403, "a lease does not reach the machine service"));
+    }
+    let to = tokio::task::block_in_place(|| {
+        if lease {
+            shared
+                .leases
+                .admit(&hash, &shared.boxes)
+                .map(|(addr, internal)| To::Front(addr, internal))
+        } else {
+            shared.boxes.admit(&hash).map(To::Box)
+        }
+    })
+    .map_err(|refused| match refused {
         Refused::Unknown => refuse(401, "unknown token"),
         Refused::Limited => refuse(429, "too many tunnels; retry after a second"),
         Refused::Unavailable(why) => {
@@ -206,22 +226,21 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
     Ok(Checked::Tunnel(Open {
         key,
         target,
-        route,
+        to,
         plain: ask.plain,
         machine,
     }))
 }
 
-/// Looks the token up off the async workers, since the ledger and a proxy start block.
-fn admit(shared: &Shared, hash: &str) -> Result<Route, Refused> {
-    tokio::task::block_in_place(|| shared.boxes.admit(hash))
-}
-
-/// Opens the CONNECT to `target` through the Box's proxy; `Err` carries the status to answer.
-async fn open(route: &Route, target: &str) -> Result<(TcpStream, Vec<u8>), u16> {
-    let served = &route.served;
-    let mut upstream = TcpStream::connect(served.addr).await.map_err(|_| 503_u16)?;
-    let head = connect_head(target, served.internal.expose());
+/// Opens the CONNECT to `target` through the proxy at `addr`, presenting `internal`; `Err` carries
+/// the status to answer.
+async fn open(
+    addr: SocketAddr,
+    internal: &Secret,
+    target: &str,
+) -> Result<(TcpStream, Vec<u8>), u16> {
+    let mut upstream = TcpStream::connect(addr).await.map_err(|_| 503_u16)?;
+    let head = connect_head(target, internal.expose());
     upstream.write_all(&head).await.map_err(|_| 503_u16)?;
     let (answer, rest) = read_head(&mut upstream).await.ok_or(502_u16)?;
     let mut headers = [httparse::EMPTY_HEADER; 32];
@@ -320,52 +339,4 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> Option<(Vec<u8>, Vec
         }
     };
     timeout(HEAD_TIMEOUT, read).await.ok().flatten()
-}
-
-/// The forwarder's request, or `None` when it is not one HTTP/1.1 request head.
-fn parse(head: &[u8]) -> Option<Ask> {
-    let mut headers = [httparse::EMPTY_HEADER; 32];
-    let mut req = httparse::Request::new(&mut headers);
-    if !matches!(req.parse(head), Ok(httparse::Status::Complete(_))) || req.method != Some("GET") {
-        return None;
-    }
-    let find = |name: &str| {
-        req.headers
-            .iter()
-            .find(|h| h.name.eq_ignore_ascii_case(name))
-            .map(|h| h.value)
-    };
-    let text = |name: &str| find(name).and_then(|v| std::str::from_utf8(v).ok());
-    let upgrade = text("upgrade").is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
-    let token = find("authorization")
-        .and_then(|v| v.strip_prefix(b"Bearer "))
-        .filter(|t| !t.is_empty())
-        .map(|t| Zeroizing::new(t.to_vec()));
-    Some(Ask {
-        path: req.path?.to_owned(),
-        key: text("sec-websocket-key")
-            .filter(|_| upgrade)
-            .map(str::to_owned),
-        token,
-        target: text(TARGET).filter(|t| authority_ok(t)).map(str::to_owned),
-        plain: text(PLAIN) == Some("1"),
-    })
-}
-
-/// True for `host:port` or `[v6]:port` with a port that fits and no path, userinfo or spacing.
-pub(super) fn authority_ok(authority: &str) -> bool {
-    let plain = authority
-        .bytes()
-        .all(|b| b.is_ascii_graphic() && !matches!(b, b'/' | b'@' | b'?' | b'#' | b'\\'));
-    let Some((host, port)) = authority.rsplit_once(':') else {
-        return false;
-    };
-    let host_ok = host
-        .strip_prefix('[')
-        .and_then(|h| h.strip_suffix(']'))
-        .map_or_else(
-            || !host.is_empty() && !host.contains([':', '[', ']']),
-            |v6| v6.parse::<std::net::Ipv6Addr>().is_ok(),
-        );
-    plain && host_ok && port.parse::<u16>().is_ok()
 }

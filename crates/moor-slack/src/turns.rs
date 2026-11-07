@@ -210,7 +210,7 @@ impl Turns {
                 return Closing::of(End::Failed, lines::unavailable(&format!("slack.db: {e}")))
             }
         };
-        let lease = match proxy::lease(&client, &row.owner) {
+        let lease = match proxy::lease(&client, &row.owner, &ready.proxy.ca) {
             Ok(lease) => lease,
             Err(closing) => return closing,
         };

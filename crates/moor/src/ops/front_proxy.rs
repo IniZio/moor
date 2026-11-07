@@ -2,7 +2,6 @@
 //! identity in its own namespace belongs to. The lease token is the only thing the front gets;
 //! the Proxy injects the user's secrets in its place.
 
-use std::fmt::Write as _;
 use std::time::Duration;
 
 use moor_core::config::proxy::front_rules;
@@ -35,21 +34,18 @@ pub(crate) fn lease(
     if let Some(name) = needed.into_iter().find(|n| !names.contains(n)) {
         return to_value(&ProxyLeaseValue::NoSecret { name });
     }
-    if !cx.proxy_host().front_running(front) {
+    if !proxy_up(cx, front) {
         return to_value(&ProxyLeaseValue::ProxyDown);
     }
-    let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, format!("cannot mint a lease: {e}")))?;
-    let token = bytes.iter().fold(String::with_capacity(64), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    });
+    let token = crate::proxy::token::mint_lease(cx.env().egress_key())
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
+    let ca_pem = remote_ca(cx, front)?;
     let expires = cx.clock().now().saturating_add(LEASE_TTL);
     store.add_front_lease(token.as_bytes(), front, user, expires)?;
     to_value(&ProxyLeaseValue::Granted {
         token: SecretValue::new(token.into_bytes()),
         expires_in_secs: LEASE_TTL.as_secs(),
+        ca_pem,
     })
 }
 
@@ -72,8 +68,25 @@ pub(crate) fn release(
 pub(crate) fn status(cx: &Cx, who: &Identity) -> Result<serde_json::Value, CommandError> {
     let front = front_of(cx, who)?;
     to_value(&ProxyStatusValue {
-        running: cx.proxy_host().front_running(front),
+        running: proxy_up(cx, front),
     })
+}
+
+/// Whether `front`'s Proxy serves: a remote front's is the shared egress Proxy, whose replicas
+/// the controller does not watch.
+fn proxy_up(cx: &Cx, front: &str) -> bool {
+    cx.env().front_is_remote(front) || cx.proxy_host().front_running(front)
+}
+
+/// The CA a remote front's Proxy signs with, which it finds on no disk of its own.
+fn remote_ca(cx: &Cx, front: &str) -> Result<Option<String>, CommandError> {
+    if !cx.env().front_is_remote(front) {
+        return Ok(None);
+    }
+    cx.proxy_host()
+        .front_ca_pem()
+        .map(Some)
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e))
 }
 
 /// The front `who` speaks for: its namespace, which must have a Proxy.
