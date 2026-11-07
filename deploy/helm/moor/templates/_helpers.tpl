@@ -66,6 +66,20 @@ app.kubernetes.io/name: moor-runner
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end -}}
 
+{{/* Not moor.labels: the controller pod and its Services select on those. */}}
+{{- define "moor.slackLabels" -}}
+app.kubernetes.io/name: moor-slack
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+{{- end -}}
+
+{{/* Non-empty when Slack is its own Deployment, which dials the ledger and the shared egress Proxy. */}}
+{{- define "moor.slackSeparate" -}}
+{{- if and .Values.slack.enabled .Values.slack.separate -}}
+{{- if not .Values.egress.enabled }}{{ fail "slack.separate needs egress.enabled: Slack dials the controller through the ledger listener and spends credentials through the shared egress Proxy" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{/* Non-empty when the runner is its own Deployment, which dials the controller's ledger. */}}
 {{- define "moor.runnerSeparate" -}}
 {{- if and .Values.runner.enabled .Values.runner.separate -}}
