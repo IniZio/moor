@@ -26,6 +26,10 @@ mod tests;
 
 /// How long the machine service gets to accept a connection before the tunnel is a 502.
 const MACHINE_DIAL: Duration = Duration::from_secs(3);
+/// How long a runner may take no byte of a request before the Box gets a 502. The clock runs only
+/// while a write waits on the runner, so a Box's slow upload never starts it. A live runner
+/// drains its socket as soon as it is scheduled, and gets as long as it has to answer.
+const WRITE_STALL: Duration = HEAD_TIMEOUT;
 /// Asks the runner to answer 421 when it does not hold the Box's machine's link, and to leave
 /// the request undone, so it can go to the new holder.
 const HOLDER_ONLY: &str = "X-Moor-Holder-Only";
@@ -110,9 +114,10 @@ async fn deliver<S: Peer>(
             Err(why) => return gateway_error(&mut ws, why).await,
         }
     }
-    if send(&mut upstream, &plain.request, &plain.body).await {
-        relay(ws, upstream, Vec::new()).await;
+    if !send(&mut upstream, &plain.request, &plain.body).await {
+        return gateway_error(&mut ws, NOT_ANSWERING).await;
     }
+    relay(ws, upstream, Vec::new()).await;
 }
 
 /// Tries `plain` on the holder at `failed` over `upstream`: its answer to relay, or `None` once
@@ -240,7 +245,20 @@ async fn dial(addr: &str) -> Option<TcpStream> {
 
 /// Writes `request` and `body` to `upstream`; whether both went.
 async fn send(upstream: &mut TcpStream, request: &[u8], body: &[u8]) -> bool {
-    upstream.write_all(request).await.is_ok() && upstream.write_all(body).await.is_ok()
+    write_within(upstream, request, WRITE_STALL).await
+        && write_within(upstream, body, WRITE_STALL).await
+}
+
+/// Writes `bytes` to `upstream`, giving up once it takes no byte for `stall`. The limit is on
+/// each write, not the whole, so a runner reading slowly still gets all of them.
+async fn write_within(upstream: &mut TcpStream, mut bytes: &[u8], stall: Duration) -> bool {
+    while !bytes.is_empty() {
+        let Ok(Ok(n @ 1..)) = timeout(stall, upstream.write(bytes)).await else {
+            return false;
+        };
+        bytes = bytes.get(n..).unwrap_or_default();
+    }
+    true
 }
 
 /// `request` with the header `name: value` added last.
