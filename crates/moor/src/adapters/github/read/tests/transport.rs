@@ -52,7 +52,7 @@ fn raw_server(reply: impl FnOnce(TcpStream) + Send + 'static) -> (String, JoinHa
 fn unreachable_api_error_does_not_carry_the_token() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/graphql", listener.local_addr().unwrap());
-    drop(listener);
+    std::thread::spawn(move || listener.incoming().for_each(drop));
     let err = GitHub::at(url)
         .read(&ForgeRepo::new("o", "n"), None, &token())
         .unwrap_err();
