@@ -90,6 +90,11 @@ impl Layered {
         matches!(self.disk, Disk::Rerun { .. })
     }
 
+    /// Whether the disk is a checkpoint of the Box's own base.
+    pub(super) const fn holds_own_commit(&self) -> bool {
+        matches!(self.disk, Disk::OnLayer { .. })
+    }
+
     /// The commit a forked disk holds; none on a disk set up from scratch.
     pub(super) fn forked_commit(&self) -> Option<&str> {
         match &self.disk {

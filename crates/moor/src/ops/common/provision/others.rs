@@ -1,6 +1,6 @@
 //! The repos a Box lists after its primary one: each cloned into its own work tree and set up there.
 
-use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, left_out_submodules, Checkout, CloneStep};
 use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
@@ -10,7 +10,7 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
-use super::clone::{clone_log_of, warn_left_out, with_tail, SetupProxy};
+use super::clone::{clone_log_of, with_tail, SetupProxy};
 use super::layers;
 use super::setup_run::run_through_proxy;
 use super::SetupTarget;
@@ -278,6 +278,16 @@ fn combined(first: SetupRun, next: SetupRun, repo: &str) -> SetupRun {
             ms: first.ms().unwrap_or_default() + ms,
             tail,
         },
+    }
+}
+
+/// Warns of each submodule a passing clone's `text` left out, its path after `repo`.
+pub(super) fn warn_left_out(cx: &Cx, repo: &str, text: &str) {
+    for left_out in left_out_submodules(text) {
+        cx.warn(Warning {
+            code: "submodule".to_owned(),
+            message: format!("submodule {repo}{left_out}; the Box runs without it"),
+        });
     }
 }
 
