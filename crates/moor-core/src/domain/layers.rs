@@ -8,6 +8,13 @@ use sha2::{Digest as _, Sha256};
 
 use crate::user::UserId;
 
+/// How long a chain lives from when it was set up from scratch, in milliseconds.
+pub const CHAIN_MAX_AGE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// How many times a chain rolls forward. Each roll is a delta over the last, and a delta holds its
+/// parent on the disk.
+pub const CHAIN_MAX_DEPTH: u32 = 8;
+
 /// A line that runs longer than this, in milliseconds, is checkpointed after it ends.
 pub const SLOW_LINE_MS: u64 = 20_000;
 
@@ -112,6 +119,22 @@ pub fn finished_key(top: &LayerKey, steps: &FinishedSteps<'_>) -> LayerKey {
         steps.env,
         steps.dotfiles,
     ])
+}
+
+/// Why a chain `age_ms` old that rolled forward `depth` times starts over; none while it may go on.
+#[must_use]
+pub fn chain_past_limits(age_ms: i64, depth: u32) -> Option<String> {
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+    if age_ms >= CHAIN_MAX_AGE_MS {
+        return Some(format!(
+            "its checkpoints date from {} days ago, past the limit of {}",
+            age_ms / DAY_MS,
+            CHAIN_MAX_AGE_MS / DAY_MS
+        ));
+    }
+    (depth >= CHAIN_MAX_DEPTH).then(|| {
+        format!("its checkpoints rolled forward {depth} times, the limit of {CHAIN_MAX_DEPTH}")
+    })
 }
 
 /// Whether layer `layer` of a setup of `lines` lines is checkpointed once it passes in `ms`.

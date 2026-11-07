@@ -71,6 +71,7 @@ fn start_with_all_flags() {
             model: Some("haiku".into()),
             node: None,
             no_agent: true,
+            cold: false,
             resume: true,
             repo: None,
             parent: None,
@@ -548,5 +549,14 @@ fn doctor_takes_an_optional_gate_url() {
     assert_eq!(
         url(&["doctor", "--public-url", "https://moor.example"]).as_deref(),
         Some("https://moor.example")
+    );
+}
+
+#[test]
+fn start_takes_cold() {
+    let r = req(&["start", "t1", "--cold"]);
+    assert!(
+        matches!(r, Request::Start(StartReq { cold: true, .. })),
+        "{r:?}"
     );
 }

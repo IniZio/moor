@@ -241,6 +241,7 @@ fn start(
             model: None,
             node: None,
             no_agent: false,
+            cold: false,
             resume: false,
             repo: Some(repo),
             parent: Some(root),

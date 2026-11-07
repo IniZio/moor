@@ -19,6 +19,8 @@ pub(crate) enum Call {
         base: Option<String>,
         /// The node to run on, when given.
         node: Option<String>,
+        /// Whether to set the Box up from scratch.
+        cold: bool,
     },
     /// `steer_box`.
     SteerBox {
@@ -125,6 +127,7 @@ impl Call {
                 repo: text("repo").ok(),
                 base: text("base").ok(),
                 node: text("node").ok(),
+                cold: args.get("cold").and_then(Value::as_bool).unwrap_or(false),
             }),
             "steer_box" => Ok(Self::SteerBox {
                 box_name: boxed()?,

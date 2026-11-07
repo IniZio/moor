@@ -74,6 +74,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
         prompt: "fix the flaky test".into(),
         base: None,
         node: None,
+        cold: false,
         requested_by: "U1".into(),
         parent: Some(SessionId::new(100)),
         state: BoxState::Starting,
@@ -493,6 +494,7 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
 mod answer;
 mod base;
 mod close;
+mod cold;
 mod post_first;
 mod refusal_kind;
 mod start_notes;

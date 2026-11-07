@@ -265,3 +265,16 @@ fn the_finished_key_changes_with_what_it_holds() {
         super::finished_key(&chain(&bob, &lines(&["a"]))[1], &STEPS)
     );
 }
+
+#[test]
+fn a_chain_goes_on_until_its_age_or_depth_limit() {
+    use super::{chain_past_limits, CHAIN_MAX_AGE_MS, CHAIN_MAX_DEPTH};
+    assert_eq!(
+        chain_past_limits(CHAIN_MAX_AGE_MS - 1, CHAIN_MAX_DEPTH - 1),
+        None
+    );
+    let old = chain_past_limits(CHAIN_MAX_AGE_MS, 0).unwrap();
+    assert!(old.contains("7 days"), "{old}");
+    let deep = chain_past_limits(0, CHAIN_MAX_DEPTH).unwrap();
+    assert!(deep.contains("8 times"), "{deep}");
+}

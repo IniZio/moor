@@ -266,6 +266,9 @@ struct StartArgs {
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
+    /// Set the Box up from scratch, past any setup kept from earlier Boxes.
+    #[arg(long)]
+    cold: bool,
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
@@ -285,6 +288,7 @@ impl From<StartArgs> for StartReq {
             model: a.model,
             node: a.node,
             no_agent: a.no_agent,
+            cold: a.cold,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
             also: (!a.also.is_empty()).then_some(a.also),

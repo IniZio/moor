@@ -61,6 +61,9 @@ struct StartArgs {
     base: Option<String>,
     /// A node you may use; omit for your default.
     node: Option<String>,
+    /// Set the Box up from scratch, past any setup kept from earlier Boxes; false by default.
+    #[serde(default)]
+    cold: Option<bool>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.
     wait: Option<bool>,

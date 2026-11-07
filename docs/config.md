@@ -620,6 +620,13 @@ credentials on the wire, so no agent login or forge token of moor's is on it. Th
 identity files can be on it. Claude Code writes `machineID` and `userID` to `~/.claude.json`
 when `claude plugin` first runs, so that user's forks share them.
 
+A chain lives 7 days from when it was set up from scratch, and rolls forward 8 times at most,
+since each roll is a delta that holds the last on the disk. A Box that finds a chain past either
+limit warns `checkpoint_chain_expired`, sets up from scratch, and starts a new chain. moor runs
+no background rebuild, so the Box that crosses a limit pays. `moor start --cold` skips kept
+checkpoints too, and that Box's saves replace the layers it went past. `--cold` applies only to
+a Box it creates, and warns `cold_ignored` on one that exists.
+
 Checkpoints never fill the node's disk. The floor is the one a node keeps
 before it takes a Box. It is 10% of the filesystem, and at least 20 GiB. Before a Box
 starts or retries, and before moor saves a checkpoint, moor checks the disk

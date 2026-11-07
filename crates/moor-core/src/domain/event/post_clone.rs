@@ -114,6 +114,8 @@ pub enum TimingEvent {
         /// The last lines of its log.
         tail: String,
     },
+    /// The start asked for no setup kept from earlier Boxes.
+    ColdAsked,
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {
         /// Setup lines the checkpoint held.
@@ -179,6 +181,7 @@ impl TimingEvent {
             Self::WarmStarted { .. } => "warm_started",
             Self::WarmRerun { .. } => "warm_rerun",
             Self::WarmRerunFailed { .. } => "warm_rerun_failed",
+            Self::ColdAsked => "cold_asked",
             Self::WarmStartFailed { .. } => "warm_start_failed",
             Self::CacheCold { .. } => "cache_cold",
             Self::CacheEmptied { .. } => "cache_emptied",

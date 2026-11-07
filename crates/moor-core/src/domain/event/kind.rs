@@ -32,7 +32,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 84] = [
+pub const EVENT_KINDS: [&str; 85] = [
     "caches_not_saved",
     "disk_lost",
     "started",
@@ -110,6 +110,7 @@ pub const EVENT_KINDS: [&str; 84] = [
     "setup_line_started",
     "setup_line_finished",
     "warm_started",
+    "cold_asked",
     "warm_rerun",
     "warm_rerun_failed",
     "warm_start_failed",

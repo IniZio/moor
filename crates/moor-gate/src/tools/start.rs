@@ -35,6 +35,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         model: None,
         node: args.node,
         no_agent: false,
+        cold: args.cold.unwrap_or(false),
         resume: false,
         repo: Some(repo),
         parent: None,
@@ -56,6 +57,18 @@ mod tests {
 
     fn start(args: serde_json::Value) -> Result<ControllerRequest, String> {
         start_request(serde_json::from_value(args).expect("start_box arguments"))
+    }
+
+    #[test]
+    fn start_box_asks_for_cold_only_when_told() {
+        assert!(matches!(
+            start(serde_json::json!({"repo": "o/a", "cold": true})),
+            Ok(ControllerRequest::Start(StartReq { cold: true, .. }))
+        ));
+        assert!(matches!(
+            start(serde_json::json!({"repo": "o/a"})),
+            Ok(ControllerRequest::Start(StartReq { cold: false, .. }))
+        ));
     }
 
     #[test]

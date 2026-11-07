@@ -129,6 +129,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "setting_up" => "setting up".to_owned(),
         "cloned" => format!("cloned{}", took()),
         "warm_started" | "warm_rerun" | "warm_rerun_failed" => warm_step(kind, payload),
+        "cold_asked" => "setting up from scratch, as asked".to_owned(),
         "cache_cold" => format!("starting without cache volumes: {}", text("detail")),
         "cache_emptied" => format!(
             "emptied cache volume {}: {}",
