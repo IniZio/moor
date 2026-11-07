@@ -5,8 +5,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::box_key::checkpoint_home_machine;
+use moor_core::domain::event::ProviderStep;
 use moor_core::name::{BoxHandle, ProviderId};
-use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError};
+use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError, Forked};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -52,7 +53,7 @@ struct Native {
 
 /// What `checkpoint fork --json` prints of the new lease; unknown fields are ignored.
 #[derive(Deserialize)]
-struct Forked {
+struct ForkRecord {
     /// The lease's slug, when printed.
     #[serde(default)]
     slug: Option<String>,
@@ -80,7 +81,7 @@ pub(super) fn create(
 /// Starts the lease `req` names from checkpoint `id`, run from that lease's own dir so it is
 /// claimed there, with the Box's cache volumes as warmup gives them; a fork that fails releases
 /// what it started.
-pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
     if pool::is_pool_provider(&req.provider) {
         return pool::checkpoints::fork(cb, id, req);
     }
@@ -99,11 +100,14 @@ pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle
     cb.forget_targets(&handle);
     let forked = cb
         .call(Op::Acquire, Some(provider), &spec)
-        .and_then(|out| parse_forked(&out.stdout, &name));
+        .and_then(|out| parse_forked(&out.stdout, &name).map(|()| out.stderr));
     match forked {
         Err(failed) if !existed => Err(cb.undo_acquire(&handle, failed)),
         Err(failed) => Err(failed),
-        Ok(()) => Ok(handle),
+        Ok(said) => Ok(Forked {
+            handle,
+            steps: ProviderStep::parse_all(said.lines()),
+        }),
     }
 }
 
@@ -167,7 +171,8 @@ fn parse_made(text: &str) -> Option<Checkpoint> {
 
 /// Checks the fork `text` reports is the lease moor named `slug`.
 fn parse_forked(text: &str, slug: &str) -> Result<(), DriverError> {
-    let forked: Forked = serde_json::from_str(text).map_err(|_| unreadable("checkpoint fork"))?;
+    let forked: ForkRecord =
+        serde_json::from_str(text).map_err(|_| unreadable("checkpoint fork"))?;
     match forked.slug {
         Some(got) if got != slug => Err(DriverError::Failed {
             summary: format!("crabbox forked the checkpoint as {got:?}, not the asked {slug:?}"),

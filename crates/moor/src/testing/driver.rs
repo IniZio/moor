@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, CheckpointDisk, Driver,
-    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, PausePublish, Released, RunEnd,
-    SleepKind, SleepOutcome, StepDone,
+    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, Forked, PausePublish, Released,
+    RunEnd, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -339,7 +339,7 @@ impl Driver for FakeDriver {
         Ok(self.disk())
     }
 
-    fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+    fn fork(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
         self.forked(id, req)
     }
 

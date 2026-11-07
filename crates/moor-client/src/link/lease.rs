@@ -104,6 +104,12 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<String>,
     },
+    /// The lease a fork booted.
+    Forked {
+        /// The fork's `timing ` lines, for the controller to read.
+        #[serde(default)]
+        timing: Vec<String>,
+    },
     /// The filesystem checkpoints are kept on.
     Disk {
         /// What is free, in MiB.

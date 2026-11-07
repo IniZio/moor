@@ -7,8 +7,10 @@ use std::time::Duration;
 
 use moor_client::link::lease::{Answer, Boot, Cache, CheckpointAct, Verb};
 use moor_client::link::ops::Reply;
+use moor_core::domain::event::{ProviderStep, MAX_STEPS};
 use serde::Deserialize;
 use tokio::process::Command;
+use tokio::time::Instant;
 
 use super::memory::disk_mib;
 use super::{box_dir, cache, checked, checked_class, room, Crabbox, Pool, POOL_DIR};
@@ -222,7 +224,9 @@ async fn fork(
     let (id, slug) = (checked_word(id)?, checked(slug)?);
     let class = class.map(checked_class).transpose()?;
     let env = cache.map(cache::env).transpose()?.unwrap_or_default();
+    let began = Instant::now();
     room(home, pool, slug).await?;
+    let room_ms = began.elapsed().as_millis();
     let mine = box_dir(home, slug);
     let dir = mine.join("lease");
     let existed = dir.is_dir();
@@ -236,14 +240,32 @@ async fn fork(
         pool,
         slug: Some(slug),
     };
+    let began = Instant::now();
     let forked = crabbox
-        .spawn(&args, (&dir, &mine), CHECKPOINT, &[0], &env)
+        .spawn_both(&args, (&dir, &mine), CHECKPOINT, &[0], &env)
         .await
-        .and_then(|printed| same_lease(&printed, slug));
+        .and_then(|(printed, said)| same_lease(&printed, slug).map(|()| said));
+    let crabbox_ms = began.elapsed().as_millis();
     if forked.is_err() && !existed {
         let _ = super::lease(home, pool, Verb::Stop, Some(slug), None, &Boot::default()).await;
     }
-    forked.map(|()| Answer::Done)
+    forked.map(|said| Answer::Forked {
+        timing: timing_lines(room_ms, crabbox_ms, &said),
+    })
+}
+
+/// This agent's own steps, which split the time around crabbox, then the steps crabbox's stderr
+/// reports. Bounded here because a reply crosses the link whole.
+fn timing_lines(room_ms: u128, crabbox_ms: u128, said: &str) -> Vec<String> {
+    let own = [
+        format!("timing agent-room ms={room_ms}"),
+        format!("timing agent-crabbox ms={crabbox_ms}"),
+    ];
+    let reported = said
+        .lines()
+        .filter(|line| ProviderStep::parse(line).is_some())
+        .map(str::to_owned);
+    own.into_iter().chain(reported).take(MAX_STEPS).collect()
 }
 
 /// Ok unless `printed` names a lease other than `slug`.

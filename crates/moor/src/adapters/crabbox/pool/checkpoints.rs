@@ -3,8 +3,9 @@
 use std::fs;
 
 use moor_client::link::lease::{Answer, CheckpointAct, Verb};
+use moor_core::domain::event::ProviderStep;
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError};
+use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError, Forked};
 
 use super::{failed, planned, release, target, Crabbox, PoolHosts};
 use crate::adapters::crabbox::{cache, size_of};
@@ -50,7 +51,7 @@ pub(in crate::adapters::crabbox) fn fork(
     cb: &Crabbox,
     id: &str,
     req: &AcquireReq,
-) -> Result<BoxHandle, DriverError> {
+) -> Result<Forked, DriverError> {
     let handle = planned(req)?;
     let placed = cb.placed(&handle)?;
     cb.forget_targets(&handle);
@@ -61,14 +62,16 @@ pub(in crate::adapters::crabbox) fn fork(
         cache: cache::lease(&req.cache),
         class: class.map(str::to_owned),
     };
-    match placed
+    let steps = match placed
         .hosts
         .checkpoint(placed.machine, act)
         .map_err(failed)?
     {
-        Answer::Done => {}
+        Answer::Forked { timing } => ProviderStep::parse_all(timing.iter().map(String::as_str)),
+        // An agent older than this controller answers a fork with no steps.
+        Answer::Done => Vec::new(),
         other => return Err(misfit(&other)),
-    }
+    };
     let reached = cb.controller_key().and_then(|key| {
         let public = fs::read_to_string(key.with_extension("pub"))
             .map_err(|e| failed(format!("cannot read the controller's public key: {e}")))?;
@@ -76,7 +79,7 @@ pub(in crate::adapters::crabbox) fn fork(
         target(cb, &handle).map(drop)
     });
     match reached {
-        Ok(()) => Ok(handle),
+        Ok(()) => Ok(Forked { handle, steps }),
         Err(e) => {
             let _ = release(cb, &handle);
             Err(e)

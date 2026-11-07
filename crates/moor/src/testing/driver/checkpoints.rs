@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use moor_core::domain::event::ProviderStep;
 use moor_core::seam::driver::{
-    AcquireReq, Checkpoint, CheckpointDisk, DriverError, ExecOutcome, ExecSpec,
+    AcquireReq, Checkpoint, CheckpointDisk, DriverError, ExecOutcome, ExecSpec, Forked,
 };
 use moor_core::BoxHandle;
 
@@ -33,6 +34,8 @@ pub(super) struct LayerKnobs {
     hooks: Vec<(String, Arc<ExecHook>)>,
     /// The error the next fork ends with, once.
     fork_fails: Option<DriverError>,
+    /// What every fork reports it spent its time on.
+    fork_steps: Vec<ProviderStep>,
     /// The error the next checkpoint ends with, once.
     checkpoint_fails: Option<DriverError>,
     /// Whether every delete fails, leaving the checkpoint on the disk.
@@ -79,6 +82,12 @@ impl FakeDriver {
     /// deleted while a delta over it is kept.
     pub(crate) fn with_delta_checkpoints(self) -> Self {
         self.st().layers.deltas = true;
+        self
+    }
+
+    /// Has every fork report `steps`.
+    pub(crate) fn with_fork_steps(self, steps: Vec<ProviderStep>) -> Self {
+        self.st().layers.fork_steps = steps;
         self
     }
 
@@ -265,7 +274,7 @@ impl FakeDriver {
     }
 
     /// A new live Box from a saved checkpoint, under the next planned handle.
-    pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+    pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
         let mut s = self.st();
         s.note(format!("fork {id}"));
         let seat = req.pool_machine.as_ref().map(|s| s.machine);
@@ -283,7 +292,10 @@ impl FakeDriver {
         s.live.push(handle.clone());
         s.providers.push((handle.clone(), req.provider.clone()));
         s.cache.classes.push(req.class.clone());
-        Ok(BoxHandle::new(handle))
+        Ok(Forked {
+            handle: BoxHandle::new(handle),
+            steps: s.layers.fork_steps.clone(),
+        })
     }
 }
 

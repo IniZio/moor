@@ -20,7 +20,7 @@ mod types;
 
 pub use batch::{run_each, BoxStep, StepDone};
 pub use caps::{DriverCaps, SleepKind};
-pub use checkpoint::{Checkpoint, CheckpointDisk};
+pub use checkpoint::{Checkpoint, CheckpointDisk, Forked};
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
@@ -325,7 +325,7 @@ pub trait Driver: Send + Sync {
     ///
     /// # Errors
     /// As [`Driver::checkpoint`].
-    fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+    fn fork(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
         let _ = (id, req);
         Err(DriverError::Unsupported("checkpoints"))
     }
