@@ -889,7 +889,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `drain_timeout_secs` | integer | 30 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `blobs` | map | `kind: fs` | Where artifacts, Reports and transcripts live. See [Blob storage](#blob-storage). |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
-| `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. `client_ca` is the PEM CA bundle every client's certificate must chain to; a client without one fails the handshake. The listener answers the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. A machine runner whose hello is `{"runner":{"v":1,"key":KEY}}`, with `KEY` the controller's `MOOR_MACHINE_SERVICE_KEY`, is served as on the runner socket; it presents its client certificate from `--controller-cert`. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem --ledger-cert CLIENT.pem --ledger-key CLIENT.key`. |
+| `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. `client_ca` is the PEM CA bundle every client's certificate must chain to; a client without one fails the handshake. The listener answers the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. A machine runner whose hello is `{"runner":{"v":1,"key":KEY}}`, with `KEY` the controller's `MOOR_MACHINE_SERVICE_KEY`, is served as on the runner socket; it presents its client certificate from `--controller-cert`. A remote front whose hello is `{"front":{"v":1,"ns":NS,"key":KEY}}`, with `KEY` the content of its `fronts.NS.remote.key_file`, is served as on that front's socket. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem --ledger-cert CLIENT.pem --ledger-key CLIENT.key`. |
 
 The controller refuses a config that has a `web`, `slack`, or `repos` key.
 
@@ -1050,6 +1050,11 @@ does not drain. It stops the controller at once. Under a service manager,
 set the stop timeout above `drain_timeout_secs`.
 
 ### `fronts`
+
+A front in another pod sets `fronts.<namespace>.remote.key_file`, a file holding
+the key its hello presents to `ledger_tls`. Its connections are served as on its
+socket, so it may assert only identities in its own namespace. A remote front
+needs `ledger_tls` and takes no `command`.
 
 `fronts.<namespace>` gives one front its own socket:
 

@@ -49,8 +49,8 @@ pub struct ControllerConfig {
     slack: Option<Option<serde_json::Value>>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
     pub fronts: BTreeMap<String, FrontEntry>,
-    /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy in another
-    /// pod; none serves it only on its unix socket.
+    /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy, machine runner
+    /// or front in another pod; none serves it only on its unix socket.
     pub ledger_tls: Option<LedgerTls>,
     /// Where artifacts, reports and transcripts live; the state directory by default.
     pub blobs: BlobsConfig,
@@ -96,6 +96,17 @@ pub struct FrontEntry {
     /// listens on the same port inside its own network namespace.
     #[serde(default)]
     pub ports: Vec<u16>,
+    /// Set when the front runs elsewhere and dials `ledger_tls`.
+    #[serde(default)]
+    pub remote: Option<RemoteFront>,
+}
+
+/// A front that runs elsewhere and opens each connection to `ledger_tls` with a hello.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteFront {
+    /// The file holding the key the front's hello must present; `~` allowed.
+    pub key_file: PathBuf,
 }
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
@@ -225,6 +236,15 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
             ConfigError::new(format!("fronts.{ns}.{key}"), why).in_file(file)
         })?;
     }
+    if cfg.ledger_tls.is_none() {
+        if let Some((ns, _)) = cfg.fronts.iter().find(|(_, f)| f.remote.is_some()) {
+            return Err(ConfigError::new(
+                format!("fronts.{ns}.remote"),
+                "needs ledger_tls, which a remote front dials",
+            )
+            .in_file(file));
+        }
+    }
     Ok(cfg)
 }
 
@@ -232,6 +252,12 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
 fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
     if front.command.as_ref().is_some_and(Vec::is_empty) {
         return Err(("command", "must name a program"));
+    }
+    if front.remote.is_some() && front.command.is_some() {
+        return Err((
+            "remote",
+            "a remote front runs elsewhere, so it takes no command",
+        ));
     }
     let known = front_rules();
     if !front

@@ -215,7 +215,8 @@ fn start_until(
         fronts,
         runner,
         ledger: (ledger, proxy.as_ref().map(|p| Arc::from(p.key()))),
-        ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref()).map_err(refused)?,
+        ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref(), &cfg.fronts)
+            .map_err(refused)?,
         commands,
         proxy,
         vault: Arc::new(vault),
@@ -328,7 +329,13 @@ impl Running {
         let (ledger, key) = self.ledger;
         ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
         if let Some(tls) = self.ledger_tls {
-            tls.serve_until_exit((&self.env, &self.vault), (runner, drain), sink);
+            let loops = ledger::Loops {
+                runner,
+                fronts: tls.front_loops(|ns| serve(peer::On::Front(ns))),
+                drain: Arc::clone(drain),
+                sink: Arc::clone(sink),
+            };
+            tls.serve_until_exit((&self.env, &self.vault), loops, sink);
         }
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),

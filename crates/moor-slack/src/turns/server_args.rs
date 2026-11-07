@@ -11,18 +11,20 @@ impl Turns {
     pub(super) fn tool_args(&self, row: &TurnRow, identity: &Identity) -> Vec<String> {
         let state_dir =
             std::path::absolute(&self.state_dir).unwrap_or_else(|_| self.state_dir.clone());
-        vec![
+        let mut args = vec![
             "mcp".to_owned(),
             "--state-dir".to_owned(),
             state_dir.display().to_string(),
-            "--socket".to_owned(),
-            self.socket.display().to_string(),
+        ];
+        args.extend(self.tool_dial.iter().cloned());
+        args.extend([
             "--thread".to_owned(),
             format!("{}/{}", row.channel, row.thread_ts),
             "--max-open-boxes".to_owned(),
             self.max_open_boxes.to_string(),
             "--as".to_owned(),
             identity.to_string(),
-        ]
+        ]);
+        args
     }
 }
