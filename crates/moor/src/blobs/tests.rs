@@ -1,23 +1,64 @@
-//! The blob store contract.
+//! The blob store contract, on the filesystem and on a real S3-compatible store.
+//!
+//! The `s3` tests need `MOOR_TEST_S3_ENDPOINT` and run under `make unit-s3`.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use std::fs;
+use std::net::TcpListener;
 use std::sync::Arc;
 
+use moor_core::config::{BlobsConfig, S3Blobs};
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::request::ArtifactReadReq;
 use moor_core::{BoxId, BoxName};
 use sha2::{Digest, Sha256};
 
 use super::fs::FsBlobs;
+use super::object::{Credentials, ObjectBlobs};
 use super::{BlobError, BlobKey, Blobs};
 use crate::cx::Cx;
+use crate::env::Env;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 /// One byte over the size that goes up in a single request.
 const OVER_ONE_PART: usize = 16 * 1024 * 1024 + 1;
+
+fn s3_config(endpoint: &str, prefix: &str) -> S3Blobs {
+    S3Blobs {
+        endpoint: endpoint.to_owned(),
+        bucket: std::env::var("MOOR_TEST_S3_BUCKET").unwrap_or_else(|_| "moor-test".to_owned()),
+        region: None,
+        prefix: Some(prefix.to_owned()),
+        credentials_dir: None,
+    }
+}
+
+fn s3_at(endpoint: &str) -> Arc<dyn Blobs> {
+    // A fresh temp name keeps runs against a shared bucket apart.
+    let prefix = format!("test-{}", tempfile::tempdir().unwrap().path().display());
+    let prefix = prefix.replace('/', "-");
+    let credentials = Credentials {
+        id: std::env::var("MOOR_TEST_S3_KEY").unwrap_or_else(|_| "moor-test-key".to_owned()),
+        secret: std::env::var("MOOR_TEST_S3_SECRET")
+            .unwrap_or_else(|_| "moor-test-secret".to_owned()),
+    };
+    Arc::new(ObjectBlobs::s3(&s3_config(endpoint, &prefix), &credentials).unwrap())
+}
+
+/// The real store the environment names, under a prefix of its own.
+pub(crate) fn s3() -> Arc<dyn Blobs> {
+    s3_at(&std::env::var("MOOR_TEST_S3_ENDPOINT").expect("run under make unit-s3"))
+}
+
+/// A store whose endpoint refuses every connection.
+pub(crate) fn unreachable() -> Arc<dyn Blobs> {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    s3_at(&format!("http://127.0.0.1:{port}"))
+}
 
 /// A context on `blobs` holding one Box.
 pub(crate) fn cx_on(dir: &std::path::Path, blobs: Arc<dyn Blobs>) -> (Cx, BoxId) {
@@ -158,6 +199,46 @@ fn fs_report_round_trip() {
     report_round_trip(Arc::new(FsBlobs::new(dir.path())));
 }
 
+#[test]
+#[ignore = "needs MOOR_TEST_S3_ENDPOINT"]
+fn s3_report_round_trip() {
+    report_round_trip(s3());
+}
+
+#[test]
+#[ignore = "needs MOOR_TEST_S3_ENDPOINT"]
+fn s3_holds_what_it_was_given() {
+    holds_what_it_was_given(s3().as_ref());
+}
+
+#[test]
+#[ignore = "needs MOOR_TEST_S3_ENDPOINT"]
+fn s3_takes_a_file_of_any_size() {
+    let staging = tempfile::tempdir().unwrap();
+    takes_a_file_of_any_size(s3().as_ref(), staging.path());
+}
+
+#[test]
+#[ignore = "needs MOOR_TEST_S3_ENDPOINT"]
+fn s3_artifact_round_trip() {
+    artifact_round_trip(s3());
+}
+
+#[test]
+fn an_unreachable_store_answers_get_artifact_with_a_clear_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, id) = cx_on(dir.path(), unreachable());
+    cx.store()
+        .unwrap()
+        .add_artifact(id, "a.log", b"x", &FsBlobs::new(dir.path()))
+        .unwrap()
+        .unwrap();
+    let err = crate::ops::artifacts::read(&cx, &read_req(0, 1), &mut |_| Ok(())).unwrap_err();
+    let text = err.error.to_string();
+    assert!(text.contains("cannot read artifact a.log"), "{text}");
+    assert!(text.contains("blob store http://127.0.0.1"), "{text}");
+}
+
 /// Fails a put if another store write cannot get through while it runs.
 struct WritesDuringPut {
     inner: FsBlobs,
@@ -219,4 +300,39 @@ fn storing_a_blob_holds_no_store_lock() {
         .add_artifact(id, "a.log", b"x", &blobs)
         .unwrap()
         .unwrap();
+}
+
+#[test]
+fn an_unreachable_store_leaves_a_report_unrecorded() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, id) = cx_on(dir.path(), unreachable());
+    let store = cx.store().unwrap();
+    let err = store
+        .add_report(id, "plan", "the report body", cx.blobs().unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("blob store http"), "{err}");
+    assert!(!err.contains("the report body"), "{err}");
+    assert!(store.reports(id).unwrap().is_empty());
+}
+
+#[test]
+fn an_s3_store_without_credentials_is_refused_at_setup() {
+    let config = BlobsConfig::S3(s3_config("http://127.0.0.1:1", "p"));
+    let err = super::share(Env::from_pairs([("HOME", "/nowhere")]), &config)
+        .err()
+        .unwrap();
+    assert!(err.contains("MOOR_BLOBS_ACCESS_KEY_ID"), "{err}");
+}
+
+#[test]
+fn an_s3_store_reads_a_mounted_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("access_key_id"), "id\n").unwrap();
+    fs::write(dir.path().join("secret_access_key"), "secret\n").unwrap();
+    let mut config = s3_config("http://127.0.0.1:1", "p");
+    config.credentials_dir = Some(dir.path().display().to_string());
+    let got =
+        super::object::credentials(&config, &Env::from_pairs([("HOME", "/nowhere")])).unwrap();
+    assert_eq!((got.id.as_str(), got.secret.as_str()), ("id", "secret"));
 }

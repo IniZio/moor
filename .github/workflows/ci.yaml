@@ -112,6 +112,10 @@ jobs:
       - run: make unit
       - name: Check the store schema and run the store tests on Postgres
         run: make unit-pg
+      - name: Round-trip blobs through a real S3-compatible store
+        run: |
+          make dev-s3
+          make unit-s3
       - name: Run the egress proxy under parallel load through a real tinyproxy
         run: |
           sudo apt-get install -y tinyproxy-bin

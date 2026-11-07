@@ -880,6 +880,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
 | `workflow_min_interval_secs` | integer, above 0 | 3600 | The shortest gap a [workflow](workflows.md) cron may leave between two firings. Lower it only to try a workflow quickly. |
 | `drain_timeout_secs` | integer | 30 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
+| `blobs` | map | `kind: fs` | Where artifacts, Reports and transcripts live. See [Blob storage](#blob-storage). |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 | `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. `client_ca` is the PEM CA bundle every client's certificate must chain to; a client without one fails the handshake. The listener answers the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. A machine runner whose hello is `{"runner":{"v":1,"key":KEY}}`, with `KEY` the controller's `MOOR_MACHINE_SERVICE_KEY`, is served as on the runner socket; it presents its client certificate from `--controller-cert`. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem --ledger-cert CLIENT.pem --ledger-key CLIENT.key`. |
 
@@ -966,6 +967,52 @@ A working Box that lost its machine and failed its clone, a `setup:` line or its
 agent install on the new one is a `setup_failed` Box too, so this pass closes it after the same time. Set
 the key to 0 to keep failed Boxes until someone closes them by hand or with
 `moor close-failed`.
+
+### Blob storage
+
+Artifacts, Reports and transcripts live under the state directory by default,
+owner-only. To keep them in a bucket on any S3-compatible endpoint, name it:
+
+```yaml
+blobs:
+  kind: s3
+  endpoint: https://blobs.example
+  bucket: moor
+  prefix: nightly
+  credentials_dir: /var/lib/moor/blobs
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `kind` | `fs` | `fs` or `s3`. |
+| `endpoint` | required | The endpoint URL, `http` or `https`. |
+| `bucket` | required | The bucket. It must already exist. |
+| `region` | `us-east-1` | The signing region. |
+| `prefix` | none | Put before every key, so controllers can share a bucket. |
+| `credentials_dir` | none | A directory holding the files `access_key_id` and `secret_access_key`, such as a mounted Secret. Without it, the controller reads `MOOR_BLOBS_ACCESS_KEY_ID` and `MOOR_BLOBS_SECRET_ACCESS_KEY`. |
+
+Keys are the same under every backend:
+
+| Blob | Key |
+| --- | --- |
+| Artifact | `artifacts/<box>/v<version>/<name>` |
+| Artifact manifest | `artifacts/<box>/artifact-manifest.json` |
+| Report | `reports/<box>/<kind>.v<version>.md` |
+| Transcript | `transcripts/<box>/<session>-<n>.tgz` |
+
+The controller refuses to start without credentials. It reads them once at
+start, so a rotated key needs a restart. A store that cannot be reached shows
+only when it is used. Reading an artifact then answers an error naming the
+store. Collecting from a Box warns and tries again after the Box's next turn, and
+Box work carries on. A Box that cannot save everything is not slept. A Box closed
+while the store is away loses what was not saved, with a warning, as any failed
+collect does.
+
+Run logs, setup logs and clone logs stay on local disk under the state
+directory.
+
+Moving a state directory's blobs to a bucket copies each file to the key of the
+same relative path. Stored rows need no change.
 
 ### Stopping the controller
 

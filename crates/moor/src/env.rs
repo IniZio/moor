@@ -20,6 +20,12 @@ pub(crate) const DATABASE_URL: &str = "MOOR_DATABASE_URL";
 /// The variable capping the read connections the store opens to its Postgres database.
 pub(crate) const DATABASE_READERS: &str = "MOOR_DATABASE_READERS";
 
+/// The variable holding the blob store's access key id, when the config names no credentials dir.
+pub(crate) const BLOBS_ACCESS_KEY_ID: &str = "MOOR_BLOBS_ACCESS_KEY_ID";
+
+/// The variable holding the blob store's secret access key, beside [`BLOBS_ACCESS_KEY_ID`].
+pub(crate) const BLOBS_SECRET_ACCESS_KEY: &str = "MOOR_BLOBS_SECRET_ACCESS_KEY";
+
 /// The variable holding the key a Proxy process presents on the ledger socket.
 pub(crate) const PROXY_KEY: &str = "MOOR_PROXY_KEY";
 

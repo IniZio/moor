@@ -15,7 +15,7 @@ use super::fronts::{relay_lines, watch, Outcome, Stop, FIRST_BACKOFF, MAX_BACKOF
 use moor_core::config::FrontEntry;
 
 use super::{log, Sink};
-use crate::env::{Env, DATABASE_URL, PROXY_KEY};
+use crate::env::{Env, BLOBS_ACCESS_KEY_ID, BLOBS_SECRET_ACCESS_KEY, DATABASE_URL, PROXY_KEY};
 use crate::front_dir;
 use crate::Moor;
 
@@ -117,7 +117,9 @@ impl Plan {
             .arg("--state-dir")
             .arg(&self.state_dir)
             .env(PROXY_KEY, &self.key)
-            .env_remove(DATABASE_URL);
+            .env_remove(DATABASE_URL)
+            .env_remove(BLOBS_ACCESS_KEY_ID)
+            .env_remove(BLOBS_SECRET_ACCESS_KEY);
         for (ns, rules) in &self.fronts {
             command
                 .arg("--front")

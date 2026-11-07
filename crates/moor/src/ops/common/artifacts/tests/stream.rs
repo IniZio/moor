@@ -42,6 +42,42 @@ fn many_files_take_one_batch_and_one_stream() {
     assert_one_stream(&f);
 }
 
+#[test]
+fn an_unreachable_blob_store_warns_and_the_next_collect_stores_the_files() {
+    let Fx {
+        dir,
+        cx,
+        driver,
+        id,
+    } = three();
+    let cx = cx.with_blobs(crate::blobs::tests::unreachable());
+    let f = Fx {
+        dir,
+        cx,
+        driver,
+        id,
+    };
+    assert_eq!(run(&f), 0);
+    let warned = warnings(&f);
+    assert_eq!(warned.len(), 3, "{warned:?}");
+    for warning in &warned {
+        assert_eq!(warning.code, "artifact_skipped");
+        assert!(
+            warning.message.contains("could not be stored"),
+            "{warning:?}"
+        );
+        assert!(warning.message.contains("blob store http"), "{warning:?}");
+    }
+    assert!(versions(&f).is_empty());
+    let blobs = crate::blobs::fs::FsBlobs::new(f.dir.path());
+    let f = Fx {
+        cx: f.cx.with_blobs(std::sync::Arc::new(blobs)),
+        ..f
+    };
+    push_three(&f);
+    assert_eq!(run(&f), 3);
+}
+
 fn assert_stored(rows: &[crate::store::artifacts::ArtifactRow], name: &str, bytes: &[u8]) {
     let r = rows.iter().find(|r| r.name == name).unwrap();
     assert_eq!(r.size, bytes.len() as u64);

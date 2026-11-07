@@ -19,7 +19,7 @@ use rustix::process::{kill_process, Pid, Signal};
 
 use super::front_proxy::{self, Plan};
 use super::{log, Sink};
-use crate::env::DATABASE_URL;
+use crate::env::{BLOBS_ACCESS_KEY_ID, BLOBS_SECRET_ACCESS_KEY, DATABASE_URL};
 
 mod front;
 #[cfg(target_os = "linux")]
@@ -281,6 +281,8 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         .arg("--")
         .args(&front.command)
         .env_remove(DATABASE_URL)
+        .env_remove(BLOBS_ACCESS_KEY_ID)
+        .env_remove(BLOBS_SECRET_ACCESS_KEY)
         .current_dir("/")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

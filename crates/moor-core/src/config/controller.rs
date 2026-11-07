@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::blobs::BlobsConfig;
 use super::proxy::front_rules;
 use super::{parse_strict, ConfigError};
 use crate::user::valid_front_namespace;
@@ -51,6 +52,8 @@ pub struct ControllerConfig {
     /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy in another
     /// pod; none serves it only on its unix socket.
     pub ledger_tls: Option<LedgerTls>,
+    /// Where artifacts, reports and transcripts live; the state directory by default.
+    pub blobs: BlobsConfig,
 }
 
 /// The `ledger_tls` entry: the ledger on TCP, behind the controller's certificate, answering
@@ -186,6 +189,9 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         }
     }
     check_intervals(&cfg, file)?;
+    if let Some((key, why)) = cfg.blobs.problem() {
+        return Err(ConfigError::new(key, why).in_file(file));
+    }
     if cfg.web.is_some() {
         return Err(ConfigError::new(
             "web",

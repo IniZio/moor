@@ -16,7 +16,9 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use crate::config_load::load_user;
-use crate::env::{Env, DATABASE_READERS, DATABASE_URL, EGRESS_KEY};
+use crate::env::{
+    Env, BLOBS_ACCESS_KEY_ID, BLOBS_SECRET_ACCESS_KEY, DATABASE_READERS, DATABASE_URL, EGRESS_KEY,
+};
 use crate::proxy::route::EgressRoute;
 use crate::proxy::token::{base64url, key_id};
 
@@ -209,6 +211,8 @@ fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
     }
     let mut child = cmd
         .env_remove(DATABASE_URL)
+        .env_remove(BLOBS_ACCESS_KEY_ID)
+        .env_remove(BLOBS_SECRET_ACCESS_KEY)
         .env_remove(DATABASE_READERS)
         .env(EGRESS_KEY, env.get(EGRESS_KEY).unwrap_or_default())
         .stdin(Stdio::null())

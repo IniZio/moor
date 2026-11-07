@@ -12,3 +12,20 @@ services:
       interval: 1s
       timeout: 5s
       retries: 30
+  s3:
+    image: rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_ACCESS_KEY: moor-test-key
+      RUSTFS_SECRET_KEY: moor-test-secret
+    ports:
+      - "127.0.0.1:${MOOR_TEST_S3_PORT:-9000}:9000"
+  s3-bucket:
+    image: rclone/rclone:1.71.2
+    profiles: [setup]
+    environment:
+      RCLONE_CONFIG_S3_TYPE: s3
+      RCLONE_CONFIG_S3_PROVIDER: Other
+      RCLONE_CONFIG_S3_ENDPOINT: http://s3:9000
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: moor-test-key
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: moor-test-secret
+    command: mkdir s3:moor-test
