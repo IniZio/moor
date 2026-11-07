@@ -90,6 +90,26 @@ pub enum TimingEvent {
         /// What the provider reports the fork spent that time on.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         steps: Vec<ProviderStep>,
+        /// The commit the checkpoint's disk holds, when it is not the Box's base, so every line
+        /// runs again; none when the Box stands on those lines.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rerun_from: Option<String>,
+    },
+    /// The Box reran its setup lines over a checkpoint of another commit.
+    WarmRerun {
+        /// The commit the checkpoint's disk holds.
+        commit: String,
+        /// How many tracked paths differ from that commit; none when git could not tell.
+        changed: Option<u64>,
+        /// The ignored paths that came with the disk.
+        ignored: Vec<String>,
+    },
+    /// A line failed on a rerun over a checkpoint, so the Box is set up from scratch once.
+    WarmRerunFailed {
+        /// The line that failed.
+        line: String,
+        /// The last lines of its log.
+        tail: String,
     },
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {
@@ -154,6 +174,8 @@ impl TimingEvent {
             Self::SetupLineStarted { .. } => "setup_line_started",
             Self::SetupLineFinished { .. } => "setup_line_finished",
             Self::WarmStarted { .. } => "warm_started",
+            Self::WarmRerun { .. } => "warm_rerun",
+            Self::WarmRerunFailed { .. } => "warm_rerun_failed",
             Self::WarmStartFailed { .. } => "warm_start_failed",
             Self::CacheCold { .. } => "cache_cold",
             Self::CacheEmptied { .. } => "cache_emptied",

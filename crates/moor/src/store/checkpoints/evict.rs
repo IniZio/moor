@@ -130,6 +130,16 @@ impl Store {
         Ok(())
     }
 
+    /// Lets go of every checkpoint Box `id` stands on, once its disk no longer holds them.
+    pub(crate) fn unpin_checkpoints(&self, id: BoxId) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::delete()
+                .from_table(Pins::Table)
+                .and_where(Expr::col(Pins::BoxId).eq(id.get())),
+        )?;
+        Ok(())
+    }
+
     /// The checkpoints under `provider` that may be claimed for deleting: no Box holds them back
     /// and none is a delta over them; superseded chains first, then the least recently used.
     pub(crate) fn evictable(&self, provider: &ProviderId) -> Result<Vec<Evictable>, StoreError> {

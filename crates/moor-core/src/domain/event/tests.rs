@@ -276,6 +276,7 @@ fn all_events() -> Vec<Event> {
             saved_ms: 400_000,
             fork_ms: 9_000,
             steps: vec![super::ProviderStep::parse("timing root-flatten ms=7 bytes=9").unwrap()],
+            rerun_from: Some(s("abc")),
         }),
         Event::Timing(TimingEvent::WarmStartFailed {
             layer: 2,
@@ -320,6 +321,15 @@ fn all_events() -> Vec<Event> {
         Event::Timing(TimingEvent::CacheEmptied {
             volume: s("docker"),
             reason: s("blob abc does not match its hash"),
+        }),
+        Event::Timing(TimingEvent::WarmRerun {
+            commit: s("abc"),
+            changed: Some(3),
+            ignored: vec![s("dist/")],
+        }),
+        Event::Timing(TimingEvent::WarmRerunFailed {
+            line: s("make"),
+            tail: s("boom"),
         }),
     ]
 }
@@ -424,6 +434,8 @@ const fn event_index(e: &Event) -> usize {
         Event::DiskLost => 79,
         Event::CachesNotSaved => 80,
         Event::Timing(TimingEvent::CacheEmptied { .. }) => 81,
+        Event::Timing(TimingEvent::WarmRerun { .. }) => 82,
+        Event::Timing(TimingEvent::WarmRerunFailed { .. }) => 83,
     }
 }
 
@@ -431,7 +443,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 82);
+    assert_eq!(all.len(), 84);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

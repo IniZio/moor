@@ -18,6 +18,8 @@ pub(super) struct BriefInput<'a> {
     pub(super) repo_notes: Option<&'a str>,
     /// The CPUs and memory the Box delivers, when they are recorded.
     pub(super) shape: Option<Shape>,
+    /// What to know about the checkpoint disk the Box's setup lines ran again over.
+    pub(super) disk_note: Option<&'a str>,
 }
 
 /// The brief text for a Box.
@@ -109,6 +111,9 @@ fn project_facts(b: &BriefInput, out: &mut String) {
             tenths % 10
         );
     }
+    if let Some(note) = b.disk_note {
+        _ = write!(out, "{note}\n\n");
+    }
 }
 
 /// How to open a pull request and show artifacts on it; the limits are gh's own.
@@ -133,6 +138,7 @@ mod tests {
             setup_exit: None,
             repo_notes: None,
             shape: None,
+            disk_note: None,
         }
     }
 
@@ -279,6 +285,14 @@ mod tests {
         });
         assert!(render(&b).contains("1 vCPU and 2.0 GiB of memory."));
         assert!(!render(&input(None)).contains("vCPU"));
+    }
+
+    #[test]
+    fn names_the_disk_a_rerun_stood_on_only_when_there_was_one() {
+        let mut b = input(None);
+        b.disk_note = Some("This Box started from a disk set up at commit abc.");
+        assert!(render(&b).contains("set up at commit abc.\n\n"));
+        assert!(!render(&input(None)).contains("set up at commit"));
     }
 
     #[test]

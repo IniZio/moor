@@ -36,6 +36,22 @@ pub struct RepoNode {
     pub labels: Vec<String>,
 }
 
+/// `checkpoint:` section.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RepoCheckpoint {
+    /// Whether a Box may start from a checkpoint saved at another commit.
+    pub across_commits: bool,
+}
+
+impl Default for RepoCheckpoint {
+    fn default() -> Self {
+        Self {
+            across_commits: true,
+        }
+    }
+}
+
 /// The repo config. Build it with [`parse_repo`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -57,6 +73,8 @@ pub struct RepoConfig {
     pub box_credentials: Vec<String>,
     /// `cache:` section.
     pub cache: CacheConfig,
+    /// `checkpoint:` section.
+    pub checkpoint: RepoCheckpoint,
     /// `machine:` section: what a user's machine attached to the Box must offer.
     pub machine: Option<RepoMachine>,
     /// `node:` section.
@@ -90,6 +108,7 @@ impl RepoConfig {
                 self.box_credentials != other.box_credentials,
             ),
             ("cache", self.cache != other.cache),
+            ("checkpoint", self.checkpoint != other.checkpoint),
             ("machine", self.machine != other.machine),
             ("node", self.node != other.node),
         ]

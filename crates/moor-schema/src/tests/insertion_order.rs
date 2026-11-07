@@ -107,7 +107,7 @@ fn the_migration_runs_once_and_a_reopen_changes_nothing() {
         history,
         [
             "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "58", "59",
-            "60"
+            "60", "61"
         ]
     );
 }

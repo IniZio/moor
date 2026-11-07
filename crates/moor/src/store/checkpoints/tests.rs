@@ -3,15 +3,33 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::layers::{chain, LayerKey};
+use moor_core::domain::layers::{LayerIdentity, LayerKey};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::Checkpoint;
+use moor_core::user::UserId;
 use moor_core::ProviderId;
 
+use moor_core::BoxPath;
+use moor_schema::tables::SetupCheckpoints as Checkpoints;
+use sea_query::{Expr, Query};
+
 use super::evict::{EvictReason, Evictable};
-use super::Lineage;
+use super::{Lineage, Place};
+use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::REQUESTER_USER;
+
+/// The keys of a chain pinned to `base`, so each base makes a chain of its own.
+fn chain(user: UserId, repo: &str, base: &str, cache: &str, lines: &[String]) -> Vec<LayerKey> {
+    let identity = LayerIdentity {
+        user,
+        repo,
+        cache,
+        class: "",
+        pinned_base: Some(base),
+    };
+    moor_core::domain::layers::chain(&identity, lines)
+}
 
 fn made(id: &str) -> Checkpoint {
     Checkpoint {
@@ -251,4 +269,37 @@ fn an_unclaimed_checkpoint_is_used_again_and_not_forgotten() {
         !store.forget_checkpoint(&local, "cp-1").unwrap(),
         "only a claimed checkpoint is forgotten"
     );
+}
+
+#[test]
+fn a_row_from_before_the_base_column_gives_no_place_and_is_still_evictable() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = crate::store::db::testing::open_store(&dir.path().join("moor.db"), clock);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", "", &[]);
+    let local = ProviderId::new("local");
+    store
+        .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("old"))
+        .unwrap();
+    let place = Place {
+        workdir: BoxPath::restore("/work/old").unwrap(),
+        setup_ms: 5,
+        base: "abc".to_owned(),
+    };
+    store.place_checkpoint(&local, &keys[0], &place).unwrap();
+    assert_eq!(
+        store.checkpoint(&local, &keys[0]).unwrap().unwrap().place,
+        Some(place)
+    );
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Base, Expr::val(None::<String>)),
+        )
+        .unwrap();
+    let row = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
+    assert_eq!(row.place, None, "no Box starts from it");
+    assert_eq!(ids(store.evictable(&local).unwrap()), ["old"]);
 }

@@ -99,7 +99,10 @@ fn set_up_in_machine(
     let plan = cache::derived(cx, store, row, cfg, &held.provider);
     let mut layered = layers::plan(cx, store, row, provider, cfg, &plan);
     let forked = match layered.as_mut() {
-        Some(layered) if fork => layers::resume(cx, store, row, handle, cfg, layered)?,
+        Some(layered) if fork => {
+            layers::stand_on_rerun(store, row.id, layered)?;
+            layers::resume(cx, store, row, handle, cfg, layered)?
+        }
         Some(layered) => {
             layers::stand_on_warm_start(store, row.id, layered)?;
             None

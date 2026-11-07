@@ -28,17 +28,19 @@ pub(crate) struct CheckpointRow {
     pub(crate) place: Option<Place>,
 }
 
-/// What a new Box started from a checkpoint inherits: the saved disk's workdir, and what the
-/// layers below it took to set up from scratch.
+/// What a new Box started from a checkpoint inherits: the saved disk's workdir and commit, and
+/// what the layers below it took to set up from scratch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Place {
     /// The workdir on the checkpointed disk.
     pub(crate) workdir: BoxPath,
     /// Milliseconds the clone and the lines up to this layer took on a Box set up from scratch.
     pub(crate) setup_ms: u64,
+    /// The commit the disk holds.
+    pub(crate) base: String,
 }
 
-/// Whose setup a checkpoint holds: a user's chain of layers over one repo at one commit.
+/// Whose setup a checkpoint holds: a user's chain of layers over one repo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Lineage {
     /// The user whose Box saved it.
@@ -93,6 +95,7 @@ impl Store {
                 .values(layer.iter().map(|(c, v)| (*c, Expr::val(v.clone()))))
                 .value(Checkpoints::Workdir, Expr::val(None::<String>))
                 .value(Checkpoints::SetupMs, Expr::val(None::<i64>))
+                .value(Checkpoints::Base, Expr::val(None::<String>))
                 .and_where(Expr::col(Checkpoints::Provider).eq(provider))
                 .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
@@ -136,6 +139,7 @@ impl Store {
                         Checkpoints::LastUsedAt,
                         Checkpoints::Workdir,
                         Checkpoints::SetupMs,
+                        Checkpoints::Base,
                     ])
                     .from(Checkpoints::Table)
                     .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
@@ -150,7 +154,7 @@ impl Store {
                             .and_then(|b| u64::try_from(b).ok()),
                         created_at: Ts::from_millis(r.get(3)?),
                         last_used_at: Ts::from_millis(r.get(4)?),
-                        place: place(r.get(5)?, r.get(6)?),
+                        place: place(r.get(5)?, r.get(6)?, r.get(7)?),
                     })
                 },
             )
@@ -171,6 +175,7 @@ impl Store {
                 .table(Checkpoints::Table)
                 .value(Checkpoints::Workdir, place.workdir.as_str())
                 .value(Checkpoints::SetupMs, ms)
+                .value(Checkpoints::Base, place.base.as_str())
                 .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                 .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
@@ -196,11 +201,12 @@ impl Store {
     }
 }
 
-/// The place stored as `workdir` and `setup_ms`; none when either is missing or unreadable.
-fn place(workdir: Option<String>, setup_ms: Option<i64>) -> Option<Place> {
+/// The place stored as `workdir`, `setup_ms` and `base`; none when any is missing or unreadable.
+fn place(workdir: Option<String>, setup_ms: Option<i64>, base: Option<String>) -> Option<Place> {
     Some(Place {
         workdir: BoxPath::restore(&workdir?).ok()?,
         setup_ms: u64::try_from(setup_ms?).ok()?,
+        base: base?,
     })
 }
 

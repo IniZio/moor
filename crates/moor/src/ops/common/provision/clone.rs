@@ -7,11 +7,12 @@ use moor_core::boxscript::clone::{
     at_base, clone_script, left_out_submodules, Checkout, CloneStep,
 };
 use moor_core::boxscript::refresh::{outcome, refresh_script};
-use moor_core::boxscript::resources;
+use moor_core::boxscript::{resources, warm_disk};
 use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::PostCloneStep;
+use moor_core::domain::layers::IGNORED_NAMED;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -20,6 +21,7 @@ use moor_core::shape::Shape;
 use moor_core::view::WorkTreeView;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
+use super::layers::Layered;
 use super::others::clone_others;
 use super::outcome::clone_failed;
 use super::SetupTarget;
@@ -44,6 +46,8 @@ pub(super) struct Cloned {
     pub(super) work_tree: Option<WorkTreeView>,
     /// Whether the work tree is the base commit with no changes.
     pub(super) at_base: bool,
+    /// On a forked disk, how many tracked paths changed since its commit, and its ignored paths.
+    pub(super) disk: (Option<u64>, Vec<String>),
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -57,7 +61,8 @@ struct Plan {
     base: String,
     /// The Box branch.
     branch: String,
-    /// The Box's key when it keeps its work tree, which is refreshed once per Box before the clone.
+    /// The Box's key when its work tree may hold another Box's files, which is refreshed once per
+    /// Box before the clone.
     refresh: Option<String>,
 }
 
@@ -107,7 +112,8 @@ pub(super) fn clone_with_proxy(
             })
         })
         .transpose();
-    let job = Job::new(id, target, plan.as_ref(), kept.restore_script());
+    let mut job = Job::new(id, target, plan.as_ref(), kept.restore_script());
+    job.disk = target.layered.and_then(|l| l.forked_commit());
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
@@ -148,7 +154,8 @@ pub(super) fn clone_with_proxy(
 fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
-    let refresh = kept.work_tree().map(|_| target.handle.as_str().to_owned());
+    let rerun = target.layered.is_some_and(Layered::reruns);
+    let refresh = (kept.work_tree().is_some() || rerun).then(|| target.handle.as_str().to_owned());
     Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
@@ -169,6 +176,8 @@ struct Job<'a> {
     identity: Option<Identity>,
     /// What makes the Box's restored cache volumes safe, run before anything else.
     restore: Option<String>,
+    /// The commit a forked disk holds, which the tree is compared with after the clone.
+    disk: Option<&'a str>,
 }
 
 impl<'a> Job<'a> {
@@ -191,6 +200,7 @@ impl<'a> Job<'a> {
             plan,
             identity,
             restore,
+            disk: None,
         }
     }
 }
@@ -230,6 +240,9 @@ fn clone(
             script.push_str(&refresh_script(&plan.checkout(), key));
         }
         script.push_str(&clone_script(&plan.checkout()));
+        // One past what is named, so the note can say there are more.
+        let probe = job.disk.map(|c| warm_disk::script(c, IGNORED_NAMED + 1));
+        script.push_str(&probe.unwrap_or_default());
     }
     let script = resources::after(&script);
     let site = Site {
@@ -320,6 +333,7 @@ fn report(
         delivered: text.and_then(resources::parse),
         work_tree: tree,
         at_base: text.is_some_and(at_base),
+        disk: text.map(warm_disk::parse).unwrap_or_default(),
     }
 }
 

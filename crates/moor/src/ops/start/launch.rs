@@ -21,7 +21,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
 use crate::ops::common::facts::{repo_config, settings_of};
-use crate::ops::common::provision::{nonce, recorded_workdir, reread};
+use crate::ops::common::provision::{nonce, recorded_workdir, reread, warm_disk_note};
 use crate::ops::common::resume;
 use crate::ops::common::step::timed_result;
 use crate::ops::common::view::rfc3339;
@@ -305,6 +305,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         setup_exit,
         repo_notes: repo_config(row).ok().flatten().and_then(|c| c.brief),
         shape: b.delivered,
+        disk_note: cx.store().ok().and_then(|s| warm_disk_note(s, row.id)),
         model: None,
         nonce: nonce(cx.rng()),
         proxy: None,

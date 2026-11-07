@@ -227,12 +227,13 @@ is asleep and did not save its caches as it slept.
 
 ## Warm starts
 
-A later Box on your node can start from a checkpoint a Box of yours saved there,
-skipping the setup lines the checkpoint holds. Checkpoints are never shared across
-users or across nodes.
+A later Box on your node can start from a checkpoint a Box of yours saved there, at
+any commit. Checkpoints are never shared across users or across nodes.
 
-**A warm start holds only for the same commit today.** A Box at any other commit
-finds no checkpoint, runs its whole setup, and saves a new chain.
+A Box at the checkpoint's own commit skips the setup lines the checkpoint holds. A Box
+at another commit runs every line again on the refreshed tree. A line whose guard skips
+its work can leave the old commit's output, so read
+[what rerunning does not cover](config.md#setup-checkpoints).
 
 `moor node ls` says `warm starts on`, or `warm starts off:` with the reason. The
 agent offers them only when its provider has `workspace-checkpoint` and
@@ -240,11 +241,11 @@ agent offers them only when its provider has `workspace-checkpoint` and
 [the cloud-hypervisor provider](providers.md#use-the-cloud-hypervisor-provider)
 for the setting, which the agent adds for you and an owner's `false` turns off.
 
-A chain is the checkpoints of one user, repo, commit and cache plan: the clone, each
-setup line over 20 seconds, and the last line. Each checkpoint is a delta over the one
+A chain is the checkpoints of one user, repo, machine class and cache plan: the clone,
+each setup line over 20 seconds, and the last line. Each checkpoint is a delta over the one
 before. It holds the guest memory in use at the save and what changed on disk since,
 so a chain costs about what setup wrote to disk, plus the memory in use at each save.
-Each new commit starts a new chain, so chains add up until the disk reaches its floor.
+A Box at a new commit reuses the chain and saves nothing over it.
 A just-booted 16 GiB VM on ext4 took 1.07 GiB for its first checkpoint and 0.60 GiB for
 the next, with `v52.0-moor.1`. A real setup costs more, and that is not yet measured.
 

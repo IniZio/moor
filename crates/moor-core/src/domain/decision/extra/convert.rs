@@ -68,13 +68,27 @@ impl From<ExtraEvent> for Event {
                 saved_ms,
                 fork_ms,
                 steps,
+                rerun_from,
             } => Self::Timing(TimingEvent::WarmStarted {
                 layer,
                 layers,
                 saved_ms,
                 fork_ms,
                 steps,
+                rerun_from,
             }),
+            ExtraEvent::WarmRerun {
+                commit,
+                changed,
+                ignored,
+            } => Self::Timing(TimingEvent::WarmRerun {
+                commit,
+                changed,
+                ignored,
+            }),
+            ExtraEvent::WarmRerunFailed { line, tail } => {
+                Self::Timing(TimingEvent::WarmRerunFailed { line, tail })
+            }
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })
             }

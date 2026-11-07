@@ -213,14 +213,15 @@ Box checkout for unsaved work.
 and prints the Box as a start does. When the provider keeps checkpoints, the
 Box moves to a new machine forked from the newest checkpoint at or below the
 line that failed, and only the lines after that checkpoint run again. Only a
-checkpoint that one of your own Boxes saved is used. It refuses
+checkpoint of the Box's own commit that one of your own Boxes saved is used. It refuses
 a Box whose setup did not fail, and says which state the Box is in. After a successful retry the agent starts
 as it does on a first start, including for a Box whose setup was interrupted by
 a controller restart. If setup fails again, the Box stays in `setup_failed` and
 no agent starts. A working Box that lost its machine and failed its clone, a
 `setup:` line or its agent install on the new one is in `setup_failed` too, and
 `moor retry` resumes it from its deepest checkpoint. A retry runs the agent
-install again. moor never retries a failed step by itself.
+install again. moor retries a failed step by itself in one case. A line that fails over a
+[checkpoint of another commit](config.md#setup-checkpoints) gets one start from scratch.
 
 ### `moor close-failed`
 

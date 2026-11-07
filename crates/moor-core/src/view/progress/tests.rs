@@ -267,3 +267,24 @@ fn a_cold_cache_reads_as_a_step_and_is_not_a_failure() {
         ))
     );
 }
+
+#[test]
+fn a_warm_start_at_another_commit_says_its_lines_run_and_a_failed_one_is_named() {
+    let at = event(
+        "warm_started",
+        json!({"layer": 2, "layers": 3, "saved_ms": 9000, "fork_ms": 1, "rerun_from": "abc"}),
+        0,
+    );
+    assert_eq!(
+        latest(&[at]).unwrap(),
+        "started from setup checkpoint 2/3 of another commit, running its lines"
+    );
+    let failed = event("warm_rerun_failed", json!({"line": "make", "tail": ""}), 0);
+    assert!(latest(&[failed]).unwrap().contains("make"));
+    let rerun = event(
+        "warm_rerun",
+        json!({"commit": "abc", "changed": 1, "ignored": ["dist/"]}),
+        0,
+    );
+    assert!(latest(&[rerun]).unwrap().contains("dist/"));
+}

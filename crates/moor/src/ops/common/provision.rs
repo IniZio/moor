@@ -250,14 +250,20 @@ fn run_and_record(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
-    // Checkpoints are keyed by the base, so a tree that is not the base unchanged saves none.
-    let target = &target.keeping_layers(cloned.at_base);
+    let on_fork = target;
+    let (target, reran) = &warm_rerun::after_clone(target, &cloned);
+    let (target, reran) = (target, *reran);
     layers::after_clone(cx, store, target, cloned.ms);
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     record_delivered(cx, store, id, cfg, cloned.delivered)?;
+    let warm_disk = warm_rerun::record_disk(store, id, reran, &cloned)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
+    let retries = run.failed() && reran.is_some() && !cx.env().cancel().is_cancelled();
+    if let Some(layered) = on_fork.layered.filter(|_| retries) {
+        return warm_rerun::cold_again(cx, store, id, advance, on_fork, layered, cfg, &run);
+    }
     if !run.failed() {
         store.apply(Decision::new(id).set(Fields {
             setup_failed_at: Field::Clear,
@@ -298,6 +304,7 @@ fn run_and_record(
         dotfiles,
         work_tree: cloned.work_tree,
         install_failed,
+        warm_disk,
     })
 }
 
@@ -347,5 +354,7 @@ mod rerun;
 mod retry;
 mod setup_run;
 mod target;
+mod warm_rerun;
+pub(crate) use warm_rerun::warm_disk_note;
 #[cfg(test)]
 mod tests;

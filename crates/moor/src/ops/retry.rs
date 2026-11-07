@@ -3,6 +3,7 @@
 //! The Box lock is taken by the provisioning step, which reads the row again under it.
 
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::layers::WarmDisk;
 use moor_core::view::{AgentLaunchView, StartView};
 use moor_core::{BoxReq, BoxTarget, ErrorKind};
 
@@ -63,7 +64,7 @@ fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> Start
         setup: p.setup.view(),
         dotfiles: p.dotfiles.view(),
         agent,
-        warnings_inline: Vec::new(),
+        warnings_inline: p.warm_disk.iter().map(WarmDisk::note).collect(),
         failed_step: failed.map(str::to_owned),
         handle: failed.and_then(|_| boxed.driver.as_ref().and_then(|b| b.handle.clone())),
         boxed,

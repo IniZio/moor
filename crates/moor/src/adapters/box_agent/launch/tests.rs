@@ -62,6 +62,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         issue: None,
         setup_exit: None,
         repo_notes: None,
+        disk_note: None,
         shape: None,
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),

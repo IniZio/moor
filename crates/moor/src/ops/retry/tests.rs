@@ -7,17 +7,18 @@ use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::layers::{chain, LayerKey};
+use moor_core::domain::layers::{chain, LayerIdentity, LayerKey};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::surface::PaneRef;
-use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, ProviderId, StartReq};
 
 use super::run;
 use crate::cx::Cx;
-use crate::store::checkpoints::Lineage;
+use crate::store::checkpoints::{Lineage, Place};
+use crate::store::BoxRow;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -269,19 +270,25 @@ fn box_roots(w: &World, id: BoxId) -> Vec<String> {
         .collect()
 }
 
+/// The keys of the requester's chain of `o/n` with setup `lines`.
+fn keys_of(lines: &[String]) -> Vec<LayerKey> {
+    let identity = LayerIdentity {
+        user: REQUESTER_USER,
+        repo: "o/n",
+        cache: "",
+        class: "",
+        pinned_base: None,
+    };
+    chain(&identity, lines)
+}
+
 /// Saves layer `layer` of Box `id`'s chain as a checkpoint of its current machine, as an
 /// earlier Box of the same repo, base and lines would have.
 fn saved_layer(w: &World, id: BoxId, layer: usize) {
     let r = row(w, id);
-    let boxed = r.boxed.unwrap();
+    let boxed = r.boxed.clone().unwrap();
     let lines: Vec<String> = ["prep-one", "run-two"].map(str::to_owned).to_vec();
-    let keys = chain(
-        REQUESTER_USER,
-        "o/n",
-        r.base.as_deref().unwrap(),
-        "",
-        &lines,
-    );
+    let keys = keys_of(&lines);
     let key = &keys[layer];
     let made = w
         .driver
@@ -291,6 +298,18 @@ fn saved_layer(w: &World, id: BoxId, layer: usize) {
     store
         .record_checkpoint(&boxed.provider, key, &lineage(&keys[0]), &made)
         .unwrap();
+    place_at_base(w, &r, &boxed.provider, key);
+}
+
+/// Records where a Box may start from `key`'s checkpoint, at the base of `at`.
+fn place_at_base(w: &World, at: &BoxRow, provider: &ProviderId, key: &LayerKey) {
+    let place = Place {
+        workdir: BoxPath::restore("/work/cbx_1/repo").unwrap(),
+        setup_ms: 1,
+        base: at.base.clone().unwrap(),
+    };
+    let store = w.cx.store().unwrap();
+    store.place_checkpoint(provider, key, &place).unwrap();
 }
 
 /// The requester's chain of `o/n` whose clone layer is `clone`.
@@ -320,13 +339,7 @@ fn a_first_run_checkpoints_the_clone_a_slow_line_and_the_last_line_only() {
     let lines: Vec<String> = ["make-slow", "cheap", "last-one"]
         .map(str::to_owned)
         .to_vec();
-    let keys = chain(
-        REQUESTER_USER,
-        "o/n",
-        row(&w, id).base.as_deref().unwrap(),
-        "",
-        &lines,
-    );
+    let keys = keys_of(&lines);
     let want: Vec<String> = [0, 1, 3]
         .iter()
         .map(|&i| keys[i].as_str().to_owned())
@@ -392,14 +405,8 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     let w = world(TWO_LINES, driver);
     let id = started(&w);
     let before = row(&w, id);
-    let provider = before.boxed.unwrap().provider;
-    let clone = &chain(
-        REQUESTER_USER,
-        "o/n",
-        before.base.as_deref().unwrap(),
-        "",
-        &[],
-    )[0];
+    let provider = before.boxed.clone().unwrap().provider;
+    let clone = &keys_of(&[])[0];
     let gone = Checkpoint {
         id: "gone".to_owned(),
         bytes: None,
@@ -409,6 +416,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     store
         .record_checkpoint(&provider, clone, &lineage(clone), &gone)
         .unwrap();
+    place_at_base(&w, &before, &provider, clone);
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ok);
     assert_eq!(

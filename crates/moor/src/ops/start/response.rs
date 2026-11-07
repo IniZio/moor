@@ -1,6 +1,7 @@
 //! Builds the response a start returns, from the Box row and the launch outcome.
 
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::layers::WarmDisk;
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 
 use crate::cx::Cx;
@@ -52,6 +53,8 @@ pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.setup = p.setup.view();
     v.dotfiles = p.dotfiles.view();
     v.work_tree.clone_from(&p.work_tree);
+    v.warnings_inline
+        .extend(p.warm_disk.as_ref().map(WarmDisk::note));
     if let Some(step) = p.failed_step() {
         v.failed_step = Some(step.to_owned());
         v.handle = v.boxed.driver.as_ref().and_then(|b| b.handle.clone());

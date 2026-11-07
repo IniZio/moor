@@ -3,33 +3,47 @@
 //! its layers, and a retry from the nearest one.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
+use moor_core::boxscript::warm_disk;
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::layers::{chain, checkpoint_after, LayerKey};
+use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
+use moor_core::seam::driver::{AcquireReq, ExecOutcome, ExecSpec};
+use moor_core::seam::proc::Deadline;
 use moor_core::{BoxId, ProviderId, Warning};
 
 use super::clone::SetupProxy;
 use super::disk::make_room;
 use super::setup_run::run_through_proxy;
-use super::SetupTarget;
+use super::{nonce, SetupTarget};
 use crate::cx::Cx;
+use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
-use crate::ops::common::node::checkpoint_home;
+use crate::ops::common::node::{checkpoint_home, seat_of};
 use crate::ops::common::setup::{Released, SetupRun};
 use crate::store::checkpoints::{Lineage, Place};
 use crate::store::{BoxRow, Store};
+
+/// How long reading the Box's HEAD may take.
+const HEAD_CHECK_DEADLINE: Deadline = Deadline(Duration::from_mins(1));
 
 /// What a Box's disk holds of its setup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Disk {
     /// Nothing: a new machine, or one that holds no checkpoint.
     Fresh,
-    /// A checkpoint, whose lines are not run again.
+    /// A checkpoint of the Box's own base, whose lines are not run again.
     OnLayer {
         /// The layer it holds.
         layer: usize,
+    },
+    /// A checkpoint of another commit: every line runs again and nothing is saved, since the
+    /// output of a line whose guard skipped it may still be that commit's.
+    Rerun {
+        /// The commit the disk holds.
+        commit: String,
     },
 }
 
@@ -45,6 +59,8 @@ pub(super) struct Layered {
     lineage: Lineage,
     /// The Box the layers are for.
     id: BoxId,
+    /// The commit the Box starts from.
+    base: String,
     /// What the Box's disk holds.
     disk: Disk,
     /// The Box's cache plan, which its checkpoints hold the disks of.
@@ -65,8 +81,46 @@ impl Layered {
     const fn from(&self) -> usize {
         match self.disk {
             Disk::OnLayer { layer } => layer,
-            Disk::Fresh => 0,
+            Disk::Fresh | Disk::Rerun { .. } => 0,
         }
+    }
+
+    /// Whether every line runs again over a checkpoint of another commit.
+    pub(super) const fn reruns(&self) -> bool {
+        matches!(self.disk, Disk::Rerun { .. })
+    }
+
+    /// The commit a forked disk holds; none on a disk set up from scratch.
+    pub(super) fn forked_commit(&self) -> Option<&str> {
+        match &self.disk {
+            Disk::Fresh => None,
+            Disk::OnLayer { .. } => Some(&self.base),
+            Disk::Rerun { commit } => Some(commit),
+        }
+    }
+
+    /// What a new machine for Box `row` is asked for.
+    pub(super) fn machine_req(
+        &self,
+        cx: &Cx,
+        store: &Store,
+        row: &BoxRow,
+        cfg: &BoxSettings,
+    ) -> Result<AcquireReq, CommandError> {
+        Ok(AcquireReq {
+            provider: self.provider.clone(),
+            box_id: row.id,
+            name: row.name.clone(),
+            class: cfg.size.as_ref().map(|s| s.value.as_str().to_owned()),
+            nonce: nonce(cx.rng()),
+            cache: self.cache.clone(),
+            pool_machine: seat_of(cx, store, row)?,
+        })
+    }
+
+    /// The Box's cache plan.
+    pub(super) const fn cache(&self) -> &CachePlan {
+        &self.cache
     }
 }
 
@@ -89,7 +143,14 @@ pub(super) fn plan(
     let provider = ProviderId::new(provider);
     let home = checkpoint_home(cx, store, row, &provider, user)?;
     let repo = repo.repo.to_string();
-    let keys = chain(user, &repo, base, &cache.identity(), &cfg.setup);
+    let identity = LayerIdentity {
+        user,
+        repo: &repo,
+        cache: &cache.identity(),
+        class: cfg.size.as_ref().map_or("", |s| s.value.as_str()),
+        pinned_base: (!cfg.across_commits).then_some(base),
+    };
+    let keys = chain(&identity, &cfg.setup);
     Some(Layered {
         lineage: Lineage {
             user,
@@ -100,6 +161,7 @@ pub(super) fn plan(
         provider,
         home,
         id: row.id,
+        base: base.to_owned(),
         disk: Disk::Fresh,
         cache: cache.clone(),
         spent_ms: AtomicU64::new(0),
@@ -149,7 +211,7 @@ pub(super) fn run(
                 ms += took;
                 tail = t;
                 layered.spent_ms.fetch_add(took, Ordering::Relaxed);
-                if checkpoint_after(i + 1, took, total) {
+                if !layered.reruns() && checkpoint_after(i + 1, took, total) {
                     save(cx, store, target, layered, i + 1);
                 }
             }
@@ -172,6 +234,21 @@ pub(super) fn run(
     Ok(SetupRun::Ok { ms, tail })
 }
 
+/// Whether the target's HEAD is still the Box's base, which is the commit a checkpoint records. A
+/// line may have moved it since the clone said so.
+fn head_at_base(cx: &Cx, target: &SetupTarget<'_>, layered: &Layered) -> bool {
+    let spec = ExecSpec {
+        argv: ["sh", "-c", &warm_disk::head_at(&layered.base)]
+            .map(str::to_owned)
+            .to_vec(),
+        env: Vec::new(),
+        cwd: Some(target.workdir.clone()),
+        output: None,
+    };
+    let ended = cx.driver().exec(target.handle, &spec, HEAD_CHECK_DEADLINE);
+    matches!(ended, Ok(ExecOutcome::Exited { code: 0 }))
+}
+
 /// Checkpoints `layer` of the target's Box, unless a checkpoint of it is kept already.
 /// A failed checkpoint is only warned about: setup goes on, and a retry runs the layer again.
 fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, layer: usize) {
@@ -181,13 +258,17 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
     if store.use_checkpoint(&layered.home, key).unwrap_or(false) {
         return;
     }
-    if !make_room(cx, store, layered.id, &layered.home).unwrap_or(true) {
+    let refused = if layer > 0 && !head_at_base(cx, target, layered) {
+        Some("a setup line moved HEAD off the base commit, or moor could not tell")
+    } else if !make_room(cx, store, layered.id, &layered.home).unwrap_or(true) {
+        Some("the disk is below its floor with no checkpoint left to delete")
+    } else {
+        None
+    };
+    if let Some(why) = refused {
         cx.warn(Warning {
             code: "checkpoint_skipped".to_owned(),
-            message: format!(
-                "did not checkpoint setup layer {layer}: the disk is below its floor with no \
-                 checkpoint left to delete"
-            ),
+            message: format!("did not checkpoint setup layer {layer}: {why}"),
         });
         return;
     }
@@ -211,6 +292,7 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
         let place = Place {
             workdir: target.workdir.clone(),
             setup_ms: layered.spent_ms.load(Ordering::Relaxed),
+            base: layered.base.clone(),
         };
         store
             .record_checkpoint(&layered.home, key, &layered.lineage, &made)
@@ -230,4 +312,4 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
 
 mod fork;
 
-pub(super) use fork::{resume, stand_on_warm_start, warm};
+pub(super) use fork::{release_old, resume, stand_on_rerun, stand_on_warm_start, warm};

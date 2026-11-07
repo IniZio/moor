@@ -42,12 +42,12 @@ pub(super) fn start(w: &World, name: &str, base: &str, yaml: &str) -> BoxId {
     store.open_box_by_name(&name).unwrap().unwrap().id
 }
 
-fn row(w: &World, id: BoxId) -> BoxRow {
+pub(super) fn row(w: &World, id: BoxId) -> BoxRow {
     w.cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
 /// The setup lines that ran on Box `id`'s machine, by their text.
-fn lines_on(w: &World, id: BoxId) -> Vec<&'static str> {
+pub(super) fn lines_on(w: &World, id: BoxId) -> Vec<&'static str> {
     let handle = row(w, id).boxed.unwrap().handle.unwrap();
     let ran: Vec<String> = w
         .driver
@@ -168,12 +168,8 @@ fn a_failed_checkpoint_is_recorded_with_its_error_and_setup_goes_on() {
 }
 
 #[test]
-fn a_new_box_whose_base_or_first_line_changed_does_not_reuse_the_layers_above() {
+fn a_new_box_whose_first_line_changed_does_not_reuse_the_layers_above() {
     let (w, _) = after_a_partial_setup(FakeDriver::new());
-    let moved = start(&w, "moved", "def456", LINES);
-    assert!(events(&w, moved, "warm_started").is_empty());
-    assert!(!w.driver.calls().iter().any(|c| c.starts_with("fork")));
-    assert_eq!(lines_on(&w, moved), ["one-a", "two-b", "three-c"]);
     let changed = start(&w, "changed", "abc123", "setup: [one-z, two-b, three-c]\n");
     let warm = events(&w, changed, "warm_started");
     assert_eq!(warm.len(), 1, "only the clone still matches");

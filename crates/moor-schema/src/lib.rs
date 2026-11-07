@@ -7,6 +7,7 @@ use moor_migrate::sea_query::{
 use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
+mod checkpoint_base;
 mod egress_token;
 mod forward_port;
 mod held_prompt;
@@ -86,6 +87,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V60__machine_boxes",
         write: machine_boxes::write,
+    },
+    Step {
+        name: "V61__checkpoint_base",
+        write: checkpoint_base::write,
     },
 ];
 

@@ -204,9 +204,9 @@ impl Driver for FakeDriver {
             write_log(spec, scripted)?;
             return Ok(out);
         }
-        let out = s
-            .exec_results
-            .pop_front()
+        let scripted_result = !knobs::is_head_check(spec);
+        let out = (scripted_result.then(|| s.exec_results.pop_front()))
+            .flatten()
             .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
         let passed = matches!(out, Ok(ExecOutcome::Exited { code: 0 }));
         let text = scripted.or_else(|| passed.then(|| knobs::clone_default(spec)).flatten());
