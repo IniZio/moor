@@ -58,4 +58,6 @@ egress:
     egressClientKey: example-egress-key
     runnerClientCert: example-runner-cert
     runnerClientKey: example-runner-key
+    slackClientCert: example-slack-cert
+    slackClientKey: example-slack-key
   resources: {limits: {memory: 256Mi}}

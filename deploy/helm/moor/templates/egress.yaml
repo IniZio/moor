@@ -6,8 +6,13 @@
 {{- $key := .Values.egress.key | default (get $was "egress-key") | default (randAlphaNum 64) -}}
 {{- $tls := .Values.egress.ledgerTls | default dict -}}
 {{- $names := list "ledger-ca.pem" "ledger-ca.key" "ledger-tls.crt" "ledger-tls.key" "egress-client.crt" "egress-client.key" "runner-client.crt" "runner-client.key" -}}
+{{- $roles := list "egress" "runner" -}}
+{{- if include "moor.slackSeparate" . -}}
+{{- $names = concat $names (list "slack-client.crt" "slack-client.key") -}}
+{{- $roles = append $roles "slack" -}}
+{{- end -}}
 {{- $pem := dict -}}
-{{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
+{{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey "slack-client.crt" $tls.slackClientCert "slack-client.key" $tls.slackClientKey -}}
 {{- $keptPairs := and (get $was "ledger-tls.crt") (get $was "ledger-tls.key") (get $was "egress-client.crt") (get $was "egress-client.key") (get $was "runner-client.crt") (get $was "runner-client.key") -}}
 {{- if or $tls.cert $tls.key $tls.ca $tls.caKey $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey -}}
 {{- if not (and $tls.cert $tls.key $tls.ca) -}}
@@ -18,6 +23,9 @@
 {{- end -}}
 {{- if not (or $tls.caKey (and $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey)) -}}
 {{- fail "egress.ledgerTls with your own ca needs caKey, or all of egressClientCert, egressClientKey, runnerClientCert and runnerClientKey" -}}
+{{- end -}}
+{{- if and (include "moor.slackSeparate" .) (not (or $tls.caKey (and $tls.slackClientCert $tls.slackClientKey))) -}}
+{{- fail "slack.separate with your own ca needs caKey, or both slackClientCert and slackClientKey" -}}
 {{- end -}}
 {{- if eq (get $was "ledger-ca.pem") $tls.ca -}}
 {{- range $names }}{{ $_ := set $pem . (get $was .) }}{{ end -}}
@@ -40,7 +48,7 @@
 {{- $_ := set $pem "ledger-tls.crt" $cert.Cert -}}
 {{- $_ := set $pem "ledger-tls.key" $cert.Key -}}
 {{- end -}}
-{{- range $role := list "egress" "runner" -}}
+{{- range $role := $roles -}}
 {{- if not (and (get $pem (printf "%s-client.crt" $role)) (get $pem (printf "%s-client.key" $role))) -}}
 {{- $cert := genSignedCert (printf "moor %s" $role) nil nil 3650 $ca -}}
 {{- $_ := set $pem (printf "%s-client.crt" $role) $cert.Cert -}}
@@ -64,6 +72,9 @@ stringData:
   {{ . }}: {{ get $pem . | default "" | quote }}
   {{- end }}
   machine-service-key: {{ printf "moor machine service:%s" $key | sha256sum | quote }}
+  {{- if include "moor.slackSeparate" . }}
+  slack-front-key: {{ printf "moor front slack:%s" $key | sha256sum | quote }}
+  {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
