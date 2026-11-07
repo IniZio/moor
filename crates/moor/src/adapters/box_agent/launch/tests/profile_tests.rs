@@ -30,7 +30,7 @@ fn the_profile_writers_run_after_the_path_and_proxy_and_before_the_agent() {
     let path = at(&script, AGENT_PATH_LINE);
     let proxy = at(&script, "HTTPS_PROXY");
     let truncate = at(&script, &format!(": > '/work/box-1/{FAILURES_FILE}.all'"));
-    let claude = at(&script, "plugin install 'p@m'");
+    let claude = at(&script, "\"$c/skills\"");
     let codex = at(&script, "/.codex'");
     let kept = at(&script, &format!("mv '/work/box-1/{FAILURES_FILE}.all'"));
     let agent = script.rfind("'claude'").unwrap();
@@ -95,18 +95,15 @@ fn a_profile_without_env_exports_nothing_extra() {
 }
 
 #[test]
-fn each_profile_writer_is_timed_into_the_seconds_file() {
+fn the_launch_script_of_a_box_with_plugins_installs_none() {
     let script = launched(|s| LaunchReq {
         profile: Some(parse(MANIFEST).unwrap()),
         ..req_with_proxy(s)
     });
-    let secs = "/work/box-1/.moor/profile-steps.secs";
-    assert_eq!(
-        script.matches(&format!(">> '{secs}'")).count(),
-        2,
-        "{script}"
-    );
-    let truncate = at(&script, &format!(": > '{secs}'"));
-    let claude = at(&script, "plugin install 'p@m'");
-    assert!(truncate < claude, "{script}");
+    assert!(!script.contains("plugin install"), "{script}");
+    assert!(!script.contains("plugin marketplace"), "{script}");
+    assert!(!script.contains("plugin add"), "{script}");
+    let manifest = parse(MANIFEST).unwrap();
+    let installs = crate::adapters::box_agent::profile_writer::install_script(&manifest).unwrap();
+    assert!(installs.contains("plugin install 'p@m'"), "{installs}");
 }

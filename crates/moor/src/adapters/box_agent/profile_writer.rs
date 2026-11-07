@@ -1,8 +1,13 @@
 //! Turns a checked-out person profile into the config an agent reads on the Box.
 
+use moor_core::boxscript::profile::PROFILE_DIR;
+use moor_core::boxscript::AGENT_PATH_LINE;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::BoxSetup;
+
+use super::claude::Claude;
+use super::codex::Codex;
 
 /// What a writer knows about the profile and the Box it writes into.
 pub(crate) struct ProfileCtx<'a> {
@@ -20,9 +25,30 @@ pub(crate) struct ProfileCtx<'a> {
 /// the files the profile ships are only known on the Box, and it never fails the launch: what
 /// went wrong is listed in [`FAILURES_FILE`].
 pub(crate) trait ProfileWriter {
-    /// Files and a shell step that put the profile's instructions, skills, settings and plugins
-    /// where this agent reads them.
+    /// Files and a shell step that put the profile's instructions, skills and settings where this
+    /// agent reads them, on each launch.
     fn write(&self, ctx: &ProfileCtx<'_>) -> Result<BoxSetup, NameError>;
+
+    /// The shell lines that add `manifest`'s marketplaces and install its plugins, which last across
+    /// a checkpoint. They read the checkout as `$d`, and report through `fail`.
+    fn installs(&self, manifest: &Manifest) -> String;
+}
+
+/// The script that runs every agent's installs for `manifest`, ahead of the launch; none when it
+/// lists none. What failed reaches the exec's output, and the script exits 0.
+pub(crate) fn install_script(manifest: &Manifest) -> Option<String> {
+    let writers: [&dyn ProfileWriter; 2] = [&Claude, &Codex];
+    let steps: Vec<String> = writers
+        .iter()
+        .map(|w| w.installs(manifest))
+        .filter(|s| !s.is_empty())
+        .collect();
+    (!steps.is_empty()).then(|| {
+        format!(
+            "{AGENT_PATH_LINE}\nd=\"$HOME/{PROFILE_DIR}\"; f=/dev/null\n{FAIL_FN}\n{}\n:\n",
+            steps.join("\n")
+        )
+    })
 }
 
 pub(crate) use moor_core::boxscript::profile::FAILURES_FILE;

@@ -69,7 +69,10 @@ case \"$*\" in *--json*) echo '{\"marketplaceName\": \"local-mk\"}';; esac\nexit
             std::env::var("PATH").unwrap()
         );
         Command::new("/bin/sh")
-            .args(["-c", &setup.step])
+            .args([
+                "-c",
+                &format!("{}\n{}", setup.step, Codex.installs(manifest)),
+            ])
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("STUB_LOG", self.path("log"))

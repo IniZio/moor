@@ -72,6 +72,7 @@ impl TryFrom<Event> for ExtraEvent {
                 fork_ms,
                 steps,
                 rerun_from,
+                finished,
             }) => Ok(Self::WarmStarted {
                 layer,
                 layers,
@@ -79,6 +80,7 @@ impl TryFrom<Event> for ExtraEvent {
                 fork_ms,
                 steps,
                 rerun_from,
+                finished,
             }),
             Event::Timing(TimingEvent::WarmRerun {
                 commit,

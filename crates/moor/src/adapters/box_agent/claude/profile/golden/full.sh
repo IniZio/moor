@@ -55,7 +55,4 @@ const t = p + ".moor-tmp";
 fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
 ' '/box/home/.claude/settings.json' "$d/claude/settings.json"; elif [ ! -e '/box/home/.claude/settings.json' ] && cp "$d/claude/settings.json" '/box/home/.claude/settings.json'; then :; else false; fi || fail settings $?; }
-claude plugin marketplace add 'https://github.com/acme/agent-tools' </dev/null >/dev/null 2>&1 || fail 'marketplace tools' $?
-claude plugin install 'lint@tools' </dev/null >/dev/null 2>&1 || fail 'plugin lint@tools' $?
-claude plugin install 'fmt@tools' </dev/null >/dev/null 2>&1 || fail 'plugin fmt@tools' $?
 } || :

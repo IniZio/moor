@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::boxscript::profile::{fetch_script, setup_script, FAILURES_FILE, PLUGIN_SECS_FILE};
+use moor_core::boxscript::profile::{failed_installs, fetch_script, setup_script, FAILURES_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{PostCloneStep, ProfileStep};
@@ -18,7 +18,7 @@ use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
 use crate::ops::common::setup::log_dir;
-use crate::ops::common::step::{timed, try_record, warn_unrecorded};
+use crate::ops::common::step::timed;
 use crate::store::box_profile::BoxProfile;
 use crate::store::{BoxRow, Store};
 
@@ -28,8 +28,9 @@ const FETCH_DEADLINE: Duration = Duration::from_mins(2);
 /// Wall-clock allowance for the profile's own `setup.sh`.
 const SETUP_DEADLINE: Duration = agent_install::INSTALL_DEADLINE;
 
-/// Fetches the profile Box `id` resolved, if any, through its Proxy, then runs its `setup.sh`;
-/// a failure is recorded and warned, never returned.
+/// Fetches the profile Box `id` resolved, if any, through its Proxy, runs its `setup.sh`, then its
+/// plugin installs; a failure is recorded and warned, never returned. Whether all of it went well,
+/// which a Box with no profile always has.
 ///
 /// # Errors
 /// [`CommandError`] when the store cannot be read or written.
@@ -40,20 +41,65 @@ pub(crate) fn apply(
     id: BoxId,
     cfg: &BoxSettings,
     proxy: &Result<Option<BoxProxy>, String>,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     let Some(profile) = store.box_profile(id)? else {
-        return Ok(());
+        return Ok(true);
     };
     let proxy = match proxy {
         Ok(proxy) => proxy.as_ref(),
-        Err(reason) => return failed(cx, store, id, ProfileStep::Fetch, reason.clone()),
+        Err(reason) => {
+            failed(cx, store, id, ProfileStep::Fetch, reason.clone())?;
+            return Ok(false);
+        }
     };
     let ran = timed(cx, store, id, PostCloneStep::Profile, || {
         let out = fetch_and_setup(cx, store, (handle, provider), id, (cfg, proxy), &profile);
         let ok = matches!(out, Ok(true));
         (out, ok)
-    });
-    ran.map(|_| ())
+    })?;
+    let site = Site {
+        handle,
+        provider,
+        workdir: None,
+    };
+    let installed = plugin_installs(cx, store, &site, id, (cfg, proxy), &profile)?;
+    Ok(ran && installed)
+}
+
+/// Runs the plugin installs of `profile`'s manifest, ahead of the launch so a checkpoint can hold
+/// them; whether they all went well. Each one that failed is recorded, and the rest still ran.
+fn plugin_installs(
+    cx: &Cx,
+    store: &Store,
+    site: &Site<'_>,
+    id: BoxId,
+    env: (&BoxSettings, Option<&BoxProxy>),
+    profile: &BoxProfile,
+) -> Result<bool, CommandError> {
+    let manifest = profile.manifest.as_deref();
+    let manifest = manifest.and_then(|text| moor_core::profile::parse(text).ok());
+    let Some(script) = manifest.and_then(|m| cx.engine().profile_install(&m)) else {
+        return Ok(true);
+    };
+    let log = cx.state_dir()?;
+    let log = log_dir(log, id).join("profile-plugins.log");
+    timed(cx, store, id, PostCloneStep::Plugins, || {
+        let ran = run(
+            cx,
+            site,
+            env,
+            (script, &log),
+            ("profile plugins", SETUP_DEADLINE),
+        );
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        let mut failures: Vec<String> = ran.err().into_iter().collect();
+        failures.extend(failed_installs(&text).into_iter().map(str::to_owned));
+        let recorded = failures
+            .iter()
+            .try_for_each(|line| failed(cx, store, id, ProfileStep::Install, line.clone()));
+        let ok = failures.is_empty();
+        (recorded.map(|()| ok), ok)
+    })
 }
 
 /// Fetches the profile into the Box and runs its `setup.sh`; whether both went well.
@@ -196,51 +242,5 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         failed(cx, store, row.id, ProfileStep::Install, line.to_owned())?;
     }
-    record_plugin_time(cx, store, row, &place);
     Ok(())
-}
-
-/// Records the time the launch script spent in its profile writers as one `plugins` step, when it
-/// left any timings. The script writes them on the Box, so this is the only way to see them.
-fn record_plugin_time(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    (handle, workdir): &(BoxHandle, BoxPath),
-) {
-    let Ok(path) = BoxPath::under(workdir.as_str(), PLUGIN_SECS_FILE) else {
-        return;
-    };
-    let Ok(Some(text)) = cx.driver().peek_file(handle, &path) else {
-        return;
-    };
-    let Some(ms) = plugin_ms(&text) else {
-        return;
-    };
-    let step = ExtraEvent::StepFinished {
-        step: PostCloneStep::Plugins,
-        ms,
-        ok: true,
-    };
-    if let Err(e) = try_record(store, row.id, step) {
-        warn_unrecorded(cx, &e);
-    }
-}
-
-/// The milliseconds the whole-second lines of `text` add up to; none when no line is a count.
-fn plugin_ms(text: &str) -> Option<u64> {
-    let secs: Vec<u64> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
-    (!secs.is_empty()).then(|| secs.iter().sum::<u64>().saturating_mul(1000))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::plugin_ms;
-
-    #[test]
-    fn two_markers_sum_to_one_time_and_noise_is_skipped() {
-        assert_eq!(plugin_ms("12\n9\n"), Some(21_000));
-        assert_eq!(plugin_ms("3\nnot a count\n\n4"), Some(7_000));
-        assert_eq!(plugin_ms(""), None);
-    }
 }

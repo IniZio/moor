@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes, WaitCheck};
 use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
+use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
@@ -45,6 +46,7 @@ struct State {
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
+    profile_install: Option<String>,
     fates: VecDeque<Result<AgentFate, EngineError>>,
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
@@ -75,12 +77,6 @@ impl FakeEngine {
     /// Every probe hangs until its deadline passes on `clock`, then reads nothing.
     pub(crate) fn hangs_on(self, clock: Arc<dyn Clock>) -> Self {
         self.st().hang = Some(clock);
-        self
-    }
-
-    /// The Engine knows how to install its agent with `install`.
-    pub(crate) fn install(self, install: AgentInstall) -> Self {
-        self.st().install = Some(install);
         self
     }
 
@@ -283,6 +279,10 @@ impl Engine for FakeEngine {
         self.st().install.clone()
     }
 
+    fn profile_install(&self, _manifest: &Manifest) -> Option<String> {
+        self.st().profile_install.clone()
+    }
+
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         let mut st = self.st();
         st.launches.push(req.clone());
@@ -389,6 +389,8 @@ impl Engine for FakeEngine {
     }
 }
 
+mod installs;
 mod knobs;
+
 #[cfg(test)]
 mod tests;

@@ -9,8 +9,17 @@ pub const PROFILE_DIR: &str = ".moor-profile/person";
 /// rewritten on every launch that applies a profile.
 pub const FAILURES_FILE: &str = ".moor/profile-failures";
 
-/// Beside [`FAILURES_FILE`]: one line per profile writer, the seconds the launch script spent in it.
-pub const PLUGIN_SECS_FILE: &str = ".moor/profile-steps.secs";
+/// What a profile step prints before `<what> exit <code>` when it fails and goes on.
+pub const FAILED_PREFIX: &str = "moor: profile: ";
+
+/// The installs in `output` that printed [`FAILED_PREFIX`], each as `<what> exit <code>`.
+#[must_use]
+pub fn failed_installs(output: &str) -> Vec<&str> {
+    output
+        .lines()
+        .filter_map(|l| l.trim_end().strip_prefix(FAILED_PREFIX))
+        .collect()
+}
 
 /// Shell text that leaves `$HOME/.moor-profile/person` at exactly `sha` of `url`.
 ///

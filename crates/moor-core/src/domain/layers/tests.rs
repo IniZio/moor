@@ -215,3 +215,23 @@ fn the_failed_layer_is_the_failed_line_s_position_else_the_top() {
         "a later repo's line ran after all of these"
     );
 }
+
+#[test]
+fn the_finished_key_changes_with_what_it_holds() {
+    let top = &chain(&ID, &lines(&["a"]))[1];
+    let key = super::finished_key(top, "install", "sha", "plugins");
+    assert_eq!(key, super::finished_key(top, "install", "sha", "plugins"));
+    let other = &chain(&ID, &lines(&["b"]))[1];
+    assert_ne!(key, super::finished_key(other, "install", "sha", "plugins"));
+    assert_ne!(key, super::finished_key(top, "other", "sha", "plugins"));
+    assert_ne!(key, super::finished_key(top, "install", "other", "plugins"));
+    assert_ne!(key, super::finished_key(top, "install", "sha", "other"));
+    let bob = &chain(
+        &LayerIdentity {
+            user: UserId::new(2),
+            ..ID
+        },
+        &lines(&["a"]),
+    )[1];
+    assert_ne!(key, super::finished_key(bob, "install", "sha", "plugins"));
+}

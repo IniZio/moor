@@ -229,8 +229,9 @@ installs no `gh`, so a Box has `gh` only when the Box image or this script puts
 it there. An agent without `gh` pushes its branch with git and says it could not
 open the pull request. A failure
 (non-zero exit, timeout) is reported as a profile warning with the end of the
-log, and the Box still starts. It runs on every new Box, so keep it fast and
-safe to rerun. For example, to give bun-based hooks their runtime:
+log, and the Box still starts. It runs on every new Box that does not fork a
+[checkpoint holding the profile](#setup-checkpoints), so keep it fast and safe to
+rerun. For example, to give bun-based hooks their runtime:
 
 ```sh
 command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
@@ -563,6 +564,26 @@ of that Box. The start warns `checkpoint_skipped`.
 A repo that cannot change such a guard sets `checkpoint.across_commits: false`. Its
 key then holds the base commit, so each commit gets its own chain and a new commit
 starts from scratch.
+
+One more layer sits above the last line. It holds the agent install, the profile's
+`setup.sh`, and its marketplaces and plugins, which moor installs before the agent starts. Its
+key covers the top line's key, the install script, the profile's commit and the install
+commands. moor saves it only when all of them succeed, so a Box with `profile_failed` saves
+none and the next Box tries again. A Box that forks it runs none of those steps, and
+`warm_started` holds `finished: true`. A Box at another commit also stands on it, and reruns
+only its setup lines. The steps run on it before those lines, not after. Dotfiles are not in
+the key, so they apply on every Box.
+
+**A checkpoint keeps what a profile installed until the profile's commit changes.** A
+`setup.sh` that installs `latest` stays at the version it got when moor saved the layer. A new
+profile commit forks the layer below, so no setup line runs again, and runs those steps once
+more. A Box at another commit in that case saves nothing, so it pays for them each time.
+
+The layer belongs to one user, as every key does. It holds what the user's `setup.sh` and
+plugins wrote under the home. moor saves it before the agent first starts, and the Proxy places
+credentials on the wire, so no agent login or forge token of moor's is on it. The agent's own
+identity files can be on it. Claude Code writes `machineID` and `userID` to `~/.claude.json`
+when `claude plugin` first runs, so that user's forks share them.
 
 Checkpoints never fill the node's disk. The floor is the one a node keeps
 before it takes a Box. It is 10% of the filesystem, and at least 20 GiB. Before a Box

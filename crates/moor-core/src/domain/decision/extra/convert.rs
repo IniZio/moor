@@ -69,6 +69,7 @@ impl From<ExtraEvent> for Event {
                 fork_ms,
                 steps,
                 rerun_from,
+                finished,
             } => Self::Timing(TimingEvent::WarmStarted {
                 layer,
                 layers,
@@ -76,6 +77,7 @@ impl From<ExtraEvent> for Event {
                 fork_ms,
                 steps,
                 rerun_from,
+                finished,
             }),
             ExtraEvent::WarmRerun {
                 commit,

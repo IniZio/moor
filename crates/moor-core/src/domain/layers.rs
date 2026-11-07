@@ -81,6 +81,15 @@ pub fn chain(identity: &LayerIdentity<'_>, lines: &[String]) -> Vec<LayerKey> {
     keys
 }
 
+/// The key of the layer above `top`, the last setup line's.
+///
+/// It holds the agent installed from `install` and the profile at `profile_sha`, with `plugins`
+/// run. Those steps read no commit, so the key holds none but what `top` does.
+#[must_use]
+pub fn finished_key(top: &LayerKey, install: &str, profile_sha: &str, plugins: &str) -> LayerKey {
+    LayerKey::of(&["finished", top.as_str(), install, profile_sha, plugins])
+}
+
 /// Whether layer `layer` of a setup of `lines` lines is checkpointed once it passes in `ms`.
 ///
 /// A checkpoint holds memory and disk, so only the clone, a slow line and the last line earn one.
