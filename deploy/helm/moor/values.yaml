@@ -30,6 +30,10 @@ database:
   # Read connections the controller keeps open (MOOR_DATABASE_READERS).
   readers: 4
 
+# Where artifacts, reports and transcripts live, as the controller config's `blobs:` entry
+# (docs/config.md). Not rendered yet; the state directory holds them until it is.
+blobs: {}
+
 controller:
   uid: 10001
   # surface.kind in the controller config. Empty keeps the image default, MOOR_SURFACE=pty; a set value overrides it.

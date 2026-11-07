@@ -324,3 +324,25 @@ fn a_transcript_round_trips_through_the_state_directory() {
     let dir = tempfile::tempdir().unwrap();
     round_trip(Arc::new(FsBlobs::new(dir.path())));
 }
+
+#[test]
+#[ignore = "needs MOOR_TEST_S3_ENDPOINT"]
+fn s3_transcript_round_trip() {
+    round_trip(crate::blobs::tests::s3());
+}
+
+#[test]
+fn an_unreachable_blob_store_records_the_failure_and_stops_nothing() {
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let cx = cx.with_blobs(crate::blobs::tests::unreachable());
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    assert!(save(&cx, store, &row, &session, Trigger::Close).is_none());
+    let events = store.events(row.id, usize::MAX).unwrap();
+    let failed = events
+        .iter()
+        .find(|e| e.kind == "transcript_failed")
+        .unwrap();
+    let error = failed.payload.get("error").unwrap().as_str().unwrap();
+    assert!(error.contains("blob store http"), "{error}");
+}

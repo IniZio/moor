@@ -1,5 +1,6 @@
 //! User and repo configuration: pure parsing, no IO.
 
+mod blobs;
 pub mod check;
 pub mod controller;
 pub mod proxy;
@@ -8,6 +9,7 @@ pub mod settings;
 mod sync;
 mod user;
 
+pub use blobs::{BlobsConfig, S3Blobs};
 pub use controller::{parse_controller, ControllerConfig, FrontEntry, LedgerTls};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 

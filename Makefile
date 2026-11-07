@@ -17,11 +17,13 @@ ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
 
 PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
+MOOR_TEST_S3_PORT ?= 9000
+export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg dev-s3 unit-s3
 
 help:
-	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db unit-s3 dev-s3 ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -135,6 +137,14 @@ ci:
 
 build:
 	cargo build --workspace --release --locked $(PTY)
+
+dev-s3:
+	docker compose up -d s3
+	@for _ in $$(seq 30); do curl -fs -o /dev/null http://127.0.0.1:$(MOOR_TEST_S3_PORT)/health && break; sleep 1; done
+	docker compose run --rm s3-bucket
+
+unit-s3:
+	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --locked -p moor --lib --run-ignored only -E 'test(/::s3_/)'
 
 lint-pty:
 	cargo clippy -p moor --all-targets --locked $(PTY) -- -D warnings

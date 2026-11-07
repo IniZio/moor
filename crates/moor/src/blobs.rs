@@ -3,11 +3,16 @@
 use std::fmt;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
+use moor_core::config::BlobsConfig;
 use moor_core::decide::transcript::relative_path;
 use moor_core::BoxId;
 
+use crate::env::Env;
+
 pub(crate) mod fs;
+mod object;
 
 /// Where one blob lives, the same under every backend.
 ///
@@ -120,6 +125,22 @@ pub(crate) trait Blobs: Send + Sync {
 
     /// The backend's name in a manifest.
     fn name(&self) -> &'static str;
+}
+
+/// `env` sharing the store `config` names, with its one client; the state directory's files need
+/// no sharing, as [`crate::cx::Cx::blobs`] opens them from the state directory.
+///
+/// # Errors
+/// Why the store cannot be set up, such as missing credentials. No request is made.
+pub(crate) fn share(env: Env, config: &BlobsConfig) -> Result<Env, String> {
+    match config {
+        BlobsConfig::Fs => Ok(env),
+        BlobsConfig::S3(s3) => {
+            let store = object::ObjectBlobs::s3(s3, &object::credentials(s3, &env)?)?;
+            let store: Arc<dyn Blobs> = Arc::new(store);
+            Ok(env.sharing(store))
+        }
+    }
 }
 
 #[cfg(test)]

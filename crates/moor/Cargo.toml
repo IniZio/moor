@@ -38,6 +38,9 @@ tokio-postgres-rustls = { version = "0.14", default-features = false, features =
   "ring",
 ] }
 bytes = "1"
+object_store = { version = "0.14", default-features = false, features = [
+  "aws",
+] }
 url = "2"
 thiserror = "2"
 webpki-roots = "1"
