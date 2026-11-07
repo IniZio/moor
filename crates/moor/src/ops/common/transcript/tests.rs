@@ -13,6 +13,8 @@ use moor_core::{BoxName, ProviderId};
 use serde_json::json;
 
 use super::{save, save_pending};
+use crate::blobs::fs::FsBlobs;
+use crate::blobs::{BlobKey, Blobs};
 use crate::cx::Cx;
 use crate::store::{BoxRow, SessionRow};
 use crate::testing::driver::FakeDriver;
@@ -302,4 +304,23 @@ fn a_pending_save_that_fails_again_stays_pending() {
     engine.fail_next_transcript(not_linked());
     save_pending(&cx, store, &row).unwrap();
     assert_eq!(failed_events(&cx, &row).len(), 3);
+}
+
+fn round_trip(blobs: Arc<dyn Blobs>) {
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let cx = cx.with_blobs(blobs);
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    let saved = save(&cx, store, &row, &session, Trigger::Close).unwrap();
+    let key = BlobKey::transcript(row.id, session.id, 1);
+    assert_eq!(cx.blobs().unwrap().get(&key).unwrap(), b"abc");
+    assert_eq!(saved.path, cx.blobs().unwrap().locate(&key));
+    let staged = cx.state_dir().unwrap().join("transcripts/.staging");
+    assert_eq!(fs::read_dir(staged).unwrap().count(), 0);
+}
+
+#[test]
+fn a_transcript_round_trips_through_the_state_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    round_trip(Arc::new(FsBlobs::new(dir.path())));
 }

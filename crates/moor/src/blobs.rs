@@ -4,6 +4,7 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
+use moor_core::decide::transcript::relative_path;
 use moor_core::BoxId;
 
 pub(crate) mod fs;
@@ -24,6 +25,16 @@ impl BlobKey {
     /// The Box's artifact manifest.
     pub(crate) fn artifact_manifest(box_id: BoxId) -> Self {
         Self(format!("artifacts/{}/artifact-manifest.json", box_id.get()))
+    }
+
+    /// Version `version` of the Box's Report `kind`.
+    pub(crate) fn report(box_id: BoxId, kind: &str, version: i64) -> Self {
+        Self(format!("reports/{}/{kind}.v{version}.md", box_id.get()))
+    }
+
+    /// Save `n` of the session's transcript.
+    pub(crate) fn transcript(box_id: BoxId, session: i64, n: usize) -> Self {
+        Self(relative_path(box_id, session, n))
     }
 
     /// A key spelled out, for a test that lays out its own files.
@@ -93,6 +104,16 @@ pub(crate) trait Blobs: Send + Sync {
         len: u64,
         sink: &mut dyn FnMut(&[u8]) -> io::Result<()>,
     ) -> Result<(), BlobError>;
+
+    /// The whole blob.
+    fn get(&self, key: &BlobKey) -> Result<Vec<u8>, BlobError> {
+        let mut got = Vec::new();
+        self.read(key, 0, self.size(key)?, &mut |piece| {
+            got.extend_from_slice(piece);
+            Ok(())
+        })?;
+        Ok(got)
+    }
 
     /// What to show a person for `key`: never read back to reach the blob.
     fn locate(&self, key: &BlobKey) -> String;

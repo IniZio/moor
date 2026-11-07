@@ -57,9 +57,10 @@ fn reports_are_returned_latest_version_per_kind_when_asked() {
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let id = add(&cx, "a");
     let store = cx.store().unwrap();
-    let out = dir.path().join("reports");
     for (kind, body) in [("pr", "v1"), ("pr", "v2"), ("qa", "ok")] {
-        store.add_report(id, kind, body, &out).unwrap();
+        store
+            .add_report(id, kind, body, cx.blobs().unwrap())
+            .unwrap();
     }
     let asked = ShowReq {
         reports: true,

@@ -46,7 +46,7 @@ pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
         + 1
 }
 
-/// The archive path under the state directory: `transcripts/<box>/<session>-<n>.tgz`.
+/// The archive's blob key: `transcripts/<box>/<session>-<n>.tgz`.
 #[must_use]
 pub fn relative_path(box_id: BoxId, session: i64, n: usize) -> String {
     format!("transcripts/{}/{session}-{n}.tgz", box_id.get())
