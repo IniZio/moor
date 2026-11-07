@@ -5,7 +5,7 @@
 //! A notification says only which resource changed; the client reads it for the facts, the
 //! same JSON `box_status` returns.
 
-use std::path::{Path, PathBuf};
+use std::io::ErrorKind;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_client::{Client, ClientError, WatchItem, WatchStop};
@@ -148,8 +148,9 @@ impl ServerHandler for Tools {
         let person = person(context.request_context())?;
         let (tx, rx) = mpsc::unbounded_channel();
         let stop = EndsWatch(Arc::new(Mutex::new(Stopper::default())));
-        let (socket, held) = (self.front_socket.clone(), Arc::clone(&stop.0));
-        let watching = tokio::task::spawn_blocking(move || follow(&socket, &person, &tx, &held));
+        let (controller, held) = (self.controller.clone(), Arc::clone(&stop.0));
+        let watching =
+            tokio::task::spawn_blocking(move || follow(&controller, &person, &tx, &held));
         let watch_ended = relay(&context, rx).await;
         drop(stop);
         if !watch_ended {
@@ -192,8 +193,8 @@ impl Tools {
         request: ControllerRequest,
         reply: Reply,
     ) -> Result<Value, ErrorData> {
-        let socket = self.front_socket.clone();
-        tokio::task::spawn_blocking(move || send(&socket, &person, request, reply))
+        let controller = self.controller.clone();
+        tokio::task::spawn_blocking(move || send(&controller, &person, request, reply))
             .await
             .map_err(|e| ErrorData::internal_error(format!("the call did not finish: {e}"), None))?
             .map_err(|why| ErrorData::internal_error(why, None))
@@ -239,12 +240,12 @@ impl Drop for EndsWatch {
 /// Follows `person`'s events from now until the watch ends or `stop` is set, sending each
 /// change to `tx`. An `Err` says why the controller ended it.
 fn follow(
-    socket: &Path,
+    controller: &Client,
     person: &Person,
     tx: &mpsc::UnboundedSender<Change>,
     stop: &Mutex<Stopper>,
 ) -> Result<(), String> {
-    let client = enrolled(socket, person)?;
+    let client = enrolled(controller, person)?;
     let mut kinds: Vec<String> = UPDATED.iter().map(|&k| k.to_owned()).collect();
     kinds.extend(
         LISTED
@@ -286,11 +287,11 @@ fn follow(
     Ok(())
 }
 
-/// Why a call to the controller failed, and whether the controller was missing or refusing.
+/// Why a call to the controller failed, and whether the controller was away.
 pub(crate) struct Unreachable {
     /// What to tell the caller.
     pub(crate) why: String,
-    /// Whether the controller's socket is missing or refuses connections.
+    /// Whether the controller is away: nothing was run, and a later call may pass.
     pub(crate) down: bool,
 }
 
@@ -316,22 +317,25 @@ impl From<Unreachable> for String {
     }
 }
 
-/// Whether `e` says nothing listens on the controller's socket.
+/// Whether `e` says the controller is away and the request did not run.
 pub(crate) fn client_down(e: &ClientError) -> bool {
     match e {
-        ClientError::Connect { source, .. } => crate::http::is_down(source),
-        ClientError::GaveUp { last, .. } => client_down(last),
+        ClientError::Connect { source, .. } => matches!(
+            source.kind(),
+            ErrorKind::NotFound | ErrorKind::ConnectionRefused
+        ),
+        ClientError::GaveUp { .. } => true,
         _ => false,
     }
 }
 
 /// A client acting as `person`, once the controller knows their identity and email.
-pub(super) fn enrolled(socket: &Path, person: &Person) -> Result<Client, Unreachable> {
+pub(super) fn enrolled(controller: &Client, person: &Person) -> Result<Client, Unreachable> {
     let enroll = ControllerRequest::Enroll(EnrollReq {
         identity: None,
         email: None,
     });
-    let client = Client::new(PathBuf::from(socket));
+    let client = controller.clone();
     let reply = client
         .request(rewrite::act(enroll, person)?, |_| {})
         .map_err(|e| Unreachable::from_client(&e))?;

@@ -2,11 +2,10 @@
 //! gate holds no state per caller: each call is one watch from `after`, ended once it has what
 //! it will return.
 
-use std::path::Path;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
-use moor_client::{ClientError, EventRecord, WatchItem};
+use moor_client::{Client, ClientError, EventRecord, WatchItem};
 use moor_core::controller::WatchFilter;
 use moor_core::name::BoxName;
 use rmcp::handler::server::wrapper::Parameters;
@@ -65,8 +64,9 @@ impl Tools {
             Ok(auth) => auth,
             Err(why) => return failed(why),
         };
-        let socket = self.front_socket.clone();
-        let read = tokio::task::spawn_blocking(move || fetch(&socket, &auth.person, args)).await;
+        let controller = self.controller.clone();
+        let read =
+            tokio::task::spawn_blocking(move || fetch(&controller, &auth.person, args)).await;
         match read {
             Ok(Ok(value)) => CallToolResult::structured(value),
             Ok(Err(why)) => failed(why.why),
@@ -77,7 +77,7 @@ impl Tools {
 
 /// One watch of `person`'s events from `args.after`, as the JSON `list_events` returns.
 pub(crate) fn fetch(
-    socket: &Path,
+    controller: &Client,
     person: &Person,
     args: EventsArgs,
 ) -> Result<Value, Unreachable> {
@@ -94,7 +94,7 @@ pub(crate) fn fetch(
         kinds: args.kinds,
         parent: None,
     };
-    let client = enrolled(socket, person)?;
+    let client = enrolled(controller, person)?;
     let watch = client
         .watch(after, filter, !wait.is_zero())
         .map_err(|e| Unreachable::from_client(&e))?;

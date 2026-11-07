@@ -27,8 +27,8 @@ pub(crate) fn serve(
     let Some((mcp, person)) = reader(&mut stream, req, gate, "/boxes") else {
         return;
     };
-    let socket = mcp.front_socket();
-    let found = parse(path).and_then(|wanted| artifact::find(socket, &person, &wanted));
+    let controller = mcp.controller();
+    let found = parse(path).and_then(|wanted| artifact::find(controller, &person, &wanted));
     let found = match found {
         Ok(found) => found,
         Err(refusal) => return refuse(&mut stream, &refusal),
@@ -39,7 +39,7 @@ pub(crate) fn serve(
         held: Vec::new(),
         started: false,
     };
-    let read = artifact::read(socket, &person, &found, |data| body.push(data));
+    let read = artifact::read(controller, &person, &found, |data| body.push(data));
     match read {
         Ok(()) => body.finish(),
         Err(refusal) if !body.started => refuse(&mut stream, &refusal),

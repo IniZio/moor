@@ -58,6 +58,10 @@ tungstenite = { version = "0.29", default-features = false, features = [
 
 [dev-dependencies]
 moor-testkit = { path = "../moor-testkit" }
+rcgen = { version = "0.14", default-features = false, features = [
+  "pem",
+  "ring",
+] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 tempfile = "3"
 

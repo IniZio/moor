@@ -1,7 +1,6 @@
 //! `get_artifact`: the record of one Artifact a Box published and the path that downloads it.
 
-use std::path::Path;
-
+use moor_client::Client;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -46,8 +45,9 @@ impl Tools {
             Ok(auth) => auth,
             Err(why) => return failed(why),
         };
-        let socket = self.front_socket.clone();
-        let got = tokio::task::spawn_blocking(move || fetch(&socket, &auth.person, &args)).await;
+        let controller = self.controller.clone();
+        let got =
+            tokio::task::spawn_blocking(move || fetch(&controller, &auth.person, &args)).await;
         match got {
             Ok(Ok(result)) => result,
             Ok(Err(why)) => failed(why),
@@ -57,9 +57,13 @@ impl Tools {
 }
 
 /// The tool's answer for `args`, or why there is none.
-fn fetch(socket: &Path, person: &Person, args: &ArtifactArgs) -> Result<CallToolResult, String> {
+fn fetch(
+    controller: &Client,
+    person: &Person,
+    args: &ArtifactArgs,
+) -> Result<CallToolResult, String> {
     let wanted = Wanted::parse(&args.r#box, &args.name, args.version).map_err(|r| text(&r))?;
-    let found = artifact::find(socket, person, &wanted).map_err(|r| text(&r))?;
+    let found = artifact::find(controller, person, &wanted).map_err(|r| text(&r))?;
     Ok(CallToolResult::structured(record(&wanted, &found)))
 }
 

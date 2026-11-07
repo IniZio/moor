@@ -1,8 +1,11 @@
 //! Redialling a controller while a request provably did not run.
 
+use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use moor_core::seam::clock::{Clock, Ts};
+
+use super::{Client, ClientError};
 
 /// How long and how often a client dials again a controller that refused the connection or
 /// proved it is restarting. Only those failures prove a request never ran, so only they are
@@ -155,6 +158,27 @@ pub fn redial<T, E>(
         sleep(pause, &e);
         paused = true;
         next = (next * 2).min(policy.max_pause);
+    }
+}
+
+impl Client {
+    /// Waits, under this client's redial policy, until the controller answers a hello. A
+    /// `restarting` answer keeps waiting. Nothing is asked, so nothing can run.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when the wait runs out or the dial cannot work.
+    pub fn ready(&self) -> Result<(), ClientError> {
+        self.redialing(|| self.connect().and_then(|stream| self.hello(stream)))
+            .map(drop)
+    }
+
+    /// A connection to the controller on which nothing of the protocol has been said, for a
+    /// relay to speak over. Dials under this client's redial policy.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when the wait runs out or the dial cannot work.
+    pub fn stream(&self) -> Result<UnixStream, ClientError> {
+        self.redialing(|| self.connect())
     }
 }
 

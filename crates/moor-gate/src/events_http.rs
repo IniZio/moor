@@ -30,9 +30,9 @@ pub(crate) fn serve(
         Ok(args) => args,
         Err(why) => return reply(&mut stream, "400 Bad Request", None, &error(&why)),
     };
-    let socket = mcp.front_socket();
+    let controller = mcp.controller();
     let _held = streams.hold(&stream);
-    match fetch(socket, &person, args) {
+    match fetch(controller, &person, args) {
         Ok(doc) => reply(&mut stream, "200 OK", None, &doc.to_string()),
         Err(why) if why.down => crate::http::unavailable(&mut stream),
         Err(why) => reply(&mut stream, "502 Bad Gateway", None, &error(&why.why)),
