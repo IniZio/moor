@@ -171,3 +171,32 @@ fn open_with_an_unknown_parent_is_refused() {
     let err = open(&cx, &bad).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
 }
+
+#[test]
+fn a_keyed_session_reopened_on_an_empty_state_dir_gets_its_workdir_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = cx(dir.path());
+    let (user, _) = base
+        .store()
+        .unwrap()
+        .enroll(
+            &moor_core::user::Identity::parse("authgear:a").unwrap(),
+            None,
+        )
+        .unwrap();
+    let as_user = base.with_viewer(moor_core::user::Viewer::User(user));
+    let keyed = OpenHostSessionReq {
+        workdir: None,
+        key: Some("thread-1".to_owned()),
+        ..req("")
+    };
+    let first = open(&as_user, &keyed).unwrap();
+    std::fs::remove_dir_all(dir.path().join("users")).unwrap();
+    let again = open(&as_user, &keyed).unwrap();
+    assert_eq!(again.session, first.session);
+    assert!(
+        Path::new(&again.workdir).is_dir(),
+        "{} is missing",
+        again.workdir
+    );
+}
