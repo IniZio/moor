@@ -59,9 +59,9 @@ pub(super) async fn fly(
         let ending = ending.clone();
         going.insert(dir.to_path_buf(), Flight { ending, stop });
     }
-    let landed = Landed(dir.to_path_buf());
+    let (landed, busy) = (Landed(dir.to_path_buf()), crate::busy::busy());
     tokio::spawn(async move {
-        let _landed = landed;
+        let _landed = (landed, busy);
         let ended = STOP.scope(stopping, boot).await;
         let _ = tell.send(Some(ended));
     });

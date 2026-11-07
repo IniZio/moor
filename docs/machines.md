@@ -520,7 +520,19 @@ command to fix it, `moor-machine-agent update --version 1.2.3`. That command
 downloads the release's tarball for this OS and CPU from the project's GitHub
 releases, checks it against the published `.sha256` (refusing a mismatch),
 replaces the running binary in place and prints the old and new versions.
-`MOOR_AGENT_RELEASES` points it at a mirror of the releases instead. Start
-`run` with `--auto-update` to have the agent do that itself and restart with
-the same arguments; it is off unless the machine's owner asks for it, and a
-failed update is logged with its reason and ends the agent.
+`MOOR_AGENT_RELEASES` points it at a mirror of the releases instead.
+
+Start `run` with `--auto-update` to have the agent follow the controller's
+release itself. It is off unless the machine's owner asks for it. The agent
+installs only the release the controller names in its welcome, never the
+newest on GitHub, so an agent of a stable controller stays on stable. When a
+linked controller runs another release, the agent installs it in the
+background and keeps serving. It restarts with the same arguments only once no
+stream the runner opened is open and no Box is booting or forking. A restart
+closes the link and every stream on it, and nothing resumes a cut `exec`,
+hook, relay or forward, so the agent waits for them all. A forward or dial
+held open for long delays the restart for as long. A failed background update
+is logged and the agent keeps running its release. Without `--auto-update` the
+agent logs that an update exists and keeps running. When the controller
+refuses the agent's release, the agent updates the same way and a failed
+update ends it.
