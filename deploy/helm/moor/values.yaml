@@ -53,7 +53,7 @@ slack:
   enabled: false
   # true runs Slack as <release>-slack, one replica of its own on a PVC of its own, in place of a
   # sidecar of the controller pod: a controller deploy then costs it one redial. Needs
-  # egress.enabled. The new PVC starts without the sidecar's slack.db.
+  # egress.enabled. The new PVC starts empty; docs/kubernetes.md lists what that loses.
   separate: false
   # separate only: the PVC holding slack.db and each thread's workdir.
   persistence:
