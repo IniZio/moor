@@ -56,7 +56,7 @@ pub(crate) fn s3() -> Arc<dyn Blobs> {
 pub(crate) fn unreachable() -> Arc<dyn Blobs> {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    std::thread::spawn(move || listener.incoming().for_each(drop));
     s3_at(&format!("http://127.0.0.1:{port}"))
 }
 
