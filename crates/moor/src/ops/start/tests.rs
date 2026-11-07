@@ -68,6 +68,7 @@ mod repos;
 mod requester;
 mod rerun;
 mod resources;
+mod resume_sweep;
 mod revive;
 mod session;
 mod settle_busy;
