@@ -162,11 +162,11 @@ mod tests {
         if std::env::var_os(HOLD).is_some() {
             return;
         }
-        let Ok(free) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)) else {
+        if TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).is_err() {
             return;
-        };
-        let port = free.local_addr().unwrap().port();
-        drop(free);
+        }
+        let reserved = moor_testkit::LockedPort::reserve();
+        let port = reserved.port();
         let dir = tempfile::tempdir().unwrap();
         let named = dir.path().join("sshd");
         std::os::unix::fs::symlink(std::env::current_exe().unwrap(), &named).unwrap();

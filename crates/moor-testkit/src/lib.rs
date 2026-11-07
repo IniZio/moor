@@ -7,9 +7,11 @@ use std::process::{Command, Stdio};
 mod egress;
 mod guard;
 pub mod oidc;
+mod port;
 
 pub use egress::{write_host_guards, FakeEgress, FAKE_TINYPROXY, HOST_GUARD};
 pub use guard::ChildGuard;
+pub use port::LockedPort;
 
 /// Writes `contents` to `path` as an executable that can be run at once.
 ///

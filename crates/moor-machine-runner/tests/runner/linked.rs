@@ -255,15 +255,6 @@ fn hold_answers(m: &Linked, answers: Vec<Value>) {
     m.rig.holds.lock().unwrap().answers = answers.into();
 }
 
-/// A free loopback port, unbound again.
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// The machine service key a controller in another pod presents.
 const KEY: &str = "machine-service-key";
 
@@ -375,7 +366,8 @@ fn ping_at(ip: &str, port: u16) -> std::io::Result<String> {
 fn a_machine_connection_is_named_on_the_carrier_and_the_dial_back_pipes_it_both_ways() {
     let m = Linked::start(&[]);
     let via = m.local();
-    let port = free_port();
+    let reserved = moor_testkit::LockedPort::reserve();
+    let port = reserved.port();
 
     let (answer, mut carrier) = via.forward(7, &[port]);
     assert_eq!(answer, json!({"reply": "up"}));
@@ -402,7 +394,8 @@ fn a_dial_back_across_the_network_with_the_wrong_key_is_refused() {
     let m = Linked::start(&["--links", "127.0.0.1:0", "--service-key", KEY]);
     let links = m.rig.links.unwrap();
     let (via, wrong) = (Via::Remote(links, KEY), Via::Remote(links, "not-the-key"));
-    let port = free_port();
+    let reserved = moor_testkit::LockedPort::reserve();
+    let port = reserved.port();
 
     let (answer, mut carrier) = via.forward(7, &[port]);
     assert_eq!(answer, json!({"reply": "up"}));
@@ -429,7 +422,11 @@ fn a_dial_back_across_the_network_with_the_wrong_key_is_refused() {
 fn a_box_beyond_the_machines_slots_gets_no_listener() {
     let m = Linked::start(&[]);
     let via = m.local();
-    let (first, second) = (free_port(), free_port());
+    let (first_lock, second_lock) = (
+        moor_testkit::LockedPort::reserve(),
+        moor_testkit::LockedPort::reserve(),
+    );
+    let (first, second) = (first_lock.port(), second_lock.port());
 
     let (answer, _held) = via.forward(7, &[first]);
     assert_eq!(answer, json!({"reply": "up"}));
@@ -454,7 +451,8 @@ fn a_forward_of_no_ports_is_refused() {
 fn a_machine_port_answers_on_127_0_0_1_alone() {
     let m = Linked::start(&[]);
     let via = m.local();
-    let port = free_port();
+    let reserved = moor_testkit::LockedPort::reserve();
+    let port = reserved.port();
 
     let (answer, carrier) = via.forward(7, &[port]);
     assert_eq!(answer, json!({"reply": "up"}));
