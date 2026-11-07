@@ -51,11 +51,13 @@ pub fn lifecycle_events(
         BoxLifecycleInput::Sleep { auto, reason } => vec![Event::Asleep {
             auto: *auto,
             reason: reason.clone(),
+            cache_save: None,
         }],
         BoxLifecycleInput::Wake => vec![Event::Woke],
         BoxLifecycleInput::Suspend { reason } => vec![Event::Asleep {
             auto: true,
             reason: Some(reason.clone()),
+            cache_save: None,
         }],
         BoxLifecycleInput::WaitForRoom => vec![],
         BoxLifecycleInput::Close { reason } => vec![Event::Closed {

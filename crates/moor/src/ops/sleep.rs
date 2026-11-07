@@ -59,7 +59,8 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
-    match sleep_parked(cx, store, row, &handle, settled(cx, store, row)?)? {
+    let parked = sleep_parked(cx, store, row, &handle, settled(cx, store, row)?)?;
+    match parked.outcome {
         SleepOutcome::Slept | SleepOutcome::Native => {
             let fields = Fields {
                 box_sleep_reason: Field::Clear,
@@ -71,6 +72,7 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                         auto: false,
                         reason: None,
                     })
+                    .cache_save(parked.cache_save)
                     .box_input(BoxInput::Sleep)
                     .set(fields),
             )?;

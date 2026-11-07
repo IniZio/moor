@@ -48,6 +48,9 @@ pub enum Event {
         /// Why moor slept it, such as making room for another Box.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        /// What this sleep decided about the Box's caches; none when there was nothing to decide.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_save: Option<crate::domain::cache_save::CacheSave>,
     },
     /// The box woke.
     Woke,
@@ -381,13 +384,10 @@ pub enum Event {
     #[serde(untagged)]
     Timing(TimingEvent),
 }
-pub use boxes::box_events;
-pub use checked::CheckedCred;
+pub use self::{boxes::box_events, checked::CheckedCred, machine::MachineEvent};
+pub use self::{profile::*, steps::*};
 pub use kind::{NodeDiskEvent, StallEvent, ASSERTED_KINDS, EVENT_KINDS};
-pub use machine::MachineEvent;
 pub use post_clone::{PostCloneStep, ProviderStep, StepName, TimingEvent, MAX_STEPS};
-pub use profile::{ProfileEvent, ProfileStep};
-pub use steps::{lifecycle_events, session_events};
 mod boxes;
 mod checked;
 pub mod close_reason;

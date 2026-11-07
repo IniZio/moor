@@ -99,7 +99,9 @@ Add `caches_not_saved` to hear when a close deleted an asleep Box without waking
 it, and the Box had not [saved its caches as it slept](providers.md#saving-at-a-pause),
 so they were lost. Add `relaunched` to
 hear about each automatic restart of the agent, or
-`closed` and `asleep` for those changes. A `closed` event's `data` has `from`,
+`closed` and `asleep` for those changes. An `asleep` event's `data` can say
+[whether the Box's caches may be saved](providers.md#saving-at-a-pause) in
+`cache_save`. A `closed` event's `data` has `from`,
 the lifecycle the Box left, and a `reason` when moor closed the Box and no
 person asked. `setup_failed_expired` means the controller closed a Box whose
 setup had failed for longer than `close_setup_failed_after_secs`.

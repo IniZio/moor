@@ -4,6 +4,7 @@ mod extra;
 
 use super::box_state::BoxLifecycleInput;
 use super::boxes::BoxInput;
+use super::cache_save::CacheSave;
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use crate::name::{ForgeRepo, GitAuthor};
@@ -193,6 +194,8 @@ pub struct Decision {
     pub requester: Option<UserId>,
     /// Name the inserted Box's branch from its new id, for a Decision that inserts a box.
     pub branch_by_id: bool,
+    /// What the sleep this Decision records decided about the caches, for its `asleep` event.
+    pub cache_save: Option<CacheSave>,
 }
 
 impl Decision {
@@ -221,6 +224,7 @@ impl Decision {
             parent_session: None,
             requester: None,
             branch_by_id: false,
+            cache_save: None,
         }
     }
 
@@ -228,6 +232,13 @@ impl Decision {
     #[must_use]
     pub fn lifecycle(mut self, i: BoxLifecycleInput) -> Self {
         self.lifecycle_input = Some(i);
+        self
+    }
+
+    /// Sets what the sleep this Decision records decided about the caches.
+    #[must_use]
+    pub const fn cache_save(mut self, save: Option<CacheSave>) -> Self {
+        self.cache_save = save;
         self
     }
 

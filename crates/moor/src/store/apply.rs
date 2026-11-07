@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::cache_save::CacheSave;
 use moor_core::domain::decision::{BoxTarget, Decision, Field, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
@@ -121,7 +122,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreEr
         (None, Some(s)) => session_events(s),
         (None, None) => Vec::new(),
     };
-    for e in &stepped {
+    for e in &with_cache_save(stepped, d.cache_save) {
         ids.push(insert_event(tx, id, e, now)?);
     }
     let mut events = Vec::new();
@@ -180,6 +181,16 @@ fn step_driver(
             .value(Boxes::DriverUpdatedAt, now.as_millis()),
     )?;
     Ok(Some(Step { from: None, to }))
+}
+
+/// `events` with an `asleep` event saying what its sleep decided about the caches.
+fn with_cache_save(mut events: Vec<Event>, save: Option<CacheSave>) -> Vec<Event> {
+    for e in &mut events {
+        if let Event::Asleep { cache_save, .. } = e {
+            *cache_save = save;
+        }
+    }
+    events
 }
 
 /// Write box state, fields and intent.

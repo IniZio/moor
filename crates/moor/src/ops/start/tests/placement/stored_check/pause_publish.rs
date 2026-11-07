@@ -274,3 +274,124 @@ fn an_idle_box_with_an_unread_agent_suspended_for_room_saves_nothing() {
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(publishes(&w), [PausePublish::Denied]);
 }
+
+/// What the newest `asleep` event of `id` says of the caches.
+fn cache_save(w: &World, id: BoxId) -> Option<serde_json::Value> {
+    let store = w.cx.store().unwrap();
+    let event = store.last_event_of(id, "asleep").unwrap().unwrap();
+    event.payload.get("cache_save").cloned()
+}
+
+fn denied(reason: &str) -> serde_json::Value {
+    serde_json::json!({"state": "denied", "reason": reason})
+}
+
+#[test]
+fn the_asleep_event_of_a_quiet_box_on_its_timer_says_the_save_was_allowed() {
+    let (w, _) = saving_world();
+    let b = started(&w, "b");
+    idle(&w, b);
+    holds(&w, b, CLEAN);
+    w.cx.clock().sleep(std::time::Duration::from_mins(6));
+    autosleep::run(&w.cx, w.cx.store().unwrap(), b, autosleep::AgentRead::Plain);
+    assert_eq!(
+        cache_save(&w, b),
+        Some(serde_json::json!({"state": "allowed"}))
+    );
+}
+
+#[test]
+fn the_asleep_event_of_a_box_slept_by_room_says_the_save_was_allowed() {
+    let (w, _, b) = suspended_for_room();
+    assert_eq!(
+        cache_save(&w, b),
+        Some(serde_json::json!({"state": "allowed"}))
+    );
+}
+
+#[test]
+fn the_asleep_event_at_the_awake_cap_says_the_agent_was_not_quiet() {
+    let (w, _) = saving_world();
+    let b = started(&w, "b");
+    let (w, _) = agents_report(w, &[], &[b]);
+    holds(&w, b, CLEAN);
+    w.cx.clock().sleep(std::time::Duration::from_mins(120));
+    autosleep::run(&w.cx, w.cx.store().unwrap(), b, autosleep::AgentRead::Plain);
+    assert_eq!(cache_save(&w, b), Some(denied("agent_not_quiet")));
+}
+
+#[test]
+fn the_asleep_event_of_an_agent_read_as_unread_says_so() {
+    let (w, _) = saving_world();
+    let b = started(&w, "b");
+    idle(&w, b);
+    holds(&w, b, CLEAN);
+    w.cx.clock().sleep(std::time::Duration::from_mins(120));
+    let store = w.cx.store().unwrap();
+    autosleep::run(&w.cx, store, b, autosleep::AgentRead::Unread);
+    assert_eq!(cache_save(&w, b), Some(denied("agent_unread")));
+}
+
+#[test]
+fn the_asleep_event_of_a_commanded_sleep_of_a_lapsed_agent_says_it_was_unread() {
+    let (w, _) = saving_world();
+    let b = started(&w, "b");
+    idle(&w, b);
+    holds(&w, b, CLEAN);
+    super::super::unread::unread(&w, b);
+    let box_name = w.cx.store().unwrap().box_row(b).unwrap().unwrap().name;
+    crate::ops::sleep::run(&w.cx, &moor_core::BoxReq { box_name }).unwrap();
+    assert_eq!(cache_save(&w, b), Some(denied("agent_unread")));
+}
+
+#[test]
+fn a_sleep_with_a_run_in_flight_decides_the_run_denied_it() {
+    let (w, _) = saving_world();
+    let b = started(&w, "b");
+    idle(&w, b);
+    let store = w.cx.store().unwrap();
+    let _claim = store
+        .begin_run(crate::store::NewRun {
+            box_id: b,
+            argv: vec!["make".into()],
+            record: None,
+            sha: None,
+            pid: 4242,
+        })
+        .unwrap();
+    let row = store.box_row(b).unwrap().unwrap();
+    let handle = autosleep::ready_handle(&row).unwrap();
+    let settled = autosleep::settled(&w.cx, store, &row).unwrap();
+    let parked = autosleep::sleep_parked(&w.cx, store, &row, &handle, settled).unwrap();
+    assert_eq!(
+        parked.cache_save,
+        Some(moor_core::domain::cache_save::CacheSave::Denied {
+            reason: moor_core::domain::cache_save::CacheSaveDenied::RunInFlight
+        })
+    );
+}
+
+#[test]
+fn the_asleep_event_of_a_last_resort_suspend_says_so() {
+    let (w, b) = suspended_at_work();
+    assert_eq!(cache_save(&w, b), Some(denied("last_resort")));
+}
+
+#[test]
+fn a_box_with_no_volumes_on_a_provider_that_cannot_save_records_no_decision() {
+    let (w, _, _, b) = suspended_holding(CLEAN);
+    assert_eq!(cache_save(&w, b), None);
+}
+
+#[test]
+fn a_box_found_stopped_records_no_decision() {
+    let (w, _) = live_world(32_768);
+    let b = started(&w, "b");
+    idle(&w, b);
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(b).unwrap().unwrap();
+    w.driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    crate::ops::common::reconcile::run(&w.cx);
+    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+    assert_eq!(cache_save(&w, b), None);
+}
