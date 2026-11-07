@@ -89,6 +89,15 @@ gate:
   login: false
   # Empty finds the keys through the issuer's discovery document.
   jwksUrl: ""
+  # Dial the controller's ledger TLS listener with a front hello instead of the front socket on
+  # the volume. A request waits up to 30 s for the controller, then gets 503. Needs egress.enabled.
+  overTls:
+    enabled: false
+    # Secret: the key the gate's hello presents.
+    frontKey: ""
+    # Secret: the gate's client certificate and key, signed by the ledger CA.
+    clientCert: ""
+    clientKey: ""
   service:
     type: ClusterIP
     nodePort: null

@@ -87,10 +87,15 @@ fn world_with(
     } = Issuer::start(CLIENT_ID);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = listener.local_addr().unwrap().to_string();
-    let mcp =
-        mcp.then(|| moor_gate::Mcp::new(&format!("http://{gate}/mcp"), socket.clone()).unwrap());
+    let mcp = mcp.then(|| {
+        moor_gate::Mcp::new(
+            &format!("http://{gate}/mcp"),
+            moor_client::Client::new(&socket),
+        )
+        .unwrap()
+    });
     let config = Arc::new(Gate {
-        front_socket: socket,
+        controller: moor_client::Client::new(socket),
         mcp,
         verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
     });
@@ -478,6 +483,7 @@ mod drain;
 mod enroll;
 mod events;
 mod events_http;
+mod hold;
 mod listen;
 mod login;
 mod mcp;

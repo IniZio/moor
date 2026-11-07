@@ -46,4 +46,15 @@ grep -q 'controller.alive' <<<"$full" || fail "a database-backed controller has 
 if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml | grep -q 'controller.alive'; then
   fail "a file-backed controller has a liveness probe, but nothing feeds it"
 fi
+
+gate_tls=(--set gate.overTls.enabled=true --set gate.overTls.frontKey=k --set gate.overTls.clientCert=c --set gate.overTls.clientKey=k)
+over=$(helm template moor "${chart[@]}" "${gate_tls[@]}")
+grep -q -- '--controller=tls://moor-ledger\.' <<<"$over" || fail "gate.overTls renders no --controller"
+grep -q 'name: MOOR_GATE_FRONT_KEY' <<<"$over" || fail "gate.overTls renders no front key"
+grep -q 'key_file: /var/lib/moor/config/gate-front-key' <<<"$over" || fail "gate.overTls leaves the authgear front local"
+if grep -q -- '--front-socket=' <<<"$over"; then fail "gate.overTls still dials the front socket"; fi
+if grep -q 'subPath: state/fronts/authgear' <<<"$over"; then fail "gate.overTls still mounts the volume"; fi
+if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml "${gate_tls[@]}" 2>&1 | grep -qv 'gate.overTls needs egress.enabled'; then
+  fail "gate.overTls without egress.enabled renders"
+fi
 echo "chart-render: ok"
