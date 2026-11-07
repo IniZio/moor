@@ -135,8 +135,10 @@ post twice after a crash, as it can today.
 connections drop and redial with its 10 s backoff cap. A turn in flight keeps
 its lease, and the Proxy uses its last answers while the ledger is away.
 
-**The switch.** `slack.db` does not move on its own. With the flag on, the new
-PVC starts empty unless an operator copies the old file first.
+**The switch.** Turning the flag on starts `slack.db` fresh, with no copy.
+Existing threads lose their context and stop following their Boxes, open
+questions can no longer be answered from Slack, channels add their repos again,
+and workflows added earlier run on without reports in Slack.
 
 ## Data shape
 
