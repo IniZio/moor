@@ -37,6 +37,16 @@ pub fn head_at(base: &str) -> String {
     )
 }
 
+/// POSIX sh, run in the work tree, that exits 0 only while [`head_at`] does and the tree has no
+/// changes, so a disk saved from it is that commit and what its ignored files hold.
+#[must_use]
+pub fn tree_at(base: &str) -> String {
+    format!(
+        "{} && [ -z \"$(git status --porcelain 2>/dev/null)\" ] && git status --porcelain >/dev/null",
+        head_at(base)
+    )
+}
+
 /// The changed path count and the ignored paths the script printed in `output`.
 #[must_use]
 pub fn parse(output: &str) -> (Option<u64>, Vec<String>) {

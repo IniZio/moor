@@ -32,8 +32,8 @@ const LINES: &str = "setup: ['true', 'true']\n";
 const MARKS: [&str; 3] = ["install-ran", "profile-ran", "plugins-ran"];
 
 /// A scratch repo, and a profile repo beside it, for an Engine with an install and plugin installs.
-struct Profiled {
-    s: Scratch,
+pub(super) struct Profiled {
+    pub(super) s: Scratch,
     profile: PathBuf,
     /// What each repo the profile installs from answers, as a commit or as nothing.
     sources: Vec<(ForgeRepo, Option<String>)>,
@@ -53,12 +53,16 @@ fn engine(plugins: &str) -> FakeEngine {
 }
 
 impl Profiled {
-    fn new(setup_sh: &str, plugins: &str) -> Self {
+    pub(super) fn new(setup_sh: &str, plugins: &str) -> Self {
         Self::on(FakeDriver::new(), setup_sh, plugins)
     }
 
     fn on(driver: FakeDriver, setup_sh: &str, plugins: &str) -> Self {
-        let mut s = Scratch::on(driver);
+        Self::over(Scratch::on(driver), setup_sh, plugins)
+    }
+
+    /// A profile beside the scratch repo of `s`.
+    pub(super) fn over(mut s: Scratch, setup_sh: &str, plugins: &str) -> Self {
         let profile = s.dir.path().join("ann/profile.git");
         std::fs::create_dir_all(&profile).unwrap();
         git(&profile, &["init", "-q", "-b", "main"]);
@@ -79,7 +83,7 @@ impl Profiled {
     }
 
     /// Commits `setup_sh` as the profile's `setup.sh`, and makes it what a new Box resolves.
-    fn commit_profile(self, setup_sh: &str) -> Self {
+    pub(super) fn commit_profile(self, setup_sh: &str) -> Self {
         std::fs::write(self.profile.join("setup.sh"), setup_sh).unwrap();
         git(&self.profile, &["add", "."]);
         git(&self.profile, &["commit", "-qm", "p"]);
@@ -129,12 +133,12 @@ impl Profiled {
     }
 
     /// How many times each of the three steps has run on the disk of Box `id`.
-    fn runs_on_disk(&self, id: BoxId) -> [usize; 3] {
+    pub(super) fn runs_on_disk(&self, id: BoxId) -> [usize; 3] {
         MARKS.map(|m| lines_in(&self.s.home(id).join(m)))
     }
 
     /// The execs of the three steps on the machine of Box `id`.
-    fn step_execs(&self, id: BoxId) -> usize {
+    pub(super) fn step_execs(&self, id: BoxId) -> usize {
         let handle = self.s.handle(id);
         let execs = self.s.w.driver.execs();
         let on = execs.iter().filter(|(h, _, _)| h.as_str() == handle);
@@ -145,11 +149,11 @@ impl Profiled {
         .count()
     }
 
-    fn saved(&self) -> usize {
+    pub(super) fn saved(&self) -> usize {
         self.s.w.driver.checkpoint_names().len()
     }
 
-    fn finished(&self, id: BoxId) -> bool {
+    pub(super) fn finished(&self, id: BoxId) -> bool {
         events(&self.s.w, id, "warm_started")[0]["finished"] == true
     }
 }
@@ -158,9 +162,9 @@ fn lines_in(path: &Path) -> usize {
     std::fs::read_to_string(path).map_or(0, |t| t.lines().count())
 }
 
-const SETUP_SH: &str = "echo x >> \"$HOME/profile-ran\"\n";
+pub(super) const SETUP_SH: &str = "echo x >> \"$HOME/profile-ran\"\n";
 
-const PLUGINS: &str = "echo x >> \"$HOME/plugins-ran\"\n";
+pub(super) const PLUGINS: &str = "echo x >> \"$HOME/plugins-ran\"\n";
 
 #[test]
 fn a_second_box_runs_no_install_profile_or_plugin_exec_and_holds_what_they_left() {
@@ -243,20 +247,6 @@ fn a_rerun_at_a_new_commit_stands_on_the_layer_and_runs_only_its_lines() {
     assert!(events(&p.s.w, next, "warm_started")[0]["rerun_from"].is_string());
     assert_eq!(setup_calls_on(&p.s.w, next), (1, 1), "the lines ran");
     assert_eq!(p.step_execs(next), 0);
-    assert_eq!(p.runs_on_disk(next), [1, 1, 1]);
-    assert_eq!(p.saved(), saved);
-}
-
-#[test]
-fn a_rerun_with_a_changed_profile_runs_those_steps_and_saves_nothing() {
-    let p = Profiled::new(SETUP_SH, PLUGINS);
-    p.s.start("a", LINES);
-    let saved = p.saved();
-    p.s.commit("other", "changed\n");
-    let p = p.commit_profile("echo y >> \"$HOME/profile-ran\"\n");
-    let (next, _) = p.s.start("next", LINES);
-    assert!(!p.finished(next));
-    assert_eq!(setup_calls_on(&p.s.w, next), (1, 1));
     assert_eq!(p.runs_on_disk(next), [1, 1, 1]);
     assert_eq!(p.saved(), saved);
 }

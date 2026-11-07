@@ -19,12 +19,12 @@ use crate::store::{BoxRow, EventRow, Store};
 fn deepest_kept(
     store: &Store,
     layered: &Layered,
-) -> Result<Option<(usize, LayerKey, String, Place)>, CommandError> {
+) -> Result<Option<(usize, LayerKey, CheckpointRow, Place)>, CommandError> {
     let above = layered.finished_key.iter().map(|k| (layered.keys.len(), k));
     for (layer, key) in above.chain(layered.keys.iter().enumerate().rev()) {
         let row = store.checkpoint(&layered.home, key)?;
         if let Some((row, place)) = row.and_then(|r| r.place.clone().map(|p| (r, p))) {
-            return Ok(Some((layer, key.clone(), row.checkpoint, place)));
+            return Ok(Some((layer, key.clone(), row, place)));
         }
     }
     Ok(None)
@@ -43,7 +43,7 @@ pub(in super::super) fn warm(
 ) -> Result<Option<Acquired>, CommandError> {
     let lines = layered.keys.len() - 1;
     let deepest = deepest_kept(store, layered)?;
-    let Some((layer, key, checkpoint, place)) = deepest else {
+    let Some((layer, key, kept, place)) = deepest else {
         make_room(cx, store, id, &layered.home)?;
         return Ok(None);
     };
@@ -56,7 +56,7 @@ pub(in super::super) fn warm(
     let layer = layer.min(lines);
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
     let began = cx.clock().now().as_millis();
-    let forked = match cx.driver().fork(&checkpoint, req) {
+    let forked = match cx.driver().fork(&kept.checkpoint, req) {
         Ok(forked) => forked,
         Err(e) => {
             let error = e.to_string();
@@ -74,12 +74,8 @@ pub(in super::super) fn warm(
     let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
     let rerun_from = (place.base != layered.base).then(|| place.base.clone());
     match &rerun_from {
-        Some(commit) => {
-            layered.disk = Disk::Rerun {
-                commit: commit.clone(),
-            };
-        }
-        None => layered.stand_on(layer, place.setup_ms),
+        Some(commit) => layered.rerun_over(commit, &place, &kept),
+        None => layered.stand_on(layer, Some(&place)),
     }
     layered.finished = finished;
     let lines = u32::try_from(lines).unwrap_or(u32::MAX);
@@ -156,7 +152,7 @@ pub(in super::super) fn stand_on_warm_start(
             .transpose()?;
         let place = kept.flatten().and_then(|r| r.place);
         let finished = layered.finished;
-        layered.stand_on(layer, place.map_or(0, |p| p.setup_ms));
+        layered.stand_on(layer, place.as_ref());
         layered.finished = finished;
     }
     Ok(())
@@ -253,7 +249,7 @@ pub(in super::super) fn resume(
         ..Fields::default()
     });
     store.apply(moved)?;
-    layered.stand_on(layer, spent);
+    layered.stand_on(layer, saved.place.as_ref());
     release_old(cx, store, row.id, old)?;
     Ok(Some(new))
 }

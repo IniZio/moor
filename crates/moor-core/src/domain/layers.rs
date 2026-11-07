@@ -149,15 +149,18 @@ pub fn failed_layer(lines: &[String], line: &str) -> usize {
 /// The most ignored paths a Box's brief and start reply name.
 pub const IGNORED_NAMED: usize = 20;
 
-/// The disk under a Box that reran its setup lines over a checkpoint of another commit.
+/// The disk under a Box whose ignored files may come from an older commit than the Box's own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WarmDisk {
-    /// The commit the checkpoint's disk holds.
+    /// The oldest commit the disk's ignored files may come from.
     pub commit: String,
     /// How many tracked paths differ from that commit; none when git could not tell.
     pub changed: Option<u64>,
     /// The ignored paths that came with the disk.
     pub ignored: Vec<String>,
+    /// Whether the setup lines did not run again, as on a fork of the Box's own commit.
+    #[serde(default)]
+    pub lines_kept: bool,
 }
 
 impl WarmDisk {
@@ -169,9 +172,14 @@ impl WarmDisk {
             || "An unknown number of tracked paths".to_owned(),
             |n| format!("{n} tracked path{}", if n == 1 { "" } else { "s" }),
         );
+        let ran = if self.lines_kept {
+            "its setup lines did not run again"
+        } else {
+            "every setup line ran again on the current tree"
+        };
         let mut note = format!(
-            "This Box started from a disk set up at commit {commit}, and every setup line ran \
-             again on the current tree. {changed} changed since that commit."
+            "This Box started from a disk whose ignored files may come from as far back as commit \
+             {commit}, and {ran}. {changed} changed since that commit."
         );
         if self.ignored.is_empty() {
             return note;

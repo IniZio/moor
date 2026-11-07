@@ -78,6 +78,7 @@ mod user_mcp;
 mod warm;
 mod warm_commits;
 mod warm_profile;
+mod warm_roll;
 mod warm_saved;
 mod warm_trees;
 mod workdir;

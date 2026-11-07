@@ -123,7 +123,9 @@ pub(super) fn clone_with_proxy(
         })
         .transpose();
     let mut job = Job::new(id, target, plan.as_ref(), kept.restore_script());
-    job.disk = target.layered.and_then(|l| l.forked_commit());
+    job.disk = target
+        .layered
+        .and_then(|l| l.stale_from().or_else(|| l.forked_commit()));
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),

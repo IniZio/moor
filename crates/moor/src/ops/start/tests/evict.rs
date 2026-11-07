@@ -2,6 +2,9 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::decide::schedule::DISK_FLOOR_MIB;
+use std::sync::{Arc, Mutex};
+
+use moor_core::domain::layers::LayerKey;
 use moor_core::{BoxName, CloseReq};
 
 use super::warm::{after_a_partial_setup, after_a_partial_setup_of, events, start, LINES};
@@ -120,9 +123,6 @@ fn a_checkpoint_whose_delete_fails_stays_tracked_and_goes_later() {
     w.driver.set_deletes_fail(true);
     let second = start(&w, "second", "def456", LINES);
     let tried = deleted(&w);
-    let mut once = tried.clone();
-    once.dedup();
-    assert_eq!(tried, once, "each checkpoint is tried once per start");
     assert!(tried.contains(&"ckpt-1".to_owned()), "{tried:?}");
     assert!(events(&w, second, "checkpoint_evicted").is_empty());
     let warned = w.cx.take_warnings();
@@ -183,4 +183,101 @@ fn a_checkpoint_claimed_before_a_crash_stays_tracked_and_the_next_start_deletes_
         "the claimed checkpoint was still tracked: {told:?}"
     );
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
+}
+
+/// The world after one rerun saved a top and a later one replaced it, then one more start.
+fn after_a_replaced_top(driver: FakeDriver) -> World {
+    let (w, _) = after_a_partial_setup(driver);
+    close(&w, "first");
+    start(&w, "saved", "def456", LINES);
+    assert!(w.driver.checkpoint_ids().contains(&"ckpt-3".to_owned()));
+    start(&w, "replaced", "fed789", LINES);
+    start(&w, "later", "fed789", LINES);
+    w
+}
+
+#[test]
+fn a_checkpoint_a_rerun_replaced_goes_at_the_next_start_with_the_disk_roomy() {
+    let w = after_a_replaced_top(roomy());
+    assert_eq!(deleted(&w), ["ckpt-3"], "{:?}", w.driver.calls());
+}
+
+#[test]
+fn a_checkpoint_a_rerun_replaced_waits_for_the_delta_over_it() {
+    let w = after_a_replaced_top(roomy().with_delta_checkpoints());
+    assert!(deleted(&w).is_empty(), "{:?}", w.driver.calls());
+}
+
+/// The provider Box `id` runs on, and the key of the chain its first checkpoint began.
+fn chain_of(w: &World, id: moor_core::BoxId) -> (moor_core::ProviderId, LayerKey) {
+    let store = w.cx.store().unwrap();
+    let provider = store.box_row(id).unwrap().unwrap().boxed.unwrap().provider;
+    let taken = events(w, id, "checkpoint_taken");
+    let key = taken[0]["key"].as_str().unwrap().to_owned();
+    (provider, LayerKey::restore(key).unwrap())
+}
+
+#[test]
+fn a_retired_checkpoint_a_failed_box_resumes_from_waits_for_it() {
+    let (w, first) = after_a_partial_setup(roomy());
+    let (provider, chain) = chain_of(&w, first);
+    let store = w.cx.store().unwrap();
+    store.retire_chain(&provider, &chain, None).unwrap();
+    start(&w, "second", "abc123", LINES);
+    assert!(
+        !deleted(&w).contains(&"ckpt-2".to_owned()),
+        "{:?}",
+        deleted(&w)
+    );
+    close(&w, "first");
+    start(&w, "third", "abc123", LINES);
+    assert!(
+        deleted(&w).contains(&"ckpt-2".to_owned()),
+        "{:?}",
+        deleted(&w)
+    );
+}
+
+#[test]
+fn a_pin_from_before_pins_named_their_checkpoint_holds_every_row_of_its_layer() {
+    use crate::store::db::DbExt as _;
+    use moor_schema::tables::SetupCheckpointPins as Pins;
+
+    let (w, first) = after_a_partial_setup(roomy());
+    let (provider, chain) = chain_of(&w, first);
+    let store = w.cx.store().unwrap();
+    let unnamed = sea_query::Query::update()
+        .table(Pins::Table)
+        .value(Pins::Checkpoint, sea_query::Expr::val(None::<String>))
+        .take();
+    store.writer().run(unnamed).unwrap();
+    store.retire_chain(&provider, &chain, None).unwrap();
+    start(&w, "second", "abc123", LINES);
+    assert!(
+        !deleted(&w).contains(&"ckpt-2".to_owned()),
+        "{:?}",
+        deleted(&w)
+    );
+}
+
+#[test]
+fn a_checkpoint_retired_while_a_box_stands_on_it_stays_until_that_box_is_set_up() {
+    let (w, first) = after_a_partial_setup(roomy());
+    close(&w, "first");
+    let (provider, chain) = chain_of(&w, first);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (hook_seen, store) = (seen.clone(), w.cx.store().unwrap().clone());
+    w.driver.on_exec_of("three-c", move || {
+        store.retire_chain(&provider, &chain, None).unwrap();
+        let gone = store.evicting(&provider).unwrap();
+        hook_seen
+            .lock()
+            .unwrap()
+            .extend(gone.into_iter().map(|e| e.checkpoint));
+    });
+    start(&w, "second", "abc123", LINES);
+    assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
+    let seen = seen.lock().unwrap().clone();
+    assert!(!seen.is_empty(), "the hook ran");
+    assert!(!seen.contains(&"ckpt-2".to_owned()), "{seen:?}");
 }

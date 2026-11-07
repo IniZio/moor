@@ -45,7 +45,8 @@ pub(crate) struct Evictable {
 
 /// True for a checkpoint `c` that a Box holds back: one setting up or waiting to, which may be
 /// forking it, and one whose setup failed, for its deepest checkpoint, where a retry resumes.
-fn held(c: &DynIden) -> Expr {
+/// With `exact`, only a Box that stood on `c` itself holds it, and not on its layer saved again.
+fn held(c: &DynIden, exact: bool) -> Expr {
     let deepest = Query::select()
         .expr(Expr::col(("q", Pins::Layer)).max())
         .from_as(Pins::Table, "q")
@@ -62,6 +63,15 @@ fn held(c: &DynIden) -> Expr {
         )
         .and_where(Expr::col(("p", Pins::Provider)).equals((c.clone(), Checkpoints::Provider)))
         .and_where(Expr::col(("p", Pins::LayerKey)).equals((c.clone(), Checkpoints::LayerKey)))
+        .and_where(if exact {
+            let pinned = Expr::col(("p", Pins::Checkpoint));
+            pinned
+                .clone()
+                .is_null()
+                .or(pinned.equals((c.clone(), Checkpoints::Checkpoint)))
+        } else {
+            Expr::val(true)
+        })
         .and_where(
             state.clone().is_in(["pending", "setting_up"]).or(state
                 .eq("setup_failed")
@@ -107,7 +117,8 @@ fn superseded(c: &DynIden) -> Expr {
 }
 
 impl Store {
-    /// Marks layer `layer`, keyed `key`, under `provider` as one Box `id` stands on.
+    /// Marks layer `layer`, keyed `key`, under `provider` as one Box `id` stands on, at the checkpoint
+    /// kept for it now.
     pub(crate) fn pin_checkpoint(
         &self,
         id: BoxId,
@@ -115,17 +126,29 @@ impl Store {
         key: &LayerKey,
         layer: usize,
     ) -> Result<(), StoreError> {
+        let now = self.checkpoint(provider, key)?.map(|row| row.checkpoint);
         self.writer().run(
             Query::insert()
                 .into_table(Pins::Table)
-                .columns([Pins::BoxId, Pins::Provider, Pins::LayerKey, Pins::Layer])
+                .columns([
+                    Pins::BoxId,
+                    Pins::Provider,
+                    Pins::LayerKey,
+                    Pins::Layer,
+                    Pins::Checkpoint,
+                ])
                 .values_panic([
                     id.get().into(),
                     provider.as_str().into(),
                     key.as_str().into(),
                     i64::try_from(layer).unwrap_or(i64::MAX).into(),
+                    now.into(),
                 ])
-                .on_conflict(OnConflict::new().do_nothing().to_owned()),
+                .on_conflict(
+                    OnConflict::columns([Pins::BoxId, Pins::Provider, Pins::LayerKey])
+                        .update_column(Pins::Checkpoint)
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
@@ -146,14 +169,19 @@ impl Store {
         let c = "c".into_iden();
         let filter = Expr::col((c.clone(), Checkpoints::Evicting))
             .eq(0)
-            .and(held(&c).not());
+            .and(held(&c, false).not());
         self.to_evict(provider, filter)
     }
 
     /// The checkpoints under `provider` claimed for deleting and still tracked, as a deleter cut
-    /// short leaves them.
+    /// short leaves them, and the retired ones no Box holds back.
     pub(crate) fn evicting(&self, provider: &ProviderId) -> Result<Vec<Evictable>, StoreError> {
-        let filter = Expr::col(("c", Checkpoints::Evicting)).eq(1);
+        let c = "c".into_iden();
+        let evicting = Expr::col((c.clone(), Checkpoints::Evicting));
+        let filter = evicting
+            .clone()
+            .eq(1)
+            .or(evicting.ne(0).and(held(&c, true).not()));
         self.to_evict(provider, filter)
     }
 
@@ -212,7 +240,7 @@ impl Store {
                 .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                 .and_where(Expr::col(Checkpoints::Checkpoint).eq(gone.checkpoint.as_str()))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0))
-                .and_where(held(&c).not())
+                .and_where(held(&c, false).not())
                 .and_where(parent(&c).not()),
         )?;
         Ok(changed > 0)
@@ -262,7 +290,7 @@ impl Store {
                     .from_table(Checkpoints::Table)
                     .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
                     .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
-                    .and_where(Expr::col(Checkpoints::Evicting).eq(1))
+                    .and_where(Expr::col(Checkpoints::Evicting).ne(0))
                     .returning_col(Checkpoints::LayerKey),
                 |r| r.get(0),
             )

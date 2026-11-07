@@ -140,6 +140,8 @@ pub enum ExtraEvent {
         changed: Option<u64>,
         /// The ignored paths that came with the disk.
         ignored: Vec<String>,
+        /// Whether the setup lines did not run again, as on a fork of the Box's own commit.
+        lines_kept: bool,
     },
     /// A line failed on a rerun over a checkpoint, so the Box is set up from scratch once.
     WarmRerunFailed {

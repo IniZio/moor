@@ -55,6 +55,8 @@ fn of(repo: &str, keys: &[LayerKey]) -> Lineage {
         user: REQUESTER_USER,
         repo: repo.to_owned(),
         chain: keys[0].clone(),
+        depth: 0,
+        root_at: None,
     }
 }
 
@@ -285,11 +287,26 @@ fn a_row_from_before_the_base_column_gives_no_place_and_is_still_evictable() {
         workdir: BoxPath::restore("/work/old").unwrap(),
         setup_ms: 5,
         base: "abc".to_owned(),
+        stale_since: "abc".to_owned(),
     };
     store.place_checkpoint(&local, &keys[0], &place).unwrap();
     assert_eq!(
         store.checkpoint(&local, &keys[0]).unwrap().unwrap().place,
-        Some(place)
+        Some(place.clone())
+    );
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::StaleSince, Expr::val(None::<String>)),
+        )
+        .unwrap();
+    let row = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
+    assert_eq!(
+        row.place,
+        Some(place),
+        "a row from before reads its own base"
     );
     store
         .writer()
@@ -302,4 +319,63 @@ fn a_row_from_before_the_base_column_gives_no_place_and_is_still_evictable() {
     let row = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
     assert_eq!(row.place, None, "no Box starts from it");
     assert_eq!(ids(store.evictable(&local).unwrap()), ["old"]);
+}
+
+#[test]
+fn a_replaced_or_retired_checkpoint_never_comes_back_even_if_its_delete_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = crate::store::db::testing::open_store(&dir.path().join("moor.db"), clock);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", "", &[]);
+    let local = ProviderId::new("local");
+    store
+        .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("old"))
+        .unwrap();
+    store
+        .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("new"))
+        .unwrap();
+    let live = store.checkpoint(&local, &keys[0]).unwrap().unwrap();
+    assert_eq!(live.checkpoint, "new");
+    assert_eq!(ids(store.evicting(&local).unwrap()), ["old"]);
+    store.unclaim_checkpoint(&local, "old").unwrap();
+    assert_eq!(
+        ids(store.evicting(&local).unwrap()),
+        ["old"],
+        "not given back"
+    );
+    store.retire_chain(&local, &keys[0], None).unwrap();
+    assert_eq!(store.checkpoint(&local, &keys[0]).unwrap(), None);
+    store.unclaim_checkpoint(&local, "new").unwrap();
+    assert_eq!(
+        store.checkpoint(&local, &keys[0]).unwrap(),
+        None,
+        "no Box starts from it"
+    );
+    assert!(store.forget_checkpoint(&local, "old").unwrap());
+    assert!(store.forget_checkpoint(&local, "new").unwrap());
+    assert!(store.evicting(&local).unwrap().is_empty());
+}
+
+#[test]
+fn retiring_a_chain_can_keep_the_rows_of_one_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = crate::store::db::testing::open_store(&dir.path().join("moor.db"), clock);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", "", &["a".to_owned()]);
+    let local = ProviderId::new("local");
+    let at = |base: &str| Place {
+        workdir: BoxPath::restore("/work/w").unwrap(),
+        setup_ms: 1,
+        base: base.to_owned(),
+        stale_since: base.to_owned(),
+    };
+    for (key, id, base) in [(&keys[0], "old", "x"), (&keys[1], "own", "y")] {
+        store
+            .record_checkpoint(&local, key, &of("o/n", &keys), &made(id))
+            .unwrap();
+        store.place_checkpoint(&local, key, &at(base)).unwrap();
+    }
+    store.retire_chain(&local, &keys[0], Some("y")).unwrap();
+    assert_eq!(store.checkpoint(&local, &keys[0]).unwrap(), None);
+    assert!(store.checkpoint(&local, &keys[1]).unwrap().is_some());
 }
