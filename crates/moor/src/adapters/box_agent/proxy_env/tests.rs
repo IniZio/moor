@@ -99,6 +99,7 @@ fn the_lines_carry_the_exports() {
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
+        "if command -v ccache >/dev/null 2>&1; then [ -n \"${CMAKE_C_COMPILER_LAUNCHER+x}\" ] || export CMAKE_C_COMPILER_LAUNCHER=ccache; [ -n \"${CMAKE_CXX_COMPILER_LAUNCHER+x}\" ] || export CMAKE_CXX_COMPILER_LAUNCHER=ccache; fi",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
         "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa moor_fw",
     ] {

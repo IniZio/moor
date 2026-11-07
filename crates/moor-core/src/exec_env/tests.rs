@@ -464,6 +464,67 @@ fn the_android_sdk_is_exported_only_where_the_directory_exists_and_the_repo_did_
     assert_eq!(android_vars("/no/such/sdk-dir", &[]), ["-", "-"]);
 }
 
+/// The values of the two cmake launcher variables after the ccache lines run with `env` already
+/// set and `ccache` on the `PATH` or not, `-` for a variable left unset and `<empty>` for one set
+/// to nothing.
+fn launcher_vars(with_ccache: bool, env: &[(&str, &str)]) -> Vec<String> {
+    let bin = tempfile::tempdir().unwrap();
+    let tool = bin.path().join("ccache");
+    if with_ccache {
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    let script = format!(
+        "{}\nprintf '%s\\n' \"${{CMAKE_C_COMPILER_LAUNCHER-unset}}\" \"${{CMAKE_CXX_COMPILER_LAUNCHER-unset}}\"",
+        build_env::ccache_lines().join("\n")
+    );
+    let out = std::process::Command::new("/bin/sh")
+        .args(["-c", &script])
+        .env_clear()
+        .env("PATH", bin.path())
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            match l {
+                "unset" => "-",
+                "" => "<empty>",
+                l => l,
+            }
+            .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn cmake_builds_use_ccache_only_when_it_is_installed_and_the_launcher_is_not_set() {
+    assert_eq!(launcher_vars(true, &[]), ["ccache", "ccache"]);
+    assert_eq!(launcher_vars(false, &[]), ["-", "-"]);
+    assert_eq!(
+        launcher_vars(true, &[("CMAKE_C_COMPILER_LAUNCHER", "sccache")]),
+        ["sccache", "ccache"]
+    );
+    assert_eq!(
+        launcher_vars(true, &[("CMAKE_CXX_COMPILER_LAUNCHER", "sccache")]),
+        ["ccache", "sccache"]
+    );
+    assert_eq!(
+        launcher_vars(
+            true,
+            &[
+                ("CMAKE_C_COMPILER_LAUNCHER", ""),
+                ("CMAKE_CXX_COMPILER_LAUNCHER", "")
+            ]
+        ),
+        ["<empty>", "<empty>"]
+    );
+}
+
 #[test]
 fn a_proxy_exec_exports_the_sdk_at_its_preset_path_before_the_java_lines() {
     let e = env();
