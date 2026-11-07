@@ -165,6 +165,12 @@ egress:
     slackClientKey: ""
   resources: {}
 
+# Off by default because applying a PodDisruptionBudget needs RBAC on policy/v1 that some installs lack.
+# On, a node drain evicts one gate pod at a time, and one runner pod at a time with runner.separate and
+# runner.replicas above 1. It renders only for a Deployment that runs as its own pods.
+podDisruptionBudget:
+  enabled: false
+
 persistence:
   size: 10Gi
   storageClassName: ""

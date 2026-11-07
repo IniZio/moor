@@ -121,4 +121,19 @@ fi
 if helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set gate.drainSecs=30 2>&1 | grep -qv 'gate.drainSecs must outlast'; then
   fail "a drain shorter than the hold renders"
 fi
+# The PodDisruptionBudget is opt-in and covers only pods that run as their own Deployment.
+pdb_names() { awk '/^kind:/ { kind = $2; name = "" } kind == "PodDisruptionBudget" && /^  name:/ && name == "" { name = $2; print name }' | sort | tr '\n' ' '; }
+pdb_on=(--set podDisruptionBudget.enabled=true)
+[ -z "$(pdb_names <<<"$(helm template moor "${chart[@]}" "${pdb_on[@]}")")" ] ||
+  fail "renders a PodDisruptionBudget for a gate and runner that share the controller pod"
+gate_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null "${pdb_on[@]}")
+[ "$(pdb_names <<<"$gate_pdb")" = "moor-gate " ] || fail "gate.separate with the budget on renders [$(pdb_names <<<"$gate_pdb")], want moor-gate"
+[ "$(grep -c 'maxUnavailable: 1$' <<<"$gate_pdb")" -ge 1 ] || fail "the gate budget lacks maxUnavailable: 1"
+both_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set runner.separate=true "${pdb_on[@]}")
+[ "$(pdb_names <<<"$both_pdb")" = "moor-gate moor-runner " ] || fail "gate and runner separate render [$(pdb_names <<<"$both_pdb")] budgets"
+one_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set runner.separate=true --set runner.replicas=1 "${pdb_on[@]}")
+[ "$(pdb_names <<<"$one_pdb")" = "moor-gate " ] || fail "a single runner replica gets a budget that would block every drain"
+off_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null --set runner.separate=true)
+grep -q PodDisruptionBudget <<<"$off_pdb" && fail "renders a PodDisruptionBudget with the budget off"
+
 echo "chart-render: ok"

@@ -1,0 +1,26 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- if include "moor.gateSeparate" . }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels: {{- include "moor.gateLabels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "moor.gateLabels" . | nindent 6 }}
+{{- end }}
+{{- if and (include "moor.runnerSeparate" .) (gt (int .Values.runner.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-runner
+  labels: {{- include "moor.runnerLabels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "moor.runnerLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

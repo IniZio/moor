@@ -268,6 +268,12 @@ leaves them up, and they hold `/mcp` and `/front` for up to 30 s while the
 controller is away. Set `gate.drainSecs` above that hold. The chart keeps the
 machine runner reachable through `<release>-agents` when it is still a sidecar.
 
+`podDisruptionBudget.enabled: true` adds a PodDisruptionBudget with `maxUnavailable: 1` for the gate, and for the
+runner pods when `runner.separate` is on and `runner.replicas` is above 1. A node drain then evicts one at a time,
+so one replica always answers while the other reschedules. It is off by default, because applying a
+`policy/v1` PodDisruptionBudget needs RBAC that some installs do not grant. It renders nothing for a gate or
+runner that still sits in the controller pod.
+
 With `runner.separate`, a controller upgrade leaves the runner pods up, and rolling the runner pods one at a
 time relinks each machine within a redial of its agent.
 
