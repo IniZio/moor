@@ -37,6 +37,16 @@ fn close_failed_exits_non_zero_only_when_a_close_failed() {
 }
 
 #[test]
+fn a_start_or_retry_that_stopped_at_a_failed_step_exits_1() {
+    for cmd in ["start", "retry"] {
+        let failed = json!({"failed_step": "setup"});
+        let passed = json!({"failed_step": null});
+        assert_eq!(code(&Response::ok(cmd, Some(failed))), 1);
+        assert_eq!(code(&Response::ok(cmd, Some(passed))), 0);
+    }
+}
+
+#[test]
 fn run_failed_and_refused_are_125() {
     assert_eq!(code(&err("run", ErrorKind::Failed)), 125);
     assert_eq!(code(&err("run", ErrorKind::Internal)), 125);

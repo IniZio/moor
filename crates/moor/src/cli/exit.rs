@@ -17,6 +17,7 @@ pub(crate) fn code(resp: &Response) -> u8 {
     match resp.class {
         ExitClass::Ok if resp.cmd == "wait" && wait_timed_out(resp) => WAIT_TIMED_OUT,
         ExitClass::Ok if resp.cmd == "close-failed" && has_failures(resp) => 1,
+        ExitClass::Ok if matches!(resp.cmd.as_str(), "start" | "retry") && failed_step(resp) => 1,
         ExitClass::Ok if is_run => run_exit(resp),
         ExitClass::Ok => 0,
         ExitClass::Failed | ExitClass::Refused | ExitClass::Usage if is_run => RUN_NOT_STARTED,
@@ -33,6 +34,14 @@ fn has_failures(resp: &Response) -> bool {
         .and_then(|v| v.get("failed"))
         .and_then(serde_json::Value::as_array)
         .is_some_and(|f| !f.is_empty())
+}
+
+/// True when a `start` or `retry` value names the step that stopped the Box.
+fn failed_step(resp: &Response) -> bool {
+    resp.value
+        .as_ref()
+        .and_then(|v| v.get("failed_step"))
+        .is_some_and(serde_json::Value::is_string)
 }
 
 /// True when a `wait` value reports `timed_out`.

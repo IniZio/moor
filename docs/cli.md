@@ -319,7 +319,7 @@ code, or null when the transfer was killed.
 | Code | Meaning |
 | --- | --- |
 | 0 | The command succeeded. |
-| 1 | The command failed. |
+| 1 | The command failed, or `moor start` or `moor retry` kept the Box after a failed setup line or agent install. |
 | 2 | The command line or request was not valid. |
 | 3 | moor refused the command. |
 | 124 | `moor wait` timed out. |
