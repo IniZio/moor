@@ -49,6 +49,17 @@ impl Moor {
         wire::open_store(env)
     }
 
+    /// Waits until this controller may run on `env`'s store, which it then may until the process
+    /// exits. False means `stopped` said to give up. `lost` runs if the right is lost.
+    pub(crate) fn claim_controller(
+        env: &Env,
+        stopped: &dyn Fn(std::time::Duration) -> bool,
+        note: &dyn Fn(&str),
+        lost: std::sync::Arc<dyn Fn(&str) + Send + Sync>,
+    ) -> Result<bool, CommandError> {
+        wire::claim_controller(env, stopped, note, lost)
+    }
+
     /// The warning for a state db a newer build migrated, which this build opened unchanged.
     pub(crate) fn schema_warning(env: &Env) -> Option<String> {
         wire::schema_warning(env)

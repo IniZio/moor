@@ -51,6 +51,27 @@ pub(crate) enum StoreError {
         /// The running controller's socket, as its lock file records it.
         socket: String,
     },
+    /// A controller holds the lock on the shared database, and this moor is not it.
+    #[error(
+        "the controller {holder} is running on the state database {db}; set MOOR_CONTROLLER to \
+         its socket to talk to it, or stop it before running this moor on the database"
+    )]
+    Leased {
+        /// The database, without its password.
+        db: String,
+        /// The name the session holding the lock gave.
+        holder: String,
+    },
+    /// Taking the controller lock did not leave this session holding it.
+    #[error(
+        "the controller lock on {db} is not held after taking it; the URL's search_path must \
+         name a schema that exists, and the URL must reach Postgres directly or through a \
+         session-mode pooler, not a transaction-mode one"
+    )]
+    LockNotHeld {
+        /// The database, without its password.
+        db: String,
+    },
     /// `MOOR_DATABASE_URL` does not name a database moor can open.
     #[error("MOOR_DATABASE_URL: {0}")]
     Url(String),

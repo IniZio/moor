@@ -899,8 +899,21 @@ read connections to the database, 4 when the variable is unset or empty. It
 takes a whole number of 1 or more and refuses anything else. A read that finds
 every reader in use waits up to 30 seconds, then fails and names the cap, so a
 burst of reads never opens more connections than the cap. Size it so the
-writer plus readers of every moor process on the database, a second controller
-during a rollout included, stays under the database role's connection limit.
+writer plus readers of every moor process on the database stays under the
+database role's connection limit. A controller adds one lock connection, and a
+second controller waiting during a rollout holds only that one.
+
+One controller runs on a Postgres database at a time. It holds a session advisory
+lock on one connection of its own, from before it migrates until the process
+exits. Another controller blocks on that lock with no socket and only that
+connection, and takes over as soon as the holder's session ends. A holder whose
+lock connection dies exits at once, so a database restart restarts the
+controller. TCP keepalives on the connection end a session with a dead peer in
+about 11 seconds on the server and 6 on the client. The URL must reach Postgres
+directly or through a session-mode pooler: the lock is checked from a second
+connection, and a controller that does not hold it refuses to start. The
+controller rewrites `controller.alive` in the state directory every 5 seconds as
+a liveness probe's input, because a frozen holder keeps its session.
 
 Every moor that opens the store reads `MOOR_DATABASE_URL`: the controller,
 `moor store migrate`, and the CLI when no controller is set. The controller
@@ -932,8 +945,10 @@ latest migration opens it unchanged and warns. `moor store migrate` opens the
 store, migrates it, prints where the store lives, and exits 0. On a store a
 newer moor migrated, it prints the warning instead and still exits 0. It exits
 1 and says why when it cannot open the store. A deploy can run it with the same
-`MOOR_DATABASE_URL` and `MOOR_STATE_DIR` before the new controllers start, for
-example as a Helm pre-upgrade Job.
+`MOOR_DATABASE_URL` and `MOOR_STATE_DIR` before the first controller starts. It
+need not run on later deploys, as a new controller migrates once it holds the
+lock. On Postgres, `moor store migrate` and any command with no controller set
+take the same lock, and are refused, naming the holder, while a controller has it.
 
 ### Closing failed Boxes
 

@@ -19,6 +19,11 @@ use url::Url;
 /// The server option that makes every transaction on a connection read-only.
 const READ_ONLY: &str = "-c default_transaction_read_only=on";
 
+/// The server options of the controller lock's session.
+const LOCK_SESSION: &str = "-c tcp_keepalives_idle=5 -c tcp_keepalives_interval=2 \
+     -c tcp_keepalives_count=3 -c statement_timeout=0 -c lock_timeout=0 \
+     -c idle_session_timeout=0";
+
 /// How long a connection attempt waits when the URL sets no `connect_timeout`.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -118,6 +123,27 @@ impl Target {
         );
         read_only.config.options(&options);
         read_only
+    }
+
+    /// This database for the controller lock's session, named `me`. A dead peer must end the
+    /// session on both sides without any write, and the holder's side first, so the client's
+    /// keepalive gives up in about 6 s and the server's in about 11 s. No server timeout may end
+    /// a session that is meant to sit idle or blocked.
+    pub(crate) fn lock_session(&self, me: &str) -> Self {
+        let mut session = self.clone();
+        let options = self.config.get_options().map_or_else(
+            || LOCK_SESSION.to_owned(),
+            |options| format!("{options} {LOCK_SESSION}"),
+        );
+        session
+            .config
+            .options(&options)
+            .application_name(me)
+            .keepalives(true)
+            .keepalives_idle(Duration::from_secs(3))
+            .keepalives_interval(Duration::from_secs(1))
+            .keepalives_retries(3);
+        session
     }
 
     /// A new connection.
