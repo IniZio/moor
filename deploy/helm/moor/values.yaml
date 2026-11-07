@@ -30,13 +30,6 @@ database:
   # Read connections the controller keeps open (MOOR_DATABASE_READERS).
   readers: 4
 
-# Where artifacts, reports and transcripts live (docs/config.md). Empty keeps them in the state
-# directory. Not rendered yet. A bucket takes these keys, the last two from the SOPS file:
-#   s3:
-#     endpoint: ""
-#     bucket: ""
-#     accessKey: ""
-#     secretKey: ""
 blobs: {}
 
 controller:

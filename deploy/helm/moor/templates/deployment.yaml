@@ -1,4 +1,5 @@
 {{- $uid := int .Values.controller.uid -}}
+{{- $stateless := include "moor.stateless" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,7 +8,12 @@ metadata:
 spec:
   replicas: 1
   strategy:
+    {{- if $stateless }}
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 1 }
+    {{- else }}
     type: Recreate
+    {{- end }}
   selector:
     matchLabels: {{- include "moor.labels" . | nindent 6 }}
   template:
@@ -34,7 +40,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        {{- if .Values.database.url }}
+        {{- if and .Values.database.url (not $stateless) }}
         # Moving to Postgres starts the store empty. State a SQLite store left behind is set aside, not
         # copied, so the controller does not meet Boxes its new store never recorded.
         - name: state-aside
@@ -124,6 +130,14 @@ spec:
               value: /var/lib/moor/config/crabbox.yaml
             - name: XDG_CONFIG_HOME
               value: /var/lib/moor/pv/state/xdg-config
+            {{- if .Values.blobs.s3 }}
+            - name: MOOR_BLOBS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: blobs-access-key }
+            - name: MOOR_BLOBS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: blobs-secret-key }
+            {{- end }}
             {{- if .Values.database.url }}
             - name: MOOR_DATABASE_URL
               valueFrom:
@@ -292,4 +306,8 @@ spec:
         - name: slack-tmp
           emptyDir: {}
         - name: state
+          {{- if $stateless }}
+          emptyDir: {}
+          {{- else }}
           persistentVolumeClaim: { claimName: moor-state }
+          {{- end }}

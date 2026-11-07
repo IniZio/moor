@@ -95,6 +95,14 @@ true
 {{- end -}}
 {{- end -}}
 
+{{/* Non-empty when the controller keeps no volume: Postgres holds its store and lock, a bucket its blobs. */}}
+{{- define "moor.stateless" -}}
+{{- if and .Values.database.url .Values.blobs.s3 -}}
+{{- if and .Values.slack.enabled (not .Values.slack.separate) }}{{ fail "a controller without the volume needs slack.separate: the Slack sidecar keeps slack.db on it" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{/* The gate container, beside the controller or in its own Deployment. */}}
 {{- define "moor.gateContainer" -}}
 - name: gate
