@@ -60,7 +60,16 @@ const REFUSED: u8 = 3;
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    let running = match start(env, config) {
+    // Before the start, as a pod's first process ignores SIGTERM until it handles it and could
+    // wait for the lock through its whole grace period.
+    let wake = match drain::on_sigterm() {
+        Ok(wake) => wake,
+        Err(e) => {
+            log(&sink, &format!("cannot handle SIGTERM: {e}"));
+            return 1;
+        }
+    };
+    let running = match start_until(env, config, &wake, &sink) {
         Ok(running) => running,
         Err(stop) => {
             log(&sink, &stop.message);
@@ -70,13 +79,6 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     if let Some(warning) = Moor::schema_warning(&running.env) {
         log(&sink, &warning);
     }
-    let wake = match drain::on_sigterm() {
-        Ok(wake) => wake,
-        Err(e) => {
-            log(&sink, &format!("cannot handle SIGTERM: {e}"));
-            return 1;
-        }
-    };
     serve_started(
         running,
         &wake,
@@ -129,8 +131,22 @@ struct Running {
     drain_timeout: Duration,
 }
 
-/// Loads `config`, takes the instance lock and the sockets passed in, binding any not passed.
+/// [`start_until`] with nothing to stop it.
+#[cfg(test)]
 fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
+    let (wake, signal) = UnixStream::pair().map_err(|e| Stop {
+        code: 1,
+        message: e.to_string(),
+    })?;
+    let sink: Sink = Arc::new(Mutex::new(std::io::sink()));
+    let running = start_until(env, config, &wake, &sink);
+    drop(signal);
+    running
+}
+
+/// Loads `config`, takes the instance lock and the sockets passed in, binding any not passed.
+/// `wake` turning readable ends a wait for the store.
+fn start_until(env: &Env, config: &Path, wake: &UnixStream, sink: &Sink) -> Result<Running, Stop> {
     let refused = |message: String| Stop { code: 1, message };
     let mut sockets = Sockets::from_env(env).map_err(refused)?;
     let failed = |message: String| Stop {
@@ -156,6 +172,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket, LOCK_WAIT))
         .transpose()?;
+    lock::claim(&env, wake, sink)?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
     Moor::settle_keys(&env, &vault, front_ca(&cfg)).map_err(|message| Stop {

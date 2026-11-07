@@ -231,7 +231,7 @@ pub(crate) use conn::{
     open_postgres, open_sqlite, open_sqlite_source, Conn, Opened, Reader, Readers, Tx,
 };
 pub(crate) use error::{Error, OptionalExtension};
-pub(crate) use postgres::Target;
+pub(crate) use postgres::{ControllerLock, Target};
 use value::{bound, Unread};
 pub(crate) use value::{FromValue, Kind, Value};
 

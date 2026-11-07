@@ -39,6 +39,7 @@ mod bindings;
 mod box_node;
 pub(crate) mod box_profile;
 pub(crate) mod checkpoints;
+pub(crate) mod controller_lock;
 pub(crate) mod copy;
 pub(crate) mod db;
 mod driver_row;
@@ -197,6 +198,9 @@ pub(crate) struct Store {
     pins: Pins,
     /// Whether a newer build migrated the db past this one.
     schema: Outcome,
+    /// For a moor that is not the controller on a shared database, the controller lock it holds
+    /// so none starts beside it; released when the last clone drops.
+    _excludes: Option<Arc<Mutex<db::ControllerLock>>>,
 }
 
 impl Store {

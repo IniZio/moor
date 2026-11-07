@@ -42,4 +42,8 @@ runner=$(awk '
 ' <<<"$separate" | sort | tr '\n' ' ')
 [ "$runner" = "ledger-ca.pem runner-client.crt runner-client.key " ] ||
   fail "runner pods mount [$runner], want the CA and their client certificate only"
+grep -q 'controller.alive' <<<"$full" || fail "a database-backed controller has no liveness probe"
+if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml | grep -q 'controller.alive'; then
+  fail "a file-backed controller has a liveness probe, but nothing feeds it"
+fi
 echo "chart-render: ok"

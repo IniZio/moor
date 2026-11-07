@@ -32,8 +32,9 @@ use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts, MachineLinks};
-use crate::env::Env;
+use crate::env::{Env, CONTROLLER_ALIVE};
 use crate::error::CommandError;
+use crate::store::controller_lock::{Claim, Claimant, Lost};
 use crate::store::{Database, Store};
 use crate::vault::Vault;
 
@@ -112,12 +113,39 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         return Ok(env);
     };
     let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    let store = Store::open_in(
+    let store = Store::open_claimed(
         &state_dir,
         Database::from_env(&env)?.as_ref(),
         Arc::new(clock),
     )?;
     Ok(env.sharing(store))
+}
+
+/// Waits until this controller may run on `env`'s store, which it then may until the process
+/// exits. False means `stopped` said to give up. A store in a file waits for nothing here, as its
+/// file lock serves. This comes before any migration, so a waiter never changes the schema under
+/// a live holder.
+pub(crate) fn claim_controller(
+    env: &Env,
+    stopped: &dyn Fn(Duration) -> bool,
+    note: &dyn Fn(&str),
+    lost: Lost,
+) -> Result<bool, CommandError> {
+    let Some(state_dir) = env.state_dir() else {
+        return Ok(true);
+    };
+    let claimant = Claimant {
+        me: env.hostname().map_or_else(
+            || format!("controller-{}", std::process::id()),
+            str::to_owned,
+        ),
+        alive: state_dir.join(CONTROLLER_ALIVE),
+        stopped,
+        note,
+        lost,
+    };
+    let claim = claimant.claim(Database::from_env(env)?.as_ref())?;
+    Ok(matches!(claim, Claim::Held))
 }
 
 /// The warning for a store a newer build migrated, which this build opened unchanged.

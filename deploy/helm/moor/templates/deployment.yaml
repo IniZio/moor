@@ -149,6 +149,22 @@ spec:
             exec:
               command: [test, -S, /var/lib/moor/pv/state/controller.sock]
             periodSeconds: 5
+          {{- if .Values.database.url }}
+          # A frozen holder keeps its database session, so nothing takes over until it is killed.
+          # A thread rewrites this file every 5 s, so an old file means the process is not running.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - '[ "$(( $(date +%s) - $(stat -c %Y /var/lib/moor/pv/state/controller.alive) ))" -lt 20 ]'
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 2
+            # A frozen process cannot drain, so it must not get the pod's drain-long grace period.
+            terminationGracePeriodSeconds: 1
+          {{- end }}
           {{- with .Values.controller.resources }}
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}

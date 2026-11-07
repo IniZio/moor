@@ -10,6 +10,8 @@ use std::time::Duration;
 
 /// File name, inside the state directory, of the lock that a running controller holds.
 pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
+/// The file a controller rewrites while its process runs, whose age a liveness probe reads.
+pub(crate) const CONTROLLER_ALIVE: &str = "controller.alive";
 
 /// The variable naming the Postgres database the store lives in, in place of the state dir's
 /// `moor.db`.
@@ -234,6 +236,11 @@ impl Env {
     /// The Postgres URL the store lives in, when set and non-empty.
     pub(crate) fn database_url(&self) -> Option<&str> {
         self.non_empty(DATABASE_URL)
+    }
+
+    /// This host's name, which in a pod is the pod's.
+    pub(crate) fn hostname(&self) -> Option<&str> {
+        self.non_empty("HOSTNAME")
     }
 
     /// The cap on the store's read connections to Postgres, when set and non-empty.

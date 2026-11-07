@@ -11,6 +11,8 @@
 mod client_cwd;
 #[path = "cli/controller.rs"]
 mod controller;
+#[path = "cli/controller_lock.rs"]
+mod controller_lock;
 #[path = "cli/events.rs"]
 mod events;
 #[path = "cli/exec.rs"]

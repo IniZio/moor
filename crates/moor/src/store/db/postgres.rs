@@ -17,6 +17,7 @@ use super::{Db, Error, Result, Rows, Statement, UniqueKey, Value};
 use crate::store::StoreError;
 use types::{Bind, Read};
 
+pub(crate) use controller_lock::ControllerLock;
 pub(crate) use target::Target;
 
 /// Taken by every transaction, keyed by schema so stores in separate schemas of one database
@@ -358,6 +359,7 @@ fn unique_key(db: &DbError) -> Option<UniqueKey> {
     })
 }
 
+mod controller_lock;
 mod target;
 #[cfg(test)]
 mod tests;

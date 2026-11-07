@@ -52,8 +52,30 @@ impl Store {
         Ok(Self::with(opened, path.with_file_name("runs"), clock))
     }
 
-    /// Open the store in the Postgres database `url` names, else in `moor.db` in `state_dir`.
+    /// Open the store in the Postgres database `url` names, else in `moor.db` in `state_dir`,
+    /// for a moor that is not the controller. On a shared database it takes the controller lock
+    /// for as long as the store lives, and is refused if a controller holds it, as a Box lock or
+    /// run claim here would not reach that controller's.
     pub(crate) fn open_in(
+        state_dir: &Path,
+        database: Option<&Database>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, StoreError> {
+        let excludes = database
+            .map(|database| {
+                let target = Target::parse(&database.url).map_err(StoreError::Url)?;
+                db::ControllerLock::exclude(&target, "moor command")
+            })
+            .transpose()?
+            .map(|lock| Arc::new(Mutex::new(lock)));
+        Ok(Self {
+            _excludes: excludes,
+            ..Self::open_claimed(state_dir, database, clock)?
+        })
+    }
+
+    /// As [`Store::open_in`], for the controller, which already holds the right to run here.
+    pub(crate) fn open_claimed(
         state_dir: &Path,
         database: Option<&Database>,
         clock: Arc<dyn Clock>,
@@ -94,6 +116,7 @@ impl Store {
             clock,
             pins: Pins::new(),
             schema,
+            _excludes: None,
         }
     }
 
