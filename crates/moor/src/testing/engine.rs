@@ -283,18 +283,12 @@ impl Engine for FakeEngine {
         self.st().profile_sources.clone()
     }
 
+    fn new_holder(&self) -> AgentHolder {
+        self.st().holder
+    }
+
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
-        let mut st = self.st();
-        st.launches.push(req.clone());
-        st.launch_results.pop_front().unwrap_or_else(|| {
-            Ok(SessionRef {
-                id: String::new(),
-                handle: req.handle.clone(),
-                workdir: req.workdir.clone(),
-                pane: Some(PaneRef::new("p-1")),
-                holder: st.holder,
-            })
-        })
+        self.scripted_launch(req)
     }
 
     fn relay_argv(&self, holder: AgentHolder, connect: &[String]) -> Option<Vec<String>> {
@@ -391,6 +385,7 @@ impl Engine for FakeEngine {
 
 mod installs;
 mod knobs;
+mod script;
 
 #[cfg(test)]
 mod tests;

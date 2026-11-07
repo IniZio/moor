@@ -6,6 +6,7 @@ use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::engine::{AgentFate, EngineError};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxId, StartReq};
@@ -431,6 +432,72 @@ fn a_setup_followed_after_a_restart_launches_the_agent_with_its_prompt() {
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 1);
+}
+
+/// A world whose start died while the engine launched its agent.
+fn launch_cut(req: &StartReq) -> (World, Arc<FakeEngine>) {
+    let (w, engine) = install_world("setup: [a]\n", None, false, FakeDriver::new());
+    engine.push_launch(Err(EngineError::Failed {
+        step: "cut",
+        message: String::new(),
+    }));
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, req));
+    }));
+    assert!(crashed.is_err());
+    assert_eq!(engine.launches().len(), 1);
+    (w, engine)
+}
+
+#[test]
+fn a_launch_already_in_flight_is_attached_to_and_never_launched_twice() {
+    let (w, engine) = launch_cut(&prompt_req());
+    engine.push_fate(Ok(AgentFate::Running));
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 1, "no second agent");
+    assert_eq!(engine.reattached().len(), 1);
+    assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+}
+
+#[test]
+fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
+    let (w, engine) = launch_cut(&prompt_req());
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 2);
+    assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
+}
+
+#[test]
+fn a_box_that_cannot_say_whether_its_agent_runs_launches_nothing() {
+    let (w, engine) = launch_cut(&prompt_req());
+    engine.push_fate(Err(EngineError::Failed {
+        step: "fate",
+        message: "interrupted".to_owned(),
+    }));
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    assert!(crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).is_err());
+    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+}
+
+#[test]
+fn a_box_started_with_no_agent_gets_none_after_a_restart() {
+    let (w, engine) = install_world("setup: [a]\n", None, false, FakeDriver::new());
+    let req = StartReq {
+        no_agent: true,
+        ..prompt_req()
+    };
+    run(&w.cx, &req).unwrap();
+    assert!(fail_interrupted(&w.cx, w.cx.store().unwrap())
+        .unwrap()
+        .is_empty());
+    assert!(engine.launches().is_empty());
 }
 
 #[test]

@@ -250,6 +250,11 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// The holder a new agent's terminal gets.
+    fn new_holder(&self) -> AgentHolder {
+        AgentHolder::default()
+    }
+
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned
     /// session has an empty `id` until the agent reports its own.
     ///

@@ -26,6 +26,9 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
     let mut claimed = Vec::new();
     for row in store.open_boxes()? {
         let Some(intent) = row.intent else {
+            if launch_was_cut(store, &row)? {
+                claimed.push(row.id);
+            }
             continue;
         };
         if intent.pid() != me && cx.proc().alive(intent.pid()) {
@@ -47,6 +50,26 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
         }
     }
     Ok(claimed)
+}
+
+/// Whether a start began launching the agent of `row` and no session came of it. A `--no-agent`
+/// start never begins, and a launch that failed says so.
+pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    let ready = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Ready);
+    let waits = row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet();
+    if !ready || !waits || row.launch_failure.is_some() || store.live_session(row.id)?.is_some() {
+        return Ok(false);
+    }
+    let events = store.events(row.id, usize::MAX)?;
+    let began = events.iter().rfind(|e| {
+        e.kind == "step_started" && e.payload.get("step").and_then(|s| s.as_str()) == Some("launch")
+    });
+    let began = began.map_or(0, |e| e.id);
+    let session = events.iter().rfind(|e| e.kind == "session_started");
+    Ok(began > session.map_or(0, |e| e.id))
 }
 
 /// Whether the cut-off start of `row` was running its setup lines in a machine it still holds.
