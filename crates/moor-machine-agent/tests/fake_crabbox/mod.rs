@@ -49,7 +49,8 @@ case "$1" in
   esac ;;
   pause) if [ -e "$HOME/no-pause" ]; then
       echo "provider=$3 does not support pause" >&2; exit 2
-    fi ;;
+    fi
+    cat "$HOME/pause.stderr" >&2 2>/dev/null ;;
   stop) if [ -e "$HOME/stop-fail" ]; then echo "provider exploded" >&2; exit 2; fi
     if [ -e "$HOME/stop-gone" ]; then echo "lease not found" >&2; exit 4; fi
     if [ -e "$HOME/stop-missing" ]; then echo "lease $5 not found" >&2; exit 1; fi ;;
