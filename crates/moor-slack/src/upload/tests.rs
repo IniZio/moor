@@ -390,9 +390,9 @@ fn a_longer_stored_copy_in_later_frames_never_shares_the_file() {
 #[test]
 fn the_upload_url_never_reaches_an_error_or_the_thread() {
     const MARKER: &str = "capability-marker-7f3a";
-    let gone = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/upload/{MARKER}", gone.local_addr().unwrap());
-    drop(gone);
+    let hangup = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/upload/{MARKER}", hangup.local_addr().unwrap());
+    std::thread::spawn(move || hangup.incoming().for_each(drop));
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     *f.upload_to.lock().unwrap() = Some(url);
     let sock = dir.path().join("c.sock");
