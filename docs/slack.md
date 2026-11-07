@@ -108,7 +108,12 @@ line in each thread that says why.
 
 | Flag | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
-| `--socket PATH` | `MOOR_SLACK_SOCKET`, else `MOOR_FRONT_SOCKET` | required | The controller's `slack` front socket. |
+| `--socket PATH` | `MOOR_SLACK_SOCKET`, else `MOOR_FRONT_SOCKET` | required unless `--controller` is set | The controller's `slack` front socket. |
+| `--controller tls://HOST:PORT` | none | none | The controller's `ledger_tls` listener, in place of `--socket`, for a front in another pod. Needs `--controller-ca`, `--controller-cert`, `--controller-key` and `--front-key-file`. |
+| `--controller-ca PEM` | none | none | The CA that signed the controller's certificate. |
+| `--controller-cert PEM` | none | none | The certificate presented to `--controller`, signed by the ledger CA. |
+| `--controller-key PEM` | none | none | The private key of `--controller-cert`. |
+| `--front-key-file FILE` | none | none | The file, mode 0600, holding the key in the controller's `fronts.slack.remote.key_file`. |
 | `--config PATH` | `MOOR_SLACK_CONFIG` | required | The front's config file. |
 | `--state-dir DIR` | `MOOR_SLACK_STATE_DIR` | `$MOOR_FRONT_STATE_DIR`, set by the controller that runs it, else `$XDG_STATE_HOME/moor-slack`, else `$HOME/.local/state/moor-slack` | The front's own state, including `slack.db`. |
 

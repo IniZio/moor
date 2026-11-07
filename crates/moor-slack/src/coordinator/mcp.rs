@@ -14,12 +14,13 @@ use std::process::Command;
 use std::time::Duration;
 
 use command_fds::{CommandFdExt as _, FdMapping};
-use moor_client::{Client, Timeouts};
+use moor_client::Timeouts;
 use moor_core::user::Identity;
 use serde_json::{json, Value};
 
 use super::tools::{self, Call, Reply, Scope, SPECS};
 use crate::db::Db;
+use crate::dial::Dial;
 
 /// The newest MCP version this server speaks.
 const NEWEST: &str = "2025-06-18";
@@ -38,8 +39,8 @@ const MAX_LINE: u64 = 1 << 20;
 pub struct ToolSettings {
     /// The front's state dir, which holds `slack.db`.
     pub state_dir: PathBuf,
-    /// Controller socket to dial.
-    pub socket: PathBuf,
+    /// Where to reach the controller.
+    pub controller: Dial,
     /// The Slack user the thread's tools act for; every request asserts it.
     pub identity: Identity,
     /// The thread, as `<channel>/<thread ts>`.
@@ -127,7 +128,9 @@ pub fn serve_tools(settings: &ToolSettings) -> Result<(), String> {
         return Err(format!("{} does not exist", path.display()));
     }
     let db = Db::open(&path).map_err(|e| format!("open slack.db: {e}"))?;
-    let client = Client::new(&settings.socket)
+    let client = settings
+        .controller
+        .client()?
         .acting_as(settings.identity.clone())
         .with_timeouts(Timeouts {
             read: CONTROLLER_WAIT,

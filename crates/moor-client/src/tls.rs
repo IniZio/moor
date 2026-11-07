@@ -1,9 +1,9 @@
-//! The machine runner's dial to the controller's TLS listener, and the pump that makes a TLS
-//! stream look like a Unix socket to the code on either end.
+//! The dial to the controller's TLS listener from a machine runner or a front in another pod, and
+//! the pump that makes a TLS stream look like a Unix socket to the code on either end.
 //!
-//! The runner opens with `{"runner":{"v":1,"key":<key>}}` and the controller answers
-//! `{"Ok":null}` or `{"Err":{"refused":<why>}}`. From then on the stream carries the
-//! controller socket's protocol.
+//! A runner opens with `{"runner":{"v":1,"key":<key>}}` and a front with
+//! `{"front":{"v":1,"ns":<namespace>,"key":<key>}}`. The controller answers `{"Ok":null}` or
+//! `{"Err":{"refused":<why>}}`. From then on the stream carries the controller socket's protocol.
 
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -26,36 +26,39 @@ use super::{Attempt, Client, ClientError};
 /// The runner hello's protocol version.
 pub const RUNNER_HELLO: u32 = 1;
 
-/// The longest hello answer the runner reads.
+/// The front hello's protocol version.
+pub const FRONT_HELLO: u32 = 1;
+
+/// The longest hello answer a dialer reads.
 const ANSWER_MAX: usize = 4096;
 
-/// The PEM files of the runner's TLS dial.
+/// The PEM files of a TLS dial to the controller.
 #[derive(Debug, Clone)]
-pub struct RunnerPki {
+pub struct TlsPki {
     /// The CA that signed the controller's certificate.
     pub ca: PathBuf,
-    /// The certificate the runner presents.
+    /// The certificate the dialer presents.
     pub cert: PathBuf,
     /// The certificate's private key.
     pub key: PathBuf,
 }
 
-/// The controller's TLS listener, as the runner dials it.
+/// The controller's TLS listener, as a runner or a front dials it.
 #[derive(Clone)]
-pub(super) struct Runner {
+pub(super) struct Tls {
     /// Host to dial and to check the certificate against.
     host: String,
     /// Port of the listener.
     port: u16,
     /// Trusts only the controller's CA.
     config: Arc<ClientConfig>,
-    /// The service key the hello presents.
-    key: Arc<str>,
+    /// The hello line, which carries the key.
+    hello: Arc<str>,
 }
 
-impl fmt::Debug for Runner {
+impl fmt::Debug for Tls {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Runner(tls://{}:{})", self.host, self.port)
+        write!(f, "Tls(tls://{}:{})", self.host, self.port)
     }
 }
 
@@ -66,7 +69,24 @@ impl Client {
     ///
     /// # Errors
     /// The address is not `tls://HOST:PORT`, or a PEM file cannot be read or does not fit.
-    pub fn runner(controller: &str, pki: &RunnerPki, key: &str) -> Result<Self, String> {
+    pub fn runner(controller: &str, pki: &TlsPki, key: &str) -> Result<Self, String> {
+        let hello = serde_json::json!({"runner": {"v": RUNNER_HELLO, "key": key}});
+        Self::over_tls(controller, pki, &hello)
+    }
+
+    /// A client for the controller's TLS listener at `controller`, `tls://HOST:PORT`, whose
+    /// certificate `pki.ca` signed. Each connection presents `pki.cert` and opens with the
+    /// front hello for namespace `ns` and `key`, and then speaks as that front.
+    ///
+    /// # Errors
+    /// The address is not `tls://HOST:PORT`, or a PEM file cannot be read or does not fit.
+    pub fn front(controller: &str, pki: &TlsPki, ns: &str, key: &str) -> Result<Self, String> {
+        let hello = serde_json::json!({"front": {"v": FRONT_HELLO, "ns": ns, "key": key}});
+        Self::over_tls(controller, pki, &hello)
+    }
+
+    /// A client whose connections each open with `hello`.
+    fn over_tls(controller: &str, pki: &TlsPki, hello: &serde_json::Value) -> Result<Self, String> {
         let rest = controller
             .strip_prefix("tls://")
             .ok_or_else(|| format!("{controller}: expected tls://HOST:PORT"))?;
@@ -78,16 +98,16 @@ impl Client {
             .trim_start_matches('[')
             .trim_end_matches(']')
             .to_owned();
-        Ok(Self::linked(super::remote::Link::Runner(Runner {
+        Ok(Self::linked(super::remote::Link::Tls(Tls {
             host,
             port,
             config: Arc::new(client_config(pki)?),
-            key: Arc::from(key),
+            hello: Arc::from(hello.to_string()),
         })))
     }
 }
 
-impl Runner {
+impl Tls {
     /// Dials, says the hello and returns the client's end of the pumped connection. Nothing
     /// of the protocol has been sent yet, so any failure leaves nothing run.
     pub(super) fn connect(&self) -> Attempt<UnixStream, ClientError> {
@@ -104,7 +124,7 @@ impl Runner {
         }
     }
 
-    /// Completes TLS and the runner hello on `tcp`.
+    /// Completes TLS and the hello on `tcp`.
     fn hello(
         &self,
         tcp: TcpStream,
@@ -115,8 +135,7 @@ impl Runner {
         let conn = ClientConnection::new(Arc::clone(&self.config), name)
             .map_err(|e| bad(e.to_string()))?;
         let mut tls = StreamOwned::new(conn, tcp);
-        let hello = serde_json::json!({"runner": {"v": RUNNER_HELLO, "key": &*self.key}});
-        writeln!(tls, "{hello}")
+        writeln!(tls, "{}", self.hello)
             .and_then(|()| tls.flush())
             .map_err(|e| down(&e))?;
         let answer = line(&mut tls).map_err(|e| down(&e))?;
@@ -161,7 +180,7 @@ fn line(read: &mut impl Read) -> io::Result<Vec<u8>> {
 }
 
 /// TLS that trusts only the certificates in `pki.ca` and presents `pki.cert`.
-fn client_config(pki: &RunnerPki) -> Result<ClientConfig, String> {
+fn client_config(pki: &TlsPki) -> Result<ClientConfig, String> {
     fn named(path: &Path) -> impl Fn(rustls::pki_types::pem::Error) -> String + '_ {
         move |e| format!("{}: {e}", path.display())
     }

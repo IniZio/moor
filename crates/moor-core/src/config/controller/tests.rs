@@ -316,3 +316,18 @@ fn workflow_floor_parses_and_defaults_to_an_hour() {
         "workflow_min_interval_secs"
     );
 }
+
+#[test]
+fn a_remote_front_needs_ledger_tls_and_takes_no_command() {
+    let remote = "fronts:\n  slack:\n    remote:\n      key_file: /k\n";
+    let err = parse_controller("c.yaml", remote).unwrap_err().to_string();
+    assert!(err.contains("fronts.slack.remote"), "{err}");
+    assert!(err.contains("needs ledger_tls"), "{err}");
+    let tls = "ledger_tls:\n  listen: 127.0.0.1:0\n  cert: /c\n  key: /k\n  client_ca: /a\n";
+    let both =
+        format!("{tls}fronts:\n  slack:\n    command: [x]\n    remote:\n      key_file: /k\n");
+    let err = parse_controller("c.yaml", &both).unwrap_err().to_string();
+    assert!(err.contains("takes no command"), "{err}");
+    let fine = format!("{tls}{remote}");
+    assert!(parse_controller("c.yaml", &fine).is_ok());
+}
