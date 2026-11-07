@@ -4,9 +4,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -21,6 +19,7 @@ pub use crate::pool::Pool;
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 
+mod busy;
 mod files;
 mod held;
 mod listen;
@@ -30,6 +29,7 @@ mod serve;
 pub mod settings;
 mod status;
 mod sweep;
+mod upgrade;
 
 /// What `enroll` asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,10 +135,6 @@ pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<St
     Ok(state)
 }
 
-/// The release a restarted agent was just updated to, so that a server still refusing it is
-/// reported instead of updated for again.
-const UPDATED_TO: &str = "MOOR_AGENT_UPDATED_TO";
-
 /// Keeps this machine linked to its server with the key and state enrollment left in `dir`,
 /// dialing again after every drop, and telling `log` each change.
 ///
@@ -148,8 +144,10 @@ pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> R
     run_with(dir, machine, false, log).await
 }
 
-/// As [`run`]; with `auto_update`, a server that needs another release gets it: the agent
-/// installs that release and starts it in this process's place with the same arguments.
+/// As [`run`]; with `auto_update`, the agent moves to the release of the server it links to.
+///
+/// It installs that release, then starts it in this process's place with the same arguments
+/// once no stream or boot is going on. Linked, it keeps serving meanwhile.
 ///
 /// # Errors
 /// As [`run`], and the update or the restart fails.
@@ -167,6 +165,22 @@ pub async fn run_with(
         .map_err(|e| format!("{} is not the agent's state: {e}", path.display()))?;
     let key = read_key(&dir.join(KEY))?
         .ok_or_else(|| format!("{} has no key; enroll first", dir.display()))?;
+    let (tell, offers) = tokio::sync::watch::channel(String::new());
+    tokio::select! {
+        done = keep_linked(&state, &key, &machine, auto_update, log, &tell) => done,
+        never = upgrade::follow(offers, auto_update, log) => match never {},
+    }
+}
+
+/// Keeps `machine` linked to `state`'s server, telling `tell` the server's release on each link.
+async fn keep_linked(
+    state: &State,
+    key: &PrivateKey,
+    machine: &Arc<Machine>,
+    auto_update: bool,
+    log: &(dyn Fn(&str) + Sync),
+    tell: &tokio::sync::watch::Sender<String>,
+) -> Result<(), String> {
     let boxes = listen::Boxes::new(state.slots);
     let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
@@ -174,12 +188,13 @@ pub async fn run_with(
     let mut old: Option<tokio::task::JoinHandle<String>> = None;
     let mut relinked: Option<tokio::time::Instant> = None;
     loop {
-        let (why, handing_over) = match connect(&state, &key, &machine).await {
-            Ok(carried) => {
+        let (why, handing_over) = match connect(state, key, machine).await {
+            Ok((carried, theirs)) => {
                 log(&format!("linked to {}", state.server));
+                tell.send_replace(theirs);
                 wait = FIRST_WAIT;
                 relinked = None;
-                match held::hold(carried, &machine, &boxes, &recent).await {
+                match held::hold(carried, machine, &boxes, &recent).await {
                     held::Ended::Closed(why) => (why, false),
                     held::Ended::Relinked(link) => {
                         old = Some(link);
@@ -190,7 +205,7 @@ pub async fn run_with(
                 }
             }
             Err(Turned::Update(version)) => {
-                return Err(needs_update(&version, auto_update, log));
+                return Err(upgrade::required(&version, auto_update, log).await);
             }
             Err(Turned::Relink) => {
                 relinked.get_or_insert_with(tokio::time::Instant::now);
@@ -217,42 +232,6 @@ pub async fn run_with(
     }
 }
 
-/// Why `run_with` stops for a server that needs `version`: the update failed, the restart
-/// failed, or updating was not asked for. Restarts in place when the update works.
-fn needs_update(version: &str, auto_update: bool, log: &(dyn Fn(&str) + Sync)) -> String {
-    let need = format!("the server needs this agent updated from {VERSION} to {version}");
-    let Ok(plain) = release::plain_semver(version) else {
-        return format!("{need}, which is not a release this agent can install");
-    };
-    if !auto_update {
-        return format!(
-            "{need}; run `moor-machine-agent update --version {plain}`, or start `run` with --auto-update"
-        );
-    }
-    if std::env::var(UPDATED_TO).is_ok_and(|done| done == plain) {
-        return format!(
-            "{need}, but it was just updated to {plain} and the server still refuses it"
-        );
-    }
-    log(&format!("{need}; updating"));
-    let done = match update(&plain) {
-        Ok(done) => done,
-        Err(e) => return format!("{need}; the update failed: {e}"),
-    };
-    log(&format!(
-        "updated from {} to {}; restarting",
-        done.from, done.to
-    ));
-    let why = Command::new(&done.exe)
-        .args(std::env::args_os().skip(1))
-        .env(UPDATED_TO, &done.to)
-        .exec();
-    format!(
-        "updated to {plain} but cannot restart {}: {why}",
-        done.exe.display()
-    )
-}
-
 /// Why a dial did not end in a link.
 enum Turned {
     /// The server needs this release.
@@ -263,12 +242,13 @@ enum Turned {
     Failed(String),
 }
 
-/// Dials `state`'s server and proves the machine with `key`; the link, once it is up.
+/// Dials `state`'s server and proves the machine with `key`; the link, once it is up, and the
+/// server's release.
 async fn connect(
     state: &State,
     key: &PrivateKey,
     machine: &Machine,
-) -> Result<link::Carried, Turned> {
+) -> Result<(link::Carried, String), Turned> {
     let mut ws = link::dial(&state.server).await.map_err(Turned::Failed)?;
     let hello = Frame::Hello {
         machine_id: state.machine_id,
@@ -293,7 +273,7 @@ async fn connect(
         .await
         .map_err(Turned::Failed)?;
     match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
-        Frame::Welcome { .. } => Ok(link::carry(ws, link::KEEPALIVE)),
+        Frame::Welcome { version } => Ok((link::carry(ws, link::KEEPALIVE), version)),
         other => Err(turned(other)),
     }
 }

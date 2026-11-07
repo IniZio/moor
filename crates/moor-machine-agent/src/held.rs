@@ -8,7 +8,7 @@ use moor_client::link::{self, Frame};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::{listen, pool, serve, status, Machine, Pool};
+use crate::{busy, listen, pool, serve, status, Machine, Pool};
 
 /// How a held link ended.
 pub(crate) enum Ended {
@@ -37,8 +37,11 @@ pub(crate) async fn hold(
     let (machine, recent) = (Arc::clone(machine), Arc::clone(recent));
     let take = move |ch| {
         let (machine, streams) = (Arc::clone(&machine), streams.clone());
-        let recent = Arc::clone(&recent);
-        tokio::spawn(async move { serve::serve(&machine, &streams, &recent, ch).await });
+        let (recent, busy) = (Arc::clone(&recent), busy::busy());
+        tokio::spawn(async move {
+            let _busy = busy;
+            serve::serve(&machine, &streams, &recent, ch).await;
+        });
     };
     let (drain, draining) = oneshot::channel();
     let drained = async {
