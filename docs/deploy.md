@@ -183,7 +183,9 @@ With `--controller tls://HOST:PORT`, `--controller-ca`, `--controller-cert`,
 `--controller-key` and `--front-key` (`MOOR_GATE_FRONT_KEY`), the gate dials the
 controller's `ledger_tls` listener with a front hello, so it needs no shared
 volume. The key is the content of `fronts.authgear.remote.key_file`. The chart
-sets these with `gate.overTls`.
+sets these with `gate.separate`. Readiness at `/.well-known/moor` never dials the
+controller, so a gap leaves the gate ready to hold. At most 512 requests wait on
+one gate. The next gets `503` with `Retry-After: 5` at once.
 
 The CLI and the fronts dial again only when a request provably did not run:
 

@@ -29,6 +29,8 @@ use tungstenite::{Message, WebSocket};
 
 use super::{sign, CLIENT_ID};
 
+mod cap;
+
 const FRONT_KEY: &str = "gate-front-key";
 const CUT: &str = "repo/cut";
 
@@ -537,4 +539,20 @@ fn a_gate_with_a_wrong_front_key_is_refused_at_once() {
     let (_, head) = w.front();
     assert!(head.starts_with("HTTP/1.1 502"), "{head}");
     assert!(began.elapsed() < Duration::from_secs(5), "it was held");
+}
+
+#[test]
+fn readiness_does_not_wait_for_the_controller() {
+    let mut w = held_with(FRONT_KEY, holding(LONG));
+    w.away();
+    let began = Instant::now();
+    let mut res = w
+        .agent
+        .get(format!("http://{}/.well-known/moor", w.gate))
+        .call()
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    assert!(began.elapsed() < Duration::from_secs(5), "it was held");
+    let doc: Value = serde_json::from_str(&res.body_mut().read_to_string().unwrap()).unwrap();
+    assert_eq!(doc["client_id"], CLIENT_ID);
 }

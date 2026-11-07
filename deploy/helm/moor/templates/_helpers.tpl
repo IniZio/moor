@@ -80,12 +80,84 @@ true
 {{- end -}}
 {{- end -}}
 
-{{/* Non-empty when the gate dials the controller's ledger instead of its front socket. */}}
-{{- define "moor.gateOverTls" -}}
-{{- if and .Values.gate.enabled .Values.gate.overTls.enabled -}}
-{{- if not .Values.egress.enabled }}{{ fail "gate.overTls needs egress.enabled: the gate dials the controller through the ledger listener" }}{{ end -}}
+{{/* Not moor.labels: the gate Service moves to these when the gate is its own Deployment. */}}
+{{- define "moor.gateLabels" -}}
+app.kubernetes.io/name: moor-gate
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+{{- end -}}
+
+{{/* Non-empty when the gate is its own Deployment, which dials the controller's ledger. */}}
+{{- define "moor.gateSeparate" -}}
+{{- if and .Values.gate.enabled .Values.gate.separate -}}
+{{- if not .Values.egress.enabled }}{{ fail "gate.separate needs egress.enabled: the gate dials the controller through the ledger listener" }}{{ end -}}
+{{- if lt (int .Values.gate.drainSecs) 35 }}{{ fail "gate.drainSecs must outlast the gate's 30 s hold" }}{{ end -}}
 true
 {{- end -}}
+{{- end -}}
+
+{{/* The gate container, beside the controller or in its own Deployment. */}}
+{{- define "moor.gateContainer" -}}
+- name: gate
+  image: {{ include "moor.image" . }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  securityContext: {{- include "moor.gateSecurity" . | nindent 4 }}
+  command: [moor-gate]
+  env:
+    - { name: MOOR_GATE_DRAIN_TIMEOUT_SECS, value: {{ (ternary .Values.gate.drainSecs .Values.controller.drainTimeoutSecs (not (empty (include "moor.gateSeparate" .)))) | quote }} }
+    {{- if include "moor.gateSeparate" . }}
+    # The gate reads --front-key from here, so the key stays out of the process list.
+    - name: MOOR_GATE_FRONT_KEY
+      valueFrom:
+        secretKeyRef: { name: {{ .Release.Name }}-egress, key: gate-front-key }
+    {{- end }}
+    {{- if .Values.gate.login }}
+    - name: MOOR_GATE_COOKIE_KEY
+      valueFrom:
+        secretKeyRef: { name: {{ .Release.Name }}-gate, key: cookie-key }
+    {{- end }}
+  args:
+    - --listen=0.0.0.0:{{ .Values.gate.port }}
+    {{- if include "moor.gateSeparate" . }}
+    - --controller=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+    - --controller-ca=/var/lib/moor/gate/ledger-ca.pem
+    - --controller-cert=/var/lib/moor/gate/gate-client.crt
+    - --controller-key=/var/lib/moor/gate/gate-client.key
+    {{- else }}
+    - --front-socket=/var/lib/moor/front/front
+    {{- end }}
+    - --issuer={{ required "authgear.issuer is required" .Values.authgear.issuer }}
+    - --client-id={{ required "authgear.clientId is required" .Values.authgear.clientId }}
+    {{- with .Values.gate.jwksUrl }}
+    - --jwks-url={{ . }}
+    {{- end }}
+    {{- if .Values.mcp.enabled }}
+    - --mcp-resource-url={{ required "mcp.resourceUrl is required" .Values.mcp.resourceUrl }}
+    {{- end }}
+    {{- if .Values.gate.login }}
+    - --public-url=https://{{ required "host is required for gate.login" .Values.host }}
+    {{- end }}
+  ports:
+    - { name: gate, containerPort: {{ .Values.gate.port }} }
+  {{- if include "moor.gateSeparate" . }}
+  # The Service and the ingress take the pod out before it stops accepting.
+  lifecycle:
+    preStop:
+      exec:
+        command: [sleep, "10"]
+  {{- end }}
+  {{- /* Must not dial the controller: both gates would go unready in a gap, and nothing would hold. */}}
+  readinessProbe:
+    httpGet: { path: /.well-known/moor, port: gate }
+    periodSeconds: 5
+  {{- with .Values.gate.resources }}
+  resources: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  volumeMounts:
+    {{- if include "moor.gateSeparate" . }}
+    - { name: gate-tls, mountPath: /var/lib/moor/gate, readOnly: true }
+    {{- else }}
+    - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/authgear, readOnly: true }
+    {{- end }}
 {{- end -}}
 
 {{/* Non-empty when the runner is its own Deployment, which dials the controller's ledger. */}}
