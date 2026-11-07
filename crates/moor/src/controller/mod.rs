@@ -22,6 +22,7 @@ mod watch;
 
 pub use local::watch_local;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
@@ -176,7 +177,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         fronts,
         runner,
         ledger: (ledger, proxy.as_ref().map(|p| Arc::from(p.key()))),
-        ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref()).map_err(refused)?,
+        ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref(), &cfg.fronts)
+            .map_err(refused)?,
         commands,
         proxy,
         vault: Arc::new(vault),
@@ -275,6 +277,11 @@ impl Running {
     fn serve_until(self, wake: &UnixStream, drain: &Arc<Drain>, sink: &Sink) {
         let serve = |on: peer::On| handler(&self.env, &self.vault, on, sink);
         let mut listeners = vec![(self.listener, serve(peer::On::Controller))];
+        let remote_fronts = self.ledger_tls.as_ref().map_or_else(BTreeMap::new, |tls| {
+            tls.front_namespaces()
+                .map(|ns| (ns.clone(), serve(peer::On::Front(ns.clone()))))
+                .collect()
+        });
         for (ns, listener) in self.fronts {
             listeners.push((listener, serve(peer::On::Front(ns))));
         }
@@ -283,7 +290,13 @@ impl Running {
         let (ledger, key) = self.ledger;
         ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
         if let Some(tls) = self.ledger_tls {
-            tls.serve_until_exit((&self.env, &self.vault), (runner, drain), sink);
+            let loops = ledger::Loops {
+                runner,
+                fronts: remote_fronts,
+                drain: Arc::clone(drain),
+                sink: Arc::clone(sink),
+            };
+            tls.serve_until_exit((&self.env, &self.vault), loops, sink);
         }
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),

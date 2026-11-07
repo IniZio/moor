@@ -8,8 +8,55 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use clap::Parser;
+use moor_client::tls::TlsPki;
 use moor_core::user::Identity;
-use moor_slack::{Log, Settings, ToolSettings};
+use moor_slack::{Dial, Log, Settings, ToolSettings};
+
+/// Where to reach the controller: its socket, or its TLS listener from another pod.
+#[derive(clap::Args)]
+struct DialArgs {
+    /// Controller socket to dial; defaults to `$MOOR_FRONT_SOCKET`.
+    #[arg(long, env = "MOOR_SLACK_SOCKET", conflicts_with = "controller")]
+    socket: Option<PathBuf>,
+    /// The controller's TLS listener, `tls://HOST:PORT`, in place of `--socket`.
+    #[arg(
+        long,
+        requires_all = ["controller_ca", "controller_cert", "controller_key", "front_key_file"]
+    )]
+    controller: Option<String>,
+    /// The CA that signed the controller's certificate.
+    #[arg(long)]
+    controller_ca: Option<PathBuf>,
+    /// The certificate presented to `--controller`.
+    #[arg(long)]
+    controller_cert: Option<PathBuf>,
+    /// The private key of `--controller-cert`.
+    #[arg(long)]
+    controller_key: Option<PathBuf>,
+    /// The file, mode 0600, holding the key this front's hello presents to `--controller`.
+    #[arg(long)]
+    front_key_file: Option<PathBuf>,
+}
+
+impl DialArgs {
+    /// The dial these flags name; `front` is `MOOR_FRONT_SOCKET`.
+    fn dial(self, front: Option<OsString>) -> Result<Dial, String> {
+        if let (Some(url), Some(ca), Some(cert), Some(key), Some(key_file)) = (
+            self.controller,
+            self.controller_ca,
+            self.controller_cert,
+            self.controller_key,
+            self.front_key_file,
+        ) {
+            let pki = TlsPki { ca, cert, key };
+            return Ok(Dial::Tls { url, pki, key_file });
+        }
+        self.socket
+            .or_else(|| front.filter(|v| !v.is_empty()).map(PathBuf::from))
+            .map(Dial::Socket)
+            .ok_or_else(|| "set --socket, --controller or MOOR_FRONT_SOCKET".to_owned())
+    }
+}
 
 /// Command line of the daemon.
 #[derive(Parser)]
@@ -19,9 +66,9 @@ use moor_slack::{Log, Settings, ToolSettings};
     about = "Slack front for the moor controller"
 )]
 struct Args {
-    /// Controller socket to dial; defaults to `$MOOR_FRONT_SOCKET`.
-    #[arg(long, env = "MOOR_SLACK_SOCKET")]
-    socket: Option<PathBuf>,
+    /// Where to reach the controller.
+    #[command(flatten)]
+    dial: DialArgs,
     /// The front's config file: Slack token files and API bases.
     #[arg(long, env = "MOOR_SLACK_CONFIG")]
     config: PathBuf,
@@ -39,9 +86,9 @@ struct McpArgs {
     /// The front's state dir, which holds `slack.db`.
     #[arg(long)]
     state_dir: PathBuf,
-    /// Controller socket to dial.
-    #[arg(long)]
-    socket: PathBuf,
+    /// Where to reach the controller.
+    #[command(flatten)]
+    dial: DialArgs,
     /// The Slack user the tools act for, as the controller names them: `slack:<team>/<user>`.
     #[arg(long = "as")]
     acting_as: String,
@@ -73,14 +120,6 @@ fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
         .ok_or_else(|| "set --state-dir, XDG_STATE_HOME or HOME".to_owned())
 }
 
-/// The socket to dial: the one given, else `MOOR_FRONT_SOCKET`, which the controller sets
-/// when it starts the front.
-fn dial_path(given: Option<PathBuf>, front: Option<OsString>) -> Result<PathBuf, String> {
-    given
-        .or_else(|| front.filter(|v| !v.is_empty()).map(PathBuf::from))
-        .ok_or_else(|| "set --socket or MOOR_FRONT_SOCKET".to_owned())
-}
-
 /// Current time in unix seconds.
 #[allow(
     clippy::disallowed_methods,
@@ -102,7 +141,7 @@ fn mcp() -> Result<(), String> {
     let identity = Identity::parse(&given.acting_as).map_err(|e| format!("--as: {e}"))?;
     moor_slack::serve_tools(&ToolSettings {
         state_dir: given.state_dir,
-        socket: given.socket,
+        controller: given.dial.dial(None)?,
         identity,
         thread: given.thread,
         max_open_boxes: given.max_open_boxes,
@@ -126,11 +165,11 @@ fn main() -> ExitCode {
     });
     let stop = Arc::new(AtomicBool::new(false));
     let result = state_dir(args.state_dir).and_then(|state_dir| {
-        let socket = dial_path(args.socket, std::env::var_os("MOOR_FRONT_SOCKET"))?;
+        let controller = args.dial.dial(std::env::var_os("MOOR_FRONT_SOCKET"))?;
         signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&stop))
             .map_err(|e| format!("handle SIGTERM: {e}"))?;
         let settings = Settings {
-            socket,
+            controller,
             config: args.config,
             state_dir,
             home: std::env::var_os("HOME").map(PathBuf::from),

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_client::link::ops;
-use moor_client::tls::RunnerPki;
+use moor_client::tls::TlsPki;
 use moor_client::Client;
 use moor_core::request::{BoxRsyncReq, Request};
 use moor_core::BoxId;
@@ -29,7 +29,7 @@ pub enum Dial {
         /// `tls://HOST:PORT`.
         url: String,
         /// The CA it trusts and the certificate it presents.
-        pki: RunnerPki,
+        pki: TlsPki,
         /// The machine service key.
         key: String,
     },
@@ -70,7 +70,7 @@ impl Dial {
             file.clone()
                 .ok_or_else(|| format!("--controller needs {flag}"))
         };
-        let pki = RunnerPki {
+        let pki = TlsPki {
             ca: need(ca, "--controller-ca")?,
             cert: need(cert, "--controller-cert")?,
             key: need(client_key, "--controller-key")?,
@@ -107,7 +107,7 @@ impl Dial {
         };
         Ok(Self::Tls {
             url: text(CONTROLLER)?,
-            pki: RunnerPki {
+            pki: TlsPki {
                 ca: text(CA)?.into(),
                 cert: text(CERT)?.into(),
                 key: text(CLIENT_KEY)?.into(),
