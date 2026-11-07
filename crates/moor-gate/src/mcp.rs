@@ -24,6 +24,7 @@ use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 
 use crate::http::{RESTARTING, RETRY_AFTER_SECS};
+use crate::streams::Streams;
 use crate::tools::{client_down, Tools};
 use crate::{log, Gate, Person};
 
@@ -143,7 +144,7 @@ impl Mcp {
     }
 
     /// Serves `stream`, whose request head (`prefix`) the gate already read, until it closes.
-    pub(crate) fn serve(&self, stream: TcpStream, prefix: Vec<u8>, gate: &Gate) {
+    pub(crate) fn serve(&self, stream: TcpStream, prefix: Vec<u8>, gate: &Gate, streams: &Streams) {
         if stream.set_read_timeout(None).is_err() || stream.set_nonblocking(true).is_err() {
             return;
         }
@@ -154,7 +155,9 @@ impl Mcp {
             // The gate already consumed the request head; replay it ahead of the socket.
             let (reader, writer) = split(stream);
             let io = TokioIo::new(join(Cursor::new(prefix).chain(reader), writer));
-            let svc = service_fn(|req| async { Ok::<_, Infallible>(self.route(req, gate).await) });
+            let svc = service_fn(|req| async {
+                Ok::<_, Infallible>(self.route(req, gate, streams).await)
+            });
             let conn = http1::Builder::new().serve_connection(io, svc);
             tokio::pin!(conn);
             tokio::select! {
@@ -176,7 +179,12 @@ impl Mcp {
     }
 
     /// Checks the request's token, then lets the MCP service answer it.
-    async fn route(&self, mut req: Request<Incoming>, gate: &Gate) -> Response<Body> {
+    async fn route(
+        &self,
+        mut req: Request<Incoming>,
+        gate: &Gate,
+        streams: &Streams,
+    ) -> Response<Body> {
         let authorization = req
             .headers()
             .get(header::AUTHORIZATION)
@@ -184,7 +192,12 @@ impl Mcp {
         let verified = tokio::task::block_in_place(|| self.authenticate(authorization, gate));
         match verified {
             Ok((person, scopes)) => {
-                if let Err(e) = tokio::task::block_in_place(|| self.controller.ready()) {
+                let Some(waiting) = streams.wait() else {
+                    return restarting();
+                };
+                let ready = tokio::task::block_in_place(|| self.controller.ready());
+                drop(waiting);
+                if let Err(e) = ready {
                     return away(&e);
                 }
                 req.extensions_mut().insert(Auth { person, scopes });
@@ -239,14 +252,25 @@ impl Mcp {
     }
 }
 
-/// The answer to a request held until the controller stayed away, or could not be spoken to.
+/// The answer to a request whose hold ran out, or that could not be spoken for at all.
 fn away(e: &ClientError) -> Response<Body> {
-    let (status, message) = if client_down(e) {
-        (StatusCode::SERVICE_UNAVAILABLE, RESTARTING)
-    } else {
-        log(&format!("the controller is unreachable: {e}"));
-        (StatusCode::BAD_GATEWAY, "the controller is unreachable")
-    };
+    if client_down(e) {
+        return restarting();
+    }
+    log(&format!("the controller is unreachable: {e}"));
+    json_error(StatusCode::BAD_GATEWAY, "the controller is unreachable")
+}
+
+/// The 503 that tells a client to come back.
+fn restarting() -> Response<Body> {
+    let mut res = json_error(StatusCode::SERVICE_UNAVAILABLE, RESTARTING);
+    res.headers_mut()
+        .insert(header::RETRY_AFTER, RETRY_AFTER_SECS.into());
+    res
+}
+
+/// `{"error": message}` with `status`.
+fn json_error(status: StatusCode, message: &str) -> Response<Body> {
     let body = serde_json::json!({ "error": message }).to_string();
     let mut res = Response::new(Full::new(Bytes::from(body)).boxed());
     *res.status_mut() = status;
@@ -254,10 +278,6 @@ fn away(e: &ClientError) -> Response<Body> {
         header::CONTENT_TYPE,
         header::HeaderValue::from_static("application/json"),
     );
-    if status == StatusCode::SERVICE_UNAVAILABLE {
-        res.headers_mut()
-            .insert(header::RETRY_AFTER, RETRY_AFTER_SECS.into());
-    }
     res
 }
 

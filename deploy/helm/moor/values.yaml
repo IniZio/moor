@@ -102,15 +102,18 @@ gate:
   cookieKey: ""
   # Empty finds the keys through the issuer's discovery document.
   jwksUrl: ""
-  # Dial the controller's ledger TLS listener with a front hello instead of the front socket on
-  # the volume. A request waits up to 30 s for the controller, then gets 503. Needs egress.enabled.
-  overTls:
-    enabled: false
-    # Secret: the key the gate's hello presents.
-    frontKey: ""
-    # Secret: the gate's client certificate and key, signed by the ledger CA.
-    clientCert: ""
-    clientKey: ""
+  # Run the gate as its own Deployment, which dials the controller's ledger over TLS with a front
+  # hello and needs no volume, so a controller roll leaves it up. A request waits up to 30 s for
+  # the controller, then gets 503. Needs egress.enabled. Off, the gate sits beside the controller.
+  separate: false
+  # separate only.
+  replicas: 2
+  # separate only: how long a stopping gate lets requests finish; must outlast the 30 s hold.
+  drainSecs: 60
+  # separate only, Secret, optional: the certificate the gate presents, for your own ledger CA
+  # without its key. Empty makes one from the ledger CA.
+  clientCert: ""
+  clientKey: ""
   service:
     type: ClusterIP
     nodePort: null

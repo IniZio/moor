@@ -50,6 +50,12 @@ pub const HOLD: Redial = Redial {
     max_pause: Duration::from_secs(2),
 };
 
+/// The most requests one gate holds at once; the next gets 503 with `Retry-After` straight away.
+///
+/// A held request costs a thread, about 50 kB as measured, so this stays near 26 MB, and it
+/// bounds the dials that reach a controller coming back.
+pub const HOLD_CAP: usize = 512;
+
 /// A client for the controller's TLS listener at `controller`, `tls://HOST:PORT`, that says the
 /// front hello for [`NAMESPACE`] with `key` and holds requests under `hold`, normally [`HOLD`].
 ///
