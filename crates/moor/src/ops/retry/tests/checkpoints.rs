@@ -39,6 +39,7 @@ fn start(w: &World, name: &str) -> BoxId {
         model: None,
         node: None,
         no_agent: true,
+        cold: false,
         resume: false,
         repo: Some(ForgeRepo::new("o", "n")),
         parent: None,

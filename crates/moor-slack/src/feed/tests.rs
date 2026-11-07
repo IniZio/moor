@@ -39,6 +39,7 @@ pub(super) fn bound_box(db: &Db) -> SlackBox {
         prompt: "fix it".into(),
         base: None,
         node: None,
+        cold: false,
         requested_by: "U1".into(),
         parent: None,
         state: BoxState::Starting,

@@ -93,6 +93,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::WarmRerunFailed { line, tail } => {
                 Self::Timing(TimingEvent::WarmRerunFailed { line, tail })
             }
+            ExtraEvent::ColdAsked => Self::Timing(TimingEvent::ColdAsked),
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })
             }

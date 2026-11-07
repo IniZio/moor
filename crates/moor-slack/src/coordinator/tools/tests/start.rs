@@ -67,6 +67,7 @@ fn start(prompt: &str, repo: Option<&str>) -> Call {
         repo: repo.map(str::to_owned),
         base: None,
         node: None,
+        cold: false,
     }
 }
 
@@ -76,6 +77,7 @@ fn start_from(prompt: &str, base: &str) -> Call {
         repo: Some("acme/api".into()),
         base: Some(base.to_owned()),
         node: None,
+        cold: false,
     }
 }
 
@@ -127,6 +129,7 @@ fn start_box_reads_base_from_the_tool_arguments() {
         repo: None,
         base: Some("moor-setup".into()),
         node: None,
+        cold: false,
     };
     assert_eq!(Call::parse("start_box", &args), Ok(with));
     let args = serde_json::json!({"prompt": "g"});
@@ -265,8 +268,23 @@ fn start_box_reads_the_node_and_records_it_on_the_row() {
         repo: None,
         base: None,
         node: node.clone(),
+        cold: false,
     };
     assert!(!start_with(&db, &call, 1).is_error);
     let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
     assert_eq!(row.node, node);
+}
+
+#[test]
+fn start_box_reads_cold_and_records_it_on_the_row() {
+    let args = serde_json::json!({"prompt": "g", "cold": true});
+    let Ok(call @ Call::StartBox { cold: true, .. }) = Call::parse("start_box", &args) else {
+        panic!("not a cold start_box");
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/web"));
+    turn_of(&db, "U1", "Ev1");
+    assert!(!start_with(&db, &call, 1).is_error);
+    let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
+    assert!(row.cold);
 }
