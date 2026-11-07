@@ -132,10 +132,15 @@ A suspended Box keeps its session: moor cannot ask a machine that is not running
 about its agent, so reading its status decides nothing. On a wake moor asks the
 Box. A running agent gets a new pane and keeps its terminal and every process.
 Only an agent the Box says is gone is started again, from its stored session. A
-Box that does not answer keeps its session, and later status reads decide. Once
-it has answered, an agent that stopped mid-turn is told once for how long, whether
-its processes are intact or lost, that network connections open at that moment
-were dropped, and to carry on with its work. Its wall clock jumps.
+Box that does not answer keeps its session. Each status sweep reads it once,
+within the usual probe deadline. Once a read shows the agent running, it is
+told. Once the Box says the agent is gone, moor starts it again, once. That
+start holds the sweep for at most about 70 seconds: up to 60 for the tunnel, then
+the launch and its check. A failed start is recorded and not tried again.
+Whichever op woke or restarted it, once it has answered, an agent that stopped
+mid-turn is told once for how long, whether its processes are intact or lost, that network
+connections open at that moment were dropped, and to carry on with its work. Its
+wall clock jumps.
 
 If a waiting Box's machine is gone altogether, it takes its turn for a new one,
 whose disk is empty. Moor records a `disk_lost` event, starts the agent again, and

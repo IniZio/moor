@@ -18,6 +18,7 @@ use crate::ops::common::activity::session_ref;
 use crate::ops::common::profile_fetch;
 use crate::ops::common::provision::reread;
 use crate::ops::common::view::rfc3339;
+use crate::ops::common::wake::tell_relaunched;
 use crate::store::{SessionRow, Store};
 
 /// Time between two reads of the pane while watching.
@@ -68,6 +69,12 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     let Some((session, code, tail)) = poll(cx, store, id, agent.nonce.as_deref()) else {
         report_installs(cx, store, id);
         tell_of_lost_disk(cx, store, id);
+        if let Err(e) = tell_relaunched(cx, store, id) {
+            cx.warn(Warning {
+                code: "note_failed".to_owned(),
+                message: format!("cannot tell the agent it was started again: {}", e.error),
+            });
+        }
         return agent;
     };
     let failure = exited(cx, code, &tail);
