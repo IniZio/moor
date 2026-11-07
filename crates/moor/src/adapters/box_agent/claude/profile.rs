@@ -4,12 +4,13 @@ use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::profile::{Manifest, PROFILE_MARKETPLACE};
 use moor_core::seam::agent_adapter::BoxSetup;
+use moor_core::seam::engine::GitSource;
 use moor_core::seam::proc::Tool;
 
 use super::launch::{interpreters, parent};
 use super::Claude;
 use crate::adapters::box_agent::profile_writer::{
-    ProfileCtx, ProfileWriter, FAILURES_FILE, FAIL_FN, MARKETPLACE_NAME_FN,
+    git_sources, ProfileCtx, ProfileWriter, FAILURES_FILE, FAIL_FN, MARKETPLACE_NAME_FN,
 };
 
 mod merge;
@@ -72,6 +73,10 @@ impl ProfileWriter for Claude {
 
     fn installs(&self, manifest: &Manifest) -> String {
         plugins(manifest)
+    }
+
+    fn sources(&self, manifest: &Manifest) -> Vec<GitSource> {
+        git_sources(&manifest.claude.marketplaces)
     }
 }
 

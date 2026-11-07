@@ -81,13 +81,37 @@ pub fn chain(identity: &LayerIdentity<'_>, lines: &[String]) -> Vec<LayerKey> {
     keys
 }
 
+/// What the layer above the last setup line holds, each part as the text that names it. Those
+/// steps read no repo file, so its key holds no commit but what the top line's key does.
+#[derive(Debug, Clone, Copy)]
+pub struct FinishedSteps<'a> {
+    /// The script that installs the agent.
+    pub install: &'a str,
+    /// The profile's commit.
+    pub profile_sha: &'a str,
+    /// The script that installs what the profile lists.
+    pub plugins: &'a str,
+    /// The commit of each repo that script reads.
+    pub sources: &'a str,
+    /// The environment those scripts run with.
+    pub env: &'a str,
+    /// The dotfiles.
+    pub dotfiles: &'a str,
+}
+
 /// The key of the layer above `top`, the last setup line's.
-///
-/// It holds the agent installed from `install` and the profile at `profile_sha`, with `plugins`
-/// run. Those steps read no commit, so the key holds none but what `top` does.
 #[must_use]
-pub fn finished_key(top: &LayerKey, install: &str, profile_sha: &str, plugins: &str) -> LayerKey {
-    LayerKey::of(&["finished", top.as_str(), install, profile_sha, plugins])
+pub fn finished_key(top: &LayerKey, steps: &FinishedSteps<'_>) -> LayerKey {
+    LayerKey::of(&[
+        "finished",
+        top.as_str(),
+        steps.install,
+        steps.profile_sha,
+        steps.plugins,
+        steps.sources,
+        steps.env,
+        steps.dotfiles,
+    ])
 }
 
 /// Whether layer `layer` of a setup of `lines` lines is checkpointed once it passes in `ms`.

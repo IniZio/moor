@@ -35,7 +35,7 @@ use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+    AgentFate, Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, Surface, WorkspaceRef};
@@ -116,6 +116,10 @@ impl Engine for BoxAgent {
 
     fn profile_install(&self, manifest: &Manifest) -> Option<String> {
         profile_writer::install_script(manifest)
+    }
+
+    fn profile_sources(&self, manifest: &Manifest) -> Vec<GitSource> {
+        profile_writer::all_sources(manifest)
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

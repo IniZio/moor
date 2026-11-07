@@ -35,7 +35,7 @@ mod asleep;
 mod launch;
 mod needs;
 mod preflight;
-mod profile;
+pub(crate) mod profile;
 mod profile_env;
 mod relaunch;
 mod reopen;

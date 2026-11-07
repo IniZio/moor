@@ -36,6 +36,7 @@ fn prompt_req() -> StartReq {
 fn installer() -> AgentInstall {
     AgentInstall {
         script: SCRIPT.to_owned(),
+        present: "true".to_owned(),
         dirs: vec!["~/.local/share/agent".to_owned()],
         check: "true".to_owned(),
     }

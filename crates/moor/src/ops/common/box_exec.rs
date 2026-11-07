@@ -10,7 +10,8 @@ use moor_core::user::UserId;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
-use crate::ops::common::proxy::{box_env, plan};
+use crate::ops::common::proxy::{box_env, plan, ProxyPlan};
+use crate::store::BoxRow;
 
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
@@ -41,17 +42,7 @@ pub(crate) fn proxy(
     repo: Option<&ForgeRepo>,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
-    let (user, others) = requester(cx, box_id)?;
-    let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
-    // A Box with a profile fetches its profile checkout even when it has no repo.
-    let has_profile = cx
-        .store()
-        .map_err(|e| e.error.to_string())?
-        .box_profile(box_id)
-        .map_err(|e| e.to_string())?
-        .is_some();
-    let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
-    let plan = plan(cx, &repos, &mcp.servers, has_profile)?;
+    let (user, plan) = box_plan(cx, box_id, repo)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,
@@ -80,6 +71,36 @@ pub(crate) fn proxy(
         hosts,
     };
     Ok(BoxProxy { addr, rule_env })
+}
+
+/// The user of Box `box_id` and the rules its Proxy would run.
+fn box_plan(
+    cx: &Cx,
+    box_id: BoxId,
+    repo: Option<&ForgeRepo>,
+) -> Result<(UserId, ProxyPlan), String> {
+    let (user, others) = requester(cx, box_id)?;
+    let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
+    // A Box with a profile fetches its profile checkout even when it has no repo.
+    let has_profile = cx
+        .store()
+        .map_err(|e| e.error.to_string())?
+        .box_profile(box_id)
+        .map_err(|e| e.to_string())?
+        .is_some();
+    let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
+    Ok((user, plan(cx, &repos, &mcp.servers, has_profile)?))
+}
+
+/// The env the steps after setup run with on Box `row`, in a steady order. It holds no secret, as
+/// the Proxy places those. With rules that do not resolve it is the repo's alone, and such a Box's
+/// Proxy fails before it reaches those steps.
+pub(crate) fn setup_env(cx: &Cx, row: &BoxRow, cfg: &BoxSettings) -> Vec<(String, String)> {
+    let repo = row.repo.as_ref().map(|r| &r.repo);
+    let rules = box_plan(cx, row.id, repo).map_or_else(|_| Vec::new(), |(_, p)| box_env(&p.rules));
+    let mut env = exec_env::merged_env(cfg.env.clone().into_iter().collect(), rules);
+    env.sort_unstable();
+    env
 }
 
 /// The user the Box acts for and the repos it lists after its primary, read from its row.

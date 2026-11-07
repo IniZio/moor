@@ -136,6 +136,8 @@ fn extra_events_round_trip() {
         ExtraEvent::ProfileResolved {
             repo: crate::name::ForgeRepo::new("o", "p"),
             sha: "abc".into(),
+            sources: Vec::new(),
+            unresolved: Vec::new(),
         },
         ExtraEvent::ProfileFailed {
             step: crate::domain::event::ProfileStep::Fetch,

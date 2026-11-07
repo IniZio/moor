@@ -218,20 +218,50 @@ fn the_failed_layer_is_the_failed_line_s_position_else_the_top() {
 
 #[test]
 fn the_finished_key_changes_with_what_it_holds() {
+    const STEPS: super::FinishedSteps<'static> = super::FinishedSteps {
+        install: "i",
+        profile_sha: "s",
+        plugins: "p",
+        sources: "o",
+        env: "e",
+        dotfiles: "d",
+    };
     let top = &chain(&ID, &lines(&["a"]))[1];
-    let key = super::finished_key(top, "install", "sha", "plugins");
-    assert_eq!(key, super::finished_key(top, "install", "sha", "plugins"));
+    let key = super::finished_key(top, &STEPS);
+    assert_eq!(key, super::finished_key(top, &STEPS));
     let other = &chain(&ID, &lines(&["b"]))[1];
-    assert_ne!(key, super::finished_key(other, "install", "sha", "plugins"));
-    assert_ne!(key, super::finished_key(top, "other", "sha", "plugins"));
-    assert_ne!(key, super::finished_key(top, "install", "other", "plugins"));
-    assert_ne!(key, super::finished_key(top, "install", "sha", "other"));
-    let bob = &chain(
-        &LayerIdentity {
-            user: UserId::new(2),
-            ..ID
+    assert_ne!(key, super::finished_key(other, &STEPS));
+    for changed in [
+        super::FinishedSteps {
+            install: "x",
+            ..STEPS
         },
-        &lines(&["a"]),
-    )[1];
-    assert_ne!(key, super::finished_key(bob, "install", "sha", "plugins"));
+        super::FinishedSteps {
+            profile_sha: "x",
+            ..STEPS
+        },
+        super::FinishedSteps {
+            plugins: "x",
+            ..STEPS
+        },
+        super::FinishedSteps {
+            sources: "x",
+            ..STEPS
+        },
+        super::FinishedSteps { env: "x", ..STEPS },
+        super::FinishedSteps {
+            dotfiles: "x",
+            ..STEPS
+        },
+    ] {
+        assert_ne!(key, super::finished_key(top, &changed), "{changed:?}");
+    }
+    let bob = LayerIdentity {
+        user: UserId::new(2),
+        ..ID
+    };
+    assert_ne!(
+        key,
+        super::finished_key(&chain(&bob, &lines(&["a"]))[1], &STEPS)
+    );
 }

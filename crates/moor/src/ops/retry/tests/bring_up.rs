@@ -26,6 +26,7 @@ fn install_world(driver: FakeDriver) -> (World, Arc<FakeEngine>) {
         .launch_result(Ok(pane_session()))
         .install(AgentInstall {
             script: INSTALL.to_owned(),
+            present: "true".to_owned(),
             dirs: Vec::new(),
             check: "true".to_owned(),
         });

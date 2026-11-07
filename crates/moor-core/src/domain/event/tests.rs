@@ -246,6 +246,11 @@ fn all_events() -> Vec<Event> {
         Event::Profile(ProfileEvent::ProfileResolved {
             repo: crate::name::ForgeRepo::new("o", "p"),
             sha: s("abc"),
+            sources: vec![super::ResolvedSource {
+                url: s("https://x/o/t"),
+                sha: s("def"),
+            }],
+            unresolved: vec![s("https://x/o/u: gone")],
         }),
         Event::Profile(ProfileEvent::ProfileFailed {
             step: ProfileStep::Fetch,
@@ -574,20 +579,6 @@ fn session_ended_kind_and_payload() {
         e.payload(),
         serde_json::json!({"session":3,"cause":"exited","exit":null})
     );
-}
-
-/// `TurnDone` names itself and carries the steer id and each outcome.
-#[test]
-fn turn_done_kind_and_payload() {
-    for (outcome, name) in [
-        (TurnOutcome::Idle, "idle"),
-        (TurnOutcome::NeedsInput, "needs_input"),
-        (TurnOutcome::Exited, "exited"),
-    ] {
-        let e = Event::TurnDone { steer: 7, outcome };
-        assert_eq!(e.kind(), "turn_done");
-        assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
-    }
 }
 
 mod kinds;

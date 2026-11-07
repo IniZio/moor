@@ -128,9 +128,17 @@ impl From<ExtraEvent> for Event {
                 free_mib,
                 needs_mib,
             }),
-            ExtraEvent::ProfileResolved { repo, sha } => {
-                Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
-            }
+            ExtraEvent::ProfileResolved {
+                repo,
+                sha,
+                sources,
+                unresolved,
+            } => Self::Profile(ProfileEvent::ProfileResolved {
+                repo,
+                sha,
+                sources,
+                unresolved,
+            }),
             ExtraEvent::ProfileFailed { step, detail } => {
                 Self::Profile(ProfileEvent::ProfileFailed { step, detail })
             }

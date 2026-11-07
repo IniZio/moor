@@ -6,10 +6,11 @@ use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::profile::{Manifest, PROFILE_MARKETPLACE};
 use moor_core::seam::agent_adapter::BoxSetup;
+use moor_core::seam::engine::GitSource;
 
 use super::Codex;
 use crate::adapters::box_agent::profile_writer::{
-    ProfileCtx, ProfileWriter, COPY_SKILLS, FAILURES_FILE, FAIL_FN,
+    git_sources, ProfileCtx, ProfileWriter, COPY_SKILLS, FAILURES_FILE, FAIL_FN,
 };
 
 #[cfg(test)]
@@ -75,6 +76,10 @@ impl ProfileWriter for Codex {
 
     fn installs(&self, manifest: &Manifest) -> String {
         plugins(manifest)
+    }
+
+    fn sources(&self, manifest: &Manifest) -> Vec<GitSource> {
+        git_sources(&manifest.codex.marketplaces)
     }
 }
 

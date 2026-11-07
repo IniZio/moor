@@ -18,6 +18,15 @@ pub enum ProfileStep {
     Setup,
 }
 
+/// A repo the profile installs from, at the commit it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct ResolvedSource {
+    /// Where the repo is.
+    pub url: String,
+    /// The full commit sha.
+    pub sha: String,
+}
+
 /// The profile resolved to a commit, or a step of getting it into the Box failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -28,6 +37,12 @@ pub enum ProfileEvent {
         repo: crate::name::ForgeRepo,
         /// The full commit sha.
         sha: String,
+        /// The commit each repo the profile installs from resolved to.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sources: Vec<ResolvedSource>,
+        /// Why a repo the profile installs from did not resolve, one per repo.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unresolved: Vec<String>,
     },
     /// A profile step failed; the Box starts without the profile.
     ProfileFailed {

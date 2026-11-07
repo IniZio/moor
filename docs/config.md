@@ -565,19 +565,41 @@ A repo that cannot change such a guard sets `checkpoint.across_commits: false`. 
 key then holds the base commit, so each commit gets its own chain and a new commit
 starts from scratch.
 
-One more layer sits above the last line. It holds the agent install, the profile's
+One more layer sits above the last line. It holds the dotfiles, the agent install, the profile's
 `setup.sh`, and its marketplaces and plugins, which moor installs before the agent starts. Its
-key covers the top line's key, the install script, the profile's commit and the install
-commands. moor saves it only when all of them succeed, so a Box with `profile_failed` saves
+key covers the top line's key and these:
+
+- The install script and the install commands.
+- The profile's commit.
+- The commit of each marketplace.
+- The repo's `env` and the Proxy rules' env.
+- The dotfiles' files and their install script.
+
+moor saves the layer only when all of those steps succeed, so a Box with `profile_failed` saves
 none and the next Box tries again. A Box that forks it runs none of those steps, and
 `warm_started` holds `finished: true`. A Box at another commit also stands on it, and reruns
-only its setup lines. The steps run on it before those lines, not after. Dotfiles are not in
-the key, so they apply on every Box.
+only its setup lines. The steps run on it before those lines, not after.
 
-**A checkpoint keeps what a profile installed until the profile's commit changes.** A
-`setup.sh` that installs `latest` stays at the version it got when moor saved the layer. A new
-profile commit forks the layer below, so no setup line runs again, and runs those steps once
-more. A Box at another commit in that case saves nothing, so it pays for them each time.
+moor still asks a Box that forks this layer whether its agent can start. A setup line or a lost
+cache can remove the agent, so a Box that has none runs all those steps again.
+
+**A new commit of a marketplace reaches your next Box.** moor looks up the commit of each
+marketplace when a Box starts. That is one forge call per marketplace, made in parallel and
+bounded at 5 seconds. A marketplace pinned to a whole commit id needs no call. A new commit forks
+the layer below, runs those steps once, and saves a new layer. No setup line runs again.
+
+moor warns with `profile_source_unresolved` when a marketplace gives no commit in time or is not
+on the forge. That Box forks the layer below, runs those steps, and saves no layer of its own.
+A marketplace off the forge therefore never keeps this layer.
+
+**A checkpoint keeps what `setup.sh` installed until the profile's commit changes.** A `setup.sh`
+that installs `latest` stays at the version it got when moor saved the layer, however old that
+is. Pin versions in your profile, and push a commit when you want a newer one. A new profile
+commit forks the layer below, so no setup line runs again, and runs those steps once more. A Box
+at another commit in that case saves nothing, so it pays for them each time.
+
+A plugin that fails to install stays missing on that Box, and moor reports it. moor installs
+plugins with the repo's `env`, not the `env` of your profile.
 
 The layer belongs to one user, as every key does. It holds what the user's `setup.sh` and
 plugins wrote under the home. moor saves it before the agent first starts, and the Proxy places

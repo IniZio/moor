@@ -19,6 +19,9 @@ use crate::store::Store;
 /// Wall-clock allowance for the install inside the Box.
 pub(crate) const INSTALL_DEADLINE: Duration = Duration::from_mins(10);
 
+/// Wall-clock allowance for asking whether the agent is there.
+const PRESENT_DEADLINE: Duration = Duration::from_mins(1);
+
 /// The warning for an install that did not succeed.
 pub(crate) fn warning(reason: &str) -> Warning {
     Warning {
@@ -88,6 +91,36 @@ pub(crate) fn apply(
     timed_result(cx, store, id, PostCloneStep::AgentInstall, || {
         install_in_box(cx, &site, cfg, proxy.as_ref(), install.script, &log)
     })
+}
+
+/// Whether the Box can start its agent as it is, or moor has no way to tell, which a fork that
+/// holds an install asks since its line reruns and its caches may have lost it. A failed check counts as no.
+pub(crate) fn present(
+    cx: &Cx,
+    (handle, provider): (&BoxHandle, &str),
+    id: BoxId,
+    cfg: &BoxSettings,
+    proxy: &Result<Option<BoxProxy>, String>,
+) -> bool {
+    let (true, Some(install), Ok(proxy)) = (cfg.install_agent, cx.engine().agent_install(), proxy)
+    else {
+        return true;
+    };
+    let Ok(dir) = cx.state_dir() else {
+        return false;
+    };
+    let log = dir.join("agent-install").join(format!("{}.log", id.get()));
+    if private_log(&log).is_err() {
+        return false;
+    }
+    let site = Site {
+        handle,
+        provider,
+        workdir: None,
+    };
+    let limit = ("agent check", PRESENT_DEADLINE);
+    let ran = run(cx, &site, cfg, proxy.as_ref(), install.present, &log, limit);
+    matches!(ran, Ok(ExecOutcome::Exited { code: 0 }))
 }
 
 /// Runs the install script in the Box; why it did not succeed, with the log tail.

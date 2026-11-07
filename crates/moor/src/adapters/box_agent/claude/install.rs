@@ -67,6 +67,10 @@ fn script() -> String {
 pub(super) fn native() -> AgentInstall {
     AgentInstall {
         script: script(),
+        present: format!(
+            "{AGENT_PATH_LINE}\ncommand -v {} >/dev/null 2>&1",
+            quote(Tool::Agent.program())
+        ),
         dirs: vec![INSTALL_DIR.to_owned()],
         check: CHECK.to_owned(),
     }

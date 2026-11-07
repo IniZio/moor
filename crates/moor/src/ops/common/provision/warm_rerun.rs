@@ -68,7 +68,8 @@ pub(super) fn record_disk(
 pub(crate) fn warm_disk_note(store: &Store, id: BoxId) -> Option<String> {
     let rerun = store.newest_events_of(id, "warm_rerun", 1).ok()?.pop()?;
     let machine = store.newest_events_of(id, "box_requested", 1).ok()?.pop();
-    if machine.is_some_and(|m| m.id > rerun.id) {
+    let fork = store.newest_events_of(id, "warm_started", 1).ok()?.pop();
+    if machine.is_some_and(|m| m.id > rerun.id) || fork.is_some_and(|f| f.id > rerun.id) {
         return None;
     }
     let disk = WarmDisk::deserialize(&rerun.payload).ok()?;

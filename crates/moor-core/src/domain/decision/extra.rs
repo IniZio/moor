@@ -208,6 +208,10 @@ pub enum ExtraEvent {
         repo: crate::name::ForgeRepo,
         /// The full commit sha.
         sha: String,
+        /// The commit each repo the profile installs from resolved to.
+        sources: Vec<crate::domain::event::ResolvedSource>,
+        /// Why a repo the profile installs from did not resolve, one per repo.
+        unresolved: Vec<String>,
     },
     /// A profile step failed; the Box starts without the profile.
     ProfileFailed {
