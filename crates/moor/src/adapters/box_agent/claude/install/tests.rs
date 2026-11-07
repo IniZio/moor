@@ -239,3 +239,27 @@ fn the_check_passes_an_empty_dir_or_a_whole_install_and_fails_a_broken_one() {
     b.cache_version("1.0.1", "#!/bin/sh\nexit 1\n");
     assert_ne!(check_code(&b), 0);
 }
+
+/// Whether the install says the agent in `b` can start, under the Box's own `PATH` lines.
+fn agent_present(b: &TestBox) -> bool {
+    std::process::Command::new(b.home.path().join("bin/sh"))
+        .args(["-c", &native().present])
+        .env_clear()
+        .env("HOME", b.home.path())
+        .env("PATH", b.home.path().join("bin"))
+        .status()
+        .unwrap()
+        .success()
+}
+
+#[test]
+fn an_agent_that_is_gone_or_dangling_is_not_present() {
+    let b = TestBox::new(INSTALLER);
+    assert!(!agent_present(&b), "no agent yet");
+    assert_eq!(b.run(&[]).1, 0);
+    assert!(agent_present(&b), "after the install");
+    let link = b.home.path().join(".local/bin/claude");
+    std::fs::remove_file(&link).unwrap();
+    symlink(b.home.path().join("emptied-cache/claude"), &link).unwrap();
+    assert!(!agent_present(&b), "its cache was emptied");
+}

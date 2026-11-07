@@ -427,6 +427,7 @@ fn finished_world(dir: &Path, driver: FakeDriver) -> World {
     let (mut w, _) = dotfiles_world("setup: [a]\n", Some(dir), None, driver.with_checkpoints());
     let engine = FakeEngine::new().install(AgentInstall {
         script: "install-the-agent".to_owned(),
+        present: "true".to_owned(),
         dirs: Vec::new(),
         check: "true".to_owned(),
     });
@@ -434,26 +435,39 @@ fn finished_world(dir: &Path, driver: FakeDriver) -> World {
     w
 }
 
+/// The argv of every exec on the machine of Box `id`.
+fn execs_on(w: &World, id: BoxId) -> Vec<String> {
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    let handle = row.boxed.unwrap().handle.unwrap();
+    let on = w.driver.execs().into_iter().filter(|e| e.0 == handle);
+    on.map(|e| e.1.argv.join(" ")).collect()
+}
+
 #[test]
-fn a_fork_that_holds_the_agent_install_still_applies_the_dotfiles_and_no_install() {
+fn a_fork_that_holds_the_dotfiles_applies_none_until_they_change() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("install.sh"), "one").unwrap();
     let w = finished_world(dir.path(), FakeDriver::new());
     start(&w, "first", "abc123", "setup: [a]\n");
     let next = start(&w, "next", "abc123", "setup: [a]\n");
     let warm = events(&w, next, "warm_started");
     let finished = warm.first().and_then(|e| e.get("finished"));
     assert_eq!(finished, Some(&serde_json::json!(true)));
-    let handle = w.cx.store().unwrap().box_row(next).unwrap().unwrap();
-    let handle = handle.boxed.unwrap().handle.unwrap();
-    let on: Vec<String> = (w.driver.execs().into_iter())
-        .filter(|e| e.0 == handle)
-        .map(|e| e.1.argv.join(" "))
-        .collect();
-    assert!(on.iter().any(|a| a.contains(".moor-dotfiles")), "{on:?}");
+    let on = execs_on(&w, next);
+    assert!(!on.iter().any(|a| a.contains(".moor-dotfiles")), "{on:?}");
     assert!(
         !on.iter().any(|a| a.contains("install-the-agent")),
         "{on:?}"
     );
+    std::fs::write(dir.path().join("install.sh"), "two").unwrap();
+    let changed = start(&w, "changed", "abc123", "setup: [a]\n");
+    let warm = events(&w, changed, "warm_started");
+    assert!(
+        warm.first().and_then(|e| e.get("finished")).is_none(),
+        "{warm:?}"
+    );
+    let on = execs_on(&w, changed);
+    assert!(on.iter().any(|a| a.contains(".moor-dotfiles")), "{on:?}");
 }
 
 #[test]
@@ -467,4 +481,66 @@ fn failed_dotfiles_save_no_layer_above_the_lines() {
         2,
         "the clone and the line"
     );
+}
+
+/// A dotfiles tree with a nested file, as the config that names it.
+fn tree_to_name(dir: &Path) -> DotfilesConfig {
+    std::fs::create_dir_all(dir.join("conf")).unwrap();
+    std::fs::write(dir.join("conf/a"), "one\n").unwrap();
+    DotfilesConfig {
+        path: dir.to_path_buf(),
+        install: Some("install.sh".to_owned()),
+    }
+}
+
+#[test]
+fn the_identity_of_dotfiles_changes_with_each_thing_a_box_would_get() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::ops::common::dotfiles::identity;
+
+    let w = world_with(FakeDriver::new(), UserConfig::default());
+    let dir = tempfile::tempdir().unwrap();
+    let d = tree_to_name(dir.path());
+    let id = |d: &DotfilesConfig| identity(&w.cx, Some(d)).unwrap();
+    let first = id(&d);
+    assert_eq!(id(&d), first, "steady while nothing changes");
+    let mut seen = vec![first];
+    let mut differs = |value: String| {
+        assert!(!seen.contains(&value));
+        seen.push(value);
+    };
+    std::fs::write(dir.path().join("conf/a"), "two\n").unwrap();
+    differs(id(&d));
+    std::fs::rename(dir.path().join("conf/a"), dir.path().join("conf/b")).unwrap();
+    differs(id(&d));
+    let script = dir.path().join("conf/b");
+    let exec = std::fs::Permissions::from_mode(0o755);
+    std::fs::set_permissions(&script, exec).unwrap();
+    differs(id(&d));
+    let other = DotfilesConfig {
+        install: None,
+        path: d.path,
+    };
+    differs(id(&other));
+    assert_eq!(identity(&w.cx, None).as_deref(), Some(""));
+}
+
+#[test]
+fn dotfiles_that_cannot_be_read_have_no_identity() {
+    use crate::ops::common::dotfiles::identity;
+
+    let w = world_with(FakeDriver::new(), UserConfig::default());
+    let dir = tempfile::tempdir().unwrap();
+    let missing = DotfilesConfig {
+        path: dir.path().join("none"),
+        install: None,
+    };
+    assert_eq!(identity(&w.cx, Some(&missing)), None);
+    let d = tree_to_name(dir.path());
+    std::os::unix::fs::symlink(dir.path(), dir.path().join("conf/loop")).unwrap();
+    assert_eq!(identity(&w.cx, Some(&d)), None, "a loop of links ends");
+    std::fs::remove_file(dir.path().join("conf/loop")).unwrap();
+    std::os::unix::fs::symlink("gone", dir.path().join("conf/dangling")).unwrap();
+    assert_eq!(identity(&w.cx, Some(&d)), None);
 }

@@ -51,6 +51,16 @@ impl LaunchPrompt {
     }
 }
 
+/// A git repo a Box installs from at a ref, or the default branch when it names none; the agent
+/// says what it is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitSource {
+    /// Where the repo is.
+    pub url: String,
+    /// The branch, tag or commit.
+    pub git_ref: Option<String>,
+}
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -227,6 +237,11 @@ pub trait Engine: Send + Sync {
     /// [`crate::boxscript::profile::FAILED_PREFIX`], and goes on.
     fn profile_install(&self, _manifest: &Manifest) -> Option<String> {
         None
+    }
+
+    /// The repos that script installs from, whose new commits change what it would install.
+    fn profile_sources(&self, _manifest: &Manifest) -> Vec<GitSource> {
+        Vec::new()
     }
 
     /// The command that relays the agent's live terminal, held by `holder`, through `connect`;

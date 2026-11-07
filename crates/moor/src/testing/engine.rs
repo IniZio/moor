@@ -16,7 +16,7 @@ use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+    AgentFate, Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
@@ -47,6 +47,7 @@ struct State {
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
     profile_install: Option<String>,
+    profile_sources: Vec<GitSource>,
     fates: VecDeque<Result<AgentFate, EngineError>>,
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
@@ -204,11 +205,6 @@ impl FakeEngine {
     pub(crate) fn probe_count(&self, session: &str) -> usize {
         self.st().counts.get(session).copied().unwrap_or(0)
     }
-
-    /// The pane the latest probe of `session` was given; none if never probed.
-    pub(crate) fn probed_pane(&self, session: &str) -> Option<PaneRef> {
-        self.st().panes.get(session).cloned().flatten()
-    }
 }
 
 impl Engine for FakeEngine {
@@ -281,6 +277,10 @@ impl Engine for FakeEngine {
 
     fn profile_install(&self, _manifest: &Manifest) -> Option<String> {
         self.st().profile_install.clone()
+    }
+
+    fn profile_sources(&self, _manifest: &Manifest) -> Vec<GitSource> {
+        self.st().profile_sources.clone()
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

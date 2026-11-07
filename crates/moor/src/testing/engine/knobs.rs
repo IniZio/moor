@@ -3,10 +3,16 @@
 use std::sync::Arc;
 
 use moor_core::seam::engine::EngineError;
+use moor_core::seam::surface::PaneRef;
 
 use super::FakeEngine;
 
 impl FakeEngine {
+    /// The pane the latest probe of `session` was given; none if never probed.
+    pub(crate) fn probed_pane(&self, session: &str) -> Option<PaneRef> {
+        self.st().panes.get(session).cloned().flatten()
+    }
+
     /// Every transcript request writes `text` to its destination.
     pub(crate) fn transcript_text(self, text: &str) -> Self {
         self.st().transcript_text = Some(text.to_owned());

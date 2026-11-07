@@ -13,6 +13,7 @@ use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
 use moor_core::view::DotfilesView;
 use moor_core::{BoxHandle, BoxId, BoxPath};
+use sha2::{Digest, Sha256};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
@@ -64,6 +65,9 @@ impl DotfilesRun {
     }
 }
 
+/// How deep a dotfiles tree is read, which also ends a loop of links.
+const TREE_DEPTH: u32 = 32;
+
 /// A failed dotfiles step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DotfilesFailed {
@@ -91,6 +95,41 @@ pub(crate) fn box_script(stage: &str, archive: &str, install: Option<&str>) -> S
         "set -e; trap \"rm -rf {qs}\" EXIT; rm -rf {tmp}; mkdir -p {tmp}; tar -xzf {qa} -C {tmp}; \
          rm -rf {dir}; mv {tmp} {dir}; cd {dir}; {install}"
     )
+}
+
+/// A hash of the dotfiles a Box would get, as the install script and every file under their root,
+/// following links as the upload does; empty with no dotfiles, none when they cannot be read.
+pub(crate) fn identity(cx: &Cx, dotfiles: Option<&DotfilesConfig>) -> Option<String> {
+    let Some(d) = dotfiles else {
+        return Some(String::new());
+    };
+    let mut hash = Sha256::new();
+    hash.update(d.install.as_deref().unwrap_or_default());
+    hash_tree(&cx.env().expand_home(&d.path), &mut hash, TREE_DEPTH)?;
+    Some(format!("{:x}", hash.finalize()))
+}
+
+/// Adds `dir` to `hash`: each entry's name, sorted, then its mode and bytes or its own entries.
+fn hash_tree(dir: &Path, hash: &mut Sha256, depth: u32) -> Option<()> {
+    let depth = depth.checked_sub(1)?;
+    let mut names: Vec<_> = fs::read_dir(dir)
+        .ok()?
+        .map(|e| Some(e.ok()?.file_name()))
+        .collect::<Option<_>>()?;
+    names.sort_unstable();
+    for name in names {
+        let path = dir.join(&name);
+        let meta = fs::metadata(&path).ok()?;
+        hash.update(name.as_encoded_bytes());
+        hash.update([0]);
+        if meta.is_dir() {
+            hash_tree(&path, hash, depth)?;
+        } else {
+            hash.update(meta.permissions().mode().to_le_bytes());
+            hash.update(fs::read(&path).ok()?);
+        }
+    }
+    Some(())
 }
 
 /// The last [`TAIL_LINES`] lines of `log`, ignoring trailing blank lines.

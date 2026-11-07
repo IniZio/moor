@@ -1,10 +1,13 @@
 //! Turns a checked-out person profile into the config an agent reads on the Box.
 
+use std::collections::BTreeMap;
+
 use moor_core::boxscript::profile::PROFILE_DIR;
 use moor_core::boxscript::AGENT_PATH_LINE;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::profile::Manifest;
+use moor_core::profile::{GithubRepo, Manifest};
 use moor_core::seam::agent_adapter::BoxSetup;
+use moor_core::seam::engine::GitSource;
 
 use super::claude::Claude;
 use super::codex::Codex;
@@ -32,6 +35,25 @@ pub(crate) trait ProfileWriter {
     /// The shell lines that add `manifest`'s marketplaces and install its plugins, which last across
     /// a checkpoint. They read the checkout as `$d`, and report through `fail`.
     fn installs(&self, manifest: &Manifest) -> String;
+
+    /// The repos those lines install from. The profile's own checkout is not one, as its commit is
+    /// known already.
+    fn sources(&self, manifest: &Manifest) -> Vec<GitSource>;
+}
+
+/// The repos every agent's installs read for `manifest`.
+pub(crate) fn all_sources(manifest: &Manifest) -> Vec<GitSource> {
+    let writers: [&dyn ProfileWriter; 2] = [&Claude, &Codex];
+    writers.iter().flat_map(|w| w.sources(manifest)).collect()
+}
+
+/// `marketplaces` as the repos they name.
+pub(crate) fn git_sources(marketplaces: &BTreeMap<String, GithubRepo>) -> Vec<GitSource> {
+    let sources = marketplaces.values().map(|m| GitSource {
+        url: format!("https://github.com/{}", m.repo),
+        git_ref: m.git_ref.clone(),
+    });
+    sources.collect()
 }
 
 /// The script that runs every agent's installs for `manifest`, ahead of the launch; none when it

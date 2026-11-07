@@ -50,6 +50,7 @@ mod profile_env;
 mod profile_install;
 mod profile_model;
 mod profile_setup;
+mod profile_sources;
 mod progress;
 mod prompt_watch;
 mod promptless;

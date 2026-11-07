@@ -204,6 +204,11 @@ impl Cx {
         self.proc.as_ref()
     }
 
+    /// Code forge, for work on another thread.
+    pub(crate) fn shared_forge(&self) -> Arc<dyn Forge> {
+        self.forge.clone()
+    }
+
     /// Code forge.
     pub(crate) fn forge(&self) -> &dyn Forge {
         self.forge.as_ref()

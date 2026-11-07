@@ -202,6 +202,8 @@ fn profile_events_serialize_flat() {
     let resolved = Event::Profile(ProfileEvent::ProfileResolved {
         repo: crate::name::ForgeRepo::new("o", "p"),
         sha: "abc".to_owned(),
+        sources: Vec::new(),
+        unresolved: Vec::new(),
     });
     assert_eq!(
         serde_json::to_string(&resolved).unwrap(),
@@ -238,4 +240,18 @@ fn artifact_published_kind_and_payload() {
         e.payload(),
         serde_json::json!({"name":"shot.png","version":2,"artifact_kind":"screenshot","content_type":"image/png","size":12,"sha256":"ab"})
     );
+}
+
+/// `TurnDone` names itself and carries the steer id and each outcome.
+#[test]
+fn turn_done_kind_and_payload() {
+    for (outcome, name) in [
+        (TurnOutcome::Idle, "idle"),
+        (TurnOutcome::NeedsInput, "needs_input"),
+        (TurnOutcome::Exited, "exited"),
+    ] {
+        let e = Event::TurnDone { steer: 7, outcome };
+        assert_eq!(e.kind(), "turn_done");
+        assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
+    }
 }

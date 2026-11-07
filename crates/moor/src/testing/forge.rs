@@ -3,12 +3,14 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo, GitAuthor, RepoAt, RepoFiles};
 use moor_core::{Secret, Sha};
 
 #[derive(Default)]
 struct State {
+    slow_files: HashMap<ForgeRepo, Duration>,
     repos: HashMap<String, ForgeRepo>,
     reads: HashMap<ForgeRepo, Result<RepoAt, ForgeError>>,
     files: HashMap<(ForgeRepo, Option<String>, &'static str), FileAnswer>,
@@ -95,6 +97,12 @@ impl FakeForge {
         self
     }
 
+    /// Makes `read_file_at` of `repo` take `delay` before it answers.
+    pub(crate) fn with_slow_files(self, repo: ForgeRepo, delay: Duration) -> Self {
+        self.lock().slow_files.insert(repo, delay);
+        self
+    }
+
     /// Every `read_file_at` asked so far, as repo, ref and path, in order.
     pub(crate) fn files_asked(&self) -> Vec<(ForgeRepo, Option<String>, &'static str)> {
         self.lock().files_asked.clone()
@@ -150,6 +158,10 @@ impl Forge for FakeForge {
         _token: &Secret,
     ) -> FileAnswer {
         let key = (repo.clone(), at.map(str::to_owned), path);
+        let slow = self.lock().slow_files.get(repo).copied();
+        if let Some(delay) = slow {
+            std::thread::sleep(delay);
+        }
         let mut state = self.lock();
         state.files_asked.push(key.clone());
         state

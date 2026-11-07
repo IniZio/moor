@@ -17,7 +17,7 @@ use crate::store::Store;
 
 /// Runs what comes after the setup lines, and checkpoints it once it all went well. A Box failing a
 /// line gets no agent, so the steps that prepare one wait for the retry. A fork that holds those
-/// steps runs only the dotfiles, whose files moor does not hash.
+/// steps runs none of them, unless a rerun line or a lost cache took its agent.
 pub(super) fn steps_after_lines(
     cx: &Cx,
     store: &Store,
@@ -30,10 +30,10 @@ pub(super) fn steps_after_lines(
         return Ok((DotfilesRun::Skipped, Ok(())));
     }
     let at = (target.handle, target.provider);
-    if on_fork.layered.is_some_and(Layered::finished) {
-        let dotfiles = apply_dotfiles(cx, store, at, id, cfg, proxy);
+    let holds_steps = on_fork.layered.is_some_and(Layered::finished);
+    if holds_steps && agent_install::present(cx, at, id, cfg, proxy) {
         refresh_login(cx, at.0);
-        return Ok((dotfiles, Ok(())));
+        return Ok((DotfilesRun::Skipped, Ok(())));
     }
     let began = cx.clock().instant();
     let after = after_setup(cx, store, at, id, cfg, proxy)?;

@@ -389,6 +389,30 @@ fn the_agent_of_a_rerun_box_is_told_of_the_disk_and_a_later_cold_machine_is_not(
 }
 
 #[test]
+fn a_box_a_retry_moved_off_its_rerun_tells_its_agent_nothing_of_the_old_disk() {
+    let (w, _) = after_a_partial_setup(FakeDriver::new());
+    w.driver
+        .push_exec_stdout("moor.clone=base\nmoor.warm.changed=2\n");
+    w.forge.answer(repo(), Ok(repo_at("def456", Some(LINES))));
+    let v = run(&w.cx, &repo_req("moved")).unwrap();
+    let id = BoxId::new(v.boxed.id);
+    let store = w.cx.store().unwrap();
+    assert!(warm_disk_note(store, id).is_some());
+    store
+        .apply(Decision::new(id).event(ExtraEvent::WarmStarted {
+            layer: 1,
+            layers: 1,
+            saved_ms: 0,
+            fork_ms: 0,
+            steps: Vec::new(),
+            rerun_from: None,
+            finished: false,
+        }))
+        .unwrap();
+    assert_eq!(warm_disk_note(store, id), None);
+}
+
+#[test]
 fn a_cold_box_tells_its_agent_nothing_of_a_disk() {
     let w = world(FakeDriver::new().with_checkpoints());
     w.forge.answer(repo(), Ok(repo_at("abc123", Some(LINES))));

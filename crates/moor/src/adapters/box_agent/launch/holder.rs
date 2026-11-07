@@ -145,6 +145,7 @@ const HC_DIR: &str = "~/.local/share/moor/herdr-core";
 fn hc_install() -> AgentInstall {
     AgentInstall {
         script: hc_install_script(&HC_BUILDS),
+        present: format!("{AGENT_PATH_LINE}\n{HC_BIN} --version >/dev/null 2>&1"),
         dirs: vec![HC_DIR.to_owned()],
         check: format!(
             "for f in \"$HOME\"/{}/*/{HC_BIN}; do [ ! -e \"$f\" ] || \"$f\" --version >/dev/null 2>&1 || exit 1; done",
@@ -228,6 +229,7 @@ pub(crate) fn with_agent(h: &Holder, agent: Option<AgentInstall>) -> Option<Agen
     };
     Some(AgentInstall {
         script: format!("(\n{}\n) || exit 1\n{}", own.script, agent.script),
+        present: format!("( {} ) && ( {} )", own.present, agent.present),
         dirs: [own.dirs, agent.dirs].concat(),
         check: format!("( {} ) && ( {} )", own.check, agent.check),
     })

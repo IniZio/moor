@@ -155,6 +155,9 @@ pub struct AgentInstall {
     /// present, installs it otherwise, and exits non-zero when the command is still missing. It
     /// is safe to run any number of times.
     pub script: String,
+    /// POSIX sh text that exits 0 only when the agent can be started as it is, so a Box that holds
+    /// an install from a checkpoint can tell it lost it.
+    pub present: String,
     /// The directories, in `~/` form, that hold what the script installs.
     pub dirs: Vec<String>,
     /// POSIX sh text that exits 0 only when `dirs` hold a whole install, or nothing; it runs at

@@ -131,9 +131,17 @@ impl TryFrom<Event> for ExtraEvent {
                 free_mib,
                 needs_mib,
             }),
-            Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
-                Ok(Self::ProfileResolved { repo, sha })
-            }
+            Event::Profile(ProfileEvent::ProfileResolved {
+                repo,
+                sha,
+                sources,
+                unresolved,
+            }) => Ok(Self::ProfileResolved {
+                repo,
+                sha,
+                sources,
+                unresolved,
+            }),
             Event::Profile(ProfileEvent::ProfileFailed { step, detail }) => {
                 Ok(Self::ProfileFailed { step, detail })
             }

@@ -230,6 +230,7 @@ fn a_failed_holder_install_stops_before_the_agent_install() {
     let b = TestBox::new();
     let agent = AgentInstall {
         script: "echo agent >>\"$HOME/log\"; exit 0".to_owned(),
+        present: "true".to_owned(),
         dirs: vec!["~/.agent".to_owned()],
         check: "true".to_owned(),
     };
@@ -245,4 +246,27 @@ fn a_failed_holder_install_stops_before_the_agent_install() {
         with_agent(&HC, None).map(|i| i.dirs),
         Some(vec![HC_DIR.to_owned()])
     );
+}
+
+#[test]
+fn a_box_with_a_holder_counts_its_agent_present_only_with_both() {
+    let b = TestBox::new();
+    let agent = |present: &str| AgentInstall {
+        script: "exit 0".to_owned(),
+        present: present.to_owned(),
+        dirs: Vec::new(),
+        check: "true".to_owned(),
+    };
+    let present = |of: &str| {
+        let joined = with_agent(&HC, Some(agent(of))).unwrap();
+        b.run(&joined.present, "Linux x86_64").1 == 0
+    };
+    assert!(!present("true"), "no holder yet");
+    assert_eq!(
+        b.run(&b.script(None), "Linux x86_64").1,
+        0,
+        "the holder installs"
+    );
+    assert!(present("true"));
+    assert!(!present("false"), "no agent");
 }

@@ -9,7 +9,7 @@ use moor_core::boxscript::warm_disk;
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::layers::{chain, checkpoint_after, finished_key, LayerIdentity, LayerKey};
+use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
 use moor_core::seam::driver::{AcquireReq, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxId, ProviderId, Warning};
@@ -178,7 +178,7 @@ pub(super) fn plan(
     let keys = chain(&identity, &cfg.setup);
     let finished_key = keys
         .last()
-        .and_then(|top| finished_key_of(cx, store, row, cfg, top));
+        .and_then(|top| finished::key_of(cx, store, row, cfg, top));
     Some(Layered {
         finished_key,
         finished: false,
@@ -196,32 +196,6 @@ pub(super) fn plan(
         cache: cache.clone(),
         spent_ms: AtomicU64::new(0),
     })
-}
-
-/// The key of the layer above `top` for Box `row`; none when it has no agent install and no profile.
-fn finished_key_of(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    cfg: &BoxSettings,
-    top: &LayerKey,
-) -> Option<LayerKey> {
-    let install = cfg.install_agent.then(|| cx.engine().agent_install());
-    let install = install.flatten().map(|i| i.script);
-    let profile = store.box_profile(row.id).ok().flatten();
-    if install.is_none() && profile.is_none() {
-        return None;
-    }
-    let manifest = profile.as_ref().and_then(|p| p.manifest.as_deref());
-    let manifest = manifest.and_then(|text| moor_core::profile::parse(text).ok());
-    let plugins = manifest.and_then(|m| cx.engine().profile_install(&m));
-    let sha = profile.as_ref().map_or("", |p| p.sha.as_str());
-    Some(finished_key(
-        top,
-        install.as_deref().unwrap_or_default(),
-        sha,
-        plugins.as_deref().unwrap_or_default(),
-    ))
 }
 
 /// Checkpoints the agent install and profile the target's Box finished in `ms`, once they all went
@@ -376,6 +350,7 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
     }
 }
 
+mod finished;
 mod fork;
 
 pub(super) use fork::{release_old, resume, stand_on_rerun, stand_on_warm_start, warm};
