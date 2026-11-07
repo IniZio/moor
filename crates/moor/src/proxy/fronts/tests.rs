@@ -106,6 +106,7 @@ impl Served {
             Arc::new(vault),
             Some("front-key".to_owned()),
         );
+        crate::proxy::nono::ca::load_or_create_in(&ca_dir(&state), super::CA_NAME).unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let deps = Deps {
             ledger: Arc::new(FrontsLedger::at(socket, "front-key".to_owned())),
