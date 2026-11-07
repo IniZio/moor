@@ -6,16 +6,20 @@
 //! The Proxy answers before it upgrades, so its status is the CONNECT's: `101` becomes
 //! `200 Connection established`, and any other status goes to the client as it came.
 //!
+//! With no token in its config it serves a turn of a front in another pod: each client presents
+//! its lease as the proxy password, and that goes to the Proxy as `Authorization: Basic`, since an
+//! ingress may drop `Proxy-Authorization` as a hop-by-hop header. A client with none gets `407`.
+//!
 //! An absolute-form `http://` request goes the same way with `X-Moor-Plain: 1`. After `101` the
 //! whole request goes into the tunnel, and the Proxy's reply comes back as sent.
 
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
-use rustls::{ClientConfig, RootCertStore};
+use rustls::RootCertStore;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -25,7 +29,9 @@ use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
 mod target;
+mod upstream;
 use target::plain_target;
+pub use upstream::Upstream;
 
 /// The header naming the CONNECT target as `host:port`.
 const TARGET: &str = "x-moor-target";
@@ -53,8 +59,9 @@ struct File {
     listen: SocketAddr,
     /// The Proxy's `/egress` address, `ws://` or `wss://`.
     upstream: String,
-    /// The Box's token.
-    token: String,
+    /// The Box's token; none passes on each client's proxy password.
+    #[serde(default)]
+    token: Option<String>,
 }
 
 /// How the forwarder runs, read from its config file.
@@ -74,86 +81,15 @@ impl Config {
     pub fn parse(json: &str) -> Result<Self, String> {
         let file: File = serde_json::from_str(json).map_err(|e| format!("bad config: {e}"))?;
         let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let upstream = match file.token {
+            Some(token) => Upstream::new(file.upstream, &token, roots)?,
+            None => Upstream::passing_leases(file.upstream, roots)?,
+        };
         Ok(Self {
             listen: file.listen,
-            upstream: Upstream::new(file.upstream, &file.token, roots)?,
+            upstream,
         })
     }
-}
-
-/// The shared Proxy's `/egress` address and the token presented there.
-pub struct Upstream {
-    /// `ws://` or `wss://` address.
-    url: String,
-    /// `Bearer <token>`.
-    bearer: HeaderValue,
-    /// TLS for a `wss://` address.
-    tls: Arc<ClientConfig>,
-    /// How long a CONNECT keeps dialing while the Proxy cannot be reached.
-    patience: Duration,
-}
-
-impl fmt::Debug for Upstream {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Upstream")
-            .field("url", &self.url)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Upstream {
-    /// `url` with `token`, trusting `roots` for `wss://`.
-    ///
-    /// # Errors
-    /// As for [`Config::parse`].
-    pub fn new(url: String, token: &str, roots: RootCertStore) -> Result<Self, String> {
-        match (url.strip_prefix("ws://"), url.starts_with("wss://")) {
-            (Some(rest), _) if !loopback(rest) => {
-                return Err(format!(
-                    "upstream {url} sends the token in the clear; only a loopback ws:// address may"
-                ))
-            }
-            (Some(_), _) | (None, true) => {}
-            (None, false) => {
-                return Err(format!("upstream {url} is not a ws:// or wss:// address"))
-            }
-        }
-        if token.is_empty() {
-            return Err("the token is empty".to_owned());
-        }
-        let mut bearer = HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|_| "the token cannot be sent in a header".to_owned())?;
-        bearer.set_sensitive(true);
-        let tls =
-            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()
-                .map_err(|e| e.to_string())?
-                .with_root_certificates(roots)
-                .with_no_client_auth();
-        Ok(Self {
-            url,
-            bearer,
-            tls: Arc::new(tls),
-            patience: PATIENCE,
-        })
-    }
-
-    /// This upstream, with a CONNECT dialing for at most `patience` while it cannot be reached.
-    #[must_use]
-    pub const fn with_patience(mut self, patience: Duration) -> Self {
-        self.patience = patience;
-        self
-    }
-}
-
-/// Whether the host of `rest`, an address after its scheme, is a loopback name or address.
-fn loopback(rest: &str) -> bool {
-    let authority = rest.split('/').next().unwrap_or_default();
-    let host = authority.strip_prefix('[').map_or_else(
-        || authority.split(':').next().unwrap_or_default(),
-        |v6| v6.split(']').next().unwrap_or_default(),
-    );
-    host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// The first pause after a failed accept.
@@ -191,6 +127,8 @@ struct Connect {
     early: Vec<u8>,
     /// Whether it is a plain `http://` request.
     plain: bool,
+    /// The client's `Basic` proxy credential.
+    lease: Option<HeaderValue>,
 }
 
 /// A WebSocket open to the Proxy.
@@ -211,6 +149,9 @@ async fn forward(mut client: TcpStream, upstream: &Upstream) {
         Ok(None) => return,
         Err(status) => return answer(&mut client, status, b"").await,
     };
+    if upstream.bearer.is_none() && connect.lease.is_none() {
+        return answer(&mut client, StatusCode::PROXY_AUTHENTICATION_REQUIRED, b"").await;
+    }
     match dial(upstream, &connect).await {
         Ok(tunnel) => pump(client, tunnel, connect).await,
         Err(Refused::Status(status, body)) => answer(&mut client, status, &body).await,
@@ -242,12 +183,23 @@ async fn read_connect(client: &mut TcpStream) -> Result<Option<Connect>, StatusC
         return Err(StatusCode::BAD_REQUEST);
     }
     let path = req.path.unwrap_or_default();
+    let lease = req
+        .headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("proxy-authorization"))
+        .filter(|h| h.value.starts_with(b"Basic "))
+        .and_then(|h| HeaderValue::from_bytes(h.value).ok())
+        .map(|mut value| {
+            value.set_sensitive(true);
+            value
+        });
     if req.method != Some("CONNECT") {
         let target = plain_target(path)?;
         return Ok(Some(Connect {
             target,
             early: buf,
             plain: true,
+            lease,
         }));
     }
     let target = Some(path)
@@ -261,6 +213,7 @@ async fn read_connect(client: &mut TcpStream) -> Result<Option<Connect>, StatusC
         target,
         early: buf.split_off(end),
         plain: false,
+        lease,
     }))
 }
 
@@ -291,7 +244,9 @@ async fn dial_once(upstream: &Upstream, connect: &Connect) -> Result<Tunnel, Ref
         .into_client_request()
         .map_err(|e| Refused::Unreachable(format!("bad upstream {}: {e}", upstream.url)))?;
     let headers = req.headers_mut();
-    headers.insert("authorization", upstream.bearer.clone());
+    if let Some(auth) = upstream.bearer.as_ref().or(connect.lease.as_ref()) {
+        headers.insert("authorization", auth.clone());
+    }
     headers.insert(
         TARGET,
         HeaderValue::from_str(&connect.target)
