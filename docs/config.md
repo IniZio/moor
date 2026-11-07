@@ -616,9 +616,9 @@ plugins with the repo's `env`, not the `env` of your profile.
 
 The layer belongs to one user, as every key does. It holds what the user's `setup.sh` and
 plugins wrote under the home. moor saves it before the agent first starts, and the Proxy places
-credentials on the wire, so no agent login or forge token of moor's is on it. The agent's own
-identity files can be on it. Claude Code writes `machineID` and `userID` to `~/.claude.json`
-when `claude plugin` first runs, so that user's forks share them.
+credentials on the wire, so no agent login or forge token of moor's is on it. Claude Code writes
+`machineID`, `userID` and `firstStartTime` to `~/.claude.json` when `claude plugin` first runs.
+A Box's first launch removes them, so it makes its own, and a relaunch keeps them.
 
 A chain lives 7 days from when it was set up from scratch, and rolls forward 8 times at most,
 since each roll is a delta that holds the last on the disk. A Box that finds a chain past either
