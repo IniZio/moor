@@ -4,7 +4,7 @@
 use std::sync::atomic::Ordering;
 
 use moor_core::config::BoxSettings;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::layers::{chain_past_limits, failed_layer, nearest, LayerKey};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, Warning};
@@ -234,7 +234,7 @@ pub(in super::super) fn stand_on_warm_start(
 }
 
 /// The nearest checkpoint of the Box's own base at or below layer `failed`, with its layer.
-fn nearest_of_own_base(
+pub(super) fn nearest_of_own_base(
     store: &Store,
     layered: &Layered,
     failed: usize,
@@ -256,83 +256,14 @@ fn nearest_of_own_base(
 }
 
 /// The layer whose line Box `row` failed last; the top when it names none.
-fn failed_at(store: &Store, row: &BoxRow, cfg: &BoxSettings) -> Result<usize, CommandError> {
+pub(super) fn failed_at(
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+) -> Result<usize, CommandError> {
     let failed = store.newest_events_of(row.id, "setup_failed", 1)?.pop();
     let line = failed.and_then(|e| e.payload.get("line")?.as_str().map(str::to_owned));
     Ok(line.map_or(cfg.setup.len(), |line| failed_layer(&cfg.setup, &line)))
-}
-
-/// Moves Box `row` from the machine `old` onto a new one forked from the nearest checkpoint of its
-/// own base at or below its failed layer, and releases `old`. Returns the new handle; none when
-/// no such checkpoint is kept or the fork fails, and the setup runs in `old` from its start.
-pub(in super::super) fn resume(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    old: &BoxHandle,
-    cfg: &BoxSettings,
-    layered: &mut Layered,
-) -> Result<Option<BoxHandle>, CommandError> {
-    make_room(cx, store, row.id, &layered.home)?;
-    if layered.replacing {
-        return Ok(None);
-    }
-    let failed = failed_at(store, row, cfg)?;
-    let Some((layer, saved)) = nearest_of_own_base(store, layered, failed)? else {
-        return Ok(None);
-    };
-    let Some(key) = layered.keys.get(layer) else {
-        return Ok(None);
-    };
-    store.pin_checkpoint(row.id, &layered.home, key, layer)?;
-    if !store.use_checkpoint(&layered.home, key)? {
-        return Ok(None);
-    }
-    let req = layered.machine_req(cx, store, row, cfg)?;
-    // Planned first, so a fork cut short is still found from its record.
-    let planned = cx.driver().planned_handle(&req);
-    let root = store.plan_lease(row.id, LeaseKind::BoxRoot, planned.as_str())?;
-    let spent = saved.place.as_ref().map_or(0, |p| p.setup_ms);
-    let began = cx.clock().now().as_millis();
-    let (new, told) = match cx.driver().fork(&saved.checkpoint, &req) {
-        Ok(forked) => {
-            let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
-            let told = ExtraEvent::WarmStarted {
-                layer: u32::try_from(layer).unwrap_or(u32::MAX),
-                layers: u32::try_from(layered.keys.len() - 1).unwrap_or(u32::MAX),
-                saved_ms: spent.saturating_sub(fork_ms),
-                fork_ms,
-                steps: forked.steps,
-                rerun_from: None,
-                finished: false,
-            };
-            (forked.handle, told)
-        }
-        Err(e) => {
-            cx.warn(Warning {
-                code: "checkpoint_failed".to_owned(),
-                message: format!(
-                    "could not start from setup layer {layer}: {e}; setup runs from its start"
-                ),
-            });
-            return Ok(None);
-        }
-    };
-    if new == planned {
-        store.hold_lease(root)?;
-    } else {
-        let actual = store.plan_lease(row.id, LeaseKind::BoxRoot, new.as_str())?;
-        store.hold_lease(actual)?;
-    }
-    // One write, so a restart never reads this machine with the fork of the one before it.
-    let moved = Decision::new(row.id).event(told).set(Fields {
-        box_handle: Field::Set(new.clone()),
-        ..Fields::default()
-    });
-    store.apply(moved)?;
-    layered.stand_on(layer, spent);
-    release_old(cx, store, row.id, old)?;
-    Ok(Some(new))
 }
 
 /// Releases the machine the Box left and drops its lease record; one that will not release

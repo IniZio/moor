@@ -329,9 +329,11 @@ pub(super) fn run(
 
 mod finished;
 mod fork;
+mod retry_fork;
 mod save;
 
 use save::save;
 pub(super) use save::{after_finishing, roll_forward};
 
-pub(super) use fork::{release_old, resume, stand_on_rerun, stand_on_warm_start, warm};
+pub(super) use fork::{release_old, stand_on_rerun, stand_on_warm_start, warm};
+pub(super) use retry_fork::resume;
