@@ -6,6 +6,18 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
 use super::{write_manifest, ArtifactRow};
+use crate::blobs::fs::FsBlobs;
+use crate::blobs::BlobKey;
+
+/// The blobs under `dir`.
+fn blobs(dir: &std::path::Path) -> FsBlobs {
+    FsBlobs::new(dir)
+}
+
+/// A manifest directly under the blobs' root.
+fn key() -> BlobKey {
+    BlobKey::raw("artifact-manifest.json")
+}
 
 fn row(name: &str, version: i64, kind: &str, ct: &str, created_ms: i64) -> ArtifactRow {
     ArtifactRow {
@@ -30,7 +42,13 @@ fn writes_exact_json_for_two_rows() {
         row("log.txt", 1, "log", "text/plain", 1_700_000_000_000),
         row("shot.png", 2, "screenshot", "image/png", 1_700_000_060_000),
     ];
-    write_manifest(dir.path(), &rows, Ts::from_millis(1_700_000_120_000)).expect("write");
+    write_manifest(
+        &blobs(dir.path()),
+        &key(),
+        &rows,
+        Ts::from_millis(1_700_000_120_000),
+    )
+    .expect("write");
     let got = std::fs::read_to_string(dir.path().join("artifact-manifest.json")).expect("read");
     let sha = "ab".repeat(32);
     let expected = format!(
@@ -71,7 +89,7 @@ fn writes_exact_json_for_two_rows() {
 #[test]
 fn empty_rows_give_empty_files() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write_manifest(dir.path(), &[], Ts::from_millis(0)).expect("write");
+    write_manifest(&blobs(dir.path()), &key(), &[], Ts::from_millis(0)).expect("write");
     let got = std::fs::read_to_string(dir.path().join("artifact-manifest.json")).expect("read");
     let v: serde_json::Value = serde_json::from_str(&got).expect("json");
     assert_eq!(v.get("files"), Some(&serde_json::json!([])));
@@ -81,7 +99,7 @@ fn empty_rows_give_empty_files() {
 #[test]
 fn file_mode_is_private() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write_manifest(dir.path(), &[], Ts::from_millis(0)).expect("write");
+    write_manifest(&blobs(dir.path()), &key(), &[], Ts::from_millis(0)).expect("write");
     let meta = std::fs::metadata(dir.path().join("artifact-manifest.json")).expect("meta");
     assert_eq!(meta.permissions().mode() & 0o777, 0o600);
 }
@@ -90,8 +108,8 @@ fn file_mode_is_private() {
 fn overwrite_replaces_content() {
     let dir = tempfile::tempdir().expect("tempdir");
     let one = [row("a.txt", 1, "log", "text/plain", 0)];
-    write_manifest(dir.path(), &one, Ts::from_millis(0)).expect("first");
-    write_manifest(dir.path(), &[], Ts::from_millis(0)).expect("second");
+    write_manifest(&blobs(dir.path()), &key(), &one, Ts::from_millis(0)).expect("first");
+    write_manifest(&blobs(dir.path()), &key(), &[], Ts::from_millis(0)).expect("second");
     let got = std::fs::read_to_string(dir.path().join("artifact-manifest.json")).expect("read");
     assert!(!got.contains("a.txt"));
     assert!(!dir.path().join(".artifact-manifest.json.tmp").exists());
@@ -103,7 +121,8 @@ fn symlink_at_target_is_refused_and_left_untouched() {
     let victim = dir.path().join("victim");
     std::fs::write(&victim, "keep").expect("victim");
     symlink(&victim, dir.path().join("artifact-manifest.json")).expect("link");
-    let err = write_manifest(dir.path(), &[], Ts::from_millis(0)).expect_err("refused");
+    let err =
+        write_manifest(&blobs(dir.path()), &key(), &[], Ts::from_millis(0)).expect_err("refused");
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(std::fs::read_to_string(&victim).expect("read"), "keep");
 }
@@ -114,6 +133,6 @@ fn symlink_at_temp_path_is_refused() {
     let victim = dir.path().join("victim");
     std::fs::write(&victim, "keep").expect("victim");
     symlink(&victim, dir.path().join(".artifact-manifest.json.tmp")).expect("link");
-    write_manifest(dir.path(), &[], Ts::from_millis(0)).expect_err("refused");
+    write_manifest(&blobs(dir.path()), &key(), &[], Ts::from_millis(0)).expect_err("refused");
     assert_eq!(std::fs::read_to_string(&victim).expect("read"), "keep");
 }

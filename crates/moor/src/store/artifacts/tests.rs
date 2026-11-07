@@ -10,6 +10,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 use sha2::{Digest, Sha256};
 
+use crate::blobs::fs::FsBlobs;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
@@ -41,7 +42,7 @@ fn first_add_is_version_one_with_content_on_disk() {
     let root = dir.path().join("artifacts");
     let bytes = b"hello";
     let row = store
-        .add_artifact(t, "shot.png", bytes, &root)
+        .add_artifact(t, "shot.png", bytes, &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     let box_dir = root.join(t.get().to_string());
@@ -60,12 +61,16 @@ fn stale_file_without_row_is_replaced() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");
-    let version_dir = dir.path().join(t.get().to_string()).join("v1");
+    let version_dir = dir
+        .path()
+        .join("artifacts")
+        .join(t.get().to_string())
+        .join("v1");
     fs::create_dir_all(&version_dir).unwrap();
     let file = version_dir.join("a.log");
     fs::write(&file, b"stale").unwrap();
     let row = store
-        .add_artifact(t, "a.log", b"fresh", dir.path())
+        .add_artifact(t, "a.log", b"fresh", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(row.version, 1);
@@ -78,7 +83,7 @@ fn row_holds_digest_and_is_listed() {
     let store = open(dir.path());
     let t = add(&store, "a");
     let row = store
-        .add_artifact(t, "a.log", b"hello", dir.path())
+        .add_artifact(t, "a.log", b"hello", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(row.sha256, format!("{:x}", Sha256::digest(b"hello")));
@@ -92,7 +97,9 @@ fn files_and_dirs_are_private() {
     let store = open(dir.path());
     let t = add(&store, "a");
     let root = dir.path().join("artifacts");
-    store.add_artifact(t, "a.log", b"x", &root).unwrap();
+    store
+        .add_artifact(t, "a.log", b"x", &FsBlobs::new(dir.path()))
+        .unwrap();
     let box_dir = root.join(t.get().to_string());
     assert_eq!(mode(&box_dir.join("v1").join("a.log")), 0o600);
     assert_eq!(mode(&box_dir), 0o700);
@@ -105,14 +112,21 @@ fn same_bytes_add_nothing() {
     let store = open(dir.path());
     let t = add(&store, "a");
     store
-        .add_artifact(t, "a.log", b"x", dir.path())
+        .add_artifact(t, "a.log", b"x", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(
-        store.add_artifact(t, "a.log", b"x", dir.path()).unwrap(),
+        store
+            .add_artifact(t, "a.log", b"x", &FsBlobs::new(dir.path()))
+            .unwrap(),
         None
     );
-    assert!(!dir.path().join(t.get().to_string()).join("v2").exists());
+    assert!(!dir
+        .path()
+        .join("artifacts")
+        .join(t.get().to_string())
+        .join("v2")
+        .exists());
     assert_eq!(store.artifacts(t).unwrap().len(), 1);
 }
 
@@ -122,11 +136,11 @@ fn changed_bytes_make_the_next_version() {
     let store = open(dir.path());
     let t = add(&store, "a");
     store
-        .add_artifact(t, "a.log", b"x", dir.path())
+        .add_artifact(t, "a.log", b"x", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     let v2 = store
-        .add_artifact(t, "a.log", b"y", dir.path())
+        .add_artifact(t, "a.log", b"y", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(v2.version, 2);
@@ -140,10 +154,14 @@ fn names_version_independently() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");
-    store.add_artifact(t, "a.log", b"1", dir.path()).unwrap();
-    store.add_artifact(t, "a.log", b"2", dir.path()).unwrap();
+    store
+        .add_artifact(t, "a.log", b"1", &FsBlobs::new(dir.path()))
+        .unwrap();
+    store
+        .add_artifact(t, "a.log", b"2", &FsBlobs::new(dir.path()))
+        .unwrap();
     let b = store
-        .add_artifact(t, "b.log", b"1", dir.path())
+        .add_artifact(t, "b.log", b"1", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     assert_eq!(b.version, 1);
@@ -166,7 +184,12 @@ fn invalid_name_is_rejected_and_nothing_is_written() {
     let t = add(&store, "a");
     let root = dir.path().join("artifacts");
     for name in ["", "../x", "a/b", ".."] {
-        assert!(store.add_artifact(t, name, b"x", &root).is_err(), "{name}");
+        assert!(
+            store
+                .add_artifact(t, name, b"x", &FsBlobs::new(dir.path()))
+                .is_err(),
+            "{name}"
+        );
     }
     assert!(!root.exists());
     assert!(store.artifacts(t).unwrap().is_empty());
@@ -183,7 +206,7 @@ fn symlinked_box_dir_is_refused() {
     fs::create_dir(&elsewhere).unwrap();
     symlink(&elsewhere, root.join(t.get().to_string())).unwrap();
     let err = store
-        .add_artifact(t, "a.log", b"secret", &root)
+        .add_artifact(t, "a.log", b"secret", &FsBlobs::new(dir.path()))
         .unwrap_err();
     assert!(err.to_string().contains(&t.get().to_string()), "{err}");
     assert!(!err.to_string().contains("secret"));
@@ -197,7 +220,7 @@ fn add_records_event_and_writes_manifest() {
     let store = open(dir.path());
     let t = add(&store, "a");
     let row = store
-        .add_artifact(t, "a.log", b"x", dir.path())
+        .add_artifact(t, "a.log", b"x", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     let events = store.events(t, 50).unwrap();
@@ -218,6 +241,7 @@ fn add_records_event_and_writes_manifest() {
     );
     let manifest = dir
         .path()
+        .join("artifacts")
         .join(t.get().to_string())
         .join("artifact-manifest.json");
     let doc: serde_json::Value =
@@ -239,7 +263,13 @@ fn staged_file_is_moved_in_as_a_private_version() {
     let staged = dir.path().join("staged.bin");
     fs::write(&staged, b"hello").unwrap();
     let row = store
-        .add_artifact_staged(t, "shot.png", &staged, &digest(b"hello"), &root)
+        .add_artifact_staged(
+            t,
+            "shot.png",
+            &staged,
+            &digest(b"hello"),
+            &FsBlobs::new(dir.path()),
+        )
         .unwrap()
         .unwrap();
     let file = root.join(t.get().to_string()).join("v1").join("shot.png");
@@ -278,13 +308,19 @@ fn staged_file_with_latest_digest_is_left_in_place() {
     let store = open(dir.path());
     let t = add(&store, "a");
     store
-        .add_artifact(t, "a.log", b"same", dir.path())
+        .add_artifact(t, "a.log", b"same", &FsBlobs::new(dir.path()))
         .unwrap()
         .unwrap();
     let staged = dir.path().join("staged.bin");
     fs::write(&staged, b"same").unwrap();
     let out = store
-        .add_artifact_staged(t, "a.log", &staged, &digest(b"same"), dir.path())
+        .add_artifact_staged(
+            t,
+            "a.log",
+            &staged,
+            &digest(b"same"),
+            &FsBlobs::new(dir.path()),
+        )
         .unwrap();
     assert!(out.is_none());
     assert_eq!(fs::read(&staged).unwrap(), b"same");
@@ -303,7 +339,7 @@ fn staged_symlink_or_missing_path_is_rejected_and_unrecorded() {
     let missing = dir.path().join("missing");
     for staged in [&link, &missing] {
         store
-            .add_artifact_staged(t, "a.log", staged, &digest(b"x"), dir.path())
+            .add_artifact_staged(t, "a.log", staged, &digest(b"x"), &FsBlobs::new(dir.path()))
             .unwrap_err();
     }
     assert!(store.artifacts(t).unwrap().is_empty());

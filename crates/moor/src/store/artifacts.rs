@@ -1,9 +1,8 @@
-//! Artifact versions kept per Box; contents live as files, rows hold the path.
+//! Artifact versions kept per Box; contents live in the blob store, rows hold the digest.
 
-use std::fs::{self, DirBuilder, Permissions};
+use std::fs;
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use moor_core::artifact::{content_type, kind_of, valid_name};
 use moor_core::domain::event::Event;
@@ -14,6 +13,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use super::select::newest_session;
 use super::{Store, StoreError};
+use crate::blobs::{BlobError, BlobKey, Blobs};
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Row, Tx};
 
 /// Columns of an `artifacts` row, in the order `artifact_from_row` reads them.
@@ -60,14 +60,14 @@ pub(crate) struct ArtifactRow {
     pub(crate) size: u64,
     /// Lowercase hex SHA-256 of the contents.
     pub(crate) sha256: String,
-    /// Full path of the file holding this version.
+    /// Where a person finds this version; a reader goes by its key, not this.
     pub(crate) path: String,
     /// When this version was stored.
     pub(crate) created_at: Ts,
 }
 
 impl Store {
-    /// Stores `bytes` as the next version of `name`, under `dir/<box id>/v<version>/<name>`.
+    /// Stores `bytes` as the next version of `name`.
     /// Returns None and writes nothing when the latest stored version has the same digest.
     /// This is the in-memory form tests use; the collect path stages files and moves them.
     #[cfg(test)]
@@ -76,30 +76,19 @@ impl Store {
         box_id: BoxId,
         name: &str,
         bytes: &[u8],
-        dir: &Path,
+        blobs: &dyn Blobs,
     ) -> Result<Option<ArtifactRow>, StoreError> {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-
         use sha2::{Digest, Sha256};
 
         let contents = Contents {
             sha256: format!("{:x}", Sha256::digest(bytes)),
             size: bytes.len() as u64,
         };
-        self.add_version(box_id, name, dir, contents, |file| {
-            fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(file)?
-                .write_all(bytes)?;
-            fs::set_permissions(file, Permissions::from_mode(0o600))
-        })
+        self.add_version(box_id, name, blobs, contents, |key| blobs.put(key, bytes))
     }
 
-    /// Stores the regular file at `staged` as the next version of `name` by moving it under
-    /// `dir/<box id>/v<version>/<name>`; `sha256` is its digest, already checked by the caller.
+    /// Stores the regular file at `staged` as the next version of `name`, which takes it;
+    /// `sha256` is its digest, already checked by the caller.
     /// Returns None and leaves `staged` in place when the latest stored version has the same digest.
     pub(crate) fn add_artifact_staged(
         &self,
@@ -107,7 +96,7 @@ impl Store {
         name: &str,
         staged: &Path,
         sha256: &str,
-        dir: &Path,
+        blobs: &dyn Blobs,
     ) -> Result<Option<ArtifactRow>, StoreError> {
         let meta = fs::symlink_metadata(staged)?;
         if !meta.file_type().is_file() {
@@ -120,20 +109,24 @@ impl Store {
             sha256: sha256.to_owned(),
             size: meta.len(),
         };
-        self.add_version(box_id, name, dir, contents, |file| {
-            move_private(staged, file)
+        self.add_version(box_id, name, blobs, contents, |key| {
+            blobs.put_file(key, staged)
         })
     }
 
     /// Records the next version of `name` unless the digest matches the latest one, calling
-    /// `place` to put the contents at the version's path; `place` runs inside the transaction.
+    /// `place` to store the contents under the version's key.
+    ///
+    /// `place` runs outside any transaction, as the blob store may be slow or gone and every
+    /// store write waits on the one write lock. The Box lock keeps out a second collect, and a
+    /// blob whose row never committed is replaced when that version is tried again.
     fn add_version(
         &self,
         box_id: BoxId,
         name: &str,
-        dir: &Path,
+        blobs: &dyn Blobs,
         contents: Contents,
-        place: impl FnOnce(&Path) -> io::Result<()>,
+        place: impl FnOnce(&BlobKey) -> Result<(), BlobError>,
     ) -> Result<Option<ArtifactRow>, StoreError> {
         let Contents { sha256, size } = contents;
         if !valid_name(name) {
@@ -142,10 +135,8 @@ impl Store {
                 format!("invalid artifact name `{name}`"),
             )));
         }
-        let now = self.now();
-        let mut conn = self.writer();
-        let tx = conn.immediate()?;
-        let latest: Option<(i64, String)> = tx
+        let latest: Option<(i64, String)> = self
+            .reader()?
             .row(
                 Query::select()
                     .columns([Artifacts::Version, Artifacts::Sha256])
@@ -161,35 +152,24 @@ impl Store {
             return Ok(None);
         }
         let version = latest.map_or(1, |(v, _)| v + 1);
-        let box_dir = dir.join(box_id.get().to_string());
-        let version_dir = box_dir.join(format!("v{version}"));
-        let file = version_dir.join(name);
-        refuse_symlink(dir, &file)?;
-        clear_stale(&file)?;
-        DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&version_dir)?;
-        place(&file)?;
+        let key = BlobKey::artifact(box_id, version, name);
+        place(&key).map_err(io::Error::from)?;
+        let now = self.now();
         let fresh = Fresh {
             box_id,
             name,
             version,
             size,
             sha256,
-            path: file.to_string_lossy().into_owned(),
+            path: blobs.locate(&key),
             now,
         };
-        match record(tx, &fresh, &box_dir) {
-            Ok(row) => {
-                drop(conn);
-                Ok(Some(row))
-            }
-            Err(e) => {
-                let _ = fs::remove_file(&file);
-                Err(e)
-            }
-        }
+        let mut conn = self.writer();
+        let row = record(conn.immediate()?, &fresh)?;
+        drop(conn);
+        let rows = self.latest_artifacts(box_id)?;
+        manifest::write_manifest(blobs, &BlobKey::artifact_manifest(box_id), &rows, now)?;
+        Ok(Some(row))
     }
 
     /// Every stored Artifact version of the Box, by name then version.
@@ -230,14 +210,14 @@ struct Fresh<'a> {
     size: u64,
     /// Lowercase hex digest.
     sha256: String,
-    /// Full path of the written file.
+    /// Where a person finds it.
     path: String,
     /// Time of the write.
     now: Ts,
 }
 
-/// Inserts the row and event, rewrites the manifest, and commits.
-fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, StoreError> {
+/// Inserts the row and event, and commits.
+fn record(tx: Tx<'_>, f: &Fresh<'_>) -> Result<ArtifactRow, StoreError> {
     let kind = kind_of(f.name).as_str().to_owned();
     let content_type = content_type(f.name).to_owned();
     let size = i64::try_from(f.size)
@@ -270,8 +250,6 @@ fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, Stor
         sha256: f.sha256.clone(),
     };
     super::apply::insert_event(&tx, f.box_id, &event, f.now)?;
-    let rows = latest_in(&tx, f.box_id)?;
-    manifest::write_manifest(box_dir, &rows, f.now)?;
     let row = tx.row(
         artifact_select().and_where(Expr::col(Artifacts::Id).eq(id)),
         artifact_from_row,
@@ -296,67 +274,6 @@ fn latest_in(conn: &dyn Db, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreErro
         .order_by(Artifacts::Name, Order::Asc)
         .take();
     Ok(conn.rows(q, artifact_from_row)?.collect::<Result<_, _>>()?)
-}
-
-/// Fails when `root` or any existing component down to `to` is a symlink.
-fn refuse_symlink(root: &Path, to: &Path) -> io::Result<()> {
-    match symlink_on_path(root, to) {
-        Ok(None) => Ok(()),
-        Ok(Some(link)) => Err(io::Error::other(format!(
-            "refusing to write through symlink {}",
-            link.display()
-        ))),
-        Err(msg) => Err(io::Error::other(msg)),
-    }
-}
-
-/// The first symlink among `root` and every existing path component from there down to `to`.
-fn symlink_on_path(root: &Path, to: &Path) -> Result<Option<PathBuf>, String> {
-    let rest = to.strip_prefix(root).unwrap_or(to);
-    let mut cur = root.to_path_buf();
-    let steps = std::iter::once(None).chain(rest.components().map(Some));
-    for step in steps {
-        if let Some(c) = step {
-            cur.push(c);
-        }
-        match fs::symlink_metadata(&cur) {
-            Ok(m) if m.file_type().is_symlink() => return Ok(Some(cur)),
-            Ok(_) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(format!("cannot inspect {}: {e}", cur.display())),
-        }
-    }
-    Ok(None)
-}
-
-/// Removes a regular file left at `file` by a write whose row never committed.
-///
-/// Anything else already at `file`, such as a directory, is an error.
-fn clear_stale(file: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(file) {
-        Ok(m) if m.file_type().is_file() => fs::remove_file(file),
-        Ok(_) => Err(io::Error::other(format!(
-            "{} exists and is not a regular file",
-            file.display()
-        ))),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-    }
-}
-
-/// Moves the regular file `from` to the new path `to`, readable by the owner only.
-///
-/// Falls back to copy and remove when the two paths are on different filesystems.
-fn move_private(from: &Path, to: &Path) -> io::Result<()> {
-    match fs::rename(from, to) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
-            fs::copy(from, to)?;
-            fs::remove_file(from)?;
-        }
-        Err(e) => return Err(e),
-    }
-    fs::set_permissions(to, Permissions::from_mode(0o600))
 }
 
 /// Map an `artifacts` row selected in `COLUMNS` order.

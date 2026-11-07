@@ -1,10 +1,7 @@
 //! The host-side `artifact-manifest.json` for a Box, in the crabbox artifact
 //! manifest shape (schema version 1).
 
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::Path;
+use std::io;
 
 use moor_core::seam::clock::Ts;
 use serde::Serialize;
@@ -12,6 +9,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use super::ArtifactRow;
+use crate::blobs::{BlobKey, Blobs};
 
 /// Format a timestamp as RFC3339 UTC with second precision.
 ///
@@ -24,12 +22,6 @@ fn rfc3339(ts: Ts) -> String {
         .and_then(|t| t.format(&Rfc3339).ok())
         .unwrap_or_else(|| ms.to_string())
 }
-
-/// File name of the manifest inside the Box directory.
-const MANIFEST_NAME: &str = "artifact-manifest.json";
-
-/// File name of the temporary file the manifest is staged in.
-const TEMP_NAME: &str = ".artifact-manifest.json.tmp";
 
 /// The manifest document.
 #[derive(Serialize)]
@@ -74,20 +66,19 @@ struct File {
     published_at: String,
 }
 
-/// Writes `<box_dir>/artifact-manifest.json` listing `rows`, which are already
-/// the latest version per name, sorted by name.
-///
-/// The document is staged in a private temp file and renamed over the target.
-/// A symlink at the target or at the temp path is refused.
+/// Writes the Box's manifest under `key`, naming each file where [`Blobs::locate`] says it is.
 pub(super) fn write_manifest(
-    box_dir: &Path,
+    blobs: &dyn Blobs,
+    key: &BlobKey,
     rows: &[ArtifactRow],
     generated_at: Ts,
 ) -> io::Result<()> {
     let manifest = Manifest {
         schema_version: 1,
         generated_at: rfc3339(generated_at),
-        storage: Storage { backend: "local" },
+        storage: Storage {
+            backend: blobs.name(),
+        },
         files: rows
             .iter()
             .map(|r| File {
@@ -105,35 +96,8 @@ pub(super) fn write_manifest(
     let mut body = serde_json::to_string_pretty(&manifest).map_err(io::Error::other)?;
     body.push('\n');
 
-    let target = box_dir.join(MANIFEST_NAME);
-    let temp = box_dir.join(TEMP_NAME);
-    refuse_symlink(&target)?;
-    refuse_symlink(&temp)?;
-
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&temp)?;
-    file.write_all(body.as_bytes())?;
-    file.sync_all()?;
-    drop(file);
-    fs::set_permissions(&temp, fs::Permissions::from_mode(0o600))?;
-    fs::rename(&temp, &target)
-}
-
-/// Fails when `path` exists and is a symlink.
-fn refuse_symlink(path: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("refusing to write through symlink {}", path.display()),
-        )),
-        Ok(_) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-    }
+    blobs.put(key, body.as_bytes())?;
+    Ok(())
 }
 
 #[cfg(test)]

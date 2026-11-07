@@ -180,9 +180,8 @@ fn run(
     tally: &mut Tally<'_>,
 ) -> Result<(), String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;
-    let dir = state.join("artifacts");
     let staging = private_staging(state, &row.id.get().to_string())?;
-    let result = stage_and_store(cx, store, row, (handle, workdir), (&dir, &staging), tally);
+    let result = stage_and_store(cx, store, row, (handle, workdir), &staging, tally);
     let _ = fs::remove_dir_all(&staging);
     result
 }
@@ -193,7 +192,7 @@ fn stage_and_store(
     store: &Store,
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
-    (dir, staging): (&Path, &Path),
+    staging: &Path,
     tally: &mut Tally<'_>,
 ) -> Result<(), String> {
     let text = index_text(cx, handle, workdir, tally.within)?;
@@ -225,7 +224,7 @@ fn stage_and_store(
         row,
         handle,
         workdir,
-        dir,
+        blobs: cx.blobs().map_err(|e| e.error.to_string())?,
         staging,
         within: tally.within,
     };

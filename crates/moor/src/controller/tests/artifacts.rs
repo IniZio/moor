@@ -63,7 +63,7 @@ fn seed(dir: &Path) -> Vec<u8> {
         .apply(Decision::insert(NewBox { name, repo: None }))
         .expect("box")
         .box_id;
-    let root = dir.join("artifacts");
+    let root = crate::blobs::fs::FsBlobs::new(dir);
     let big = patterned(BIG_LEN);
     store
         .add_artifact(id, "demo.log", b"old-v", &root)

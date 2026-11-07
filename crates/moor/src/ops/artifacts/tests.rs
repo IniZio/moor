@@ -46,10 +46,9 @@ fn new_box(cx: &Cx, n: &str) -> BoxId {
 }
 
 fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {
-    let root = cx.state_dir().unwrap().join("artifacts");
     cx.store()
         .unwrap()
-        .add_artifact(t, file, bytes, &root)
+        .add_artifact(t, file, bytes, cx.blobs().unwrap())
         .unwrap();
 }
 
