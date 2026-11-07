@@ -518,9 +518,14 @@ lets in an agent of any release. The welcome names the controller's release.
 When the server needs another release of the agent, `run` exits and names the
 command to fix it, `moor-machine-agent update --version 1.2.3`. That command
 downloads the release's tarball for this OS and CPU from the project's GitHub
-releases, checks it against the published `.sha256` (refusing a mismatch),
-replaces the running binary in place and prints the old and new versions.
-`MOOR_AGENT_RELEASES` points it at a mirror of the releases instead.
+releases, checks it against the published `.sha256` and its minisign
+signature `.minisig` (refusing a mismatch or a missing signature), replaces the
+running binary in place and prints the old and new versions. The agent trusts
+only the public key built into it, `crates/moor-machine-agent/release.pub`.
+`MOOR_AGENT_RELEASES` points it at a mirror of the releases instead, and
+`MOOR_AGENT_RELEASE_KEY` replaces the key for a mirror signed with its own.
+CD signs every tarball with the `MINISIGN_SECRET_KEY` secret and makes no
+release while that secret is unset.
 
 Start `run` with `--auto-update` to have the agent follow the controller's
 release itself. It is off unless the machine's owner asks for it. The agent

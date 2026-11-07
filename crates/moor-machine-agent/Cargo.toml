@@ -18,6 +18,7 @@ moor-client = { path = "../moor-client", features = ["link"] }
 moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }
 flate2 = "1"
+minisign-verify = "0.2"
 self-replace = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 semver = "1"
@@ -46,6 +47,7 @@ tokio = { version = "1", features = [
 ] }
 
 [dev-dependencies]
+minisign = "0.7"
 moor-machine-runner = { path = "../moor-machine-runner" }
 tokio = { version = "1", features = [
   "rt-multi-thread",

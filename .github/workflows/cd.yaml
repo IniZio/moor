@@ -30,6 +30,14 @@ jobs:
     outputs:
       tag: ${{ steps.semantic.outputs.tag }}
     steps:
+      - name: Releases can be signed
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "::error::The MINISIGN_SECRET_KEY secret is not set, so no release is made: agents install only signed releases."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -179,9 +187,42 @@ jobs:
           helm package deploy/helm/moor --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP/chart"
           helm push "$RUNNER_TEMP/chart/moor-$VERSION.tgz" oci://ghcr.io/inizio/charts
 
+  sign:
+    needs: [release, build]
+    if: github.event_name == 'push' && needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+      - name: Install minisign
+        run: sudo apt-get update -q && sudo apt-get install -y -q minisign
+      - name: Sign every tarball with the key agents trust
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          key=$RUNNER_TEMP/minisign.key
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          mkdir -p "$RUNNER_TEMP/dist" && cd "$RUNNER_TEMP/dist"
+          gh release download "$TAG" --pattern '*.tar.gz' --repo "$GITHUB_REPOSITORY"
+          for asset in *.tar.gz; do
+            minisign -S -s "$key" -m "$asset" -t "$asset $TAG" < /dev/null
+            minisign -V -q -p "$GITHUB_WORKSPACE/crates/moor-machine-agent/release.pub" -m "$asset"
+          done
+          gh release upload "$TAG" ./*.minisig --clobber --repo "$GITHUB_REPOSITORY"
+
   gitops:
-    # The agent tarballs must be up before the controller that sends agents to them.
-    needs: [release, build, image]
+    # The agent tarballs and their signatures must be up before the controller that sends
+    # agents to them.
+    needs: [release, build, image, sign]
     if: github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10

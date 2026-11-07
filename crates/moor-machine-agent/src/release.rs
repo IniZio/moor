@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use flate2::read::GzDecoder;
+use minisign_verify::{PublicKey, Signature};
 use moor_client::oidc::Http;
 use sha2::{Digest, Sha256};
 
@@ -17,6 +18,9 @@ const BINARY: &str = "moor-machine-agent";
 const LIMIT: u64 = 256 << 20;
 /// How long one download may take.
 const DOWNLOAD: Duration = Duration::from_secs(300);
+/// The minisign public key every release tarball is signed with; `MOOR_AGENT_RELEASE_KEY`
+/// replaces it, for a mirror signed with its own.
+const RELEASE_KEY: &str = include_str!("../release.pub");
 
 /// What a finished update changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +66,7 @@ pub fn update(version: &str) -> Result<Updated, String> {
     let base = std::env::var("MOOR_AGENT_RELEASES").unwrap_or_else(|_| RELEASES.to_owned());
     let exe = std::env::current_exe().map_err(|e| format!("cannot find this executable: {e}"))?;
     let stage = tempfile::tempdir().map_err(|e| format!("cannot make a staging dir: {e}"))?;
-    let new = fetch(&base, &to, target, stage.path())?;
+    let new = fetch(&base, &to, target, stage.path(), &release_key()?)?;
     self_replace::self_replace(&new)
         .map_err(|e| format!("cannot replace {}: {e}", exe.display()))?;
     Ok(Updated {
@@ -73,8 +77,14 @@ pub fn update(version: &str) -> Result<Updated, String> {
 }
 
 /// Downloads release `version`'s tarball for `target` from under `base`, checks it against its
-/// published checksum, and unpacks the binary into `stage`.
-fn fetch(base: &str, version: &str, target: &str, stage: &Path) -> Result<PathBuf, String> {
+/// published checksum and its signature by `key`, and unpacks the binary into `stage`.
+fn fetch(
+    base: &str,
+    version: &str,
+    target: &str,
+    stage: &Path,
+    key: &PublicKey,
+) -> Result<PathBuf, String> {
     let url = format!(
         "{}/v{version}/{BINARY}-{target}.tar.gz",
         base.trim_end_matches('/')
@@ -92,7 +102,23 @@ fn fetch(base: &str, version: &str, target: &str, stage: &Path) -> Result<PathBu
             "{url} does not match its checksum (published {want:?}, downloaded {got})"
         ));
     }
+    let sig = get(&format!("{url}.minisig"))?;
+    Signature::decode(&String::from_utf8_lossy(&sig))
+        .and_then(|sig| key.verify(&tarball, &sig, false))
+        .map_err(|e| format!("{url} is not signed by the release key: {e}"))?;
     unpack(&tarball, stage).map_err(|e| format!("cannot unpack {url}: {e}"))
+}
+
+/// The key releases must be signed with.
+fn release_key() -> Result<PublicKey, String> {
+    std::env::var("MOOR_AGENT_RELEASE_KEY").map_or_else(
+        |_| {
+            PublicKey::decode(RELEASE_KEY).map_err(|_| "this build holds no release key".to_owned())
+        },
+        |b64| {
+            PublicKey::from_base64(b64.trim()).map_err(|e| format!("MOOR_AGENT_RELEASE_KEY: {e}"))
+        },
+    )
 }
 
 /// The bytes at `url`, which is `https` or, for a mirror on this machine, `file://`.
