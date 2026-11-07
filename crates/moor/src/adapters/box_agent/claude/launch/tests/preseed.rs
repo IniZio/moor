@@ -24,12 +24,12 @@ fn check_preseed_creates_and_merges(path: Option<&str>) {
 
     fs::write(
         &file,
-        json!({"userID": "u", "projects": {wd: {"allowedTools": ["x"]}, "/o": {}}}).to_string(),
+        json!({"kept": "u", "projects": {wd: {"allowedTools": ["x"]}, "/o": {}}}).to_string(),
     )
     .unwrap();
     assert!(run_step_on(&setup, path).status.success());
     let merged = read_json(&file);
-    assert_eq!(merged["userID"], "u");
+    assert_eq!(merged["kept"], "u");
     assert_eq!(merged["projects"]["/o"], json!({}));
     assert_eq!(merged["projects"][wd]["allowedTools"], json!(["x"]));
     assert_eq!(merged["projects"][wd]["hasTrustDialogAccepted"], true);
@@ -63,11 +63,16 @@ fn check_preseed_without_interpreter(path: Option<&str>) {
         read_json(&file)["projects"][c.workdir.as_str()]["hasTrustDialogAccepted"],
         true
     );
-    fs::write(&file, r#"{"keep":1}"#).unwrap();
+    assert!(
+        !run_step_on(&setup, path).status.success(),
+        "a home this step wrote may hold what the agent wrote since"
+    );
+    let launched = r#"{"keep":1,"moorIdentityFresh":true}"#;
+    fs::write(&file, launched).unwrap();
     let out = run_step_on(&setup, path);
-    assert!(!out.status.success());
+    assert!(!out.status.success(), "an agent's state cannot be merged");
     assert!(String::from_utf8_lossy(&out.stderr).contains("could not preseed"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), r#"{"keep":1}"#);
+    assert_eq!(fs::read_to_string(&file).unwrap(), launched);
 }
 
 #[test]
@@ -163,4 +168,81 @@ fn preseed_failure_fails_the_step() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("could not preseed"));
     assert_eq!(fs::read_to_string(&path).unwrap(), "not json");
+}
+
+/// What a checkpoint holds when a plugin install ran before the agent ever started.
+const FORKED: &str = r#"{"machineID":"m","userID":"u","firstStartTime":"t","migrationVersion":14}"#;
+
+fn check_a_forked_home_gets_a_new_identity_once(path: Option<&str>, merges: bool) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let file = format!("{}/.claude.json", c.home.as_str());
+    let setup = Claude.preseed(&c).unwrap();
+    fs::create_dir_all(c.home.as_str()).unwrap();
+    fs::write(&file, FORKED).unwrap();
+    assert!(run_step_on(&setup, path).status.success());
+    let first = read_json(&file);
+    for name in ["machineID", "userID", "firstStartTime"] {
+        assert!(first.get(name).is_none(), "{name} stayed: {first}");
+    }
+    assert_eq!(first["hasCompletedOnboarding"], true);
+    if merges {
+        assert_eq!(first["migrationVersion"], 14);
+        let mut started = first;
+        started["userID"] = json!("this-box");
+        fs::write(&file, started.to_string()).unwrap();
+        assert!(run_step_on(&setup, path).status.success());
+        assert_eq!(
+            read_json(&file)["userID"],
+            "this-box",
+            "a relaunch keeps it"
+        );
+    }
+}
+
+#[test]
+fn a_forked_home_gets_a_new_identity_once_with_python3_only() {
+    forced(Interp::Python, |p| {
+        check_a_forked_home_gets_a_new_identity_once(p, true);
+    });
+}
+
+#[test]
+fn a_forked_home_gets_a_new_identity_once_with_node_only() {
+    forced(Interp::Node, |p| {
+        check_a_forked_home_gets_a_new_identity_once(p, true);
+    });
+}
+
+#[test]
+fn a_forked_home_gets_a_new_identity_without_an_interpreter() {
+    forced(Interp::Neither, |p| {
+        check_a_forked_home_gets_a_new_identity_once(p, false);
+    });
+}
+
+fn check_a_fresh_home_keeps_the_identity_its_first_launch_made(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let file = format!("{}/.claude.json", c.home.as_str());
+    let setup = Claude.preseed(&c).unwrap();
+    fs::create_dir_all(c.home.as_str()).unwrap();
+    assert!(run_step_on(&setup, path).status.success());
+    let mut started = read_json(&file);
+    started["userID"] = json!("this-box");
+    fs::write(&file, started.to_string()).unwrap();
+    assert!(run_step_on(&setup, path).status.success());
+    assert_eq!(read_json(&file)["userID"], "this-box");
+}
+
+#[test]
+fn a_fresh_home_keeps_the_identity_its_first_launch_made() {
+    forced(
+        Interp::Python,
+        check_a_fresh_home_keeps_the_identity_its_first_launch_made,
+    );
+    forced(
+        Interp::Node,
+        check_a_fresh_home_keeps_the_identity_its_first_launch_made,
+    );
 }

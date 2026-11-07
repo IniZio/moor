@@ -12,6 +12,9 @@ use super::interpreters;
 /// Enter prompt; the notice is marked shown without approving the imports. Trust goes on
 /// the workdir, its resolved path and the git repository root above that, since Claude Code keys
 /// trust by the physical cwd and accepts a trusted repository root for any folder inside it.
+///
+/// A home with no [`IDENTITY_MARK`] has not yet seen a launch, but may hold a checkpoint's identity
+/// from `claude plugin`, shared with every fork of it. That goes once, and the agent makes its own.
 const PRESEED_PY: &str = r#"
 import json, os, sys
 p, w = sys.argv[1:3]
@@ -20,6 +23,10 @@ try:
     j = json.load(open(p))
 except FileNotFoundError:
     j = {}
+if not j.get("moorIdentityFresh"):
+    for k in ("machineID", "userID", "firstStartTime"):
+        j.pop(k, None)
+    j["moorIdentityFresh"] = True
 j["hasCompletedOnboarding"] = True
 j["theme"] = "dark"
 r = os.path.realpath(w)
@@ -42,6 +49,10 @@ const fs = require("fs"), path = require("path");
 const [p, w] = process.argv.slice(1);
 let j = {};
 try { j = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { if (e.code !== "ENOENT") throw e; }
+if (!j.moorIdentityFresh) {
+  for (const k of ["machineID", "userID", "firstStartTime"]) delete j[k];
+  j.moorIdentityFresh = true;
+}
 j.hasCompletedOnboarding = true;
 j.theme = "dark";
 j.projects = j.projects || {};
@@ -74,7 +85,7 @@ pub(in crate::adapters::box_agent::claude) fn preseed(
         PRESEED_JS,
         &format!("{file} {workdir}"),
         &format!(
-            "( [ ! -e {file} ] || exit 1; umask 077; \
+            "( ! grep -qF {IDENTITY_MARK} {file} 2>/dev/null || exit 1; umask 077; \
 r=$(cd {workdir} 2>/dev/null && pwd -P) || r={workdir}; \
 g=$r; while [ ! -e \"$g/.git\" ] && [ -n \"$g\" ]; do g=${{g%/*}}; done; \
 [ -e \"$g/.git\" ] || g=$r; \
@@ -91,6 +102,9 @@ case \"$r$g\" in *'\"'*|*'\\'*) printf '%s' {plain} > {file} ;; \
         ),
     })
 }
+
+/// The key of `~/.claude.json` that says this Box's own launch has been through it.
+const IDENTITY_MARK: &str = "moorIdentityFresh";
 
 /// Stands in for the resolved workdir, which only the Box knows, in [`fresh_preseed`].
 const RESOLVED: &str = "MOOR_RESOLVED_WORKDIR";
@@ -114,6 +128,7 @@ fn fresh_preseed(dirs: &[&str]) -> String {
         "hasCompletedOnboarding": true,
         "theme": "dark",
         "projects": trusted,
+        IDENTITY_MARK: true,
     })
     .to_string()
 }
