@@ -430,3 +430,39 @@ fn a_box_cannot_ask_a_runner_for_a_421_itself() {
     assert!(!request.contains("X-Moor-Holder-Only"), "{request}");
     server.drain(Duration::from_secs(5));
 }
+
+#[test]
+fn a_send_that_fails_on_the_last_try_is_a_502() {
+    let w = World::new();
+    let ([service, _a, _b], _) = pods();
+    let addr = service.local_addr().unwrap();
+    let (opened, reset_now) = std::sync::mpsc::channel();
+    let (reset, was_reset) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (conn, _) = service.accept().unwrap();
+        reset_now.recv().unwrap();
+        rustix::net::sockopt::set_socket_linger(&conn, Some(Duration::ZERO)).unwrap();
+        drop(conn);
+        reset.send(()).unwrap();
+    });
+    let (server, _) = holding(&w, addr);
+    let mut tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
+    opened.send(()).unwrap();
+    was_reset.recv().unwrap();
+    let request = format!(
+        "POST http://{MACHINE}/mcp HTTP/1.1\r\nHost: {MACHINE}\r\nContent-Length: {}\r\n\r\n{CALL}",
+        CALL.len()
+    );
+    tunnel.send(Message::binary(request.into_bytes())).unwrap();
+    let mut got = Vec::new();
+    while let Ok(msg) = tunnel.read() {
+        match msg {
+            Message::Binary(b) => got.extend_from_slice(&b),
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+    let reply = String::from_utf8_lossy(&got);
+    assert!(reply.starts_with("HTTP/1.1 502 "), "{reply:?}");
+    server.drain(Duration::from_secs(5));
+}
