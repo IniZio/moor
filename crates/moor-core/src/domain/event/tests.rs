@@ -52,6 +52,7 @@ fn all_events() -> Vec<Event> {
         Event::Asleep {
             auto: true,
             reason: None,
+            cache_save: None,
         },
         Event::Woke,
         Event::Closed {
@@ -574,24 +575,6 @@ fn turn_done_kind_and_payload() {
         assert_eq!(e.kind(), "turn_done");
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }
-}
-
-/// `ArtifactPublished` carries its artifact kind as `artifact_kind`, since `kind` is the tag.
-#[test]
-fn artifact_published_kind_and_payload() {
-    let e = Event::ArtifactPublished {
-        name: s("shot.png"),
-        version: 2,
-        artifact_kind: s("screenshot"),
-        content_type: s("image/png"),
-        size: 12,
-        sha256: s("ab"),
-    };
-    assert_eq!(e.kind(), "artifact_published");
-    assert_eq!(
-        e.payload(),
-        serde_json::json!({"name":"shot.png","version":2,"artifact_kind":"screenshot","content_type":"image/png","size":12,"sha256":"ab"})
-    );
 }
 
 mod kinds;

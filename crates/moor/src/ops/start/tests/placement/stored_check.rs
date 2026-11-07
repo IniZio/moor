@@ -140,7 +140,7 @@ fn an_idle_box_with_a_run_in_flight_is_not_asked_either() {
     let before = calls(&w, "exec");
     let store = w.cx.store().unwrap();
     let settled = autosleep::settled(&w.cx, store, &store.box_row(b).unwrap().unwrap()).unwrap();
-    crate::ops::common::suspend_check::record(&w.cx, store, b, settled);
+    crate::ops::common::suspend_check::record(&w.cx, store, b, settled.is_ok());
     assert_eq!(stored(&w, b), None);
     assert_eq!(calls(&w, "exec"), before);
 }

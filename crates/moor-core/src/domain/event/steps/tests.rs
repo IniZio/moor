@@ -104,7 +104,11 @@ fn lifecycle_events_table_rest() {
     for auto in [true, false] {
         assert_eq!(
             ev(Some(L::Ready), L::Asleep, &I::Sleep { auto, reason: None }),
-            vec![Event::Asleep { auto, reason: None }]
+            vec![Event::Asleep {
+                auto,
+                reason: None,
+                cache_save: None
+            }]
         );
     }
     assert_eq!(ev(Some(L::Asleep), L::Ready, &I::Wake), vec![Event::Woke]);

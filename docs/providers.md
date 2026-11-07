@@ -213,6 +213,33 @@ first, it closes as usual and saves.
 On a personal node the machine's agent reports the feature with the others, so
 the crabbox config on that machine turns it on.
 
+Each `asleep` event says what moor asked for, in `cache_save`:
+
+```json
+{"auto": true, "cache_save": {"state": "allowed"}}
+{"auto": true, "cache_save": {"state": "denied", "reason": "agent_unread"}}
+```
+
+`allowed` means moor asked the provider to save. It does not mean the save
+succeeded. `denied` names one reason:
+
+| Reason | Meaning |
+|---|---|
+| `agent_not_quiet` | The agent was working. |
+| `run_in_flight` | A run was in flight. |
+| `agent_unread` | The agent could not be read, and may have started a turn. |
+| `last_resort` | moor suspended the Box to free memory, whatever it was doing. |
+| `no_feature` | The provider or the machine's agent does not report the feature. |
+| `machine_offline` | The Box's machine is not linked and online as its owner's. |
+
+The field is absent when moor made no decision: a Box with no volumes on a
+provider without the feature, or a Box moor found already stopped.
+
+On a personal node, the machine's agent logs what crabbox said during each
+successful pause, with the lease's slug. The adapter's notes on its sync and its
+publisher start appear there. Only the end of that output is kept, with control
+characters removed.
+
 When the Box has a repo, moor also sends `CRABBOX_CACHE_SCOPE`. Its value is
 the repo group's 16 hex characters, without the group's suffix. A Box
 without a repo, or without volumes, gets no scope.
