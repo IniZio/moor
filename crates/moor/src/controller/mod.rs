@@ -60,17 +60,14 @@ const REFUSED: u8 = 3;
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    // Before the start, as a pod's first process ignores SIGTERM until it handles it and could
-    // wait for the lock through its whole grace period.
-    let wake = match drain::on_sigterm() {
-        Ok(wake) => wake,
-        Err(e) => {
-            log(&sink, &format!("cannot handle SIGTERM: {e}"));
-            return 1;
-        }
+    let on_sigterm = || {
+        drain::on_sigterm().map_err(|e| Stop {
+            code: 1,
+            message: format!("cannot handle SIGTERM: {e}"),
+        })
     };
-    let running = match start_until(env, config, &wake, &sink) {
-        Ok(running) => running,
+    let (running, wake) = match start_until(env, config, on_sigterm, &sink) {
+        Ok(started) => started,
         Err(stop) => {
             log(&sink, &stop.message);
             return stop.code;
@@ -139,9 +136,9 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         message: e.to_string(),
     })?;
     let sink: Sink = Arc::new(Mutex::new(std::io::sink()));
-    let running = start_until(env, config, &wake, &sink);
+    let running = start_until(env, config, || Ok(wake), &sink);
     drop(signal);
-    running
+    running.map(|(running, _wake)| running)
 }
 
 /// `env` with the settings from `cfg` that requests read.
@@ -150,19 +147,33 @@ fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
     crate::blobs::share(env.with_front_webhooks(cfg.webhook_fronts()), &cfg.blobs)
 }
 
-/// Loads `config`, takes the instance lock and the sockets passed in, binding any not passed.
-/// `wake` turning readable ends a wait for the store.
-fn start_until(env: &Env, config: &Path, wake: &UnixStream, sink: &Sink) -> Result<Running, Stop> {
-    let refused = |message: String| Stop { code: 1, message };
-    let mut sockets = Sockets::from_env(env).map_err(refused)?;
+/// The controller config at `config`, or a usage error naming it.
+fn load(config: &Path) -> Result<ControllerConfig, Stop> {
     let failed = |message: String| Stop {
         code: USAGE,
         message,
     };
     let text = fs::read_to_string(config)
         .map_err(|e| failed(format!("cannot read config {}: {e}", config.display())))?;
-    let cfg = parse_controller(&config.display().to_string(), &text)
-        .map_err(|e| failed(e.to_string()))?;
+    parse_controller(&config.display().to_string(), &text).map_err(|e| failed(e.to_string()))
+}
+
+/// Loads `config`, takes the instance lock and the sockets passed in, binding any not passed, and
+/// returns what `wake` made, which turning readable ends a wait for the store and later the
+/// serving. A bad config or a held state dir is reported before any signal is taken.
+fn start_until(
+    env: &Env,
+    config: &Path,
+    wake: impl FnOnce() -> Result<UnixStream, Stop>,
+    sink: &Sink,
+) -> Result<(Running, UnixStream), Stop> {
+    let refused = |message: String| Stop { code: 1, message };
+    let mut sockets = Sockets::from_env(env).map_err(refused)?;
+    let failed = |message: String| Stop {
+        code: USAGE,
+        message,
+    };
+    let cfg = load(config)?;
     let env = cfg.state_dir.as_ref().map_or_else(
         || env.clone(),
         |dir| env.clone().with_state_dir(&env.expand_home(Path::new(dir))),
@@ -178,7 +189,9 @@ fn start_until(env: &Env, config: &Path, wake: &UnixStream, sink: &Sink) -> Resu
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket, LOCK_WAIT))
         .transpose()?;
-    lock::claim(&env, wake, sink)?;
+    // Before the wait, as a pod's PID 1 ignores SIGTERM it has no handler for.
+    let wake = wake()?;
+    lock::claim(&env, &wake, sink)?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
     Moor::settle_keys(&env, &vault, front_ca(&cfg)).map_err(|message| Stop {
@@ -196,7 +209,7 @@ fn start_until(env: &Env, config: &Path, wake: &UnixStream, sink: &Sink) -> Resu
     let ledger = peer::bind_ledger(&env, &mut sockets)?;
     let commands = front_commands(&fronts, &cfg, proxy.as_ref(), &env, &socket).map_err(refused)?;
     sockets.finish().map_err(refused)?;
-    Ok(Running {
+    let running = Running {
         socket,
         listener,
         fronts,
@@ -212,7 +225,8 @@ fn start_until(env: &Env, config: &Path, wake: &UnixStream, sink: &Sink) -> Resu
         settle_every: cfg.settle_every(),
         close_setup_failed_after: cfg.close_setup_failed_after(),
         drain_timeout: cfg.drain_timeout(),
-    })
+    };
+    Ok((running, wake))
 }
 
 /// Whether any front in `cfg` has a Proxy, which needs the front CA.
