@@ -3,6 +3,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
+use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use tungstenite::handshake::derive_accept_key;
@@ -65,7 +66,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
             if let Some(mcp) = &gate.mcp {
                 let mut prefix = head.clone();
                 prefix.extend_from_slice(&leftover);
-                mcp.serve(stream, prefix, gate);
+                mcp.serve(stream, prefix, gate, streams);
             }
         }
         (Some("GET"), "/events") if gate.mcp.is_some() => {
@@ -162,22 +163,8 @@ fn front(
         );
         return;
     };
-    let unix = match gate.controller.stream() {
-        Ok(unix) => unix,
-        Err(e) if client_down(&e) => {
-            unavailable(&mut stream);
-            return;
-        }
-        Err(e) => {
-            log(&format!("the controller is unreachable: {e}"));
-            respond(
-                &mut stream,
-                "502 Bad Gateway",
-                "text/plain",
-                "the controller is unreachable\n",
-            );
-            return;
-        }
+    let Some(unix) = dial_held(&mut stream, gate, streams) else {
+        return;
     };
     let accept = derive_accept_key(key.as_bytes());
     let switched = write!(
@@ -193,6 +180,33 @@ fn front(
         &unix,
         &person,
     );
+}
+
+/// The controller's end for a relay, held for it; answers the client when there is none.
+fn dial_held(stream: &mut TcpStream, gate: &Gate, streams: &Streams) -> Option<UnixStream> {
+    let Some(waiting) = streams.wait() else {
+        unavailable(stream);
+        return None;
+    };
+    let dialled = gate.controller.stream();
+    drop(waiting);
+    match dialled {
+        Ok(unix) => Some(unix),
+        Err(e) if client_down(&e) => {
+            unavailable(stream);
+            None
+        }
+        Err(e) => {
+            log(&format!("the controller is unreachable: {e}"));
+            respond(
+                stream,
+                "502 Bad Gateway",
+                "text/plain",
+                "the controller is unreachable\n",
+            );
+            None
+        }
+    }
 }
 
 /// Answers `503` with `Retry-After` while the controller is away, as a restart makes it.

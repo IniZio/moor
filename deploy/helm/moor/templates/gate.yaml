@@ -22,7 +22,7 @@ metadata:
   labels: {{- include "moor.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.gate.service.type }}
-  selector: {{- include "moor.labels" . | nindent 4 }}
+  selector: {{- include (ternary "moor.gateLabels" "moor.labels" (not (empty (include "moor.gateSeparate" .)))) . | nindent 4 }}
   ports:
     - name: gate
       port: {{ .Values.gate.port }}
@@ -30,11 +30,26 @@ spec:
       {{- with .Values.gate.service.nodePort }}
       nodePort: {{ . }}
       {{- end }}
-    {{- if and .Values.runner.enabled (not .Values.runner.separate) }}
+    {{- if and .Values.runner.enabled (not .Values.runner.separate) (not (include "moor.gateSeparate" .)) }}
     - name: agents
       port: {{ .Values.runner.agentsPort }}
       targetPort: agents
     {{- end }}
+{{- if and .Values.runner.enabled (not .Values.runner.separate) (include "moor.gateSeparate" .) }}
+---
+# The runner stays beside the controller while the gate moves out, so its agents keep a way in.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-agents
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "moor.labels" . | nindent 4 }}
+  ports:
+    - name: agents
+      port: {{ .Values.runner.agentsPort }}
+      targetPort: agents
+{{- end }}
 {{- if .Values.gate.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -76,8 +91,65 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $.Release.Name }}-{{ if $.Values.runner.separate }}runner-agents{{ else }}gate{{ end }}
+                name: {{ $.Release.Name }}-{{ if $.Values.runner.separate }}runner-agents{{ else if include "moor.gateSeparate" $ }}agents{{ else }}gate{{ end }}
                 port: { name: agents }
           {{- end }}
 {{- end }}
+{{- end }}
+{{- if include "moor.gateSeparate" . }}
+{{- $uid := int .Values.controller.uid }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels: {{- include "moor.gateLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gate.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "moor.gateLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "moor.gateLabels" . | nindent 8 }}
+      annotations:
+        checksum/gate: {{ list .Values.egress.key (.Values.egress.ledgerTls | default dict).ca .Values.gate.clientCert .Values.gate.cookieKey | toJson | sha256sum | quote }}
+        {{- range $k, $v := .Values.podAnnotations }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      hostUsers: false
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "moor.gateLabels" . | nindent 20 }}
+      # The preStop sleep, then a drain that outlasts a request held for 30 s, before the kill.
+      terminationGracePeriodSeconds: {{ add .Values.gate.drainSecs 30 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $uid }}
+        runAsGroup: {{ $uid }}
+        fsGroup: {{ $uid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        {{- include "moor.gateContainer" . | nindent 8 }}
+      volumes:
+        - name: gate-tls
+          secret:
+            secretName: {{ .Release.Name }}-egress
+            defaultMode: 0440
+            items:
+              - { key: ledger-ca.pem, path: ledger-ca.pem }
+              - { key: gate-client.crt, path: gate-client.crt }
+              - { key: gate-client.key, path: gate-client.key }
 {{- end }}

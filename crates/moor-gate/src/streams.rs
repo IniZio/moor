@@ -13,6 +13,8 @@ struct Open {
     next: u64,
     /// A handle on each stream held, by number.
     held: Vec<(u64, TcpStream)>,
+    /// Requests waiting for the controller.
+    waiting: usize,
 }
 
 /// Every long-lived connection the gate serves.
@@ -26,6 +28,9 @@ pub(crate) struct Hold<'a> {
     /// Its number.
     id: u64,
 }
+
+/// A request counted as waiting for the controller until this drops.
+pub(crate) struct Waiting<'a>(&'a Streams);
 
 impl Streams {
     /// The state, usable even when a holder panicked.
@@ -47,6 +52,17 @@ impl Streams {
         Some(Hold { streams: self, id })
     }
 
+    /// Counts a request as waiting for the controller, unless [`crate::HOLD_CAP`] already are.
+    pub(crate) fn wait(&self) -> Option<Waiting<'_>> {
+        let mut open = self.open();
+        if open.waiting >= crate::HOLD_CAP {
+            return None;
+        }
+        open.waiting += 1;
+        drop(open);
+        Some(Waiting(self))
+    }
+
     /// Closes every stream held now and every one held later.
     pub(crate) fn close_all(&self) {
         let mut open = self.open();
@@ -60,5 +76,11 @@ impl Streams {
 impl Drop for Hold<'_> {
     fn drop(&mut self) {
         self.streams.open().held.retain(|(id, _)| *id != self.id);
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.open().waiting -= 1;
     }
 }
