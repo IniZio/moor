@@ -16,7 +16,33 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.tip.outputs.run }}
+    steps:
+      - id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          run=true
+          if [ "$EVENT" = pull_request ] && [ "$HEAD_REPO" = "$REPO" ]; then
+            above=$(gh api "repos/$REPO/pulls?state=open&base=$HEAD_REF&per_page=1" --jq length)
+            [ "$above" = 0 ] || run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: stack
+    if: needs.stack.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -92,6 +118,8 @@ jobs:
           cargo test -p moor-core --locked --lib -- --ignored exec_env::tests::egress_load
 
   pty-surface:
+    needs: stack
+    if: needs.stack.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -123,6 +151,8 @@ jobs:
       - run: make unit-pty
 
   macos-fronts:
+    needs: stack
+    if: needs.stack.outputs.run == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
