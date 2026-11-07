@@ -11,6 +11,7 @@ use moor_client::link::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use crate::busy::Busy;
 use crate::files;
 use crate::listen::{self, Link};
 use crate::pool::{self, Pool};
@@ -71,12 +72,20 @@ impl Machine {
 /// Serves the request that opens `ch`, when this machine's mode allows it, and notes it in
 /// `recent`. Every agent serves a status, which is read-only; past that, this match is the
 /// allow-list: a pool host serves only lease and dial, any other machine everything else, and
-/// `exec` only when it was started with `--allow-exec`.
-pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut ch: Channel) {
+/// `exec` only when it was started with `--allow-exec`. `busy` is named for the op.
+pub(crate) async fn serve(
+    machine: &Machine,
+    link: &Link,
+    recent: &Recent,
+    mut ch: Channel,
+    busy: &Busy,
+) {
     let op = match ops::read_line::<_, Op>(&mut ch).await {
         Ok(op) => op,
         Err(e) => return end(ch, refused(e)).await,
     };
+    let what = kind(&op);
+    busy.name(&target(&op).map_or_else(|| what.to_owned(), |t| format!("{what} {t}")));
     if op == Op::Status {
         let reply = Reply::Status(Box::new(status::status(machine, recent).await));
         return end(ch, reply).await;
