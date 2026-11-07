@@ -13,8 +13,10 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind};
 
 use super::{handle_of, pin, split_handle, Crabbox};
+use lost::{lost_or_failed, undone};
 
 pub(super) mod checkpoints;
+mod lost;
 mod power;
 pub(super) use power::{sleep, wake};
 mod list;
@@ -61,7 +63,7 @@ impl Placed<'_> {
     fn ask(&self, verb: Verb, key: Option<&str>) -> Result<Answer, DriverError> {
         self.hosts
             .lease(self.machine, verb, Some(self.slug), key, &Boot::default())
-            .map_err(failed)
+            .map_err(lost_or_failed)
     }
 
     /// Boots the lease's VM with `boot`, by `verb`.
@@ -72,7 +74,7 @@ impl Placed<'_> {
         {
             Ok(Answer::Done) => Ok(()),
             Ok(other) => Err(unexpected(verb, &other)),
-            Err(e) => Err(failed(e)),
+            Err(e) => Err(lost_or_failed(e)),
         }
     }
 
@@ -262,10 +264,7 @@ fn boot_and_reach(cb: &Crabbox, req: &AcquireReq, verb: Verb) -> Result<Acquired
             workdir: BoxPath::restore(&workdir(&user)).map_err(|e| failed(e.to_string()))?,
             handle,
         }),
-        Err(e) => {
-            let _ = release(cb, &handle);
-            Err(e)
-        }
+        Err(e) => Err(undone(cb, &handle, e)),
     }
 }
 

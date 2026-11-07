@@ -23,6 +23,7 @@ mod memory;
 mod reach;
 mod rows;
 mod sweep;
+mod takeover;
 
 pub use checkpoint::checkpoint_op;
 use crabbox::Crabbox;
@@ -30,6 +31,7 @@ use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
 use rows::{held_memory, leases};
 pub(crate) use sweep::sweep;
+use takeover::{adopt, stop_now};
 
 /// How long a VM may take to boot.
 const BOOT: Duration = Duration::from_mins(15);
@@ -239,26 +241,6 @@ async fn act(
         }
         Err(e) => Err(e),
     }
-}
-
-/// Deletes lease `slug` and its dir, with no boot of it going on.
-async fn stop_now(lease: &Crabbox<'_>, slug: &str) -> Result<String, String> {
-    let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
-    let _ = tokio::fs::remove_dir_all(box_dir(lease.home, slug)).await;
-    gone
-}
-
-/// Takes over lease `slug` for a caller whose earlier warmup or fork was cut off: waits for one
-/// going on, or finds its VM up, or boots the VM.
-async fn adopt(lease: &Crabbox<'_>, slug: &str, boot: &Boot) -> Result<Answer, String> {
-    if let Some(ended) = flight::join(&box_dir(lease.home, slug)).await {
-        return ended.map(|()| Answer::Done);
-    }
-    let up = list(lease.home, lease.pool).await?;
-    if up.iter().any(|l| l.slug == slug) {
-        return Ok(Answer::Done);
-    }
-    warmup(lease, slug, boot).await.map(|_| Answer::Done)
 }
 
 /// Pauses the lease with `env` added to crabbox's.

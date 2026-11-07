@@ -19,15 +19,26 @@ pub(super) fn acquire_timed(
     req: &AcquireReq,
 ) -> Result<Acquired, DriverError> {
     timed_result(cx, store, id, PostCloneStep::Acquire, || {
-        cx.driver().acquire_noting(req, &mut progress(store, id))
+        match cx.driver().acquire_noting(req, &mut progress(store, id)) {
+            Err(e) if goes_on_after(cx, req, &e) => take_over(cx, store, id, req),
+            got => got,
+        }
     })
 }
 
-/// Pause before asking a host that has not relinked again.
-const RELINK_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+/// Whether `e` cut off an acquire that goes on without its caller.
+pub(in crate::ops::common::provision) fn goes_on_after(
+    cx: &Cx,
+    req: &AcquireReq,
+    e: &DriverError,
+) -> bool {
+    matches!(e, DriverError::Transport { .. })
+        && cx
+            .driver()
+            .acquire_outlives_caller(&cx.driver().planned_handle(req))
+}
 
-/// Takes over the acquire of Box `id` that a cut-off process left going, timed as an acquire. The
-/// host may not have relinked yet, which is not the acquire failing, so it is asked again.
+/// Takes over the acquire of Box `id` that a cut-off process left going, timed as an acquire.
 pub(super) fn adopt_timed(
     cx: &Cx,
     store: &Store,
@@ -35,18 +46,31 @@ pub(super) fn adopt_timed(
     req: &AcquireReq,
 ) -> Result<Acquired, DriverError> {
     timed_result(cx, store, id, PostCloneStep::Acquire, || {
-        let began = cx.clock().instant();
-        loop {
-            let got = cx.driver().adopt_noting(req, &mut progress(store, id));
-            let waited = cx.clock().instant().saturating_duration_since(began);
-            match got {
-                Err(e) if e.to_string().contains("is not linked") && waited < LINK_WAIT => {
-                    cx.clock().sleep(RELINK_POLL);
-                }
-                got => return got,
-            }
-        }
+        take_over(cx, store, id, req)
     })
+}
+
+/// Pause before asking a host out of reach again.
+const RELINK_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Takes over the acquire going on for Box `id`. A host out of reach is not the acquire failing, so
+/// it is asked again until [`LINK_WAIT`], or until a drain leaves it to the next process.
+pub(in crate::ops::common::provision) fn take_over(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    req: &AcquireReq,
+) -> Result<Acquired, DriverError> {
+    let began = cx.clock().instant();
+    loop {
+        let got = cx.driver().adopt_noting(req, &mut progress(store, id));
+        let waited = cx.clock().instant().saturating_duration_since(began);
+        let again = waited < LINK_WAIT && !cx.env().draining().is_cancelled();
+        match got {
+            Err(DriverError::Transport { .. }) if again => cx.clock().sleep(RELINK_POLL),
+            got => return got,
+        }
+    }
 }
 
 /// Records each note the driver hands over while it acquires Box `id`.

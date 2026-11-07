@@ -152,23 +152,7 @@ impl Driver for FakeDriver {
     }
 
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
-        let mut s = self.st();
-        s.note("list".to_owned());
-        if s.by_handle {
-            return Err(DriverError::Unsupported("listed by handle"));
-        }
-        if let Some(e) = s.fail_list.take().or_else(|| s.fail_list_always.clone()) {
-            return Err(e);
-        }
-        Ok(s.providers
-            .iter()
-            .filter(|(h, p)| p == provider && s.live.contains(h))
-            .map(|(h, _)| BoxListing {
-                handle: BoxHandle::new(h.clone()),
-                provider: Some(provider.clone()),
-                asleep: s.stopped.contains(h),
-            })
-            .collect())
+        self.listed(provider)
     }
 
     fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {

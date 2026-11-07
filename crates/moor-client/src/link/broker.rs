@@ -206,6 +206,20 @@ async fn ask(runner: &Runner, machine_id: i64, op: PoolOp) -> Result<(Conn, Repl
     }
 }
 
+/// Whether a broker call failed because its machine or runner could not be reached or the stream
+/// was cut, so the agent may have gone on; a machine that answered said something else.
+#[must_use]
+pub fn is_link_loss(reason: &str) -> bool {
+    const LOST: [&str; 5] = [
+        "is not linked",
+        "is offline:",
+        "is unreachable:",
+        "the stream ended",
+        "the links broker hung up",
+    ];
+    !reason.contains(" refused: ") && LOST.iter().any(|word| reason.contains(word))
+}
+
 /// What machine `machine_id`'s unexpected `reply` says.
 fn refusal(machine_id: i64, reply: Reply) -> String {
     match reply {

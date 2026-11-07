@@ -6,13 +6,14 @@ use std::sync::atomic::Ordering;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::layers::{chain_past_limits, failed_layer, nearest, LayerKey};
-use moor_core::seam::driver::{AcquireReq, Acquired};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::{Disk, Layered, RollFrom};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::disk::make_room;
+use crate::ops::common::provision::progress::{goes_on_after, take_over};
 use crate::store::checkpoints::{CheckpointRow, Place};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, EventRow, Store};
@@ -92,7 +93,7 @@ pub(in super::super) fn warm(
     id: BoxId,
     req: &AcquireReq,
     layered: &mut Layered,
-) -> Result<Option<Acquired>, CommandError> {
+) -> Result<Option<Result<Acquired, DriverError>>, CommandError> {
     let lines = layered.keys.len() - 1;
     let deepest = deepest_kept(store, layered)?.filter(|_| !layered.replacing);
     let Some((layer, key, kept, place)) = deepest else {
@@ -111,8 +112,11 @@ pub(in super::super) fn warm(
     let layer = layer.min(lines);
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
     let began = cx.clock().now().as_millis();
-    let forked = match cx.driver().fork(&kept.checkpoint, req) {
+    let forked = match fork_or_take_over(cx, store, id, req, &kept.checkpoint) {
         Ok(forked) => forked,
+        Err(e @ DriverError::Transport { .. }) if goes_on_after(cx, req, &e) => {
+            return Ok(Some(Err(e)))
+        }
         Err(e) => {
             let error = e.to_string();
             cx.warn(Warning {
@@ -139,10 +143,28 @@ pub(in super::super) fn warm(
         rerun_from,
         finished,
     }))?;
-    Ok(Some(Acquired {
+    Ok(Some(Ok(Acquired {
         handle: forked.handle,
         workdir: place.workdir,
-    }))
+    })))
+}
+
+/// Forks `checkpoint` for Box `id`; a fork cut off by a lost link goes on at its host and is taken
+/// over.
+fn fork_or_take_over(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    req: &AcquireReq,
+    checkpoint: &str,
+) -> Result<Forked, DriverError> {
+    match cx.driver().fork(checkpoint, req) {
+        Err(e) if goes_on_after(cx, req, &e) => take_over(cx, store, id, req).map(|got| Forked {
+            handle: got.handle,
+            steps: Vec::new(),
+        }),
+        forked => forked,
+    }
 }
 
 /// The event of the fork Box `id`'s current machine came from; none on a machine asked for since.
