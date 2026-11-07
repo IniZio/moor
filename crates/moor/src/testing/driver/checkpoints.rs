@@ -34,6 +34,8 @@ pub(super) struct LayerKnobs {
     hooks: Vec<(String, Arc<ExecHook>)>,
     /// The error the next fork ends with, once.
     fork_fails: Option<DriverError>,
+    /// Run as the next fork starts, outside the lock, once; a panic there is a process dying.
+    during_fork: Option<Arc<ExecHook>>,
     /// What every fork reports it spent its time on.
     fork_steps: Vec<ProviderStep>,
     /// The error the next checkpoint ends with, once.
@@ -89,6 +91,16 @@ impl FakeDriver {
     pub(crate) fn with_fork_steps(self, steps: Vec<ProviderStep>) -> Self {
         self.st().layers.fork_steps = steps;
         self
+    }
+
+    /// Runs `f` as the next fork starts, on a driver already in use.
+    pub(crate) fn during_next_fork(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().layers.during_fork = Some(Arc::new(f));
+    }
+
+    /// Ends the next fork with `e`, on a driver already in use.
+    pub(crate) fn fork_fails_next(&self, e: DriverError) {
+        self.st().layers.fork_fails = Some(e);
     }
 
     /// Ends the next fork with `e`, once.
@@ -278,6 +290,10 @@ impl FakeDriver {
 
     /// A new live Box from a saved checkpoint, under the next planned handle.
     pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
+        let during = self.st().layers.during_fork.take();
+        if let Some(during) = during {
+            during();
+        }
         let mut s = self.st();
         s.note(format!("fork {id}"));
         let seat = req.pool_machine.as_ref().map(|s| s.machine);

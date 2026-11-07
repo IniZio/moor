@@ -63,7 +63,7 @@ pub(super) fn retry_in_box(
             pid: std::process::id(),
         }));
     store.apply(begin)?;
-    set_up_in_machine(cx, store, row, cfg, true)
+    set_up_in_machine(cx, store, row, cfg, Fork::New)
 }
 
 /// Picks up the start a controller restart cut off in Box `id`, which this process claimed, and
@@ -160,7 +160,8 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
     if let Some((handle, _)) = machine(row) {
         setup::await_reachable(cx, handle)?;
     }
-    match set_up_in_machine(cx, store, row, &cfg, false) {
+    let fork = cut_fork(cx, store, row)?;
+    match set_up_in_machine(cx, store, row, &cfg, fork) {
         Ok(done) => Ok(done),
         // The intent stays, so the next process claims this setup again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
@@ -171,6 +172,37 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
     }
 }
 
+/// What a retried setup does about a fork onto a checkpoint.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fork {
+    /// Runs in the machine the Box holds.
+    No,
+    /// Forks the nearest checkpoint first.
+    New,
+    /// Takes over the fork an earlier process left going.
+    Adopt,
+}
+
+/// What became of a retry fork an earlier process left: taken over when its host keeps it going,
+/// else released, as nothing else would.
+fn cut_fork(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Fork, CommandError> {
+    let held = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
+    let Some(planned) = planned_root(store, row.id)?.filter(|p| Some(p) != held) else {
+        return Ok(Fork::No);
+    };
+    if cx.driver().acquire_outlives_caller(&planned) {
+        return Ok(Fork::Adopt);
+    }
+    if release_warned(cx, store, row, &planned) {
+        for lease in store.leases(row.id)? {
+            if lease.key == planned.as_str() {
+                store.drop_lease(lease.id)?;
+            }
+        }
+    }
+    Ok(Fork::No)
+}
+
 /// Runs the clone, setup and dotfiles in the machine `row` holds, then marks it ready; `fork`
 /// first moves a retried Box onto the checkpoint nearest its failed line.
 fn set_up_in_machine(
@@ -178,7 +210,7 @@ fn set_up_in_machine(
     store: &Store,
     row: &BoxRow,
     cfg: &BoxSettings,
-    fork: bool,
+    fork: Fork,
 ) -> Result<Provisioned, CommandError> {
     let (Some((handle, workdir)), Some(held)) = (machine(row), row.boxed.as_ref()) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
@@ -187,9 +219,10 @@ fn set_up_in_machine(
     let plan = cache::derived(cx, store, row, cfg, &held.provider);
     let mut layered = layers::plan(cx, store, row, provider, cfg, &plan);
     let forked = match layered.as_mut() {
-        Some(layered) if fork => {
+        Some(layered) if fork != Fork::No => {
             layers::stand_on_rerun(store, row.id, layered)?;
-            layers::resume(cx, store, row, handle, cfg, layered)?
+            let adopt = fork == Fork::Adopt;
+            layers::resume(cx, store, row, handle, cfg, (layered, adopt))?
         }
         Some(layered) => {
             layers::stand_on_warm_start(store, row.id, layered)?;

@@ -30,7 +30,7 @@ use crate::testing::surface::FakeSurface;
 mod bring_up;
 
 struct World {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
     clock: Arc<FakeClock>,
@@ -64,7 +64,7 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
     )
     .with_forge(forge);
     World {
-        _dir: dir,
+        dir,
         cx,
         driver,
         clock,
@@ -580,3 +580,4 @@ fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_resumes_from_the_deepest_
 }
 
 mod checkpoints;
+mod roll;

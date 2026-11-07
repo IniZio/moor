@@ -74,6 +74,9 @@ pub(crate) fn run_with_reason(
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
     let box_deleted = wind_down(cx, store, &row, &plan, req.force, probed_clean)?;
+    if req.force {
+        release_stray(cx, store, &row)?;
+    }
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     if let Err(e) = cx.proxy_host().stop(row.id) {
@@ -129,7 +132,7 @@ fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
     let interrupted = (force && (in_setup || acquiring))
         .then(|| boxlock::interrupt(state, row.id))
         .flatten();
-    if force && acquiring {
+    if force && (acquiring || in_setup) {
         cancel_boot(cx, store, row)?;
     }
     if let Some(ended) = interrupted {
@@ -157,6 +160,22 @@ fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
             e
         }
     })
+}
+
+/// Releases the machine a retry's fork made for `row` and never moved it to; the Box's own machine
+/// is released by the close itself, so it is left out.
+fn release_stray(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let own = row.boxed.as_ref().and_then(held);
+    let Some(stray) = planned_root(store, row.id)?.filter(|p| Some(p) != own) else {
+        return Ok(());
+    };
+    if let Err(e) = cx.driver().release(&stray) {
+        cx.warn(Warning {
+            code: "box_release_failed".to_owned(),
+            message: format!("could not release {}: {e}", stray.as_str()),
+        });
+    }
+    Ok(())
 }
 
 /// Tells the host of `row` to end the boot it may still run for the start this close stops.
