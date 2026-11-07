@@ -117,6 +117,11 @@ impl FakeDriver {
         self.st().fail_acquire = Some(e);
     }
 
+    /// Ends every `exec` whose argv mentions `needle` with `outcome`, on a driver already in use.
+    pub(crate) fn ends_exec_when(&self, needle: &str, outcome: ExecOutcome) {
+        self.st().exec_ends.push((needle.to_owned(), outcome));
+    }
+
     /// Has a cut acquire go on without its caller and keep its slug, as a pool host's does.
     pub(crate) fn cut_acquires_go_on(self) -> Self {
         self.st().flight.goes_on = true;

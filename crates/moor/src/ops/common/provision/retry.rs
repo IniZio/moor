@@ -63,7 +63,8 @@ pub(super) fn retry_in_box(
 /// or is running is attached to rather than run again. The Box lock is held meanwhile; a Box that
 /// is no longer claimed is left alone.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
+        .interruptible(cx.env().cancel());
     let row = super::reread(store, id)?;
     let me = std::process::id();
     let acquiring = row.intent == Some(Intent::Provisioning { pid: me });

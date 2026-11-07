@@ -125,6 +125,79 @@ fn a_cut_acquire_that_cannot_be_released_is_not_tried_again() {
     assert_eq!(w.driver.acquired_nonces().len(), 0);
 }
 
+/// What a runner that exits with a call in flight leaves the caller.
+fn runner_gone() -> DriverError {
+    DriverError::Transport {
+        stderr_tail: "the stream ended: unexpected end of file".to_owned(),
+    }
+}
+
+#[test]
+fn a_takeover_cut_when_its_runner_exits_is_asked_again_of_the_next_runner() {
+    let w = cut_off(
+        FakeDriver::new()
+            .cut_acquires_go_on()
+            .adopt_fails(1, &runner_gone()),
+    );
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    let events = store.events(row.id, 80).unwrap();
+    assert!(!events.iter().any(|e| e.kind == "setup_failed"));
+    assert!(releases(&w).is_empty());
+}
+
+#[test]
+fn a_forced_close_interrupts_a_setup_a_restarted_controller_follows() {
+    let (mut w, _) = restarted_mid_setup("setup: [sdkmanager]\n");
+    w.driver
+        .ends_exec_when(".moor/runs/", ExecOutcome::Interrupted);
+    let fresh = Cx::fake(
+        w.dir.path(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+    );
+    let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
+    w.cx = cx;
+    let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
+    let (dir, driver, surface, proc, slot) = (
+        w.dir.path().to_owned(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+        closer.clone(),
+    );
+    w.driver.on_exec_of(".moor/runs/", move || {
+        let mut slot = slot.lock().unwrap();
+        if slot.is_none() {
+            let (dir, driver, surface, proc) =
+                (dir.clone(), driver.clone(), surface.clone(), proc.clone());
+            *slot = Some(std::thread::spawn(move || {
+                let other = Cx::fake_with(&dir, driver, surface, proc, UserConfig::default());
+                close_demo_in(&other)
+                    .map(|v| v.boxed.lifecycle)
+                    .map_err(|e| e.error.to_string())
+            }));
+        }
+        drop(slot);
+        for _ in 0..15_000 {
+            if cancel.is_cancelled() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    });
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    drop(resume_setup(&w.cx, store, BoxId::new(1)));
+    let closing = closer.lock().unwrap().take();
+    let outcome = closing.expect("close ran during the setup").join().unwrap();
+    assert_eq!(outcome, Ok(BoxLifecycle::Closed));
+}
+
 /// What a lost link looks like to the driver.
 fn link_lost() -> DriverError {
     DriverError::Transport {

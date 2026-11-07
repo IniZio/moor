@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::drain::Drain;
 use super::{log, settle, Running, Sink};
-use crate::env::Env;
+use crate::env::{Cancel, Env};
 use crate::Moor;
 use moor_core::BoxId;
 
@@ -68,7 +68,9 @@ pub(super) fn serve_started(
 /// drain does not wait for them, as the setup goes on in the Box and the next process follows it.
 fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink) {
     for id in claimed {
-        let (env, sink) = (Arc::clone(env), Arc::clone(sink));
+        // Its own stop flag, so a forced close interrupting this start stops only it.
+        let env = Env::clone(env).with_cancel(Cancel::default());
+        let sink = Arc::clone(sink);
         std::thread::spawn(move || {
             let lines = Moor::from_env(&env).map_or_else(
                 |e| vec![e.error.to_string()],

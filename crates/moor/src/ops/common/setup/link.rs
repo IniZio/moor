@@ -60,6 +60,9 @@ pub(crate) fn await_reachable(cx: &Cx, handle: &BoxHandle) -> Result<(), Release
         if cx.env().draining().is_cancelled() {
             return Err(Released);
         }
+        if cx.env().cancel().is_cancelled() {
+            break;
+        }
         let waited = cx.clock().instant().saturating_duration_since(began);
         if waited >= LINK_WAIT {
             break;
