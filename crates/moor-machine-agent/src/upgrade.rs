@@ -5,6 +5,7 @@
 use std::convert::Infallible;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
+use std::time::Duration;
 
 use tokio::sync::watch;
 
@@ -16,6 +17,8 @@ pub(crate) type Log<'a> = &'a (dyn Fn(&str) + Sync);
 /// The release a restarted agent was just updated to, so that a server still naming it is
 /// reported instead of updated for again.
 const UPDATED_TO: &str = "MOOR_AGENT_UPDATED_TO";
+/// How long a restart waits for work to end before the agent says what holds it.
+const PATIENCE: Duration = Duration::from_mins(30);
 
 /// Why `run_with` stops for a server that refuses this release and needs `version`: the update
 /// failed, the restart failed, or updating was not asked for.
@@ -52,7 +55,15 @@ async fn install(need: String, version: &str, log: Log<'_>) -> String {
         "updated from {} to {}; restarting once no stream or boot is going on",
         done.from, done.to
     ));
-    let why = busy::when_idle(|| {
+    let to = done.to.clone();
+    let stuck = |held: &[String]| {
+        log(&format!(
+            "the update to {to} has waited {} minutes, held by: {}",
+            PATIENCE.as_secs() / 60,
+            held.join(", ")
+        ));
+    };
+    let why = busy::when_idle(PATIENCE, stuck, || {
         Command::new(&done.exe)
             .args(std::env::args_os().skip(1))
             .env(UPDATED_TO, &done.to)

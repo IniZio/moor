@@ -37,10 +37,9 @@ pub(crate) async fn hold(
     let (machine, recent) = (Arc::clone(machine), Arc::clone(recent));
     let take = move |ch| {
         let (machine, streams) = (Arc::clone(&machine), streams.clone());
-        let (recent, busy) = (Arc::clone(&recent), busy::busy());
+        let (recent, busy) = (Arc::clone(&recent), busy::busy("a stream"));
         tokio::spawn(async move {
-            let _busy = busy;
-            serve::serve(&machine, &streams, &recent, ch).await;
+            serve::serve(&machine, &streams, &recent, ch, &busy).await;
         });
     };
     let (drain, draining) = oneshot::channel();

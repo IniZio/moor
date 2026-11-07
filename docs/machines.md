@@ -531,7 +531,9 @@ background and keeps serving. It restarts with the same arguments only once no
 stream the runner opened is open and no Box is booting or forking. A restart
 closes the link and every stream on it, and nothing resumes a cut `exec`,
 hook, relay or forward, so the agent waits for them all. A forward or dial
-held open for long delays the restart for as long. A failed background update
+held open for long delays the restart for as long. After 30 minutes of waiting
+the agent logs once which streams and boots hold the restart, and keeps
+waiting. A failed background update
 is logged and the agent keeps running its release. Without `--auto-update` the
 agent logs that an update exists and keeps running. When the controller
 refuses the agent's release, the agent updates the same way and a failed
