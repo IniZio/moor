@@ -71,13 +71,38 @@ fn close_demo_in(cx: &Cx) -> Result<moor_core::view::CloseView, crate::error::Co
 }
 
 #[test]
-fn a_start_cut_off_by_a_restart_fails_and_releases_its_planned_machine() {
+fn a_start_cut_off_by_a_restart_acquires_once_more() {
     let w = cut_off(FakeDriver::new());
-    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(releases(&w), ["release box-1"]);
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+    let events = store.events(row.id, 50).unwrap();
+    assert!(!events.iter().any(|e| e.kind == "setup_failed"));
+}
+
+#[test]
+fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
+    let w = cut_off(FakeDriver::new());
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.driver.notes_while_acquiring(&[], || {
+        std::panic::resume_unwind(Box::new("process died mid-acquire"))
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(resume_setup(&w.cx, store, BoxId::new(1)));
+    }));
+    assert!(crashed.is_err());
+    w.driver.notes_while_acquiring(&[], || {});
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(row.intent, None);
-    assert_eq!(releases(&w), ["release box-1"]);
+    assert_eq!(releases(&w).len(), 2);
     let events = w.cx.store().unwrap().events(row.id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     assert!(
@@ -119,7 +144,9 @@ fn a_failed_release_of_an_unfinished_box_refuses_the_close() {
     let w = cut_off(FakeDriver::new().fail_release_always(DriverError::Failed {
         summary: "provider down".into(),
     }));
-    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
     let e = close_demo(&w).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("provider down"), "{}", e.error);

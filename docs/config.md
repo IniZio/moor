@@ -879,7 +879,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
 | `workflow_min_interval_secs` | integer, above 0 | 3600 | The shortest gap a [workflow](workflows.md) cron may leave between two firings. Lower it only to try a workflow quickly. |
-| `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
+| `drain_timeout_secs` | integer | 30 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 | `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. `client_ca` is the PEM CA bundle every client's certificate must chain to; a client without one fails the handshake. The listener answers the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. A machine runner whose hello is `{"runner":{"v":1,"key":KEY}}`, with `KEY` the controller's `MOOR_MACHINE_SERVICE_KEY`, is served as on the runner socket; it presents its client certificate from `--controller-cert`. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem --ledger-cert CLIENT.pem --ledger-key CLIENT.key`. |
 
@@ -979,10 +979,11 @@ things:
    the moment the drain began gets an error frame of kind `restarting`.
 2. A `wait`, `wait-events`, or `watch` gets an error frame of kind
    `restarting` and is closed. Send it again once a controller listens.
-3. Any other request in flight, such as a `start`, `close`, or `run`, runs
-   to its end. The controller waits up to `drain_timeout_secs` for these
-   requests, then exits anyway. A `start` cut off this way leaves its Box to
-   `moor close`.
+3. A `start` or `retry` is not waited for. It is cut when the controller exits,
+   and the next controller follows its setup or acquires its machine once more.
+   Any other request in flight, such as a `close` or `run`, runs to its end. The
+   controller waits up to `drain_timeout_secs` for these requests, then exits
+   anyway.
 4. No request runs once the drain began. Each connection ends with an
    error frame of kind `restarting` that names no request. A request that was
    half sent, sent behind another, or sent just after the signal can be sent

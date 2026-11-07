@@ -48,6 +48,18 @@ struct Live {
     /// Admitted work by number; a connection's handle is out while it answers a request, so
     /// the drain leaves its reads alone.
     streams: Vec<(u64, Option<UnixStream>)>,
+    /// The numbers of the connections answering a request the next process picks up.
+    left_out: Vec<u64>,
+}
+
+impl Live {
+    /// How much admitted work the drain still waits for.
+    fn waited_for(&self) -> usize {
+        self.streams
+            .iter()
+            .filter(|(id, _)| !self.left_out.contains(id))
+            .count()
+    }
 }
 
 impl Drain {
@@ -121,11 +133,10 @@ impl Drain {
     /// Waits up to `timeout` for all admitted work to end; returns how much remains.
     fn settle(&self, timeout: Duration) -> usize {
         self.ended
-            .wait_timeout_while(self.live(), timeout, |l| !l.streams.is_empty())
+            .wait_timeout_while(self.live(), timeout, |l| l.waited_for() > 0)
             .unwrap_or_else(PoisonError::into_inner)
             .0
-            .streams
-            .len()
+            .waited_for()
     }
 
     /// The live set, locked.
@@ -164,6 +175,14 @@ impl Admitted {
         Some(Answering { of: self, handle })
     }
 
+    /// Has the drain not wait for this connection until the guard drops: what it answers meanwhile
+    /// is cut when the process exits, and the next process picks that up.
+    pub(crate) fn left_out_of_drain(&self) -> LeftOut<'_> {
+        self.drain.live().left_out.push(self.id);
+        self.drain.ended.notify_all();
+        LeftOut(self)
+    }
+
     /// A connection no drain waits for, for tests that serve one by hand.
     #[cfg(test)]
     pub(crate) fn unwatched() -> Self {
@@ -181,6 +200,16 @@ pub(crate) struct Answering<'a> {
     of: &'a Admitted,
     /// The connection's read handle, held back from the drain.
     handle: Option<UnixStream>,
+}
+
+/// A connection the drain does not wait for, while this lives.
+pub(crate) struct LeftOut<'a>(&'a Admitted);
+
+impl Drop for LeftOut<'_> {
+    fn drop(&mut self) {
+        let id = self.0.id;
+        self.0.drain.live().left_out.retain(|left| *left != id);
+    }
 }
 
 impl Drop for Answering<'_> {

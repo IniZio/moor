@@ -44,7 +44,7 @@ controller:
   drivers: {}
   settleEverySecs: 5
   # Kept short while one pod runs everything: the pod is replaced, not rolled.
-  drainTimeoutSecs: 60
+  drainTimeoutSecs: 30
   resources: {}
   # Extra env for the controller container, as a list of {name, value}.
   extraEnv: []

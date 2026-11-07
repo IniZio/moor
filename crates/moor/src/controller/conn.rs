@@ -12,7 +12,9 @@ use moor_core::{ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
-use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL, WAIT};
+use super::progress::{
+    outlives_drain, respond_with_progress, wait_unless_draining, Sink, INTERVAL, WAIT,
+};
 use super::watch;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -149,7 +151,7 @@ fn answer(
 }
 
 /// Answer `request`, writing its frames to `out`; `None` when `peer`'s drain began before a wait
-/// ended. Every other request runs to its end.
+/// ended. A start or retry is cut with the process, and every other request runs to its end.
 fn respond_unless_draining(
     env: &Env,
     acting: Acting,
@@ -165,15 +167,13 @@ fn respond_unless_draining(
                 respond(&env, acting, request)
             })
         }
-        request => Some(respond_with_progress(
-            env,
-            acting,
-            peer.hangup.as_ref(),
-            id,
-            request,
-            INTERVAL,
-            out,
-        )),
+        request => {
+            let _left_out = outlives_drain(&request).then(|| peer.conn.left_out_of_drain());
+            let hangup = peer.hangup.as_ref();
+            Some(respond_with_progress(
+                env, acting, hangup, id, request, INTERVAL, out,
+            ))
+        }
     }
 }
 

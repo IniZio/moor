@@ -85,6 +85,12 @@ pub(crate) fn respond_with_progress(
     }
 }
 
+/// Whether the drain leaves `request` to be cut with the process: its Box work outlives it, and the
+/// next process follows the setup or acquires the machine again.
+pub(super) const fn outlives_drain(request: &Request) -> bool {
+    matches!(request, Request::Start(_) | Request::Retry(_))
+}
+
 /// Whether `request` sends progress frames while it runs, besides a `run`'s output.
 pub(super) const fn reports_progress(request: &Request) -> bool {
     matches!(

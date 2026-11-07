@@ -56,6 +56,8 @@ pub(crate) enum Entry {
     Stay,
     /// A Box queued until a machine slot frees.
     Waiting,
+    /// A Box being set up whose acquire a restart cut off, whose start goes on.
+    Again,
 }
 
 impl Entry {
@@ -65,15 +67,20 @@ impl Entry {
             Self::Fresh => Some(BoxLifecycleInput::Admitted),
             Self::Waiting => Some(BoxLifecycleInput::Promoted),
             Self::Retry => Some(BoxLifecycleInput::Retry),
-            Self::Stay => None,
+            Self::Stay | Self::Again => None,
         }
+    }
+
+    /// Whether the Box comes up from this step, rather than already working.
+    const fn sets_up(self) -> bool {
+        !matches!(self, Self::Stay)
     }
 
     /// The state reason once the Box gets its machine: a queued Box no longer waits for room.
     const fn reason_once_admitted(self) -> Field<String> {
         match self {
             Self::Waiting => Field::Clear,
-            Self::Fresh | Self::Retry | Self::Stay => Field::Keep,
+            Self::Fresh | Self::Retry | Self::Stay | Self::Again => Field::Keep,
         }
     }
 }
@@ -195,7 +202,7 @@ pub(crate) fn provision(
             let log_dir = setup::log_dir(cx.state_dir()?, id);
             let repo = started.repo.as_ref();
             let target = SetupTarget::new(&got, provider, repo, &log_dir, layered.as_ref());
-            let done = run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)?;
+            let done = run_and_record(cx, store, id, entry.sets_up(), &target, cfg)?;
             // A Box a forced close is waiting on gets no agent.
             if cx.env().cancel().is_cancelled() {
                 return Err(CommandError::new(ErrorKind::Failed, setup::FORCED_CLOSE));

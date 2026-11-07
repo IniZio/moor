@@ -24,7 +24,7 @@ pub(super) fn failed(
     let cause = err.to_string();
     let attempted: BoxHandle = cx.driver().planned_handle(req);
     let mut lost = Decision::new(id);
-    lost.lifecycle_input = entry.begin().map(|_| BoxLifecycleInput::SetupFailed {
+    lost.lifecycle_input = entry.sets_up().then(|| BoxLifecycleInput::SetupFailed {
         cause: cause.clone(),
         which: None,
     });

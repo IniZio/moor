@@ -82,7 +82,7 @@ fn slow_after(after: Duration) -> Slow {
     }
 }
 
-/// Records Box 1 as provisioning under a process that no longer exists.
+/// Records Box 1 as provisioning a second time under a process that no longer exists.
 fn cut_off_start(dir: &tempfile::TempDir) {
     let mut child = moor_testkit::ChildGuard::new(Command::new("true").spawn().expect("spawn"));
     let dead = child.id();
@@ -104,6 +104,15 @@ fn cut_off_start(dir: &tempfile::TempDir) {
         .set(fields)
         .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
     store.apply(starting).expect("starting");
+    let cut = Decision::new(id).box_input(BoxInput::AcquireFailed {
+        cause: "cut once already".to_owned(),
+        attempted: None,
+    });
+    store.apply(cut).expect("cut");
+    let again = Decision::new(id)
+        .box_input(BoxInput::Requested)
+        .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
+    store.apply(again).expect("again");
 }
 
 /// The response to `request`, or a failure when the controller does not answer in time.
@@ -146,7 +155,7 @@ fn every_proxy_is_still_restarted_after_the_controller_starts() {
 }
 
 #[test]
-fn an_interrupted_start_is_failed_before_the_first_request_is_served() {
+fn a_start_cut_twice_is_failed_before_the_first_request_is_served() {
     let slow = slow();
     slow.entered.recv_timeout(WAIT).expect("restart began");
     let got = answer(&slow.main, json!({"cmd": "show", "box": "cut"}));
