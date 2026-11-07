@@ -14,6 +14,8 @@ pub enum Verb {
     /// Take over a warmup or fork whose caller was cut off: wait for one still going, or find
     /// its VM up, or boot the VM.
     Adopt,
+    /// End a warmup or fork going on, leaving what it made for a stop; none going on is fine.
+    Cancel,
     /// How to sign in to the VM and which host keys it shows.
     Info,
     /// Pause the VM, keeping its disk and memory.

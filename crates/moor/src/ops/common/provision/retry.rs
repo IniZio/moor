@@ -8,7 +8,7 @@ use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::WorkspaceRef;
-use moor_core::{BoxHandle, BoxPath, ErrorKind};
+use moor_core::{BoxHandle, BoxPath, BoxTarget, CloseReq, ErrorKind};
 
 use moor_core::config::Flags;
 use moor_core::BoxId;
@@ -19,6 +19,7 @@ use super::rerun::record_interrupted;
 use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::close;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
@@ -70,6 +71,14 @@ pub(super) fn retry_in_box(
 /// or is running is attached to rather than run again. The Box lock is held meanwhile; a Box that
 /// is no longer claimed is left alone.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+    let first = super::reread(store, id)?;
+    if matches!(first.intent, Some(Intent::Closing { .. })) {
+        let req = CloseReq {
+            target: BoxTarget::Name(first.name),
+            force: true,
+        };
+        return close::run(cx, &req).map(drop);
+    }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
         .interruptible(cx.env().cancel());
     let row = super::reread(store, id)?;

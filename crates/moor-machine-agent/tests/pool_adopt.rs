@@ -117,17 +117,35 @@ async fn an_adopt_of_a_warmup_that_fails_says_why() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_stop_waits_for_the_warmup_so_it_leaves_no_vm_behind() {
+async fn a_stop_ends_the_warmup_and_leaves_no_vm_behind() {
     let home = tempfile::tempdir().unwrap();
     let pool = pool(home.path());
     cut_warmup(home.path(), &pool).await;
-    let go = home.path().join("go");
-    let late = tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        std::fs::write(go, "").unwrap();
-    });
     assert_eq!(ask(home.path(), &pool, Verb::Stop).await, DONE);
-    late.await.unwrap();
-    assert_eq!(calls(home.path()), ["warmup", "stop"]);
+    assert_eq!(calls(home.path()), ["stop"], "the warmup never finished");
     assert!(!home.path().join("leases.json").exists());
+    std::fs::write(home.path().join("go"), "").unwrap();
+    assert_eq!(ask(home.path(), &pool, Verb::Warmup).await, DONE);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancel_ends_the_warmup_and_the_caller_hears_it_failed() {
+    let home = tempfile::tempdir().unwrap();
+    let pool = pool(home.path());
+    let (h, p) = (home.path().to_path_buf(), pool.clone());
+    let caller = tokio::spawn(async move { ask(&h, &p, Verb::Warmup).await });
+    while !home.path().join("claim").exists() {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(ask(home.path(), &pool, Verb::Cancel).await, DONE);
+    let got = caller.await.unwrap();
+    assert!(matches!(got, Reply::Refused { .. }), "{got:?}");
+    assert!(calls(home.path()).is_empty(), "the warmup never finished");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancel_with_no_boot_going_on_is_done() {
+    let home = tempfile::tempdir().unwrap();
+    let pool = pool(home.path());
+    assert_eq!(ask(home.path(), &pool, Verb::Cancel).await, DONE);
 }

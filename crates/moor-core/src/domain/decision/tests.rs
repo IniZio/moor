@@ -190,11 +190,12 @@ const fn intent_index(i: &Intent) -> usize {
         Intent::Provisioning { .. } => 0,
         Intent::Running { .. } => 1,
         Intent::Setup { .. } => 2,
+        Intent::Closing { .. } => 3,
     }
 }
 
 /// One sample of every intent variant.
-fn intent_samples() -> [Intent; 3] {
+fn intent_samples() -> [Intent; 4] {
     [
         Intent::Provisioning { pid: 1 },
         Intent::Running {
@@ -202,6 +203,7 @@ fn intent_samples() -> [Intent; 3] {
             pid: 2,
         },
         Intent::Setup { pid: 3 },
+        Intent::Closing { pid: 4 },
     ]
 }
 

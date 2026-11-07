@@ -113,6 +113,8 @@ pub(in super::super) fn warm(
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
     let began = cx.clock().now().as_millis();
     let forked = match fork_or_take_over(cx, store, id, req, &kept.checkpoint) {
+        // A forced close ended it, so the Box gets no other machine.
+        Err(e) if cx.env().cancel().is_cancelled() => return Ok(Some(Err(e))),
         Ok(forked) => forked,
         Err(e @ DriverError::Transport { .. }) if goes_on_after(cx, req, &e) => {
             return Ok(Some(Err(e)))

@@ -4,18 +4,32 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::watch;
 
 /// How a boot ended; none while it goes on.
 type Ending = Option<Result<(), String>>;
 
+/// A boot going on: how it ended, and what asks it to stop.
+#[derive(Clone)]
+struct Flight {
+    /// How it ended.
+    ending: watch::Receiver<Ending>,
+    /// Set to ask it to stop.
+    stop: Arc<watch::Sender<bool>>,
+}
+
 /// The boots going on, by the lease's dir.
-static FLIGHTS: Mutex<BTreeMap<PathBuf, watch::Receiver<Ending>>> = Mutex::new(BTreeMap::new());
+static FLIGHTS: Mutex<BTreeMap<PathBuf, Flight>> = Mutex::new(BTreeMap::new());
+
+tokio::task_local! {
+    /// What asks the boot this code runs for to stop.
+    static STOP: watch::Receiver<bool>;
+}
 
 /// The boots going on, whichever thread poisoned them.
-fn flights() -> MutexGuard<'static, BTreeMap<PathBuf, watch::Receiver<Ending>>> {
+fn flights() -> MutexGuard<'static, BTreeMap<PathBuf, Flight>> {
     FLIGHTS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -35,17 +49,20 @@ pub(super) async fn fly(
     boot: impl Future<Output = Result<(), String>> + Send + 'static,
 ) -> Result<(), String> {
     let (tell, ending) = watch::channel(None);
+    let (stop, stopping) = watch::channel(false);
     {
         let mut going = flights();
         if going.contains_key(dir) {
             return Err(format!("{} is still booting", dir.display()));
         }
-        going.insert(dir.to_path_buf(), ending.clone());
+        let stop = Arc::new(stop);
+        let ending = ending.clone();
+        going.insert(dir.to_path_buf(), Flight { ending, stop });
     }
     let landed = Landed(dir.to_path_buf());
     tokio::spawn(async move {
         let _landed = landed;
-        let ended = boot.await;
+        let ended = STOP.scope(stopping, boot).await;
         let _ = tell.send(Some(ended));
     });
     landing(ending).await
@@ -53,8 +70,27 @@ pub(super) async fn fly(
 
 /// Waits for the boot of `dir` going on, and says how it ended; none when no boot is going on.
 pub(super) async fn join(dir: &Path) -> Option<Result<(), String>> {
-    let ending = flights().get(dir).cloned()?;
+    let ending = flights().get(dir).cloned()?.ending;
     Some(landing(ending).await)
+}
+
+/// Asks the boot of `dir` going on to stop and waits for it; none going on is fine.
+pub(super) async fn stop(dir: &Path) {
+    let Some(flight) = flights().get(dir).cloned() else {
+        return;
+    };
+    let _ = flight.stop.send(true);
+    let _ = landing(flight.ending).await;
+}
+
+/// Resolves when the boot this code runs for is asked to stop; never outside a boot.
+pub(super) async fn stop_asked() {
+    let Ok(mut stopping) = STOP.try_with(Clone::clone) else {
+        return std::future::pending().await;
+    };
+    if stopping.wait_for(|asked| *asked).await.is_err() {
+        std::future::pending::<()>().await;
+    }
 }
 
 /// How the boot behind `ending` ended.

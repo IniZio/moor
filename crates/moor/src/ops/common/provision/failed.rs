@@ -4,13 +4,34 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, IntentChange};
 use moor_core::seam::driver::{AcquireReq, DriverError, Released};
-use moor_core::{BoxHandle, BoxId, Warning};
+use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
 use super::{reread, Entry};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::setup::FORCED_CLOSE;
 use crate::ops::common::view::box_view;
 use crate::store::Store;
+
+/// Records an acquire a forced close stopped, naming what it may have made for that close to
+/// release, and the error that ends the start. The close's intent stays.
+pub(super) fn forced_out(
+    store: &Store,
+    id: BoxId,
+    entry: Entry,
+    planned: &BoxHandle,
+) -> Result<CommandError, CommandError> {
+    let mut lost = Decision::new(id);
+    lost.lifecycle_input = entry.sets_up().then(|| BoxLifecycleInput::SetupFailed {
+        cause: FORCED_CLOSE.to_owned(),
+        which: None,
+    });
+    store.apply(lost.box_input(BoxInput::AcquireFailed {
+        cause: FORCED_CLOSE.to_owned(),
+        attempted: Some(planned.clone()),
+    }))?;
+    Ok(CommandError::new(ErrorKind::Failed, FORCED_CLOSE))
+}
 
 /// Records a failed acquire; returns the error, carrying the Box row, to report.
 pub(super) fn failed(

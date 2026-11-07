@@ -6,7 +6,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
-use moor_core::seam::driver::AcquireReq;
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
 
@@ -25,7 +25,7 @@ use self::after_lines::steps_after_lines;
 use self::clone::clone_with_proxy;
 use self::delivered::record_delivered;
 pub(crate) use self::entry::Entry;
-use self::failed::failed;
+use self::failed::{failed, forced_out};
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 pub(crate) use self::outcome::Provisioned;
@@ -159,17 +159,11 @@ pub(crate) fn provision(
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     let provider = req.provider.as_str();
     let mut layered = layers::plan(cx, store, &started, provider, cfg, &req.cache);
-    let warm = match layered.as_mut() {
-        Some(layered) if entry != Entry::Adopt => layers::warm(cx, store, id, &req, layered)?,
-        _ => None,
-    };
-    let acquire = if entry == Entry::Adopt {
-        adopt_timed
-    } else {
-        acquire_timed
-    };
-    let acquired = warm.unwrap_or_else(|| acquire(cx, store, id, &req));
+    let acquired = machine_for(cx, store, id, entry, &req, layered.as_mut())?;
+    let forced = || cx.env().cancel().is_cancelled();
     match acquired {
+        // Whatever it made is the forced close's to release.
+        _ if forced() => Err(forced_out(store, id, entry, &planned)?),
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got, (entry == Entry::Stay).then_some(&started))?;
@@ -190,6 +184,38 @@ pub(crate) fn provision(
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
+}
+
+/// Gets Box `id` its machine for `req`: from a kept layer, else by the acquire `entry` calls for. A
+/// forced close already asked for gets it none.
+fn machine_for(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    entry: Entry,
+    req: &AcquireReq,
+    layered: Option<&mut layers::Layered>,
+) -> Result<Result<Acquired, DriverError>, CommandError> {
+    let forced = || cx.env().cancel().is_cancelled();
+    let warm = match layered {
+        Some(layered) if entry != Entry::Adopt && !forced() => {
+            layers::warm(cx, store, id, req, layered)?
+        }
+        _ => None,
+    };
+    let acquire = if entry == Entry::Adopt {
+        adopt_timed
+    } else {
+        acquire_timed
+    };
+    Ok(warm.unwrap_or_else(|| {
+        if forced() {
+            return Err(DriverError::Failed {
+                summary: setup::FORCED_CLOSE.to_owned(),
+            });
+        }
+        acquire(cx, store, id, req)
+    }))
 }
 
 /// What the driver is asked for `started` on `provider`.
