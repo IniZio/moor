@@ -26,6 +26,24 @@ pub(crate) fn mint(store: &Store, key: &[u8], box_id: BoxId) -> Result<Option<Se
     Ok(recorded.then(|| Secret::new(token.into_bytes())))
 }
 
+/// What every front lease token starts with, so the shared Proxy tells one from a Box token.
+const LEASE_PREFIX: &str = "lease.";
+
+/// A new front lease token under `key`, `lease.<id>.<mac>`, signed as a Box token is so the
+/// shared Proxy checks it before it spends any budget.
+pub(crate) fn mint_lease(key: &[u8]) -> Result<String, String> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| format!("cannot mint a lease: {e}"))?;
+    let id = format!("{LEASE_PREFIX}{}", base64url(&bytes));
+    let sig = mac(key, id.as_bytes());
+    Ok(format!("{id}.{sig}"))
+}
+
+/// Whether `token` has the shape of a front lease token.
+pub(crate) fn is_lease(token: &[u8]) -> bool {
+    token.starts_with(LEASE_PREFIX.as_bytes())
+}
+
 /// Whether `token` carries a MAC that `key` made; compared in constant time.
 pub(crate) fn verify(key: &[u8], token: &[u8]) -> bool {
     let Some(dot) = token.iter().rposition(|b| *b == b'.') else {

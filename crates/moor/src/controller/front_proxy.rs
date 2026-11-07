@@ -54,8 +54,13 @@ pub(super) fn plan(
         .filter(|(_, front)| !front.proxy_rules.is_empty())
         .map(|(ns, front)| (ns.clone(), front.proxy_rules.clone()))
         .collect();
-    let env = env.with_front_proxies(proxied.clone());
-    let plan = Plan::new(&env, proxied)?;
+    let beside_me = proxied
+        .iter()
+        .filter(|(ns, _)| fronts.get(*ns).is_some_and(|f| f.remote.is_none()))
+        .map(|(ns, rules)| (ns.clone(), rules.clone()))
+        .collect();
+    let env = env.with_front_proxies(proxied);
+    let plan = Plan::new(&env, beside_me)?;
     Ok((env, plan))
 }
 

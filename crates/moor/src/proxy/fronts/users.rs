@@ -11,7 +11,6 @@ use moor_core::config::proxy::ResolvedRule;
 use moor_core::user::UserId;
 use moor_core::Secret;
 
-use super::Deps;
 use crate::proxy::ledger::FrontsLedger;
 use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
@@ -25,7 +24,7 @@ struct Running {
 }
 
 /// The nonos of every user a lease has used.
-pub(super) struct Users {
+pub(crate) struct Users {
     /// Reads a user's secret.
     ledger: Arc<FrontsLedger>,
     /// The CA every front trusts.
@@ -39,20 +38,25 @@ pub(super) struct Users {
 }
 
 impl Users {
-    /// No nono yet; each starts with `deps`'s secrets and `ca`.
-    pub(super) fn new(deps: &Deps, ca: Arc<ca::BoxCa>) -> Self {
+    /// No nono yet; each starts with `ledger`'s secrets and `ca`, keeps its files in a state dir
+    /// and trusts an extra upstream root PEM when one is given.
+    pub(crate) fn new(
+        ledger: Arc<FrontsLedger>,
+        ca: Arc<ca::BoxCa>,
+        (state_dir, upstream_ca): (std::path::PathBuf, Option<std::path::PathBuf>),
+    ) -> Self {
         Self {
-            ledger: Arc::clone(&deps.ledger),
+            ledger,
             ca,
-            state_dir: deps.state_dir.clone(),
-            upstream_ca: deps.upstream_ca.clone(),
+            state_dir,
+            upstream_ca,
             running: Mutex::new(BTreeMap::new()),
         }
     }
 
     /// The address and internal token of front `ns`'s nono for `user`, started with `rules`
     /// when it is not running; none when it cannot start.
-    pub(super) fn nono(
+    pub(crate) fn nono(
         &self,
         ns: &str,
         user: UserId,
@@ -100,7 +104,7 @@ impl Users {
     }
 
     /// Stops every nono.
-    pub(super) fn stop(&self) {
+    pub(crate) fn stop(&self) {
         let running =
             std::mem::take(&mut *self.running.lock().unwrap_or_else(PoisonError::into_inner));
         for it in running.into_values() {

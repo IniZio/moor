@@ -1,12 +1,14 @@
 //! The controller's end of the ledger: one connection, its hello, then its calls.
 
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::PathBuf;
 
 use moor_core::user::{SecretName, UserId};
 use serde::Serialize;
 use zeroize::Zeroizing;
 
-use super::{Call, Fault, Hello, LEDGER};
+use super::{CaPair, Call, Fault, FrontLease, Hello, LEDGER};
+use crate::env::Env;
 use crate::store::Store;
 use crate::vault::Vault;
 
@@ -18,12 +20,15 @@ pub(crate) use start::ca as box_ca;
 const HELLO_MAX: u64 = 64 * 1024;
 
 /// The keys the controller started its Proxy processes with, and who may say hello.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct Keys<'a> {
     /// The front Proxy's key; none when no front Proxy runs.
     pub(crate) fronts: Option<&'a str>,
     /// The shared egress Proxy's key; none while the shared Proxy is off.
     pub(crate) egress: Option<&'a str>,
+    /// Which fronts run elsewhere, and the rules and state dir they share; none answers no call
+    /// about a remote front.
+    pub(crate) env: Option<&'a Env>,
 }
 
 /// Whom a connection's hello proved it speaks for.
@@ -51,7 +56,10 @@ pub(crate) fn serve((store, vault): (&Store, &Vault), keys: &Keys<'_>, stream: i
         return;
     }
     while let Some(line) = next(&mut read) {
-        if !send(read.get_mut(), &answer((store, vault), &bound, &line)) {
+        if !send(
+            read.get_mut(),
+            &answer((store, vault), keys.env, &bound, &line),
+        ) {
             return;
         }
     }
@@ -127,7 +135,12 @@ fn same(want: &str, got: &str) -> bool {
 }
 
 /// The reply to `line`, a call by `bound`.
-fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroizing<String> {
+fn answer(
+    (store, vault): (&Store, &Vault),
+    env: Option<&Env>,
+    bound: &Bound,
+    line: &str,
+) -> Zeroizing<String> {
     let call: Call = match serde_json::from_str(line) {
         Ok(call) => call,
         Err(e) => return encode(&Err::<(), _>(Fault::Refused(format!("bad call: {e}")))),
@@ -138,6 +151,17 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         }
         (Bound::Fronts, Call::FrontSecret { front, user, name }) => {
             encode(&front_secret((store, vault), &front, user, &name))
+        }
+        (Bound::Egress(None), Call::FrontLeaseOf { token_hash }) => {
+            encode(&front_lease_of(store, env, &token_hash))
+        }
+        (Bound::Egress(None), Call::FrontCa) => encode(&front_ca(env)),
+        (Bound::Egress(None), Call::FrontSecret { front, user, name }) => {
+            if env.is_some_and(|env| env.front_is_remote(&front)) {
+                encode(&front_secret((store, vault), &front, user, &name))
+            } else {
+                encode(&Err::<(), _>(not_remote(&front)))
+            }
         }
         (Bound::Egress(None), Call::TokenBox { token_hash }) => {
             encode(&boxes::token_box(store, &token_hash).map_err(Fault::from))
@@ -153,6 +177,37 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
             "a token lookup connection makes no Box call".to_owned(),
         ))),
     }
+}
+
+/// The refusal for a call about `front`, whose Proxy is not the shared one.
+fn not_remote(front: &str) -> Fault {
+    Fault::Refused(format!("{front} is not a remote front"))
+}
+
+/// The live lease whose token hashes to `token_hash`, when its front runs elsewhere; a lease of
+/// a front beside the controller is spent only through that front's own Proxy.
+fn front_lease_of(
+    store: &Store,
+    env: Option<&Env>,
+    token_hash: &str,
+) -> Result<Option<FrontLease>, Fault> {
+    let Some(env) = env else { return Ok(None) };
+    Ok(store
+        .front_lease_of(token_hash)?
+        .filter(|(front, _)| env.front_is_remote(front))
+        .map(|(front, user)| FrontLease {
+            rules: env.front_proxy_rules(&front).to_vec(),
+            front,
+            user,
+        }))
+}
+
+/// The CA every remote front's Proxy signs with.
+fn front_ca(env: Option<&Env>) -> Result<CaPair, Fault> {
+    let state: PathBuf = env
+        .and_then(Env::state_dir)
+        .ok_or_else(|| Fault::Store("a front Proxy needs a state dir".to_owned()))?;
+    crate::proxy::fronts::ca_pair(&state).map_err(|e| Fault::Store(e.to_string()))
 }
 
 /// `user`'s secret `name` as bytes, refused unless they hold a live lease of `front`.

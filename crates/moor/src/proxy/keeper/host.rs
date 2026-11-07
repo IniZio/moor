@@ -81,6 +81,16 @@ impl KeptProxy {
 }
 
 impl ProxyHost for KeptProxy {
+    fn front_ca_pem(&self) -> Result<String, String> {
+        let state = self
+            .state_dir
+            .as_ref()
+            .ok_or("a front Proxy needs a state dir")?;
+        crate::proxy::fronts::ca_pair(state)
+            .map(|pair| pair.cert_pem.clone())
+            .map_err(|e| format!("cannot read the front Proxy CA: {e}"))
+    }
+
     fn front_running(&self, front: &str) -> bool {
         self.state_dir
             .as_ref()
@@ -183,6 +193,10 @@ fn no_controller() -> ProxyHostError {
 }
 
 impl ProxyHost for NoProxyHost {
+    fn front_ca_pem(&self) -> Result<String, String> {
+        Err("this host runs no Proxy".to_owned())
+    }
+
     fn front_running(&self, _front: &str) -> bool {
         false
     }

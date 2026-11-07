@@ -56,6 +56,17 @@ pub(crate) fn serve_on(
     vault: Arc<Vault>,
     fronts: Option<String>,
 ) -> Served {
+    serve_on_with(socket, store, vault, fronts, None)
+}
+
+/// [`serve_on`], answering calls about remote fronts as `env` says.
+pub(crate) fn serve_on_with(
+    socket: &Path,
+    store: Store,
+    vault: Arc<Vault>,
+    fronts: Option<String>,
+    env: Option<crate::env::Env>,
+) -> Served {
     let listener = UnixListener::bind(socket).unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let streams = Arc::new(Mutex::new(Vec::new()));
@@ -68,10 +79,12 @@ pub(crate) fn serve_on(
             }
             kept.lock().unwrap().push(stream.try_clone().unwrap());
             let (store, vault, fronts) = (store.clone(), Arc::clone(&vault), fronts.clone());
+            let env = env.clone();
             std::thread::spawn(move || {
                 let keys = Keys {
                     fronts: fronts.as_deref(),
                     egress: Some(EGRESS_KEY),
+                    env: env.as_ref(),
                 };
                 serve((&store, &vault), &keys, stream);
             });

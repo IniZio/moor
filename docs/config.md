@@ -863,7 +863,10 @@ set the stop timeout above `drain_timeout_secs`.
 A front in another pod sets `fronts.<namespace>.remote.key_file`, a file holding
 the key its hello presents to `ledger_tls`. Its connections are served as on its
 socket, so it may assert only identities in its own namespace. A remote front
-needs `ledger_tls` and takes no `command`.
+needs `ledger_tls` and takes no `command`. Its `proxy_rules` run on the shared
+egress Proxy, so the controller starts no front Proxy for it and a controller
+restart leaves its leases in place. Each lease comes with the CA that Proxy signs
+with.
 
 `fronts.<namespace>` gives one front its own socket:
 

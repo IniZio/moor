@@ -1,5 +1,6 @@
 //! The Proxy's end of the ledger: a small pool of connections to the controller.
 
+use std::collections::HashMap;
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -9,10 +10,11 @@ use moor_core::user::{SecretName, UserId};
 use moor_core::BoxId;
 use moor_core::Secret;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::endpoint::Duplex;
-use super::{Call, Endpoint, Fault, Hello, LedgerError, LEDGER};
+use super::{CaPair, Call, Endpoint, Fault, Hello, LedgerError, LEDGER};
 use crate::ledger_dir;
 
 /// How long one call may wait on the controller before it counts as unavailable.
@@ -118,8 +120,29 @@ fn unavailable(e: &io::Error) -> LedgerError {
     LedgerError::Unavailable(e.to_string())
 }
 
-/// The front Proxy's ledger.
-pub(crate) struct FrontsLedger(Ledger);
+/// A live lease of a remote front, as the shared egress Proxy learns it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct FrontLease {
+    /// The front.
+    pub(crate) front: String,
+    /// Whose secrets it spends.
+    pub(crate) user: UserId,
+    /// The names of the rules the front's Proxy serves.
+    pub(crate) rules: Vec<String>,
+}
+
+/// Each secret by front, user and name, as last answered.
+type LastSecrets = HashMap<(String, UserId, SecretName), Option<Zeroizing<Vec<u8>>>>;
+
+/// The ledger of a Proxy that serves fronts: the front Proxy beside the controller, or the shared
+/// egress Proxy for a remote front.
+pub(crate) struct FrontsLedger {
+    /// Its connections.
+    ledger: Ledger,
+    /// Served while the controller cannot be reached, so a turn outlives a controller restart.
+    /// A secret revoked meanwhile stays in use until the controller answers again.
+    last: Mutex<LastSecrets>,
+}
 
 impl FrontsLedger {
     /// The ledger of the controller whose state dir is `state_dir`, presenting `key`.
@@ -129,10 +152,37 @@ impl FrontsLedger {
 
     /// The ledger on `socket`, presenting `key`.
     pub(crate) fn at(socket: PathBuf, key: String) -> Self {
-        Self(Ledger::new(
-            Endpoint::Unix(socket),
-            &Hello::Fronts { v: LEDGER, key },
-        ))
+        Self::with_hello(Endpoint::Unix(socket), &Hello::Fronts { v: LEDGER, key })
+    }
+
+    /// The ledger at `endpoint`, as the shared egress Proxy presenting `key`.
+    pub(crate) fn egress(endpoint: Endpoint, key: String) -> Self {
+        let hello = Hello::Egress {
+            v: LEDGER,
+            key,
+            box_id: None,
+        };
+        Self::with_hello(endpoint, &hello)
+    }
+
+    /// The ledger at `endpoint`, opening each connection with `hello`.
+    fn with_hello(endpoint: Endpoint, hello: &Hello) -> Self {
+        Self {
+            ledger: Ledger::new(endpoint, hello),
+            last: Mutex::default(),
+        }
+    }
+
+    /// The live lease of a remote front whose token hashes to `token_hash`.
+    pub(crate) fn lease_of(&self, token_hash: &str) -> Result<Option<FrontLease>, LedgerError> {
+        self.ledger.call(&Call::FrontLeaseOf {
+            token_hash: token_hash.to_owned(),
+        })
+    }
+
+    /// The CA a remote front's Proxy signs with.
+    pub(crate) fn ca(&self) -> Result<CaPair, LedgerError> {
+        self.ledger.call(&Call::FrontCa)
     }
 
     /// The user the live lease `token` of `front` acts for.
@@ -141,7 +191,7 @@ impl FrontsLedger {
         token: &[u8],
         front: &str,
     ) -> Result<Option<UserId>, LedgerError> {
-        self.0.call(&Call::FrontLeaseUser {
+        self.ledger.call(&Call::FrontLeaseUser {
             token: token.to_vec(),
             front: front.to_owned(),
         })
@@ -154,12 +204,24 @@ impl FrontsLedger {
         user: UserId,
         name: &SecretName,
     ) -> Result<Option<Secret>, LedgerError> {
-        let bytes: Option<Vec<u8>> = self.0.call(&Call::FrontSecret {
+        let answer = self.ledger.call::<Option<Vec<u8>>>(&Call::FrontSecret {
             front: front.to_owned(),
             user,
             name: name.clone(),
-        })?;
-        Ok(bytes.map(Secret::new))
+        });
+        let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+        let at = (front.to_owned(), user, name.clone());
+        let bytes = match answer {
+            Ok(bytes) => {
+                let bytes = bytes.map(Zeroizing::new);
+                last.insert(at, bytes.clone());
+                bytes
+            }
+            Err(e @ LedgerError::Unavailable(_)) => last.get(&at).cloned().ok_or(e)?,
+            Err(e) => return Err(e),
+        };
+        drop(last);
+        Ok(bytes.map(|b| Secret::new(b.to_vec())))
     }
 }
 

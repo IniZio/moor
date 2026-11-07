@@ -162,7 +162,9 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let env = Moor::prepare_egress(env).map_err(refused)?;
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
-    let env = env.with_front_webhooks(cfg.webhook_fronts());
+    let env = env
+        .with_front_webhooks(cfg.webhook_fronts())
+        .with_remote_fronts(cfg.remote_fronts());
     let lock = take_socket_lock(&socket)?;
     Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
