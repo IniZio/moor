@@ -126,6 +126,9 @@ Base the new branch on the pull requests that it lists.
 
 CI runs `lint`, `audit`, and `unit` in
 [ci.yaml](../.github/workflows/ci.yaml).
+On a pull request, the full run happens only on the tip of a stack, the PR that no open PR is based on.
+Its green run covers every PR below it.
+If you close the PR above, push to the one below to start its run.
 
 ## Run a Box from a checkout
 
