@@ -13,6 +13,7 @@ use moor_core::{BoxHandle, BoxPath};
 use sha2::{Digest, Sha256};
 
 use super::{discard, is_regular_file, skipped, ARTIFACTS_DIR};
+use crate::blobs::Blobs;
 use crate::cx::Cx;
 use crate::store::{BoxRow, Store};
 
@@ -34,8 +35,8 @@ pub(super) struct Fetch<'a> {
     pub handle: &'a BoxHandle,
     /// The Box's workdir.
     pub workdir: &'a BoxPath,
-    /// The artifact store directory.
-    pub dir: &'a Path,
+    /// Where stored files go.
+    pub blobs: &'a dyn Blobs,
     /// The private staging directory.
     pub staging: &'a Path,
     /// A limit on the stream, for a collect that must not hold up a suspend; it copies nothing
@@ -187,13 +188,15 @@ impl Fetch<'_> {
         }
         match self
             .store
-            .add_artifact_staged(self.row.id, name, staged, sha, self.dir)
+            .add_artifact_staged(self.row.id, name, staged, sha, self.blobs)
         {
             Ok(stored) => stored.is_some(),
             Err(e) => {
                 skipped(
                     self.cx,
-                    &format!("artifact {name} could not be stored: {e}"),
+                    &format!(
+                        "artifact {name} could not be stored: {e}; it will be tried next time"
+                    ),
                 );
                 false
             }

@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 mod adapters;
+mod blobs;
 pub mod cli;
 /// Client for the controller socket.
 pub mod client;

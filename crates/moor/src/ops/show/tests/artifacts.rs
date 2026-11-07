@@ -14,7 +14,7 @@ fn show_adds_the_latest_artifacts_when_asked() {
     let bytes = b"png bytes";
     cx.store()
         .unwrap()
-        .add_artifact(id, "shot.png", bytes, &dir.path().join("artifacts"))
+        .add_artifact(id, "shot.png", bytes, cx.blobs().unwrap())
         .unwrap();
     let mut asked = req(Some("a"), None);
     asked.artifacts = true;

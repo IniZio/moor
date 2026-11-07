@@ -19,6 +19,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
+use crate::blobs::{fs::FsBlobs, Blobs};
 pub(crate) use crate::env::Cancel;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -65,6 +66,8 @@ pub(crate) struct Cx {
     prompt_window: Duration,
     /// State store, opened on first use.
     store: OnceCell<Store>,
+    /// Blob store, opened on first use.
+    blobs: OnceCell<Arc<dyn Blobs>>,
     /// The controller's vault key file; `None` outside a controller.
     vault_key: Option<PathBuf>,
     /// The identity a socket request acts as, already checked against its socket.
@@ -124,6 +127,7 @@ impl Cx {
             env: p.env,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
+            blobs: OnceCell::new(),
             vault_key: None,
             requester: None,
             viewer: Viewer::Operator,
@@ -155,6 +159,27 @@ impl Cx {
             )?,
         };
         Ok(self.store.get_or_init(|| store.pinned(self.pins.clone())))
+    }
+
+    /// The blob store the env shares, else the files under the state directory.
+    pub(crate) fn blobs(&self) -> Result<&dyn Blobs, CommandError> {
+        if let Some(blobs) = self.blobs.get() {
+            return Ok(blobs.as_ref());
+        }
+        let blobs = match self.env.shared::<Arc<dyn Blobs>>() {
+            Some(shared) => Arc::clone(shared),
+            None => Arc::new(FsBlobs::new(self.state_dir()?)),
+        };
+        Ok(self.blobs.get_or_init(|| blobs).as_ref())
+    }
+
+    /// This context with `blobs` for its blob store.
+    #[cfg(test)]
+    pub(crate) fn with_blobs(self, blobs: Arc<dyn Blobs>) -> Self {
+        Self {
+            blobs: OnceCell::from(blobs),
+            ..self
+        }
     }
 
     /// Box backend.

@@ -1,8 +1,6 @@
 //! `artifacts` and `artifact-read`: serve published files from the store without waking the Box.
 
-use std::fs::{self, File};
-use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io;
 
 use moor_core::artifact::valid_name;
 use moor_core::controller::BYTES_MAX;
@@ -12,6 +10,7 @@ use moor_core::view::{ArtifactReadView, ArtifactView};
 use moor_core::{BoxTarget, ErrorKind};
 use sha2::{Digest, Sha256};
 
+use crate::blobs::{BlobError, BlobKey, Blobs};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::target::{self, Rule};
@@ -51,8 +50,9 @@ pub(crate) fn artifact_view(row: &ArtifactRow) -> ArtifactView {
 /// bytes at a time, reading the next piece only after `out` took the last one.
 ///
 /// # Errors
-/// [`CommandError`] when the name is invalid, the Artifact is unknown or missing on disk, the
-/// offset is past the end, the stored path is a symlink, a read fails, or `out` fails.
+/// [`CommandError`] when the name is invalid, the Artifact is unknown or missing from the blob
+/// store, the offset is past the end, the stored path is unsafe, the blob store cannot be read,
+/// or `out` fails.
 pub(crate) fn read(
     cx: &Cx,
     req: &ArtifactReadReq,
@@ -79,32 +79,10 @@ pub(crate) fn read(
                 format!("no artifact {}{which} for {name}", req.name),
             )
         })?;
-    let box_dir = cx
-        .state_dir()?
-        .join("artifacts")
-        .join(box_id.get().to_string());
-    let version_dir = box_dir.join(format!("v{}", row.version));
-    let file = version_dir.join(&row.name);
-    let refused = || {
-        CommandError::new(
-            ErrorKind::Refused,
-            format!("artifact {} is not a plain stored file", row.name),
-        )
-    };
-    for dir in [&box_dir, &version_dir] {
-        match fs::symlink_metadata(dir) {
-            Ok(m) if m.is_dir() => {}
-            Ok(_) => return Err(refused()),
-            Err(e) => return Err(io_error(row, &e)),
-        }
-    }
-    match fs::symlink_metadata(&file) {
-        Ok(m) if m.is_file() => {}
-        Ok(_) => return Err(refused()),
-        Err(e) => return Err(io_error(row, &e)),
-    }
+    let key = BlobKey::artifact(box_id, row.version, &row.name);
     let whole = (req.offset == 0 && req.len >= row.size).then_some(row.sha256.as_str());
-    let (sent, eof) = stream(&file, req, whole, out).map_err(|e| e.into_error(row, req.offset))?;
+    let (sent, eof) =
+        stream(cx.blobs()?, &key, req, whole, out).map_err(|e| e.into_error(row, req.offset))?;
     Ok(ArtifactReadView {
         offset: req.offset,
         sent,
@@ -118,10 +96,8 @@ pub(crate) fn read(
 enum Stream {
     /// The offset lies past the end of the file.
     Past,
-    /// The file could not be opened or read.
-    Io(io::Error),
-    /// The receiver refused a piece.
-    Out(io::Error),
+    /// The blob could not be read, or the receiver refused a piece.
+    Blob(BlobError),
     /// Every byte went out, and they hash to this instead of the recorded sha256.
     Mismatch(String),
 }
@@ -134,11 +110,7 @@ impl Stream {
                 ErrorKind::Usage,
                 format!("offset {offset} is past the end of {}", row.name),
             ),
-            Self::Io(e) => io_error(row, &e),
-            Self::Out(e) => CommandError::new(
-                ErrorKind::Failed,
-                format!("stopped sending artifact {}: {}", row.name, e.kind()),
-            ),
+            Self::Blob(e) => blob_error(row, &e),
             Self::Mismatch(got) => CommandError::new(
                 ErrorKind::Failed,
                 format!(
@@ -152,39 +124,36 @@ impl Stream {
     }
 }
 
-/// Send up to the clamped length from the offset; returns bytes sent and whether that reaches
-/// the end. With `whole`, the bytes sent must hash to it, so a receiver that holds back the
-/// last piece until the response never passes on a file that does not match.
+/// Send up to the clamped length from the offset, a piece of at most [`BYTES_MAX`] bytes at a
+/// time; returns bytes sent and whether that reaches the end. With `whole`, the bytes sent must
+/// hash to it, so a receiver that holds back the last piece until the response never passes on a
+/// file that does not match.
 fn stream(
-    file: &Path,
+    blobs: &dyn Blobs,
+    key: &BlobKey,
     req: &ArtifactReadReq,
     whole: Option<&str>,
     out: &mut dyn FnMut(&[u8]) -> io::Result<()>,
 ) -> Result<(u64, bool), Stream> {
-    let mut f = File::open(file).map_err(Stream::Io)?;
-    let size = f.metadata().map_err(Stream::Io)?.len();
+    let size = blobs.size(key).map_err(Stream::Blob)?;
     if req.offset > size {
         return Err(Stream::Past);
     }
-    f.seek(SeekFrom::Start(req.offset)).map_err(Stream::Io)?;
-    let mut f = f.take(req.len.min(size - req.offset));
-    let mut buf = vec![0; BYTES_MAX];
     let mut sent = 0_u64;
     let mut digest = Sha256::new();
-    loop {
-        let n = match f.read(&mut buf) {
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            n => n.map_err(Stream::Io)?,
-        };
-        let Some(piece) = buf.get(..n).filter(|p| !p.is_empty()) else {
-            break;
-        };
-        if whole.is_some() {
-            digest.update(piece);
-        }
-        out(piece).map_err(Stream::Out)?;
-        sent += n as u64;
-    }
+    let len = req.len.min(size - req.offset);
+    blobs
+        .read(key, req.offset, len, &mut |chunk| {
+            for piece in chunk.chunks(BYTES_MAX) {
+                if whole.is_some() {
+                    digest.update(piece);
+                }
+                out(piece)?;
+                sent += piece.len() as u64;
+            }
+            Ok(())
+        })
+        .map_err(Stream::Blob)?;
     if let Some(want) = whole {
         let got = format!("{:x}", digest.finalize());
         if !got.eq_ignore_ascii_case(want) {
@@ -194,19 +163,30 @@ fn stream(
     Ok((sent, req.offset + sent >= size))
 }
 
-/// Map a file error to a command error that names the Artifact, never its contents.
-fn io_error(row: &ArtifactRow, e: &io::Error) -> CommandError {
-    if e.kind() == io::ErrorKind::NotFound {
-        return CommandError::new(
+/// Map a blob error to a command error that names the Artifact, never its contents.
+fn blob_error(row: &ArtifactRow, e: &BlobError) -> CommandError {
+    match e {
+        BlobError::Missing => CommandError::new(
             ErrorKind::NotFound,
-            format!("artifact {} v{} is missing on disk", row.name, row.version),
+            format!(
+                "artifact {} v{} is missing from the blob store",
+                row.name, row.version
+            ),
         )
-        .with_detail(ErrorDetail::ArtifactMissing);
+        .with_detail(ErrorDetail::ArtifactMissing),
+        BlobError::NotPlain(_) => CommandError::new(
+            ErrorKind::Refused,
+            format!("artifact {} is not a plain stored file", row.name),
+        ),
+        BlobError::Store(why) => CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot read artifact {}: {why}", row.name),
+        ),
+        BlobError::Sink(e) => CommandError::new(
+            ErrorKind::Failed,
+            format!("stopped sending artifact {}: {}", row.name, e.kind()),
+        ),
     }
-    CommandError::new(
-        ErrorKind::Failed,
-        format!("cannot read artifact {}: {}", row.name, e.kind()),
-    )
 }
 
 /// The Box `target` means, in any state.

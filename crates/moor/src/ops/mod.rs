@@ -6,7 +6,7 @@ use moor_core::{ErrorKind, Request};
 use crate::cx::Cx;
 use crate::error::CommandError;
 
-mod artifacts;
+pub(crate) mod artifacts;
 pub(crate) mod attach;
 pub(crate) mod authz;
 mod binding;
