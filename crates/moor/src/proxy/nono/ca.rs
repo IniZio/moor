@@ -78,6 +78,35 @@ pub(crate) fn load_or_create_in(dir: &Path, cn: &str) -> std::io::Result<BoxCa> 
     }
 }
 
+/// Loads the CA in `dir`; a missing one is refused, not made.
+pub(crate) fn load_in(dir: &Path) -> std::io::Result<BoxCa> {
+    let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
+    for path in [&key_path, &cert_path] {
+        if !path.exists() {
+            return Err(missing(path));
+        }
+    }
+    load(&key_path, &cert_path)
+}
+
+/// The CA's key and certificate PEM in `dir`.
+pub(crate) fn read_in(dir: &Path) -> std::io::Result<(Zeroizing<Vec<u8>>, String)> {
+    Ok((
+        Zeroizing::new(std::fs::read(dir.join(KEY_FILE))?),
+        std::fs::read_to_string(dir.join(CERT_FILE))?,
+    ))
+}
+
+/// Writes the CA into `dir`, replacing what is there, and loads it back.
+pub(crate) fn install_in(dir: &Path, (key_pem, cert_pem): (&[u8], &str)) -> std::io::Result<BoxCa> {
+    DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
+    let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
+    write_private(dir, &key_path, key_pem)?;
+    write_private(dir, &cert_path, cert_pem.as_bytes())?;
+    load(&key_path, &cert_path)
+}
+
 /// A new CA for `box_id`: its PEM key and PEM certificate.
 pub(crate) fn generate(box_id: BoxId) -> std::io::Result<(Zeroizing<String>, String)> {
     let cn = format!("moor box {}", box_id.get());
@@ -91,15 +120,9 @@ pub(crate) fn generate(box_id: BoxId) -> std::io::Result<(Zeroizing<String>, Str
 pub(crate) fn install(
     state_dir: &Path,
     box_id: BoxId,
-    (key_pem, cert_pem): (&[u8], &str),
+    pem: (&[u8], &str),
 ) -> std::io::Result<BoxCa> {
-    let dir = ca_dir(state_dir, box_id);
-    DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
-    std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
-    let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
-    write_private(&dir, &key_path, key_pem)?;
-    write_private(&dir, &cert_path, cert_pem.as_bytes())?;
-    load(&key_path, &cert_path)
+    install_in(&ca_dir(state_dir, box_id), pem)
 }
 
 /// Path of the CA certificate in `dir`.

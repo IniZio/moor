@@ -158,6 +158,10 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         .transpose()?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
+    Moor::settle_keys(&env, &vault, front_ca(&cfg)).map_err(|message| Stop {
+        code: REFUSED,
+        message,
+    })?;
     let env = Moor::prepare_egress(env).map_err(refused)?;
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
@@ -187,6 +191,11 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         close_setup_failed_after: cfg.close_setup_failed_after(),
         drain_timeout: cfg.drain_timeout(),
     })
+}
+
+/// Whether any front in `cfg` has a Proxy, which needs the front CA.
+fn front_ca(cfg: &ControllerConfig) -> bool {
+    cfg.fronts.values().any(|f| !f.proxy_rules.is_empty())
 }
 
 /// The fronts in `cfg` that have a command, each on its socket in `fronts`.

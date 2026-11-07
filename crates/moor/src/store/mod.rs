@@ -60,6 +60,7 @@ pub(super) mod reads;
 mod repo;
 mod reports;
 mod runs;
+mod sealed;
 mod select;
 mod sessions;
 #[cfg(test)]

@@ -126,6 +126,7 @@ fn rig() -> Rig {
         ..ToolPaths::default()
     };
     let cb = driver(d, &tools).with_pool_hosts(Some(Arc::new(host) as Arc<dyn PoolHosts>));
+    crate::keys::scratch_ssh_key(&d.join("state"));
     let key = cb.controller_key().unwrap();
     fs::copy(key.with_extension("pub"), d.join("authorized_keys")).unwrap();
     Rig { dir, cb }
