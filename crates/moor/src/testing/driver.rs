@@ -41,6 +41,8 @@ struct State {
     fail_copy_out: Option<DriverError>,
     copy_content: Option<Vec<u8>>,
     copy_symlink: Option<PathBuf>,
+    /// Acquires that go on without their caller.
+    flight: acquire::Flight,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     /// Outcomes that end any `exec` whose argv mentions the needle.
     exec_ends: Vec<(String, ExecOutcome)>,
@@ -107,8 +109,19 @@ impl Driver for FakeDriver {
         req: &AcquireReq,
         note: &mut dyn FnMut(&str),
     ) -> Result<Acquired, DriverError> {
-        self.replay_notes(note);
-        self.acquire(req)
+        self.take_off()?;
+        self.land(req, note)
+    }
+
+    fn acquire_outlives_caller(&self, _handle: &BoxHandle) -> bool {
+        self.st().flight.goes_on
+    }
+    fn adopt_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        self.adopted(req, note)
     }
 
     fn planned_handle(&self, _req: &AcquireReq) -> BoxHandle {

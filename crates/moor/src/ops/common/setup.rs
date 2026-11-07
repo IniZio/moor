@@ -18,7 +18,7 @@ use crate::ops::common::box_exec::{BoxProxy, Site};
 
 use attach::attach;
 pub(crate) use attach::run_id;
-pub(crate) use link::{await_reachable, Released};
+pub(crate) use link::{await_reachable, Released, LINK_WAIT};
 use link::{link_lost, Left};
 
 /// How many trailing log lines a failure warning carries.

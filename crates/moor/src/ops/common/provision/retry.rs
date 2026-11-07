@@ -9,6 +9,8 @@ use moor_core::{BoxHandle, BoxPath, ErrorKind};
 use moor_core::config::Flags;
 use moor_core::BoxId;
 
+use super::interrupted::release_warned;
+use super::lease::planned_root;
 use super::rerun::record_interrupted;
 use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
 use crate::cx::Cx;
@@ -64,12 +66,18 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let row = super::reread(store, id)?;
     let me = std::process::id();
+    let acquiring = row.intent == Some(Intent::Provisioning { pid: me });
+    if acquiring && row.lifecycle != BoxLifecycle::SettingUp {
+        return release_cut(cx, store, &row);
+    }
     if row.lifecycle != BoxLifecycle::SettingUp {
         return Ok(());
     }
-    let done = if row.intent == Some(Intent::Provisioning { pid: me }) {
+    let done = if acquiring {
         let cfg = settings_of(cx, &row, &Flags::default())?;
-        super::provision(cx, store, id, Entry::Again, &cfg)?
+        let goes_on = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Starting);
+        let entry = if goes_on { Entry::Adopt } else { Entry::Again };
+        super::provision(cx, store, id, entry, &cfg)?
     } else if row.intent == Some(Intent::Setup { pid: me }) {
         follow_setup(cx, store, &row)?
     } else {
@@ -78,6 +86,16 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
     if done.failed_step().is_none() {
         launch_after_retry(cx, store, id)?;
     }
+    Ok(())
+}
+
+/// Stops the lease a working Box's cut-off acquire left going on its host; this can wait for that
+/// acquire, so it runs here and not before the controller serves.
+fn release_cut(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    if let Some(handle) = planned_root(store, row.id)? {
+        release_warned(cx, store, row, &handle);
+    }
+    store.apply(Decision::new(row.id).intent(IntentChange::Clear))?;
     Ok(())
 }
 

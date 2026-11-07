@@ -3,7 +3,7 @@
 use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::seam::driver::AcquireReq;
@@ -24,12 +24,13 @@ use self::acquired::record_acquired;
 use self::after_lines::steps_after_lines;
 use self::clone::clone_with_proxy;
 use self::delivered::record_delivered;
+pub(crate) use self::entry::Entry;
 use self::failed::failed;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_noted, setup_ended, step_outcome};
-use self::progress::acquire_timed;
+use self::progress::{acquire_timed, adopt_timed};
 use self::rerun::start_ready;
 pub(crate) use self::retry::resume_setup;
 use self::retry::{kept_box_retry, retry_in_box};
@@ -43,46 +44,6 @@ pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
     store
         .box_row(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started Box vanished"))
-}
-
-/// Where the Box stands when its machine is wanted.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Entry {
-    /// A new Box still being checked.
-    Fresh,
-    /// A Box whose setup failed.
-    Retry,
-    /// A working Box that lost its machine; its state stays.
-    Stay,
-    /// A Box queued until a machine slot frees.
-    Waiting,
-    /// A Box being set up whose acquire a restart cut off, whose start goes on.
-    Again,
-}
-
-impl Entry {
-    /// The Box input that starts the step, if any.
-    const fn begin(self) -> Option<BoxLifecycleInput> {
-        match self {
-            Self::Fresh => Some(BoxLifecycleInput::Admitted),
-            Self::Waiting => Some(BoxLifecycleInput::Promoted),
-            Self::Retry => Some(BoxLifecycleInput::Retry),
-            Self::Stay | Self::Again => None,
-        }
-    }
-
-    /// Whether the Box comes up from this step, rather than already working.
-    const fn sets_up(self) -> bool {
-        !matches!(self, Self::Stay)
-    }
-
-    /// The state reason once the Box gets its machine: a queued Box no longer waits for room.
-    const fn reason_once_admitted(self) -> Field<String> {
-        match self {
-            Self::Waiting => Field::Clear,
-            Self::Fresh | Self::Retry | Self::Stay | Self::Again => Field::Keep,
-        }
-    }
 }
 
 /// Gives a Box with no machine, a failed setup in a lost machine or a lost machine a machine again.
@@ -138,6 +99,27 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
     }
 }
 
+/// What marks Box `id` as wanting a machine from `provider`. A takeover only claims the acquire
+/// already under way.
+fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
+    let claim = IntentChange::Set(Intent::Provisioning {
+        pid: std::process::id(),
+    });
+    if entry == Entry::Adopt {
+        return Decision::new(id).intent(claim);
+    }
+    let mut d = Decision::new(id);
+    d.lifecycle_input = entry.begin();
+    d.box_input(BoxInput::Requested)
+        .set(Fields {
+            box_provider: Field::Set(provider.clone()),
+            box_handle: Field::Clear,
+            state_reason: entry.reason_once_admitted(),
+            ..Fields::default()
+        })
+        .intent(claim)
+}
+
 /// Admits the Box, acquires its machine and records the outcome.
 ///
 /// A new or waiting Box at the machine limit is queued (or left waiting) and the
@@ -150,20 +132,7 @@ pub(crate) fn provision(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let started = reread(store, id)?;
-    let requested = |provider: &ProviderId| {
-        let mut d = Decision::new(id);
-        d.lifecycle_input = entry.begin();
-        d.box_input(BoxInput::Requested)
-            .set(Fields {
-                box_provider: Field::Set(provider.clone()),
-                box_handle: Field::Clear,
-                state_reason: entry.reason_once_admitted(),
-                ..Fields::default()
-            })
-            .intent(IntentChange::Set(Intent::Provisioning {
-                pid: std::process::id(),
-            }))
-    };
+    let requested = |provider: &ProviderId| requested(id, entry, provider);
     let bound = if matches!(entry, Entry::Fresh | Entry::Waiting) {
         let fresh = (&started, entry == Entry::Fresh);
         match node::admit(cx, store, fresh, requested)? {
@@ -191,10 +160,16 @@ pub(crate) fn provision(
     let provider = req.provider.as_str();
     let mut layered = layers::plan(cx, store, &started, provider, cfg, &req.cache);
     let warm = match layered.as_mut() {
-        Some(layered) => layers::warm(cx, store, id, &req, layered)?,
-        None => None,
+        Some(layered) if entry != Entry::Adopt => layers::warm(cx, store, id, &req, layered)?,
+        _ => None,
     };
-    match warm.map_or_else(|| acquire_timed(cx, store, id, &req), Ok) {
+    let acquire = if entry == Entry::Adopt {
+        adopt_timed
+    } else {
+        acquire_timed
+    };
+    let acquired = warm.map_or_else(|| acquire(cx, store, id, &req), Ok);
+    match acquired {
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got, (entry == Entry::Stay).then_some(&started))?;
@@ -321,6 +296,7 @@ mod after_lines;
 mod clone;
 mod delivered;
 mod disk;
+mod entry;
 pub(crate) use disk::relieve_disk;
 mod failed;
 pub(crate) mod interrupted;

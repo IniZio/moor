@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
-use moor_client::link::lease::{Answer, Boot, Cache, CheckpointAct, Verb};
+use moor_client::link::lease::{Answer, Cache, CheckpointAct};
 use moor_client::link::ops::Reply;
 use moor_core::domain::event::{ProviderStep, MAX_STEPS};
 use serde::Deserialize;
@@ -13,7 +13,9 @@ use tokio::process::Command;
 use tokio::time::Instant;
 
 use super::memory::disk_mib;
-use super::{box_dir, cache, checked, checked_class, room, Crabbox, Pool, POOL_DIR};
+use super::{
+    box_dir, cache, checked, checked_class, flight, room, stop_now, Crabbox, Pool, POOL_DIR,
+};
 use crate::settings;
 
 /// How long a save or a fork may take, since it copies a VM's memory and disk.
@@ -228,28 +230,47 @@ async fn fork(
     room(home, pool, slug).await?;
     let room_ms = began.elapsed().as_millis();
     let mine = box_dir(home, slug);
-    let dir = mine.join("lease");
-    let existed = dir.is_dir();
-    let mut args = vec!["checkpoint", "fork", id, "--slug", slug];
-    if let Some(class) = class {
-        args.extend(["--class", class]);
-    }
-    args.push("--json");
-    let crabbox = Crabbox {
-        home,
-        pool,
-        slug: Some(slug),
-    };
-    let began = Instant::now();
-    let forked = crabbox
-        .spawn_both(&args, (&dir, &mine), CHECKPOINT, &[0], &env)
-        .await
-        .and_then(|(printed, said)| same_lease(&printed, slug).map(|()| said));
-    let crabbox_ms = began.elapsed().as_millis();
-    if forked.is_err() && !existed {
-        let _ = super::lease(home, pool, Verb::Stop, Some(slug), None, &Boot::default()).await;
-    }
-    forked.map(|said| Answer::Forked {
+    let (at, owned_home, owned_pool) = (mine.clone(), home.to_path_buf(), pool.clone());
+    let (id, slug, class) = (id.to_owned(), slug.to_owned(), class.map(str::to_owned));
+    let told = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let tell = std::sync::Arc::clone(&told);
+    flight::fly(&mine, async move {
+        let dir = at.join("lease");
+        let existed = dir.is_dir();
+        let mut args = vec!["checkpoint", "fork", id.as_str(), "--slug", slug.as_str()];
+        if let Some(class) = class.as_deref() {
+            args.extend(["--class", class]);
+        }
+        args.push("--json");
+        let crabbox = Crabbox {
+            home: &owned_home,
+            pool: &owned_pool,
+            slug: Some(&slug),
+        };
+        let env: Vec<(&str, String)> = env;
+        let began = Instant::now();
+        let forked = crabbox
+            .spawn_both(&args, (&dir, &at), CHECKPOINT, &[0], &env)
+            .await
+            .and_then(|(printed, said)| same_lease(&printed, &slug).map(|()| said));
+        let crabbox_ms = began.elapsed().as_millis();
+        if forked.is_err() && !existed {
+            let _ = stop_now(&crabbox, &slug).await;
+        }
+        forked.map(|said| {
+            *tell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((crabbox_ms, said));
+        })
+    })
+    .await?;
+    // A fork another caller started and this one joined reports no timing.
+    let (crabbox_ms, said) = told
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+        .unwrap_or_default();
+    Ok(Answer::Forked {
         timing: timing_lines(room_ms, crabbox_ms, &said),
     })
 }

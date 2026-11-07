@@ -18,6 +18,7 @@ pub use reach::{carry, dial, splice, Sshd};
 mod cache;
 mod checkpoint;
 mod crabbox;
+mod flight;
 mod memory;
 mod reach;
 mod rows;
@@ -174,10 +175,11 @@ async fn answer(
     key: Option<&str>,
     boot: &Boot,
 ) -> Result<Answer, String> {
-    if boot.cache.is_some() && verb != Verb::Warmup {
+    let boots = matches!(verb, Verb::Warmup | Verb::Adopt);
+    if boot.cache.is_some() && !boots {
         return Err("only a warmup mounts a cache".to_owned());
     }
-    if boot.class.is_some() && verb != Verb::Warmup {
+    if boot.class.is_some() && !boots {
         return Err("only a warmup boots a machine class".to_owned());
     }
     match (verb, slug.map(checked).transpose()?) {
@@ -218,14 +220,15 @@ async fn act(
             return reach::authorize(lease, key).await;
         }
         Verb::Warmup => warmup(lease, slug, boot).await,
+        Verb::Adopt => return adopt(lease, slug, boot).await,
         Verb::Info => return reach::info(lease).await,
         Verb::Pause => return pause(lease, &[]).await,
         Verb::PausePublish => return pause(lease, &[(PAUSE_PUBLISH, "1".to_owned())]).await,
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
-            let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
-            let _ = tokio::fs::remove_dir_all(box_dir(lease.home, slug)).await;
-            gone
+            // A stop while the VM boots finds no lease yet, and the boot then leaves one behind.
+            let _ = flight::join(&box_dir(lease.home, slug)).await;
+            stop_now(lease, slug).await
         }
         Verb::List => return Err("list names no slug".to_owned()),
     };
@@ -236,6 +239,26 @@ async fn act(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Deletes lease `slug` and its dir, with no boot of it going on.
+async fn stop_now(lease: &Crabbox<'_>, slug: &str) -> Result<String, String> {
+    let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
+    let _ = tokio::fs::remove_dir_all(box_dir(lease.home, slug)).await;
+    gone
+}
+
+/// Takes over lease `slug` for a caller whose earlier warmup or fork was cut off: waits for one
+/// going on, or finds its VM up, or boots the VM.
+async fn adopt(lease: &Crabbox<'_>, slug: &str, boot: &Boot) -> Result<Answer, String> {
+    if let Some(ended) = flight::join(&box_dir(lease.home, slug)).await {
+        return ended.map(|()| Answer::Done);
+    }
+    let up = list(lease.home, lease.pool).await?;
+    if up.iter().any(|l| l.slug == slug) {
+        return Ok(Answer::Done);
+    }
+    warmup(lease, slug, boot).await.map(|_| Answer::Done)
 }
 
 /// Pauses the lease with `env` added to crabbox's.
@@ -278,7 +301,27 @@ async fn warmup(lease: &Crabbox<'_>, slug: &str, boot: &Boot) -> Result<String, 
     let flags = class.map_or_else(|| vec!["--slug"], |c| vec!["--class", c, "--slug"]);
     room(lease.home, lease.pool, slug).await?;
     let env = env.unwrap_or_default();
-    lease.run_with("warmup", &flags, BOOT, &[0], &env).await
+    let flags: Vec<String> = flags.into_iter().map(str::to_owned).collect();
+    let (home, pool, name) = (
+        lease.home.to_path_buf(),
+        lease.pool.clone(),
+        slug.to_owned(),
+    );
+    flight::fly(&box_dir(lease.home, slug), async move {
+        let lease = Crabbox {
+            home: &home,
+            pool: &pool,
+            slug: Some(&name),
+        };
+        let env: Vec<(&str, String)> = env;
+        let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+        lease
+            .run_with("warmup", &flags, BOOT, &[0], &env)
+            .await
+            .map(drop)
+    })
+    .await
+    .map(|()| String::new())
 }
 
 /// `slug` itself, when it is a well-formed `moor-<controller>-<id>` slug.

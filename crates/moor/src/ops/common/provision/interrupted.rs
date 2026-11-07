@@ -4,7 +4,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::seam::driver::Released;
-use moor_core::{BoxId, Warning};
+use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::lease::planned_root;
 use super::rerun::record_interrupted;
@@ -58,14 +58,32 @@ fn followable(row: &BoxRow) -> bool {
         })
 }
 
-/// Settles a cut-off acquire; returns whether this process acquires once more.
+/// Settles a cut-off acquire; returns whether this process goes on with it.
 fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, CommandError> {
     let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
+    let claim = IntentChange::Set(Intent::Provisioning { pid: me });
     match row.boxed.as_ref().map(|b| b.state) {
         Some(BoxState::Starting) => {
-            let again = (setting_up && !cut_before(store, row)?).then_some(me);
-            fail_acquire(cx, store, row, again)?;
-            Ok(again.is_some())
+            let planned = planned_root(store, row.id)?;
+            let goes_on = planned
+                .as_ref()
+                .is_some_and(|h| cx.driver().acquire_outlives_caller(h));
+            if goes_on && setting_up {
+                store.apply(Decision::new(row.id).intent(claim))?;
+                return Ok(true);
+            }
+            if goes_on {
+                // Stopping it can wait for it, and the controller is not serving yet.
+                let lost = Decision::new(row.id)
+                    .box_input(BoxInput::AcquireFailed {
+                        cause: CAUSE.to_owned(),
+                        attempted: planned,
+                    })
+                    .intent(claim);
+                store.apply(lost)?;
+                return Ok(true);
+            }
+            fail_acquire(cx, store, row, me, setting_up && !cut_before(store, row)?)
         }
         // The process that claimed it to acquire again ended before it could.
         Some(BoxState::Failed | BoxState::Gone) if setting_up => {
@@ -91,46 +109,57 @@ fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     Ok(newest("box_failed")? > newest("setting_up")?)
 }
 
-/// Records the cut-off acquire as failed and releases the machine it may have created. With
-/// `again` that process keeps the Box's start, so its setup has not failed.
+/// Records the cut-off acquire as failed and releases the machine it may have created; returns
+/// whether this process acquires again, which `again` asks for. A machine that cannot be released
+/// may still be there, so its Box fails instead.
 fn fail_acquire(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    again: Option<u32>,
-) -> Result<(), CommandError> {
+    me: u32,
+    again: bool,
+) -> Result<bool, CommandError> {
     let planned = planned_root(store, row.id)?;
-    let mut lost = Decision::new(row.id);
-    if row.lifecycle == BoxLifecycle::SettingUp && again.is_none() {
-        lost = lost.lifecycle(BoxLifecycleInput::SetupFailed {
+    let lost = Decision::new(row.id).box_input(BoxInput::AcquireFailed {
+        cause: CAUSE.to_owned(),
+        attempted: planned.clone(),
+    });
+    store.apply(lost.intent(IntentChange::Set(Intent::Provisioning { pid: me })))?;
+    let released = planned
+        .as_ref()
+        .is_none_or(|handle| release_warned(cx, store, row, handle));
+    if again && released {
+        return Ok(true);
+    }
+    let mut settled = Decision::new(row.id).intent(IntentChange::Clear);
+    if row.lifecycle == BoxLifecycle::SettingUp {
+        settled = settled.lifecycle(BoxLifecycleInput::SetupFailed {
             cause: CAUSE.to_owned(),
             which: None,
         });
     }
-    let lost = lost
-        .box_input(BoxInput::AcquireFailed {
-            cause: CAUSE.to_owned(),
-            attempted: planned.clone(),
-        })
-        .intent(again.map_or(IntentChange::Clear, |pid| {
-            IntentChange::Set(Intent::Provisioning { pid })
-        }));
-    store.apply(lost)?;
-    let Some(handle) = planned else {
-        return Ok(());
-    };
-    match cx.driver().release(&handle) {
+    store.apply(settled)?;
+    Ok(false)
+}
+
+/// Releases `handle`, what the cut-off acquire of `row` may have created; warns and returns false
+/// when it may still be there.
+pub(super) fn release_warned(cx: &Cx, store: &Store, row: &BoxRow, handle: &BoxHandle) -> bool {
+    match cx.driver().release(handle) {
+        Ok(Released::Deleted) => true,
         Ok(Released::AlreadyGone) => {
-            store.apply(Decision::new(row.id).box_input(BoxInput::DriverMissing))?;
+            let gone = Decision::new(row.id).box_input(BoxInput::DriverMissing);
+            store.apply(gone).is_ok()
         }
-        Ok(Released::Deleted) => {}
-        Err(e) => cx.warn(Warning {
-            code: "box_release_failed".to_owned(),
-            message: format!(
-                "could not release {} after its start was interrupted: {e}",
-                row.name.as_str()
-            ),
-        }),
+        Err(e) => {
+            cx.warn(Warning {
+                code: "box_release_failed".to_owned(),
+                message: format!(
+                    "could not release {} after its start was interrupted: {e}",
+                    row.name.as_str()
+                ),
+            });
+            false
+        }
     }
-    Ok(())
 }

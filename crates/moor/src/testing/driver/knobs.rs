@@ -106,6 +106,17 @@ impl FakeDriver {
             .collect())
     }
 
+    /// Fails the next acquire with `e`, on a driver already in use.
+    pub(crate) fn fail_next_acquire(&self, e: DriverError) {
+        self.st().fail_acquire = Some(e);
+    }
+
+    /// Has a cut acquire go on without its caller and keep its slug, as a pool host's does.
+    pub(crate) fn cut_acquires_go_on(self) -> Self {
+        self.st().flight.goes_on = true;
+        self
+    }
+
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
