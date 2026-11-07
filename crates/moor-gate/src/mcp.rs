@@ -1,11 +1,10 @@
 //! `/mcp`: a streamable HTTP MCP server on the gate. A bot signs in as a person through the
 //! issuer; every request carries that person's access token, and each tool acts on the
-//! controller's front socket as that person, through the same rewrite `/front` uses.
+//! controller as that person, through the same rewrite `/front` uses.
 
 use std::convert::Infallible;
 use std::io::Cursor;
 use std::net::TcpStream;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -17,13 +16,15 @@ use hyper::server::conn::http1;
 use hyper::service::{service_fn, Service};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
+use moor_client::{Client, ClientError};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio::io::{join, split, AsyncReadExt};
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 
-use crate::tools::Tools;
+use crate::http::{RESTARTING, RETRY_AFTER_SECS};
+use crate::tools::{client_down, Tools};
 use crate::{log, Gate, Person};
 
 /// Scope that lets a token read Boxes.
@@ -46,8 +47,8 @@ pub struct Mcp {
     runtime: Runtime,
     /// The MCP service, shared by every connection so sessions survive reconnects.
     service: StreamableHttpService<Tools, LocalSessionManager>,
-    /// The controller's front socket.
-    front_socket: PathBuf,
+    /// Dials the controller.
+    controller: Client,
     /// Cancelled when the gate drains: each connection ends after the response in flight.
     draining: CancellationToken,
     /// Cancelled at the drain's stream bound: every SSE response ends.
@@ -55,13 +56,13 @@ pub struct Mcp {
 }
 
 impl Mcp {
-    /// An MCP surface at `resource_url` whose tools act on `front_socket`, on a gate without
+    /// An MCP surface at `resource_url` whose tools act through `controller`, on a gate without
     /// browser sign-in.
     ///
     /// # Errors
     /// When the URL has no host or the async runtime cannot start.
-    pub fn new(resource_url: &str, front_socket: PathBuf) -> Result<Self, String> {
-        Self::with_setup(resource_url, front_socket, None)
+    pub fn new(resource_url: &str, controller: Client) -> Result<Self, String> {
+        Self::with_setup(resource_url, controller, None)
     }
 
     /// An MCP surface like [`Mcp::new`] whose webhook replies link to the setup page at
@@ -71,7 +72,7 @@ impl Mcp {
     /// When the URL has no host or the async runtime cannot start.
     pub fn with_setup(
         resource_url: &str,
-        front_socket: PathBuf,
+        controller: Client,
         public_url: Option<&str>,
     ) -> Result<Self, String> {
         let host = resource_url
@@ -88,7 +89,7 @@ impl Mcp {
             .with_legacy_session_mode(false)
             .with_json_response(true);
         let tools = Tools {
-            front_socket: front_socket.clone(),
+            controller: controller.clone(),
             public_url: public_url.map(|url| url.trim_end_matches('/').into()),
         };
         let service = StreamableHttpService::new(
@@ -105,7 +106,7 @@ impl Mcp {
             resource_url: resource_url.to_owned(),
             runtime,
             service,
-            front_socket,
+            controller,
             draining: CancellationToken::new(),
             streams_ended,
         })
@@ -183,6 +184,9 @@ impl Mcp {
         let verified = tokio::task::block_in_place(|| self.authenticate(authorization, gate));
         match verified {
             Ok((person, scopes)) => {
+                if let Err(e) = tokio::task::block_in_place(|| self.controller.ready()) {
+                    return away(&e);
+                }
                 req.extensions_mut().insert(Auth { person, scopes });
                 match TowerToHyperService::new(self.service.clone())
                     .call(req)
@@ -218,9 +222,9 @@ impl Mcp {
         format!("Bearer resource_metadata=\"{}\"", self.metadata_url())
     }
 
-    /// The controller's front socket.
-    pub(crate) fn front_socket(&self) -> &std::path::Path {
-        &self.front_socket
+    /// Dials the controller.
+    pub(crate) const fn controller(&self) -> &Client {
+        &self.controller
     }
 
     /// The 401 that points a client at the metadata document.
@@ -233,6 +237,28 @@ impl Mcp {
         }
         res
     }
+}
+
+/// The answer to a request held until the controller stayed away, or could not be spoken to.
+fn away(e: &ClientError) -> Response<Body> {
+    let (status, message) = if client_down(e) {
+        (StatusCode::SERVICE_UNAVAILABLE, RESTARTING)
+    } else {
+        log(&format!("the controller is unreachable: {e}"));
+        (StatusCode::BAD_GATEWAY, "the controller is unreachable")
+    };
+    let body = serde_json::json!({ "error": message }).to_string();
+    let mut res = Response::new(Full::new(Bytes::from(body)).boxed());
+    *res.status_mut() = status;
+    res.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/json"),
+    );
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        res.headers_mut()
+            .insert(header::RETRY_AFTER, RETRY_AFTER_SECS.into());
+    }
+    res
 }
 
 /// The bearer token in the value of an `Authorization` header.

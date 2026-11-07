@@ -77,6 +77,9 @@ spec:
               {{- if .Values.egress.enabled }}
               install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /src/egress/ledger-ca.pem /var/lib/moor/config/
               {{- end }}
+              {{- if include "moor.gateOverTls" . }}
+              install -m 0600 /src/secrets/gate-front-key /var/lib/moor/config/gate-front-key
+              {{- end }}
               {{- if .Values.slack.enabled }}
               cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
               install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
@@ -209,9 +212,22 @@ spec:
           command: [moor-gate]
           env:
             - { name: MOOR_GATE_DRAIN_TIMEOUT_SECS, value: {{ .Values.controller.drainTimeoutSecs | quote }} }
+            {{- if include "moor.gateOverTls" . }}
+            # The gate reads --front-key from here, so the key stays out of the process list.
+            - name: MOOR_GATE_FRONT_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-secrets, key: gate-front-key }
+            {{- end }}
           args:
             - --listen=0.0.0.0:{{ .Values.gate.port }}
+            {{- if include "moor.gateOverTls" . }}
+            - --controller=tls://{{ include "moor.ledgerHost" . }}:{{ .Values.egress.ledgerPort }}
+            - --controller-ca=/var/lib/moor/gate/ledger-ca.pem
+            - --controller-cert=/var/lib/moor/gate/gate-client.crt
+            - --controller-key=/var/lib/moor/gate/gate-client.key
+            {{- else }}
             - --front-socket=/var/lib/moor/front/front
+            {{- end }}
             - --issuer={{ required "authgear.issuer is required" .Values.authgear.issuer }}
             - --client-id={{ required "authgear.clientId is required" .Values.authgear.clientId }}
             {{- with .Values.gate.jwksUrl }}
@@ -232,7 +248,11 @@ spec:
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
+            {{- if include "moor.gateOverTls" . }}
+            - { name: gate-tls, mountPath: /var/lib/moor/gate, readOnly: true }
+            {{- else }}
             - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/authgear, readOnly: true }
+            {{- end }}
         {{- end }}
         {{- if and .Values.runner.enabled (not .Values.runner.separate) }}
         - name: runner
@@ -286,6 +306,21 @@ spec:
               - { key: ledger-tls.crt, path: ledger-tls.crt }
               - { key: ledger-tls.key, path: ledger-tls.key }
               - { key: ledger-ca.pem, path: ledger-ca.pem }
+        {{- end }}
+        {{- if include "moor.gateOverTls" . }}
+        - name: gate-tls
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Release.Name }}-egress
+                  items:
+                    - { key: ledger-ca.pem, path: ledger-ca.pem }
+              - secret:
+                  name: {{ .Release.Name }}-secrets
+                  items:
+                    - { key: gate-client.crt, path: gate-client.crt }
+                    - { key: gate-client.key, path: gate-client.key }
         {{- end }}
         - name: moor-config
           emptyDir: { medium: Memory, sizeLimit: 1Mi }

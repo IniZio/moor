@@ -522,6 +522,23 @@ fn a_hello_is_refused_unless_its_key_is_that_fronts() {
 }
 
 #[test]
+fn a_front_is_ready_with_its_key_and_refused_at_once_without_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, ca) = serving_fronts(&dir);
+    let files = TlsPki {
+        ca,
+        cert: dir.path().join("ctl-client.pem"),
+        key: dir.path().join("ctl-client.key"),
+    };
+    let front = |key| Client::front(&format!("tls://{addr}"), &files, "slack", key).unwrap();
+    front(FRONT_KEY).ready().unwrap();
+    assert!(matches!(
+        front("not-the-key").ready(),
+        Err(ClientError::Unauthorized(_))
+    ));
+}
+
+#[test]
 fn a_front_key_is_not_a_runner_key() {
     let dir = tempfile::tempdir().unwrap();
     let (addr, ca) = serving_fronts(&dir);
