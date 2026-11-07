@@ -191,6 +191,12 @@ impl Driver for Crabbox {
         plain()
     }
 
+    fn cancel_acquire(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        pool::is_pool_handle(handle)
+            .then_some(())
+            .map_or(Ok(()), |()| pool::cancel(self, handle))
+    }
+
     fn acquire_outlives_caller(&self, handle: &BoxHandle) -> bool {
         pool::is_pool_handle(handle)
     }

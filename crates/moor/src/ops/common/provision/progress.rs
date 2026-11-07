@@ -65,7 +65,8 @@ pub(in crate::ops::common::provision) fn take_over(
     loop {
         let got = cx.driver().adopt_noting(req, &mut progress(store, id));
         let waited = cx.clock().instant().saturating_duration_since(began);
-        let again = waited < LINK_WAIT && !cx.env().draining().is_cancelled();
+        let stopped = cx.env().draining().is_cancelled() || cx.env().cancel().is_cancelled();
+        let again = waited < LINK_WAIT && !stopped;
         match got {
             Err(DriverError::Transport { .. }) if again => cx.clock().sleep(RELINK_POLL),
             got => return got,

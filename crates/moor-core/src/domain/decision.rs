@@ -83,6 +83,11 @@ pub enum Intent {
         /// Process id.
         pid: u32,
     },
+    /// A forced close wants the Box gone, ahead of the start it is stopping; a restart honours it.
+    Closing {
+        /// Process id.
+        pid: u32,
+    },
 }
 
 impl Intent {
@@ -93,6 +98,7 @@ impl Intent {
             Self::Provisioning { .. } => "provisioning",
             Self::Running { .. } => "running",
             Self::Setup { .. } => "setup",
+            Self::Closing { .. } => "closing",
         }
     }
 
@@ -100,7 +106,10 @@ impl Intent {
     #[must_use]
     pub const fn pid(&self) -> u32 {
         match self {
-            Self::Provisioning { pid } | Self::Running { pid, .. } | Self::Setup { pid } => *pid,
+            Self::Provisioning { pid }
+            | Self::Running { pid, .. }
+            | Self::Setup { pid }
+            | Self::Closing { pid } => *pid,
         }
     }
 
@@ -109,7 +118,7 @@ impl Intent {
     pub const fn run(&self) -> Option<RunId> {
         match self {
             Self::Running { run, .. } => Some(*run),
-            Self::Provisioning { .. } | Self::Setup { .. } => None,
+            Self::Provisioning { .. } | Self::Setup { .. } | Self::Closing { .. } => None,
         }
     }
 }

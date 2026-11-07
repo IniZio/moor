@@ -122,6 +122,11 @@ impl FakeDriver {
         self.st().exec_ends.push((needle.to_owned(), outcome));
     }
 
+    /// Whether no Box is left.
+    pub(crate) fn list_is_empty(&self) -> bool {
+        self.st().live.is_empty()
+    }
+
     /// Has a cut acquire go on without its caller and keep its slug, as a pool host's does.
     pub(crate) fn cut_acquires_go_on(self) -> Self {
         self.st().flight.goes_on = true;

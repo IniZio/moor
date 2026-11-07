@@ -12,6 +12,7 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind};
 
 use super::{handle_of, pin, split_handle, Crabbox};
+pub(super) use lost::cancel;
 use lost::{lost_or_failed, undone};
 
 pub(super) mod checkpoints;

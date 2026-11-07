@@ -1,11 +1,20 @@
 //! Telling a host out of reach from a host that said no.
 
 use moor_client::link::broker::is_link_loss;
+use moor_client::link::lease::Verb;
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::DriverError;
 
 use super::{failed, release};
 use crate::adapters::crabbox::Crabbox;
+
+/// Ends the boot of `handle` going on at its host.
+pub(in crate::adapters::crabbox) fn cancel(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+) -> Result<(), DriverError> {
+    cb.placed(handle)?.done(Verb::Cancel, None)
+}
 
 /// `e`, which came after the VM booted, once the lease is stopped. A lost link leaves the VM to
 /// whoever takes the acquire over.

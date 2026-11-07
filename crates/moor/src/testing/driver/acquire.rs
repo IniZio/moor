@@ -61,22 +61,6 @@ impl FakeDriver {
         Ok(())
     }
 
-    /// Takes over the acquire going on.
-    pub(super) fn adopted(
-        &self,
-        req: &AcquireReq,
-        note: &mut dyn FnMut(&str),
-    ) -> Result<Acquired, DriverError> {
-        {
-            let mut s = self.st();
-            s.note("adopt".to_owned());
-            if !s.flight.adopt_errors.is_empty() {
-                return Err(s.flight.adopt_errors.remove(0));
-            }
-        }
-        self.land(req, note)
-    }
-
     /// The Boxes a listing of `provider` shows.
     pub(super) fn listed(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         let mut s = self.st();
@@ -96,6 +80,22 @@ impl FakeDriver {
                 asleep: s.stopped.contains(h),
             })
             .collect())
+    }
+
+    /// Takes over the acquire going on.
+    pub(super) fn adopted(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        {
+            let mut s = self.st();
+            s.note("adopt".to_owned());
+            if !s.flight.adopt_errors.is_empty() {
+                return Err(s.flight.adopt_errors.remove(0));
+            }
+        }
+        self.land(req, note)
     }
 
     /// Ends the acquire going on, handing `note` its notes.

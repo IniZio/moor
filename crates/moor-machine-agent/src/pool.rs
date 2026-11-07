@@ -223,13 +223,17 @@ async fn act(
         }
         Verb::Warmup => warmup(lease, slug, boot).await,
         Verb::Adopt => return adopt(lease, slug, boot).await,
+        Verb::Cancel => {
+            flight::stop(&box_dir(lease.home, slug)).await;
+            return Ok(Answer::Done);
+        }
         Verb::Info => return reach::info(lease).await,
         Verb::Pause => return pause(lease, &[]).await,
         Verb::PausePublish => return pause(lease, &[(PAUSE_PUBLISH, "1".to_owned())]).await,
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
             // A stop while the VM boots finds no lease yet, and the boot then leaves one behind.
-            let _ = flight::join(&box_dir(lease.home, slug)).await;
+            flight::stop(&box_dir(lease.home, slug)).await;
             stop_now(lease, slug).await
         }
         Verb::List => return Err("list names no slug".to_owned()),

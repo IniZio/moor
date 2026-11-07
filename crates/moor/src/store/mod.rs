@@ -320,6 +320,7 @@ fn intent_from(
     match kind.as_str() {
         "provisioning" => Ok(Some(Intent::Provisioning { pid })),
         "setup" => Ok(Some(Intent::Setup { pid })),
+        "closing" => Ok(Some(Intent::Closing { pid })),
         "running" => {
             let run =
                 run.ok_or_else(|| StoreError::Corrupt("running intent without run".into()))?;

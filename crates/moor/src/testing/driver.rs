@@ -113,6 +113,12 @@ impl Driver for FakeDriver {
         self.land(req, note)
     }
 
+    fn cancel_acquire(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        self.st()
+            .note(format!("cancel_acquire {}", handle.as_str()));
+        Ok(())
+    }
+
     fn acquire_outlives_caller(&self, _handle: &BoxHandle) -> bool {
         self.st().flight.goes_on
     }

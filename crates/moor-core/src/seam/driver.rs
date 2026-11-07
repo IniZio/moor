@@ -66,6 +66,16 @@ pub trait Driver: Send + Sync {
         false
     }
 
+    /// Ends the acquire of `handle` going on elsewhere, for a forced close. What it made stays for
+    /// [`Driver::release`]. An acquire that stops with its caller needs nothing here.
+    ///
+    /// # Errors
+    /// The acquire could not be told.
+    fn cancel_acquire(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let _ = handle;
+        Ok(())
+    }
+
     /// Takes over the acquire a cut-off caller left going, as [`Driver::acquire_noting`] would
     /// have ended.
     ///

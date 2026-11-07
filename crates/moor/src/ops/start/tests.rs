@@ -32,6 +32,7 @@ mod dead_agent;
 mod dotfiles;
 mod evict;
 mod exited_start;
+mod forced_close;
 mod identity;
 mod interrupted;
 mod launch_deadline;

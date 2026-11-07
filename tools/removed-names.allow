@@ -18,3 +18,5 @@ std::task::Context
 background_tasks
 # Claude Code's own directory of shell output files, looked for in crates/moor/src/adapters/box_agent/claude/wait.rs.
 /tasks/
+# tokio::task_local!, the macro tokio names it by.
+task_local

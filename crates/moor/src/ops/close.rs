@@ -8,7 +8,7 @@ use moor_core::decide::close::{
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, ExtraEvent, Intent};
+use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
 use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
@@ -112,16 +112,32 @@ pub(crate) fn run_with_reason(
 ///
 /// The interrupted start records its setup as failed before it lets go. One that has not
 /// stopped after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still
-/// acquiring the machine is not interrupted.
+/// acquiring its machine has that boot cancelled, and the close is recorded first so a restart
+/// honours it.
 fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
     let (clock, state) = (cx.clock(), cx.state_dir()?);
     let name = row.name.as_str();
     let in_setup = matches!(row.intent, Some(Intent::Setup { .. }));
-    let interrupted = (force && in_setup)
+    let acquiring = matches!(row.intent, Some(Intent::Provisioning { .. }));
+    let store = cx.store()?;
+    if force && acquiring {
+        let closing = Intent::Closing {
+            pid: std::process::id(),
+        };
+        store.apply(Decision::new(row.id).intent(IntentChange::Set(closing)))?;
+    }
+    let interrupted = (force && (in_setup || acquiring))
         .then(|| boxlock::interrupt(state, row.id))
         .flatten();
+    if force && acquiring {
+        cancel_boot(cx, store, row)?;
+    }
     if let Some(ended) = interrupted {
         if !boxlock::wait_ended(clock, &ended, INTERRUPT_WAIT) {
+            if let (true, Some(start)) = (acquiring, row.intent) {
+                let back = IntentChange::Set(start);
+                store.apply(Decision::new(row.id).intent(back))?;
+            }
             return Err(CommandError::new(
                 ErrorKind::Refused,
                 format!(
@@ -133,7 +149,7 @@ fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
         }
     }
     BoxLock::acquire(clock, state, row.id, "close", boxlock::WAIT).map_err(|e| {
-        if in_setup && boxlock::is_interruptible(state, row.id) {
+        if (in_setup || acquiring) && boxlock::is_interruptible(state, row.id) {
             e.with_hint(format!(
                 "`moor close {name} --force` interrupts the start and closes the Box"
             ))
@@ -141,6 +157,20 @@ fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
             e
         }
     })
+}
+
+/// Tells the host of `row` to end the boot it may still run for the start this close stops.
+fn cancel_boot(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let Some(handle) = planned_root(store, row.id)? else {
+        return Ok(());
+    };
+    if let Err(e) = cx.driver().cancel_acquire(&handle) {
+        cx.warn(Warning {
+            code: "box_cancel_failed".to_owned(),
+            message: format!("could not cancel the boot of {}: {e}", row.name.as_str()),
+        });
+    }
+    Ok(())
 }
 
 /// Saves the live agent's transcript while the Box is still Ready; a failure only records an event.

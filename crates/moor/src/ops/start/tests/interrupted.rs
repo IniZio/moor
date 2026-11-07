@@ -328,7 +328,7 @@ fn a_failed_release_of_an_unfinished_box_refuses_the_close() {
 }
 
 #[test]
-fn close_while_the_acquire_runs_is_refused_and_the_start_keeps_its_machine() {
+fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machine() {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, None);
     let seen = Arc::new(Mutex::new(None));
@@ -347,7 +347,11 @@ fn close_while_the_acquire_runs_is_refused_and_the_start_keeps_its_machine() {
             proc.clone(),
             UserConfig::default(),
         );
-        let e = close_demo_in(&other).unwrap_err();
+        let req = CloseReq {
+            target: BoxName::parse_allow_bare("demo").unwrap().into(),
+            force: false,
+        };
+        let e = close::run(&other, &req).unwrap_err();
         *got.lock().unwrap() = Some((e.kind, e.error.to_string()));
     });
     run(&w.cx, &start_req()).unwrap();

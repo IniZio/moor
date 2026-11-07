@@ -6,7 +6,10 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
-use super::{box_dir, Pool, CACHE_CAP, POOL_DIR, TAIL};
+use super::{box_dir, flight, Pool, CACHE_CAP, POOL_DIR, TAIL};
+
+/// How long crabbox gets to end a boot it was asked to stop; a forced close waits on this.
+const STOP_GRACE: Duration = Duration::from_secs(20);
 
 /// crabbox on this host, for one lease or, with no slug, for the pool.
 pub(super) struct Crabbox<'a> {
@@ -104,7 +107,30 @@ impl Crabbox<'_> {
             .envs(self.pool.cache_gb.map(|gb| (CACHE_CAP, gb.to_string())))
             .stdin(Stdio::null())
             .kill_on_drop(true);
-        let out = tokio::time::timeout(within, cmd.output())
+        let child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cannot run crabbox: {e}"))?;
+        let pid = child.id();
+        let finished = async {
+            let exited = child.wait_with_output();
+            tokio::pin!(exited);
+            tokio::select! {
+                out = &mut exited => out,
+                () = flight::stop_asked() => {
+                    // crabbox ends its provider call on SIGTERM; past the grace it is killed.
+                    if let Some(pid) = pid.and_then(|p| rustix::process::Pid::from_raw(p.cast_signed())) {
+                        let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+                    }
+                    tokio::time::timeout(STOP_GRACE, &mut exited)
+                        .await
+                        .map_err(std::io::Error::other)
+                        .and_then(|out| out)
+                }
+            }
+        };
+        let out = tokio::time::timeout(within, finished)
             .await
             .map_err(|_| format!("crabbox {verb} ran past {}s", within.as_secs()))?
             .map_err(|e| format!("cannot run crabbox: {e}"))?;

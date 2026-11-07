@@ -47,6 +47,7 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
             }
             Intent::Setup { .. } => record_interrupted(cx, store, &row)?,
             Intent::Running { .. } => {}
+            Intent::Closing { .. } => claimed.push(row.id),
         }
     }
     Ok(claimed)
