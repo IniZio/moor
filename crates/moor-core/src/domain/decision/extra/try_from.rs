@@ -71,13 +71,27 @@ impl TryFrom<Event> for ExtraEvent {
                 saved_ms,
                 fork_ms,
                 steps,
+                rerun_from,
             }) => Ok(Self::WarmStarted {
                 layer,
                 layers,
                 saved_ms,
                 fork_ms,
                 steps,
+                rerun_from,
             }),
+            Event::Timing(TimingEvent::WarmRerun {
+                commit,
+                changed,
+                ignored,
+            }) => Ok(Self::WarmRerun {
+                commit,
+                changed,
+                ignored,
+            }),
+            Event::Timing(TimingEvent::WarmRerunFailed { line, tail }) => {
+                Ok(Self::WarmRerunFailed { line, tail })
+            }
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
             }

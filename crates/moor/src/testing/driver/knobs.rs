@@ -32,6 +32,12 @@ pub(super) fn clone_default(spec: &ExecSpec) -> Option<String> {
         .then(|| format!("{AT_BASE}\n"))
 }
 
+/// Whether `spec` is the check of HEAD before a save, which passes unless a test ends it by its
+/// text, so a test that scripts its setup's execs need not count it.
+pub(super) fn is_head_check(spec: &ExecSpec) -> bool {
+    spec.argv.join(" ").contains("moor_head=$(git")
+}
+
 /// Whether the `sh -c` script of `spec` reads the Box's `.moor/artifacts` directory.
 fn is_artifact_index(spec: &ExecSpec) -> bool {
     matches!(spec.argv.as_slice(), [sh, c, script, ..]

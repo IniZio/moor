@@ -318,3 +318,12 @@ fn a_repo_config_cannot_list_more_repos() {
         assert!(parse_repo("m.yaml", text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn checkpoints_cross_commits_unless_the_repo_opts_out() {
+    assert!(ok("setup: [a]\n").checkpoint.across_commits);
+    let out = ok("checkpoint: {across_commits: false}\n");
+    assert!(!out.checkpoint.across_commits);
+    assert!(parse_repo(".moor.yaml", "checkpoint: {commits: false}\n").is_err());
+    assert_eq!(out.changed_keys(&ok("")), ["checkpoint"]);
+}

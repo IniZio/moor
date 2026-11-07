@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::domain::layers::WarmDisk;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::WorkTreeView;
 use moor_core::BoxId;
@@ -26,6 +27,8 @@ pub(crate) struct Provisioned {
     pub(crate) work_tree: Option<WorkTreeView>,
     /// Whether the agent install failed after every setup line passed.
     pub(crate) install_failed: bool,
+    /// The checkpoint disk the setup lines reran over, when they did.
+    pub(crate) warm_disk: Option<WarmDisk>,
 }
 
 impl Provisioned {
@@ -36,6 +39,7 @@ impl Provisioned {
             dotfiles: DotfilesRun::Skipped,
             work_tree: None,
             install_failed: false,
+            warm_disk: None,
         }
     }
 

@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::user::UserId;
@@ -41,21 +42,37 @@ impl LayerKey {
     }
 }
 
-/// The key of every layer: `user`'s clone of `repo` at `base` under cache plan `cache`, then
-/// one per line.
+/// What a chain of layers belongs to. A checkpoint is reused only under the same identity.
+#[derive(Debug, Clone, Copy)]
+pub struct LayerIdentity<'a> {
+    /// Whose secrets and repo access the checkpoint may hold.
+    pub user: UserId,
+    /// The repo, `OWNER/NAME`.
+    pub repo: &'a str,
+    /// The cache plan, since a checkpoint holds its cache disks.
+    pub cache: &'a str,
+    /// The machine class, since a fork refuses another size.
+    pub class: &'a str,
+    /// The base commit, only for a repo that opted out of reuse across commits.
+    pub pinned_base: Option<&'a str>,
+}
+
+/// The key of every layer of `identity`: the clone, then one per line.
 ///
-/// The user is in every key, so no Box starts from a checkpoint another user's Box saved. So is
-/// the cache plan, since a checkpoint holds its cache disks. A Box without cache volumes keeps
-/// the keys of before.
+/// The key holds no commit unless the repo pinned one, so a Box at a new commit finds the
+/// checkpoint. What keeps that safe is the rerun of every line over a checkpoint of another base.
 #[must_use]
-pub fn chain(user: UserId, repo: &str, base: &str, cache: &str, lines: &[String]) -> Vec<LayerKey> {
-    let user = user.get().to_string();
-    let clone = if cache.is_empty() {
-        LayerKey::of(&["clone", &user, repo, base])
-    } else {
-        LayerKey::of(&["clone", &user, repo, base, cache])
-    };
-    let mut keys = vec![clone];
+pub fn chain(identity: &LayerIdentity<'_>, lines: &[String]) -> Vec<LayerKey> {
+    let user = identity.user.get().to_string();
+    let mut clone = vec![
+        "clone",
+        &user,
+        identity.repo,
+        identity.cache,
+        identity.class,
+    ];
+    clone.extend(identity.pinned_base);
+    let mut keys = vec![LayerKey::of(&clone)];
     for line in lines {
         let below = keys.last().map_or("", LayerKey::as_str);
         let key = LayerKey::of(&["line", below, line]);
@@ -94,6 +111,52 @@ pub fn failed_layer(lines: &[String], line: &str) -> usize {
         .iter()
         .position(|l| l == line)
         .map_or(lines.len(), |i| i + 1)
+}
+
+/// The most ignored paths a Box's brief and start reply name.
+pub const IGNORED_NAMED: usize = 20;
+
+/// The disk under a Box that reran its setup lines over a checkpoint of another commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WarmDisk {
+    /// The commit the checkpoint's disk holds.
+    pub commit: String,
+    /// How many tracked paths differ from that commit; none when git could not tell.
+    pub changed: Option<u64>,
+    /// The ignored paths that came with the disk.
+    pub ignored: Vec<String>,
+}
+
+impl WarmDisk {
+    /// What the Box's agent and whoever started it are told.
+    #[must_use]
+    pub fn note(&self) -> String {
+        let commit = self.commit.get(..12).unwrap_or(&self.commit);
+        let changed = self.changed.map_or_else(
+            || "An unknown number of tracked paths".to_owned(),
+            |n| format!("{n} tracked path{}", if n == 1 { "" } else { "s" }),
+        );
+        let mut note = format!(
+            "This Box started from a disk set up at commit {commit}, and every setup line ran \
+             again on the current tree. {changed} changed since that commit."
+        );
+        if self.ignored.is_empty() {
+            return note;
+        }
+        let shown = self.ignored.iter().take(IGNORED_NAMED);
+        let names = shown.map(String::as_str).collect::<Vec<_>>().join(", ");
+        let more = if self.ignored.len() > IGNORED_NAMED {
+            ", and more"
+        } else {
+            ""
+        };
+        let _ = write!(
+            note,
+            " Ignored paths from that disk remain: {names}{more}. A setup line may have skipped \
+             rebuilding them, so they may be stale."
+        );
+        note
+    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 
 use moor_core::config::EnrolledMachine;
 use moor_core::domain::event::ProviderStep;
-use moor_core::domain::layers::chain;
+use moor_core::domain::layers::{chain, LayerIdentity};
 use moor_core::name::NodeName;
 use moor_core::request::{MachineLink, MemoryReport, WarmStarts};
 use moor_core::seam::clock::Ts;
@@ -157,7 +157,14 @@ fn a_save_below_the_floor_is_skipped_with_its_warning() {
 /// Records a checkpoint of another machine under the same provider and name.
 fn on_another_machine(w: &World, machine: i64) {
     let store = w.cx.store().unwrap();
-    let key = chain(REQUESTER_USER, "o/r", "elsewhere", "", &[]).remove(0);
+    let identity = LayerIdentity {
+        user: REQUESTER_USER,
+        repo: "o/r",
+        cache: "",
+        class: "",
+        pinned_base: None,
+    };
+    let key = chain(&identity, &[]).remove(0);
     let lineage = Lineage {
         user: REQUESTER_USER,
         repo: "o/r".to_owned(),

@@ -1,78 +1,171 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
-use super::{chain, checkpoint_after, failed_layer, nearest, LayerKey};
+use super::{
+    chain, checkpoint_after, failed_layer, nearest, LayerIdentity, LayerKey, WarmDisk,
+    IGNORED_NAMED,
+};
 use crate::user::UserId;
 
 const U: UserId = UserId::new(1);
+
+const ID: LayerIdentity<'static> = LayerIdentity {
+    user: U,
+    repo: "o/n",
+    cache: "",
+    class: "",
+    pinned_base: None,
+};
 
 fn lines(xs: &[&str]) -> Vec<String> {
     xs.iter().map(|s| (*s).to_owned()).collect()
 }
 
 #[test]
-fn the_same_repo_base_and_lines_give_the_same_keys() {
-    let a = chain(U, "o/n", "abc", "", &lines(&["npm ci", "make"]));
-    let b = chain(U, "o/n", "abc", "", &lines(&["npm ci", "make"]));
+fn the_same_identity_and_lines_give_the_same_keys() {
+    let a = chain(&ID, &lines(&["npm ci", "make"]));
+    let b = chain(&ID, &lines(&["npm ci", "make"]));
     assert_eq!(a, b);
     assert_eq!(a.len(), 3, "the clone layer and one per line");
 }
 
 #[test]
 fn a_changed_line_invalidates_itself_and_every_later_layer_only() {
-    let before = chain(U, "o/n", "abc", "", &lines(&["a", "b", "c"]));
-    let after = chain(U, "o/n", "abc", "", &lines(&["a", "B", "c"]));
+    let before = chain(&ID, &lines(&["a", "b", "c"]));
+    let after = chain(&ID, &lines(&["a", "B", "c"]));
     assert_eq!(before[..2], after[..2]);
     assert_ne!(before[2], after[2]);
     assert_ne!(before[3], after[3]);
 }
 
 #[test]
-fn another_base_or_repo_changes_every_layer() {
-    let one = chain(U, "o/n", "abc", "", &lines(&["a"]));
+fn each_part_of_the_identity_changes_every_layer() {
+    let one = chain(&ID, &lines(&["a"]));
     for other in [
-        chain(U, "o/n", "abc9", "", &lines(&["a"])),
-        chain(U, "o/m", "abc", "", &lines(&["a"])),
+        LayerIdentity {
+            user: UserId::new(2),
+            ..ID
+        },
+        LayerIdentity { repo: "o/m", ..ID },
+        LayerIdentity {
+            cache: "npm ~/.npm",
+            ..ID
+        },
+        LayerIdentity {
+            class: "large",
+            ..ID
+        },
+        LayerIdentity {
+            pinned_base: Some("abc"),
+            ..ID
+        },
     ] {
-        assert!(one.iter().zip(&other).all(|(x, y)| x != y));
+        let keys = chain(&other, &lines(&["a"]));
+        assert!(one.iter().zip(&keys).all(|(x, y)| x != y), "{other:?}");
     }
 }
 
 #[test]
-fn another_user_changes_every_layer() {
-    let one = chain(U, "o/n", "abc", "", &lines(&["a"]));
-    let other = chain(UserId::new(2), "o/n", "abc", "", &lines(&["a"]));
-    assert!(one.iter().zip(&other).all(|(x, y)| x != y));
+fn a_repo_that_pins_its_base_gets_a_chain_per_commit() {
+    let at = |base| {
+        chain(
+            &LayerIdentity {
+                pinned_base: Some(base),
+                ..ID
+            },
+            &lines(&["a"]),
+        )
+    };
+    assert_eq!(at("abc"), at("abc"));
+    assert_ne!(at("abc")[1], at("def")[1]);
+}
+
+#[test]
+fn the_keys_hold_no_commit_and_match_their_definition() {
+    let keys = chain(&ID, &lines(&["a"]));
+    let clone = LayerKey::of(&["clone", "1", "o/n", "", ""]);
+    assert_eq!(keys[0], clone);
+    assert_eq!(keys[1], LayerKey::of(&["line", clone.as_str(), "a"]));
+}
+
+#[test]
+fn a_key_from_when_the_base_was_in_it_is_never_asked_for() {
+    let then = LayerKey::of(&["clone", "1", "o/n", "abc"]);
+    let then_cached = LayerKey::of(&["clone", "1", "o/n", "abc", "npm ~/.npm"]);
+    for now in [
+        ID,
+        LayerIdentity {
+            pinned_base: Some("abc"),
+            ..ID
+        },
+        LayerIdentity {
+            cache: "npm ~/.npm",
+            pinned_base: Some("abc"),
+            ..ID
+        },
+    ] {
+        let key = &chain(&now, &[])[0];
+        assert!(*key != then && *key != then_cached, "{now:?}");
+    }
 }
 
 #[test]
 fn a_line_cannot_pose_as_the_clone_or_shift_text_between_parts() {
-    let split = chain(U, "o/n", "ab", "", &lines(&["c"]));
-    let joined = chain(U, "o/n", "abc", "", &[]);
+    let split = chain(&LayerIdentity { repo: "o/n", ..ID }, &lines(&["c"]));
+    let joined = chain(&LayerIdentity { repo: "o/nc", ..ID }, &[]);
     assert_ne!(split[1], joined[0]);
     assert_ne!(
-        chain(U, "o", "n/abc", "", &[])[0],
-        chain(U, "o/n", "abc", "", &[])[0],
-        "the repo and base are kept apart"
+        chain(
+            &LayerIdentity {
+                cache: "n",
+                ..LayerIdentity { repo: "o/", ..ID }
+            },
+            &[]
+        )[0],
+        chain(&LayerIdentity { repo: "o/n", ..ID }, &[])[0],
+        "the repo and cache are kept apart"
     );
 }
 
+fn disk(changed: Option<u64>, ignored: &[&str]) -> WarmDisk {
+    WarmDisk {
+        commit: "0123456789abcdef0123".to_owned(),
+        changed,
+        ignored: lines(ignored),
+    }
+}
+
 #[test]
-fn a_cache_plan_changes_every_layer_and_none_keeps_the_keys_of_before() {
-    let none = chain(U, "o/n", "abc", "", &lines(&["a"]));
-    let cached = chain(U, "o/n", "abc", "npm ~/.npm", &lines(&["a"]));
-    let other = chain(U, "o/n", "abc", "cargo ~/.cargo", &lines(&["a"]));
-    assert!(none.iter().zip(&cached).all(|(x, y)| x != y));
-    assert!(cached.iter().zip(&other).all(|(x, y)| x != y));
-    assert_eq!(
-        none[0].as_str(),
-        LayerKey::of(&["clone", "1", "o/n", "abc"]).as_str(),
-        "a Box without cache volumes still matches the checkpoints kept for it"
+fn the_note_names_the_disk_s_commit_its_changes_and_its_ignored_paths() {
+    let note = disk(Some(3), &["dist/", "target/"]).note();
+    assert!(note.contains("commit 0123456789ab,"), "{note}");
+    assert!(note.contains("3 tracked paths changed"), "{note}");
+    assert!(note.contains("dist/, target/."), "{note}");
+    assert!(note.contains("may have skipped rebuilding them"), "{note}");
+}
+
+#[test]
+fn the_note_says_when_it_could_not_count_and_warns_only_of_paths_that_exist() {
+    let note = disk(None, &[]).note();
+    assert!(
+        note.contains("An unknown number of tracked paths"),
+        "{note}"
     );
+    assert!(!note.contains("skipped rebuilding"), "{note}");
+    assert!(disk(Some(1), &[]).note().contains("1 tracked path changed"));
+}
+
+#[test]
+fn the_note_caps_the_paths_it_names() {
+    let many: Vec<String> = (0..=IGNORED_NAMED).map(|i| format!("p{i}/")).collect();
+    let refs: Vec<&str> = many.iter().map(String::as_str).collect();
+    let note = disk(Some(1), &refs).note();
+    assert!(note.contains(", and more."), "{note}");
+    assert!(!note.contains(&format!("p{IGNORED_NAMED}/")), "{note}");
 }
 
 #[test]
 fn keys_are_hex_sha256() {
-    let key = &chain(U, "o/n", "abc", "", &[])[0];
+    let key = &chain(&ID, &[])[0];
     assert_eq!(key.as_str().len(), 64);
     assert!(key.as_str().bytes().all(|b| b.is_ascii_hexdigit()));
     assert_eq!(
@@ -93,7 +186,7 @@ fn the_clone_a_slow_line_and_the_last_line_are_checkpointed() {
 
 #[test]
 fn retry_resumes_from_the_deepest_checkpoint_at_or_below_the_failed_layer() {
-    let keys = chain(U, "o/n", "abc", "", &lines(&["a", "b", "c", "d"]));
+    let keys = chain(&ID, &lines(&["a", "b", "c", "d"]));
     let held = [keys[0].clone(), keys[2].clone(), keys[4].clone()];
     let stored = |k: &LayerKey| held.contains(k);
     assert_eq!(nearest(&keys, 3, stored), Some(2));

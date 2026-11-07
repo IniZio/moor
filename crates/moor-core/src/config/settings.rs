@@ -109,6 +109,8 @@ pub struct BoxSettings {
     pub cache: CacheLayers,
     /// Whether moor installs the agent on a Box that lacks it: user config only, on by default.
     pub install_agent: bool,
+    /// Whether a Box may start from a checkpoint saved at another commit: repo only, on by default.
+    pub across_commits: bool,
 }
 
 /// Builds the sorted credential plan from box credentials and MCP refs.
@@ -182,6 +184,7 @@ impl BoxSettings {
                 agent: None,
             },
             install_agent: user.agent.install.unwrap_or(true),
+            across_commits: r.checkpoint.across_commits,
         }
     }
 }

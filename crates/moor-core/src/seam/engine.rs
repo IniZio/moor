@@ -76,6 +76,8 @@ pub struct LaunchReq {
     pub repo_notes: Option<String>,
     /// The CPUs and memory the Box delivers, when they are recorded.
     pub shape: Option<Shape>,
+    /// What the agent should know about the checkpoint disk its setup lines ran again over.
+    pub disk_note: Option<String>,
     /// The model to ask for; the agent's default when `None`.
     pub model: Option<String>,
     /// Random hex that keeps the credential directory name unique.
@@ -128,6 +130,7 @@ impl PartialEq for LaunchReq {
             && self.setup_exit == other.setup_exit
             && self.repo_notes == other.repo_notes
             && self.shape == other.shape
+            && self.disk_note == other.disk_note
             && self.model == other.model
             && self.nonce == other.nonce
             && proxy(&self.proxy) == proxy(&other.proxy)

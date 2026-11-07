@@ -126,6 +126,25 @@ pub enum ExtraEvent {
         fork_ms: u64,
         /// What the provider reports the fork spent that time on.
         steps: Vec<crate::domain::event::ProviderStep>,
+        /// The commit the checkpoint's disk holds, when it is not the Box's base, so every line
+        /// runs again; none when the Box stands on those lines.
+        rerun_from: Option<String>,
+    },
+    /// The Box reran its setup lines over a checkpoint of another commit.
+    WarmRerun {
+        /// The commit the checkpoint's disk holds.
+        commit: String,
+        /// How many tracked paths differ from that commit; none when git could not tell.
+        changed: Option<u64>,
+        /// The ignored paths that came with the disk.
+        ignored: Vec<String>,
+    },
+    /// A line failed on a rerun over a checkpoint, so the Box is set up from scratch once.
+    WarmRerunFailed {
+        /// The line that failed.
+        line: String,
+        /// The last lines of its log.
+        tail: String,
     },
     /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
     WarmStartFailed {

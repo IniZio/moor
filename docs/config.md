@@ -478,7 +478,8 @@ A repo's `.moor.yaml` configures its Boxes.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `brief` | string | Notes from the repo's author for the Box's agent, such as how to start services, what is installed, and which test users exist. The agent reads the brief verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
-| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. A group a line, dotfiles or the profile's `setup.sh` adds the Box user to reaches the agent: when the Box's open ssh login lacks one, moor logs in anew before the agent starts. Calls already running finish on the old login. A terminal holder (`tmux` or `herdr-core`) that one of those steps started keeps its old groups for terminals it opens later, so stop it before the step ends. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. On a provider that keeps checkpoints, moor checkpoints the clone, each line that runs longer than 20 seconds and the last line. Checkpoints are per user, like caches: a Box only starts from one that its own user's Box saved for the same repo, base and lines. A Box whose work tree is not the base commit unchanged when setup starts, such as one on a branch already on GitHub, saves none. |
+| `checkpoint.across_commits` | bool | Whether a Box may start from a checkpoint saved at another commit. Default `true`. See [Setup checkpoints](#setup-checkpoints). |
+| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. A group a line, dotfiles or the profile's `setup.sh` adds the Box user to reaches the agent: when the Box's open ssh login lacks one, moor logs in anew before the agent starts. Calls already running finish on the old login. A terminal holder (`tmux` or `herdr-core`) that one of those steps started keeps its old groups for terminals it opens later, so stop it before the step ends. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. On a provider that keeps checkpoints, moor checkpoints the clone, each line that runs longer than 20 seconds and the last line. Checkpoints are per user, like caches: a Box only starts from one that its own user's Box saved for the same repo and lines. A Box whose work tree is not the base commit unchanged when setup starts, such as one on a branch already on GitHub, saves none. |
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
@@ -501,20 +502,62 @@ first layer. Each `setup:` line is the next one. moor checkpoints the machine
 after the clone and after the last line. It also checkpoints after any line
 that ran over 20 seconds.
 
-Each layer has a key. The clone's key covers the repo and the Box's base
-commit. Each line's key covers the key below it and the line's text. Changing
-a line changes its key and every key above it. A new commit changes every key,
-because a line may read any file in the repo. Checkpoints are kept per
+Each layer has a key. The clone's key covers the user, the repo, the cache plan
+and the machine class. Each line's key covers the key below it and the line's
+text. Changing a line changes its key and every key above it. No key holds a
+commit, so a Box at a new commit finds the checkpoint. Checkpoints are kept per
 provider. A personal node is its own provider, so a Box on another node never
 uses them.
 
 A new Box starts on a fork of the deepest checkpoint whose key matches its own
-layers, and runs only the lines above it. Its events then hold `warm_started`
-with the layer it started from, the number of lines, the fork's time, the
-setup time it skipped, and `steps`, the timed steps the provider reports of the
-fork. When the fork fails, the Box is set up from scratch on a
-new machine. Its events hold `warm_start_failed` with the provider's error,
-and the start warns with `checkpoint_failed`.
+layers. Its events then hold `warm_started` with the layer it started from, the
+number of lines, the fork's time, the setup time that layer took from scratch, and
+`steps`, the timed steps the provider reports of the fork. When the fork fails, the Box is set up from scratch on a new machine. Its events
+hold `warm_start_failed` with the provider's error, and the start warns with
+`checkpoint_failed`.
+
+A Box at the checkpoint's own commit runs only the lines above that layer. A Box
+at another commit works differently:
+
+1. moor refreshes the tree as it refreshes a [kept work tree](#work-tree). Tracked
+   files reset, untracked files go, and ignored files stay.
+2. Every setup line runs again on that tree, so a line sees the new commit's files.
+3. moor saves no checkpoint from this Box, on a retry too. `warm_started` holds
+   `rerun_from`, the commit the disk holds.
+
+When a line fails there, the start warns `warm_rerun_failed`, and the event of that
+name holds the line and its log tail. moor releases the fork and sets the Box up once
+from scratch on a new machine. A line that also fails there ends in `setup_failed`.
+
+**A guard can hide a new commit from its line.** This line skips its work once
+`dist/` exists, so the Box keeps the old commit's output and reports no error:
+
+```sh
+[ -f dist/out ] || make dist
+```
+
+A guard on output derived from tracked files must check content, such as a stored
+hash of its sources:
+
+```sh
+[ "$(cat dist/sum 2>/dev/null)" = "$(cksum src)" ] || { make dist && cksum src > dist/sum; }
+```
+
+A guard on an installed tool is fine when the line's text pins its version, since
+changing the text changes the key. State outside the work tree that derives from
+tracked files has the same risk. A daemon a line started keeps running from the
+checkpoint until its line restarts it.
+
+After a rerun, the start reply and the agent's brief name the disk's commit, how many
+tracked paths changed since, and the ignored paths the disk still holds. They warn
+that a setup line may have skipped rebuilding those paths. The event is `warm_rerun`.
+
+A line that moves `HEAD` off the base commit, such as `git pull`, stops later checkpoints
+of that Box. The start warns `checkpoint_skipped`.
+
+A repo that cannot change such a guard sets `checkpoint.across_commits: false`. Its
+key then holds the base commit, so each commit gets its own chain and a new commit
+starts from scratch.
 
 Checkpoints never fill the node's disk. The floor is the one a node keeps
 before it takes a Box. It is 10% of the filesystem, and at least 20 GiB. Before a Box
@@ -522,8 +565,9 @@ starts or retries, and before moor saves a checkpoint, moor checks the disk
 the provider keeps checkpoints on. While it is below the floor, moor deletes
 checkpoints, one at a time:
 
-1. First, chains of a repo that the same user set up again at another commit
-   after them.
+1. First, a chain of a repo when the same user has a newer chain of that repo. A new
+   chain follows a change of cache plan or machine class, or a new commit under
+   `checkpoint.across_commits: false`.
 2. Then the checkpoint used longest ago.
 
 Two kinds are never deleted. One is a checkpoint a pending or setting-up Box

@@ -4,7 +4,7 @@
 use moor_core::decide::schedule::DISK_FLOOR_MIB;
 use moor_core::{BoxName, CloseReq};
 
-use super::warm::{after_a_partial_setup, events, start, LINES};
+use super::warm::{after_a_partial_setup, after_a_partial_setup_of, events, start, LINES};
 use super::World;
 use crate::ops::close;
 use crate::testing::driver::FakeDriver;
@@ -29,6 +29,9 @@ fn deleted(w: &World) -> Vec<String> {
         .filter_map(|c| c.strip_prefix("delete-checkpoint "));
     gone.map(str::to_owned).collect()
 }
+
+/// [`LINES`] of a repo that keeps a chain per commit.
+const PER_COMMIT: &str = "setup: [one-a, two-b, three-c]\ncheckpoint: {across_commits: false}\n";
 
 #[test]
 fn above_the_floor_no_checkpoint_is_deleted() {
@@ -55,15 +58,15 @@ fn below_the_floor_a_start_deletes_the_least_recently_used_and_says_so() {
 
 #[test]
 fn a_newer_commit_s_chain_sends_the_older_one_first() {
-    let (w, _) = after_a_partial_setup(roomy());
+    let (w, _) = after_a_partial_setup_of(roomy(), PER_COMMIT);
     close(&w, "first");
-    start(&w, "newer", "def456", LINES);
+    start(&w, "newer", "def456", PER_COMMIT);
     close(&w, "newer");
-    start(&w, "again", "abc123", LINES);
+    start(&w, "again", "abc123", PER_COMMIT);
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
     close(&w, "again");
     w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
-    let third = start(&w, "third", "fed789", LINES);
+    let third = start(&w, "third", "fed789", PER_COMMIT);
     assert_eq!(
         deleted(&w)[..2],
         ["ckpt-1", "ckpt-2"],
@@ -75,9 +78,9 @@ fn a_newer_commit_s_chain_sends_the_older_one_first() {
 
 #[test]
 fn a_box_whose_setup_failed_keeps_the_checkpoint_its_retry_resumes_from() {
-    let (w, _) = after_a_partial_setup(roomy());
+    let (w, _) = after_a_partial_setup_of(roomy(), PER_COMMIT);
     w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
-    start(&w, "second", "def456", LINES);
+    start(&w, "second", "def456", PER_COMMIT);
     let gone = deleted(&w);
     assert!(gone.contains(&"ckpt-1".to_owned()), "{gone:?}");
     assert!(!gone.contains(&"ckpt-2".to_owned()), "{gone:?}");
@@ -95,6 +98,16 @@ fn a_box_forking_a_checkpoint_keeps_it() {
     close(&w, "first");
     w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
     start(&w, "second", "abc123", LINES);
+    assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
+    assert_eq!(deleted(&w), ["ckpt-1"]);
+}
+
+#[test]
+fn a_box_rerunning_over_a_checkpoint_of_another_commit_keeps_it() {
+    let (w, _) = after_a_partial_setup(roomy());
+    close(&w, "first");
+    w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
+    start(&w, "second", "def456", LINES);
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
     assert_eq!(deleted(&w), ["ckpt-1"]);
 }
@@ -130,10 +143,10 @@ fn a_checkpoint_whose_delete_fails_stays_tracked_and_goes_later() {
 
 #[test]
 fn a_checkpoint_goes_only_after_the_delta_over_it() {
-    let (w, _) = after_a_partial_setup(roomy().with_delta_checkpoints());
+    let (w, _) = after_a_partial_setup_of(roomy().with_delta_checkpoints(), PER_COMMIT);
     close(&w, "first");
     w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
-    start(&w, "second", "def456", LINES);
+    start(&w, "second", "def456", PER_COMMIT);
     let gone = deleted(&w);
     assert_eq!(
         gone[..2],
