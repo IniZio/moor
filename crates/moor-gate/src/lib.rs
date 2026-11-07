@@ -1,14 +1,15 @@
 //! moor-gate: the remote front. It checks a person's OIDC access token once per WebSocket
-//! connection, then relays the controller's socket protocol to the controller's front socket,
-//! acting as that person's identity on every request.
+//! connection, then relays the controller's socket protocol to the controller, acting as that
+//! person's identity on every request.
 
 use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
+use moor_client::tls::TlsPki;
+use moor_client::{Client, Redial};
 use streams::Streams;
 
 use rustix::event::{poll, PollFd, PollFlags};
@@ -40,10 +41,28 @@ pub const NAMESPACE: &str = "authgear";
 /// Clients reconnect, so a deploy never waits on one.
 pub const STREAM_DRAIN_SECS: u64 = 5;
 
+/// How long a gate holds a request while the controller is away, before it answers 503.
+/// Only a request that provably never ran is dialled again.
+pub const HOLD: Redial = Redial {
+    budget: Duration::from_secs(30),
+    refused: Duration::from_secs(30),
+    first_pause: Duration::from_millis(100),
+    max_pause: Duration::from_secs(2),
+};
+
+/// A client for the controller's TLS listener at `controller`, `tls://HOST:PORT`, that says the
+/// front hello for [`NAMESPACE`] with `key` and holds requests under `hold`, normally [`HOLD`].
+///
+/// # Errors
+/// The address is not `tls://HOST:PORT`, or a PEM file cannot be read or does not fit.
+pub fn over_tls(controller: &str, pki: &TlsPki, key: &str, hold: Redial) -> Result<Client, String> {
+    Ok(Client::front(controller, pki, NAMESPACE, key)?.with_redial(hold))
+}
+
 /// What one gate serves.
 pub struct Gate {
-    /// The controller's front socket for [`NAMESPACE`].
-    pub front_socket: PathBuf,
+    /// Dials the controller as the front of [`NAMESPACE`].
+    pub controller: Client,
     /// Checks access tokens.
     pub verifier: Verifier,
     /// The `/mcp` surface; `/mcp` is a 404 without it.

@@ -61,7 +61,7 @@ fn setup_id(path: &str) -> Option<i64> {
 /// Webhook `id` as its setup page shows it, asked for as the session's person.
 fn setup(gate: &Gate, session: &Session, id: i64) -> Result<WebhookSetupValue, String> {
     let show = ControllerRequest::WebhookSetupShow(WebhookSetupShowReq { identity: None, id });
-    let value = tools::act_as(&gate.front_socket, &session.person, show)?;
+    let value = tools::act_as(&gate.controller, &session.person, show)?;
     serde_json::from_value(value).map_err(|e| format!("the controller's answer is unreadable: {e}"))
 }
 
@@ -89,7 +89,7 @@ fn finish(
         id,
         header_value,
     });
-    match tools::act_as(&gate.front_socket, &session.person, request) {
+    match tools::act_as(&gate.controller, &session.person, request) {
         Ok(_) => page(
             stream,
             "200 OK",

@@ -80,6 +80,14 @@ true
 {{- end -}}
 {{- end -}}
 
+{{/* Non-empty when the gate dials the controller's ledger instead of its front socket. */}}
+{{- define "moor.gateOverTls" -}}
+{{- if and .Values.gate.enabled .Values.gate.overTls.enabled -}}
+{{- if not .Values.egress.enabled }}{{ fail "gate.overTls needs egress.enabled: the gate dials the controller through the ledger listener" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{/* Non-empty when the runner is its own Deployment, which dials the controller's ledger. */}}
 {{- define "moor.runnerSeparate" -}}
 {{- if and .Values.runner.enabled .Values.runner.separate -}}

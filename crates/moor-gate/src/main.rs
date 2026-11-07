@@ -7,9 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use moor_client::tls::TlsPki;
+use moor_client::Client;
 use moor_gate::{Gate, Login, Mcp, Verifier};
 
-/// The remote front: OIDC access tokens in, the controller's front socket out.
+/// The remote front: OIDC access tokens in, the controller out.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
@@ -17,8 +19,33 @@ struct Args {
     #[arg(long, env = "MOOR_GATE_LISTEN", default_value = "0.0.0.0:8443")]
     listen: String,
     /// The controller's front socket for the `authgear` front.
-    #[arg(long, env = "MOOR_GATE_FRONT_SOCKET")]
-    front_socket: PathBuf,
+    #[arg(
+        long,
+        env = "MOOR_GATE_FRONT_SOCKET",
+        required_unless_present = "controller",
+        conflicts_with = "controller"
+    )]
+    front_socket: Option<PathBuf>,
+    /// The controller's TLS listener, `tls://HOST:PORT`, in place of `--front-socket`. A request
+    /// waits up to 30 s for it to answer, then gets 503 with `Retry-After`.
+    #[arg(
+        long,
+        env = "MOOR_GATE_CONTROLLER",
+        requires_all = ["controller_ca", "controller_cert", "controller_key", "front_key"]
+    )]
+    controller: Option<String>,
+    /// The CA that signed the controller's certificate.
+    #[arg(long, env = "MOOR_GATE_CONTROLLER_CA")]
+    controller_ca: Option<PathBuf>,
+    /// The certificate presented to `--controller`.
+    #[arg(long, env = "MOOR_GATE_CONTROLLER_CERT")]
+    controller_cert: Option<PathBuf>,
+    /// The private key of `--controller-cert`.
+    #[arg(long, env = "MOOR_GATE_CONTROLLER_KEY")]
+    controller_key: Option<PathBuf>,
+    /// The key the front hello presents to `--controller`.
+    #[arg(long, env = "MOOR_GATE_FRONT_KEY", hide_env_values = true)]
+    front_key: Option<String>,
     /// The OIDC issuer tokens must name in `iss`.
     #[arg(long, env = "MOOR_GATE_ISSUER")]
     issuer: String,
@@ -41,8 +68,39 @@ struct Args {
     drain_timeout_secs: u64,
 }
 
+impl Args {
+    /// The client these flags name.
+    fn client(&self) -> Result<Client, String> {
+        if let (Some(url), Some(ca), Some(cert), Some(key), Some(front_key)) = (
+            &self.controller,
+            &self.controller_ca,
+            &self.controller_cert,
+            &self.controller_key,
+            &self.front_key,
+        ) {
+            let pki = TlsPki {
+                ca: ca.clone(),
+                cert: cert.clone(),
+                key: key.clone(),
+            };
+            return moor_gate::over_tls(url, &pki, front_key, moor_gate::HOLD);
+        }
+        self.front_socket
+            .as_ref()
+            .map(Client::new)
+            .ok_or_else(|| "set --front-socket or --controller".to_owned())
+    }
+}
+
 fn main() -> ExitCode {
     let args = Args::parse();
+    let controller = match args.client() {
+        Ok(controller) => controller,
+        Err(why) => {
+            moor_gate_log(&why);
+            return ExitCode::FAILURE;
+        }
+    };
     let listener = match TcpListener::bind(&args.listen) {
         Ok(listener) => listener,
         Err(e) => {
@@ -52,7 +110,7 @@ fn main() -> ExitCode {
     };
     let mcp = match args
         .mcp_resource_url
-        .map(|url| Mcp::with_setup(&url, args.front_socket.clone(), args.public_url.as_deref()))
+        .map(|url| Mcp::with_setup(&url, controller.clone(), args.public_url.as_deref()))
         .transpose()
     {
         Ok(mcp) => mcp,
@@ -69,7 +127,7 @@ fn main() -> ExitCode {
         }
     };
     let gate = Arc::new(Gate {
-        front_socket: args.front_socket,
+        controller,
         mcp,
         verifier: Verifier::new(args.issuer, args.client_id, args.jwks_url),
     });

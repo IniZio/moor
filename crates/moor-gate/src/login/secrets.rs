@@ -83,7 +83,7 @@ fn save(
         name: name.clone(),
         value: SecretValue::new(value.clone().into_bytes()),
     });
-    match tools::act_as(&gate.front_socket, &session.person, set) {
+    match tools::act_as(&gate.controller, &session.person, set) {
         Ok(_) => {
             let notice = format!("Saved <code>{}</code>.", escape(name.as_str()));
             show(stream, gate, &session, "200 OK", Some(&notice));
@@ -103,7 +103,7 @@ fn save(
 
 /// The secrets the person's Boxes need and whether each is set, asked as the session's person.
 fn rows(gate: &Gate, session: &Session) -> Result<Vec<Row>, String> {
-    let ask = |request| tools::act_as(&gate.front_socket, &session.person, request);
+    let ask = |request| tools::act_as(&gate.controller, &session.person, request);
     let unreadable = |e: serde_json::Error| format!("the controller's answer is unreadable: {e}");
     let needs = ask(ControllerRequest::StartNeeds(StartNeedsReq {
         identity: None,

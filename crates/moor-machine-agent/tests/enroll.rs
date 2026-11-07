@@ -73,7 +73,7 @@ fn world_on(
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = format!("http://{}", listener.local_addr().unwrap());
     let config = Arc::new(Gate {
-        front_socket: socket,
+        controller: moor_client::Client::new(socket),
         mcp: None,
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });

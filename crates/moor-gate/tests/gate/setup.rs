@@ -142,13 +142,13 @@ fn world(login: bool) -> World {
     let public = login.then(|| format!("http://{addr}"));
     let mcp = Mcp::with_setup(
         &format!("http://{addr}/mcp"),
-        socket.clone(),
+        moor_client::Client::new(&socket),
         public.as_deref(),
     )
     .unwrap();
     let login = public.map(|p| Arc::new(Login::new(&p).unwrap()));
     let gate = Arc::new(Gate {
-        front_socket: socket,
+        controller: moor_client::Client::new(socket),
         mcp: Some(mcp),
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });

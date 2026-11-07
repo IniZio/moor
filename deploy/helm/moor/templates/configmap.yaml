@@ -18,7 +18,11 @@ data:
           key_file: /var/lib/moor/config/slack-front.key
         {{- end }}
       {{- end }}
-      {{- if .Values.gate.enabled }}
+      {{- if include "moor.gateOverTls" . }}
+      authgear:
+        remote:
+          key_file: /var/lib/moor/config/gate-front-key
+      {{- else if .Values.gate.enabled }}
       authgear: {}
       {{- end }}
       {{- if .Values.notify.enabled }}
