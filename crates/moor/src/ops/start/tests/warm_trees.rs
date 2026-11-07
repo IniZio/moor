@@ -26,13 +26,13 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
 
 /// An origin with `.gitignore` of `dist/`, at `<dir>/o/n.git`, and a world whose Boxes clone it.
-struct Scratch {
-    w: World,
-    repo: PathBuf,
-    _dir: tempfile::TempDir,
+pub(super) struct Scratch {
+    pub(super) w: World,
+    pub(super) repo: PathBuf,
+    pub(super) dir: tempfile::TempDir,
 }
 
-fn git(repo: &Path, args: &[&str]) -> String {
+pub(super) fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .args([
             "-c",
@@ -51,11 +51,11 @@ fn git(repo: &Path, args: &[&str]) -> String {
 }
 
 impl Scratch {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self::on(FakeDriver::new())
     }
 
-    fn on(driver: FakeDriver) -> Self {
+    pub(super) fn on(driver: FakeDriver) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("o/n.git");
         std::fs::create_dir_all(&repo).unwrap();
@@ -74,24 +74,24 @@ impl Scratch {
         Self {
             w: world(driver),
             repo,
-            _dir: dir,
+            dir,
         }
     }
 
     /// Commits `text` to `path` in the origin; the new commit.
-    fn commit(&self, path: &str, text: &str) -> String {
+    pub(super) fn commit(&self, path: &str, text: &str) -> String {
         std::fs::write(self.repo.join(path), text).unwrap();
         git(&self.repo, &["add", "."]);
         git(&self.repo, &["commit", "-qm", path]);
         self.head()
     }
 
-    fn head(&self) -> String {
+    pub(super) fn head(&self) -> String {
         git(&self.repo, &["rev-parse", "HEAD"])
     }
 
     /// Starts Box `name` at the origin's HEAD with `.moor.yaml` text `yaml`, with no agent.
-    fn start(&self, name: &str, yaml: &str) -> (BoxId, StartView) {
+    pub(super) fn start(&self, name: &str, yaml: &str) -> (BoxId, StartView) {
         let sha = self.head();
         let at = repo_at(&sha, Some(yaml));
         self.w.forge.answer(repo(), Ok(at));
@@ -103,20 +103,20 @@ impl Scratch {
         (BoxId::new(v.boxed.id), v)
     }
 
-    fn handle(&self, id: BoxId) -> String {
+    pub(super) fn handle(&self, id: BoxId) -> String {
         let row = row(&self.w, id);
         row.boxed.unwrap().handle.unwrap().as_str().to_owned()
     }
 
-    fn tree(&self, id: BoxId) -> PathBuf {
+    pub(super) fn tree(&self, id: BoxId) -> PathBuf {
         self.w.driver.tree_of(&self.handle(id)).unwrap()
     }
 
-    fn home(&self, id: BoxId) -> PathBuf {
+    pub(super) fn home(&self, id: BoxId) -> PathBuf {
         self.w.driver.home_of(&self.handle(id)).unwrap()
     }
 
-    fn file(&self, id: BoxId, rel: &str) -> String {
+    pub(super) fn file(&self, id: BoxId, rel: &str) -> String {
         std::fs::read_to_string(self.tree(id).join(rel)).unwrap()
     }
 
@@ -136,7 +136,7 @@ impl Scratch {
         self.start(name, yaml).1
     }
 
-    fn warm(&self, id: BoxId) -> usize {
+    pub(super) fn warm(&self, id: BoxId) -> usize {
         events(&self.w, id, "warm_started").len()
     }
 }

@@ -30,6 +30,7 @@ use std::sync::Arc;
 use moor_core::activity::{HookRecord, Probes, WaitCheck};
 use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
+use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
@@ -111,6 +112,10 @@ impl Engine for BoxAgent {
 
     fn agent_install(&self) -> Option<AgentInstall> {
         launch::holder::with_agent(holder(self.holder), self.profile.install())
+    }
+
+    fn profile_install(&self, manifest: &Manifest) -> Option<String> {
+        profile_writer::install_script(manifest)
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

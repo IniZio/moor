@@ -222,6 +222,13 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// The script that makes the marketplace adds and plugin installs of `manifest`, which belong
+    /// to the user and not the Box; `None` when it has none. It reports what failed through
+    /// [`crate::boxscript::profile::FAILED_PREFIX`], and goes on.
+    fn profile_install(&self, _manifest: &Manifest) -> Option<String> {
+        None
+    }
+
     /// The command that relays the agent's live terminal, held by `holder`, through `connect`;
     /// `None` when this engine has no terminal a client can attach to.
     fn relay_argv(&self, _holder: AgentHolder, _connect: &[String]) -> Option<Vec<String>> {

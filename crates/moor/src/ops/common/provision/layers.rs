@@ -9,7 +9,7 @@ use moor_core::boxscript::warm_disk;
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
+use moor_core::domain::layers::{chain, checkpoint_after, finished_key, LayerIdentity, LayerKey};
 use moor_core::seam::driver::{AcquireReq, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxId, ProviderId, Warning};
@@ -51,6 +51,11 @@ enum Disk {
 pub(super) struct Layered {
     /// The clone's key, then one per setup line.
     keys: Vec<LayerKey>,
+    /// The key of the layer above them, which holds the agent install and the profile; none when
+    /// the Box has neither.
+    finished_key: Option<LayerKey>,
+    /// Whether the Box's disk holds that layer's steps, whichever layer it forked.
+    finished: bool,
     /// The provider a Box forks with.
     provider: ProviderId,
     /// What its checkpoints are recorded under, and the disk they fill is read by.
@@ -74,7 +79,22 @@ impl Layered {
     /// Marks the disk as holding layer `layer`, which took `ms` to set up from scratch.
     fn stand_on(&mut self, layer: usize, ms: u64) {
         self.disk = Disk::OnLayer { layer };
+        self.finished = false;
         self.spent_ms.store(ms, Ordering::Relaxed);
+    }
+
+    /// The key of layer `layer`, counting the one above the last line.
+    fn key_at(&self, layer: usize) -> Option<&LayerKey> {
+        let above = self
+            .finished_key
+            .as_ref()
+            .filter(|_| layer == self.keys.len());
+        self.keys.get(layer).or(above)
+    }
+
+    /// Whether the agent install and the profile are on the disk already.
+    pub(super) const fn finished(&self) -> bool {
+        self.finished
     }
 
     /// The layer whose lines are the first to run.
@@ -156,7 +176,12 @@ pub(super) fn plan(
         pinned_base: (!cfg.across_commits).then_some(base),
     };
     let keys = chain(&identity, &cfg.setup);
+    let finished_key = keys
+        .last()
+        .and_then(|top| finished_key_of(cx, store, row, cfg, top));
     Some(Layered {
+        finished_key,
+        finished: false,
         lineage: Lineage {
             user,
             repo,
@@ -171,6 +196,42 @@ pub(super) fn plan(
         cache: cache.clone(),
         spent_ms: AtomicU64::new(0),
     })
+}
+
+/// The key of the layer above `top` for Box `row`; none when it has no agent install and no profile.
+fn finished_key_of(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+    top: &LayerKey,
+) -> Option<LayerKey> {
+    let install = cfg.install_agent.then(|| cx.engine().agent_install());
+    let install = install.flatten().map(|i| i.script);
+    let profile = store.box_profile(row.id).ok().flatten();
+    if install.is_none() && profile.is_none() {
+        return None;
+    }
+    let manifest = profile.as_ref().and_then(|p| p.manifest.as_deref());
+    let manifest = manifest.and_then(|text| moor_core::profile::parse(text).ok());
+    let plugins = manifest.and_then(|m| cx.engine().profile_install(&m));
+    let sha = profile.as_ref().map_or("", |p| p.sha.as_str());
+    Some(finished_key(
+        top,
+        install.as_deref().unwrap_or_default(),
+        sha,
+        plugins.as_deref().unwrap_or_default(),
+    ))
+}
+
+/// Checkpoints the agent install and profile the target's Box finished in `ms`, once they all went
+/// well and its tree is still the base.
+pub(super) fn after_finishing(cx: &Cx, store: &Store, target: &SetupTarget<'_>, ms: u64) {
+    let Some(layered) = target.layered.filter(|l| !l.finished) else {
+        return;
+    };
+    layered.spent_ms.fetch_add(ms, Ordering::Relaxed);
+    save(cx, store, target, layered, layered.keys.len());
 }
 
 /// Checkpoints the fresh clone, which took `ms`, of a Box whose disk holds no layer yet.
@@ -257,7 +318,7 @@ fn head_at_base(cx: &Cx, target: &SetupTarget<'_>, layered: &Layered) -> bool {
 /// Checkpoints `layer` of the target's Box, unless a checkpoint of it is kept already.
 /// A failed checkpoint is only warned about: setup goes on, and a retry runs the layer again.
 fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, layer: usize) {
-    let Some(key) = layered.keys.get(layer) else {
+    let Some(key) = layered.key_at(layer) else {
         return;
     };
     if store.use_checkpoint(&layered.home, key).unwrap_or(false) {

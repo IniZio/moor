@@ -15,6 +15,9 @@ use moor_core::{BoxId, BoxReq, StartReq};
 
 use super::setup::unwrapped;
 use super::state::WORKING;
+use moor_core::seam::agent_adapter::AgentInstall;
+
+use super::warm::{events, start};
 use super::{repo_req, req, script_base_yaml, world_with, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -417,4 +420,51 @@ fn without_dotfiles_config_no_step_is_recorded() {
     let (w, _) = dotfiles_world("setup: [a]\n", None, None, FakeDriver::new());
     started(&w);
     assert!(super::agent_install::step_events(&w, BoxId::new(1)).is_empty());
+}
+
+/// A world whose engine installs its agent, whose Box checkpoints, and whose user has dotfiles.
+fn finished_world(dir: &Path, driver: FakeDriver) -> World {
+    let (mut w, _) = dotfiles_world("setup: [a]\n", Some(dir), None, driver.with_checkpoints());
+    let engine = FakeEngine::new().install(AgentInstall {
+        script: "install-the-agent".to_owned(),
+        dirs: Vec::new(),
+        check: "true".to_owned(),
+    });
+    w.cx = w.cx.with_engine(Arc::new(engine));
+    w
+}
+
+#[test]
+fn a_fork_that_holds_the_agent_install_still_applies_the_dotfiles_and_no_install() {
+    let dir = tempfile::tempdir().unwrap();
+    let w = finished_world(dir.path(), FakeDriver::new());
+    start(&w, "first", "abc123", "setup: [a]\n");
+    let next = start(&w, "next", "abc123", "setup: [a]\n");
+    let warm = events(&w, next, "warm_started");
+    let finished = warm.first().and_then(|e| e.get("finished"));
+    assert_eq!(finished, Some(&serde_json::json!(true)));
+    let handle = w.cx.store().unwrap().box_row(next).unwrap().unwrap();
+    let handle = handle.boxed.unwrap().handle.unwrap();
+    let on: Vec<String> = (w.driver.execs().into_iter())
+        .filter(|e| e.0 == handle)
+        .map(|e| e.1.argv.join(" "))
+        .collect();
+    assert!(on.iter().any(|a| a.contains(".moor-dotfiles")), "{on:?}");
+    assert!(
+        !on.iter().any(|a| a.contains("install-the-agent")),
+        "{on:?}"
+    );
+}
+
+#[test]
+fn failed_dotfiles_save_no_layer_above_the_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_ends_when(".moor-dotfiles", exit(1));
+    let w = finished_world(dir.path(), driver);
+    start(&w, "first", "abc123", "setup: [a]\n");
+    assert_eq!(
+        w.driver.checkpoint_names().len(),
+        2,
+        "the clone and the line"
+    );
 }

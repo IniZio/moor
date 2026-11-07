@@ -1,6 +1,5 @@
 //! The script that starts the agent in the Box.
 
-use moor_core::boxscript::profile::PLUGIN_SECS_FILE;
 use moor_core::boxscript::{command_line, quote};
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_adapter::{BoxSetup, LaunchCtx};
@@ -93,14 +92,8 @@ pub(super) fn script_stripping(
         let all = quote(&format!("{}.all", failures.as_str()));
         let failures = quote(failures.as_str());
         lines.push(format!(": > {all}"));
-        let secs = BoxPath::under(workdir, PLUGIN_SECS_FILE)?;
-        lines.push(format!(": > {}", quote(secs.as_str())));
-        // Each writer's time is one line, which the watcher sums into the `plugins` step.
-        let secs = quote(secs.as_str());
         for w in writers {
-            lines.push("t0=$(date +%s)".to_owned());
             lines.push(w.step.clone());
-            lines.push(format!("printf '%s\\n' $(( $(date +%s) - t0 )) >> {secs}"));
             lines.push(format!("cat {failures} >> {all}"));
         }
         lines.push(format!("mv {all} {failures}"));

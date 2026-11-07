@@ -77,3 +77,12 @@ fn setup_sh_finds_a_binary_moor_put_in_the_home_bin() {
     assert!(out.status.success(), "{stderr}");
     assert_eq!(String::from_utf8_lossy(&out.stdout), "tool hello\n");
 }
+
+#[test]
+fn failed_installs_are_the_lines_after_the_prefix() {
+    let output = "noise\nmoor: profile: plugin a exit 7\nmoor: profile: marketplace b exit 1\n";
+    assert_eq!(
+        super::failed_installs(output),
+        ["plugin a exit 7", "marketplace b exit 1"]
+    );
+}

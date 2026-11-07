@@ -8,28 +8,27 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::seam::driver::AcquireReq;
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
+use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
-use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
 use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
-use crate::ops::common::{agent_install, profile_fetch};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
 use self::acquired::record_acquired;
+use self::after_lines::steps_after_lines;
 use self::clone::clone_with_proxy;
 use self::delivered::record_delivered;
 use self::failed::failed;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 pub(crate) use self::outcome::Provisioned;
-use self::outcome::{dotfiles_noted, dotfiles_warned, setup_ended, step_outcome};
+use self::outcome::{dotfiles_noted, setup_ended, step_outcome};
 use self::progress::acquire_timed;
 use self::rerun::start_ready;
 pub(crate) use self::retry::resume_setup;
@@ -271,12 +270,8 @@ fn run_and_record(
             ..Fields::default()
         }))?;
     }
-    // A Box failing a line gets no agent, so the steps that prepare one wait for the retry.
-    let (dotfiles, installed) = if run.failed() {
-        (DotfilesRun::Skipped, Ok(()))
-    } else {
-        after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?
-    };
+    let (dotfiles, installed) =
+        steps_after_lines(cx, store, id, (on_fork, target), (cfg, &proxy), &run)?;
     let mut done = dotfiles_noted(id, &dotfiles);
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {
@@ -308,37 +303,8 @@ fn run_and_record(
     })
 }
 
-/// Runs the steps after the setup lines. A failed agent install is warned and returned as the
-/// Box's failed step, and the profile, which needs the agent, waits for the retry.
-pub(super) fn after_setup(
-    cx: &Cx,
-    store: &Store,
-    at: (&BoxHandle, &str),
-    id: BoxId,
-    cfg: &BoxSettings,
-    proxy: &clone::SetupProxy,
-) -> Result<(DotfilesRun, Result<(), String>), CommandError> {
-    let dotfiles = match dotfiles::apply(cx, store, at, id, cfg, proxy) {
-        Ok(d) => d,
-        Err(f) => dotfiles_warned(cx, f),
-    };
-    if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, proxy) {
-        cx.warn(agent_install::warning(&reason));
-        return Ok((dotfiles, Err(format!("agent install: {reason}"))));
-    }
-    profile_fetch::apply(cx, store, at, id, cfg, proxy)?;
-    if let Err(e) = cx.driver().refresh_login(at.0) {
-        cx.warn(Warning {
-            code: "login_not_refreshed".to_owned(),
-            message: format!(
-                "could not check the Box login for groups setup added: {e}; the agent may lack them"
-            ),
-        });
-    }
-    Ok((dotfiles, Ok(())))
-}
-
 mod acquired;
+mod after_lines;
 mod clone;
 mod delivered;
 mod disk;

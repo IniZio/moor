@@ -11,9 +11,24 @@ use super::{Disk, Layered};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::disk::make_room;
-use crate::store::checkpoints::CheckpointRow;
+use crate::store::checkpoints::{CheckpointRow, Place};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, EventRow, Store};
+
+/// The deepest layer kept with a place, looking first at the one above the last line.
+fn deepest_kept(
+    store: &Store,
+    layered: &Layered,
+) -> Result<Option<(usize, LayerKey, String, Place)>, CommandError> {
+    let above = layered.finished_key.iter().map(|k| (layered.keys.len(), k));
+    for (layer, key) in above.chain(layered.keys.iter().enumerate().rev()) {
+        let row = store.checkpoint(&layered.home, key)?;
+        if let Some((row, place)) = row.and_then(|r| r.place.clone().map(|p| (r, p))) {
+            return Ok(Some((layer, key.clone(), row.checkpoint, place)));
+        }
+    }
+    Ok(None)
+}
 
 /// Starts Box `id` on a fork of the deepest layer kept with a place. At the Box's base only the
 /// lines above it run, and at another commit every line runs. None when no layer is kept, or when
@@ -26,23 +41,19 @@ pub(in super::super) fn warm(
     req: &AcquireReq,
     layered: &mut Layered,
 ) -> Result<Option<Acquired>, CommandError> {
-    let mut deepest = None;
-    for (layer, key) in layered.keys.iter().enumerate().rev() {
-        let row = store.checkpoint(&layered.home, key)?;
-        if let Some((row, place)) = row.and_then(|r| r.place.clone().map(|p| (r, p))) {
-            deepest = Some((layer, key, row.checkpoint, place));
-            break;
-        }
-    }
+    let lines = layered.keys.len() - 1;
+    let deepest = deepest_kept(store, layered)?;
     let Some((layer, key, checkpoint, place)) = deepest else {
         make_room(cx, store, id, &layered.home)?;
         return Ok(None);
     };
-    store.pin_checkpoint(id, &layered.home, key, layer)?;
+    store.pin_checkpoint(id, &layered.home, &key, layer)?;
     make_room(cx, store, id, &layered.home)?;
-    if !store.use_checkpoint(&layered.home, key)? {
+    if !store.use_checkpoint(&layered.home, &key)? {
         return Ok(None);
     }
+    let finished = layer > lines;
+    let layer = layer.min(lines);
     let at = u32::try_from(layer).unwrap_or(u32::MAX);
     let began = cx.clock().now().as_millis();
     let forked = match cx.driver().fork(&checkpoint, req) {
@@ -70,7 +81,8 @@ pub(in super::super) fn warm(
         }
         None => layered.stand_on(layer, place.setup_ms),
     }
-    let lines = u32::try_from(layered.keys.len() - 1).unwrap_or(u32::MAX);
+    layered.finished = finished;
+    let lines = u32::try_from(lines).unwrap_or(u32::MAX);
     store.apply(Decision::new(id).event(ExtraEvent::WarmStarted {
         layer: at,
         layers: lines,
@@ -78,6 +90,7 @@ pub(in super::super) fn warm(
         fork_ms,
         steps: forked.steps,
         rerun_from,
+        finished,
     }))?;
     Ok(Some(Acquired {
         handle: forked.handle,
@@ -101,11 +114,16 @@ pub(in super::super) fn stand_on_rerun(
     id: BoxId,
     layered: &mut Layered,
 ) -> Result<bool, CommandError> {
-    let fork = machine_fork(store, id)?;
-    let commit = fork.and_then(|w| w.payload.get("rerun_from")?.as_str().map(str::to_owned));
+    let Some(fork) = machine_fork(store, id)? else {
+        return Ok(false);
+    };
+    layered.finished = fork.payload.get("finished") == Some(&serde_json::Value::Bool(true));
+    let commit = fork.payload.get("rerun_from").and_then(|c| c.as_str());
     let reruns = commit.is_some();
     if let Some(commit) = commit {
-        layered.disk = Disk::Rerun { commit };
+        layered.disk = Disk::Rerun {
+            commit: commit.to_owned(),
+        };
     }
     Ok(reruns)
 }
@@ -137,7 +155,9 @@ pub(in super::super) fn stand_on_warm_start(
             .map(|k| store.checkpoint(&layered.home, k))
             .transpose()?;
         let place = kept.flatten().and_then(|r| r.place);
+        let finished = layered.finished;
         layered.stand_on(layer, place.map_or(0, |p| p.setup_ms));
+        layered.finished = finished;
     }
     Ok(())
 }

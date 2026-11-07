@@ -66,12 +66,15 @@ impl ProfileWriter for Codex {
             COPY_SKILLS.replace("$1", "$k"),
             config_block(ctx.manifest),
             REPLACE_BLOCK.to_owned(),
-            plugins(ctx.manifest),
         ];
         Ok(BoxSetup {
             files: Vec::new(),
             step: format!("{{\n{}\n}} || :", lines.join("\n")),
         })
+    }
+
+    fn installs(&self, manifest: &Manifest) -> String {
+        plugins(manifest)
     }
 }
 

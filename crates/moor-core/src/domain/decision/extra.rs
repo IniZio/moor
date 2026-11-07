@@ -129,6 +129,8 @@ pub enum ExtraEvent {
         /// The commit the checkpoint's disk holds, when it is not the Box's base, so every line
         /// runs again; none when the Box stands on those lines.
         rerun_from: Option<String>,
+        /// Whether the checkpoint also holds the agent install and the profile, so they do not run.
+        finished: bool,
     },
     /// The Box reran its setup lines over a checkpoint of another commit.
     WarmRerun {

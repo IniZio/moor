@@ -23,7 +23,7 @@ pub enum PostCloneStep {
     CloneOthers,
     /// The engine launching the agent.
     Launch,
-    /// The profile writers in the agent's start script, which are mostly marketplace adds and plugin installs.
+    /// The marketplace adds and plugin installs of the Box's profile.
     Plugins,
 }
 
@@ -94,6 +94,9 @@ pub enum TimingEvent {
         /// runs again; none when the Box stands on those lines.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rerun_from: Option<String>,
+        /// Whether the checkpoint also holds the agent install and the profile, so they do not run.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        finished: bool,
     },
     /// The Box reran its setup lines over a checkpoint of another commit.
     WarmRerun {

@@ -277,6 +277,7 @@ fn all_events() -> Vec<Event> {
             fork_ms: 9_000,
             steps: vec![super::ProviderStep::parse("timing root-flatten ms=7 bytes=9").unwrap()],
             rerun_from: Some(s("abc")),
+            finished: true,
         }),
         Event::Timing(TimingEvent::WarmStartFailed {
             layer: 2,
