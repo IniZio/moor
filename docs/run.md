@@ -63,7 +63,7 @@ section. Add one, with the provider that `crabbox doctor` reports:
 ```yaml
 nodes:
   local:
-    runtime: cloudhypervisor
+    runtime: external
 ```
 
 ## 4. Start a Box
