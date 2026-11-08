@@ -189,7 +189,6 @@ pub(super) fn fx_setup_failed() -> Fx {
                 .box_input(BoxInput::Requested)
                 .set(Fields {
                     box_provider: Field::Set(provider.clone()),
-                    workspace_id: Field::Set("ws-1".into()),
                     box_workdir: Field::Set("/work/box-1".into()),
                     ..Fields::default()
                 }),
@@ -376,10 +375,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
 #[test]
 fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "s-1", Some("p-gone"))
-        .unwrap();
+    f.cx.store().unwrap().begin_session(f.id, "s-1").unwrap();
     let driver = f.driver.clone();
     let runs = std::sync::atomic::AtomicU32::new(0);
     f.driver.on_exec(move || {
@@ -405,10 +401,7 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
 #[test]
 fn force_does_not_probe_before_or_after_stopping_the_agent() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "s-1", Some("p-gone"))
-        .unwrap();
+    f.cx.store().unwrap().begin_session(f.id, "s-1").unwrap();
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.agent_stopped);
     assert_eq!(probes(&f), 0);
@@ -441,10 +434,7 @@ fn close_proceeds_when_the_recheck_finds_no_git_checkout() {
 #[test]
 fn an_unreadable_first_probe_refuses_before_the_agent_is_stopped() {
     let f = fx_probe(None);
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "s-1", Some("p-live"))
-        .unwrap();
+    f.cx.store().unwrap().begin_session(f.id, "s-1").unwrap();
     let t = text(&refused(&f));
     assert!(!t.contains("the agent was stopped"), "{t}");
     assert!(f.cx.store().unwrap().live_session(f.id).unwrap().is_some());

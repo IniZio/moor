@@ -65,20 +65,17 @@ fn box_exists(conn: &dyn Db, id: BoxId) -> Result<bool, StoreError> {
         .is_some())
 }
 
-/// The state, ordinal and workspace of Box `id`'s newest Session, if it has one.
-fn newest_of(
-    conn: &dyn Db,
-    id: BoxId,
-) -> Result<Option<(String, i64, Option<String>)>, StoreError> {
+/// The state and ordinal of Box `id`'s newest Session, if it has one.
+fn newest_of(conn: &dyn Db, id: BoxId) -> Result<Option<(String, i64)>, StoreError> {
     Ok(conn
         .row(
             Query::select()
-                .columns([Sessions::State, Sessions::Ordinal, Sessions::WorkspaceId])
+                .columns([Sessions::State, Sessions::Ordinal])
                 .from(Sessions::Table)
                 .and_where(Expr::col(Sessions::Box).eq(id.get()))
                 .order_by(Sessions::Ordinal, Order::Desc)
                 .limit(1),
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?)
 }
@@ -133,9 +130,7 @@ impl Store {
                 id.get()
             )));
         }
-        let (ordinal, workspace) = newest.map_or((1, None), |(_, ordinal, workspace)| {
-            (ordinal + 1, workspace)
-        });
+        let ordinal = newest.map_or(1, |(_, ordinal)| ordinal + 1);
         if let Some(p) = parent {
             live_parent(&tx, p)?;
         }
@@ -150,7 +145,6 @@ impl Store {
                         Sessions::State,
                         Sessions::StartedAt,
                         Sessions::ParentSession,
-                        Sessions::WorkspaceId,
                     ])
                     .values_panic([
                         id.get().into(),
@@ -158,7 +152,6 @@ impl Store {
                         state.as_str().into(),
                         now.as_millis().into(),
                         parent.into(),
-                        workspace.into(),
                     ])
                     .returning_col(Sessions::Id),
                 |r| r.get(0),

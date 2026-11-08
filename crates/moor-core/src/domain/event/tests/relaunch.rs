@@ -9,8 +9,6 @@ fn s(v: &str) -> String {
 #[test]
 fn relaunched_cause_is_omitted_when_none() {
     let e = Event::Relaunched {
-        old_pane: None,
-        new_pane: None,
         prompt: None,
         cause: None,
     };
@@ -20,8 +18,6 @@ fn relaunched_cause_is_omitted_when_none() {
 #[test]
 fn relaunched_cause_is_in_payload_when_set() {
     let e = Event::Relaunched {
-        old_pane: None,
-        new_pane: None,
         prompt: None,
         cause: Some(s("wake")),
     };

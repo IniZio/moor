@@ -45,7 +45,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probe) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     let id = BoxId::new(run(&w.cx, &super::agentless_req("demo")).unwrap().boxed.id);
     let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION, None).unwrap();
+    store.begin_session(id, SESSION).unwrap();
     if idle {
         store
             .apply(Decision::new(id).session(SessionInput::AgentQuiet))
@@ -220,10 +220,7 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let mut w = world(FakeDriver::new());
     let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().boxed.id);
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
-    w.cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, None)
-        .unwrap();
+    w.cx.store().unwrap().begin_session(id, SESSION).unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, idle_now(&w)));
     w.cx = w.cx.with_engine(engine);
     let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();

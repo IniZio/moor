@@ -42,17 +42,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::RelaunchCapped { count, window_secs } => {
                 Ok(Self::RelaunchCapped { count, window_secs })
             }
-            Event::Relaunched {
-                old_pane,
-                new_pane,
-                prompt,
-                cause,
-            } => Ok(Self::Relaunched {
-                old_pane,
-                new_pane,
-                prompt,
-                cause,
-            }),
+            Event::Relaunched { prompt, cause } => Ok(Self::Relaunched { prompt, cause }),
             Event::SetupFailed { line, .. } => Ok(Self::SetupFailed { line }),
             Event::Timing(TimingEvent::SetupFinished { ms, ok }) => {
                 Ok(Self::SetupFinished { ms, ok })
@@ -163,8 +153,8 @@ impl TryFrom<Event> for ExtraEvent {
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),
             Event::SessionsStopped { sessions } => Ok(Self::SessionsStopped { sessions }),
-            Event::AgentPromptBlocked { pane, prompt, line } => {
-                Ok(Self::AgentPromptBlocked { pane, prompt, line })
+            Event::AgentPromptBlocked { prompt, line } => {
+                Ok(Self::AgentPromptBlocked { prompt, line })
             }
             Event::AgentSaid { text } => Ok(Self::AgentSaid { text }),
             Event::AgentDoing { text } => Ok(Self::AgentDoing { text }),
@@ -200,9 +190,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Stall(StallEvent::PromptNotGiven { attempt, error }) => {
                 Ok(Self::PromptNotGiven { attempt, error })
             }
-            Event::AgentPromptCheckFailed { pane, error } => {
-                Ok(Self::AgentPromptCheckFailed { pane, error })
-            }
+            Event::AgentPromptCheckFailed { error } => Ok(Self::AgentPromptCheckFailed { error }),
             Event::TranscriptSaved {
                 trigger,
                 path,

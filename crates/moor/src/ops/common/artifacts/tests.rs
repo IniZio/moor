@@ -60,7 +60,6 @@ fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        workspace_id: Field::Set("ws-1".into()),
         box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()
     };

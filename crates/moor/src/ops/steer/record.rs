@@ -23,11 +23,7 @@ pub(super) fn record(
     message: &str,
     mark: Mark,
 ) -> Result<i64, CommandError> {
-    let who = if session.session_ref.is_empty() {
-        session.pane.as_deref().unwrap_or_default()
-    } else {
-        &session.session_ref
-    };
+    let who = &session.session_ref;
     let event = ExtraEvent::Steered {
         session: who.to_owned(),
         message: message.to_owned(),

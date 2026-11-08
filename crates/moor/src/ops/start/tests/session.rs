@@ -373,7 +373,7 @@ fn a_first_run_prompt_on_the_screen_is_recorded_and_warned() {
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
     assert_eq!(
         blocked.unwrap().1,
-        serde_json::json!({"pane": "", "prompt": "folder_trust", "line": "trust this folder"})
+        serde_json::json!({"prompt": "folder_trust", "line": "trust this folder"})
     );
     assert!(v.agent.launched);
     assert_eq!(reads(&engine), 1);
@@ -420,7 +420,7 @@ fn a_failed_read_records_a_check_failure_and_start_succeeds() {
         .unwrap();
     assert_eq!(
         failed.1,
-        serde_json::json!({"pane": "", "error": "the agent could not be read"})
+        serde_json::json!({"error": "the agent could not be read"})
     );
     assert!(v.agent.launched);
     assert_eq!(reads(&engine), 1);

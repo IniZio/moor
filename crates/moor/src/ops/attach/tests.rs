@@ -105,7 +105,7 @@ fn an_agent_attach_relays_through_herdr_core() {
     let cx = cx.with_engine(Arc::new(FakeEngine::new()));
     cx.store()
         .unwrap()
-        .begin_session(BoxId::new(1), "s1", None)
+        .begin_session(BoxId::new(1), "s1")
         .unwrap();
     assert_eq!(argv(&cx, &req(false)).unwrap().pop().unwrap(), "relay");
 }
@@ -117,7 +117,7 @@ fn an_agent_attach_to_a_box_another_holder_kept_says_to_recreate_it() {
     let cx = cx.with_engine(Arc::new(FakeEngine::new()));
     let store = cx.store().unwrap();
     let id = BoxId::new(1);
-    store.begin_session(id, "s1", None).unwrap();
+    store.begin_session(id, "s1").unwrap();
     store.set_holders(id, Some("tmux")).unwrap();
     let e = argv(&cx, &req(false)).unwrap_err().error.to_string();
     assert!(e.contains("close the Box and recreate it"), "{e}");

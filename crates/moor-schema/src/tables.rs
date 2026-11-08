@@ -51,9 +51,9 @@ tables! {
         SleepReason, Cpus, MemMib, DriverUpdatedAt, CreatedAt, UpdatedAt, Node, NodeLabels,
         NodeMemMib, ResumeFirstAt, OtherRepos, StepsPendingAt, SuspendAhead, SuspendDirty,
         SuspendCheckedAt, HeldPrompt, SuspendPublish }
-    Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, WorkspaceId, Pane, State, StartedAt,
+    Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
-    Launches { Id, Box, SessionRef, Pane, StartedAt, EndedAt, Exit, TranscriptDigest,
+    Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
         RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt }
     BoxRefs { Id, Box, Kind, Value }
     Events { Id, Box, Session, Kind, Payload, Ts }

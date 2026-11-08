@@ -97,8 +97,6 @@ fn all_events() -> Vec<Event> {
             message: s("m"),
         },
         Event::Relaunched {
-            old_pane: Some(s("p-1")),
-            new_pane: Some(s("p-2")),
             prompt: Some(s("g")),
             cause: None,
         },
@@ -115,14 +113,10 @@ fn all_events() -> Vec<Event> {
             sessions: vec![s("x")],
         },
         Event::AgentPromptBlocked {
-            pane: s("p"),
             prompt: s("t"),
             line: s("l"),
         },
-        Event::AgentPromptCheckFailed {
-            pane: s("p"),
-            error: s("e"),
-        },
+        Event::AgentPromptCheckFailed { error: s("e") },
         Event::TranscriptSaved {
             trigger: s("close"),
             path: s("p"),

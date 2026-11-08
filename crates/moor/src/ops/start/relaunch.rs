@@ -190,7 +190,7 @@ pub(super) fn relaunch(
     store.start_session(next.id)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
-        record_relaunch(store, id, old.pane.clone(), req.prompt.clone(), cause)?;
+        record_relaunch(store, id, req.prompt.clone(), cause)?;
     }
     Ok(view)
 }
@@ -199,18 +199,11 @@ pub(super) fn relaunch(
 pub(super) fn record_relaunch(
     store: &Store,
     id: BoxId,
-    old_pane: Option<String>,
     prompt: Option<String>,
     cause: Option<&str>,
 ) -> Result<(), CommandError> {
-    let new_pane = store.live_session(id)?.and_then(|s| s.pane);
     let cause = cause.map(str::to_owned);
-    let event = ExtraEvent::Relaunched {
-        old_pane,
-        new_pane,
-        prompt,
-        cause,
-    };
+    let event = ExtraEvent::Relaunched { prompt, cause };
     store.apply(Decision::new(id).event(event))?;
     Ok(())
 }

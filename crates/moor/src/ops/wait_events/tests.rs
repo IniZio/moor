@@ -239,10 +239,7 @@ fn the_op_settles_a_finished_steered_turn() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let cx = cx_with(dir.path(), &engine);
     let id = ready(&cx, "alpha");
-    cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, None)
-        .unwrap();
+    cx.store().unwrap().begin_session(id, SESSION).unwrap();
     steered(&cx, id);
     let mut r = req(&["alpha"], WaitMode::Any);
     r.kinds = Some(vec!["turn_done".to_owned()]);
@@ -258,10 +255,7 @@ fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let cx = cx_with(dir.path(), &engine);
     let id = ready(&cx, "alpha");
-    cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, None)
-        .unwrap();
+    cx.store().unwrap().begin_session(id, SESSION).unwrap();
     cx.store()
         .unwrap()
         .apply(Decision::new(id).set(Fields {
@@ -282,10 +276,7 @@ fn a_box_that_cannot_settle_warns_once_over_many_polls() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let id = ready(&cx, "alpha");
-    cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, None)
-        .unwrap();
+    cx.store().unwrap().begin_session(id, SESSION).unwrap();
     let raw = crate::store::db::Conn::open_file(&cx.state_dir().unwrap().join("moor.db")).unwrap();
     raw.run(
         Query::insert()

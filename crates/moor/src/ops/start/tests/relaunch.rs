@@ -219,7 +219,7 @@ fn the_relaunched_event_carries_the_prompt_and_its_cause() {
     let e = events.iter().find(|e| e.kind == "relaunched").unwrap();
     assert_eq!(
         e.payload,
-        serde_json::json!({"old_pane": null, "new_pane": null, "prompt": "ship it", "cause": "wake"})
+        serde_json::json!({"prompt": "ship it", "cause": "wake"})
     );
 }
 

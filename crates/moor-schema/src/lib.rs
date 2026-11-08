@@ -11,6 +11,7 @@ mod baseline;
 mod checkpoint_base;
 mod checkpoint_depth;
 mod checkpoint_stale;
+mod drop_panes;
 mod egress_token;
 mod forward_port;
 mod held_prompt;
@@ -106,6 +107,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V64__agent_reads",
         write: agent_reads::write,
+    },
+    Step {
+        name: "V65__drop_panes",
+        write: drop_panes::write,
     },
 ];
 

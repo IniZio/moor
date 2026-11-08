@@ -130,7 +130,7 @@ fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
             }),
             ..
         } => {
-            store.begin_session(row.id, &session.id, None)?;
+            store.begin_session(row.id, &session.id)?;
             Ok(())
         }
         Probe::Read { .. } => launch_after_retry(cx, store, row.id).map(drop),

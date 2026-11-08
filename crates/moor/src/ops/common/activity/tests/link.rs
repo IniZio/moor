@@ -19,7 +19,7 @@ use crate::testing::engine::FakeEngine;
 fn attached_box(cx: &Cx) -> BoxId {
     let id = working_box(cx, false);
     let store = cx.store().unwrap();
-    store.begin_session(id, SESSION, None).unwrap();
+    store.begin_session(id, SESSION).unwrap();
     id
 }
 
