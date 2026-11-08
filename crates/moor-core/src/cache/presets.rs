@@ -49,9 +49,10 @@ const FIXED: [(&str, &[&str]); 14] = [
 ];
 
 /// Size hints of the presets that grow large. Every preset without restore steps shares one disk, whose size
-/// is the sum of the hints up to the provider's 40 GB cap, so these two together ask for all of it.
-/// The disk is sparse, so a repo that never fills it pays nothing.
-const SIZE_GB: [(&str, u32); 2] = [("cache", 20), ("android-sdk", 20)];
+/// is the sum of the hints up to the provider's 40 GB cap, so `cache` and `android-sdk` together ask for all
+/// of it. `docker` has a disk of its own and asks for the whole cap too: a Compose build that rebuilds a few
+/// images fills the provider's 20 GB default. The disks are sparse, so a repo that never fills them pays nothing.
+const SIZE_GB: [(&str, u32); 3] = [("cache", 20), ("android-sdk", 20), ("docker", 40)];
 
 /// The names of every preset, in table order.
 #[must_use]
