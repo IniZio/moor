@@ -56,6 +56,7 @@ pub(crate) fn recover(
     let Some(sref) = session_ref(row, launch) else {
         return Ok(Fate::Ended(pane_exit));
     };
+    store.require_hc_holder(row.id, row.name.as_str())?;
     let mut attempt = 0;
     loop {
         match cx.engine().agent_fate(&sref, Deadline(TRY_DEADLINE)) {

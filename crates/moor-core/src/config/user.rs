@@ -25,7 +25,7 @@ use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
 use crate::name::ForgeRepo;
-pub use agent::{AgentConfig, AgentHolder};
+pub use agent::AgentConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 pub use driver::DriverConfig;

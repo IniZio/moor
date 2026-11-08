@@ -44,9 +44,7 @@ fn fx_with(session: bool) -> Fx {
     let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
-        let launch = store
-            .begin_session(id, "s-1", Some("p-1"), moor_core::config::AgentHolder::Hc)
-            .unwrap();
+        let launch = store.begin_session(id, "s-1", Some("p-1")).unwrap();
         store.set_registered_session(launch, "agent-1").unwrap();
         surface.have_pane("p-1");
     }

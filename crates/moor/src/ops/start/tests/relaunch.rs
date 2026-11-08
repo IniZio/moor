@@ -31,7 +31,6 @@ pub(super) fn session(pane: &str) -> SessionRef {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(PaneRef::new(pane)),
-        holder: moor_core::config::AgentHolder::Hc,
     }
 }
 

@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
@@ -117,13 +116,9 @@ fn live_session_is_the_newest_unended_row() {
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
     assert_eq!(store.live_session(id).unwrap(), None);
-    let first = store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    let first = store.begin_session(id, "s1", None).unwrap();
     clock.sleep(Duration::from_millis(5));
-    let second = store
-        .begin_session(id, "s2", None, AgentHolder::Hc)
-        .unwrap();
+    let second = store.begin_session(id, "s2", None).unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     assert_eq!((live.id, live.session_ref.as_str()), (second, "s2"));
     assert_eq!(live.started_at, Ts::from_millis(1_005));
@@ -138,9 +133,7 @@ fn begin_session_keeps_the_pane_and_appends_session_started() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    store
-        .begin_session(id, "s1", Some("p1"), AgentHolder::Hc)
-        .unwrap();
+    store.begin_session(id, "s1", Some("p1")).unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     assert_eq!(live.pane.as_deref(), Some("p1"));
     let events = store.events(id, 10).unwrap();
@@ -150,43 +143,27 @@ fn begin_session_keeps_the_pane_and_appends_session_started() {
 }
 
 #[test]
-fn a_session_keeps_the_holder_it_began_under() {
+fn a_box_with_no_session_or_a_herdr_core_session_may_be_reached() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    store
-        .begin_session(id, "s1", None, AgentHolder::Tmux)
-        .unwrap();
-    assert_eq!(
-        store.live_session(id).unwrap().unwrap().holder,
-        AgentHolder::Tmux
-    );
-    assert_eq!(store.agent_holder(id).unwrap(), AgentHolder::Tmux);
-    store
-        .begin_session(id, "s2", None, AgentHolder::Hc)
-        .unwrap();
-    assert_eq!(
-        store.live_session(id).unwrap().unwrap().holder,
-        AgentHolder::Hc
-    );
-    assert_eq!(store.agent_holder(id).unwrap(), AgentHolder::Hc);
+    store.require_hc_holder(id, "t").unwrap();
+    store.begin_session(id, "s1", None).unwrap();
+    store.require_hc_holder(id, "t").unwrap();
 }
 
 #[test]
-fn a_session_begun_before_holders_were_recorded_is_held_by_tmux() {
+fn a_box_whose_session_another_holder_kept_names_the_box_and_says_to_recreate_it() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    assert_eq!(store.agent_holder(id).unwrap(), AgentHolder::Tmux);
-    store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
-    store.forget_holders(id).unwrap();
-    assert_eq!(
-        store.live_session(id).unwrap().unwrap().holder,
-        AgentHolder::Tmux
-    );
-    assert_eq!(store.agent_holder(id).unwrap(), AgentHolder::Tmux);
+    store.begin_session(id, "s1", None).unwrap();
+    for held in [Some("tmux"), None] {
+        store.set_holders(id, held).unwrap();
+        let e = store.require_hc_holder(id, "t").unwrap_err().to_string();
+        assert!(e.contains("Box t"), "{e}");
+        assert!(e.contains("close the Box and recreate it"), "{e}");
+    }
 }
 
 #[test]
@@ -196,9 +173,7 @@ fn has_session_stays_true_once_a_session_began() {
     let id = add(&store, "t");
     let other = add(&store, "u");
     assert!(!store.has_session(id).unwrap());
-    let s = store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     assert!(store.has_session(id).unwrap());
     store.end_session(s, Some(0), None).unwrap();
     assert!(store.has_session(id).unwrap());
@@ -210,9 +185,7 @@ fn end_session_records_outcome_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
-    let s = store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     clock.sleep(Duration::from_millis(10));
     store.end_session(s, Some(3), Some("dg")).unwrap();
     clock.sleep(Duration::from_millis(10));
@@ -242,9 +215,7 @@ fn session_writes_leave_box_columns_alone() {
     let id = working(&store, "t");
     let before = state_cols(&store, id);
     clock.sleep(Duration::from_millis(50));
-    let s = store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     store.end_session(s, Some(0), None).unwrap();
     assert_eq!(state_cols(&store, id), before);
     assert_eq!(idle_since(&store, id), None);
@@ -254,9 +225,7 @@ fn session_writes_leave_box_columns_alone() {
 fn begin_session_on_unknown_box_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let err = store
-        .begin_session(BoxId::new(7), "s", None, AgentHolder::Hc)
-        .unwrap_err();
+    let err = store.begin_session(BoxId::new(7), "s", None).unwrap_err();
     assert!(
         matches!(err, crate::store::StoreError::NotFound(_)),
         "{err:?}"
@@ -394,9 +363,7 @@ fn begin_session_refuses_an_ended_current_session() {
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
     set_session_state(&store, id, "ended");
-    let err = store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap_err();
+    let err = store.begin_session(id, "s1", None).unwrap_err();
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     assert_eq!(store.live_session(id).unwrap(), None);
 }
@@ -406,13 +373,9 @@ fn begin_session_allows_a_starting_or_working_current_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    store.begin_session(id, "s1", None).unwrap();
     set_session_state(&store, id, "working");
-    store
-        .begin_session(id, "s2", None, AgentHolder::Hc)
-        .unwrap();
+    store.begin_session(id, "s2", None).unwrap();
 }
 
 #[test]
@@ -422,9 +385,7 @@ fn begin_session_records_the_current_box_session() {
     let id = add(&store, "t");
     set_session_state(&store, id, "ended");
     let second = store.open_session(id).unwrap();
-    store
-        .begin_session(id, "s1", None, AgentHolder::Hc)
-        .unwrap();
+    store.begin_session(id, "s1", None).unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     assert_eq!(live.session, Some(second.id));
 }

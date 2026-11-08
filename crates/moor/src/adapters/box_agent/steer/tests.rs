@@ -38,7 +38,6 @@ fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, Sess
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(pane),
-        holder: moor_core::config::AgentHolder::Hc,
     };
     (Arc::new(s), session)
 }
@@ -390,7 +389,6 @@ fn a_text_steer_reaches_a_pty_pane() {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(pane.clone()),
-        holder: moor_core::config::AgentHolder::Hc,
     };
     let agent = BoxAgent::new(
         Arc::new(FakeDriver::new()),

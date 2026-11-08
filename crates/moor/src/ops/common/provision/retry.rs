@@ -122,8 +122,8 @@ fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
         handle: handle.clone(),
         workdir,
         pane: None,
-        holder: cx.engine().new_holder(),
     };
+    store.require_hc_holder(row.id, row.name.as_str())?;
     let unknown = |e: EngineError| CommandError::new(ErrorKind::Failed, e.to_string());
     match cx
         .engine()
@@ -136,7 +136,7 @@ fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
                 .engine()
                 .reattach(&session, &ws, &row.name)
                 .map_err(unknown)?;
-            store.begin_session(row.id, &session.id, Some(pane.as_str()), session.holder)?;
+            store.begin_session(row.id, &session.id, Some(pane.as_str()))?;
             Ok(())
         }
         AgentFate::Ended { .. } => launch_after_retry(cx, store, row.id).map(drop),

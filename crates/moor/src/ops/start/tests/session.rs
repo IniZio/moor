@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{PaneObs, PaneStatus};
-use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
@@ -60,18 +59,6 @@ fn start_records_one_live_session_and_attach_adds_none() {
     run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(sessions(), 1);
     assert_eq!(engine.launches().len(), 1);
-}
-
-#[test]
-fn a_launch_records_the_holder_the_controller_launched_it_under() {
-    for kind in [AgentHolder::Tmux, AgentHolder::Hc] {
-        let engine = Arc::new(FakeEngine::new());
-        engine.set_holder(kind);
-        let w = with_engine(&engine);
-        let id = BoxId::new(run(&w.cx, &prompt_req("demo")).unwrap().boxed.id);
-        let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-        assert_eq!(live.holder, kind);
-    }
 }
 
 #[test]

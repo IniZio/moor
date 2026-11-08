@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
@@ -105,38 +104,27 @@ fn an_agent_attach_never_opens_a_shell() {
     assert!(!got.contains("SHELL"), "{got}");
 }
 
-/// What an agent attach relays, for an agent launched under `launched` (`None`: before holders
-/// were recorded) when the controller now launches under `configured`.
-fn relayed_holder(launched: Option<AgentHolder>, configured: AgentHolder) -> String {
+#[test]
+fn an_agent_attach_relays_through_herdr_core() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _, _) = ready_box(dir.path());
-    let engine = Arc::new(FakeEngine::new());
-    engine.set_holder(configured);
-    let cx = cx.with_engine(engine);
+    let cx = cx.with_engine(Arc::new(FakeEngine::new()));
+    cx.store()
+        .unwrap()
+        .begin_session(BoxId::new(1), "s1", None)
+        .unwrap();
+    assert_eq!(argv(&cx, &req(false)).unwrap().pop().unwrap(), "relay");
+}
+
+#[test]
+fn an_agent_attach_to_a_box_another_holder_kept_says_to_recreate_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = ready_box(dir.path());
+    let cx = cx.with_engine(Arc::new(FakeEngine::new()));
     let store = cx.store().unwrap();
     let id = BoxId::new(1);
-    store
-        .begin_session(id, "s1", None, launched.unwrap_or(configured))
-        .unwrap();
-    if launched.is_none() {
-        store.forget_holders(id).unwrap();
-    }
-    argv(&cx, &req(false)).unwrap().pop().unwrap()
-}
-
-#[test]
-fn an_agent_attach_relays_through_the_holder_the_agent_began_under() {
-    assert_eq!(
-        relayed_holder(Some(AgentHolder::Tmux), AgentHolder::Hc),
-        "relay tmux"
-    );
-    assert_eq!(
-        relayed_holder(Some(AgentHolder::Hc), AgentHolder::Tmux),
-        "relay hc"
-    );
-}
-
-#[test]
-fn an_agent_attach_relays_through_tmux_when_the_agent_began_before_holders_were_recorded() {
-    assert_eq!(relayed_holder(None, AgentHolder::Hc), "relay tmux");
+    store.begin_session(id, "s1", None).unwrap();
+    store.set_holders(id, Some("tmux")).unwrap();
+    let e = argv(&cx, &req(false)).unwrap_err().error.to_string();
+    assert!(e.contains("close the Box and recreate it"), "{e}");
 }

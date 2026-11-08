@@ -243,12 +243,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_session(
-        id,
-        &sref,
-        session.pane.as_ref().map(PaneRef::as_str),
-        session.holder,
-    )?;
+    store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
     if let Some(live) = store.live_session(id)?.filter(|_| launch.resume.is_some()) {
         resume::ensure(
             cx,

@@ -1,6 +1,5 @@
 //! Agent session rows and the last hook report cached per box.
 
-use moor_core::config::AgentHolder;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -14,7 +13,7 @@ use super::{load_box, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
 
 /// The `launches` columns [`session_from_row`] reads, in order.
-const SESSION_COLUMNS: [Launches; 11] = [
+const SESSION_COLUMNS: [Launches; 10] = [
     Launches::Id,
     Launches::Box,
     Launches::SessionRef,
@@ -25,8 +24,10 @@ const SESSION_COLUMNS: [Launches; 11] = [
     Launches::TranscriptDigest,
     Launches::RegisteredAgentSession,
     Launches::Session,
-    Launches::Holder,
 ];
+
+/// The `launches.holder` value of every agent moor starts: herdr-core.
+const HOLDER: &str = "hc";
 
 /// A stored agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,8 +52,6 @@ pub(crate) struct SessionRow {
     pub(crate) registered_agent_session: Option<String>,
     /// The Box's Session current when the agent started.
     pub(crate) session: Option<i64>,
-    /// What holds the agent's terminal on the Box.
-    pub(crate) holder: AgentHolder,
 }
 
 impl Store {
@@ -86,8 +85,9 @@ impl Store {
         Ok(at.map(Ts::from_millis))
     }
 
-    /// What holds the terminal of the newest agent of `box_id`, ended or not.
-    pub(crate) fn agent_holder(&self, box_id: BoxId) -> Result<AgentHolder, StoreError> {
+    /// Refuses a Box whose newest agent was held by anything but herdr-core, as every launch
+    /// before moor held agents with herdr-core alone was; such a Box is closed and recreated.
+    pub(crate) fn require_hc_holder(&self, box_id: BoxId, name: &str) -> Result<(), StoreError> {
         let conn = self.reader()?;
         let stored: Option<Option<String>> = conn
             .row(
@@ -100,18 +100,28 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        holder_from(stored.flatten())
-            .map_err(|e| StoreError::Corrupt(format!("launches.holder: {e}")))
+        match stored {
+            None => Ok(()),
+            Some(Some(held)) if held == HOLDER => Ok(()),
+            Some(_) => Err(StoreError::Invalid(format!(
+                "the agent of Box {name} was not started by this version of moor and cannot be \
+                 reached; close the Box and recreate it"
+            ))),
+        }
     }
 
-    /// Forget the holders of `box_id`'s sessions, as moor did before it recorded them.
+    /// Record `holder` as the holder of `box_id`'s sessions, as another moor did.
     #[cfg(test)]
-    pub(crate) fn forget_holders(&self, box_id: BoxId) -> Result<(), StoreError> {
+    pub(crate) fn set_holders(
+        &self,
+        box_id: BoxId,
+        holder: Option<&str>,
+    ) -> Result<(), StoreError> {
         let conn = self.writer();
         conn.run(
             Query::update()
                 .table(Launches::Table)
-                .value(Launches::Holder, Option::<String>::None)
+                .value(Launches::Holder, holder.map(str::to_owned))
                 .and_where(Expr::col(Launches::Box).eq(box_id.get())),
         )?;
         drop(conn);
@@ -134,14 +144,13 @@ impl Store {
             .is_some())
     }
 
-    /// Record the start of a session on `box_id`, held by `holder`, and its `SessionStarted`
-    /// event; box state is not touched.
+    /// Record the start of a session on `box_id` and its `SessionStarted` event; box state is
+    /// not touched.
     pub(crate) fn begin_session(
         &self,
         box_id: BoxId,
         session_ref: &str,
         pane: Option<&str>,
-        holder: AgentHolder,
     ) -> Result<i64, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
@@ -183,7 +192,7 @@ impl Store {
                     pane.into(),
                     now.as_millis().into(),
                     db::sub(newest_session(box_id)),
-                    holder.name().into(),
+                    HOLDER.into(),
                 ])
                 .returning_col(Launches::Id),
             |r| r.get(0),
@@ -261,18 +270,6 @@ fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
         transcript_digest: r.get(7)?,
         registered_agent_session: r.get(8)?,
         session: r.get(9)?,
-        holder: holder_from(r.get(10)?).map_err(|e| db::Error::Convert {
-            index: 10,
-            source: e.into(),
-        })?,
-    })
-}
-
-/// The holder a `launches.holder` value names. A launch from before moor recorded the holder
-/// has none, and was held by [`AgentHolder::UNRECORDED`].
-fn holder_from(stored: Option<String>) -> Result<AgentHolder, String> {
-    stored.map_or(Ok(AgentHolder::UNRECORDED), |name| {
-        AgentHolder::from_name(&name).ok_or_else(|| format!("unknown holder {name:?}"))
     })
 }
 

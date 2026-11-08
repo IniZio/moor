@@ -11,8 +11,7 @@
 /// follows the question with a generic permission notice that names nothing it asked.
 /// Each state change is also printed to `MOOR_AGENT_TTY` as an OSC 7501 sequence, once per change:
 /// `osc` holds the one mapping from hook state to terminal state. The launch script runs it with
-/// `done SessionEnd` when the agent exits, which prints without touching the record. Inside tmux
-/// the sequence travels in a passthrough wrapper.
+/// `done SessionEnd` when the agent exits, which prints without touching the record.
 /// `background_local` says every piece of background work is a local shell or subagent, the only
 /// kinds whose end the Box can see; remote or MCP work runs on with nothing to show for it.
 /// A busy record keeps the tool's name and, cut short, the input fields the `doing` line
@@ -30,11 +29,7 @@ osc() {
   p="state=$s:app=claude"
   [ "$(cat "$d/status-osc" 2>/dev/null)" = "$p" ] && return 0
   printf %s "$p" > "$d/status-osc" 2>/dev/null
-  if [ -n "$TMUX" ]; then
-    printf '\033Ptmux;\033\033]7501;%s\033\033\\\033\\' "$p"
-  else
-    printf '\033]7501;%s\033\\' "$p"
-  fi >> "$MOOR_AGENT_TTY" 2>/dev/null || :
+  printf '\033]7501;%s\033\\' "$p" >> "$MOOR_AGENT_TTY" 2>/dev/null || :
 }
 if [ "$2" = SessionEnd ]; then osc "$1" "$2"; exit 0; fi
 in=

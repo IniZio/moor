@@ -10,7 +10,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes, WaitCheck};
-use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
@@ -52,8 +51,7 @@ struct State {
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
     after_steer: Vec<(String, Probes)>,
-    holder: AgentHolder,
-    asked: Vec<(&'static str, AgentHolder)>,
+    asked: Vec<&'static str>,
 }
 
 /// The launch a scripted starting marker names to stand for the latest launch's own marker.
@@ -191,13 +189,8 @@ impl FakeEngine {
         self.st().transcripts.iter().map(|t| t.1).collect()
     }
 
-    /// Launches from now on put the agent under `kind`, as after an `agent.holder` change.
-    pub(crate) fn set_holder(&self, kind: AgentHolder) {
-        self.st().holder = kind;
-    }
-
-    /// The calls that reached a running agent, in order, each with the holder it asked.
-    pub(crate) fn asked(&self) -> Vec<(&'static str, AgentHolder)> {
+    /// The calls that reached a running agent, in order.
+    pub(crate) fn asked(&self) -> Vec<&'static str> {
         self.st().asked.clone()
     }
 
@@ -288,21 +281,17 @@ impl Engine for FakeEngine {
         self.st().profile_sources.clone()
     }
 
-    fn new_holder(&self) -> AgentHolder {
-        self.st().holder
-    }
-
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         self.scripted_launch(req)
     }
 
-    fn relay_argv(&self, holder: AgentHolder, connect: &[String]) -> Option<Vec<String>> {
-        self.st().asked.push(("relay", holder));
-        Some([connect, &[format!("relay {}", holder.name())]].concat())
+    fn relay_argv(&self, connect: &[String]) -> Option<Vec<String>> {
+        self.st().asked.push("relay");
+        Some([connect, &["relay".to_owned()]].concat())
     }
 
-    fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
-        self.st().asked.push(("stop", s.holder));
+    fn stop(&self, _s: &SessionRef) -> Result<(), EngineError> {
+        self.st().asked.push("stop");
         Ok(())
     }
 
@@ -343,8 +332,8 @@ impl Engine for FakeEngine {
         }))
     }
 
-    fn agent_fate(&self, s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
-        self.st().asked.push(("fate", s.holder));
+    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
+        self.st().asked.push("fate");
         self.st()
             .fates
             .pop_front()
@@ -358,7 +347,7 @@ impl Engine for FakeEngine {
         _name: &BoxName,
     ) -> Result<PaneRef, EngineError> {
         let mut st = self.st();
-        st.asked.push(("reattach", s.holder));
+        st.asked.push("reattach");
         let pane = format!("reattached-{}", st.reattached.len() + 1);
         st.reattached.push((s.id.clone(), pane.clone()));
         Ok(PaneRef::new(pane))
