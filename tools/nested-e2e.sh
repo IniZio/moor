@@ -137,7 +137,8 @@ build() {
 }
 
 open_prs() {
-	timeout 60 gh api "repos/$GH_REPO_NAME/pulls?state=open&head=${GH_REPO_NAME%%/*}:$BRANCH" --jq '.[].number' 2>/dev/null
+	local prs
+	prs=$(timeout 60 gh api "repos/$GH_REPO_NAME/pulls?state=open&head=${GH_REPO_NAME%%/*}:$BRANCH" --jq '.[].number' 2>/dev/null) && printf '%s\n' "$prs"
 }
 
 remote_branch() {
