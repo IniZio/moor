@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 
 import { type Account, link, SignedOut } from './api';
 
-const HINTS: Record<string, ComponentChildren> = {
+const HINTS = {
 	claude: (
 		<>
 			Run <code>claude setup-token</code> on your own machine and paste what it prints.
@@ -14,7 +14,12 @@ const HINTS: Record<string, ComponentChildren> = {
 			Paste what <code>gh auth token</code> prints, or a fine-grained token that can push to your repos.
 		</>
 	),
-};
+} satisfies Record<'claude' | 'github', ComponentChildren>;
+
+/** The hint for secret `name`, which may be one the page has no words for. */
+function hint(name: string): ComponentChildren {
+	return name === 'claude' || name === 'github' ? HINTS[name] : 'Paste the token.';
+}
 
 function Row({ account, name, linked, onLinked }: { account: Account; name: string; linked: boolean; onLinked: () => void }) {
 	const [value, setValue] = useState('');
@@ -40,7 +45,7 @@ function Row({ account, name, linked, onLinked }: { account: Account; name: stri
 					<strong>{name}</strong>
 					<span class={linked ? 'pill ok' : 'pill'}>{linked ? 'Linked' : 'Not linked'}</span>
 				</div>
-				<p class="muted">{HINTS[name] ?? 'Paste the token.'}</p>
+				<p class="muted">{hint(name)}</p>
 				<div class="field">
 					<input
 						type="password"
