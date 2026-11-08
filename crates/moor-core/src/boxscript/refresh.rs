@@ -25,12 +25,21 @@ pub fn outcome(output: &str) -> Option<&str> {
         .find_map(|line| line.trim_end().strip_prefix(LOG_PREFIX))
 }
 
+/// Removes every linked worktree under the tree and the entries git keeps for them, which a
+/// previous Box's agent made and no Box keeps.
+const DROP_WORKTREES: &str = r#"  here=$(pwd -P)
+  git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | tail -n +2 |
+    while IFS= read -r w; do case $w in "$here"/?*) rm -rf -- "$w";; esac; done
+  rm -rf -- .git/worktrees
+"#;
+
 /// POSIX sh, run in the Box workdir before [`super::clone::clone_script`], for Box `key`.
 ///
 /// It runs once per Box: `.moor/tree` names the Box that last refreshed the tree, and a rerun
 /// on that Box changes nothing, so the session's commits stay. Otherwise it leaves the workdir
 /// either on the Box branch, as `origin/<branch>` or else the base, with every tracked file
-/// reset, every untracked file and nested repo removed and ignored files kept, no remote but
+/// reset, every untracked file and nested repo removed and ignored files kept, no linked worktree,
+/// no path the last Box excluded in `.git/info/exclude`, no remote but
 /// `origin`, no ref but the Box branch, `origin`'s branches and tags, no pseudo-ref such as
 /// `ORIG_HEAD` naming an old commit, and no reflog; or, when any step fails, empty, so the
 /// clone script clones cold. A base of `HEAD` means the remote's default branch, never the old local HEAD. Lazy
@@ -61,7 +70,7 @@ impl Work {
         match self {
         Self::Discard => (
             "force=-f".to_owned(),
-            "git clean -ffdq || { moor_tree_cold 'git clean failed'; return 0; }".to_owned(),
+            ": > .git/info/exclude; git clean -ffdq || { moor_tree_cold 'git clean failed'; return 0; }".to_owned(),
             format!(
                 "{SUBMODULE_GIT} submodule update -q --recursive --force &&\n      \
                  git submodule foreach -q --recursive 'git clean -ffdq'"
@@ -110,7 +119,7 @@ moor_tree_refresh() {{
   for op in rebase merge cherry-pick revert am; do git "$op" --abort >/dev/null 2>&1 || :; done
   git bisect reset >/dev/null 2>&1 || :
   rm -rf -- .git/rebase-merge .git/rebase-apply
-  git fetch -q --force --no-recurse-submodules --prune --prune-tags origin || {{ moor_tree_cold 'git fetch failed'; return 0; }}
+{DROP_WORKTREES}  git fetch -q --force --no-recurse-submodules --prune --prune-tags origin || {{ moor_tree_cold 'git fetch failed'; return 0; }}
   git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q --no-recurse-submodules -- origin {base} || {{ moor_tree_cold 'the base could not be fetched'; return 0; }}
   if [ {base} = HEAD ]; then
     git remote set-head origin -a >/dev/null || {{ moor_tree_cold "the remote's default branch is unknown"; return 0; }}
