@@ -283,6 +283,25 @@ impl Store {
         Ok(changed == 0)
     }
 
+    /// Keep that an `agent_said` was written for the idle status of session `id` set at `at`, on
+    /// the Box's clock; whether one was written for it already.
+    pub(crate) fn note_said(&self, id: i64, at: Ts) -> Result<bool, StoreError> {
+        let conn = self.writer();
+        let changed = conn.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::SaidAt, at.as_millis())
+                .and_where(Expr::col(Launches::Id).eq(id))
+                .and_where(
+                    Expr::col(Launches::SaidAt)
+                        .is_null()
+                        .or(Expr::col(Launches::SaidAt).ne(at.as_millis())),
+                ),
+        )?;
+        drop(conn);
+        Ok(changed == 0)
+    }
+
     /// Whether the live agent of `box_id` has answered a read, but none for so long that it may
     /// have started a turn unseen.
     pub(crate) fn agent_unread(&self, box_id: BoxId, now: Ts) -> Result<bool, StoreError> {

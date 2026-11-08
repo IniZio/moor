@@ -3,6 +3,7 @@
 use moor_core::activity::{Activity, AgentState, Probe, Source};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 
+use super::Reading;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
@@ -41,13 +42,14 @@ fn ends(text: &str, max: usize) -> String {
     format!("{head}{ELIDED}{tail}")
 }
 
-/// Records `said` ahead of a step that quiets the Box. False, with nothing written, when another
-/// settle stepped the Box after `row` was read: that settle recorded the message already.
+/// Records the reply `reading` saw ahead of a step that quiets the Box, once per idle status the
+/// agent reported: a run meanwhile does not say it again. False, with nothing written, when
+/// another settle stepped the Box after `row` was read: that settle recorded the message already.
 pub(super) fn record(
     store: &Store,
     row: &BoxRow,
     quiet: bool,
-    said: Option<&str>,
+    reading: &Reading,
 ) -> Result<bool, CommandError> {
     if store
         .box_row(row.id)?
@@ -55,9 +57,16 @@ pub(super) fn record(
     {
         return Ok(false);
     }
-    if let (true, Some(text)) = (quiet, said) {
-        let text = text.to_owned();
-        store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
+    let Some(text) = reading.said.as_ref().filter(|_| quiet) else {
+        return Ok(true);
+    };
+    let since = reading.term.as_ref().and_then(|t| t.status_at);
+    if let (Some(launch), Some(at)) = (reading.session, since) {
+        if store.note_said(launch, at)? {
+            return Ok(true);
+        }
     }
+    let text = text.clone();
+    store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
     Ok(true)
 }
