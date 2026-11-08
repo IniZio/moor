@@ -81,8 +81,8 @@ Running a Box from inside a Box needs `/dev/kvm`, because the inner Box is a
 cloud-hypervisor VM. The node's VM provides it as `root:kvm` with mode `0660`,
 so the Box user must be in the `kvm` group. The repo's `.moor.yaml` sizes the
 Box `large` and runs `tools/box-nested-kvm.sh`, which adds the user to `kvm` and
-installs pinned `cloud-hypervisor`, `passt`, `crabbox` and
-`crabbox-cloudhypervisor` into the `nested-kvm` cache volume. A Box on a host
+installs the pinned `crabbox-cloudhypervisor` release and runs its `install`,
+which fetches `cloud-hypervisor` and `passt` as it does for a user, and builds the pinned `crabbox`, all into the `nested-kvm` cache volume. A Box on a host
 without `/dev/kvm` skips the script. A Box that runs as root skips the group
 change, because root opens `/dev/kvm` without it and the image may have no
 `kvm` group. A new group applies to new logins, so
