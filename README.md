@@ -1,127 +1,79 @@
 # moor
 
-moor runs coding agents in Boxes, one piece of work per Box, each on its own
-machine and branch of a GitHub repo. The agent never holds your Claude or
-GitHub token, because a Proxy on the host adds each token to its requests.
+moor runs coding agents in Boxes. A Box is one piece of work. It has a branch
+of a GitHub repo, a VM to work in, and an agent working there. You hand it work
+from Claude Code or Slack and check on it from the same place. You get a pushed
+branch and a pull request back.
 
-Pick the door that matches you.
+The agent never holds your Claude or GitHub token. A Proxy on the host adds
+each token to the agent's requests on the way out, so a Box that misbehaves
+has nothing to leak.
 
-## Use it
+## Where to start
 
-You are on a team that already runs moor. You install nothing. Your operator
-gives you the server's address, written here as `<host>`.
+- You are on a team that runs moor. Read [Use a team moor](docs/use.md). You
+  install nothing.
+- You want moor on your own Linux host. Read
+  [Self-host on one machine](docs/run.md). It takes three commands.
+- You want to change moor itself. Read [Development](docs/development.md).
 
-1. Connect Claude Code to the team's server:
+## How the parts fit
 
-   ```sh
-   claude mcp add --transport http moor https://<host>/mcp
-   ```
+```mermaid
+flowchart LR
+	P[You] -->|Claude Code, Slack| G[gate]
+	G --> C[controller]
+	C --> N1[shared node]
+	C --> N2[your machine]
+	N1 --> B1[Box]
+	N2 --> B2[Box]
+	B1 -. token-free requests .-> X[Proxy]
+	B2 -.-> X
+	X -->|adds your tokens| A[GitHub, Anthropic]
+```
 
-   Claude Code opens a browser. Sign in as yourself and approve the scopes.
-   If your team uses Slack, you can instead run `/moor login` in a channel
-   the bot is in and mention the bot.
+- **Controller.** The one long-running process. It owns the state and starts,
+  steers, sleeps, and closes Boxes.
+- **Gate.** The HTTPS front at `https://HOST`. It signs people in with the
+  team's OIDC provider, serves the account page, and serves the MCP endpoint
+  at `https://HOST/mcp`.
+- **Node.** A place that runs Boxes. A shared node serves everyone. A personal
+  node is a teammate's own machine and serves only its owner.
+- **Proxy.** It holds your secrets and adds them to requests for the hosts
+  that need them, such as `api.anthropic.com` and `github.com`.
 
-2. Link your tokens. Run `/moor login` in Slack and paste the output of
-   `claude setup-token` and `gh auth token`. Your first start refuses until
-   both the `claude` and `github` secrets are stored, and the refusal names
-   each one that is missing.
+Each Box works on its own branch, `moor/ID-NAME`, and pushes there. When the
+agent goes quiet, the Box sleeps. A message from any front wakes it.
 
-3. Ask the agent to start a Box on a repo, such as "start a Box on
-   `acme/web` to fix the login typo". It calls `start_box`. The repo needs no
-   `.moor.yaml` and you need no profile.
+## Why one piece of work per Box
 
-4. Watch it. `box_status` shows what the Box is doing and what the agent last
-   said. The agent works on the branch `moor/<name>` and pushes it there.
+A Box has its own disk, processes, and ports, so two agents never step on each
+other's checkout or dev server. Closing a Box throws all of that away. Work
+that was pushed stays on GitHub.
 
-Full steps, and how to watch Boxes in Slack or herdr:
-[Use moor on your team](docs/use.md).
-
-## Run it
-
-You run moor for a team on one Linux host.
-
-1. Install the release binaries:
-
-   ```sh
-   curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh
-   ```
-
-2. Start the controller, which owns the state and starts Boxes, and the gate,
-   which serves `https://<host>/mcp` behind your sign-in provider.
-3. Give the controller a node: a place Boxes run, backed by a crabbox
-   provider.
-4. Enroll the first user and store their `claude` and `github` secrets.
-5. Hand out `https://<host>/mcp`.
-
-On Kubernetes, the Helm chart runs the controller and the gate from the
-release image instead: [Run moor on Kubernetes](docs/kubernetes.md).
-
-Full steps: [Run moor for a team](docs/run.md).
-
-## Hack on it
-
-You change moor itself.
-
-1. Install the Rust toolchain that `rust-toolchain.toml` pins, then the
-   pinned tools:
-
-   ```sh
-   make setup
-   ```
-
-2. Check and test:
-
-   ```sh
-   make lint
-   make test
-   ```
-
-The crate layout, the checks, and how to run a Box from a checkout are in
-[Development](docs/development.md).
-
-## Concepts
-
-- **Box.** One piece of work: a branch, a machine, and an agent on it.
-- **Proxy.** One per Box, on the host. It adds your stored token to each
-  request the Box makes, so the token never enters the Box.
-- **Controller.** The long-running process that owns the state and starts,
-  steers and closes Boxes.
-- **Gate.** The HTTPS front that signs people in and serves the MCP endpoint.
-- **Node.** A place that runs Boxes, such as a host with a crabbox provider.
-- **Profile.** Your own agent settings, copied into each Box you start. It is
-  optional.
-- **`.moor.yaml`.** A repo's own Box settings, such as its setup command. It
-  is optional.
+The expensive parts carry over between Boxes of the same repo. A later Box
+starts from a saved setup and from kept caches, so it skips most of the clone
+and install. [Scheduling](docs/scheduling.md) covers how that works.
 
 ## Documentation
 
-For people who use moor:
+The site at <https://inizio.github.io/moor/> has every page. Pages are grouped
+by what you came to do:
 
-- [Use moor on your team](docs/use.md): connect, link tokens, start and watch
-  a Box.
-- [Use your Boxes over MCP](docs/mcp.md): the tools, scopes and Box
-  resources.
-- [Workflows](docs/workflows.md): recurring jobs that start a Box in your repos
-  on a cron.
-- [Slack](docs/slack.md): the Slack front, from both sides.
-- [herdr](docs/herdr.md): see your Boxes as herdr workspaces.
-- [Webhooks](docs/notify.md) and [stdout lines](docs/listen.md): get told
-  when a Box needs you.
-
-For operators:
-
-- [Run moor for a team](docs/run.md): one host, end to end.
-- [Deploy with systemd](docs/deploy.md): socket units and upgrades.
-- [Run moor on Kubernetes](docs/kubernetes.md): the Helm chart and the
-  values it needs.
-- [Configuration reference](docs/config.md): the user config, `.moor.yaml`,
-  the controller config, and the vault key.
-- [Nodes](docs/nodes.md), [providers and the Proxy](docs/providers.md), and
-  [machines](docs/machines.md): where Boxes run.
-
-For developers:
-
-- [Development](docs/development.md): crates, checks, and running a Box from
-  a checkout.
-- [Command reference](docs/cli.md): every `moor` command. The CLI is a dev
-  tool, not the main user interface.
+- **Get started.** [Use a team moor](docs/use.md),
+  [Self-host on one machine](docs/run.md).
+- **Use.** [Start and steer Boxes](docs/boxes.md),
+  [Add your machine](docs/add-machine.md), [Set up a repo](docs/repo.md),
+  [Run Boxes on a schedule](docs/workflows.md),
+  [Get Box events](docs/notify.md).
+- **Self-host.** [Choose an install](docs/install.md),
+  [Set up the Box provider](docs/providers.md),
+  [Run on one host](docs/deploy.md), [Kubernetes](docs/kubernetes.md),
+  [Sign-in with OIDC](docs/oidc.md), [Slack app](docs/slack.md),
+  [Upgrade and back up](docs/upgrade.md).
+- **Reference.** [CLI](docs/cli.md), [Configuration](docs/config.md),
+  [Helm values](docs/helm.md), [MCP tools](docs/mcp.md),
+  [Events](docs/events.md), [Fronts](docs/fronts.md),
+  [Machine tools](docs/machines.md).
+- **Concepts.** [Boxes, nodes and machines](docs/nodes.md),
+  [The Proxy and secrets](docs/proxy.md), [Scheduling](docs/scheduling.md).

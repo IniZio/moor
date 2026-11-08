@@ -1,95 +1,71 @@
-# Use moor on your team
+# Use a team moor
 
-This page is for a teammate on a team that already runs moor. You install
-nothing. Your operator gives you the server's address, written here as
-`<host>`. A repo needs no `.moor.yaml` and you need no profile. A Box starts
-with neither.
+In this tutorial, you start your first Box on your team's moor and get a
+pushed branch back. You need a browser, Claude Code, and the address of your
+team's moor, written here as `HOST`. You install nothing else.
 
-## 1. Connect
+<!-- TODO add account page screenshots once the page ships -->
 
-From Claude Code, add the team's server:
+
+## 1. Sign in
+
+Open `https://HOST` in your browser and sign in with your team account.
+
+The account page opens. It shows your secrets, your machines, and the commands
+that connect your tools.
+
+## 2. Link your secrets
+
+A Box needs two secrets from you, `claude` and `github`. The Proxy adds them to
+the agent's requests, so neither enters the Box.
+
+1. On your own computer, run `claude setup-token`. Paste what it prints into
+   the **claude** field on the account page.
+2. Run `gh auth token`. Paste what it prints into the **github** field. The
+   token must be able to push to the repos you work on.
+
+Both secrets now show as set. The page never shows a value again.
+
+## 3. Connect Claude Code
+
+Copy the Claude Code line from the account page and run it:
 
 ```sh
-claude mcp add --transport http moor https://<host>/mcp
+claude mcp add --transport http moor https://HOST/mcp
 ```
 
-Claude Code opens a browser. Sign in as yourself and approve the
-`moor:read` and `moor:write` scopes. Every call then acts as you, so you see
-and change only your own Boxes. Other agent tools connect through
-`moor mcp`, as [Use your Boxes over MCP](mcp.md#use-moor-from-any-agent-tool)
-shows.
+Start Claude Code and run `/mcp`. Claude Code opens a browser. Sign in and
+approve the `moor:read` and `moor:write` scopes. The `moor` server now lists
+its tools, such as `start_box` and `box_status`.
 
-From Slack, you need no setup. Mention the bot in a channel it is in, and a
-coordinator agent answers in a thread.
+Every call acts as you, so you see and change only your own Boxes.
 
-## 2. Link your tokens
+## 4. Start a Box
 
-A Box needs two secrets from you: `claude` and `github`. The Proxy adds them
-to the agent's requests, so neither enters the Box.
-
-In Slack, run `/moor login` and fill in the form:
-
-- **Claude.** Paste what `claude setup-token` prints on your own machine.
-- **GitHub.** Paste what `gh auth token` prints. The token must be able to
-  push to the repos you work on.
-
-The first link makes you a moor user. If your Slack email is the one you
-sign in with at `<host>`, Slack and Claude Code share that user and its
-secrets. A different email makes two users.
-
-Without this step, your first start refuses. The refusal names every missing
-secret at once, so you know what to link. The details are in
-[Secrets a Box uses](config.md#secrets-a-box-uses).
-
-## 3. Start a Box
-
-Ask your agent for the work and name the repo:
+Ask Claude Code for the work, and name the repo:
 
 ```text
-Start a Box on acme/web to fix the typo on the login page.
+Start a Box on acme/web to fix the typo on the login page and open a PR.
 ```
 
-The agent calls `start_box`, which returns once the Box exists. Cloning,
-setup and the agent's launch carry on for a few minutes. In Slack, ask the
-coordinator in the thread instead. Add the repo to the channel first with
-`/moor repo add OWNER/NAME`.
+Claude Code calls `start_box`. The answer names the Box and the node it runs
+on. Setup carries on for a few minutes after the call returns.
 
-## 4. Find the work
+## 5. Watch it and get the result
 
-The agent works on the branch `moor/<name>` of the repo and pushes it there.
-Ask it in your prompt to open a pull request when it is done. What it
-publishes, such as screenshots and logs, shows as artifacts.
+Ask Claude Code how the Box is doing. It calls `box_status`, which shows the
+state, what the agent last said, and any sign that the Box is stuck.
 
-## 5. Watch it
+When the agent is done, its work is on the branch `moor/ID-NAME` on GitHub.
+Its last message, which `box_status` shows, names the pull request it opened.
+A few minutes later the Box sleeps. To change something, ask Claude Code to
+send the agent a message. The Box wakes and carries on.
 
-- **From your agent.** `box_status` shows the lifecycle, a one-line status,
-  the agent's newest message, and any sign that the Box is stuck.
-  `inspect_box` shows the tail of the agent's terminal. `send_to_box` steers
-  it, and `close_box` closes it.
-- **In Slack.** Each Box has one status message in the thread. The front
-  edits it as the Box moves from starting to working to waiting on a
-  question.
-- **In herdr.** Each Box is a workspace whose pane shows the agent's
-  terminal. Install the plugin, name the server, and sign in:
+When you no longer need the Box, ask Claude Code to close it.
 
-  ```sh
-  herdr plugin install IniZio/moor/crates/moor-herdr/herdr --ref main
-  echo MOOR_HERDR_SERVER=https://<host> >> "$(herdr plugin config-dir moor)/env"
-  ~/.local/state/herdr/plugins/moor/bin/moor-herdr login
-  ```
+## Next
 
-  Then add the config snippet the install wrote, as [herdr](herdr.md#install)
-  step 3 shows. A Box you start from herdr asks for missing tokens itself, so
-  herdr also works in place of Slack for step 2.
-
-A `ready` Box can still be stuck. [What a coordinator can and cannot
-see](mcp.md#what-a-coordinator-can-and-cannot-see) says how to tell.
-
-## Reference
-
-- [Use your Boxes over MCP](mcp.md): every tool, its arguments, and the Box
-  resources.
-- [Slack](slack.md#how-a-thread-behaves): how a thread behaves.
-- [herdr](herdr.md): the plugin and its panels.
-- [Webhooks](notify.md) and [stdout lines](listen.md): get told when a Box
-  needs you.
+- [Start and steer Boxes](boxes.md) covers Slack and taking over the agent's
+  terminal.
+- [Add your machine](add-machine.md) runs your Boxes on your own computer.
+- [Set up a repo](repo.md) tells Boxes how to install and test your project.
