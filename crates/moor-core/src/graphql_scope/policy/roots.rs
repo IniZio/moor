@@ -9,6 +9,13 @@ use super::{deny_field, Policy};
 /// Subfields of `viewer` that are allowed.
 const VIEWER_FIELDS: &[&str] = &["login", "id", "databaseId", "name", "__typename"];
 
+/// Search types whose results are issues and pull requests. gh picks
+/// `ISSUE_ADVANCED` when the schema offers it.
+const SEARCH_TYPES: &[&str] = &["ISSUE", "ISSUE_ADVANCED"];
+
+/// The one type whose enum values the schema probe may list.
+const PROBED_ENUM: &str = "SearchType";
+
 /// Arguments `search` may carry.
 const SEARCH_ARGS: &[&str] = &["query", "type", "first", "last", "after", "before"];
 
@@ -18,28 +25,34 @@ impl<'a> Policy<'a> {
         Self::only_args(field, SEARCH_ARGS)?;
         let kind = field.args.iter().find(|(k, _)| k == "type");
         let issue = match kind.map(|(_, v)| v) {
-            Some(Value::Enum(name)) => name == "ISSUE",
-            Some(var @ Value::Var(_)) => self.resolve(var)? == Json::String("ISSUE".to_owned()),
+            Some(Value::Enum(name)) => SEARCH_TYPES.contains(&name.as_str()),
+            Some(var @ Value::Var(_)) => {
+                matches!(self.resolve(var)?, Json::String(name) if SEARCH_TYPES.contains(&name.as_str()))
+            }
             _ => false,
         };
         if !issue {
-            return Err(Reason::new("`search` needs `type: ISSUE`"));
+            return Err(Reason::new(
+                "`search` needs `type: ISSUE` or `type: ISSUE_ADVANCED`",
+            ));
         }
         super::query::search_scope(&self.arg_str(field, "query")?, self.repo)?;
         self.connection(&field.sel, "pr", 2)
     }
 
-    /// Allows the `fields { name }` schema probe on `__type`.
+    /// Allows the `fields { name }` schema probe on `__type`, and the
+    /// `enumValues { name }` probe on `SearchType`.
     pub(super) fn introspect(&mut self, field: &'a Field) -> Result<(), Reason> {
         Self::only_args(field, &["name"])?;
         for fields in self.fields(&field.sel, 2)? {
             Self::only_args(fields, &["includeDeprecated"])?;
-            if fields.name != "fields" {
+            let enums = fields.name == "enumValues" && self.arg_str(field, "name")? == PROBED_ENUM;
+            if fields.name != "fields" && !enums {
                 return Err(deny_field(&format!("__type.{}", fields.name)));
             }
             for sub in self.fields(&fields.sel, 3)? {
                 if sub.name != "name" || !sub.sel.is_empty() {
-                    return Err(deny_field(&format!("__type.fields.{}", sub.name)));
+                    return Err(deny_field(&format!("__type.{}.{}", fields.name, sub.name)));
                 }
             }
         }
