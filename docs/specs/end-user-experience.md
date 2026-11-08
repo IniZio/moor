@@ -116,12 +116,13 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 - **One job per surface.** The account page never starts Boxes. hc never links secrets. Slack and Claude Code never show a terminal.
 - **Secrets only on the account page.** One form to keep correct instead of two.
 - **Take over through hc.** It holds the session in the Box already, so a client needs no moor front code.
+- **moor-web goes now.** The account page replaces it.
+- **moor-herdr stays until the owner's herdr is an hc client.** Then it goes too.
+- **A Box closes only when a person closes it.** Sleep already frees its capacity. Closing on PR merge stays in the backlog.
 
 ## Open
 
 1. **hc connect.** `hc machine add --via 'moor exec NAME --'` needs the dev CLI and one line per Box. A teammate needs one line per moor that lists all their Boxes. Either a small `moor-hc` helper does it, or moor speaks the hc protocol at `https://HOST/hc`.
-2. **moor-herdr and moor-web.** Both overlap the target. Delete both once the account page and hc connect ship, or keep moor-herdr until the owner's herdr is an hc client.
-3. **Box end.** Today a Box sleeps until someone closes it. Close it when its PR merges or closes, or leave it to the person.
 
 ## Gaps against today
 
@@ -132,4 +133,4 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 | Watch | Claude Code, Slack and herdr show state. | hc client view once connect exists. |
 | Take over | herdr plugin, or dev CLI `moor exec`. | Open 1. |
 | Result | Branch, artifacts, sleep. | None. |
-| Close | Any front. | Open 3. |
+| Close | Any front. | None. |
