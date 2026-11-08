@@ -49,6 +49,9 @@ data:
   slack.yaml: |
     app_token_file: /var/lib/moor/slack/app-token
     bot_token_file: /var/lib/moor/slack/bot-token
+    {{- if and .Values.gate.enabled .Values.gate.login }}
+    account_url: https://{{ required "host is required" .Values.host }}
+    {{- end }}
   {{- end }}
   {{- if include "moor.slackSeparate" . }}
   slack-forward.json: |
