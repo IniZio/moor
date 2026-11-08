@@ -30,14 +30,7 @@ impl GitHub {
     /// Why `token` cannot be what `gh auth token` prints, found without asking GitHub: it
     /// must be one visible ASCII word.
     pub(crate) fn check_format(token: &Secret) -> Result<(), String> {
-        let bytes = token.expose();
-        if bytes.is_empty() {
-            return Err("it is empty".to_owned());
-        }
-        if !bytes.iter().all(u8::is_ascii_graphic) {
-            return Err("it is not the one word `gh auth token` prints".to_owned());
-        }
-        Ok(())
+        moor_core::secret::check_github_token(token).map_err(|why| format!("it {why}"))
     }
 
     /// Asks GitHub whose token `token` is. 200 takes it, 401 and 403 refuse it, and anything

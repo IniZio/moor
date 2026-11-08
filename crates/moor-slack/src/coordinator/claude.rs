@@ -42,12 +42,6 @@ const VERSION_LIMIT: Duration = Duration::from_secs(30);
 pub(crate) const LOGIN_PROMPT: &str =
     "Paste the token that `claude setup-token` printed on your machine.";
 
-/// What every token `claude setup-token` prints starts with.
-const TOKEN_PREFIX: &str = "sk-ant-";
-
-/// Longest token taken.
-const MAX_TOKEN: usize = 512;
-
 /// Longest reason taken from Claude's output.
 const MAX_REASON: usize = 300;
 
@@ -245,19 +239,8 @@ fn loaded(event: &Value) -> Loaded {
 }
 
 impl CredentialCheck for Claude {
-    /// A setup-token starts with `sk-ant-` and holds only letters, digits, `-` and `_`.
     fn check_format(&self, token: &Secret) -> Result<(), String> {
-        let token = token.expose();
-        let shaped = token.starts_with(TOKEN_PREFIX.as_bytes())
-            && token.len() <= MAX_TOKEN
-            && token
-                .iter()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
-        if shaped {
-            Ok(())
-        } else {
-            Err("it is not a token that `claude setup-token` prints".to_owned())
-        }
+        moor_core::secret::check_claude_token(token).map_err(|why| format!("it {why}"))
     }
 
     /// Runs one turn on `haiku` with `token` on the pipe and the input "Reply OK.", with

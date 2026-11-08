@@ -54,5 +54,46 @@ impl Digest {
     }
 }
 
+/// What every token `claude setup-token` prints starts with.
+const CLAUDE_PREFIX: &[u8] = b"sk-ant-";
+
+/// Longest Claude token taken.
+const CLAUDE_MAX: usize = 512;
+
+/// Why `token` cannot be what `claude setup-token` prints, found without asking Anthropic: it
+/// starts with `sk-ant-` and holds only letters, digits, `-` and `_`.
+///
+/// # Errors
+/// The reason, as a clause that follows "it".
+pub fn check_claude_token(token: &Secret) -> Result<(), String> {
+    let bytes = token.expose();
+    let shaped = bytes.starts_with(CLAUDE_PREFIX)
+        && bytes.len() <= CLAUDE_MAX
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+    if shaped {
+        Ok(())
+    } else {
+        Err("is not a token that `claude setup-token` prints".to_owned())
+    }
+}
+
+/// Why `token` cannot be what `gh auth token` prints, found without asking GitHub: it must be
+/// one visible ASCII word.
+///
+/// # Errors
+/// The reason, as a clause that follows "it".
+pub fn check_github_token(token: &Secret) -> Result<(), String> {
+    let bytes = token.expose();
+    if bytes.is_empty() {
+        return Err("is empty".to_owned());
+    }
+    if !bytes.iter().all(u8::is_ascii_graphic) {
+        return Err("is not the one word `gh auth token` prints".to_owned());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;
