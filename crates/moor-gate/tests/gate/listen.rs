@@ -86,8 +86,9 @@ fn answer(stream: UnixStream, fake: &Mutex<Fake>) {
     }
 }
 
-/// Writes the log events a `watch` frame asks for, then caught-up; holds the connection for
-/// live events when `follow`. Gives whether it is held.
+/// Writes the log events a `watch` frame asks for, then, like the controller, caught-up only
+/// when not `follow`; holds the connection for live events when `follow`. Gives whether it is
+/// held.
 fn replay(fake: &Mutex<Fake>, frame: Value, reply: &mut UnixStream, follow: bool) -> bool {
     let since = frame["since"].as_i64().unwrap_or(0);
     let kinds = frame["kinds"].as_array().cloned();
@@ -107,14 +108,14 @@ fn replay(fake: &Mutex<Fake>, frame: Value, reply: &mut UnixStream, follow: bool
             }
         }
     }
-    let up = ServerFrame::CaughtUp { cursor };
-    if reply.write_all(up.to_line().as_bytes()).is_err() {
-        return false;
-    }
     if follow {
         fake.live.push(reply.try_clone().unwrap());
+        return true;
     }
-    follow
+    drop(fake);
+    let up = ServerFrame::CaughtUp { cursor };
+    let _ = reply.write_all(up.to_line().as_bytes());
+    false
 }
 
 /// The frame of event `cursor`, of `kind` for Box `name`.

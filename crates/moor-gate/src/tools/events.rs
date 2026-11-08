@@ -3,7 +3,7 @@
 //! it will return.
 
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moor_client::{Client, ClientError, EventRecord, WatchItem};
 use moor_core::controller::WatchFilter;
@@ -84,6 +84,7 @@ pub(crate) fn fetch(
     let after = args.after.unwrap_or(0).max(0);
     let limit = args.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let wait = Duration::from_secs(args.wait_seconds.unwrap_or(0).min(MAX_WAIT));
+    let until = now() + wait;
     let boxes = args
         .r#box
         .map(|name| BoxName::parse_allow_bare(&name).map(|n| vec![n]))
@@ -95,21 +96,11 @@ pub(crate) fn fetch(
         parent: None,
     };
     let client = enrolled(controller, person)?;
-    let watch = client
-        .watch(after, filter, !wait.is_zero())
-        .map_err(|e| Unreachable::from_client(&e))?;
-    let stop = watch.stopper();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for item in watch {
-            if tx.send(item).is_err() {
-                return;
-            }
-        }
-    });
-    let read = collect(&rx, after, limit, wait);
-    stop.stop();
-    let (events, cursor) = read?;
+    let (mut events, cursor) = read(&client, after, &filter, limit, None)?;
+    if events.is_empty() && !wait.is_zero() {
+        let from = after.max(cursor.unwrap_or(after));
+        events = read(&client, from, &filter, limit, Some(until))?.0;
+    }
     let next = events
         .last()
         .map_or_else(|| after.max(cursor.unwrap_or(after)), |e| e.offset);
@@ -144,22 +135,47 @@ impl Event {
     }
 }
 
-/// Reads `rx` until `limit` events are past `after`, or the backlog is done and, when `wait`
-/// is not zero, an event came or the wait ended. Gives the events and the caught-up cursor,
-/// when the controller said caught up.
+/// One watch from `after`: with no `until`, the backlog to the controller's caught-up frame;
+/// with one, the first events that arrive before it, as a follow never sends caught-up.
+fn read(
+    client: &Client,
+    after: i64,
+    filter: &WatchFilter,
+    limit: usize,
+    until: Option<Instant>,
+) -> Result<(Vec<Event>, Option<i64>), Unreachable> {
+    let watch = client
+        .watch(after, filter.clone(), until.is_some())
+        .map_err(|e| Unreachable::from_client(&e))?;
+    let stop = watch.stopper();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for item in watch {
+            if tx.send(item).is_err() {
+                return;
+            }
+        }
+    });
+    let read = collect(&rx, after, limit, until);
+    stop.stop();
+    Ok(read?)
+}
+
+/// Reads `rx` until `limit` events are past `after`, the backlog is done, or, with `until`,
+/// an event came or the time is up. Gives the events and the caught-up cursor, when the
+/// controller said caught up.
 fn collect(
     rx: &mpsc::Receiver<Result<WatchItem, ClientError>>,
     after: i64,
     limit: usize,
-    wait: Duration,
+    until: Option<Instant>,
 ) -> Result<(Vec<Event>, Option<i64>), String> {
     let mut events = Vec::new();
-    let mut caught_up = None;
     loop {
-        let item = match caught_up {
+        let item = match until {
             None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
             Some(_) if !events.is_empty() => break,
-            Some(_) => rx.recv_timeout(wait),
+            Some(t) => rx.recv_timeout(t.saturating_duration_since(now())),
         };
         match item {
             Ok(Ok(WatchItem::Event(record))) if record.cursor > after => {
@@ -172,12 +188,7 @@ fn collect(
                 }
             }
             Ok(Ok(WatchItem::Event(_))) => {}
-            Ok(Ok(WatchItem::CaughtUp { cursor })) => {
-                caught_up = Some(cursor);
-                if wait.is_zero() {
-                    break;
-                }
-            }
+            Ok(Ok(WatchItem::CaughtUp { cursor })) => return Ok((events, Some(cursor))),
             Ok(Err(e)) => return Err(format!("the controller ended the watch: {e}")),
             Err(RecvTimeoutError::Timeout) => break,
             Err(RecvTimeoutError::Disconnected) => {
@@ -185,5 +196,14 @@ fn collect(
             }
         }
     }
-    Ok((events, caught_up))
+    Ok((events, None))
+}
+
+/// The monotonic time a wait is measured against.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "bounds a long poll; no time is stored or shown"
+)]
+fn now() -> Instant {
+    Instant::now()
 }
