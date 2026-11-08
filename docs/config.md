@@ -304,7 +304,7 @@ same directory.
 | `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 
-The controller refuses a `web`, `slack`, or `repos` key.
+The controller refuses a `slack` key. The Slack front is `moor-slack`, set up under `fronts`.
 
 ### `fronts`
 
