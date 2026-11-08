@@ -33,6 +33,12 @@ use crate::config_load::load_user;
 use crate::env::Env;
 use crate::wire::tool_paths;
 
+pub(crate) use render::line;
+
+/// Where the crabbox install steps are.
+pub(crate) const CRABBOX_INSTALL: &str =
+    "install a -moor build of IniZio/crabbox on PATH (docs/providers.md)";
+
 /// Whether a check passed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

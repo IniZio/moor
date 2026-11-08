@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
-use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq};
+use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq, StartReq};
 
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
@@ -17,6 +17,7 @@ use exec::ExecArgs;
 use inspect::InspectArgs;
 use node::NodeCmd;
 use session::SessionCmd;
+use steer::SteerArgs;
 use user::UserCli;
 use wait::WaitArgs;
 use wait_events::WaitEventsArgs;
@@ -29,6 +30,7 @@ mod node;
 #[cfg(test)]
 mod parse_ignoring_env;
 mod session;
+mod steer;
 #[cfg(test)]
 pub(super) use parse_ignoring_env::parse_ignoring_env;
 #[cfg(test)]
@@ -74,6 +76,13 @@ pub(super) enum Action {
         /// Public URL of the gate, to check it answers.
         public_url: Option<String>,
     },
+    /// `up`: set this host up as a controller with a local node.
+    Up {
+        /// The node's cap on live Boxes; sized from memory when absent.
+        max_boxes: Option<std::num::NonZeroU32>,
+    },
+    /// `down`: stop the controller's user service and remove it.
+    Down,
     /// `events`: print the event stream as JSON lines.
     Events {
         /// Only events after this id.
@@ -161,6 +170,10 @@ enum Cmd {
     /// The nodes Boxes run on.
     #[command(subcommand)]
     Node(NodeCmd),
+    /// Set this host up: controller service, local node, your user and its secrets.
+    Up(UpArgs),
+    /// Stop and remove the controller service; config, state and secrets stay.
+    Down,
     /// Check the setup after install and say how to fix what is wrong.
     Doctor(DoctorArgs),
     /// Show your identity, its user and that user's linked identities.
@@ -212,6 +225,10 @@ impl Cmd {
             }
             Self::User(u) => u.into_action(),
             Self::Node(n) => Action::Request(n.into()),
+            Self::Up(a) => Action::Up {
+                max_boxes: a.max_boxes,
+            },
+            Self::Down => Action::Down,
             Self::Doctor(a) => Action::Doctor {
                 public_url: a.public_url,
             },
@@ -221,6 +238,15 @@ impl Cmd {
             Self::Admin(a) => a.into_action(),
         }
     }
+}
+
+/// Arguments of `up`.
+#[derive(Debug, Args)]
+struct UpArgs {
+    /// The most Boxes the local node runs at once; one per 4 GiB of memory beyond the first
+    /// 4 GiB when absent.
+    #[arg(long, value_name = "N")]
+    max_boxes: Option<std::num::NonZeroU32>,
 }
 
 /// Arguments of `doctor`.
@@ -315,39 +341,6 @@ impl From<RunArgs> for RunReq {
             record: a.record,
             argv: a.cmd,
             inherit_output: false,
-        }
-    }
-}
-
-/// Arguments of `steer`.
-#[derive(Debug, Args)]
-struct SteerArgs {
-    /// Box name.
-    #[arg(value_parser = box_name)]
-    name: BoxName,
-    /// Text to send.
-    #[arg(conflicts_with_all = ["menu", "interrupt"])]
-    text: Option<String>,
-    /// Menu choice to send.
-    #[arg(
-        long,
-        required_unless_present_any = ["text", "interrupt"],
-        conflicts_with = "interrupt",
-        value_name = "N"
-    )]
-    menu: Option<u32>,
-    /// Send the agent's interrupt key, which stops its current work.
-    #[arg(long)]
-    interrupt: bool,
-}
-
-impl From<SteerArgs> for SteerReq {
-    fn from(a: SteerArgs) -> Self {
-        Self {
-            target: a.name.into(),
-            text: a.text,
-            menu: a.menu,
-            interrupt: a.interrupt,
         }
     }
 }

@@ -11,13 +11,10 @@ use moor_core::view::node::{ProviderCheck, ProviderReadyValue};
 use moor_core::Request;
 
 use super::nodes::Read;
-use super::{answer, Check, Inputs};
+use super::{answer, Check, Inputs, CRABBOX_INSTALL as INSTALL};
 
 /// Ceiling for `crabbox --version`.
 const DEADLINE_SECS: u64 = 10;
-
-/// Where the install steps are.
-const INSTALL: &str = "install a -moor build of IniZio/crabbox on PATH (docs/providers.md)";
 
 /// Whether crabbox is installed, new enough, and knows each node's provider.
 pub(super) fn check(i: &Inputs<'_>, nodes: &Read) -> Check {

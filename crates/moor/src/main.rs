@@ -82,14 +82,7 @@ fn main() -> ExitCode {
         Parsed::StoreMigrate { opts } => return migrate_store(&scoped(env, &opts)),
         Parsed::StoreCopy { opts, to } => return copy_store(&scoped(env, &opts), &to),
         Parsed::ControllerAttach { opts, socket } => {
-            let env = scoped(env, &opts);
-            return ExitCode::from(moor::controller::attach::attach(
-                &env,
-                socket.as_deref(),
-                std::io::stdin(),
-                std::io::stdout(),
-                std::io::stderr(),
-            ));
+            return run_attach(&scoped(env, &opts), socket.as_deref())
         }
         Parsed::Exec {
             opts,
@@ -110,6 +103,8 @@ fn main() -> ExitCode {
             ));
         }
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
+        Parsed::Up { opts, max_boxes } => return run_up(&scoped(env, &opts), &opts, max_boxes),
+        Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
         Parsed::Events {
             opts,
             since,
@@ -121,6 +116,34 @@ fn main() -> ExitCode {
         }
     };
     emit(&output)
+}
+
+/// Runs `moor controller attach` with this process's stdio.
+fn run_attach(env: &Env, socket: Option<&std::path::Path>) -> ExitCode {
+    ExitCode::from(moor::controller::attach::attach(
+        env,
+        socket,
+        std::io::stdin(),
+        std::io::stdout(),
+        std::io::stderr(),
+    ))
+}
+
+/// Runs `moor up` with this process's stdio; prompts go to stderr.
+fn run_up(env: &Env, opts: &GlobalOpts, max_boxes: Option<std::num::NonZeroU32>) -> ExitCode {
+    ExitCode::from(moor::up::up(
+        env,
+        opts,
+        max_boxes,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+        &mut std::io::stderr(),
+    ))
+}
+
+/// Runs `moor down`.
+fn run_down(env: &Env) -> ExitCode {
+    ExitCode::from(moor::up::down(env, &mut std::io::stdout()))
 }
 
 /// Runs `moor store migrate`: opens the store, which migrates it, and exits.
