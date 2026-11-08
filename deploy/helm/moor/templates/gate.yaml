@@ -68,11 +68,19 @@ spec:
         paths:
           {{- $paths := list "/front" "/.well-known/moor" }}
           {{- if .Values.mcp.enabled }}{{ $paths = concat $paths (list "/mcp" "/.well-known/oauth-protected-resource" "/events") }}{{ end }}
-          {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks" "/pair") }}{{ end }}
+          {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks" "/pair" "/account") }}{{ end }}
           {{- if .Values.runner.enabled }}{{ $paths = append $paths "/machines/pair" }}{{ end }}
           {{- range $paths }}
           - path: {{ . }}
             pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-gate
+                port: { name: gate }
+          {{- end }}
+          {{- if .Values.gate.login }}
+          - path: /
+            pathType: Exact
             backend:
               service:
                 name: {{ $.Release.Name }}-gate
