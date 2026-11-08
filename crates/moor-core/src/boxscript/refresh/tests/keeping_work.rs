@@ -129,3 +129,21 @@ fn a_tag_moved_on_the_remote_does_not_send_the_tree_cold() {
     assert_eq!(read(&o, "loose"), "made\n");
     assert_eq!(tree_git(&o, &["rev-parse", "nightly"]), moved);
 }
+
+#[test]
+fn a_previous_box_linked_worktree_is_dropped_though_the_tree_keeps_its_files() {
+    let o = left_with_work();
+    let made = o.sh(
+        &o.tree(),
+        "git -c user.name=a -c user.email=a@a worktree add -q .worktrees/audit -b audit-branch",
+        &[],
+    );
+    assert!(made.status.success(), "{made:?}");
+    start_keeping(&o, BOX2, "moor/two");
+    assert!(
+        !o.tree().join(".worktrees/audit").exists(),
+        "the worktree dir"
+    );
+    assert!(!o.tree().join(".git/worktrees").exists(), "its git entry");
+    assert_eq!(read(&o, "loose"), "made\n", "the tree's own files stay");
+}
