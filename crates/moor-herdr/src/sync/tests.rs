@@ -35,6 +35,7 @@ impl Herdr for Fake {
             label: label.to_owned(),
             tokens: BTreeMap::new(),
             agent_status: "unknown".to_owned(),
+            focused: false,
         });
         self.calls.push(format!("create {label}"));
         Ok(Created {
@@ -60,6 +61,12 @@ impl Herdr for Fake {
                 space.tokens.insert((*k).to_owned(), (*v).to_owned());
             }
         }
+        Ok(())
+    }
+
+    fn close(&mut self, workspace: &str) -> Result<(), Error> {
+        self.calls.push(format!("close {workspace}"));
+        self.spaces.retain(|s| s.id != workspace);
         Ok(())
     }
 
@@ -108,15 +115,26 @@ fn syncing_again_changes_nothing() {
 }
 
 #[test]
-fn a_box_that_closed_keeps_its_workspace_marked_closed() {
+fn a_box_that_closed_loses_its_workspace() {
     let mut herdr = Fake::default();
     herdr.sync(&[fix(WORKING)]);
+    assert_eq!(herdr.sync(&[]), ["close w1"]);
+    assert!(herdr.spaces.is_empty());
+    assert!(herdr.sync(&[]).is_empty());
+}
+
+#[test]
+fn a_closed_box_on_screen_stays_marked_until_focus_moves_off() {
+    let mut herdr = Fake::default();
+    herdr.sync(&[fix(WORKING)]);
+    herdr.space("w1").focused = true;
     assert_eq!(
         herdr.sync(&[]),
         ["tag w1 env=BOX,state=✕", "agent w1:p1 unknown"]
     );
     assert!(herdr.sync(&[]).is_empty());
-    assert_eq!(herdr.spaces.len(), 1);
+    herdr.space("w1").focused = false;
+    assert_eq!(herdr.sync(&[]), ["close w1"]);
 }
 
 #[test]

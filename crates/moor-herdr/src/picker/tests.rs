@@ -184,6 +184,7 @@ impl Herdr for Herd {
             label: label.to_owned(),
             tokens: BTreeMap::new(),
             agent_status: "unknown".to_owned(),
+            focused: false,
         });
         self.calls.push(format!("create {label}"));
         Ok(Created {
@@ -198,6 +199,10 @@ impl Herdr for Herd {
     }
 
     fn tag(&mut self, _: &str, _: &[(&str, &str)]) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn close(&mut self, _: &str) -> Result<(), Error> {
         Ok(())
     }
 

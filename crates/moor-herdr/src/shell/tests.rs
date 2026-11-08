@@ -12,6 +12,7 @@ fn space(id: &str, label: &str) -> Space {
         label: label.to_owned(),
         tokens: BTreeMap::new(),
         agent_status: "unknown".to_owned(),
+        focused: false,
     }
 }
 

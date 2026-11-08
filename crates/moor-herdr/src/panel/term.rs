@@ -80,7 +80,7 @@ impl Ops for Live<'_> {
             .into_iter()
             .filter(|s| s.label == label)
         {
-            self.herdr.close_space(&space.id)?;
+            self.herdr.close(&space.id)?;
         }
         Ok(())
     }

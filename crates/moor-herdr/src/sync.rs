@@ -1,5 +1,7 @@
-//! Makes herdr's workspaces match the open Boxes. Running it again changes nothing, and a
-//! Box that closed keeps its workspace, marked closed, until the user closes it.
+//! Makes herdr's workspaces match the open Boxes; running it again changes nothing.
+//!
+//! A Box that closed loses its workspace, except the one on screen, which stays marked closed
+//! until focus moves off it, so a closing Box does not vanish under the person reading it.
 
 use crate::boxes::{Phase, Shown, BOX_MARK};
 use crate::error::Error;
@@ -66,7 +68,10 @@ pub fn reconcile(
         .iter()
         .filter(|s| s.label.starts_with(BOX_MARK) && !boxes.iter().any(|b| b.label() == s.label));
     for space in gone {
-        if settle(herdr, space, Phase::Closed)? {
+        if !space.focused {
+            herdr.close(&space.id)?;
+            report.push(format!("{}: removed", space.label));
+        } else if settle(herdr, space, Phase::Closed)? {
             report.push(format!("{}: closed", space.label));
         }
     }
