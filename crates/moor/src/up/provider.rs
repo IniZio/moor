@@ -14,7 +14,7 @@ const DEADLINE_SECS: u64 = 60;
 
 /// Commands that install a provider when crabbox selects none.
 pub(crate) const INSTALL_PROVIDER: [&str; 2] = [
-    "curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.1.0/install.sh | sh",
+    "curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.2.1/install.sh | sh",
     "crabbox-cloudhypervisor install",
 ];
 

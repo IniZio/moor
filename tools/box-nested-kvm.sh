@@ -5,7 +5,7 @@ GO_VERSION=go1.27.3
 GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 CRABBOX_COMMIT=ee5e5205c9d95f54f7420bed587bc88b91efeeb4
 CRABBOX_VERSION=0.79.1-moor.17
-ADAPTER_VERSION=v0.2.0
+ADAPTER_VERSION=v0.2.1
 
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
 BIN=$NESTED/bin
@@ -76,8 +76,6 @@ if ! fresh crabbox "$CRABBOX_COMMIT-$CRABBOX_VERSION"; then
 fi
 link_bin crabbox
 
-# The adapter installs its own cloud-hypervisor and passt, as it does for a user.
-# Its crabbox registration goes to a scratch file so the host's config stays alone.
 if ! fresh crabbox-cloudhypervisor "$ADAPTER_VERSION"; then
 	timeout 600 curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$NESTED/dl/adapter-install.sh" \
 		"https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/$ADAPTER_VERSION/install.sh"
