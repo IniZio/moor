@@ -183,6 +183,9 @@ impl From<ExtraEvent> for Event {
                 free_mib,
                 total_mib,
             }),
+            ExtraEvent::PromptNotGiven { attempt, error } => {
+                Self::Stall(StallEvent::PromptNotGiven { attempt, error })
+            }
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
             }

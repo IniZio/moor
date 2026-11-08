@@ -374,7 +374,7 @@ pub enum Event {
     /// The requester's agent profile resolved, or a step of fetching it failed.
     #[serde(untagged)]
     Profile(ProfileEvent),
-    /// The agent stalled, or reported again after it had.
+    /// The agent stalled, reported again after it had, or could not be given a held prompt.
     #[serde(untagged)]
     Stall(StallEvent),
     /// The disk of the node the Box is on ran low, or came back.

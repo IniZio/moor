@@ -186,6 +186,9 @@ impl TryFrom<Event> for ExtraEvent {
                 free_mib,
                 total_mib,
             }),
+            Event::Stall(StallEvent::PromptNotGiven { attempt, error }) => {
+                Ok(Self::PromptNotGiven { attempt, error })
+            }
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })
             }
