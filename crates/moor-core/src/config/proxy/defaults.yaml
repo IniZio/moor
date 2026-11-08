@@ -20,6 +20,8 @@ github-api:
     - "GET /repos/{any_repo}/releases"
     - "GET /repos/{any_repo}/releases/**"
     - "GET /repos/{any_repo}/tags"
+    - "GET /repos/{any_repo}/contents"
+    - "GET /repos/{any_repo}/contents/**"
     - "GET /repos/{repo}"
     - "GET|POST /repos/{repo}/pulls"
     - "GET|PATCH /repos/{repo}/pulls/*"
