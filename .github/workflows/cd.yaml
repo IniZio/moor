@@ -78,7 +78,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
-      BINS: moor moor-gate moor-slack moor-web moor-listen moor-herdr moor-machine-agent
+      BINS: moor moor-gate moor-egress-forward moor-slack moor-web moor-listen moor-herdr moor-machine-agent
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
