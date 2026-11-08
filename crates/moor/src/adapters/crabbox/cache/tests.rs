@@ -79,7 +79,7 @@ fn a_volume_with_restore_steps_is_sent_in_a_group_of_its_own() {
         {"group": npm.group, "name": "cache", "key": format!("{}-cache", npm.group),
          "paths": ["~/.cache"], "sizeGB": 20},
         {"group": group, "name": "docker", "key": format!("{group}-docker"),
-         "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0},
+         "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 40},
         {"group": tree, "name": "worktree", "key": format!("{tree}-worktree"),
          "paths": ["~/moor/repos/r"], "sizeGB": 40},
     ]);
