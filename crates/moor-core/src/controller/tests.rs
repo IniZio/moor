@@ -366,12 +366,18 @@ fn exec_request_frames_and_view_round_trip() {
     let mut wire = Vec::new();
     write_stderr(&mut wire, "1", b"oops").unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(wire, b"{\"frame\":\"stderr\",\"id\":\"1\",\"len\":4}\noops");
-    let ended = crate::view::ExecView { exit: Some(7) };
+    let ended = crate::view::ExecView {
+        exit: Some(7),
+        timed_out: false,
+    };
     assert_eq!(
         serde_json::to_string(&ended).ok().as_deref(),
         Some(r#"{"exit":7}"#)
     );
-    let killed = crate::view::ExecView { exit: None };
+    let killed = crate::view::ExecView {
+        exit: None,
+        timed_out: false,
+    };
     assert_eq!(serde_json::to_string(&killed).ok().as_deref(), Some("{}"));
 }
 

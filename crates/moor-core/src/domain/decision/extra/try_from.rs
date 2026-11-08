@@ -1,7 +1,9 @@
 //! The stored event a caller may pass again, read back as an [`ExtraEvent`].
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent};
+use crate::domain::event::{
+    AccessEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent,
+};
 
 impl TryFrom<Event> for ExtraEvent {
     type Error = Event;
@@ -24,7 +26,16 @@ impl TryFrom<Event> for ExtraEvent {
                 interrupted,
                 error,
             }),
-            Event::Copied { from, to } => Ok(Self::Copied { from, to }),
+            Event::Access(AccessEvent::Copied { from, to }) => Ok(Self::Copied { from, to }),
+            Event::Access(AccessEvent::ExecRan {
+                command,
+                exit,
+                timed_out,
+            }) => Ok(Self::ExecRan {
+                command,
+                exit,
+                timed_out,
+            }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
             Event::LaunchTimedOut { after_secs } => Ok(Self::LaunchTimedOut { after_secs }),

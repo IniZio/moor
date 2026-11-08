@@ -132,7 +132,13 @@ fn a_mirror_copies_the_work_tree_and_deletes_what_left_it() {
     std::fs::write(mirror.join("stale"), "old").unwrap();
     let to = format!("{}/", mirror.display());
     let (got, ok) = f.rsync(&["-a", "--delete", "box:./", &to]);
-    assert_eq!(got.unwrap(), ExecView { exit: Some(0) });
+    assert_eq!(
+        got.unwrap(),
+        ExecView {
+            exit: Some(0),
+            timed_out: false,
+        }
+    );
     assert!(ok, "the rsync client succeeded");
     let copied = std::fs::read_to_string(mirror.join("src/a.rs")).unwrap();
     assert_eq!(copied, "fn a() {}");
@@ -146,7 +152,13 @@ fn a_put_lands_beneath_the_work_tree_making_its_directories() {
     std::fs::write(&staged, "built ok").unwrap();
     let staged = staged.display().to_string();
     let (got, ok) = f.rsync(&["--mkpath", "--chmod=F644", &staged, "box:out/my build.log"]);
-    assert_eq!(got.unwrap(), ExecView { exit: Some(0) });
+    assert_eq!(
+        got.unwrap(),
+        ExecView {
+            exit: Some(0),
+            timed_out: false,
+        }
+    );
     assert!(ok, "the rsync client succeeded");
     let landed = f.tree().join("out/my build.log");
     assert_eq!(std::fs::read_to_string(landed).unwrap(), "built ok");

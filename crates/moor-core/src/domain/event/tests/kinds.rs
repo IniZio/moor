@@ -255,3 +255,45 @@ fn turn_done_kind_and_payload() {
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }
 }
+
+/// `SessionEnded` names itself and carries the documented payload.
+#[test]
+fn session_ended_kind_and_payload() {
+    let e = Event::SessionEnded {
+        session: 3,
+        cause: s("exited"),
+        exit: None,
+    };
+    assert_eq!(e.kind(), "session_ended");
+    assert_eq!(
+        serde_json::to_value(&e).unwrap(),
+        serde_json::json!({"kind":"session_ended","session":3,"cause":"exited","exit":null})
+    );
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"session":3,"cause":"exited","exit":null})
+    );
+}
+
+/// A stored `copied` or `exec_ran` row reads back as the event that wrote it.
+#[test]
+fn access_events_read_back_from_their_json() {
+    let copied = serde_json::json!({"kind": "copied", "from": "/a", "to": "/b"});
+    assert_eq!(
+        serde_json::from_value::<Event>(copied).unwrap(),
+        Event::Access(AccessEvent::Copied {
+            from: s("/a"),
+            to: s("/b"),
+        })
+    );
+    let ran = serde_json::json!({"kind": "exec_ran", "command": "df -h", "exit": null,
+        "timed_out": true});
+    assert_eq!(
+        serde_json::from_value::<Event>(ran).unwrap(),
+        Event::Access(AccessEvent::ExecRan {
+            command: s("df -h"),
+            exit: None,
+            timed_out: true,
+        })
+    );
+}

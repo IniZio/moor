@@ -25,6 +25,7 @@ impl ExecArgs {
         let req = ExecReq {
             target: self.name.into(),
             argv: self.cmd,
+            timeout_secs: None,
         };
         (req, self.interactive)
     }

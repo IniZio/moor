@@ -84,8 +84,14 @@ pub(crate) fn run(
             "box-rsync ran past its {} minute deadline",
             within.as_secs() / 60
         ))),
-        Ok(ExecOutcome::Exited { code }) => Ok(ExecView { exit: Some(code) }),
-        Ok(ExecOutcome::Interrupted) => Ok(ExecView { exit: None }),
+        Ok(ExecOutcome::Exited { code }) => Ok(ExecView {
+            exit: Some(code),
+            timed_out: false,
+        }),
+        Ok(ExecOutcome::Interrupted) => Ok(ExecView {
+            exit: None,
+            timed_out: false,
+        }),
         Err(e) => Err(failed(e.to_string())),
     }
 }

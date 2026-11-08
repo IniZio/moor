@@ -167,8 +167,9 @@ a host checkout into a Box.
 ### Byte pipe: `moor exec`
 
 `moor exec` is a transport, not a run. It passes bytes both ways untouched,
-as `ssh -T -e none` does, and keeps no run record or log. It takes no Box
-lock and wakes an asleep Box first.
+as `ssh -T -e none` does, and keeps no run record or log. Once the command
+ends, the Box gets one `exec_ran` event with the command, its exit code and
+whether it timed out. It takes no Box lock and wakes an asleep Box first.
 
 - Stdin goes to the command until it ends, and then the command's stdin
   closes. A terminal's stdin goes only with `-i`.

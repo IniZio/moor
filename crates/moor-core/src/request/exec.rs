@@ -14,4 +14,7 @@ pub struct ExecReq {
     pub target: BoxTarget,
     /// Command and arguments; a single word is run as a shell line.
     pub argv: Vec<String>,
+    /// Kill the command once it has run this many seconds; it runs until it ends without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u32>,
 }
