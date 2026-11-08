@@ -10,7 +10,11 @@ controller serve` binds its own sockets.
 
 ## Install the units
 
-Get the binaries with `install.sh` from the latest release (`sh install.sh moor moor-gate`). The units below assume they are in `~/.local/bin`, the controller
+`moor up` writes `moor.socket` and `moor.service` like the ones below, with absolute paths
+in place of `%S` and `%h`, your `PATH` and `MOOR_CONFIG`, and `WantedBy=default.target` on
+the service, and enables and starts them. It writes no front
+socket, so add one per front by hand. To write the units yourself, get the
+binaries with `install.sh` from the latest release (`sh install.sh moor moor-gate`). The units below assume they are in `~/.local/bin`, the controller
 config is `~/.config/moor/controller.yaml`, and the state directory is the
 default `~/.local/state/moor`. In a user unit, `%S` is that state base,
 `$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` to the same value

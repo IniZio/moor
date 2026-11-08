@@ -5,51 +5,63 @@ URL that teammates connect to. You need an OIDC sign-in provider, such as
 Authgear, and a DNS name for the host, written here as `<host>`, with TLS in
 front of it.
 
-## 1. Install the binaries
+## 1. Install and set the host up
 
 ```sh
 curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh
+moor up
 ```
 
-This installs the moor release binaries. Boxes get their
-machines from crabbox, so the host also needs a `-moor` build of crabbox on
-`PATH`, as [Box providers](providers.md#use-a--moor-build-of-crabbox) says.
+Boxes get their machines from crabbox, so the host also needs a `-moor`
+build of crabbox on `PATH`, as [Box providers](providers.md#use-a--moor-build-of-crabbox)
+says. `moor up` prints one line per step, with a fix for any that fails, and a
+rerun changes nothing:
 
-## 2. Start the controller
+- It checks that crabbox selects a provider and that `crabbox doctor` passes
+  for it. When crabbox selects none, it prints the commands that install the
+  cloud-hypervisor provider.
+- It writes the controller config, `~/.config/moor/controller.yaml`, and a
+  `local` node on that provider in `~/.config/moor/config.yaml`. A
+  `--max-boxes N` flag caps the node. [Nodes](nodes.md) covers labels and
+  memory admission.
+- It runs the controller as the systemd user units `moor.socket` and
+  `moor.service`, which [Deploy the controller with systemd](deploy.md)
+  describes. Run `loginctl enable-linger` once so they keep running after you
+  log out.
+- It creates your moor user and asks for the token that `claude setup-token`
+  prints and the one that `gh auth token` prints. To skip the prompts, set
+  `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`.
+- It ends with `moor doctor`.
 
-The controller owns the state, the vault of secrets, and every Box. Keep its
-config outside the state directory, because it keeps its vault key beside the
-config. The `authgear` front is the socket the gate talks through:
+Back up `vault.key` from `~/.config/moor`. Without it, no stored secret can be
+read. `moor down` stops and removes the units, and keeps the config, state and
+secrets.
+
+## 2. Start a Box
 
 ```sh
-mkdir -p ~/.config/moor-controller
-cat > ~/.config/moor-controller/config.yaml <<'EOF'
-socket: ~/.local/state/moor/controller.sock
-fronts:
-  authgear: {}
-EOF
-moor controller serve --config ~/.config/moor-controller/config.yaml
+moor start hello --repo OWNER/NAME --prompt "Say hello and stop"
 ```
 
-Back up `vault.key` from that directory. Without it, no stored secret can be
-read. For a service that survives restarts, use the systemd units in
-[Deploy the controller with systemd](deploy.md).
+`moor start` refuses with every missing secret named, if one is missing.
+Close the Box with `moor close hello` once it is ready.
 
-## 3. Give it a node
+## 3. Add the gate's front
 
-A node is a place Boxes run. moor has no default, and a start refuses until
-one is set. Name a shared node in the user config of the account that runs
-the controller, `~/.config/moor/config.yaml`:
+The gate talks to the controller through the `authgear` front. Add it to
+`~/.config/moor/controller.yaml`, add its socket unit as
+[Deploy the controller with systemd](deploy.md#install-the-units) shows, and
+restart the controller:
 
 ```yaml
-nodes:
-  local:
-    runtime: cloudhypervisor
-    max_boxes: 4
+fronts:
+  authgear: {}
 ```
 
-`runtime` is the crabbox provider. [Nodes](nodes.md) covers labels, memory
-admission, and personal nodes that a teammate enrolls from their own machine.
+```sh
+systemctl --user enable --now moor-front@authgear.socket
+systemctl --user restart moor.service
+```
 
 ## 4. Start the gate
 
@@ -72,27 +84,7 @@ front of it, and let it hold a response stream open. The details are in
 [Operator setup](mcp.md#operator-setup) and
 [Browser sign-in](mcp.md#browser-sign-in).
 
-## 5. Enroll yourself and check a start
-
-Point the CLI at the controller, create your user, and store your tokens.
-Each command reads the value from stdin:
-
-```sh
-export MOOR_CONTROLLER=~/.local/state/moor/controller.sock
-moor user enroll
-claude setup-token   # copy the token it prints
-printf '%s' '<the Claude token>' | moor user secret set claude
-gh auth token | moor user secret set github
-moor doctor
-moor start smoke --repo OWNER/NAME --prompt "Say hello and stop"
-```
-
-`moor doctor` prints one line per check (controller, provider, node, user,
-secrets) with a fix for each that fails.
-`moor start` refuses with every missing secret named, if one is missing.
-Close the Box with `moor close smoke` once it is ready.
-
-## 6. Hand out the URL
+## 5. Hand out the URL
 
 Give teammates `https://<host>/mcp` and [Use moor on your team](use.md).
 Each one signs in as themselves and links their own tokens. To give them a
