@@ -3284,6 +3284,7 @@ dependencies = [
  "rcgen",
  "rmcp",
  "rusqlite",
+ "rust-embed",
  "rustix",
  "rustls",
  "schemars 1.2.3",

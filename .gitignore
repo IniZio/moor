@@ -3,3 +3,4 @@
 /site/node_modules
 /site/dist
 /site/.astro
+/crates/moor-gate/web/node_modules

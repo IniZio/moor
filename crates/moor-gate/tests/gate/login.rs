@@ -25,7 +25,7 @@ pub(super) struct Reply {
 }
 
 impl Reply {
-    fn header(&self, name: &str) -> Option<&str> {
+    pub(super) fn header(&self, name: &str) -> Option<&str> {
         self.head.lines().find_map(|line| {
             let (n, v) = line.split_once(": ")?;
             n.eq_ignore_ascii_case(name).then_some(v)

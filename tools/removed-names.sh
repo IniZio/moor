@@ -70,7 +70,7 @@ trap 'rm -f "$allow"' EXIT
 grep -v -e '^#' -e '^[[:space:]]*$' "$here/removed-names.allow" > "$allow" || true
 targets=()
 for t in crates tools README.md docs .github; do [ -e "$t" ] && targets+=("$t"); done
-task_hits=$(grep -rniI --exclude-dir=target --exclude=Cargo.lock -e task "${targets[@]}" \
+task_hits=$(grep -rniI --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude=Cargo.lock -e task "${targets[@]}" \
   | grep -v -e '^tools/removed-names\.sh:' -e '^tools/lint-selftest\.sh:' -e '^tools/removed-names\.allow:' \
   | awk -v allowfile="$allow" '
       BEGIN { while ((getline line < allowfile) > 0) allowed[++n] = line }
