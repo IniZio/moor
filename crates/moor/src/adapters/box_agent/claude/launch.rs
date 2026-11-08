@@ -16,15 +16,8 @@ mod preseed;
 #[cfg(test)]
 mod tests;
 
-/// Notification kinds that mean the agent waits on the user.
-const NOTIFY_MATCHER: &str =
-    "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input";
 /// Tools that ask the user a question.
 const ASK_MATCHER: &str = "AskUserQuestion|ExitPlanMode";
-/// Tools that report the agent busy before they run, so a long command shows while it runs;
-/// every tool but those in [`ASK_MATCHER`], whose own entry marks the agent waiting.
-const BUSY_MATCHER: &str = "Bash|BashOutput|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep|\
-WebFetch|WebSearch|Agent|TodoWrite|KillShell|SlashCommand|Skill|mcp__.*";
 
 /// Adds the fragment's hooks and other settings to the settings file, dropping earlier entries that
 /// run the hook script.
@@ -201,10 +194,10 @@ fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
     fragment
 }
 
-/// The hook entries to merge, each running the hook script with its state and event.
+/// The hook entries to merge, each running the hook script with its event.
 fn hooks(script: &str) -> Value {
-    let hook = |state: &str, event: &str, matcher: Option<&str>| {
-        let command = format!("sh {} {state} {event}", quote(script));
+    let hook = |event: &str, matcher: Option<&str>| {
+        let command = format!("sh {} {event}", quote(script));
         let mut entry = json!({ "hooks": [{ "type": "command", "command": command }] });
         if let Some(matcher) = matcher {
             if let Some(map) = entry.as_object_mut() {
@@ -214,14 +207,9 @@ fn hooks(script: &str) -> Value {
         entry
     };
     json!({ "hooks": {
-        "UserPromptSubmit": [hook("working", "UserPromptSubmit", None)],
-        "Stop": [hook("idle", "Stop", None)],
-        "SessionStart": [hook("idle", "SessionStart", Some("resume"))],
-        "PostToolUse": [hook("working", "PostToolUse", None)],
-        "Notification": [hook("waiting_input", "Notification", Some(NOTIFY_MATCHER))],
-        "PreToolUse": [
-            hook("waiting_input", "PreToolUse", Some(ASK_MATCHER)),
-            hook("working", "PreToolUse", Some(BUSY_MATCHER)),
-        ],
+        "UserPromptSubmit": [hook("UserPromptSubmit", None)],
+        "Stop": [hook("Stop", None)],
+        "SessionStart": [hook("SessionStart", Some("resume"))],
+        "PreToolUse": [hook("PreToolUse", Some(ASK_MATCHER))],
     }})
 }

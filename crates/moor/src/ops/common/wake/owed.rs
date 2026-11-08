@@ -31,9 +31,7 @@ impl Seen {
         match fate {
             Some(Fate::Reattached) => Self::Running,
             Some(Fate::Ended(_)) => Self::Ended,
-            None if reading.pane == PaneLiveness::Live && reading.pane_text.is_some() => {
-                Self::Running
-            }
+            None if reading.pane == PaneLiveness::Live && !reading.read_failed => Self::Running,
             Some(Fate::Unreachable) | None => Self::Silent,
         }
     }

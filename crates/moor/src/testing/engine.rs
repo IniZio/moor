@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes, WaitCheck};
+use moor_core::activity::{Life, Note, Probe, Term, WaitCheck};
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
@@ -23,11 +23,10 @@ use moor_core::seam::surface::WorkspaceRef;
 
 #[derive(Default)]
 struct State {
-    probes: HashMap<String, Probes>,
-    queued: HashMap<String, VecDeque<Probes>>,
-    fail_probe: HashMap<String, EngineError>,
+    probes: HashMap<String, Probe>,
+    queued: HashMap<String, VecDeque<Probe>>,
+    fail_probe: std::collections::HashSet<String>,
     wait_checks: HashMap<String, WaitCheck>,
-    prompt_gone: bool,
     counts: HashMap<String, usize>,
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
@@ -50,12 +49,9 @@ struct State {
     fates: VecDeque<Result<AgentFate, EngineError>>,
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
-    after_steer: Vec<(String, Probes)>,
+    after_steer: Vec<(String, Probe)>,
     asked: Vec<&'static str>,
 }
-
-/// The launch a scripted starting marker names to stand for the latest launch's own marker.
-pub(crate) const THIS_LAUNCH: &str = "this-launch";
 
 /// Scripted Engine: probes are served per session id and counted.
 #[derive(Default)]
@@ -64,7 +60,7 @@ pub(crate) struct FakeEngine {
 }
 
 impl FakeEngine {
-    /// An Engine whose sessions all probe as `Absent` until scripted.
+    /// An Engine whose sessions all probe as a live agent with no status until scripted.
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -92,13 +88,13 @@ impl FakeEngine {
     }
 
     /// Every probe of `session` returns `p`.
-    pub(crate) fn probes(self, session: &str, p: Probes) -> Self {
+    pub(crate) fn probes(self, session: &str, p: Probe) -> Self {
         self.st().probes.insert(session.to_owned(), p);
         self
     }
 
     /// The next probe of `session` returns `p`, ahead of the fixed reading.
-    pub(crate) fn then_probes(self, session: &str, p: Probes) -> Self {
+    pub(crate) fn then_probes(self, session: &str, p: Probe) -> Self {
         self.st()
             .queued
             .entry(session.to_owned())
@@ -107,9 +103,9 @@ impl FakeEngine {
         self
     }
 
-    /// The next probe of `session` fails once with `e`.
-    pub(crate) fn fail_probe(self, session: &str, e: EngineError) -> Self {
-        self.st().fail_probe.insert(session.to_owned(), e);
+    /// The next probe of `session` fails once.
+    pub(crate) fn fail_probe(self, session: &str) -> Self {
+        self.st().fail_probe.insert(session.to_owned());
         self
     }
 
@@ -142,17 +138,13 @@ impl FakeEngine {
         self.st().wait_checks.insert(session.to_owned(), check);
     }
 
-    pub(crate) fn set_prompt_gone(&self, gone: bool) {
-        self.st().prompt_gone = gone;
-    }
-
-    pub(crate) fn set_probes(&self, session: &str, p: Probes) {
+    pub(crate) fn set_probes(&self, session: &str, p: Probe) {
         self.st().probes.insert(session.to_owned(), p);
     }
 
     /// Once a steer reaches `session`, its probes read `p`: what the agent wrote while the
     /// steer was still being sent.
-    pub(crate) fn probes_after_steer(self, session: &str, p: Probes) -> Self {
+    pub(crate) fn probes_after_steer(self, session: &str, p: Probe) -> Self {
         self.st().after_steer.push((session.to_owned(), p));
         self
     }
@@ -214,44 +206,32 @@ impl Engine for FakeEngine {
             .unwrap_or(WaitCheck::Unknown)
     }
 
-    fn prompt_gone(&self, _: &HookRecord, _: &str) -> bool {
-        self.st().prompt_gone
-    }
-
-    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
+    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Probe {
         let mut st = self.st();
         *st.counts.entry(s.id.clone()).or_default() += 1;
         st.panes.insert(s.id.clone(), s.pane.clone());
         if let Some(clock) = st.hang.clone() {
             drop(st);
             clock.sleep(deadline.0);
-            return Ok(Probes {
-                hook: HookRead::TimedOut,
-                pane: PaneRead::TimedOut,
-            });
+            return Probe::TimedOut;
         }
-        if let Some(e) = st.fail_probe.remove(&s.id) {
-            return Err(e);
+        if st.fail_probe.remove(&s.id) {
+            return Probe::TimedOut;
         }
-        let mut p = st
-            .queued
+        st.queued
             .get_mut(&s.id)
             .and_then(VecDeque::pop_front)
             .or_else(|| st.probes.get(&s.id).cloned())
-            .unwrap_or(Probes {
-                hook: HookRead::Absent,
-                pane: PaneRead::Absent,
-            });
-        if let HookRead::Fresh(HookRecord {
-            kind: HookKind::Starting { launch },
-            ..
-        }) = &mut p.hook
-        {
-            if launch.as_deref() == Some(THIS_LAUNCH) {
-                *launch = st.launches.last().map(|l| l.nonce.clone());
-            }
-        }
-        Ok(p)
+            .unwrap_or_else(|| Probe::Read {
+                term: Some(Term {
+                    life: Life::Live,
+                    status: None,
+                    status_at: None,
+                    turn: 0,
+                }),
+                note: Note::default(),
+                screen: None,
+            })
     }
 
     fn hooks_quiet_during_first_run(&self) -> bool {

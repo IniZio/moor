@@ -78,6 +78,17 @@ impl Core {
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     }
 
+    /// Waits up to five seconds for `hc get` of terminal `name` to contain `needle`.
+    pub(crate) fn wait_get(&self, name: &str, needle: &str) {
+        use moor_core::seam::clock::Clock as _;
+        let clock = crate::adapters::clock::SystemClock::real();
+        let until = clock.instant() + std::time::Duration::from_secs(5);
+        while !self.hc(&["get", name, "--json"]).contains(needle) {
+            assert!(clock.instant() < until, "{name} never showed {needle}");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
     /// The value of doc `name`, `null` when it was never written.
     pub(crate) fn doc(&self, name: &str) -> serde_json::Value {
         let call = serde_json::json!({

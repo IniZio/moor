@@ -48,7 +48,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
     }
     let activity = reading.activity.as_ref()?;
     let (exit_code, question, options) = match &activity.state {
-        AgentState::Exited { code } => (Some(*code), None, Vec::new()),
+        AgentState::Exited { code } => (*code, None, Vec::new()),
         AgentState::NeedsInput { question, options } => (None, question.clone(), options.clone()),
         _ => (None, None, Vec::new()),
     };

@@ -6,7 +6,6 @@ use sea_query::Query;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
@@ -19,6 +18,7 @@ use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, WaitEventsReq, WaitMode};
 
 use super::run;
 use crate::cx::Cx;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -68,8 +68,7 @@ fn steered(cx: &Cx, id: BoxId) {
         session: SESSION.to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
-        hook_before: None,
-        new_turn: false,
+        turn_before: None,
     };
     cx.store()
         .unwrap()
@@ -238,23 +237,7 @@ fn no_boxes_fails() {
 #[test]
 fn the_op_settles_a_finished_steered_turn() {
     let dir = tempfile::tempdir().unwrap();
-    let probes = Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(i64::MAX / 2),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    };
+    let probes = agent::idle(Ts::from_millis(0));
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let cx = cx_with(dir.path(), &engine);
     let id = ready(&cx, "alpha");
@@ -273,23 +256,7 @@ fn the_op_settles_a_finished_steered_turn() {
 #[test]
 fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
     let dir = tempfile::tempdir().unwrap();
-    let probes = Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(i64::MAX / 2),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    };
+    let probes = agent::idle(Ts::from_millis(0));
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let cx = cx_with(dir.path(), &engine);
     let id = ready(&cx, "alpha");

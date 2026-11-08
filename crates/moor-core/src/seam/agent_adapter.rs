@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::activity::HookRecord;
+use crate::activity::Note;
 use crate::config::McpServer;
 use crate::name::{BoxPath, NameError};
 use crate::seam::engine::LaunchPrompt;
@@ -170,23 +170,14 @@ pub const NOTHING_TO_ARCHIVE: &str = "moor: nothing to archive";
 
 /// What is specific to one kind of agent.
 pub trait AgentAdapter: Send + Sync {
-    /// Parses the agent's hook state file; `None` when it is unreadable or partial.
-    fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord>;
+    /// Reads the note the agent's hooks leave beside its terminal.
+    fn parse_note(&self, raw: &serde_json::Value) -> Note;
 
-    /// The pending question in the pane text, apart from the agent's input box and footer.
-    fn pane_prompt(&self, tail: &str) -> Option<String>;
-
-    /// POSIX sh text that reads the agent's report at `hook_file` and the Box's processes, then
-    /// prints `none` only when all the background work reported is visibly gone, or `running` when
-    /// some of it is alive; `None` when this agent has no such check.
-    fn wait_check_script(&self, _hook_file: &BoxPath) -> Option<String> {
+    /// POSIX sh text that reads the Box's processes and prints `none` only when the background
+    /// work the agent left running locally is visibly gone, or `running` when some of it is
+    /// alive; `None` when this agent has no such check.
+    fn wait_check_script(&self) -> Option<String> {
         None
-    }
-
-    /// Whether `record` reports a prompt that always shows on the pane while it waits, and the
-    /// pane text `tail` shows it gone; `false` whenever that cannot be told.
-    fn prompt_gone(&self, _record: &HookRecord, _tail: &str) -> bool {
-        false
     }
 
     /// The first-run prompt the pane text shows, when one holds the agent.

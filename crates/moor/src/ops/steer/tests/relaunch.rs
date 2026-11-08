@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer};
@@ -14,19 +14,12 @@ use super::{blocked, fx_with, menu, steered, text, Fx};
 use crate::ops::start::revive_for_steer;
 use crate::ops::steer::run;
 use crate::ops::steer::{relaunch, Gone};
+use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
-/// Probes that read an agent whose pane shows it exited 3.
-fn exited() -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Idle,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: Some(3),
-        }),
-    }
+/// A read of an agent that exited 3.
+fn exited() -> Probe {
+    agent::exited(Some(3))
 }
 
 /// The session the relaunch starts, `agent-2` in pane `p-2`.

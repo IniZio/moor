@@ -1,7 +1,7 @@
 //! Pane observation: herdr's status for a pane plus the end of its text.
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::{PaneObs, PaneStatus};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use serde::Deserialize;
 

@@ -204,7 +204,7 @@ fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_messag
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
     gone(&w);
-    w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    engine.set_probes("p-2", ca_stopped());
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));

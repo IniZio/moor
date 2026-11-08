@@ -1,13 +1,14 @@
-//! Tests for the `agent_said` event written just before a hook-reported `idled`.
+//! Tests for the `agent_said` event written just before an `idled` the agent's own status gives.
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord};
+use moor_core::activity::Note;
 use moor_core::BoxId;
 
-use super::{cx, hook, rec, row, run_once, working_box, SESSION};
+use super::{cx, row, run_once, seen, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
+use crate::testing::agent::{idle, said, with_note};
 use crate::testing::engine::FakeEngine;
 
 fn said_then_idled(cx: &Cx, id: BoxId) -> Vec<(String, serde_json::Value)> {
@@ -20,13 +21,13 @@ fn said_then_idled(cx: &Cx, id: BoxId) -> Vec<(String, serde_json::Value)> {
 }
 
 #[test]
-fn going_quiet_on_a_hook_records_the_agents_last_message_first() {
+fn going_quiet_on_the_status_records_the_agents_last_message_first() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = hook(HookKind::Idle);
-    probes.hook = HookRead::Fresh(HookRecord {
-        message: Some("Done.\nhttps://github.com/o/r/pull/7".to_owned()),
-        ..rec(HookKind::Idle)
-    });
+    let probes = said(
+        "Done.
+https://github.com/o/r/pull/7",
+        seen(),
+    );
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
@@ -46,12 +47,8 @@ fn going_quiet_on_a_hook_records_the_agents_last_message_first() {
 #[test]
 fn a_long_last_message_keeps_its_end() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = hook(HookKind::Idle);
     let long = format!("{}PR https://x/9", "a".repeat(20_000));
-    probes.hook = HookRead::Fresh(HookRecord {
-        message: Some(long),
-        ..rec(HookKind::Idle)
-    });
+    let probes = said(&long, seen());
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
@@ -66,9 +63,9 @@ fn a_long_last_message_keeps_its_end() {
 }
 
 #[test]
-fn going_quiet_without_a_hook_message_says_nothing() {
+fn going_quiet_without_a_said_note_says_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, idle(seen())));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
@@ -79,28 +76,21 @@ fn going_quiet_without_a_hook_message_says_nothing() {
 }
 
 #[test]
-fn a_waiting_hook_keeps_the_box_working_and_says_nothing_until_it_idles() {
+fn a_waiting_agent_keeps_the_box_working_and_says_nothing_until_it_idles() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = hook(HookKind::Idle);
-    let waiting = HookRecord {
-        message: Some("Watching.".to_owned()),
-        ..rec(HookKind::Waiting {
-            on: vec!["gh run watch".to_owned()],
-        })
+    let note = Note {
+        said: Some("Watching.".to_owned()),
+        background: vec!["gh run watch".to_owned()],
+        ..Note::default()
     };
-    probes.hook = HookRead::Fresh(waiting);
+    let probes = with_note(idle(seen()), note);
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     assert_eq!(said_then_idled(&cx, id), Vec::new());
-    let mut probes = hook(HookKind::Idle);
-    probes.hook = HookRead::Fresh(HookRecord {
-        message: Some("Done.".to_owned()),
-        ..rec(HookKind::Idle)
-    });
-    engine.set_probes(SESSION, probes);
+    engine.set_probes(SESSION, said("Done.", seen()));
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     assert_eq!(
@@ -118,12 +108,8 @@ fn a_waiting_hook_keeps_the_box_working_and_says_nothing_until_it_idles() {
 #[test]
 fn a_long_last_message_keeps_its_start_too() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = hook(HookKind::Idle);
     let long = format!("Summary: disk full.\n{}PR https://x/9", "a".repeat(20_000));
-    probes.hook = HookRead::Fresh(HookRecord {
-        message: Some(long),
-        ..rec(HookKind::Idle)
-    });
+    let probes = said(&long, seen());
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
@@ -140,11 +126,7 @@ fn a_long_last_message_keeps_its_start_too() {
 #[test]
 fn two_settles_from_one_read_record_the_message_once() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = hook(HookKind::Idle);
-    probes.hook = HookRead::Fresh(HookRecord {
-        message: Some("Done.".to_owned()),
-        ..rec(HookKind::Idle)
-    });
+    let probes = said("Done.", seen());
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);

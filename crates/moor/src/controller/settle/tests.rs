@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_core::config::UserConfig;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::controller::WatchFilter;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -32,6 +32,7 @@ use crate::env::Env;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::show;
 use crate::store::{Store, STORE_FILE};
+use crate::testing::agent::idle;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -92,30 +93,14 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     id
 }
 
-/// Probes whose hook says the agent is idle, written just before the fake clock's now.
-fn idle_hook(cx: &Cx) -> Probes {
-    idle_hook_at(Ts::from_millis(cx.clock().now().as_millis() - 1000))
+/// A read of an idle agent whose status changed just before the fake clock's now.
+fn idle_status(cx: &Cx) -> Probe {
+    idle_status_at(Ts::from_millis(cx.clock().now().as_millis() - 1000))
 }
 
-/// Probes whose hook says the agent is idle, written at `at`.
-fn idle_hook_at(at: Ts) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at,
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A read of an idle agent whose status changed at `at`.
+fn idle_status_at(at: Ts) -> Probe {
+    idle(at)
 }
 
 /// A Working Box whose fake engine reports quiet, with the context that settles it.
@@ -130,14 +115,14 @@ fn view(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 
 /// Like `quiet_agent`, over the given `driver`.
 fn quiet_agent_on(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
-    agent_with_hook(dir, driver, None)
+    agent_with_status(dir, driver, None)
 }
 
-/// Like `quiet_agent_on`, with the idle hook written at `at` when given.
-fn agent_with_hook(dir: &Path, driver: &Arc<FakeDriver>, at: Option<Ts>) -> (Cx, BoxId) {
+/// Like `quiet_agent_on`, with the idle status set at `at` when given.
+fn agent_with_status(dir: &Path, driver: &Arc<FakeDriver>, at: Option<Ts>) -> (Cx, BoxId) {
     let cx = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, driver, "a", "s-a");
-    let hook = at.map_or_else(|| idle_hook(&cx), idle_hook_at);
+    let hook = at.map_or_else(|| idle_status(&cx), idle_status_at);
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook));
     (engine_cx(dir, driver, &engine), id)
 }
@@ -355,7 +340,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().copy_text(BODY));
     let later = Some(Ts::from_millis(i64::MAX / 4));
-    let (cx, id) = agent_with_hook(dir.path(), &driver, later);
+    let (cx, id) = agent_with_status(dir.path(), &driver, later);
     let moor = Moor::from_cx(cx);
     let cx = view(dir.path(), &driver);
     assert!(moor.settle_open(&|| false).is_empty());
@@ -369,8 +354,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
         session: "s-a".to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
-        hook_before: None,
-        new_turn: false,
+        turn_before: None,
     };
     cx.store()
         .unwrap()
@@ -419,7 +403,7 @@ fn two_due(dir: &Path, driver: &Arc<FakeDriver>) -> Wire {
     let seed = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
     working(&seed, driver, "a", "s-a");
     working(&seed, driver, "b", "s-b");
-    let hook = idle_hook(&seed);
+    let hook = idle_status(&seed);
     let engine = Arc::new(
         FakeEngine::new()
             .probes("s-a", hook.clone())

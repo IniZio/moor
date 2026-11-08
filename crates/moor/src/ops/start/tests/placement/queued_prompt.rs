@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{AgentFate, EngineError, Steer};
@@ -31,21 +30,12 @@ fn texts(engine: &FakeEngine) -> Vec<String> {
         .collect()
 }
 
-/// The agent's new session reports Idle through its hook.
+/// The agent's new session reports Idle.
 fn reports_idle(engine: FakeEngine) -> FakeEngine {
-    let idle = Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(i64::MAX / 2),
-            turn: None,
-        }),
-        pane: PaneRead::Absent,
-    };
-    engine.probes("moor-1", idle)
+    engine.probes(
+        "p-2",
+        crate::testing::agent::idle(Ts::from_millis(i64::MAX / 2)),
+    )
 }
 
 fn sweep(w: &World) {

@@ -1,18 +1,16 @@
-//! The `agent_doing` event a busy hook's line writes, at most one per Box in thirty seconds.
+//! The `agent_doing` event a working agent's line writes, at most one per Box in thirty seconds.
 
 use std::time::Duration;
 
+use moor_core::activity::Probe;
 use moor_core::seam::clock::Clock;
 
 use super::*;
+use crate::testing::agent;
 use crate::testing::clock::FakeClock;
 
-fn doing(text: &str) -> Probes {
-    let mut probes = hook(HookKind::Busy);
-    if let HookRead::Fresh(rec) = &mut probes.hook {
-        rec.doing = Some(text.to_owned());
-    }
-    probes
+fn doing(text: &str) -> Probe {
+    agent::doing(text, seen())
 }
 
 fn lines(cx: &Cx, id: BoxId) -> Vec<String> {
@@ -30,7 +28,7 @@ fn lines(cx: &Cx, id: BoxId) -> Vec<String> {
         .collect()
 }
 
-fn read_at(cx: Cx, id: BoxId, clock: &FakeClock, probes: Probes) -> Cx {
+fn read_at(cx: Cx, id: BoxId, clock: &FakeClock, probes: Probe) -> Cx {
     let cx = cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, probes)));
     read(
         &cx,
@@ -82,9 +80,9 @@ fn a_changed_line_is_written_at_most_once_in_thirty_seconds() {
 }
 
 #[test]
-fn a_busy_hook_without_a_line_writes_nothing() {
+fn a_working_status_without_a_line_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Busy)));
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, agent::working(seen())));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     run_once(&cx, id);

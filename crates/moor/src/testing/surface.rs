@@ -8,12 +8,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{
     FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
     WorkspaceRef,
 };
+use moor_core::seam::surface::{PaneObs, PaneStatus};
 
 #[derive(Default)]
 struct State {
@@ -285,7 +285,7 @@ impl Surface for FakeSurface {
 mod tests {
     use std::time::Duration;
 
-    use moor_core::activity::PaneStatus;
+    use moor_core::seam::surface::PaneStatus;
 
     use super::*;
 

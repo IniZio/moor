@@ -1,14 +1,14 @@
 //! The hook script keeps the background work still running at a stop.
 
-use moor_core::activity::HookKind;
-use moor_core::seam::agent_adapter::AgentAdapter;
-use serde_json::{json, Value};
+use serde_json::json;
 use tempfile::TempDir;
 
 use super::super::super::Claude;
-use super::{ctx, forced, install, run_hook_on, state_file, Interp};
+use super::{ctx, forced_with_core, install, note_of, on_host, run_hook_on, Interp};
+use crate::testing::hc;
+use moor_core::seam::agent_adapter::AgentAdapter;
 
-fn check_only_running_background_work_is_kept(path: Option<&str>) {
+fn check_only_running_background_work_is_kept(core: &hc::Core, path: &str) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
@@ -22,43 +22,26 @@ fn check_only_running_background_work_is_kept(path: Option<&str>) {
         ],
         "session_crons": [{"id": "x", "schedule": "* * * * *"}]
     });
-    run_hook_on(&c, "idle", "Stop", Some(&stop.to_string()), path);
-    let raw = state_file(&c);
-    let v: Value = serde_json::from_slice(&raw).unwrap();
-    assert_eq!(v["background"], json!(["gh run watch", "agent"]));
-    let rec = Claude.parse_hook(&raw).unwrap();
-    assert_eq!(
-        rec.kind,
-        HookKind::Waiting {
-            on: vec!["gh run watch".to_owned(), "agent".to_owned()]
-        }
-    );
-    let nudge = json!({"notification_type": "idle_prompt", "message": "waiting"});
-    run_hook_on(
-        &c,
-        "waiting_input",
-        "Notification",
-        Some(&nudge.to_string()),
-        path,
-    );
-    assert!(matches!(
-        Claude.parse_hook(&state_file(&c)).unwrap().kind,
-        HookKind::Waiting { .. }
-    ));
+    run_hook_on(&c, "Stop", Some(&stop.to_string()), Some(path));
+    let note = note_of(core);
+    assert_eq!(note.background, ["gh run watch", "agent"]);
+    assert_eq!(note.said.as_deref(), Some("Watching the run."));
     let done = json!({"last_assistant_message": "Done.", "background_tasks": []});
-    run_hook_on(&c, "idle", "Stop", Some(&done.to_string()), path);
-    assert_eq!(
-        Claude.parse_hook(&state_file(&c)).unwrap().kind,
-        HookKind::Idle
-    );
+    run_hook_on(&c, "Stop", Some(&done.to_string()), Some(path));
+    assert!(note_of(core).background.is_empty());
+}
+
+#[test]
+fn only_running_background_work_is_kept() {
+    on_host(check_only_running_background_work_is_kept);
 }
 
 #[test]
 fn only_running_background_work_is_kept_with_python3_only() {
-    forced(Interp::Python, check_only_running_background_work_is_kept);
+    forced_with_core(Interp::Python, check_only_running_background_work_is_kept);
 }
 
 #[test]
 fn only_running_background_work_is_kept_with_node_only() {
-    forced(Interp::Node, check_only_running_background_work_is_kept);
+    forced_with_core(Interp::Node, check_only_running_background_work_is_kept);
 }

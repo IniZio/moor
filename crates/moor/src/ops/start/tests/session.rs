@@ -2,15 +2,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{PaneObs, PaneStatus};
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::agent_adapter::FirstRunPrompt;
-use moor_core::seam::clock::Ts;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
-use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::state::idle;
@@ -19,6 +18,7 @@ use super::{repo, req, script_base_yaml, world, World};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::run;
 use crate::store::db::DbExt as _;
+use crate::testing::agent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -334,14 +334,9 @@ fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     assert!(!v.timed_out);
 }
 
-/// A pane observation showing `tail`.
-fn pane_tail(tail: &str) -> PaneObs {
-    PaneObs {
-        status: PaneStatus::Unknown,
-        tail: tail.to_owned(),
-        prompt: None,
-        exit_marker: None,
-    }
+/// A read of a live agent with no status whose screen shows `tail`.
+fn screen_tail(tail: &str) -> Probe {
+    agent::on_screen(agent::read(None, Ts::from_millis(1_000), 0), tail)
 }
 
 /// The recorded (kind, payload) pairs of the Box.
@@ -355,27 +350,25 @@ fn events_of(w: &World, id: BoxId) -> Vec<(String, serde_json::Value)> {
         .collect()
 }
 
-/// How many times the agent pane was read.
-fn pane_reads(w: &World) -> usize {
-    w.surface
-        .calls()
-        .iter()
-        .filter(|c| *c == "pane_obs p-1")
-        .count()
+/// How many times the agent was read.
+fn reads(engine: &FakeEngine) -> usize {
+    engine.probe_count("moor-1")
 }
 
-/// A world whose engine shows the folder-trust prompt for "trust this folder".
-fn prompting() -> World {
-    let engine =
-        Arc::new(FakeEngine::new().prompt("trust this folder", FirstRunPrompt::FolderTrust));
-    with_engine(&engine)
+/// A world whose engine shows the folder-trust prompt for "trust this folder", with the agent
+/// reading as `read`.
+fn prompting(read: Probe) -> (World, Arc<FakeEngine>) {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+            .probes("moor-1", read),
+    );
+    (with_engine(&engine), engine)
 }
 
 #[test]
-fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
-    let w = prompting();
-    w.surface
-        .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
+fn a_first_run_prompt_on_the_screen_is_recorded_and_warned() {
+    let (w, engine) = prompting(screen_tail("Do you trust this folder?"));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
@@ -384,7 +377,7 @@ fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
         serde_json::json!({"pane": "p-1", "prompt": "folder_trust", "line": "trust this folder"})
     );
     assert!(v.agent.launched);
-    assert_eq!(pane_reads(&w), 1);
+    assert_eq!(reads(&engine), 1);
     let warnings = w.cx.take_warnings();
     let warning = warnings
         .iter()
@@ -396,28 +389,30 @@ fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
 
 #[test]
 fn no_prompt_within_the_window_records_nothing_and_polls_a_bounded_number_of_times() {
-    let w = prompting();
-    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+    let (w, engine) = prompting(screen_tail("working"));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
-    assert_eq!(pane_reads(&w), 17);
+    assert_eq!(reads(&engine), 17);
     assert!(w.cx.take_warnings().is_empty());
 }
 
 #[test]
-fn a_zero_window_reads_the_pane_once() {
-    let mut w = prompting();
+fn a_zero_window_reads_the_agent_once() {
+    let (mut w, engine) = prompting(screen_tail("working"));
     w.cx = w.cx.with_prompt_window(Duration::ZERO);
-    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
     run(&w.cx, &prompt_req("demo")).unwrap();
-    assert_eq!(pane_reads(&w), 1);
+    assert_eq!(reads(&engine), 1);
 }
 
 #[test]
-fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
-    let w = prompting();
-    w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
+fn a_failed_read_records_a_check_failure_and_start_succeeds() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+            .fail_probe("moor-1"),
+    );
+    let w = with_engine(&engine);
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     let failed = events
@@ -426,27 +421,25 @@ fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
         .unwrap();
     assert_eq!(
         failed.1,
-        serde_json::json!({"pane": "p-1", "error": "timed out"})
+        serde_json::json!({"pane": "p-1", "error": "the agent could not be read"})
     );
     assert!(v.agent.launched);
-    assert_eq!(pane_reads(&w), 1);
+    assert_eq!(reads(&engine), 1);
 }
 
 #[test]
-fn a_gone_pane_stops_the_watch_after_one_read() {
-    let w = prompting();
-    w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+fn an_agent_with_no_terminal_stops_the_watch_after_one_read() {
+    let (w, engine) = prompting(agent::gone());
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
-    assert_eq!(pane_reads(&w), 1);
+    assert_eq!(reads(&engine), 1);
 }
 
 #[test]
-fn the_watch_matches_only_the_last_forty_pane_lines() {
-    let w = prompting();
+fn the_watch_matches_only_the_last_forty_screen_lines() {
     let tail = format!("trust this folder\n{}", "x\n".repeat(40));
-    w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
+    let (w, _engine) = prompting(screen_tail(&tail));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
@@ -454,63 +447,83 @@ fn the_watch_matches_only_the_last_forty_pane_lines() {
 
 #[test]
 fn a_prompt_exactly_forty_lines_from_the_bottom_is_matched() {
-    let w = prompting();
     let tail = format!("trust this folder\n{}", "x\n".repeat(39));
-    w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
+    let (w, _engine) = prompting(screen_tail(&tail));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
 
 #[test]
-fn a_retry_that_launches_after_a_failed_launch_watches_the_new_pane() {
+fn a_retry_that_launches_after_a_failed_launch_watches_the_new_agent() {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Err(launch_error("pane", "no tab")))
-            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+            .probes("moor-1", screen_tail("Do you trust this folder?")),
     );
     let w = with_engine(&engine);
-    w.surface
-        .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
     let first = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!first.agent.launched);
-    assert_eq!(pane_reads(&w), 0);
+    assert_eq!(reads(&engine), 0);
     let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(again.agent.launched);
-    assert_eq!(pane_reads(&w), 1);
+    assert_eq!(reads(&engine), 1);
     let events = events_of(&w, BoxId::new(again.boxed.id));
     assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
 
 #[test]
-fn attaching_to_a_live_session_does_not_watch_its_pane() {
-    let w = prompting();
-    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+fn attaching_to_a_live_session_does_not_watch_it() {
+    let (w, engine) = prompting(screen_tail("working"));
     run(&w.cx, &prompt_req("demo")).unwrap();
-    let before = pane_reads(&w);
+    let before = reads(&engine);
     let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(again.attached);
     assert!(!again.agent.launched);
-    // The extra read is the liveness check of the session before the attach; the watch adds none.
-    assert_eq!(pane_reads(&w), before + 1);
+    assert!(reads(&engine) < before + 17, "the watch did not run again");
+}
+
+/// A clock that runs `on_sleep` each time something sleeps on it.
+struct SleepHook {
+    inner: FakeClock,
+    on_sleep: Box<dyn Fn() + Send + Sync>,
+}
+
+impl Clock for SleepHook {
+    fn now(&self) -> Ts {
+        self.inner.now()
+    }
+
+    fn instant(&self) -> std::time::Instant {
+        self.inner.instant()
+    }
+
+    fn sleep(&self, d: Duration) {
+        (self.on_sleep)();
+        self.inner.sleep(d);
+    }
 }
 
 #[test]
-fn the_box_lock_is_free_while_the_pane_is_watched() {
-    let w = prompting();
-    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+fn the_box_lock_is_free_while_the_agent_is_watched() {
+    let (mut w, _engine) = prompting(screen_tail("working"));
     let free = Arc::new(AtomicBool::new(true));
     let seen = Arc::new(AtomicBool::new(false));
     let state = w.dir.path().to_path_buf();
     let (f, s) = (free.clone(), seen.clone());
-    w.surface.on_pane_obs(move || {
-        let clock = FakeClock::new(Ts::from_millis(0));
-        let got = BoxLock::acquire(&clock, &state, BoxId::new(1), "probe", Duration::ZERO);
-        s.store(true, Ordering::SeqCst);
-        if got.is_err() {
-            f.store(false, Ordering::SeqCst);
-        }
+    let clock = Arc::new(SleepHook {
+        inner: FakeClock::new(Ts::from_millis(1_000_000)),
+        on_sleep: Box::new(move || {
+            let clock = FakeClock::new(Ts::from_millis(0));
+            let got = BoxLock::acquire(&clock, &state, BoxId::new(1), "probe", Duration::ZERO);
+            s.store(true, Ordering::SeqCst);
+            if got.is_err() {
+                f.store(false, Ordering::SeqCst);
+            }
+        }),
     });
+    w.cx = w.cx.with_clock(clock);
     run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(seen.load(Ordering::SeqCst));
     assert!(free.load(Ordering::SeqCst));

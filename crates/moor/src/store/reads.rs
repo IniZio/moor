@@ -5,7 +5,6 @@ use moor_core::decide::turn::SteerMark;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::request::Pins;
-use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, SessionId};
 
 use moor_schema::tables::{Boxes, Events, Sessions};
@@ -197,16 +196,7 @@ impl Store {
         }
         Ok(Some(SteerMark {
             id: steer.id,
-            hook_before: steer
-                .payload
-                .get("hook_before")
-                .and_then(Value::as_i64)
-                .map(Ts::from_millis),
-            new_turn: steer
-                .payload
-                .get("new_turn")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            turn_before: steer.payload.get("turn_before").and_then(Value::as_u64),
         }))
     }
 

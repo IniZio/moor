@@ -13,17 +13,24 @@ pub(in crate::adapters::box_agent) const SESSION: &str = "moor-agent";
 
 /// The Box program that holds the agent's terminal, herdr-core called by its own name: `hc` is
 /// also herbstclient's. The start refuses to run the agent without it.
-pub(super) const PROGRAM: &str = "herdr-core";
+pub(in crate::adapters::box_agent) const PROGRAM: &str = "herdr-core";
 
-/// Replaces any agent terminal with a detached one running the shell line `inner`, after
-/// removing the shell-quoted `exit_file`; exits the shell when the terminal did not start. The
-/// terminal has no parent, so no other hc terminal's end takes it down, and is removed once it
-/// exits, so a finished one never answers for the name.
-pub(super) fn open(exit_file: &str, inner: &str) -> String {
+/// Replaces any agent terminal with a detached one running the script file `script`; exits the
+/// shell when the terminal did not start. The terminal has no parent, so no other hc terminal's
+/// end takes it down, and is kept once it ends, so its exit code can be read.
+pub(super) fn open(script: &str) -> String {
     format!(
-        "{PROGRAM} kill {SESSION} >/dev/null 2>&1; rm -f {exit_file}; \
-         {PROGRAM} run --bg --no-parent --rm --name {SESSION} sh -c {} >/dev/null || exit 1;",
-        quote(inner)
+        "{PROGRAM} kill {SESSION} >/dev/null 2>&1; {PROGRAM} rm {SESSION} >/dev/null 2>&1; \
+         {PROGRAM} run --bg --no-parent --name {SESSION} sh {} >/dev/null || exit 1;",
+        quote(script)
+    )
+}
+
+/// Exits with the ended agent's exit code: 1 when it left none, as after a signal, and 1 too
+/// while it still runs or when there is no terminal.
+pub(super) fn exit_code() -> String {
+    format!(
+        "c=$({PROGRAM} get {SESSION} --json 2>/dev/null | sed -n 's/.*\"exit_code\":\\([0-9][0-9]*\\).*/\\1/p'); exit \"${{c:-1}}\""
     )
 }
 

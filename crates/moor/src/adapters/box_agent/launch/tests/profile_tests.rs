@@ -26,7 +26,7 @@ fn the_profile_writers_run_after_the_path_and_proxy_and_before_the_agent() {
         profile: Some(parse(MANIFEST).unwrap()),
         ..req_with_proxy(s)
     });
-    let starting = at(&script, "\"state\":\"starting\"");
+    let brief = at(&script, "install -m 600");
     let path = at(&script, AGENT_PATH_LINE);
     let proxy = at(&script, "HTTPS_PROXY");
     let truncate = at(&script, &format!(": > '/work/box-1/{FAILURES_FILE}.all'"));
@@ -35,10 +35,7 @@ fn the_profile_writers_run_after_the_path_and_proxy_and_before_the_agent() {
     let kept = at(&script, &format!("mv '/work/box-1/{FAILURES_FILE}.all'"));
     let agent = script.rfind("'claude'").unwrap();
     assert!(kept < agent && codex < kept, "{script}");
-    assert!(
-        starting < path && path < proxy && proxy < truncate,
-        "{script}"
-    );
+    assert!(brief < path && path < proxy && proxy < truncate, "{script}");
     assert!(
         truncate < claude && claude < codex && codex < agent,
         "{script}"

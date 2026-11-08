@@ -4,9 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{
-    HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, STARTUP_GRACE,
-};
+use moor_core::activity::{Probe, STARTUP_GRACE};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
@@ -22,6 +20,7 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::store::{FollowClaim, NewRun};
+use crate::testing::agent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -218,7 +217,7 @@ fn never_takes_the_box_lock() {
 }
 
 /// Context whose engine answers `probes` for the live session.
-fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
+fn agent_cx(dir: &Path, probes: Probe) -> (Cx, Arc<FakeEngine>) {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir);
     (cx.with_engine(engine.clone()), engine)
@@ -272,39 +271,32 @@ fn add_boxed(cx: &Cx) -> BoxId {
     id
 }
 
-/// Probes with a fresh hook report of `kind` and an unreadable pane status.
-fn hook(kind: HookKind) -> Probes {
-    let message = (kind == HookKind::Blocked).then(|| "Allow edit?".to_owned());
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind,
-            session_id: None,
-            message,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(0),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A read of a working agent.
+fn working() -> Probe {
+    agent::working(Ts::from_millis(0))
 }
 
-/// Probes that learn nothing from the hook or the pane.
-fn silent(hook: HookRead, pane: PaneRead) -> Probes {
-    Probes { hook, pane }
+/// A read of an idle agent.
+fn idle() -> Probe {
+    agent::idle(Ts::from_millis(0))
+}
+
+/// A read of an agent blocked on a permission, asking "Allow edit?".
+fn blocked() -> Probe {
+    agent::permission("Allow edit?", Ts::from_millis(0))
+}
+
+/// A read of a live agent that has reported no status.
+fn silent() -> Probe {
+    agent::read(None, Ts::from_millis(0), 0)
 }
 
 #[test]
 fn a_busy_agent_keeps_idle_waiting_until_timeout() {
     let cases = [
-        ("working", hook(HookKind::Busy)),
-        ("starting", silent(HookRead::Absent, PaneRead::Absent)),
-        ("unknown", silent(HookRead::TimedOut, PaneRead::TimedOut)),
+        ("working", working()),
+        ("starting", silent()),
+        ("unknown", Probe::TimedOut),
     ];
     for (name, probes) in cases {
         let dir = tempfile::tempdir().unwrap();
@@ -341,9 +333,9 @@ fn a_hanging_agent_read_ends_the_wait_at_its_timeout() {
 
 #[test]
 fn an_idle_or_blocked_agent_returns_at_once() {
-    for kind in [HookKind::Idle, HookKind::Blocked] {
+    for probe in [idle(), blocked()] {
         let dir = tempfile::tempdir().unwrap();
-        let (cx, _) = agent_cx(dir.path(), hook(kind));
+        let (cx, _) = agent_cx(dir.path(), probe);
         add_live(&cx);
         let v = run(&cx, &req(None, Some(5))).unwrap();
         assert!(!v.timed_out);
@@ -354,7 +346,7 @@ fn an_idle_or_blocked_agent_returns_at_once() {
 #[test]
 fn input_returns_at_once_for_a_blocked_agent_and_waits_for_a_busy_one() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
+    let (cx, _) = agent_cx(dir.path(), blocked());
     add_live(&cx);
     let v = run(&cx, &req(Some(WaitFor::Input), Some(5))).unwrap();
     assert!(!v.timed_out);
@@ -362,7 +354,7 @@ fn input_returns_at_once_for_a_blocked_agent_and_waits_for_a_busy_one() {
     assert_eq!(v.wait_for, WaitFor::Input);
 
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Busy));
+    let (cx, _) = agent_cx(dir.path(), working());
     add_live(&cx);
     let v = run(&cx, &req(Some(WaitFor::Input), Some(1))).unwrap();
     assert!(v.timed_out);
@@ -371,12 +363,12 @@ fn input_returns_at_once_for_a_blocked_agent_and_waits_for_a_busy_one() {
 #[test]
 fn the_payload_carries_the_agent() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
+    let (cx, _) = agent_cx(dir.path(), blocked());
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     let a = v.boxed.agent.expect("an agent view");
     assert_eq!(a.state, "needs_input");
-    assert_eq!(a.source, "hooks");
+    assert_eq!(a.source, "status");
     assert_eq!(a.pane, "live");
     assert_eq!(a.question.as_deref(), Some("Allow edit?"));
 }
@@ -393,7 +385,7 @@ fn a_box_without_a_session_has_no_agent_in_the_payload() {
 #[test]
 fn waiting_leaves_the_box_row_alone() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Idle));
+    let (cx, _) = agent_cx(dir.path(), idle());
     let id = add_live(&cx);
     let before = cx.store().unwrap().box_row(id).unwrap().unwrap();
     for _ in 0..3 {
@@ -406,7 +398,7 @@ fn waiting_leaves_the_box_row_alone() {
 #[test]
 fn each_poll_probes_the_agent_once() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, engine) = agent_cx(dir.path(), hook(HookKind::Idle));
+    let (cx, engine) = agent_cx(dir.path(), idle());
     add_live(&cx);
     run(&cx, &req(None, None)).unwrap();
     assert_eq!(engine.probe_count(SESSION), 1);
@@ -415,7 +407,7 @@ fn each_poll_probes_the_agent_once() {
 #[test]
 fn a_working_agent_is_probed_on_every_poll() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, engine) = agent_cx(dir.path(), hook(HookKind::Busy));
+    let (cx, engine) = agent_cx(dir.path(), working());
     add_live(&cx);
     let before = cx.clock().now();
     let v = run(&cx, &req(None, Some(1))).unwrap();
@@ -426,13 +418,10 @@ fn a_working_agent_is_probed_on_every_poll() {
 }
 
 #[test]
-fn a_resumed_agent_is_idle_only_once_session_start_records_it() {
-    for (kind, timed_out) in [
-        (HookKind::Starting { launch: None }, true),
-        (HookKind::Idle, false),
-    ] {
+fn an_agent_with_no_status_is_idle_only_once_it_reports_one() {
+    for (probe, timed_out) in [(silent(), true), (idle(), false)] {
         let dir = tempfile::tempdir().unwrap();
-        let (cx, _) = agent_cx(dir.path(), hook(kind));
+        let (cx, _) = agent_cx(dir.path(), probe);
         add_live(&cx);
         cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
         let v = run(&cx, &req(None, Some(2))).unwrap();
@@ -443,7 +432,7 @@ fn a_resumed_agent_is_idle_only_once_session_start_records_it() {
 #[test]
 fn a_busy_agent_times_out_at_the_default_bound() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Busy));
+    let (cx, _) = agent_cx(dir.path(), working());
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(v.timed_out);

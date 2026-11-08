@@ -193,11 +193,9 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
         &format!("mkdir -p -m 700 '{TMP}' && mkdir -p '/work/box-1/.moor'"),
         &format!("export TMPDIR='{TMP}' CLAUDE_CODE_TMPDIR='{TMP}'"),
         &format!("install -m 600 '{CRED}/brief.md' '/work/box-1/.moor/brief.md'"),
-        r#""state":"starting","event":"Launch""#,
-        "> '/work/box-1/.moor/agent-state.json'",
         "settings.json",
         ".claude.json",
-        "cd '/work/box-1' && 'claude' '--append-system-prompt-file' '/work/box-1/.moor/brief.md' '--model' 'haiku'",
+        "cd '/work/box-1' && exec 'claude' '--append-system-prompt-file' '/work/box-1/.moor/brief.md' '--model' 'haiku'",
     ] {
         assert!(script.contains(want), "{want}: {script}");
     }
@@ -231,9 +229,10 @@ fn herdr_core_holds_the_agent_running_the_script_file_under_sh() {
     out.unwrap();
     let remote = remote_of(&pane_line(&s));
     let want = format!(
-        "herdr-core run --bg --no-parent --rm --name moor-agent sh -c 'sh '\\''{CRED}/agent.sh'\\'';"
+        "herdr-core rm moor-agent >/dev/null 2>&1; herdr-core run --bg --no-parent --name moor-agent sh '{CRED}/agent.sh'"
     );
     assert!(remote.contains(&want), "{remote}");
+    assert!(!remote.contains("--rm"), "{remote}");
 }
 
 #[test]
@@ -487,7 +486,7 @@ fn the_script_ends_with_the_agent_and_prints_no_status_of_its_own() {
     let script = script_of(&d);
     let last = script.lines().last().unwrap();
     assert!(
-        last.starts_with("cd '/work/box-1' && 'claude' "),
+        last.starts_with("cd '/work/box-1' && exec 'claude' "),
         "{script}"
     );
     assert!(!script.contains("MOOR_AGENT_TTY"), "{script}");

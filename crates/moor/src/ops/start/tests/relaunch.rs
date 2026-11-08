@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_adapter::FirstRunPrompt;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
+use moor_core::seam::surface::{PaneObs, PaneRef, PaneStatus, ResumeOutcome, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
 use crate::store::db::{Conn, DbExt as _};
+use crate::testing::agent;
 use crate::testing::db::column_where;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -27,7 +28,7 @@ pub(super) fn prompt_req(prompt: &str) -> StartReq {
 /// A launched session whose pane is `pane`.
 pub(super) fn session(pane: &str) -> SessionRef {
     SessionRef {
-        id: String::new(),
+        id: pane.to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(PaneRef::new(pane)),
@@ -292,25 +293,25 @@ fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
 }
 
 #[test]
-fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
+fn a_relaunch_watches_its_new_agent_for_a_first_run_prompt() {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Ok(session("p-1")))
             .launch_result(Ok(session("p-2")))
-            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+            .probes(
+                "p-2",
+                agent::on_screen(
+                    agent::read(None, Ts::from_millis(1_000), 0),
+                    "Do you trust this folder?",
+                ),
+            ),
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     let first = run(&w.cx, &prompt_req("ship it")).unwrap();
     let id = BoxId::new(first.boxed.id);
     gone(&w);
-    w.surface.push_pane_obs(
-        "p-2",
-        Ok(PaneObs {
-            tail: "Do you trust this folder?".to_owned(),
-            ..obs(None)
-        }),
-    );
     let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();

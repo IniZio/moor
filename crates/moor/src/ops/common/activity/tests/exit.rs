@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
@@ -12,6 +12,7 @@ use super::{cx, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::{settle, PaneLiveness, Reading};
 use crate::ops::common::boxlock::BoxLock;
+use crate::testing::agent::exited;
 use crate::testing::engine::FakeEngine;
 
 /// A working Box whose live session has a registered agent session.
@@ -23,16 +24,8 @@ fn registered_box(cx: &Cx) -> BoxId {
     id
 }
 
-pub(super) fn exited_probes() -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: Some(1),
-        }),
-    }
+pub(super) fn exited_probes() -> Probe {
+    exited(Some(1))
 }
 
 fn exit_saves(cx: &Cx, id: BoxId) -> usize {

@@ -2,12 +2,10 @@
 
 use std::time::Duration;
 
-use moor_core::activity::{HookKind, HookRead, Probes};
+use moor_core::activity::{Life, Probe, Term};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field};
 use moor_core::exec_env::prelude_stop;
-use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, Warning};
 
@@ -19,7 +17,7 @@ use crate::ops::common::profile_fetch;
 use crate::ops::common::provision::reread;
 use crate::ops::common::view::rfc3339;
 use crate::ops::common::wake::tell_relaunched;
-use crate::store::{SessionRow, Store};
+use crate::store::Store;
 
 /// Time between two reads of the pane while watching.
 const PROMPT_POLL: Duration = Duration::from_millis(500);
@@ -66,7 +64,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     if !agent.launched {
         return agent;
     }
-    let Some((session, code, tail)) = poll(cx, store, id, agent.nonce.as_deref()) else {
+    let Some((session, code, tail)) = poll(cx, store, id) else {
         report_installs(cx, store, id);
         tell_of_lost_disk(cx, store, id);
         if let Err(e) = tell_relaunched(cx, store, id) {
@@ -79,7 +77,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     };
     let failure = exited(cx, code, &tail);
     let recorded = store
-        .end_session(session, Some(code), None)
+        .end_session(session, code, None)
         .map_err(CommandError::from)
         .and_then(|()| record(store, id, Field::Set(to_json(&failure)?), Some(&failure)));
     if let Err(e) = recorded {
@@ -113,13 +111,16 @@ fn report_installs(cx: &Cx, store: &Store, id: BoxId) {
 /// The failure for an agent that exited with `code` right after launch. A launch the prelude
 /// stopped, because the Proxy CA could not be written or the egress proxy could not start,
 /// carries the prelude's message.
-fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
+fn exited(cx: &Cx, code: Option<i32>, tail: &str) -> LaunchFailure {
     let message = match prelude_stop(tail) {
         Some(m) => m.to_owned(),
-        None if code == 127 => {
+        None if code == Some(127) => {
             "the agent exited 127: its command was not found on the Box".to_owned()
         }
-        None => format!("the agent exited {code} right after launch"),
+        None => code.map_or_else(
+            || "the agent was ended by a signal right after launch".to_owned(),
+            |code| format!("the agent exited {code} right after launch"),
+        ),
     };
     let tail = last_lines(tail, TAIL_LINES);
     LaunchFailure {
@@ -130,14 +131,30 @@ fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
     }
 }
 
-/// Reads the fresh agent pane for a bounded window and records a first-run prompt.
-///
-/// A prompt becomes an `agent_prompt_blocked` event and a warning that quotes its line; a
-/// failed read becomes an `agent_prompt_check_failed` event. A pane that is gone ends the
-/// watch quietly, and so does an agent past its first-run screens, when its hooks stay quiet
-/// on those screens and `nonce` names its launch. An exit marker returns the live session id,
-/// the exit code and the pane tail.
-fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, i32, String)> {
+/// The event for a first-run screen `screen` shows, warned about; none when it shows none.
+fn blocked(cx: &Cx, id: BoxId, pane: &str, screen: Option<&str>) -> Option<ExtraEvent> {
+    let m = cx
+        .engine()
+        .first_run_prompt(&last_lines(screen.unwrap_or(""), PROMPT_LINES))?;
+    let name = m.prompt.name();
+    cx.warn(Warning {
+        code: "agent_prompt_blocked".to_owned(),
+        message: format!(
+            "the agent of Box {} stopped at its {name} screen (\"{}\"); moor's pre-seed did not cover it, which is a moor bug",
+            id.get(),
+            m.line
+        ),
+    });
+    Some(ExtraEvent::AgentPromptBlocked {
+        pane: pane.to_owned(),
+        prompt: name.to_owned(),
+        line: m.line,
+    })
+}
+
+/// Watches the agent just launched until it reports a status, a first-run screen holds it, or
+/// the prompt window closes; the session, exit code and screen of an agent that ended meanwhile.
+fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, Option<i32>, String)> {
     let live = match store.live_session(id) {
         Ok(Some(row)) => row,
         Ok(None) => return None,
@@ -146,41 +163,32 @@ fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, 
             return None;
         }
     };
-    let pane = live.pane.clone()?;
-    let pane_ref = PaneRef::new(pane.clone());
-    let hooks = nonce
-        .filter(|_| cx.engine().hooks_quiet_during_first_run())
-        .and_then(|n| Some((hook_reader(store, id, &live)?, n)));
-    let mut marked = false;
+    let row = store.box_row(id).ok().flatten()?;
+    let sref = session_ref(&row, &live)?;
+    let pane = live.pane.clone().unwrap_or_default();
     let begin = cx.clock().instant();
     loop {
-        let event = match cx.surface().pane_obs(&pane_ref, Deadline(PROMPT_READ)) {
-            Ok(obs) => {
-                if let Some(code) = obs.exit_marker {
-                    return Some((live.id, code, obs.tail));
-                }
-                cx.engine()
-                    .first_run_prompt(&last_lines(&obs.tail, PROMPT_LINES))
-                    .map(|m| {
-                        let name = m.prompt.name();
-                        cx.warn(Warning {
-                            code: "agent_prompt_blocked".to_owned(),
-                            message: format!(
-                                "the agent in pane {pane} stopped at its {name} screen (\"{}\"); moor's pre-seed did not cover it, which is a moor bug",
-                                m.line
-                            ),
-                        });
-                        ExtraEvent::AgentPromptBlocked {
-                            pane: pane.clone(),
-                            prompt: name.to_owned(),
-                            line: m.line,
-                        }
-                    })
-            }
-            Err(SurfaceError::NotFound) => return None,
-            Err(e) => Some(ExtraEvent::AgentPromptCheckFailed {
+        let event = match cx.engine().probe(&sref, Deadline(PROMPT_READ)) {
+            Probe::Read {
+                term:
+                    Some(Term {
+                        life: Life::Finished { exit },
+                        ..
+                    }),
+                screen,
+                ..
+            } => return Some((live.id, exit, screen.unwrap_or_default())),
+            Probe::Read { term: None, .. }
+            | Probe::Read {
+                term: Some(Term {
+                    status: Some(_), ..
+                }),
+                ..
+            } => return None,
+            Probe::Read { screen, .. } => blocked(cx, id, &pane, screen.as_deref()),
+            Probe::TimedOut => Some(ExtraEvent::AgentPromptCheckFailed {
                 pane: pane.clone(),
-                error: e.to_string(),
+                error: "the agent could not be read".to_owned(),
             }),
         };
         if let Some(event) = event {
@@ -189,44 +197,11 @@ fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, 
             }
             return None;
         }
-        let decided = hooks
-            .as_ref()
-            .is_some_and(|(s, n)| past_startup(cx, s, n, &mut marked));
-        if decided || cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window()
-        {
+        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window() {
             return None;
         }
         cx.clock().sleep(PROMPT_POLL);
     }
-}
-
-/// The session to read the hook file of, with no pane so a probe leaves the pane alone.
-fn hook_reader(store: &Store, id: BoxId, launch: &SessionRow) -> Option<SessionRef> {
-    let row = store.box_row(id).ok().flatten()?;
-    let s = session_ref(&row, launch)?;
-    Some(SessionRef { pane: None, ..s })
-}
-
-/// Whether the agent is past its first-run screens: its hook file shows a report after this
-/// watch saw the starting marker that names this launch by `nonce`.
-///
-/// The caller checked that the agent runs no hook while a first-run screen holds its pane, so
-/// no first-run prompt can follow such a report. A report read before that marker, or after a
-/// marker of another launch, may come from another writer of the hook file, so it never counts.
-/// `marked` carries whether the latest marker seen was this launch's.
-fn past_startup(cx: &Cx, hooks: &SessionRef, nonce: &str, marked: &mut bool) -> bool {
-    let Ok(Probes {
-        hook: HookRead::Fresh(record),
-        ..
-    }) = cx.engine().probe(hooks, Deadline(PROMPT_READ))
-    else {
-        return false;
-    };
-    if let HookKind::Starting { launch } = record.kind {
-        *marked = launch.as_deref() == Some(nonce);
-        return false;
-    }
-    *marked
 }
 
 /// Warns that the first-run prompt check could not be recorded.

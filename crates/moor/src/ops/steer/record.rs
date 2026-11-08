@@ -1,7 +1,6 @@
 //! The `steered` event a sent steer leaves behind.
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, ErrorKind};
 
 use crate::error::CommandError;
@@ -10,10 +9,8 @@ use crate::store::{SessionRow, Store};
 /// What the `steered` event says about the send beyond the message.
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct Mark {
-    /// When the newest hook report read before the send was written, on the Box's clock.
-    pub(super) hook_before: Option<Ts>,
-    /// Whether the steer typed a prompt that starts a turn of its own.
-    pub(super) new_turn: bool,
+    /// The ended-turn count of the agent's terminal the steer's turn must pass.
+    pub(super) turn_before: Option<u64>,
     /// Whether the submit key was pressed a second time.
     pub(super) submit_retried: bool,
 }
@@ -35,8 +32,7 @@ pub(super) fn record(
         session: who.to_owned(),
         message: message.to_owned(),
         submit_retried: mark.submit_retried,
-        hook_before: mark.hook_before.map(Ts::as_millis),
-        new_turn: mark.new_turn,
+        turn_before: mark.turn_before,
     };
     let applied = store.apply(Decision::new(id).event(event))?;
     applied

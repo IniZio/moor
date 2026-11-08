@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::{BoxId, StartReq};
 
@@ -9,22 +8,11 @@ use super::state::working;
 use super::{req, world, World};
 use crate::ops::start::{run, settle_all};
 use crate::store::db::DbExt as _;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use moor_schema::tables::{Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
-
-fn exited() -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: Some(1),
-        }),
-    }
-}
 
 /// A Box whose agent started, exited and was settled, so its Session 1 is Ended.
 fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
@@ -37,7 +25,11 @@ fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
         FakeEngine::new()
             .launch_result(Ok(named("1")))
             .launch_result(Ok(named("2")))
-            .probes("sess-1", exited()),
+            .then_probes(
+                "sess-1",
+                agent::working(moor_core::seam::clock::Ts::from_millis(0)),
+            )
+            .probes("sess-1", agent::exited(Some(1))),
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());

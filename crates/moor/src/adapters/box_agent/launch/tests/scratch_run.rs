@@ -1,5 +1,3 @@
-use moor_core::activity::HookKind;
-
 use super::*;
 
 /// A scratch Box: home, workdir, a credential dir holding a brief, and a stub agent.
@@ -81,7 +79,7 @@ impl Scratch {
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
         let tmp = BoxPath::under(root, "home/.moor-tmp-t1-x").unwrap();
         super::super::script(
-            (&cred, &tmp, "x"),
+            (&cred, &tmp),
             &ctx,
             &setup(hook_step),
             &setup("true"),
@@ -133,17 +131,13 @@ fn a_clean_run_starts_the_agent_and_removes_the_cred_dir() {
 }
 
 #[test]
-fn the_starting_marker_names_this_launch() {
+fn the_agent_starts_in_the_workdir() {
     let b = Scratch::new();
+    b.stub("claude", "pwd -P > \"$MARKER\"");
     assert!(b.spawn(&b.script("true")).wait().unwrap().success());
-    let raw = std::fs::read(b.path("work/.moor/agent-state.json")).unwrap();
-    let marker = Claude.parse_hook(&raw).map(|r| r.kind);
-    assert_eq!(
-        marker,
-        Some(HookKind::Starting {
-            launch: Some("x".to_owned())
-        })
-    );
+    let started_in = std::fs::read_to_string(b.path("started")).unwrap();
+    let work = std::fs::canonicalize(b.path("work")).unwrap();
+    assert_eq!(started_in.trim(), work.to_str().unwrap());
 }
 
 #[test]
@@ -166,15 +160,6 @@ fn the_cred_dir_is_gone_before_the_agent_starts() {
 fn a_failed_install_stops_before_the_agent_and_removes_the_cred_dir() {
     let b = Scratch::new();
     std::fs::remove_file(b.path("home/.moor-cred-t1-x/brief.md")).unwrap();
-    assert!(!b.spawn(&b.script("true")).wait().unwrap().success());
-    assert!(!b.agent_started());
-    assert!(b.cred_gone());
-}
-
-#[test]
-fn a_failed_state_write_stops_before_the_agent_and_removes_the_cred_dir() {
-    let b = Scratch::new();
-    std::fs::create_dir_all(b.path("work/.moor/agent-state.json")).unwrap();
     assert!(!b.spawn(&b.script("true")).wait().unwrap().success());
     assert!(!b.agent_started());
     assert!(b.cred_gone());

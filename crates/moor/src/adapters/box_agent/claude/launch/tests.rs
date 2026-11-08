@@ -9,7 +9,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, Key, LaunchCtx, ProxyAddr};
 use moor_core::seam::engine::LaunchPrompt;
@@ -17,11 +16,11 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use super::super::Claude;
+use crate::testing::hc;
 
 mod ask;
 mod background;
 mod bypass;
-mod doing;
 mod first_run;
 mod last_message;
 mod mcp;
@@ -235,22 +234,17 @@ fn hook_fragment_covers_the_hook_events() {
     let t = TempDir::new().unwrap();
     let setup = Claude.hook_writer(&ctx(t.path())).unwrap();
     let fragment: Value = serde_json::from_str(&setup.files[1].content).unwrap();
-    let hooks = &fragment["hooks"];
-    let command = |ev: &str| {
-        hooks[ev][0]["hooks"][0]["command"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    assert!(command("UserPromptSubmit").ends_with(" working UserPromptSubmit"));
-    assert!(command("Stop").ends_with(" idle Stop"));
-    assert!(command("PostToolUse").ends_with(" working PostToolUse"));
-    assert!(command("Notification").ends_with(" waiting_input Notification"));
-    assert!(command("PreToolUse").ends_with(" waiting_input PreToolUse"));
+    let hooks = fragment["hooks"].as_object().unwrap();
+    let mut events: Vec<_> = hooks.keys().map(String::as_str).collect();
+    events.sort_unstable();
     assert_eq!(
-        hooks["Notification"][0]["matcher"],
-        "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"
+        events,
+        ["PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"]
     );
+    for (event, entries) in hooks {
+        let command = entries[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(command.ends_with(&format!(" {event}")), "{command}");
+    }
     assert_eq!(
         hooks["PreToolUse"][0]["matcher"],
         "AskUserQuestion|ExitPlanMode"
@@ -259,7 +253,7 @@ fn hook_fragment_covers_the_hook_events() {
 }
 
 #[test]
-fn a_resumed_session_is_recorded_idle() {
+fn a_resumed_session_runs_the_hook_on_resume_only() {
     let t = TempDir::new().unwrap();
     let setup = Claude.hook_writer(&ctx(t.path())).unwrap();
     let fragment: Value = serde_json::from_str(&setup.files[1].content).unwrap();
@@ -267,7 +261,7 @@ fn a_resumed_session_is_recorded_idle() {
     assert!(entry["hooks"][0]["command"]
         .as_str()
         .unwrap()
-        .ends_with(" idle SessionStart"));
+        .ends_with(" SessionStart"));
     assert_eq!(entry["matcher"], "resume");
 }
 
@@ -291,7 +285,10 @@ fn check_merge_keeps_and_is_idempotent(path: Option<&str>) {
     assert_eq!(once["hooks"]["PreCompact"], json!([&other]));
     assert_eq!(once["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert_eq!(once["hooks"]["Stop"][0], other);
-    assert_eq!(once["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        once["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
+        1
+    );
     assert!(run_step_on(&setup, path).status.success());
     assert_eq!(read_json(&settings), once);
 }
@@ -327,7 +324,7 @@ fn check_merge_without_interpreter(path: Option<&str>) {
     let setup = Claude.hook_writer(&c).unwrap();
     install(&setup);
     assert!(run_step_on(&setup, path).status.success());
-    assert_eq!(read_json(&settings)["hooks"].as_object().unwrap().len(), 6);
+    assert_eq!(read_json(&settings)["hooks"].as_object().unwrap().len(), 4);
     fs::write(&settings, r#"{"model":"x"}"#).unwrap();
     assert!(!run_step_on(&setup, path).status.success());
     assert_eq!(fs::read_to_string(&settings).unwrap(), r#"{"model":"x"}"#);
@@ -346,7 +343,7 @@ fn merge_creates_settings_when_absent() {
     install(&setup);
     assert!(run_step(&setup).status.success());
     let settings = read_json(&format!("{}/.claude/settings.json", c.home.as_str()));
-    assert_eq!(settings["hooks"].as_object().unwrap().len(), 6);
+    assert_eq!(settings["hooks"].as_object().unwrap().len(), 4);
 }
 
 #[test]
@@ -362,14 +359,10 @@ fn merge_fails_and_keeps_settings_that_are_not_json() {
     assert_eq!(fs::read_to_string(&settings).unwrap(), "not json");
 }
 
-fn run_hook(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>) {
-    run_hook_on(c, state, event, stdin, None);
-}
-
-fn run_hook_on(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>, path: Option<&str>) {
+fn run_hook_on(c: &LaunchCtx, event: &str, stdin: Option<&str>, path: Option<&str>) {
     let script = format!("{}/.moor/hook.sh", c.workdir.as_str());
     let mut cmd = Command::new("/bin/sh");
-    cmd.args([&script, state, event]).stdout(Stdio::null());
+    cmd.args([&script, event]).stdout(Stdio::null());
     if let Some(path) = path {
         cmd.env("PATH", path);
     }
@@ -389,106 +382,101 @@ fn run_hook_on(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>, pat
     }
 }
 
-fn state_file(c: &LaunchCtx) -> Vec<u8> {
-    fs::read(format!("{}/.moor/agent-state.json", c.workdir.as_str())).unwrap()
+/// Runs `check` against a private core with the host's own interpreters.
+fn on_host(check: fn(&hc::Core, &str)) {
+    if !any_interpreter() {
+        return;
+    }
+    if let Some(core) = hc::core() {
+        check(&core, &core.path());
+    }
 }
 
-fn check_hook_round_trip(path: Option<&str>) {
+/// Runs `check` against a private core with a `PATH` offering only `interp`.
+fn forced_with_core(interp: Interp, check: fn(&hc::Core, &str)) {
+    let Some(core) = hc::core() else { return };
+    let bin = TempDir::new().unwrap();
+    let Some(path) = forced_path(interp, bin.path()) else {
+        return;
+    };
+    std::os::unix::fs::symlink(core.bin().join("herdr-core"), bin.path().join("herdr-core"))
+        .unwrap();
+    check(&core, &path);
+}
+
+/// The note the hooks left in `core`.
+fn note_of(core: &hc::Core) -> moor_core::activity::Note {
+    Claude.parse_note(&core.doc("moor-agent"))
+}
+
+fn check_stop_leaves_its_note(core: &hc::Core, path: &str) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
     let payload = json!({
         "session_id": "s-42",
-        "message": "Allow \"rm\"?\nreally",
-        "notification_type": "permission_prompt",
+        "last_assistant_message": "Allow \"rm\"?\nreally",
     })
     .to_string();
-    run_hook_on(&c, "waiting_input", "Notification", Some(&payload), path);
-    let raw = state_file(&c);
-    let value: Value = serde_json::from_slice(&raw).unwrap();
-    assert_eq!(value["event"], "Notification");
-    assert_eq!(value["notification_type"], "permission_prompt");
-    let rec = Claude.parse_hook(&raw).unwrap();
-    assert_eq!(rec.session_id.as_deref(), Some("s-42"));
-    assert_eq!(rec.kind, HookKind::Blocked);
-    assert_eq!(rec.message.as_deref(), Some("Allow \"rm\"?\nreally"));
-    let leftovers: Vec<_> = fs::read_dir(format!("{}/.moor", c.workdir.as_str()))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .filter(|n| n.contains(".tmp"))
-        .collect();
-    assert!(leftovers.is_empty(), "{leftovers:?}");
+    run_hook_on(&c, "Stop", Some(&payload), Some(path));
+    let note = note_of(core);
+    assert_eq!(note.session_id.as_deref(), Some("s-42"));
+    assert_eq!(note.said.as_deref(), Some("Allow \"rm\"?\nreally"));
 }
 
 #[test]
-fn hook_state_round_trips_through_parse_hook() {
-    if any_interpreter() {
-        check_hook_round_trip(None);
+fn a_stop_leaves_a_note_the_probe_reads() {
+    on_host(check_stop_leaves_its_note);
+}
+
+#[test]
+fn a_stop_leaves_a_note_with_python3_only() {
+    forced_with_core(Interp::Python, check_stop_leaves_its_note);
+}
+
+#[test]
+fn a_stop_leaves_a_note_with_node_only() {
+    forced_with_core(Interp::Node, check_stop_leaves_its_note);
+}
+
+#[test]
+fn a_box_without_an_interpreter_leaves_no_note() {
+    forced_with_core(Interp::Neither, |core, path| {
+        let t = TempDir::new().unwrap();
+        let c = ctx(t.path());
+        install(&Claude.hook_writer(&c).unwrap());
+        run_hook_on(&c, "Stop", Some(r#"{"session_id":"s-42"}"#), Some(path));
+        assert_eq!(core.doc("moor-agent"), Value::Null);
+    });
+}
+
+#[test]
+fn a_hook_with_closed_or_garbage_stdin_still_exits_clean_and_leaves_an_empty_note() {
+    let Some(core) = hc::core() else { return };
+    if !any_interpreter() {
+        return;
     }
-}
-
-#[test]
-fn hook_state_round_trips_with_python3_only() {
-    forced(Interp::Python, check_hook_round_trip);
-}
-
-#[test]
-fn hook_state_round_trips_with_node_only() {
-    forced(Interp::Node, check_hook_round_trip);
-}
-
-fn check_hook_without_interpreter(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
-    let payload = json!({"session_id": "s-42", "message": "m"}).to_string();
-    run_hook_on(&c, "waiting_input", "Notification", Some(&payload), path);
-    let raw = state_file(&c);
-    let value: Value = serde_json::from_slice(&raw).unwrap();
-    assert_eq!(value["state"], "waiting_input");
-    assert_eq!(value["event"], "Notification");
-    assert!(value["ts"].as_i64().unwrap() > 0);
-    assert_eq!(value["turn"], Value::Null, "no prompt was submitted yet");
-    assert_eq!(value.as_object().unwrap().len(), 4);
-    let rec = Claude.parse_hook(&raw).unwrap();
-    assert_eq!(rec.session_id, None);
-}
-
-#[test]
-fn hook_without_an_interpreter_falls_back_to_state_event_and_ts() {
-    forced(Interp::Neither, check_hook_without_interpreter);
-}
-
-#[test]
-fn hook_with_closed_stdin_still_records_state() {
-    let t = TempDir::new().unwrap();
-    let c = ctx(t.path());
-    install(&Claude.hook_writer(&c).unwrap());
-    run_hook(&c, "idle", "Stop", None);
-    let rec = Claude.parse_hook(&state_file(&c)).unwrap();
-    assert_eq!(rec.kind, HookKind::Idle);
-    assert_eq!(rec.session_id, None);
-}
-
-#[test]
-fn hook_with_garbage_stdin_still_records_state() {
-    let t = TempDir::new().unwrap();
-    let c = ctx(t.path());
-    install(&Claude.hook_writer(&c).unwrap());
-    run_hook(&c, "working", "PostToolUse", Some("{not json"));
-    let rec = Claude.parse_hook(&state_file(&c)).unwrap();
-    assert_eq!(rec.kind, HookKind::Busy);
+    let path = core.path();
+    run_hook_on(&c, "Stop", None, Some(&path));
+    assert_eq!(core.doc("moor-agent"), json!({}));
+    run_hook_on(&c, "Stop", Some("{not json"), Some(&path));
+    assert_eq!(core.doc("moor-agent"), json!({}));
 }
 
 #[test]
 fn hook_does_not_wait_for_a_stdin_that_never_closes() {
+    let Some(core) = hc::core() else { return };
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
     let script = format!("{}/.moor/hook.sh", c.workdir.as_str());
     let mut child = moor_testkit::ChildGuard::new(
         Command::new("sh")
-            .args([&script, "working", "UserPromptSubmit"])
+            .args([&script, "UserPromptSubmit"])
+            .env("PATH", core.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .spawn()
@@ -497,5 +485,4 @@ fn hook_does_not_wait_for_a_stdin_that_never_closes() {
     let held = child.stdin.take();
     assert!(child.wait().unwrap().success());
     drop(held);
-    assert!(Claude.parse_hook(&state_file(&c)).is_some());
 }

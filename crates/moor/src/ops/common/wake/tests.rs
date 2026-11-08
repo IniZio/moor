@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -455,13 +454,11 @@ fn plain_wake_leaves_a_gone_agent_alone() {
 const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
 
 /// A pane observation of a launch script the prelude stopped because the Proxy CA could not be written.
-fn ca_stopped() -> PaneObs {
-    PaneObs {
-        status: PaneStatus::Unknown,
-        tail: format!("moor: {CA}\nmoor: agent exited 1"),
-        prompt: None,
-        exit_marker: Some(1),
-    }
+fn ca_stopped() -> moor_core::activity::Probe {
+    crate::testing::agent::on_screen(
+        crate::testing::agent::exited(Some(1)),
+        &format!("moor: {CA}"),
+    )
 }
 
 /// The message of the launch failure recorded on the Box.
@@ -475,7 +472,7 @@ fn a_wake_relaunch_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
     with_agent(&f);
     sleep(&f);
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
-    f.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    f.engine.set_probes("moor-1", ca_stopped());
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.engine.launches().len(), 1);
@@ -489,7 +486,7 @@ fn a_relaunch_after_a_failed_sleep_stopped_by_an_unwritable_proxy_ca_records_the
     with_agent(&f);
     f.surface.have_pane("p-1");
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
-    f.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    f.engine.set_probes("moor-1", ca_stopped());
     let req = moor_core::BoxReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
     };

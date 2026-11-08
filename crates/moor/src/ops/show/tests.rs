@@ -1,15 +1,13 @@
 //! Tests for `show` and `reconcile`.
 
+use crate::testing::agent;
 use crate::testing::db::column_where;
 use moor_schema::tables::Boxes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{
-    AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
-    STARTUP_GRACE,
-};
+use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
@@ -31,7 +29,7 @@ mod target;
 
 use super::run;
 use crate::cx::Cx;
-use crate::ops::common::activity::{self, Reading};
+use crate::ops::common::activity;
 use crate::store::db::DbExt as _;
 use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
@@ -300,25 +298,14 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
     id
 }
 
-/// Probes whose hook says `kind`, written just before the fake clock's now.
-fn hook(cx: &Cx, kind: HookKind) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(cx.clock().now().as_millis() - 1000),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// An idle agent whose status changed just before the fake clock's now.
+fn idle_now(cx: &Cx) -> Probe {
+    agent::idle(Ts::from_millis(cx.clock().now().as_millis() - 1000))
+}
+
+/// A working agent whose status changed just before the fake clock's now.
+fn working_now(cx: &Cx) -> Probe {
+    agent::working(Ts::from_millis(cx.clock().now().as_millis() - 1000))
 }
 
 #[test]
@@ -327,7 +314,7 @@ fn list_and_detail_report_the_same_agent() {
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", Some("s-a"));
-    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_now(&cx)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let listed = first(&run(&cx, &req(None, None)).unwrap())
         .agent
@@ -342,7 +329,7 @@ fn list_and_detail_report_the_same_agent() {
     assert_eq!(listed, detail);
     assert_eq!(
         (detail.state.as_str(), detail.source.as_str()),
-        ("idle", "hooks")
+        ("idle", "status")
     );
 }
 
@@ -355,8 +342,8 @@ fn each_box_is_probed_once_per_command() {
     working(&cx, &driver, "b", Some("s-b"));
     let engine = Arc::new(
         FakeEngine::new()
-            .probes("s-a", hook(&cx, HookKind::Idle))
-            .probes("s-b", hook(&cx, HookKind::Idle)),
+            .probes("s-a", idle_now(&cx))
+            .probes("s-b", idle_now(&cx)),
     );
     let cx = engine_cx(dir.path(), &driver, &engine);
     run(&cx, &req(None, None)).unwrap();
@@ -373,7 +360,7 @@ fn show_leaves_the_box_row_untouched() {
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "a", Some("s-a"));
-    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_now(&cx)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let store = cx.store().unwrap();
     let before = store.box_row(id).unwrap();
@@ -382,17 +369,9 @@ fn show_leaves_the_box_row_untouched() {
     assert_eq!(store.box_row(id).unwrap(), before);
 }
 
-/// Probes whose pane alone reports `status`, with no hook report.
-fn pane_only(status: PaneStatus) -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status,
-            tail: "Allow this edit?".into(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A read of an agent that has reported no status, its screen showing `screen`.
+fn silent(screen: &str) -> Probe {
+    agent::on_screen(agent::read(None, Ts::from_millis(0), 0), screen)
 }
 
 /// The `idle_since` column of a Box.
@@ -413,7 +392,7 @@ fn list_settles_a_quiet_agent_to_idle() {
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "a", Some("s-a"));
-    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_now(&cx)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let v = run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
@@ -432,7 +411,7 @@ fn list_settles_a_busy_agent_to_working() {
         .unwrap()
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Busy)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", working_now(&cx)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
@@ -440,14 +419,13 @@ fn list_settles_a_busy_agent_to_working() {
     assert!(idle_since(cx.store().unwrap(), id).is_none());
 }
 
-/// List a Working Box whose session is older than the startup grace and whose only
-/// report is the pane's `status`; return the reading and the Box's state afterwards.
-fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
+#[test]
+fn list_does_not_idle_an_agent_that_reports_no_status() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "a", Some("s-a"));
-    let engine = Arc::new(FakeEngine::new().probes("s-a", pane_only(status)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", silent("Allow this edit?")));
     let cx = engine_cx(dir.path(), &driver, &engine);
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
     run(&cx, &req(None, None)).unwrap();
@@ -455,27 +433,13 @@ fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     let row = store.box_row(id).unwrap().unwrap();
     let now = cx.clock().now();
     let reading = activity::read(&cx, store, &row, now, activity::PROBE_DEADLINE).unwrap();
-    (reading, parts(&row))
-}
-
-#[test]
-fn list_does_not_idle_on_a_pane_only_idle_report() {
-    let (reading, state) = pane_only_reading(PaneStatus::Idle);
     let a = reading.activity.as_ref().unwrap();
-    assert_eq!(a.source, Source::Herdr);
-    assert_eq!(a.state, AgentState::Idle);
+    assert_eq!(
+        (&a.state, a.source),
+        (&AgentState::Unknown, Source::Terminal)
+    );
     assert!(!reading.may_quiet);
-    assert_eq!(state, WORKING);
-}
-
-#[test]
-fn list_does_not_idle_on_a_pane_only_blocked_report() {
-    let (reading, state) = pane_only_reading(PaneStatus::Blocked);
-    let a = reading.activity.as_ref().unwrap();
-    assert_eq!(a.source, Source::Herdr);
-    assert!(matches!(a.state, AgentState::NeedsInput { .. }));
-    assert!(!reading.may_quiet);
-    assert_eq!(state, WORKING);
+    assert_eq!(parts(&row), WORKING);
 }
 
 #[test]
@@ -546,7 +510,7 @@ fn idle_box(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
         .unwrap()
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_now(&cx)));
     (engine_cx(dir, driver, &engine), id)
 }
 

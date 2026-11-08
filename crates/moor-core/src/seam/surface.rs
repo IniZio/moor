@@ -1,8 +1,33 @@
 //! Surface seam: workspaces and panes behind a terminal multiplexer.
 
-use crate::activity::{PaneObs, PaneStatus};
 use crate::name::BoxName;
 use crate::seam::proc::{Deadline, Tool};
+
+/// The multiplexer's view of a pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneStatus {
+    /// Working.
+    Working,
+    /// Idle.
+    Idle,
+    /// Blocked on input.
+    Blocked,
+    /// No status.
+    Unknown,
+}
+
+/// One pane observation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaneObs {
+    /// The multiplexer's status.
+    pub status: PaneStatus,
+    /// The end of the pane text.
+    pub tail: String,
+    /// The line the agent shows as its pending question, as its profile reads it from the text.
+    pub prompt: Option<String>,
+    /// The exit code from the exit marker line, when the agent ended.
+    pub exit_marker: Option<i32>,
+}
 
 /// An opaque handle to a Workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

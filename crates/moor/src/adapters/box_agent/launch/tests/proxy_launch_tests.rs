@@ -26,9 +26,11 @@ fn a_failed_put_removes_the_cred_dir() {
 }
 
 #[test]
-fn the_agent_gets_a_private_temp_dir_that_is_removed_at_exit() {
+fn the_agent_gets_a_private_temp_dir_and_an_earlier_one_is_removed() {
     let b = Scratch::new();
     let tmp = b.path("home/.moor-tmp-t1-x");
+    let earlier = b.path("home/.moor-tmp-t1-old");
+    std::fs::create_dir_all(earlier.join("scratch")).unwrap();
     b.stub(
         "claude",
         "touch \"$MARKER\"; echo \"$TMPDIR $CLAUDE_CODE_TMPDIR\" > \"$MARKER.tmp\"; \
@@ -39,7 +41,7 @@ fn the_agent_gets_a_private_temp_dir_that_is_removed_at_exit() {
     assert_eq!(seen.trim(), format!("{0} {0}", tmp.display()));
     let ls = std::fs::read_to_string(b.path("started.ls")).unwrap();
     assert!(ls.starts_with("drwx------"), "{ls}");
-    assert!(!tmp.exists());
+    assert!(!earlier.exists(), "an earlier launch's temp dir is removed");
 }
 
 #[test]

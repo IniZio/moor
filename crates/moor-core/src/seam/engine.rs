@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::activity::{HookRecord, Probes, WaitCheck};
+use crate::activity::{Probe, WaitCheck};
 use crate::box_key::BoxKey;
 use crate::config::McpServer;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
@@ -201,22 +201,14 @@ pub enum EngineError {
 
 /// The agent running in a Box.
 pub trait Engine: Send + Sync {
-    /// Reads the agent's hook file once, then its pane once, and returns them raw.
-    /// It never chooses an agent state.
-    ///
-    /// # Errors
-    /// [`EngineError::Box`] only when the hook file path cannot be formed;
-    /// a failed or late read is reported in the returned [`Probes`] instead.
-    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError>;
+    /// Reads the agent's terminal, its hooks' note and, while it is not working, its screen,
+    /// and returns them raw. It never chooses an agent state; a failed or late read is
+    /// [`Probe::TimedOut`].
+    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Probe;
 
-    /// What the Box shows about the background work the agent reports waiting on.
+    /// What the Box shows about the background work the agent left running locally.
     fn check_wait(&self, _s: &SessionRef, _deadline: Deadline) -> WaitCheck {
         WaitCheck::Unknown
-    }
-
-    /// Whether the prompt `record` reports is gone from the pane text `tail`.
-    fn prompt_gone(&self, _record: &HookRecord, _tail: &str) -> bool {
-        false
     }
 
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.

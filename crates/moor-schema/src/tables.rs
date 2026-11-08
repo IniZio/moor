@@ -54,12 +54,11 @@ tables! {
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, WorkspaceId, Pane, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, Pane, StartedAt, EndedAt, Exit, TranscriptDigest,
-        RegisteredAgentSession, Session, Holder }
+        RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt }
     BoxRefs { Id, Box, Kind, Value }
     Events { Id, Box, Session, Kind, Payload, Ts }
     Runs { Id, Box, Argv, Record, Sha, Pid, StartedAt, FinishedAt, Exit, Interrupted }
     Reports { Id, Box, Session, Kind, Version, Path, Title, CreatedAt }
-    HookCache { Session, Record, At }
     Proxy { Box, BoxPort, EgressPort, Pid, Handle, Ready, LeaseOwner, LeaseHeartbeat, BootId,
         UpdatedAt, KeyHash, Ledger, Spec, CaCert, CaKey, TokenHash, TokenDelivered,
         ForwardPort }

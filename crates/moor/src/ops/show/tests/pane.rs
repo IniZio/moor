@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{PaneRead, PaneStatus};
+use moor_core::seam::clock::Ts;
 use moor_core::ShowReq;
 
 use super::super::run;
-use super::{engine_cx, pane_only, req, working};
+use super::{engine_cx, req, working};
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -16,10 +17,8 @@ fn show_pane(pane: bool, session: Option<&str>) -> moor_core::view::ShowView {
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", session);
-    let mut probes = pane_only(PaneStatus::Working);
-    if let PaneRead::Fresh(obs) = &mut probes.pane {
-        obs.tail = (1..=50).fold(String::new(), |t, n| t + &format!("line {n}\n"));
-    }
+    let tail = (1..=50).fold(String::new(), |t, n| t + &format!("line {n}\n"));
+    let probes = agent::on_screen(agent::working(Ts::from_millis(0)), &tail);
     let engine = Arc::new(FakeEngine::new().probes("s-a", probes));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let r = ShowReq {

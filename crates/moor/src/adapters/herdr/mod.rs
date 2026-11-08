@@ -13,9 +13,9 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-use moor_core::activity::PaneObs;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
+use moor_core::seam::surface::PaneObs;
 use moor_core::seam::surface::{
     FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
     WorkspaceRef,

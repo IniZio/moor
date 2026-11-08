@@ -25,11 +25,14 @@ fn prompt_req(name: &str) -> StartReq {
 
 /// A Box whose agent exited at launch, and the clock the world runs on.
 fn failed_launch(config: UserConfig) -> (World, Arc<FakeClock>, BoxId) {
-    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .probes("p-1", ca_stopped()),
+    );
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let mut w = world_with(FakeDriver::new(), config);
     w.cx = w.cx.with_engine(engine).with_clock(clock.clone());
-    w.surface.push_pane_obs("p-1", Ok(ca_stopped()));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     (w, clock, BoxId::new(v.boxed.id))

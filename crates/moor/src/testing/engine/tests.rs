@@ -2,8 +2,7 @@
 
 use std::time::Duration;
 
-use moor_core::activity::{HookRead, PaneRead, Probes};
-use moor_core::seam::driver::DriverError;
+use moor_core::activity::Probe;
 use moor_core::seam::engine::{
     Engine, EngineError, LaunchPrompt, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
@@ -24,41 +23,31 @@ fn session(id: &str) -> SessionRef {
 
 const DL: Deadline = Deadline(Duration::from_secs(1));
 
-fn gone() -> Probes {
-    Probes {
-        hook: HookRead::TimedOut,
-        pane: PaneRead::Gone,
-    }
-}
-
-fn absent() -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Absent,
-    }
+fn gone() -> Probe {
+    crate::testing::agent::gone()
 }
 
 #[test]
 fn scripted_probes_are_returned_every_time() {
     let e = FakeEngine::new().probes("s1", gone());
-    assert_eq!(e.probe(&session("s1"), DL), Ok(gone()));
-    assert_eq!(e.probe(&session("s1"), DL), Ok(gone()));
+    assert_eq!(e.probe(&session("s1"), DL), gone());
+    assert_eq!(e.probe(&session("s1"), DL), gone());
 }
 
 #[test]
-fn unscripted_session_probes_absent() {
+fn unscripted_session_probes_a_live_agent_with_no_status() {
     let e = FakeEngine::new().probes("s1", gone());
-    assert_eq!(e.probe(&session("other"), DL), Ok(absent()));
+    let read = e.probe(&session("other"), DL);
+    let term = read.term().expect("a read");
+    assert_eq!(term.status, None);
+    assert_eq!(term.life, moor_core::activity::Life::Live);
 }
 
 #[test]
 fn fail_probe_fails_once_then_returns_scripted() {
-    let err = EngineError::Box(DriverError::NotFound);
-    let e = FakeEngine::new()
-        .probes("s1", gone())
-        .fail_probe("s1", err.clone());
-    assert_eq!(e.probe(&session("s1"), DL), Err(err));
-    assert_eq!(e.probe(&session("s1"), DL), Ok(gone()));
+    let e = FakeEngine::new().probes("s1", gone()).fail_probe("s1");
+    assert_eq!(e.probe(&session("s1"), DL), Probe::TimedOut);
+    assert_eq!(e.probe(&session("s1"), DL), gone());
     assert_eq!(e.probe_count("s1"), 2);
 }
 
@@ -66,9 +55,9 @@ fn fail_probe_fails_once_then_returns_scripted() {
 fn counts_are_kept_per_session() {
     let e = FakeEngine::new();
     assert_eq!(e.probe_count("a"), 0);
-    e.probe(&session("a"), DL).unwrap();
-    e.probe(&session("a"), DL).unwrap();
-    e.probe(&session("b"), DL).unwrap();
+    e.probe(&session("a"), DL);
+    e.probe(&session("a"), DL);
+    e.probe(&session("b"), DL);
     assert_eq!(e.probe_count("a"), 2);
     assert_eq!(e.probe_count("b"), 1);
     assert_eq!(e.probe_count("c"), 0);
