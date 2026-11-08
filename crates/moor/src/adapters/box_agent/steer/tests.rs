@@ -372,7 +372,6 @@ fn the_twelfth_line_from_the_bottom_still_counts() {
 
 /// A text steer, as MCP `send_to_box` makes one, typed and submitted into a pty pane: no herdr
 /// server takes part.
-#[cfg(feature = "pty-surface")]
 #[test]
 fn a_text_steer_reaches_a_pty_pane() {
     use crate::adapters::pty::PtySurface;

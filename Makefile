@@ -14,16 +14,15 @@ ZIG_SHA256_aarch64-linux := 9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd
 ZIG_SHA256_x86_64-macos := 4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98f25f95529c6
 ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
 ZIG_PLATFORM ?= x86_64-linux
-PTY := --features moor/pty-surface
 
 PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
 export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
 
 help:
-	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -33,6 +32,7 @@ setup:
 	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-nextest@=$(NEXTEST_VERSION)
 	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install taplo-cli@=$(TAPLO_VERSION)
 	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install typos-cli@=$(TYPOS_VERSION)
+	@"$${ZIG:-zig}" version 2>/dev/null | grep -qx '$(ZIG_VERSION)' || { echo "setup: moor builds libghostty-vt with Zig $(ZIG_VERSION); install it from https://ziglang.org/download/ and put it on PATH, or set ZIG to it" >&2; exit 1; }
 	@helm version --short 2>/dev/null | grep -q '^v$(HELM_VERSION)+' || echo "setup: make chart needs helm $(HELM_VERSION)"
 	@echo "setup: toolchain and pinned tools present"
 
@@ -152,7 +152,7 @@ ci:
 	$(MAKE) test
 
 build:
-	cargo build --workspace --release --locked $(PTY)
+	cargo build --workspace --release --locked
 
 dev-s3:
 	docker compose up -d s3
@@ -161,12 +161,6 @@ dev-s3:
 
 unit-s3:
 	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --locked -p moor --lib --run-ignored only -E 'test(/::s3_/)'
-
-lint-pty:
-	cargo clippy -p moor --all-targets --locked $(PTY) -- -D warnings
-
-unit-pty:
-	cargo test -p moor --lib --locked $(PTY) -- adapters::pty adapters::box_agent::steer wire::
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"

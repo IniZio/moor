@@ -60,12 +60,6 @@ fn store_opens_lazily_at_moor_db() {
 }
 
 #[test]
-fn accessors_return_injected_values() {
-    let cx = cx(Path::new("/nonexistent"));
-    assert_eq!(cx.config().herdr_session(), "moor");
-}
-
-#[test]
 fn clock_is_the_injected_one() {
     let cx = cx(Path::new("/nonexistent"));
     assert_eq!(cx.clock().now(), Ts::from_millis(1000));

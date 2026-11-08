@@ -96,8 +96,6 @@ nodes:
   local:
     runtime: external
     max_boxes: 1
-surface:
-  kind: pty
 controller:
   socket: $CTL/controller.sock
 EOF
@@ -119,9 +117,9 @@ build() {
 		log "build skipped: target/debug/moor is newer than every tracked file"
 		return 0
 	fi
-	log "building with the pty surface"
+	log "building"
 	local tries=0
-	until timeout 2400 cargo build --workspace --locked --features moor/pty-surface >"$OUT/build.log" 2>&1; do
+	until timeout 2400 cargo build --workspace --locked >"$OUT/build.log" 2>&1; do
 		tries=$((tries + 1))
 		local src
 		src=$(ls -td "$REPO_DIR"/target/debug/build/ghostty-vt-sys-*/out/src 2>/dev/null | head -1)

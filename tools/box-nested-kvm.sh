@@ -111,7 +111,7 @@ if ! fresh crabbox-cloudhypervisor "$ADAPTER_REV"; then
 fi
 link_bin crabbox-cloudhypervisor
 
-# The pty surface (`--features moor/pty-surface`) builds with Zig; the Makefile pins it.
+# libghostty-vt builds with Zig; the Makefile pins it.
 read -r ZIG_VERSION ZIG_SHA256 <<EOF
 $(make -s -C "$(dirname "$0")/.." print-zig)
 EOF

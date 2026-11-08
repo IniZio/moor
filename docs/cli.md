@@ -37,7 +37,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--prompt` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
+| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME` with its machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--prompt` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor inspect NAME` | Shows one Box so you can tell working from stuck: its agent state, why it looks stuck, the agent's latest messages and the end of its pane. `--lines N` sets the pane lines (40 by default, at most 200) and `--said N` the messages (5 by default, at most 20). |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
@@ -47,7 +47,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `moor steer NAME TEXT` | Sends text to the Box's agent. `--menu N` sends a menu choice instead. |
 | `moor end NAME` | Ends the agent Session and keeps the Box open. |
 | `moor cp NAME SRC DEST` | Copies a file or directory from the Box's machine to the host. |
-| `moor open NAME` | Wakes the Box if it sleeps. With the herdr surface it then focuses the Box's herdr workspace; with the pty surface it only wakes the Box. |
+| `moor open NAME` | Wakes the Box if it sleeps. |
 | `moor sleep NAME` | Puts the Box's machine to sleep. |
 | `moor wake NAME` | Wakes a sleeping Box. |
 | `moor close NAME` | Closes the Box and releases its machine. |

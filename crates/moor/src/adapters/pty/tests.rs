@@ -10,6 +10,7 @@ use moor_core::seam::surface::{
     Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
 };
 
+use super::exit_marker;
 use super::screen::last_lines;
 use super::PtySurface;
 
@@ -226,4 +227,41 @@ fn the_pty_surface_has_no_client_side_focus_command() {
     let s = PtySurface::default();
     let ws = s.ensure_workspace("moor:t").expect("workspace");
     assert_eq!(s.focus_command(&ws), None);
+}
+
+#[test]
+fn exit_marker_sets_the_code() {
+    assert_eq!(exit_marker("bye\nmoor: agent exited 7\n"), Some(7));
+}
+
+#[test]
+fn last_exit_marker_wins() {
+    let text = "moor: agent exited 1\nmore output\nmoor: agent exited 0\n";
+    assert_eq!(exit_marker(text), Some(0));
+}
+
+#[test]
+fn exit_marker_mid_line_is_ignored() {
+    assert_eq!(exit_marker("$ foo; echo moor: agent exited 3\n"), None);
+}
+
+#[test]
+fn exit_marker_ignores_residue_after_the_code() {
+    assert_eq!(
+        exit_marker("moor: agent exited 255sc to cancel\n"),
+        Some(255)
+    );
+}
+
+#[test]
+fn exit_marker_ignores_unrelated_text() {
+    assert_eq!(
+        exit_marker("sc to cancel moor: agent exited\nagent exited 4\n"),
+        None
+    );
+}
+
+#[test]
+fn exit_marker_needs_a_number() {
+    assert_eq!(exit_marker("moor: agent exited soon\n"), None);
 }

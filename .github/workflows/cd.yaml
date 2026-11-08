@@ -109,7 +109,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/zig"
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
           echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
-      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --features moor/pty-surface --release --locked --target ${{ matrix.target }}
+      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist

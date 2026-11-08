@@ -72,7 +72,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git musl-tools pkg-config xz-utils \
  && rm -rf /var/lib/apt/lists/* \
  && rustup target add "$(uname -m)-unknown-linux-musl"
-# Zig builds the terminal emulator that the pty surface links.
+# Zig builds the terminal emulator that the controller links.
 RUN set -eu; \
     case "$TARGETARCH" in \
       amd64) zig_sha=$ZIG_SHA256_AMD64; zig_arch=x86_64 ;; \
@@ -110,18 +110,13 @@ RUN cargo chef prepare --recipe-path /recipe.json
 
 
 FROM rust AS build
-# Comma-separated cargo features of the moor crate. pty-surface lets the controller hold Box
-# agent panes itself, with no herdr server.
-ARG MOOR_FEATURES=pty-surface
 COPY --from=planner /recipe.json recipe.json
 # The dependencies, built with the same packages, features and profile as the build below, so
 # that build finds them compiled.
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
-    features=""; \
-    if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
     pkgs="-p moor -p moor-slack -p moor-notify -p moor-machine-runner"; \
     if grep -q '"moor-gate"' recipe.json; then pkgs="$pkgs -p moor-gate"; fi; \
-    cargo chef cook --release --locked --recipe-path recipe.json $pkgs $features
+    cargo chef cook --release --locked --recipe-path recipe.json $pkgs
 
 COPY . .
 # The build context carries no .git, so the commit comes in as an argument.
@@ -131,11 +126,9 @@ ENV MOOR_COMMIT=${MOOR_COMMIT}
 ARG MOOR_VERSION=
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     if [ -n "$MOOR_VERSION" ]; then export MOOR_VERSION; else unset MOOR_VERSION; fi; \
-    features=""; \
-    if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
     bins="moor moor-slack moor-notify moor-machine-runner"; \
     if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
-    cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) $features \
+    cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) \
  && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     target="$(uname -m)-unknown-linux-musl"; \
@@ -165,7 +158,6 @@ COPY --from=build /out/ /usr/local/bin/
 ENV HOME=/var/lib/moor \
     MOOR_STATE_DIR=/var/lib/moor/state \
     MOOR_CONFIG=/etc/moor/config.yaml \
-    MOOR_SURFACE=pty \
     DISABLE_AUTOUPDATER=1
 USER 10001:10001
 WORKDIR /var/lib/moor

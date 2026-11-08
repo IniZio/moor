@@ -7,15 +7,12 @@ use std::time::Duration;
 
 use moor_migrate::Outcome;
 
-#[cfg(test)]
-use moor_core::config::SurfaceKind;
 use moor_core::config::{DriverConfig, UserConfig};
 use moor_core::seam::checkout::Checkout;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
-#[cfg(test)]
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
@@ -25,9 +22,9 @@ use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
-use crate::adapters::herdr::Herdr;
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
 use crate::adapters::proc::{SystemProc, ToolPaths};
+use crate::adapters::pty::PtySurface;
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
@@ -38,36 +35,11 @@ use crate::store::controller_lock::{Claim, Claimant, Lost};
 use crate::store::{Database, Store};
 use crate::vault::Vault;
 
-/// Host variables herdr needs to find its socket and terminal.
-const HERDR_PASSTHROUGH: [&str; 5] = [
-    "XDG_RUNTIME_DIR",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "XDG_STATE_HOME",
-    "TERM",
-];
-
-/// The host variables in [`HERDR_PASSTHROUGH`] that `env` sets.
-pub(crate) fn herdr_env(env: &Env) -> Vec<(String, String)> {
-    HERDR_PASSTHROUGH
-        .iter()
-        .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
-        .collect()
-}
-
-/// The herdr adapter, numbering its reports from `clock` and opening Workspaces in `state_dir`.
-fn herdr(
-    proc: &Arc<dyn Proc>,
-    session: &str,
-    extra_env: Vec<(String, String)>,
-    clock: Arc<dyn Clock>,
-    state_dir: Option<PathBuf>,
-) -> Herdr {
-    let h = Herdr::new(Arc::clone(proc), session.to_owned(), extra_env).with_clock(clock);
-    match state_dir {
-        Some(dir) => h.with_workspace_dir(dir),
-        None => h,
-    }
+/// The process's one pty surface: its panes must outlive each request's wiring.
+fn pty_surface(state_dir: Option<PathBuf>) -> Arc<dyn Surface> {
+    static PTY: OnceLock<Arc<PtySurface>> = OnceLock::new();
+    let pty = PTY.get_or_init(|| Arc::new(PtySurface::default().with_cwd(state_dir)));
+    Arc::clone(pty) as Arc<dyn Surface>
 }
 
 /// Per-provider lookup deadlines for the providers that configure one.
@@ -227,14 +199,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
     let clock = Arc::new(clock);
     let state_dir = env.state_dir();
-    let surface = surface(
-        surface_kind(&config, env)?,
-        &config,
-        &proc,
-        herdr_env(env),
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        state_dir.clone(),
-    )?;
+    let surface = pty_surface(state_dir.clone());
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let links = state_dir.as_deref().map(|dir| {
         links::under(
@@ -315,23 +280,8 @@ mod ledger;
 mod links;
 mod store_copy;
 pub use store_copy::copy_store;
-mod surface_pick;
 
 pub(crate) use egress::prepare_egress;
 use keepers::proxy_host;
 pub(crate) use keepers::{end_keepers, keepers_tunnel, reconcile_proxies};
 pub(crate) use ledger::{serve_egress_ledger, serve_ledger};
-
-pub(crate) use surface_pick::surface_kind;
-#[cfg(test)]
-use surface_pick::SURFACE_ENV;
-use surface_pick::{surface, surface_override_warning};
-
-/// The controller's startup line when the user config's `surface.kind` overrides a different
-/// `$MOOR_SURFACE`; a config that fails to load is reported by the first request instead.
-pub(crate) fn surface_override(env: &Env) -> Option<String> {
-    surface_override_warning(&load_user(env).ok()?, env).map(|w| format!("surface: {}", w.message))
-}
-
-#[cfg(test)]
-mod tests;

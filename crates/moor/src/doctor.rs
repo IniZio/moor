@@ -8,7 +8,6 @@ mod nodes;
 mod provider;
 mod render;
 mod setup;
-mod surface;
 #[cfg(test)]
 mod tests;
 mod user;
@@ -128,7 +127,7 @@ pub(crate) struct Inputs<'a> {
     pub target: Option<&'a Target>,
     /// Asks the controller; only called when `target` is set.
     pub ask: Ask<'a>,
-    /// Runs crabbox and herdr.
+    /// Runs crabbox.
     pub proc: &'a dyn Proc,
     /// The crabbox adapter.
     pub driver: &'a dyn Driver,
@@ -185,7 +184,6 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
     out.extend(provider::controller(i));
     out.push(nodes::check(i, &read));
     out.extend(user::checks(i));
-    out.push(surface::check(i));
     out.extend(gate::check(i));
     out
 }

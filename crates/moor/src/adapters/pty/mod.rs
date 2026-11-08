@@ -20,7 +20,6 @@ use moor_core::seam::surface::{
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use self::screen::Msg;
-use super::herdr::pane::exit_marker;
 
 /// Terminal size every pane gets.
 const SIZE: PtySize = PtySize {
@@ -33,6 +32,20 @@ const SIZE: PtySize = PtySize {
 const TAIL_LINES: usize = 60;
 /// What a pane's terminal advertises.
 const TERM: &str = "xterm-256color";
+/// Start of the line moor prints when the agent ends.
+const EXIT_MARKER: &str = "moor: agent exited ";
+
+/// The code on the last exit marker line in `text`. The marker must start
+/// the line and be followed at once by digits; leftover screen text after
+/// the digits is ignored, while a marker mid-line (such as an echoed command)
+/// is not one.
+pub(crate) fn exit_marker(text: &str) -> Option<i32> {
+    text.lines().rev().find_map(|line| {
+        let rest = line.trim_start().strip_prefix(EXIT_MARKER)?;
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        rest.get(..digits)?.parse::<i32>().ok()
+    })
+}
 
 /// One running pane.
 struct Pane {

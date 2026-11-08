@@ -5,7 +5,7 @@
 pub enum Tool {
     /// The crabbox driver hub.
     Crabbox,
-    /// The herdr surface.
+    /// The herdr program `moor open` runs on a client.
     Herdr,
     /// The agent engine program (claude today).
     Agent,

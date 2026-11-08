@@ -5,7 +5,7 @@
 | Crate | What it holds |
 | --- | --- |
 | [moor-core](../crates/moor-core) | Types and decision logic with no IO: names, config parsing, the `Request` enum, the `Response` envelope, views, and the `Secret` type. |
-| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for crabbox, herdr, and git, and one module per command in [ops](../crates/moor/src/ops). |
+| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for crabbox and git, and one module per command in [ops](../crates/moor/src/ops). |
 | [moor-migrate](../crates/moor-migrate) | Forward-only schema migrations for the `SQLite` databases, run by [refinery](https://github.com/rust-db/refinery). |
 | [moor-client](../crates/moor-client) | A client for the controller socket that fronts use. |
 | [moor-slack](../crates/moor-slack) | The Slack front. |
@@ -89,7 +89,7 @@ change, because root opens `/dev/kvm` without it and the image may have no
 start a command that opens `/dev/kvm` in a Box session that already exists with
 `sg kvm -c '<command>'`.
 
-`make nested-e2e` checks the whole path. It builds moor with the pty surface,
+`make nested-e2e` checks the whole path. It builds moor,
 unless `target/debug/moor` is newer than every tracked file, runs a controller
 with one `runtime: external` node that drives `crabbox-cloudhypervisor`
 (2 vCPU, 4 GiB), and starts a Box on `IniZio/moor-nested-check`, a scratch repo
@@ -105,7 +105,7 @@ Box's Proxy through `HTTPS_PROXY`, so the inner secrets are placeholders.
 
 ## Build and test
 
-`make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
+`make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain. It also needs Zig 0.17 on `PATH` (or `ZIG` set to it), which builds the terminal emulator the controller links, and stops with that message when it is missing.
 
 In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](config.md#cache-volumes), so `make setup` runs once. A crabbox config without the `cache-volume` feature cannot keep that volume, so every Box runs `make setup` again.
 
@@ -136,7 +136,6 @@ This starts one Box from a git repo on your machine with a CLI you built.
 You need:
 
 - the Rust toolchain that `rust-toolchain.toml` pins
-- `herdr` on `PATH`
 - crabbox 0.79.1-moor.6 or a newer `-moor` build of
   [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
   the `local-container` provider
@@ -207,7 +206,7 @@ You need:
    ```
 
    Run it inside a checkout of a GitHub repo, or name one with
-   `--repo OWNER/NAME`. moor creates the herdr workspace and the machine, the
+   `--repo OWNER/NAME`. moor creates the machine, the
    machine clones the repo, and then the agent starts.
 
 7. Follow the Box, and close it when the agent is done:
