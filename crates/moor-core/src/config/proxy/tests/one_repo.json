@@ -48,6 +48,14 @@
       },
       {
         "method": "GET",
+        "path": "/repos/*/*/contents"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/*/*/contents/**"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets"
       },
       {

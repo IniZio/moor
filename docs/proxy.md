@@ -37,7 +37,7 @@ The rules are narrower than the token, so a Box cannot do everything you can.
 
 - **Git.** A Box can fetch any repo your `github` token can read, including
   submodules. It can push only to its own repos.
-- **GitHub API.** A Box can read repo metadata, releases, and tags of any repo
+- **GitHub API.** A Box can read repo metadata, releases, tags and file contents of any repo
   your token can read. For its own repos, it can also read Dependabot alerts
   and required checks. Any other request on a repo outside the Box leaves
   without the token, including every write.
