@@ -374,16 +374,18 @@ fn a_box_without_a_session_has_no_agent_in_the_payload() {
 }
 
 #[test]
-fn waiting_leaves_the_box_row_alone() {
+fn idle_returns_only_once_the_idled_event_is_recorded() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), idle());
     let id = add_live(&cx);
-    let before = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    for _ in 0..3 {
-        let v = run(&cx, &req(None, Some(1))).unwrap();
-        assert!(!v.timed_out);
-        assert_eq!(cx.store().unwrap().box_row(id).unwrap().unwrap(), before);
-    }
+    let v = run(&cx, &req(None, Some(5))).unwrap();
+    assert!(!v.timed_out);
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    assert!(
+        events.iter().any(|e| e.kind == "idled"),
+        "wait and the idled event agree: {:?}",
+        events.iter().map(|e| &e.kind).collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -1,15 +1,17 @@
 //! `wait`: poll a Box until it is idle or its run ends, or the timeout elapses.
 //!
-//! Never takes the Box lock: it only reads, and heals dead runs through the store.
+//! Never waits for the Box lock. Each poll settles the Box the way the controller's own reads
+//! do, so `wait` reports idle only once the `idled` event is recorded.
 
 use std::time::Duration;
 
+use moor_core::activity::AgentState;
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
 use moor_core::view::AttentionView;
-use moor_core::{ErrorKind, WaitFor, WaitReq};
+use moor_core::{BoxId, ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -43,10 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
     loop {
         let read_for = allowance(timeout, clock.instant().saturating_duration_since(started));
-        let row = store
-            .box_row(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
-        let reading = activity::read(cx, store, &row, clock.now(), read_for)?;
+        let (row, reading) = read_settled(cx, store, id, name, read_for)?;
         let elapsed = clock.instant().saturating_duration_since(started);
         if let Some(failure) = reading
             .launch_failure
@@ -90,14 +89,39 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     }
 }
 
-/// Whether the agent counts as working: it says so, or a steered turn is still open.
+/// Reads Box `id`'s agent, settles the Box on that reading, and gives the Box as it then stands.
+fn read_settled(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    name: &str,
+    read_for: Deadline,
+) -> Result<(BoxRow, activity::Reading), CommandError> {
+    let row = |id| {
+        store
+            .box_row(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
+    };
+    let before = row(id)?;
+    let reading = activity::read(cx, store, &before, cx.clock().now(), read_for)?;
+    activity::settle(cx, store, &before, &reading)?;
+    Ok((row(id)?, reading))
+}
+
+/// Whether the agent counts as working: it says so, a steered turn is still open, or it is idle
+/// but its Box has not gone idle yet.
 fn agent_active(
     store: &Store,
     row: &BoxRow,
     reading: &activity::Reading,
     now: Ts,
 ) -> Result<bool, CommandError> {
-    Ok(reading.busy() || activity::turn_open(store, row, reading, now)?)
+    let idle_unrecorded = reading
+        .activity
+        .as_ref()
+        .is_some_and(|a| a.state == AgentState::Idle)
+        && !row.session.is_quiet();
+    Ok(reading.busy() || idle_unrecorded || activity::turn_open(store, row, reading, now)?)
 }
 
 /// How long one agent read may take once `elapsed` of `timeout` has passed.
