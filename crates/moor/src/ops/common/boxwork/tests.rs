@@ -85,7 +85,6 @@ fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
         prompt: None,
         base: None,
         branch: None,
-        workspace_id: None,
         agent_session_id: None,
         lifecycle: BoxLifecycle::Ready,
         session: SessionState::Working,

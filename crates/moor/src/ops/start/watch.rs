@@ -132,7 +132,7 @@ fn exited(cx: &Cx, code: Option<i32>, tail: &str) -> LaunchFailure {
 }
 
 /// The event for a first-run screen `screen` shows, warned about; none when it shows none.
-fn blocked(cx: &Cx, id: BoxId, pane: &str, screen: Option<&str>) -> Option<ExtraEvent> {
+fn blocked(cx: &Cx, id: BoxId, screen: Option<&str>) -> Option<ExtraEvent> {
     let m = cx
         .engine()
         .first_run_prompt(&last_lines(screen.unwrap_or(""), PROMPT_LINES))?;
@@ -146,7 +146,6 @@ fn blocked(cx: &Cx, id: BoxId, pane: &str, screen: Option<&str>) -> Option<Extra
         ),
     });
     Some(ExtraEvent::AgentPromptBlocked {
-        pane: pane.to_owned(),
         prompt: name.to_owned(),
         line: m.line,
     })
@@ -165,7 +164,6 @@ fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, Option<i32>, String)>
     };
     let row = store.box_row(id).ok().flatten()?;
     let sref = session_ref(&row, &live)?;
-    let pane = live.pane.clone().unwrap_or_default();
     let begin = cx.clock().instant();
     loop {
         let event = match cx.engine().probe(&sref, Deadline(PROMPT_READ)) {
@@ -185,9 +183,8 @@ fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, Option<i32>, String)>
                 }),
                 ..
             } => return None,
-            Probe::Read { screen, .. } => blocked(cx, id, &pane, screen.as_deref()),
+            Probe::Read { screen, .. } => blocked(cx, id, screen.as_deref()),
             Probe::TimedOut => Some(ExtraEvent::AgentPromptCheckFailed {
-                pane: pane.clone(),
                 error: "the agent could not be read".to_owned(),
             }),
         };

@@ -11,8 +11,8 @@ use moor_core::domain::boxes::BoxState;
 
 /// The delivered CPUs and memory of the joined box, when both are recorded.
 pub(super) fn delivered_from_row(row: &Row<'_>) -> Result<Option<Shape>, StoreError> {
-    let cpus: Option<i64> = row.get(33)?;
-    let mem: Option<i64> = row.get(34)?;
+    let cpus: Option<i64> = row.get(32)?;
+    let mem: Option<i64> = row.get(33)?;
     let (Some(cpus), Some(mem)) = (cpus, mem) else {
         return Ok(None);
     };
@@ -23,21 +23,21 @@ pub(super) fn delivered_from_row(row: &Row<'_>) -> Result<Option<Shape>, StoreEr
     }))
 }
 
-/// Map the joined box columns (offset 18..=25) to a `DriverRow`, if the box exists.
+/// Map the joined box columns (offset 17..=24) to a `DriverRow`, if the box exists.
 pub(super) fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
-    let Some(provider) = row.get::<_, Option<String>>(18)? else {
+    let Some(provider) = row.get::<_, Option<String>>(17)? else {
         return Ok(None);
     };
-    let state: String = row.get(20)?;
+    let state: String = row.get(19)?;
     Ok(Some(DriverRow {
         provider: ProviderId::new(provider),
-        handle: row.get::<_, Option<String>>(19)?.map(BoxHandle::new),
+        handle: row.get::<_, Option<String>>(18)?.map(BoxHandle::new),
         state: parsed_opt("box state", &state, BoxState::parse)?,
-        attempted_handle: row.get::<_, Option<String>>(21)?.map(BoxHandle::new),
-        workdir: row.get(22)?,
-        egress: row.get(23)?,
-        sleep_reason: row.get(24)?,
+        attempted_handle: row.get::<_, Option<String>>(20)?.map(BoxHandle::new),
+        workdir: row.get(21)?,
+        egress: row.get(22)?,
+        sleep_reason: row.get(23)?,
         delivered: delivered_from_row(row)?,
-        updated_at: Ts::from_millis(row.get(25)?),
+        updated_at: Ts::from_millis(row.get(24)?),
     }))
 }

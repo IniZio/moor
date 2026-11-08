@@ -24,7 +24,7 @@ pub(super) fn repo_from_row(row: &Row<'_>) -> Result<Option<BoxRepo>, StoreError
     let Some(repo) = row.get::<_, Option<String>>(2)? else {
         return Ok(None);
     };
-    let others = match row.get::<_, Option<String>>(35)? {
+    let others = match row.get::<_, Option<String>>(34)? {
         Some(raw) => parsed("box other_repos", &raw, |s| {
             serde_json::from_str::<Vec<StoredRepo>>(s)
         })?
@@ -38,10 +38,10 @@ pub(super) fn repo_from_row(row: &Row<'_>) -> Result<Option<BoxRepo>, StoreError
     };
     Ok(Some(BoxRepo {
         repo: parsed("box repo", &repo, ForgeRepo::parse)?,
-        moor_yaml: row.get(30)?,
+        moor_yaml: row.get(29)?,
         author: GitAuthor {
-            name: row.get::<_, Option<String>>(31)?.unwrap_or_default(),
-            email: row.get::<_, Option<String>>(32)?.unwrap_or_default(),
+            name: row.get::<_, Option<String>>(30)?.unwrap_or_default(),
+            email: row.get::<_, Option<String>>(31)?.unwrap_or_default(),
         },
         others,
     }))

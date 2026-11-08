@@ -44,7 +44,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
-    store.begin_session(id, "s-1", Some("p-0")).unwrap();
+    store.begin_session(id, "s-1").unwrap();
     if !live {
         assert!(store.end_current_session(id, "requested", None).unwrap());
     }
@@ -68,7 +68,6 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        workspace_id: Field::Set("w-1".to_owned()),
         ..Fields::default()
     };
     let d = Decision::new(id)

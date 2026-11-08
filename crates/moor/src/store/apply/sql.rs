@@ -50,10 +50,7 @@ pub(super) fn box_field_sets(s: &Fields) -> Sets<Boxes> {
 
 /// Column assignments for the primary session fields.
 pub(super) fn session_field_sets(s: &Fields) -> Sets<Sessions> {
-    let all = [
-        (Sessions::WorkspaceId, text(&s.workspace_id)),
-        (Sessions::AgentSessionId, text(&s.agent_session_id)),
-    ];
+    let all = [(Sessions::AgentSessionId, text(&s.agent_session_id))];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
 

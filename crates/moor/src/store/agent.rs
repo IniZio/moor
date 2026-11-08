@@ -13,11 +13,10 @@ use super::{load_box, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
 
 /// The `launches` columns [`session_from_row`] reads, in order.
-const SESSION_COLUMNS: [Launches; 10] = [
+const SESSION_COLUMNS: [Launches; 9] = [
     Launches::Id,
     Launches::Box,
     Launches::SessionRef,
-    Launches::Pane,
     Launches::StartedAt,
     Launches::EndedAt,
     Launches::Exit,
@@ -38,8 +37,6 @@ pub(crate) struct SessionRow {
     pub(crate) box_id: BoxId,
     /// The agent's own session reference.
     pub(crate) session_ref: String,
-    /// The agent's pane, if it has one.
-    pub(crate) pane: Option<String>,
     /// When the session began.
     pub(crate) started_at: Ts,
     /// When the session ended; none while live.
@@ -150,7 +147,6 @@ impl Store {
         &self,
         box_id: BoxId,
         session_ref: &str,
-        pane: Option<&str>,
     ) -> Result<i64, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
@@ -181,7 +177,6 @@ impl Store {
                 .columns([
                     Launches::Box,
                     Launches::SessionRef,
-                    Launches::Pane,
                     Launches::StartedAt,
                     Launches::Session,
                     Launches::Holder,
@@ -189,7 +184,6 @@ impl Store {
                 .values_panic([
                     box_id.get().into(),
                     session_ref.into(),
-                    pane.into(),
                     now.as_millis().into(),
                     db::sub(newest_session(box_id)),
                     HOLDER.into(),
@@ -317,13 +311,12 @@ fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
         id: r.get(0)?,
         box_id: BoxId::new(r.get(1)?),
         session_ref: r.get(2)?,
-        pane: r.get(3)?,
-        started_at: Ts::from_millis(r.get(4)?),
-        ended_at: r.get::<_, Option<i64>>(5)?.map(Ts::from_millis),
-        exit: r.get(6)?,
-        transcript_digest: r.get(7)?,
-        registered_agent_session: r.get(8)?,
-        session: r.get(9)?,
+        started_at: Ts::from_millis(r.get(3)?),
+        ended_at: r.get::<_, Option<i64>>(4)?.map(Ts::from_millis),
+        exit: r.get(5)?,
+        transcript_digest: r.get(6)?,
+        registered_agent_session: r.get(7)?,
+        session: r.get(8)?,
     })
 }
 

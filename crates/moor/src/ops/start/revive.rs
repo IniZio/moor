@@ -67,7 +67,7 @@ pub(crate) fn revive_after_wake(
     if row.lifecycle != BoxLifecycle::Ready {
         return Ok(AfterWake::Unknown);
     }
-    let ended_pane = match store.live_session(id)? {
+    let ended = match store.live_session(id)? {
         Some(s) if launch::working(&row) => match link::recover(cx, store, &row, &s, None)? {
             Fate::Running => return Ok(AfterWake::Intact),
             Fate::Unreachable => return Ok(AfterWake::Unknown),
@@ -76,7 +76,7 @@ pub(crate) fn revive_after_wake(
         Some(_) => return Ok(AfterWake::Unknown),
         None => None,
     };
-    let view = revive(cx, store, &row, ended_pane.as_ref(), "wake")?;
+    let view = revive(cx, store, &row, ended.as_ref(), "wake")?;
     Ok(if view.launched {
         AfterWake::Relaunched
     } else {
@@ -100,11 +100,11 @@ pub(crate) fn revive_for_steer(
     if row.lifecycle != BoxLifecycle::Ready {
         return Ok(AgentLaunchView::default());
     }
-    let ended_pane = store.live_session(id)?.map(|s| {
+    let ended = store.live_session(id)?.map(|s| {
         let end = ended(cx, &row, &s).unwrap_or(Ended::Gone);
         (s, end)
     });
-    revive(cx, store, &row, ended_pane.as_ref(), "steer")
+    revive(cx, store, &row, ended.as_ref(), "steer")
 }
 
 /// Relaunches the agent of `row` whose pane ended, or launches into a new Session when the last
@@ -113,11 +113,11 @@ fn revive(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    ended_pane: Option<&(SessionRow, Ended)>,
+    ended: Option<&(SessionRow, Ended)>,
     cause: &str,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    if !revivable(row) || (ended_pane.is_none() && !reopen::ended_session(store, id, None)?) {
+    if !revivable(row) || (ended.is_none() && !reopen::ended_session(store, id, None)?) {
         return Ok(AgentLaunchView::default());
     }
     check_cap(cx, store, row)?;
@@ -143,11 +143,11 @@ fn revive(
         identity: None,
     };
     let settings = || settings_of(cx, row, &Flags::default());
-    let view = match ended_pane {
+    let view = match ended {
         None => {
             let view = launch::run(cx, store, &req, id, None, &settings)?;
             if view.launched && cause == "steer" {
-                record_relaunch(store, id, None, row.prompt.clone(), Some(cause))?;
+                record_relaunch(store, id, row.prompt.clone(), Some(cause))?;
             }
             view
         }

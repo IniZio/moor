@@ -185,8 +185,6 @@ fn put_to_sleep_ended(f: &Fx) {
 fn record_relaunches(f: &Fx, n: usize) {
     for _ in 0..n {
         let event = ExtraEvent::Relaunched {
-            old_pane: None,
-            new_pane: None,
             prompt: None,
             cause: Some("wake".to_owned()),
         };

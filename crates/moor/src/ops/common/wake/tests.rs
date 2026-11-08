@@ -343,7 +343,7 @@ fn waking_only_the_box_does_not_look_the_workdir_up() {
 /// Gives the Box a live agent session that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
-    store.begin_session(f.id, "agent-1", None).unwrap();
+    store.begin_session(f.id, "agent-1").unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),
         ..Fields::default()

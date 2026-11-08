@@ -126,8 +126,6 @@ pub(crate) struct BoxRow {
     pub(crate) base: Option<String>,
     /// Branch name.
     pub(crate) branch: Option<String>,
-    /// Surface workspace id.
-    pub(crate) workspace_id: Option<String>,
     /// The agent's own session id.
     pub(crate) agent_session_id: Option<String>,
     /// The Box's lifecycle.
@@ -336,8 +334,8 @@ fn intent_from(
 /// Map a `BOX_SELECT` row to a `BoxRow`.
 fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     let name: String = row.get(1)?;
-    let lifecycle: String = row.get(9)?;
-    let session: Option<String> = row.get(28)?;
+    let lifecycle: String = row.get(8)?;
+    let session: Option<String> = row.get(27)?;
     let session = match session {
         Some(raw) => parsed_opt("session state", &raw, SessionState::parse)?,
         None => SessionState::Starting,
@@ -347,25 +345,24 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         id: BoxId::new(row.get(0)?),
         name: parsed("box name", &name, BoxName::parse_allow_bare)?,
         repo: repo_from_row(row)?,
-        user: row.get::<_, Option<i64>>(29)?.map(UserId::new),
+        user: row.get::<_, Option<i64>>(28)?.map(UserId::new),
         issue: row.get(3)?,
         prompt: row.get(4)?,
         base: row.get(5)?,
         branch: row.get(6)?,
-        workspace_id: row.get(7)?,
-        agent_session_id: row.get(8)?,
+        agent_session_id: row.get(7)?,
         lifecycle,
         session,
-        state_reason: row.get(10)?,
-        intent: intent_from(row.get(11)?, row.get(12)?, row.get(13)?)?,
-        intent_at: row.get::<_, Option<i64>>(14)?.map(Ts::from_millis),
-        setup_failed_at: row.get::<_, Option<i64>>(15)?.map(Ts::from_millis),
-        steps_pending_at: row.get::<_, Option<i64>>(36)?.map(Ts::from_millis),
-        created_at: Ts::from_millis(row.get(16)?),
-        updated_at: Ts::from_millis(row.get(17)?),
-        idle_since: row.get::<_, Option<i64>>(26)?.map(Ts::from_millis),
+        state_reason: row.get(9)?,
+        intent: intent_from(row.get(10)?, row.get(11)?, row.get(12)?)?,
+        intent_at: row.get::<_, Option<i64>>(13)?.map(Ts::from_millis),
+        setup_failed_at: row.get::<_, Option<i64>>(14)?.map(Ts::from_millis),
+        steps_pending_at: row.get::<_, Option<i64>>(35)?.map(Ts::from_millis),
+        created_at: Ts::from_millis(row.get(15)?),
+        updated_at: Ts::from_millis(row.get(16)?),
+        idle_since: row.get::<_, Option<i64>>(25)?.map(Ts::from_millis),
         launch_failure: row
-            .get::<_, Option<String>>(27)?
+            .get::<_, Option<String>>(26)?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
         boxed: driver_from_row(row)?,

@@ -42,7 +42,7 @@ fn fx_with(session: bool) -> Fx {
     let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
-        let launch = store.begin_session(id, "s-1", None).unwrap();
+        let launch = store.begin_session(id, "s-1").unwrap();
         store.set_registered_session(launch, "agent-1").unwrap();
     }
     Fx {

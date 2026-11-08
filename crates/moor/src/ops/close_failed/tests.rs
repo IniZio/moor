@@ -49,7 +49,6 @@ fn admitted(w: &World, n: &str, machine: bool) -> BoxId {
                 .box_input(BoxInput::Requested)
                 .set(Fields {
                     box_provider: Field::Set(ProviderId::new("p")),
-                    workspace_id: Field::Set("ws-1".into()),
                     box_workdir: Field::Set("/work/box-1".into()),
                     ..Fields::default()
                 }),

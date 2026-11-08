@@ -35,8 +35,6 @@ pub struct Fields {
     pub base: Field<String>,
     /// Branch name.
     pub branch: Field<String>,
-    /// Surface workspace id.
-    pub workspace_id: Field<String>,
     /// Agent session id.
     pub agent_session_id: Field<String>,
     /// Reason for the current state.

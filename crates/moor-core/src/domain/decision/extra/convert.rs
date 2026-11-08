@@ -39,17 +39,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::RelaunchCapped { count, window_secs } => {
                 Self::RelaunchCapped { count, window_secs }
             }
-            ExtraEvent::Relaunched {
-                old_pane,
-                new_pane,
-                prompt,
-                cause,
-            } => Self::Relaunched {
-                old_pane,
-                new_pane,
-                prompt,
-                cause,
-            },
+            ExtraEvent::Relaunched { prompt, cause } => Self::Relaunched { prompt, cause },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line, why: None },
             ExtraEvent::SetupFinished { ms, ok } => {
                 Self::Timing(TimingEvent::SetupFinished { ms, ok })
@@ -160,8 +150,8 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
             ExtraEvent::SessionsStopped { sessions } => Self::SessionsStopped { sessions },
-            ExtraEvent::AgentPromptBlocked { pane, prompt, line } => {
-                Self::AgentPromptBlocked { pane, prompt, line }
+            ExtraEvent::AgentPromptBlocked { prompt, line } => {
+                Self::AgentPromptBlocked { prompt, line }
             }
             ExtraEvent::AgentSaid { text } => Self::AgentSaid { text },
             ExtraEvent::AgentDoing { text } => Self::AgentDoing { text },
@@ -197,9 +187,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::PromptNotGiven { attempt, error } => {
                 Self::Stall(StallEvent::PromptNotGiven { attempt, error })
             }
-            ExtraEvent::AgentPromptCheckFailed { pane, error } => {
-                Self::AgentPromptCheckFailed { pane, error }
-            }
+            ExtraEvent::AgentPromptCheckFailed { error } => Self::AgentPromptCheckFailed { error },
             ExtraEvent::TranscriptSaved {
                 trigger,
                 path,

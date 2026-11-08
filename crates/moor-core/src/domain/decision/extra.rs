@@ -66,12 +66,8 @@ pub enum ExtraEvent {
         /// The window, in seconds.
         window_secs: u64,
     },
-    /// The agent was started again after its pane ended.
+    /// The agent was started again after it ended.
     Relaunched {
-        /// The pane of the session that ended.
-        old_pane: Option<String>,
-        /// The pane of the new session.
-        new_pane: Option<String>,
         /// The prompt the new session works on.
         prompt: Option<String>,
         /// Why the agent was relaunched; `None` for a plain `moor start`.
@@ -252,11 +248,9 @@ pub enum ExtraEvent {
     },
     /// The agent waits at a first-run prompt.
     AgentPromptBlocked {
-        /// The agent's pane.
-        pane: String,
         /// The prompt, by name.
         prompt: String,
-        /// The pane line that showed it.
+        /// The screen line that showed it.
         line: String,
     },
     /// The agent's last message before it went quiet.
@@ -325,10 +319,8 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
-    /// Reading the agent's pane for first-run prompts failed.
+    /// Reading the agent's screen for first-run prompts failed.
     AgentPromptCheckFailed {
-        /// The agent's pane.
-        pane: String,
         /// What went wrong.
         error: String,
     },

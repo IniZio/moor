@@ -63,7 +63,7 @@ pub(super) fn box_select() -> SelectStatement {
         .take();
     Query::select()
         .columns(BOX_HEAD.map(b))
-        .columns([Sessions::WorkspaceId, Sessions::AgentSessionId].map(s))
+        .column(s(Sessions::AgentSessionId))
         .columns(BOX_MIDDLE.map(b))
         .column(s(Sessions::State))
         .columns(BOX_TAIL.map(b))

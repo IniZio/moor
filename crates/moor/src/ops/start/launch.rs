@@ -239,7 +239,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_session(id, &sref, None)?;
+    store.begin_session(id, &sref)?;
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }

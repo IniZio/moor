@@ -59,8 +59,6 @@ pub(crate) struct Reading {
     run_in_flight: bool,
     /// The live session this reading probed.
     pub(crate) session: Option<i64>,
-    /// The pane of that session this reading probed.
-    pub(crate) probed_pane: Option<String>,
     /// Why the agent never launched; the Box has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
     /// The `box.launch_timeout`, in seconds, that a failed launch has outlasted.
@@ -98,7 +96,6 @@ impl Reading {
             may_quiet: !run_in_flight,
             run_in_flight,
             session: None,
-            probed_pane: None,
             launch_failure: None,
             launch_overdue: None,
             agent_session: None,
@@ -122,7 +119,6 @@ impl Reading {
             may_quiet: overdue.is_some() && !run_in_flight,
             run_in_flight,
             session: None,
-            probed_pane: None,
             launch_failure: Some(failure),
             launch_overdue: overdue,
             agent_session: None,
@@ -158,7 +154,6 @@ pub(crate) fn read(
             },
         ));
     };
-    let probed_pane = session.pane.clone();
     let Some(sref) = session_ref(row, &session) else {
         return Ok(Reading::none(in_flight));
     };
@@ -195,7 +190,6 @@ pub(crate) fn read(
         may_quiet,
         run_in_flight: in_flight,
         session: Some(session.id),
-        probed_pane,
         launch_failure: None,
         launch_overdue: None,
         agent_session,

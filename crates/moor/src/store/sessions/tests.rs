@@ -249,7 +249,7 @@ fn end_current_session_ends_session_launch_and_records_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = ready_box(&store);
-    let launch = store.begin_session(id, "ref", None).unwrap();
+    let launch = store.begin_session(id, "ref").unwrap();
     clock.sleep(std::time::Duration::from_secs(5));
     assert!(store.end_current_session(id, "exited", Some(3)).unwrap());
     assert_eq!(session_states(&store, id), ["ended"]);
@@ -427,20 +427,4 @@ fn open_child_session_refuses_an_ended_parent_and_writes_nothing() {
         "{err:?}"
     );
     assert_eq!(store.box_sessions(id).unwrap().len(), 1);
-}
-
-#[test]
-fn open_child_session_keeps_the_box_workspace() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _clock) = open(dir.path());
-    let id = new_box(&store, "acme/1");
-    let set = Fields {
-        workspace_id: Field::Set("ws-1".into()),
-        ..Fields::default()
-    };
-    store.apply(Decision::new(id).set(set)).unwrap();
-    end_current(&store, id);
-    store.open_child_session(id, None).unwrap();
-    let row = store.box_row(id).unwrap().unwrap();
-    assert_eq!(row.workspace_id.as_deref(), Some("ws-1"));
 }

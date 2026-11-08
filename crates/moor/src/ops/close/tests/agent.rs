@@ -10,10 +10,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
 fn live(f: &Fx) {
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "s-1", None)
-        .unwrap();
+    f.cx.store().unwrap().begin_session(f.id, "s-1").unwrap();
 }
 
 fn with_engine(f: Fx) -> (Fx, Arc<FakeEngine>) {
