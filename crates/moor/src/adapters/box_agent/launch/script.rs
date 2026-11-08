@@ -8,7 +8,7 @@ use moor_core::seam::proc::Tool;
 use super::super::agent_env;
 use super::super::probe::HOOK_FILE;
 use super::super::profile_writer::FAILURES_FILE;
-use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE, STATUS_OSC_FILE};
+use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE};
 
 /// Where the agent script lands on the Box.
 pub(super) fn script_path(cred: &BoxPath) -> Result<BoxPath, NameError> {
@@ -64,10 +64,6 @@ pub(super) fn script_stripping(
             quote(nonce)
         ),
         format!("{} || exit 1", hooks.step),
-        format!(
-            "MOOR_AGENT_TTY=$(tty 2>/dev/null); case $MOOR_AGENT_TTY in /dev/*) ;; *) MOOR_AGENT_TTY= ;; esac; export MOOR_AGENT_TTY; rm -f {}",
-            quote(BoxPath::under(workdir, STATUS_OSC_FILE)?.as_str())
-        ),
         preseed.step.clone(),
         AGENT_PATH_LINE.to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
@@ -99,14 +95,5 @@ pub(super) fn script_stripping(
         lines.push(format!("mv {all} {failures}"));
     }
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
-    if let Some(hook) = hooks.files.first() {
-        // The agent has no end-of-run hook that fires on every exit, so the script reports it.
-        lines.push("moor_rc=$?".to_owned());
-        lines.push(format!(
-            "sh {} done SessionEnd </dev/null",
-            quote(hook.path.as_str())
-        ));
-        lines.push("exit $moor_rc".to_owned());
-    }
     Ok(lines.join("\n"))
 }

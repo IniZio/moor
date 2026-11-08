@@ -25,9 +25,9 @@ mod doing;
 mod first_run;
 mod last_message;
 mod mcp;
+mod note;
 mod preseed;
 mod prompt;
-mod status_osc;
 mod wait;
 
 fn ctx(dir: &Path) -> LaunchCtx {

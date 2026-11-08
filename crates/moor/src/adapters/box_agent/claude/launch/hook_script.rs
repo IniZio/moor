@@ -9,29 +9,15 @@
 /// not end with that block has not caught up, and the payload's text stands.
 /// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
 /// follows the question with a generic permission notice that names nothing it asked.
-/// Each state change is also printed to `MOOR_AGENT_TTY` as an OSC 7501 sequence, once per change:
-/// `osc` holds the one mapping from hook state to terminal state. The launch script runs it with
-/// `done SessionEnd` when the agent exits, which prints without touching the record.
+/// What herdr-core cannot read off the terminal goes to its `moor-agent` doc: the session id, a
+/// Stop's last message and background work, and a question tool's questions; a prompt or a
+/// resume clears them. Claude Code reports its own status to the terminal.
 /// `background_local` says every piece of background work is a local shell or subagent, the only
 /// kinds whose end the Box can see; remote or MCP work runs on with nothing to show for it.
 /// A busy record keeps the tool's name and, cut short, the input fields the `doing` line
 /// reads; never the tool's output or any other input.
 pub(super) const HOOK_SCRIPT: &str = r#"#!/bin/sh
 d=${0%/*}
-osc() {
-  [ -n "$MOOR_AGENT_TTY" ] && [ -w "$MOOR_AGENT_TTY" ] || return 0
-  case $1:$2 in
-    waiting_input:PreToolUse) s=blocked:kind=question ;;
-    waiting_input:*) s=blocked:kind=permission ;;
-    working:*|idle:*|done:*) s=$1 ;;
-    *) return 0 ;;
-  esac
-  p="state=$s:app=claude"
-  [ "$(cat "$d/status-osc" 2>/dev/null)" = "$p" ] && return 0
-  printf %s "$p" > "$d/status-osc" 2>/dev/null
-  printf '\033]7501;%s\033\\' "$p" >> "$MOOR_AGENT_TTY" 2>/dev/null || :
-}
-if [ "$2" = SessionEnd ]; then osc "$1" "$2"; exit 0; fi
 in=
 if command -v timeout >/dev/null 2>&1; then in=$(timeout 2 head -c 65536 2>/dev/null); fi
 if [ "$2" = Notification ] && grep -q '"state": *"waiting_input", *"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
@@ -103,6 +89,23 @@ if sys.argv[1] == "working" and isinstance(d.get("tool_name"), str):
     o["tool"] = d["tool_name"][:100]
     if isinstance(ti, dict):
         o["tool_input"] = {k: ti[k][:300] for k in ("command", "file_path", "notebook_path", "url") if isinstance(ti.get(k), str)}
+n = {k: o[k] for k in ("session_id", "background", "background_local") if k in o}
+if sys.argv[2] == "Stop" and isinstance(o.get("last_assistant_message"), str):
+    n["said"] = o["last_assistant_message"][:262144]
+if sys.argv[2] == "PreToolUse" and "questions" in o:
+    n["questions"] = o["questions"]
+if sys.argv[2] in ("UserPromptSubmit", "Stop", "SessionStart") or "questions" in n:
+    import subprocess
+    def call(m, p):
+        r = subprocess.run(["herdr-core", "connect"], input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": m, "params": p}) + "\n", capture_output=True, text=True, timeout=5)
+        return json.loads(r.stdout.splitlines()[0]).get("result")
+    try:
+        for _ in range(3):
+            v = call("doc.get", {"name": "moor-agent"})["version"]
+            if call("doc.set", {"name": "moor-agent", "value": n, "version": v}) is not None:
+                break
+    except Exception:
+        pass
 print(json.dumps(o))' "$1" "$2" "$d"
 elif command -v node >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in node -e '
@@ -167,6 +170,22 @@ if (process.argv[1] === "working" && typeof d.tool_name === "string") {
     for (const k of ["command", "file_path", "notebook_path", "url"]) if (typeof ti[k] === "string") o.tool_input[k] = ti[k].slice(0, 300);
   }
 }
+const n = {};
+for (const k of ["session_id", "background", "background_local"]) if (k in o) n[k] = o[k];
+if (process.argv[2] === "Stop" && typeof o.last_assistant_message === "string") n.said = o.last_assistant_message.slice(0, 262144);
+if (process.argv[2] === "PreToolUse" && "questions" in o) n.questions = o.questions;
+if (["UserPromptSubmit", "Stop", "SessionStart"].includes(process.argv[2]) || "questions" in n) {
+  const call = (m, p) => {
+    const r = require("child_process").spawnSync("herdr-core", ["connect"], { input: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) + "\n", timeout: 5000, encoding: "utf8" });
+    return JSON.parse(String(r.stdout).split("\n")[0]).result;
+  };
+  try {
+    for (let i = 0; i < 3; i++) {
+      const v = call("doc.get", { name: "moor-agent" }).version;
+      if (call("doc.set", { name: "moor-agent", value: n, version: v }) !== undefined) break;
+    }
+  } catch (e) {}
+}
 console.log(JSON.stringify(o));' "$1" "$2" "$d"
 else
   ts=$(date +%s%3N 2>/dev/null)
@@ -175,6 +194,5 @@ else
   else turn=$(sed -n 's/.*"turn": *\([0-9][0-9]*\).*/\1/p' "$d/agent-state.json" 2>/dev/null); fi
   printf '{"state":"%s","event":"%s","ts":%s,"turn":%s}\n' "$1" "$2" "$ts" "${turn:-null}"
 fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"
-osc "$1" "$2"
 exit 0
 "#;
