@@ -23,9 +23,10 @@ pub(crate) const SPECS: [Spec; 16] = [
     Spec {
         name: "list_nodes",
         description: "List the nodes the thread's starter may start a Box on: name, yours or \
-                      shared, runtime, online or offline since when, used and total Box slots, \
-                      free memory, warm starts, and which node a start_box with no node would \
-                      use now and whether it starts, waits or is refused. Call it before \
+                      shared, runtime, online or offline since when, Boxes used, the Box cap when \
+                      it has one (none: free memory decides), free memory, warm starts, and which \
+                      node a start_box with no node would use now and whether it starts, waits \
+                      or is refused. Call it before \
                       start_box when the person names no node, and say where the Box will go. \
                       An offline personal node refuses the start and never falls back to a \
                       shared one.",
