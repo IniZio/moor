@@ -249,9 +249,7 @@ fn end_current_session_ends_session_launch_and_records_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = ready_box(&store);
-    let launch = store
-        .begin_session(id, "ref", None, moor_core::config::AgentHolder::Hc)
-        .unwrap();
+    let launch = store.begin_session(id, "ref", None).unwrap();
     clock.sleep(std::time::Duration::from_secs(5));
     assert!(store.end_current_session(id, "exited", Some(3)).unwrap());
     assert_eq!(session_states(&store, id), ["ended"]);

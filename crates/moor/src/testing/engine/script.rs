@@ -31,7 +31,6 @@ impl FakeEngine {
                 handle: req.handle.clone(),
                 workdir: req.workdir.clone(),
                 pane: Some(PaneRef::new("p-1")),
-                holder: st.holder,
             })
         })
     }

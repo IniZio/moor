@@ -461,8 +461,7 @@ moor also refuses `proxy.direct` in a user config and a `proxy` key in
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `agent.model` | string | none | The default agent model. `moor start --model` wins over it. |
-| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. A failed install puts the Box in `setup_failed` with the installer's error in its `setup_failed` event, and `moor retry NAME` runs the install again. |
-| `agent.holder` | `hc` or `tmux` | `hc` | What keeps the agent's terminal alive on the Box when the link drops. `hc` is herdr-core 0.1.16: with `agent.install` on, moor installs it into `~/.local/share/moor/herdr-core` on a Box that lacks it, from herdr-core's own release (`releases.herdr.dev`), and refuses a download whose sha256 differs from the one moor pins. A failed install puts the Box in `setup_failed` like a failed agent install. `tmux` uses the Box image's tmux, which moor does not install. A Box without its holder refuses to start the agent. The key chooses the holder for each new agent launch, a retry or relaunch included. Each Box records the holder its agent was launched under, and moor asks after, attaches to and stops that agent through it, so changing the key leaves running Boxes as they are. An agent launched by a moor that did not record its holder counts as held by `tmux`, which every such moor used. |
+| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. A failed install puts the Box in `setup_failed` with the installer's error in its `setup_failed` event, and `moor retry NAME` runs the install again. The same switch covers herdr-core 0.1.16, which keeps the agent's terminal alive on the Box when the link drops: moor installs it into `~/.local/share/moor/herdr-core` on a Box that lacks it, from herdr-core's own release (`releases.herdr.dev`), and refuses a download whose sha256 differs from the one moor pins. A Box without herdr-core refuses to start the agent. A Box whose agent an older moor started under tmux cannot be attached to or reconciled; moor names the Box and says to close and recreate it. |
 | `dotfiles.path` | absolute path or `~/...` | none | A dotfiles directory that moor installs on each new machine. |
 | `dotfiles.install` | relative path | none | The install script inside `dotfiles.path`. |
 | `surface.kind` | `herdr` or `pty` | `$MOOR_SURFACE`, else `herdr` | What holds each Box agent's pane on the controller. `pty` keeps the panes in pseudo-terminals inside the controller, for a host without herdr; it needs a moor built with the `pty-surface` feature (`make build`, which needs Zig 0.17), and herdr's working or idle guess is then not available. The controller image is built with the feature and sets `MOOR_SURFACE=pty`, so its Boxes need no herdr server unless the config asks for `herdr`. When the config sets a kind that differs from a non-empty `$MOOR_SURFACE`, the config wins and the controller logs a `surface:` line naming both when it starts. Under `pty`, `moor open` only wakes the Box. |
@@ -480,7 +479,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | --- | --- | --- |
 | `brief` | string | Notes from the repo's author for the Box's agent, such as how to start services, what is installed, and which test users exist. The agent reads the brief verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
 | `checkpoint.across_commits` | bool | Whether a Box may start from a checkpoint saved at another commit. Default `true`. See [Setup checkpoints](#setup-checkpoints). |
-| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. A group a line, dotfiles or the profile's `setup.sh` adds the Box user to reaches the agent: when the Box's open ssh login lacks one, moor logs in anew before the agent starts. Calls already running finish on the old login. A terminal holder (`tmux` or `herdr-core`) that one of those steps started keeps its old groups for terminals it opens later, so stop it before the step ends. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. On a provider that keeps checkpoints, moor checkpoints the clone, each line that runs longer than 20 seconds and the last line. Checkpoints are per user, like caches: a Box only starts from one that its own user's Box saved for the same repo and lines. A Box whose work tree is not the base commit unchanged when setup starts, such as one on a branch already on GitHub, saves none. |
+| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. A group a line, dotfiles or the profile's `setup.sh` adds the Box user to reaches the agent: when the Box's open ssh login lacks one, moor logs in anew before the agent starts. Calls already running finish on the old login. A terminal holder (`herdr-core`) that one of those steps started keeps its old groups for terminals it opens later, so stop it before the step ends. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. On a provider that keeps checkpoints, moor checkpoints the clone, each line that runs longer than 20 seconds and the last line. Checkpoints are per user, like caches: a Box only starts from one that its own user's Box saved for the same repo and lines. A Box whose work tree is not the base commit unchanged when setup starts, such as one on a branch already on GitHub, saves none. |
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
@@ -1346,8 +1345,7 @@ three reasons:
 - `agent`: the agent's session ended.
 - `link`: the connection to the Box dropped, or the controller restarted.
 
-After the last client leaves, the agent's terminal returns to 200x120 under
-`hc` and to 200x50 under `tmux`.
+After the last client leaves, the agent's terminal returns to 200x120.
 
 ### The agent's status in its terminal
 
@@ -1356,14 +1354,11 @@ Protocol sequence, so any terminal runtime that understands it shows the state
 with no moor-specific client. The form is `ESC ] 7501 ; state=<state>:app=claude ESC \`,
 where `<state>` is `working`, `idle`, `done`, `blocked:kind=permission` or
 `blocked:kind=question`. Each state prints once, when it changes, and `done`
-prints when the agent exits. Under `tmux` the sequence goes out in a tmux
-passthrough wrapper, and the agent's session turns `allow-passthrough` on, which
-needs tmux 3.3 or later.
+prints when the agent exits.
 
 A client that attaches after the last change shows the status at once, not at
 the next transition. herdr-core keeps the last status and replays it to each
-client that attaches. Under `tmux`, the Box writes the agent's current state to
-each client's terminal when it attaches.
+client that attaches.
 
 ## Secrets a Box uses
 

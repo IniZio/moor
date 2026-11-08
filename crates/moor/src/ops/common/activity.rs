@@ -359,7 +359,6 @@ pub(crate) fn session_ref(row: &BoxRow, launch: &SessionRow) -> Option<SessionRe
         handle,
         workdir,
         pane: launch.pane.clone().map(PaneRef::new),
-        holder: launch.holder,
     })
 }
 

@@ -234,18 +234,14 @@ fn a_failed_holder_install_stops_before_the_agent_install() {
         dirs: vec!["~/.agent".to_owned()],
         check: "true".to_owned(),
     };
-    let joined = with_agent(&HC, Some(agent.clone())).unwrap();
+    let joined = with_agent(Some(agent));
     assert_eq!(joined.dirs, vec![HC_DIR.to_owned(), "~/.agent".to_owned()]);
     std::fs::remove_file(b.path("bin/curl")).unwrap();
     let (err, code) = b.run(&joined.script, "Linux x86_64");
     assert_eq!(code, 1);
     assert!(err.contains("the Box has no curl"), "{err}");
     assert!(!b.log().contains("agent"), "{}", b.log());
-    assert_eq!(with_agent(&TMUX, Some(agent.clone())), Some(agent));
-    assert_eq!(
-        with_agent(&HC, None).map(|i| i.dirs),
-        Some(vec![HC_DIR.to_owned()])
-    );
+    assert_eq!(with_agent(None).dirs, vec![HC_DIR.to_owned()]);
 }
 
 #[test]
@@ -258,7 +254,7 @@ fn a_box_with_a_holder_counts_its_agent_present_only_with_both() {
         check: "true".to_owned(),
     };
     let present = |of: &str| {
-        let joined = with_agent(&HC, Some(agent(of))).unwrap();
+        let joined = with_agent(Some(agent(of)));
         b.run(&joined.present, "Linux x86_64").1 == 0
     };
     assert!(!present("true"), "no holder yet");
@@ -272,12 +268,7 @@ fn a_box_with_a_holder_counts_its_agent_present_only_with_both() {
 }
 
 #[test]
-fn opening_a_holder_replaces_any_agent_under_its_name_so_a_box_holds_one() {
-    for (holder, kill) in [
-        (&super::super::holder::HC, "herdr-core kill"),
-        (&super::super::holder::TMUX, "tmux kill-session"),
-    ] {
-        let opened = (holder.open)("/x/exit", "agent");
-        assert!(opened.starts_with(kill), "{opened}");
-    }
+fn opening_the_terminal_replaces_any_agent_under_its_name_so_a_box_holds_one() {
+    let opened = open("/x/exit", "agent");
+    assert!(opened.starts_with("herdr-core kill"), "{opened}");
 }

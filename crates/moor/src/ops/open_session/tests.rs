@@ -48,9 +48,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
-    store
-        .begin_session(id, "s-1", Some("p-0"), moor_core::config::AgentHolder::Hc)
-        .unwrap();
+    store.begin_session(id, "s-1", Some("p-0")).unwrap();
     if !live {
         assert!(store.end_current_session(id, "requested", None).unwrap());
     }

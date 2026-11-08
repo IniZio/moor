@@ -295,9 +295,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         });
     store.apply(d).unwrap();
     if let Some(s) = session {
-        store
-            .begin_session(id, s, None, moor_core::config::AgentHolder::Hc)
-            .unwrap();
+        store.begin_session(id, s, None).unwrap();
     }
     id
 }

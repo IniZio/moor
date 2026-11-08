@@ -1,6 +1,6 @@
-//! The relay against a real tmux server on a private socket, standing in for the Box. The
-//! stand-in connect command puts a `tmux` on PATH that speaks only to that socket, so the relay
-//! runs the same Box command it runs over ssh.
+//! The relay against a real herdr-core core of its own, standing in for the Box. The stand-in
+//! connect command's home holds a `herdr-core` that speaks only to that core, so the relay runs
+//! the same Box command it runs over ssh.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
@@ -16,7 +16,7 @@ use moor_core::seam::clock::Clock;
 use moor_core::view::{AttachEnd, AttachView};
 
 use super::{run, Link};
-use crate::adapters::box_agent::{relay_argv, TMUX};
+use crate::adapters::box_agent::relay_argv;
 use crate::adapters::clock::SystemClock;
 
 /// The clock the tests wait on.
@@ -25,37 +25,41 @@ const CLOCK: SystemClock = SystemClock::real();
 /// Serializes the tests here, since `ptys` counts the whole process's pty descriptors.
 static SERIAL: Mutex<()> = Mutex::new(());
 
-/// A tmux server on a private socket running the agent's session, killed on drop.
+/// A herdr-core core of its own running the agent's terminal, stopped on drop.
 struct Agent {
-    /// Holds the socket and the `tmux` wrapper.
+    /// The core's home: its state and the `herdr-core` wrapper.
     dir: tempfile::TempDir,
-    /// Held while the server lives.
+    /// Held while the core lives.
     _serial: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Agent {
-    /// A server whose `moor-agent` session runs `cat` at 200x50; none without tmux.
+    /// A core whose `moor-agent` terminal runs `cat`; none without herdr-core.
     fn start() -> Option<Self> {
-        let tmux = std::env::split_paths(&std::env::var_os("PATH")?)
-            .map(|d| d.join("tmux"))
+        let home = std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/bin"));
+        let real = std::env::split_paths(&std::env::var_os("PATH")?)
+            .chain(home)
+            .map(|d| d.join("herdr-core"))
             .find(|p| p.is_file())?;
         let dir = tempfile::tempdir().expect("tmp");
-        std::fs::create_dir(dir.path().join("bin")).expect("bin");
-        let wrapper = dir.path().join("bin/tmux");
-        let sock = dir.path().join("s");
+        std::fs::create_dir_all(dir.path().join(".local/bin")).expect("bin");
+        std::fs::create_dir(dir.path().join("run")).expect("run");
+        let d = dir.path().display();
         let script = format!(
-            "#!/bin/sh\nexec {} -S {} -f /dev/null \"$@\"\n",
-            tmux.display(),
-            sock.display()
+            "#!/bin/sh\nunset HC_SOCKET HC_SESSION HC_TERMINAL_ID HC_SCOPE\n\
+             export HOME={d} XDG_RUNTIME_DIR={d}/run XDG_STATE_HOME={d}/state \
+             XDG_CONFIG_HOME={d}/config XDG_DATA_HOME={d}/data XDG_CACHE_HOME={d}/cache\n\
+             exec {} \"$@\"\n",
+            real.display()
         );
         // Written by a child: a writable fd in this process leaks into other tests' forks and
         // makes exec of the wrapper fail with ETXTBSY.
-        let draft = dir.path().join("tmux.sh");
+        let draft = dir.path().join("herdr-core.sh");
         std::fs::write(&draft, script).expect("wrapper");
         let installed = Command::new("install")
             .args(["-m", "755"])
             .arg(&draft)
-            .arg(&wrapper)
+            .arg(dir.path().join(".local/bin/herdr-core"))
             .status()
             .expect("install");
         assert!(installed.success(), "install the wrapper");
@@ -65,68 +69,67 @@ impl Agent {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         };
-        agent.tmux(&[
-            "new-session",
-            "-d",
-            "-s",
-            "moor-agent",
-            "-x",
-            "200",
-            "-y",
-            "50",
-            "cat",
-        ]);
-        agent.tmux(&["set-option", "-t", "moor-agent", "status", "off"]);
+        agent.hc(&["run", "--bg", "--no-parent", "--name", "moor-agent", "cat"]);
         Some(agent)
     }
 
-    /// Runs tmux on the private socket and returns its trimmed output.
-    fn tmux(&self, args: &[&str]) -> String {
-        let out = Command::new(self.dir.path().join("bin/tmux"))
+    /// Runs herdr-core on the private core and returns its trimmed output.
+    fn hc(&self, args: &[&str]) -> String {
+        let out = Command::new(self.dir.path().join(".local/bin/herdr-core"))
             .args(args)
             .output()
-            .expect("tmux");
+            .expect("herdr-core");
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     }
 
-    /// The stand-in for the Box's connect argv. Like ssh it runs its last argument as a shell
-    /// line in a child, and exits 255 when that child dies by a signal, as a lost link does.
+    /// The stand-in for the Box's connect argv, whose home is the private one, where the Box
+    /// command looks for herdr-core. Like ssh it runs its last argument as a shell line in a
+    /// child, and exits 255 when that child dies by a signal, as a lost link does.
     fn connect(&self) -> Vec<String> {
-        let bin = self.dir.path().join("bin");
         let line = format!(
-            "PATH={}:$PATH; sh -c \"$1\"; c=$?; [ $c -gt 128 ] && exit 255; exit $c",
-            bin.display()
+            "HOME={}; export HOME; sh -c \"$1\"; c=$?; [ $c -gt 128 ] && exit 255; exit $c",
+            self.dir.path().display()
         );
         ["sh", "-c", &line, "connect"].map(str::to_owned).to_vec()
     }
 
-    /// The agent window's size, as `COLSxROWS`.
+    /// The agent terminal's size, as `COLSxROWS`; empty once the terminal is gone.
     fn window(&self) -> String {
-        self.tmux(&[
-            "display-message",
-            "-p",
-            "-t",
-            "moor-agent",
-            "#{window_width}x#{window_height}",
-        ])
+        let got: serde_json::Value =
+            serde_json::from_str(&self.hc(&["get", "moor-agent", "--json"])).unwrap_or_default();
+        match (got.get("cols"), got.get("rows")) {
+            (Some(c), Some(r)) => format!("{c}x{r}"),
+            _ => String::new(),
+        }
     }
 
-    /// Processes still attached through this server's socket.
-    fn attached(&self) -> usize {
-        let sock = self.dir.path().join("s");
-        let sock = sock.to_string_lossy();
+    /// The processes attached through this core.
+    fn attached_pids(&self) -> Vec<i32> {
+        let home = format!("HOME={}", self.dir.path().display());
         std::fs::read_dir("/proc")
             .expect("proc")
-            .filter_map(|e| std::fs::read(e.ok()?.path().join("cmdline")).ok())
-            .map(|c| String::from_utf8_lossy(&c).replace('\0', " "))
-            .filter(|c| c.contains(sock.as_ref()) && c.contains("attach-session"))
-            .count()
+            .filter_map(|e| {
+                let path = e.ok()?.path();
+                let cmd = std::fs::read(path.join("cmdline")).ok()?;
+                let env = std::fs::read(path.join("environ")).ok()?;
+                let cmd = String::from_utf8_lossy(&cmd).replace('\0', " ");
+                let env = String::from_utf8_lossy(&env);
+                let mine = env.split('\0').any(|v| v == home);
+                (mine && cmd.contains("attach moor-agent"))
+                    .then(|| path.file_name()?.to_str()?.parse().ok())?
+            })
+            .collect()
+    }
+
+    /// How many processes are attached through this core.
+    fn attached(&self) -> usize {
+        self.attached_pids().len()
     }
 }
 
 impl Drop for Agent {
     fn drop(&mut self) {
-        self.tmux(&["kill-server"]);
+        self.hc(&["server", "stop"]);
     }
 }
 
@@ -146,7 +149,7 @@ impl Attached {
     /// Starts the relay to `agent` at 120x33.
     fn open(agent: &Agent) -> Self {
         let (client, server) = UnixStream::pair().expect("pair");
-        let argv = relay_argv(&TMUX, &agent.connect());
+        let argv = relay_argv(&agent.connect());
         let stopping = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopping);
         let relay = thread::spawn(move || {
@@ -238,11 +241,11 @@ fn ptys() -> usize {
         .count()
 }
 
-/// The agent's tmux server, or a skip note when the host has no tmux.
+/// The agent's core, or a skip note when the host has no herdr-core.
 fn agent() -> Option<Agent> {
     let agent = Agent::start();
     if agent.is_none() {
-        let _ = writeln!(std::io::stderr(), "skipped: tmux is not installed");
+        let _ = writeln!(std::io::stderr(), "skipped: herdr-core is not installed");
     }
     agent
 }
@@ -281,7 +284,7 @@ fn the_agent_window_returns_to_its_own_size_after_a_relay() {
     wait_for("the client's size", || agent.window() == "120x33");
     relay.client.shutdown(Shutdown::Write).expect("shut");
     assert_eq!(relay.ended().ended_by, AttachEnd::Client);
-    wait_for("the agent's own size back", || agent.window() == "200x50");
+    wait_for("the agent's own size back", || agent.window() == "200x120");
 }
 
 #[test]
@@ -289,7 +292,7 @@ fn the_agent_session_ending_ends_the_relay_as_the_agents() {
     let Some(agent) = agent() else { return };
     let relay = Attached::open(&agent);
     wait_for("the attach", || agent.attached() == 1);
-    agent.tmux(&["kill-session", "-t", "moor-agent"]);
+    agent.hc(&["kill", "moor-agent"]);
     assert_eq!(relay.ended().ended_by, AttachEnd::Agent);
     assert_eq!(agent.attached(), 0);
 }
@@ -299,10 +302,7 @@ fn a_dropped_link_ends_the_relay_as_the_links() {
     let Some(agent) = agent() else { return };
     let relay = Attached::open(&agent);
     wait_for("the attach", || agent.attached() == 1);
-    let pid: i32 = agent
-        .tmux(&["list-clients", "-F", "#{client_pid}"])
-        .parse()
-        .expect("pid");
+    let pid = *agent.attached_pids().first().expect("pid");
     let pid = rustix::process::Pid::from_raw(pid).expect("pid");
     rustix::process::kill_process(pid, rustix::process::Signal::KILL).expect("kill");
     assert_eq!(relay.ended().ended_by, AttachEnd::Link);

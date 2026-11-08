@@ -56,8 +56,9 @@ pub(crate) fn argv(cx: &Cx, req: &AttachReq) -> Result<Vec<String>, CommandError
         ));
         return Ok(argv);
     }
+    store.require_hc_holder(row.id, row.name.as_str())?;
     cx.engine()
-        .relay_argv(store.agent_holder(row.id)?, &connect)
+        .relay_argv(&connect)
         .ok_or_else(|| refused("runs an agent with no terminal to attach to"))
 }
 

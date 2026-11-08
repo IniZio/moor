@@ -142,7 +142,7 @@ fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
     };
     crate::ops::inspect::run(&cx, &inspect).unwrap();
     assert_eq!(engine.probe_count("sess"), 0);
-    assert_eq!(engine.asked(), []);
+    assert!(engine.asked().is_empty());
     let guest: Vec<String> = driver
         .calls()
         .split_off(before)

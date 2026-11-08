@@ -261,8 +261,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         Arc::clone(&surface),
         Arc::new(Claude),
         Arc::clone(&clock) as Arc<dyn Clock>,
-    )
-    .holding(config.agent.holder());
+    );
     let proxy_host = proxy_host(env, &driver, &(Arc::clone(&clock) as Arc<dyn Clock>), &rng);
     let parts = CxParts {
         state_dir,

@@ -229,7 +229,7 @@ fn add_live(cx: &Cx) -> BoxId {
     let id = add_boxed(cx);
     cx.store()
         .unwrap()
-        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
+        .begin_session(id, SESSION, None)
         .unwrap();
     id
 }

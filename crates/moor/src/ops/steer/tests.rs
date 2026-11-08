@@ -5,7 +5,6 @@ use moor_schema::tables::Launches;
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -56,7 +55,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     if session {
         cx.store()
             .unwrap()
-            .begin_session(id, "agent-1", Some("p-1"), AgentHolder::Hc)
+            .begin_session(id, "agent-1", Some("p-1"))
             .unwrap();
     }
     Fx {
@@ -530,7 +529,7 @@ fn a_session_without_an_id_records_its_pane_in_the_event() {
     let f = fx_with(FakeEngine::new(), false);
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "", Some("p-9"), AgentHolder::Hc)
+        .begin_session(f.id, "", Some("p-9"))
         .unwrap();
     run(&f.cx, &text("hi")).unwrap();
     assert_eq!(

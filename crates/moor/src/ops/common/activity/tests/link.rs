@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -16,15 +15,11 @@ use super::{cx, is_working, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
 use crate::ops::common::agent_stop::stop_agent;
+use crate::store::Store;
 use crate::testing::engine::FakeEngine;
 
 /// A working Box in workspace `ws` whose live session runs in pane `p1`.
 fn attached_box(cx: &Cx) -> BoxId {
-    attached_box_under(cx, AgentHolder::Hc)
-}
-
-/// As [`attached_box`], with the agent's terminal held by `kind`.
-fn attached_box_under(cx: &Cx, kind: AgentHolder) -> BoxId {
     let id = working_box(cx, false);
     let store = cx.store().unwrap();
     let set = Fields {
@@ -32,7 +27,7 @@ fn attached_box_under(cx: &Cx, kind: AgentHolder) -> BoxId {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(set)).unwrap();
-    store.begin_session(id, SESSION, Some("p1"), kind).unwrap();
+    store.begin_session(id, SESSION, Some("p1")).unwrap();
     id
 }
 
@@ -104,12 +99,9 @@ fn a_running_agent_gets_a_new_pane_and_keeps_its_session() {
     assert!(engine.transcripts().is_empty());
 }
 
-/// The calls reaching the agent launched under `launched` (`None`: before holders were
-/// recorded) from a controller that now launches under `configured`.
-fn asked_after_the_holder_changed(
-    launched: Option<AgentHolder>,
-    configured: AgentHolder,
-) -> Vec<(&'static str, AgentHolder)> {
+/// The calls reaching the agent of a Box after `edit` changed its store, and the error settling
+/// it gave.
+fn asked_of_a_box(edit: impl FnOnce(&Store, BoxId)) -> (Vec<&'static str>, String) {
     let dir = tempfile::tempdir().unwrap().keep();
     let engine = Arc::new(
         FakeEngine::new()
@@ -117,43 +109,35 @@ fn asked_after_the_holder_changed(
             .fates(vec![Ok(AgentFate::Running)]),
     );
     let (cx, _) = cx(&dir, &engine);
-    let id = attached_box_under(&cx, launched.unwrap_or(configured));
-    if launched.is_none() {
-        cx.store().unwrap().forget_holders(id).unwrap();
-    }
-    engine.set_holder(configured);
+    let id = attached_box(&cx);
+    edit(cx.store().unwrap(), id);
     let reading = run_once(&cx, id);
     let store = cx.store().unwrap();
-    settle(&cx, store, &row(&cx, id), &reading).unwrap();
+    let settled = settle(&cx, store, &row(&cx, id), &reading);
     stop_agent(&cx, store, &row(&cx, id), None).unwrap();
-    engine.asked()
+    (
+        engine.asked(),
+        settled
+            .err()
+            .map(|e| e.error.to_string())
+            .unwrap_or_default(),
+    )
 }
 
 #[test]
-fn a_box_launched_under_tmux_stays_with_tmux_after_the_controller_switches_to_hc() {
-    let tmux = AgentHolder::Tmux;
-    assert_eq!(
-        asked_after_the_holder_changed(Some(tmux), AgentHolder::Hc),
-        [("fate", tmux), ("reattach", tmux), ("stop", tmux)]
-    );
+fn a_box_held_by_herdr_core_is_asked_after_reattached_and_stopped() {
+    let (asked, error) = asked_of_a_box(|_, _| {});
+    assert_eq!(asked, ["fate", "reattach", "stop"]);
+    assert_eq!(error, "");
 }
 
 #[test]
-fn a_box_launched_under_hc_stays_with_hc_after_the_controller_switches_to_tmux() {
-    let hc = AgentHolder::Hc;
-    assert_eq!(
-        asked_after_the_holder_changed(Some(hc), AgentHolder::Tmux),
-        [("fate", hc), ("reattach", hc), ("stop", hc)]
-    );
-}
-
-#[test]
-fn a_box_launched_before_holders_were_recorded_is_held_by_tmux() {
-    let tmux = AgentHolder::Tmux;
-    assert_eq!(
-        asked_after_the_holder_changed(None, AgentHolder::Hc),
-        [("fate", tmux), ("reattach", tmux), ("stop", tmux)]
-    );
+fn a_box_another_holder_kept_is_not_asked_after_but_is_still_stopped() {
+    for held in [Some("tmux"), None] {
+        let (asked, error) = asked_of_a_box(|store, id| store.set_holders(id, held).unwrap());
+        assert_eq!(asked, ["stop"], "{held:?}");
+        assert!(error.contains("close the Box and recreate it"), "{error}");
+    }
 }
 
 #[test]
@@ -283,7 +267,7 @@ fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
         0,
         "no probe of a stopped guest"
     );
-    assert_eq!(engine.asked(), []);
+    assert!(engine.asked().is_empty());
     assert!(engine.transcripts().is_empty());
     assert!(engine.reattached().is_empty());
     let store = cx.store().unwrap();
@@ -304,7 +288,7 @@ fn stopping_the_agent_of_an_asleep_box_does_not_reach_for_the_guest() {
     };
     let (cx, engine, id) = polled_asleep(suspend, false);
     stop_agent(&cx, cx.store().unwrap(), &row(&cx, id), None).unwrap();
-    assert_eq!(engine.asked(), []);
+    assert!(engine.asked().is_empty());
 }
 
 #[test]

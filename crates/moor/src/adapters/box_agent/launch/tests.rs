@@ -4,7 +4,6 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::AgentHolder;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -228,18 +227,7 @@ fn script_of(d: &FakeDriver) -> String {
 }
 
 #[test]
-fn the_box_runs_the_script_file_under_sh_not_the_login_shell() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    let r = req(&s);
-    agent(&d, &s).holding(AgentHolder::Tmux).launch(&r).unwrap();
-    let remote = remote_of(&pane_line(&s));
-    let want =
-        format!("tmux new-session -d -s moor-agent -x 200 -y 50 'sh '\\''{CRED}/agent.sh'\\'';");
-    assert!(remote.contains(&want), "{remote}");
-}
-
-#[test]
-fn by_default_herdr_core_holds_the_agent_running_the_script_file_under_sh() {
+fn herdr_core_holds_the_agent_running_the_script_file_under_sh() {
     let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let remote = remote_of(&pane_line(&s));
@@ -247,15 +235,14 @@ fn by_default_herdr_core_holds_the_agent_running_the_script_file_under_sh() {
         "herdr-core run --bg --no-parent --rm --name moor-agent sh -c 'sh '\\''{CRED}/agent.sh'\\'';"
     );
     assert!(remote.contains(&want), "{remote}");
-    assert!(!remote.contains("tmux"), "{remote}");
 }
 
-/// The holder an agent launched under `launched` records, and the Box commands that reach it.
-fn commands_for(launched: AgentHolder, configured: AgentHolder) -> (AgentHolder, String) {
+#[test]
+fn the_agent_is_reached_through_herdr_core() {
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    let sref = agent(&d, &s).holding(launched).launch(&req(&s)).unwrap();
+    let kit = agent(&d, &s);
+    let sref = kit.launch(&req(&s)).unwrap();
     let before = d.execs().len();
-    let kit = agent(&d, &s).holding(configured);
     kit.agent_fate(&sref, Deadline(Duration::from_secs(1)))
         .unwrap();
     kit.stop(&sref).unwrap();
@@ -265,36 +252,15 @@ fn commands_for(launched: AgentHolder, configured: AgentHolder) -> (AgentHolder,
         .skip(before)
         .map(|(_, spec, _)| spec.argv.join(" "))
         .collect();
-    cmds.extend(kit.relay_argv(sref.holder, &["ssh".into()]).unwrap());
-    (sref.holder, cmds.join("\n"))
-}
-
-#[test]
-fn an_agent_launched_under_tmux_is_reached_through_tmux_by_a_kit_that_launches_under_hc() {
-    let (recorded, cmds) = commands_for(AgentHolder::Tmux, AgentHolder::Hc);
-    assert_eq!(recorded, AgentHolder::Tmux);
-    for want in [
-        "tmux has-session",
-        "tmux kill-session",
-        "tmux attach-session",
-    ] {
-        assert!(cmds.contains(want), "{want}: {cmds}");
-    }
-    assert!(!cmds.contains("herdr-core"), "{cmds}");
-}
-
-#[test]
-fn an_agent_launched_under_hc_is_reached_through_hc_by_a_kit_that_launches_under_tmux() {
-    let (recorded, cmds) = commands_for(AgentHolder::Hc, AgentHolder::Tmux);
-    assert_eq!(recorded, AgentHolder::Hc);
+    cmds.extend(kit.relay_argv(&["ssh".into()]).unwrap());
+    let cmds = cmds.join("\n");
     for want in ["herdr-core get", "herdr-core kill", "herdr-core attach"] {
         assert!(cmds.contains(want), "{want}: {cmds}");
     }
-    assert!(!cmds.contains("tmux"), "{cmds}");
 }
 
 #[test]
-fn the_install_puts_herdr_core_on_the_box_before_the_agent_unless_tmux_holds_it() {
+fn the_install_puts_herdr_core_on_the_box_before_the_agent() {
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     let claude = Claude.install().unwrap();
     let hc = agent(&d, &s).agent_install().unwrap();
@@ -303,8 +269,6 @@ fn the_install_puts_herdr_core_on_the_box_before_the_agent_unless_tmux_holds_it(
     assert!(rest.is_empty(), "{rest}");
     assert_eq!(hc.dirs.last(), claude.dirs.last());
     assert!(hc.dirs.len() > claude.dirs.len());
-    let tmux = agent(&d, &s).holding(AgentHolder::Tmux).agent_install();
-    assert_eq!(tmux, Some(claude));
 }
 
 #[test]

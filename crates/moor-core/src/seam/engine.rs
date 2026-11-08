@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::activity::{HookRecord, Probes, WaitCheck};
 use crate::box_key::BoxKey;
-use crate::config::{AgentHolder, McpServer};
+use crate::config::McpServer;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
 use crate::profile::Manifest;
 use crate::seam::agent_adapter::{AgentInstall, PromptMatch, ProxyAddr};
@@ -26,8 +26,6 @@ pub struct SessionRef {
     pub workdir: BoxPath,
     /// The agent's pane, if one exists.
     pub pane: Option<PaneRef>,
-    /// What holds the agent's terminal on the Box: the holder it was launched under.
-    pub holder: AgentHolder,
 }
 
 /// The first prompt the agent starts with.
@@ -244,15 +242,10 @@ pub trait Engine: Send + Sync {
         Vec::new()
     }
 
-    /// The command that relays the agent's live terminal, held by `holder`, through `connect`;
-    /// `None` when this engine has no terminal a client can attach to.
-    fn relay_argv(&self, _holder: AgentHolder, _connect: &[String]) -> Option<Vec<String>> {
+    /// The command that relays the agent's live terminal through `connect`; `None` when this
+    /// engine has no terminal a client can attach to.
+    fn relay_argv(&self, _connect: &[String]) -> Option<Vec<String>> {
         None
-    }
-
-    /// The holder a new agent's terminal gets.
-    fn new_holder(&self) -> AgentHolder {
-        AgentHolder::default()
     }
 
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned

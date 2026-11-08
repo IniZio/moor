@@ -12,7 +12,7 @@ use crate::testing::surface::FakeSurface;
 fn live(f: &Fx, pane: &str) {
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "s-1", Some(pane), moor_core::config::AgentHolder::Hc)
+        .begin_session(f.id, "s-1", Some(pane))
         .unwrap();
 }
 
@@ -145,7 +145,7 @@ fn a_session_without_a_pane_is_ended_without_closing_one() {
     let f = fx_with(FakeDriver::new(), FakeSurface::new());
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "s-1", None, moor_core::config::AgentHolder::Hc)
+        .begin_session(f.id, "s-1", None)
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped);

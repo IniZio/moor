@@ -148,9 +148,7 @@ fn a_failed_exit_save_of_one_session_does_not_block_the_next() {
     settle(&cx, store, &row(&cx, id), &r).unwrap();
     let opened = store.open_session(id).unwrap();
     store.start_session(opened.id).unwrap();
-    let second = store
-        .begin_session(id, "sess-2", None, moor_core::config::AgentHolder::Hc)
-        .unwrap();
+    let second = store.begin_session(id, "sess-2", None).unwrap();
     store.set_registered_session(second, "agent-2").unwrap();
     let r = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &r).unwrap();
