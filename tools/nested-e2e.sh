@@ -8,8 +8,8 @@ NAME=${NESTED_E2E_NAME:-nested-e2e-$(date +%s)}
 GH_REPO_NAME=${NESTED_E2E_REPO:-IniZio/moor-nested-check}
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
 START_TIMEOUT=${NESTED_E2E_START_TIMEOUT:-600}
-PROMPT="Create the file NESTED.md with the text ok, commit, push your branch, and open a draft PR titled 'test: nested Box check (close me)'"
-BRANCH=moor/$NAME
+PROMPT="Create the file NESTED.md with the text ok, commit, and push your branch"
+BRANCH=
 STATE=$D/state
 CTL=$D/ctl
 OUT=$D/out
@@ -144,6 +144,11 @@ remote_branch() {
 	timeout 60 git ls-remote "https://github.com/$GH_REPO_NAME.git" "refs/heads/$BRANCH" 2>/dev/null
 }
 
+# moor names the branch moor/<id>-<name>; ask it rather than guess the id.
+box_branch() {
+	timeout 60 moor show "$NAME" --quiet 2>/dev/null | sed -n 's/^branch: *\(moor\/.*\)$/\1/p'
+}
+
 STARTED=
 cleanup() {
 	local rc=$?
@@ -152,21 +157,22 @@ cleanup() {
 	trap - EXIT
 	set +e
 	if [ -n "$STARTED" ]; then
+		[ -n "$BRANCH" ] || BRANCH=$(box_branch)
 		timeout 60 moor events --box "$NAME" >"$OUT/events.jsonl" 2>/dev/null
 		log "closing Box $NAME"
 		# A Box still starting refuses to close; stop_ours then takes its VM down.
 		timeout 120 moor close "$NAME" --force >>"$OUT/run.log" 2>&1
 	fi
 	local n
-	for n in $(open_prs); do
+	[ -n "$BRANCH" ] && for n in $(open_prs); do
 		log "closing PR #$n"
 		timeout 60 gh api -X PATCH "repos/$GH_REPO_NAME/pulls/$n" -f state=closed 2>>"$OUT/run.log" >/dev/null
 	done
-	if [ -n "$(remote_branch)" ]; then
+	if [ -n "$BRANCH" ] && [ -n "$(remote_branch)" ]; then
 		log "deleting branch $BRANCH"
 		timeout 120 git push -q "https://github.com/$GH_REPO_NAME.git" --delete "$BRANCH" >>"$OUT/run.log" 2>&1
 	fi
-	if [ -n "$(open_prs)" ] || [ -n "$(remote_branch)" ]; then
+	if [ -n "$BRANCH" ] && { [ -n "$(open_prs)" ] || [ -n "$(remote_branch)" ]; }; then
 		log "PR or branch $BRANCH is still on $GH_REPO_NAME"
 		[ "$rc" = 0 ] && rc=1
 	fi
@@ -200,11 +206,17 @@ timeout --foreground 120 moor run "$NAME" -- sh -c "systemd-detect-virt; grep -c
 log "waiting for the agent"
 timeout --foreground 2000 moor wait "$NAME" --for done --timeout 1800
 moor show "$NAME" --agent --events 100 --pane >"$OUT/show.txt"
-url=$(gh pr list -R "$GH_REPO_NAME" --head "$BRANCH" --state open --json url,isDraft,title \
-	-q '.[] | select(.isDraft and .title == "test: nested Box check (close me)") | .url')
-if [ -z "$url" ]; then
-	log "no draft PR from $BRANCH"
+BRANCH=$(box_branch)
+if [ -z "$BRANCH" ]; then
+	log "moor show gave no branch for $NAME"
 	exit 1
 fi
-echo "$url" >"$OUT/pr.txt"
-log "draft PR $url"
+rm -rf "$D/check"
+git init -q "$D/check"
+nested=$(timeout 60 git -C "$D/check" fetch -q --depth=1 "https://github.com/$GH_REPO_NAME.git" "refs/heads/$BRANCH" 2>>"$OUT/run.log" &&
+	git -C "$D/check" show FETCH_HEAD:NESTED.md 2>>"$OUT/run.log") || nested=
+if [ "$nested" != ok ]; then
+	log "NESTED.md on $BRANCH is not ok: ${nested:-missing}"
+	exit 1
+fi
+log "pushed $BRANCH with NESTED.md ok"

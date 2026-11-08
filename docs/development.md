@@ -96,9 +96,10 @@ with one `runtime: external` node that drives `crabbox-cloudhypervisor`
 with no `.moor.yaml`. Start the outer Box with `--also IniZio/moor-nested-check`
 so its Proxy holds credentials for that repo, or set `NESTED_E2E_REPO` to another
 scratch repo you can push to.
-That Box writes `NESTED.md`, pushes its `moor/*` branch and opens a draft PR.
-The script records `systemd-detect-virt` from inside the VM, then closes the
-Box, the PR and the branch. On exit, success, failure or Ctrl-C, it stops every
+That Box writes NESTED.md and pushes its `moor/<id>-<name>` branch. The script
+reads the branch from `moor show`, fetches it with git and checks NESTED.md. The Box has no `gh`, so the check needs no PR. The
+script records `systemd-detect-virt` from inside the VM, then closes the Box and
+deletes the branch. On exit, success, failure or Ctrl-C, it stops every
 process it started and removes the VM disks. Its logs are in
 `.moor/dev/nested-e2e/out`. GitHub and Claude credentials come from the outer
 Box's Proxy through `HTTPS_PROXY`, so the inner secrets are placeholders.
