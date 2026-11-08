@@ -103,7 +103,6 @@ jobs:
       - run: make audit
       - name: Allow unprivileged user namespaces for the front tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: sudo apt-get install -y tmux
       - name: Install the herdr-core moor pins
         run: |
           curl -fsSL https://releases.herdr.dev/core/0.1.16/herdr-core-linux-x86_64.tar.gz -o "$RUNNER_TEMP/hc.tar.gz"
