@@ -302,7 +302,7 @@ fn up_with_no_selected_provider_prints_the_commands_that_install_one() {
     );
     assert!(
         r.stdout.ends_with(
-            "  curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.1.0/install.sh | sh\n  crabbox-cloudhypervisor install\n"
+            "  curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.2.1/install.sh | sh\n  crabbox-cloudhypervisor install\n"
         ),
         "{r:?}"
     );
