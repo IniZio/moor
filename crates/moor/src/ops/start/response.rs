@@ -34,6 +34,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
         boxed: view,
         attached,
         queued: row.lifecycle == BoxLifecycle::Pending,
+        node: crate::ops::common::view::node_of(cx, row),
         promoted: Vec::new(),
         work_tree: None,
         setup: SetupView::default(),

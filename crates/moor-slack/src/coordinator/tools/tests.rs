@@ -548,5 +548,6 @@ fn list_boxes_in_a_thread_with_no_box_says_so() {
 
 mod answer;
 mod control;
+mod nodes;
 mod start;
 mod workflow;

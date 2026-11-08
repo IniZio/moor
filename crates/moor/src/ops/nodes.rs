@@ -1,10 +1,12 @@
 //! `node-list`: the nodes the caller may start Boxes on.
 
 use moor_core::decide::pressure::Reading;
-use moor_core::decide::schedule::{Node, Online, Scope};
+use moor_core::decide::schedule::{
+    behind_the_queue, schedule, BoxSpec, Node, Online, Scope, Verdict,
+};
 use moor_core::request::{MachineLinksReq, WarmStarts};
 use moor_core::user::Viewer;
-use moor_core::view::node::{NodeListValue, NodeScope, NodeView};
+use moor_core::view::node::{NodeListValue, NodeScope, NodeView, PickOutcome, StartPick};
 use moor_core::view::user::MachineLinksValue;
 use moor_core::Warning;
 
@@ -149,7 +151,10 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
     nodes.sort_by_key(|n| (matches!(n.scope, Scope::Personal { .. }), n.name.clone()));
     let since = cx.store()?.pressure_since()?;
     let held = cx.store()?.box_memory_totals()?;
+    let start = pick(cx)?;
     Ok(NodeListValue {
+        at: now(cx),
+        start,
         nodes: nodes
             .iter()
             .map(|n| {
@@ -167,6 +172,43 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
             })
             .collect(),
     })
+}
+
+/// What a start naming no node would do for the viewer, when the viewer is one user.
+fn pick(cx: &Cx) -> Result<Option<StartPick>, CommandError> {
+    let Viewer::User(me) = cx.viewer() else {
+        return Ok(None);
+    };
+    let (nodes, default) = crate::ops::common::node::nodes(cx)?;
+    let spec = BoxSpec {
+        labels: Vec::new(),
+        node: None,
+    };
+    let verdict = schedule(&nodes, me, default.as_ref(), &spec, now(cx));
+    let verdict = match &verdict {
+        Verdict::Bind { node, .. } => nodes
+            .iter()
+            .find(|n| &n.name == node)
+            .map_or_else(|| verdict.clone(), |n| behind_the_queue(verdict.clone(), n)),
+        _ => verdict,
+    };
+    Ok(Some(match verdict {
+        Verdict::Bind { node, .. } => StartPick {
+            node: Some(node.to_string()),
+            outcome: PickOutcome::Starts,
+            reason: None,
+        },
+        Verdict::Pending { node, reason } => StartPick {
+            node: Some(node.to_string()),
+            outcome: PickOutcome::Waits,
+            reason: Some(reason),
+        },
+        Verdict::Fail { reason } => StartPick {
+            node: None,
+            outcome: PickOutcome::Refused,
+            reason: Some(reason),
+        },
+    }))
 }
 
 #[cfg(test)]

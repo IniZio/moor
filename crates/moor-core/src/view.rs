@@ -255,6 +255,9 @@ pub struct StartView {
     pub attached: bool,
     /// Box is queued for capacity.
     pub queued: bool,
+    /// The node the Box was placed on; absent when none is recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
     /// Names promoted from the queue.
     pub promoted: Vec<String>,
     /// How the work tree started; absent when the Box keeps none or did not provision this call.

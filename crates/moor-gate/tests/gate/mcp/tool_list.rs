@@ -29,6 +29,7 @@ fn the_tools_are_listed() {
             "inspect_box",
             "list_boxes",
             "list_events",
+            "list_nodes",
             "list_webhooks",
             "list_workflow_runs",
             "list_workflows",

@@ -78,7 +78,7 @@ fn the_requesters_first_enrolled_node_is_the_default_and_the_start_says_so() {
     enrolled(&w, "hv", Some(true), None);
     let v = start::run(&w.cx, &req("demo")).unwrap();
     assert_eq!(held(&v), "cloudhypervisor@hv");
-    assert_eq!(node_of(&w, &v).as_deref(), Some("hv"));
+    assert_eq!(node_of(&w, &v), v.node);
     assert!(
         v.warnings_inline
             .iter()

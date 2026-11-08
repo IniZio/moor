@@ -61,3 +61,9 @@ fn the_started_message_carries_the_start_warnings_escaped() {
 fn a_start_with_nothing_to_add_posts_the_plain_message() {
     assert_eq!(reply_with(&json!({"warnings_inline": []})), STARTED);
 }
+
+#[test]
+fn the_started_message_names_the_node_the_box_went_to() {
+    let reply = reply_with(&json!({"node": "hv", "work_tree": {"state": "cold"}}));
+    assert_eq!(reply, format!("{STARTED}\nNode: hv\nWork tree: cold"));
+}

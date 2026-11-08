@@ -8,7 +8,7 @@ use moor_core::name::BoxId;
 use moor_core::request::{BoxHostMemory, MachineLink};
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId, Viewer};
-use moor_core::view::node::NodeScope;
+use moor_core::view::node::{NodeScope, PickOutcome};
 
 use super::list;
 use crate::cx::Cx;
@@ -200,4 +200,35 @@ fn memory_for_a_box_another_controller_named_is_not_kept() {
     assert_ne!(other.controller, store.controller_id().unwrap());
     store.set_box_memory(&[other, on(&cx, id, 2, 512)]).unwrap();
     assert_eq!(held(&cx, "mini"), Some(512));
+}
+
+#[test]
+fn a_start_picks_the_users_online_personal_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let (base, alice, _) = two_users(dir.path());
+    let pick = list(&base.with_viewer(Viewer::User(alice)))
+        .unwrap()
+        .start
+        .unwrap();
+    assert_eq!(pick.node.as_deref(), Some("mini"));
+    assert_eq!(pick.outcome, PickOutcome::Starts);
+}
+
+#[test]
+fn a_start_for_a_user_whose_personal_node_is_offline_is_refused_not_sent_to_a_shared_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (base, _, bob) = two_users(dir.path());
+    let pick = list(&base.with_viewer(Viewer::User(bob)))
+        .unwrap()
+        .start
+        .unwrap();
+    assert_eq!(pick.outcome, PickOutcome::Refused);
+    assert!(pick.reason.unwrap().contains("rack is offline"));
+}
+
+#[test]
+fn the_operator_gets_no_start_pick() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = two_users(dir.path());
+    assert!(list(&cx).unwrap().start.is_none());
 }

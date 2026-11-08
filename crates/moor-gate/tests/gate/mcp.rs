@@ -15,6 +15,7 @@ use super::{claims, mpsc, now, sign, world_with, World};
 
 mod exec;
 mod inspect;
+mod nodes;
 mod tool_list;
 mod webhook;
 mod workflow;

@@ -13,11 +13,22 @@ pub(crate) struct Spec {
 }
 
 /// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 15] = [
+pub(crate) const SPECS: [Spec; 16] = [
     Spec {
         name: "list_boxes",
         description: "List this thread's Boxes: name, repo, requester and state as the \
                       controller reports it now, and each open prompt with its id.",
+        input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
+    },
+    Spec {
+        name: "list_nodes",
+        description: "List the nodes the thread's starter may start a Box on: name, yours or \
+                      shared, runtime, online or offline since when, used and total Box slots, \
+                      free memory, warm starts, and which node a start_box with no node would \
+                      use now and whether it starts, waits or is refused. Call it before \
+                      start_box when the person names no node, and say where the Box will go. \
+                      An offline personal node refuses the start and never falls back to a \
+                      shared one.",
         input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
     },
     Spec {
@@ -32,7 +43,7 @@ pub(crate) const SPECS: [Spec; 15] = [
                     "prompt": {"type": "string", "description": "What the Box's agent should do, in plain words."},
                     "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."},
                     "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."},
-                    "node": {"type": "string", "description": "A node you may use; omit for your default."},
+                    "node": {"type": "string", "description": "A node list_nodes shows; omit it to start on the node list_nodes says a start picks."},
                     "cold": {"type": "boolean", "description": "Set the Box up from scratch, past any setup kept from earlier Boxes. Only when asked for."}
                 },
                 "required": ["prompt"],

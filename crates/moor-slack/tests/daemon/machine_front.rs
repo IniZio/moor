@@ -62,6 +62,17 @@ fn rig() -> (Rig, super::support::RealController) {
     (rig, controller)
 }
 
+/// Enrolls `hv`, a Box pool machine, for `user` and brings its agent link up.
+fn add_hv(rig: &Rig, user: &str) {
+    let enroll = json!({"cmd": "machine-enroll", "name": "hv", "pubkey": KEY,
+        "labels": [], "pool": "cloudhypervisor"});
+    ask_as(
+        &rig.front_socket(),
+        user,
+        serde_json::from_value(enroll).unwrap(),
+    );
+}
+
 /// Enrolls `minion` with two labels for `user`, as its agent would.
 fn add_minion(rig: &Rig, user: &str) {
     let enroll = json!({"cmd": "machine-enroll", "name": "minion", "pubkey": KEY,
@@ -79,7 +90,13 @@ fn machine_add_says_how_to_enroll_and_stores_nothing() {
     rig.slack.send_slash("env-1", CHANNEL, USER, "machine add");
     let ack = rig.slack.wait_ack_payload("env-1");
     let text = ack["text"].as_str().unwrap();
-    assert!(text.contains("moor-machine-agent enroll"), "{text}");
+    for part in [
+        "moor-machine-agent enroll --server",
+        "--runtime cloudhypervisor",
+        "moor-machine-agent run --runtime cloudhypervisor",
+    ] {
+        assert!(text.contains(part), "{text}");
+    }
     assert!(machines(&rig.front_socket(), USER).is_empty());
 }
 
@@ -134,4 +151,20 @@ fn any_other_machine_command_gets_the_usage_line() {
     let text = ack["text"].as_str().unwrap();
     assert!(text.starts_with("Usage: `/moor machine list`"), "{text}");
     assert!(text.contains("`/moor machine remove <name>`"), "{text}");
+}
+
+#[test]
+fn list_says_a_machine_hosts_no_boxes_until_it_has_a_runtime_and_a_link() {
+    let (rig, _controller) = rig();
+    add_minion(&rig, USER);
+    add_hv(&rig, USER);
+    rig.slack.send_slash("env-5", CHANNEL, USER, "machine list");
+    let answers = rig.slack.wait_responses(1);
+    let text = &answers[0].1;
+    assert!(
+        text.contains("minion") && text.contains("hosts no Boxes"),
+        "{text}"
+    );
+    assert!(text.contains("hv") && text.contains("offline"), "{text}");
+    assert!(text.contains("A start with no node named fails"), "{text}");
 }

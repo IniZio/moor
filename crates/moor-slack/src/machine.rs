@@ -3,6 +3,7 @@
 //! These are setup commands; nothing reads words in a thread.
 
 use moor_core::request::{AsReq, MachineRemoveReq, Request};
+use moor_core::view::node::{NodeListValue, NodeScope};
 use serde_json::Value;
 
 use crate::credentials::SlackUser;
@@ -13,9 +14,9 @@ use crate::socket::{Kept, Slash};
 use crate::worker::Job;
 
 /// The reply to `/moor machine add`: machines enroll themselves.
-const ENROLL: &str = "A machine joins by enrolling itself: run \
-    `moor-machine-agent enroll --server <url> --name <name>` on it, then \
-    `moor-machine-agent run`.";
+const ENROLL: &str = "A machine joins by enrolling itself. On it, run \
+    `moor-machine-agent enroll --server <this server> --name <name> --runtime cloudhypervisor`, \
+    then `moor-machine-agent run --runtime cloudhypervisor`.";
 
 /// The reply to a `/moor machine` that is not one of the three.
 const USAGE: &str = "Usage: `/moor machine list` shows your machines, \
@@ -61,8 +62,9 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
     Ok((kept, job.filter(|_| first)))
 }
 
-/// The body of `/moor machine list` for `user`: each machine's name and labels, or
-/// why the controller could not say.
+/// The body of `/moor machine list` for `user`: each machine's name, labels, whether it is
+/// online, its Box slots, free memory and warm starts, then which node a start picks; or why
+/// the controller could not say.
 pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
     let reply = match send(call, user, Request::MachineList(AsReq { identity: None })) {
         Ok(reply) => reply,
@@ -81,6 +83,11 @@ pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
         return "You have no machines. Enroll one with `moor-machine-agent enroll` on it."
             .to_owned();
     }
+    let listed = send(call, user, Request::NodeList(AsReq { identity: None }))
+        .ok()
+        .and_then(|r| r.value)
+        .and_then(|v| serde_json::from_value::<NodeListValue>(v).ok());
+    let at = listed.as_ref().map_or(0, |l| l.at);
     let text = |m: &Value, k: &str| {
         crate::escape::code(m.get(k).and_then(Value::as_str).unwrap_or_default())
     };
@@ -99,10 +106,23 @@ pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
             } else {
                 crate::escape::escape(&labels.join(", "))
             };
-            format!("{} ({labels})", text(m, "name"))
+            let name = m.get("name").and_then(Value::as_str).unwrap_or_default();
+            let state = listed
+                .iter()
+                .flat_map(|l| &l.nodes)
+                .find(|n| n.name == name && n.scope == NodeScope::Personal)
+                .map_or_else(
+                    || "hosts no Boxes".to_owned(),
+                    |n| crate::escape::escape(&n.status(at)),
+                );
+            format!("{} ({labels}): {state}", text(m, "name"))
         })
         .collect();
-    format!("Your machines:\n{}", lines.join("\n"))
+    let pick = listed
+        .and_then(|l| l.start)
+        .map(|p| format!("\n{}", crate::escape::escape(&p.sentence())))
+        .unwrap_or_default();
+    format!("Your machines:\n{}{pick}", lines.join("\n"))
 }
 
 /// The answer to `/moor machine remove <name>` for `user`.
