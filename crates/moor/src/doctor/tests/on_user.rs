@@ -67,7 +67,8 @@ fn an_enrolled_user_is_ok_and_each_need_has_its_own_line() {
     );
     let fix = report.last().map(|c| c.fix.as_str()).unwrap_or_default();
     assert!(fix.contains("moor user secret set github"), "{fix}");
-    assert!(fix.contains("https://moor.example/me/secrets"), "{fix}");
+    assert!(fix.contains("or open https://moor.example/"), "{fix}");
+    assert!(!fix.contains("/me/secrets"), "{fix}");
 }
 
 #[test]

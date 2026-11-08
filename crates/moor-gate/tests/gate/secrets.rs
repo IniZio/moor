@@ -1,4 +1,4 @@
-//! The secrets page at `/me/secrets` and the `start_box` refusal that links to it, against the
+//! The `start_box` refusal that links to the account page, against the
 //! testkit issuer and a fake controller that keeps each person's secrets in memory.
 
 use std::collections::{BTreeMap, HashMap};
@@ -10,14 +10,10 @@ use std::sync::{Arc, Mutex};
 use moor_core::response::{ErrorDetail, ErrorKind, ErrorView, Response};
 use moor_gate::{Gate, Login, Mcp, Verifier};
 use moor_testkit::oidc::{now, Issuer};
-use oauth2::url::form_urlencoded;
 use serde_json::{json, Value};
 
-use super::login::{assert_page_headers, csrf, get, send, sign_in, Reply};
+use super::login::get;
 use super::CLIENT_ID;
-
-const VALUE: &str = "sk-ant-oat01-s3cret<&>";
-const STORED: &str = "ghp_alreadyStored";
 
 /// Each enrolled identity's secrets, by name.
 pub(super) type Vault = HashMap<String, BTreeMap<String, String>>;
@@ -172,15 +168,6 @@ pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)])
 }
 
 impl World {
-    fn post(&self, cookie: Option<&str>, form: &[(&str, &str)]) -> Reply {
-        let body = form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(form)
-            .finish();
-        let cookie = cookie.map_or_else(String::new, |c| format!("Cookie: {c}\r\n"));
-        let extra = format!("Content-Type: application/x-www-form-urlencoded\r\n{cookie}");
-        send(&self.addr, "POST", "/me/secrets", &extra, &body)
-    }
-
     /// The `cmd` of every request the controller got, in order.
     pub(super) fn cmds(&self) -> Vec<String> {
         let seen = self.seen.lock().unwrap();
@@ -236,120 +223,7 @@ impl World {
 }
 
 #[test]
-fn the_secrets_page_sends_a_signed_out_browser_to_sign_in() {
-    let w = world(true, &[]);
-    let page = get(&w.addr, "/me/secrets", None);
-    assert_eq!(page.status, 302, "{}", page.body);
-    assert_eq!(page.location(), "/auth/login?return=/me/secrets");
-    assert!(w.cmds().is_empty(), "{:?}", w.cmds());
-}
-
-#[test]
-fn the_secrets_page_lists_set_and_missing_names_and_never_a_value() {
-    let w = world(true, &[("github", STORED)]);
-    let cookie = sign_in(&w.addr);
-    let page = get(&w.addr, "/me/secrets", Some(&cookie));
-    assert_eq!(page.status, 200, "{}", page.body);
-    assert_page_headers(&page);
-    for want in [
-        "<code>claude</code>: not set",
-        "<code>github</code>: set",
-        "claude setup-token",
-        "gh auth token",
-        "type=\"password\"",
-        "name=\"value\"",
-        "method=\"post\" action=\"/me/secrets\"",
-    ] {
-        assert!(
-            page.body.contains(want),
-            "{want} missing from {}",
-            page.body
-        );
-    }
-    assert!(!page.body.contains(STORED), "{}", page.body);
-    assert!(!csrf(&page).is_empty());
-}
-
-#[test]
-fn saving_a_secret_enrolls_then_stores_it_and_never_echoes_it() {
-    let w = world(true, &[]);
-    let cookie = sign_in(&w.addr);
-    let token = csrf(&get(&w.addr, "/me/secrets", Some(&cookie)));
-    let saved = w.post(
-        Some(&cookie),
-        &[("csrf", &token), ("name", "claude"), ("value", VALUE)],
-    );
-    assert_eq!(saved.status, 200, "{}", saved.body);
-    assert_page_headers(&saved);
-    assert!(
-        saved.body.contains("Saved <code>claude</code>."),
-        "{}",
-        saved.body
-    );
-    assert!(
-        saved.body.contains("<code>claude</code>: set"),
-        "{}",
-        saved.body
-    );
-    assert!(!saved.body.contains("s3cret"), "{}", saved.body);
-    let cmds = w.cmds();
-    let set = cmds.iter().position(|c| c == "secret-set").unwrap();
-    assert!(cmds[..set].contains(&"enroll".to_owned()), "{cmds:?}");
-    let (who, mine) = w.vault.lock().unwrap().clone().into_iter().next().unwrap();
-    assert!(who.contains("alice-sub"), "{who}");
-    assert_eq!(mine["claude"], VALUE);
-    let logged = format!("{:?}", w.seen.lock().unwrap());
-    assert!(!logged.contains("s3cret"), "{logged}");
-}
-
-#[test]
-fn saving_needs_the_session_and_its_csrf_token() {
-    let w = world(true, &[]);
-    let cookie = sign_in(&w.addr);
-    let value = ("value", VALUE);
-    let name = ("name", "claude");
-    for (cookie, form) in [
-        (Some(cookie.as_str()), vec![name, value]),
-        (Some(cookie.as_str()), vec![("csrf", "forged"), name, value]),
-        (None, vec![("csrf", "forged"), name, value]),
-    ] {
-        let reply = w.post(cookie, &form);
-        assert_eq!(reply.status, 403, "{}", reply.body);
-        assert!(!reply.body.contains("s3cret"), "{}", reply.body);
-    }
-    assert!(
-        !w.cmds().contains(&"secret-set".to_owned()),
-        "{:?}",
-        w.cmds()
-    );
-}
-
-#[test]
-fn a_bad_name_or_an_empty_value_is_refused_without_storing() {
-    let w = world(true, &[]);
-    let cookie = sign_in(&w.addr);
-    let token = csrf(&get(&w.addr, "/me/secrets", Some(&cookie)));
-    for form in [
-        vec![
-            ("csrf", token.as_str()),
-            ("name", "Not A Name"),
-            ("value", VALUE),
-        ],
-        vec![("csrf", token.as_str()), ("name", "claude"), ("value", "")],
-    ] {
-        let reply = w.post(Some(&cookie), &form);
-        assert_eq!(reply.status, 400, "{}", reply.body);
-        assert!(!reply.body.contains("s3cret"), "{}", reply.body);
-    }
-    assert!(
-        !w.cmds().contains(&"secret-set".to_owned()),
-        "{:?}",
-        w.cmds()
-    );
-}
-
-#[test]
-fn start_box_refused_for_missing_secrets_links_the_secrets_page() {
+fn start_box_refused_for_missing_secrets_links_the_account_page() {
     let w = world(true, &[]);
     let reply = w.call(
         "alice-sub",
@@ -359,10 +233,11 @@ fn start_box_refused_for_missing_secrets_links_the_secrets_page() {
     assert_eq!(reply["result"]["isError"], true, "{reply}");
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
     assert!(
-        text.contains(&format!("http://{}/me/secrets", w.addr)),
+        text.contains(&format!("sign in at http://{}/ and", w.addr)),
         "{text}"
     );
     assert!(text.contains("claude, github"), "{text}");
+    assert!(!text.contains("/me/secrets"), "{text}");
     assert!(!text.contains("moor user secret set"), "{text}");
 }
 
@@ -376,14 +251,14 @@ fn without_browser_sign_in_the_refusal_keeps_the_controller_s_words() {
     );
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("moor user secret set claude"), "{text}");
-    assert_eq!(get(&w.addr, "/me/secrets", None).status, 404);
+    assert_eq!(get(&w.addr, "/", None).status, 404);
 }
 
 #[test]
-fn a_start_that_does_not_wait_links_the_secrets_page_too() {
+fn a_start_that_does_not_wait_links_the_account_page_too() {
     let w = world(true, &[]);
     let reply = w.call("alice-sub", "start_box", json!({"repo": "acme/web"}));
     assert_eq!(reply["result"]["isError"], true, "{reply}");
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("/me/secrets"), "{text}");
+    assert!(text.contains(&format!("http://{}/ and", w.addr)), "{text}");
 }
