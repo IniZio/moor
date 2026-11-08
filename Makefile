@@ -71,7 +71,6 @@ docs-build:
 	bun install --cwd site --frozen-lockfile
 	bun run --cwd site build
 
-# Rebuilds the account page the gate embeds; commit the result with the source change.
 web:
 	@command -v bun >/dev/null || { echo "web: bun is not installed"; exit 1; }
 	bun install --cwd crates/moor-gate/web --frozen-lockfile
