@@ -102,6 +102,7 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
         names,
         [
             "list_boxes",
+            "list_nodes",
             "start_box",
             "steer_box",
             "close_box",
