@@ -55,13 +55,15 @@ pub fn pick_machine(
     };
     let mut fitting = own
         .iter()
+        .filter(|m| m.pool.is_none())
         .filter(|m| want.labels.iter().all(|l| m.labels.contains(l)))
         .peekable();
     let Some(first) = fitting.peek().copied() else {
-        return left_out(format!(
-            "you have no machine with labels {}",
-            want.labels.join(", ")
-        ));
+        return left_out(if want.labels.is_empty() {
+            "you have no machine but pool hosts, which only host Boxes".to_owned()
+        } else {
+            format!("you have no machine with labels {}", want.labels.join(", "))
+        });
     };
     let empty = BTreeMap::new();
     let taken = |m: &UserMachine| held.get(&m.name).unwrap_or(&empty);

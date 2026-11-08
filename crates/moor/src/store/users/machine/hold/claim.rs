@@ -164,11 +164,16 @@ fn new_want(
     else {
         return Err("a release records no want".to_owned());
     };
-    if let Some(m) = machine
-        .as_ref()
-        .filter(|m| !own.iter().any(|o| &o.name == *m))
-    {
-        return Err(format!("machine {m} is not one of your machines"));
+    if let Some(m) = machine {
+        match own.iter().find(|o| &o.name == m) {
+            None => return Err(format!("machine {m} is not one of your machines")),
+            Some(o) if o.pool.is_some() => {
+                return Err(format!(
+                    "machine {m} is a pool host, which only hosts Boxes"
+                ));
+            }
+            Some(_) => {}
+        }
     }
     let labels = match (labels.is_empty(), machine, repo) {
         (true, None, Some(repo)) => repo.labels.clone(),

@@ -112,3 +112,20 @@ fn a_port_moved_past_65535_refuses_the_attach() {
 fn capacity_zero_is_refused() {
     assert!(machine("mini", &[]).with_capacity(0).is_err());
 }
+
+#[test]
+fn a_pool_host_is_never_picked() {
+    let host = machine("hv1", &[]).with_pool("fake").unwrap();
+    let got = pick_machine(
+        &want(&[], &[]),
+        std::slice::from_ref(&host),
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        got.note().as_deref(),
+        Some("machine left out: you have no machine but pool hosts, which only host Boxes")
+    );
+    let mini = machine("mini", &[]);
+    let got = pick_machine(&want(&[], &[]), &[host, mini.clone()], &BTreeMap::new());
+    assert_eq!(got, attach(&mini, 0, &[]));
+}
