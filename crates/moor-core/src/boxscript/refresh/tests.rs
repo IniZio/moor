@@ -458,4 +458,49 @@ fn the_outcome_names_what_the_script_printed() {
     assert_eq!(super::outcome(&rerun), None, "{rerun}");
 }
 
+/// A tree a first Box left with a linked worktree its agent made under an excluded `.worktrees`,
+/// holding an ignored cache, next to an ignored build output of the repo.
+fn left_with_linked_worktree() -> Origin {
+    let o = Origin::new("linked");
+    ok(&o, BOX1, &o.base);
+    std::fs::create_dir_all(o.tree().join("build")).unwrap();
+    std::fs::write(o.tree().join("build/out"), "artifact").unwrap();
+    tree_git(&o, &["config", "user.name", "a"]);
+    let script = "echo .worktrees >> .git/info/exclude && \
+        git worktree add -q .worktrees/audit -b audit-branch && \
+        mkdir .worktrees/audit/.cache && echo x > .worktrees/audit/.cache/f";
+    let made = o.sh(&o.tree(), script, &[]);
+    assert!(made.status.success(), "{made:?}");
+    o
+}
+
+#[test]
+fn a_previous_box_linked_worktree_and_its_exclude_are_gone_but_ignored_outputs_stay() {
+    let o = left_with_linked_worktree();
+    let out = ok(&o, BOX2, &o.base);
+    assert!(out.contains("moor: work tree refreshed\n"), "{out}");
+    assert!(!o.tree().join(".worktrees").exists(), "the worktree dir");
+    assert!(!o.tree().join(".git/worktrees").exists(), "its git entry");
+    assert_eq!(
+        tree_git(&o, &["worktree", "list", "--porcelain"])
+            .lines()
+            .count(),
+        3
+    );
+    assert_eq!(local_branches(&o), format!("refs/heads/{BRANCH}"));
+    assert_eq!(
+        read(&o, "build/out"),
+        "artifact",
+        "an ignored output survives"
+    );
+}
+
+#[test]
+fn a_restart_of_the_same_box_keeps_its_linked_worktree() {
+    let o = left_with_linked_worktree();
+    ok(&o, BOX1, &o.base);
+    assert!(o.tree().join(".worktrees/audit/.cache/f").exists());
+    assert!(o.tree().join(".git/worktrees/audit").exists());
+}
+
 mod keeping_work;
