@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
 use moor_core::config::{BoxSettings, Flags, Layer};
+use moor_core::seam::surface::PaneStatus;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;

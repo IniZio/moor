@@ -24,7 +24,7 @@ mod transcript;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::activity::{HookRecord, Probes, WaitCheck};
+use moor_core::activity::{Probe, WaitCheck};
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
@@ -70,22 +70,12 @@ impl Engine for BoxAgent {
         Some(relay_argv(connect))
     }
 
-    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
-        probe::probe(
-            self.driver.as_ref(),
-            self.surface.as_ref(),
-            self.profile.as_ref(),
-            s,
-            deadline,
-        )
+    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Probe {
+        probe::probe(self.driver.as_ref(), self.profile.as_ref(), s, deadline)
     }
 
     fn check_wait(&self, s: &SessionRef, deadline: Deadline) -> WaitCheck {
         probe::check_wait(self.driver.as_ref(), self.profile.as_ref(), s, deadline)
-    }
-
-    fn prompt_gone(&self, record: &HookRecord, tail: &str) -> bool {
-        self.profile.prompt_gone(record, tail)
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {

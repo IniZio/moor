@@ -201,13 +201,13 @@ fn agent_view_is_none_without_activity() {
 fn agent_view_working_maps_state_source_and_pane() {
     let v = agent_view(&reading(
         AgentState::Working,
-        Source::HooksCached,
+        Source::Status,
         PaneLiveness::Live,
     ))
     .unwrap();
     assert_eq!(v.pane, "live");
     assert_eq!(v.state, "working");
-    assert_eq!(v.source, "hooks_cached");
+    assert_eq!(v.source, "status");
     assert_eq!(v.exit_code, None);
     assert_eq!(v.question, None);
     assert!(v.options.is_empty());
@@ -220,12 +220,12 @@ fn agent_view_needs_input_carries_question_and_options() {
             question: Some("Proceed?".into()),
             options: vec!["Yes".into(), "No".into()],
         },
-        Source::Pane,
+        Source::Status,
         PaneLiveness::Live,
     ))
     .unwrap();
     assert_eq!(v.state, "needs_input");
-    assert_eq!(v.source, "pane");
+    assert_eq!(v.source, "status");
     assert_eq!(v.question.as_deref(), Some("Proceed?"));
     assert_eq!(v.options, ["Yes", "No"]);
     assert_eq!(v.exit_code, None);
@@ -234,14 +234,14 @@ fn agent_view_needs_input_carries_question_and_options() {
 #[test]
 fn agent_view_exited_carries_exit_code_and_pane() {
     let v = agent_view(&reading(
-        AgentState::Exited { code: 3 },
-        Source::Herdr,
+        AgentState::Exited { code: Some(3) },
+        Source::Terminal,
         PaneLiveness::Exited,
     ))
     .unwrap();
     assert_eq!(v.pane, "exited");
     assert_eq!(v.state, "exited");
-    assert_eq!(v.source, "herdr");
+    assert_eq!(v.source, "terminal");
     assert_eq!(v.exit_code, Some(3));
     assert_eq!(v.question, None);
     assert!(v.options.is_empty());

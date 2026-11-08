@@ -3,9 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::{Deadline, Tool};
-use moor_core::seam::surface::{PaneRef, Surface, SurfaceError};
+use moor_core::seam::surface::{PaneObs, PaneRef, PaneStatus, Surface, SurfaceError};
 
 use crate::adapters::herdr::Herdr;
 use crate::testing::proc::{Reply, ScriptedProc};

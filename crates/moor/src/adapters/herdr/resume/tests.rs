@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::PaneStatus;
 use moor_core::name::BoxName;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError};
+use moor_core::seam::surface::{
+    PaneRef, PaneStatus, ResumeOutcome, ResumeReg, Surface, SurfaceError,
+};
 
 use crate::adapters::herdr::Herdr;
 use crate::testing::clock::FakeClock;

@@ -6,6 +6,7 @@ use moor_migrate::sea_query::{
 };
 use moor_migrate::{Backend, Script, Step};
 
+mod agent_reads;
 mod baseline;
 mod checkpoint_base;
 mod checkpoint_depth;
@@ -101,6 +102,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V63__checkpoint_stale",
         write: checkpoint_stale::write,
+    },
+    Step {
+        name: "V64__agent_reads",
+        write: agent_reads::write,
     },
 ];
 

@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use moor_core::activity::{Activity, AgentState, Source};
+use moor_core::activity::{Activity, AgentState, Source, Status, Term};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
@@ -185,23 +185,22 @@ fn attempt(
     };
     let sref = session_ref(&row, &session).ok_or_else(|| no_agent(name))?;
     let reading = activity::read(cx, store, &row, cx.clock().now(), activity::PROBE_DEADLINE)?;
-    if reading.hook_unread {
+    if reading.read_failed {
         let msg = format!(
             "could not read the agent of {name}, so its turn could not be told apart; try again"
         );
         return Err(CommandError::new(ErrorKind::Failed, msg));
     }
-    let before = reading.activity;
+    let before = reading.activity.clone();
     if before
         .as_ref()
         .is_some_and(|a| a.source == Source::FirstRun)
     {
         return Err(first_run_refusal(name));
     }
-    let hook_before = store.hook(id)?.map(|c| c.record.at);
     let before = before.map(|a| a.state);
     if let (Some(AgentState::Exited { code }), false) = (&before, is_exit_req(req)) {
-        return Ok(Attempt::Gone(Gone::new(name, Some(session), Some(*code))));
+        return Ok(Attempt::Gone(Gone::new(name, Some(session), *code)));
     }
     let steer = choose(req, name, before.as_ref())?;
     let sent = match &steer {
@@ -211,7 +210,7 @@ fn attempt(
     };
     let Some(outcome) = send(cx, name, &sref, &steer)? else {
         let code = if let Some(AgentState::Exited { code }) = before {
-            Some(code)
+            code
         } else {
             None
         };
@@ -223,8 +222,7 @@ fn attempt(
         return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
     };
     let mark = Mark {
-        hook_before,
-        new_turn: matches!(steer, Steer::Text(_)),
+        turn_before: turn_before(reading.term.as_ref(), &steer),
         submit_retried: outcome.submit_retried,
     };
     let steer_id = record(store, id, &session, &sent, mark)?;
@@ -285,6 +283,15 @@ fn first_run_refusal(name: &str) -> CommandError {
         ),
     )
     .with_detail(ErrorDetail::FirstRunScreen)
+}
+
+/// The ended-turn count the turn of `steer` must pass: a prompt typed while the agent works waits
+/// for the turn already running to end first.
+fn turn_before(term: Option<&Term>, steer: &Steer) -> Option<u64> {
+    let term = term?;
+    let working = matches!(term.status, Some(Status::Working { .. }));
+    let queued = working && matches!(steer, Steer::Text(_));
+    Some(term.turn + u64::from(queued))
 }
 
 /// Whether `steer` asks the agent to exit.

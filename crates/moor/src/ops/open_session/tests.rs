@@ -5,7 +5,6 @@ use moor_schema::tables::Sessions;
 use sea_query::{Expr, ExprTrait as _, Query};
 use std::sync::Arc;
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
@@ -18,6 +17,7 @@ use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, SessionId};
 
 use super::run;
 use crate::cx::Cx;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -28,7 +28,6 @@ struct Fx {
     cx: Cx,
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     id: BoxId,
 }
 
@@ -44,8 +43,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx =
-        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), surface, proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
     store.begin_session(id, "s-1", Some("p-0")).unwrap();
@@ -57,7 +55,6 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         cx,
         engine,
         driver,
-        surface,
         id,
     }
 }
@@ -160,13 +157,9 @@ fn an_open_makes_no_box_call() {
 fn an_agent_stopped_by_an_unwritable_proxy_ca_fails_the_open_with_the_ca_message() {
     let f = fx(FakeEngine::new(), false);
     let ca = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
-    let obs = PaneObs {
-        status: PaneStatus::Unknown,
-        tail: format!("moor: {ca}\nmoor: agent exited 1"),
-        prompt: None,
-        exit_marker: Some(1),
-    };
-    f.surface.push_pane_obs("p-1", Ok(obs));
+    let screen = format!("moor: {ca}\nmoor: agent exited 1");
+    f.engine
+        .set_probes("moor-1", agent::on_screen(agent::exited(Some(1)), &screen));
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert_eq!(err.error.to_string(), format!("launch: {ca}"));

@@ -7,7 +7,6 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use moor_schema::tables::HookCache;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::copy_to_postgres;
@@ -204,27 +203,15 @@ fn a_table_with_more_rows_than_one_statement_can_bind_is_copied_whole() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("moor.db");
     let source = Store::open(&path, clock()).unwrap();
-    let sessions: Vec<i64> = (0..ROWS)
-        .map(|_| source.open_host_session("/a", None, None).unwrap())
-        .collect();
-    for chunk in sessions.chunks(5_000) {
-        let mut insert = Query::insert();
-        insert.into_table(HookCache::Table).columns([
-            HookCache::Session,
-            HookCache::Record,
-            HookCache::At,
-        ]);
-        for session in chunk {
-            insert.values_panic([(*session).into(), "{}".into(), 1.into()]);
-        }
-        source.writer().run(insert).unwrap();
+    for _ in 0..ROWS {
+        source.open_host_session("/a", None, None).unwrap();
     }
     let Some(target) = target(dir.path()) else {
         return;
     };
     let counts = copy_to_postgres(&path, &target).unwrap();
-    let hooks = counts.iter().find(|c| c.table == "hook_cache").unwrap();
-    assert_eq!(hooks.rows, ROWS);
+    let sessions = counts.iter().find(|c| c.table == "sessions").unwrap();
+    assert_eq!(sessions.rows, ROWS);
 }
 
 #[test]

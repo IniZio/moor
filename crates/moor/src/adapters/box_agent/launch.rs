@@ -188,14 +188,14 @@ impl Launch<'_> {
         preseed: &BoxSetup,
         writers: &[BoxSetup],
     ) -> Result<String, Failure> {
-        let (req, ctx) = (self.req, self.ctx);
+        let ctx = self.ctx;
         let exec = self.exec_env()?;
         let lines = self.proxy_lines()?;
         let env = agent_env::export_lines(&exec.vars, self.root, &exec.unset);
         let env = env.map_err(|e| fail("script", &e))?;
         let env = [self.profile_env_lines(&exec.unset)?, env].concat();
         script_stripping(
-            (self.cred, self.tmp, &req.nonce),
+            (self.cred, self.tmp),
             ctx,
             hooks,
             preseed,
@@ -208,15 +208,17 @@ impl Launch<'_> {
     /// Puts the files in the Box and opens the tab.
     fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
         let Self {
-            surface, ctx, req, ..
+            surface,
+            ctx: _,
+            req,
+            ..
         } = self;
         let mut plan = Plan::default();
         let planned = self.plan(&mut plan);
         self.execute(connect, &plan)?;
         planned?;
         let script = script_path(self.cred).map_err(|e| fail("script", &e))?;
-        let line = detach::pane_line(connect, ctx.workdir.as_str(), script.as_str())
-            .map_err(|e| fail("script", &e))?;
+        let line = detach::pane_line(connect, script.as_str());
         surface
             .open_pane(
                 &req.workspace,

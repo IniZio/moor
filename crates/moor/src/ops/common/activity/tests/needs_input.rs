@@ -2,25 +2,23 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{
-    Activity, AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes,
-    Source,
-};
+use moor_core::activity::{Activity, AgentState, Probe, Source};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::BoxId;
 
-use super::{cx, rec, row, working_box, NOW, SESSION};
+use super::{cx, row, seen, working_box, NOW, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
 use crate::store::{NewRun, RunOutcome};
+use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
 fn reading(state: AgentState) -> Reading {
     let activity = Activity {
         state,
-        source: Source::Pane,
+        source: Source::Status,
     };
     Reading::new(Some(activity), PaneLiveness::Live, true, false)
 }
@@ -91,26 +89,9 @@ fn a_different_question_without_a_resume_is_a_new_event() {
     assert_eq!(asked(&cx, id), 2);
 }
 
-/// A probe whose hook reports the agent waiting on a menu question.
-fn hook_asking() -> Probes {
-    hook_probe(HookRecord {
-        message: Some("Reuse PR #32?".to_owned()),
-        options: vec!["Reuse".to_owned(), "Open new".to_owned()],
-        doing: None,
-        ..rec(HookKind::Blocked)
-    })
-}
-
-fn hook_probe(record: HookRecord) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(record),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A probe whose agent waits on a menu question.
+fn question_probe() -> Probe {
+    agent::asking("Reuse PR #32?", &["Reuse", "Open new"], seen())
 }
 
 fn tick(cx: &Cx, id: BoxId) {
@@ -122,7 +103,7 @@ fn tick(cx: &Cx, id: BoxId) {
 #[test]
 fn a_run_while_the_agent_waits_keeps_one_episode() {
     let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new().probes(SESSION, hook_asking()));
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, question_probe()));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     let store = cx.store().unwrap();
@@ -156,14 +137,13 @@ fn a_run_while_the_agent_waits_keeps_one_episode() {
 #[test]
 fn the_same_question_asked_again_after_work_is_a_new_episode() {
     let dir = tempfile::tempdir().unwrap();
-    let mut again = hook_asking();
-    if let HookRead::Fresh(r) = &mut again.hook {
-        r.at = NOW;
-    }
     let engine = FakeEngine::new()
-        .then_probes(SESSION, hook_asking())
-        .then_probes(SESSION, hook_probe(rec(HookKind::Busy)))
-        .probes(SESSION, again);
+        .then_probes(SESSION, question_probe())
+        .then_probes(SESSION, agent::working(seen()))
+        .probes(
+            SESSION,
+            agent::asking("Reuse PR #32?", &["Reuse", "Open new"], NOW),
+        );
     let (cx, _) = cx(dir.path(), &Arc::new(engine));
     let id = working_box(&cx, true);
     for _ in 0..4 {
@@ -172,38 +152,55 @@ fn the_same_question_asked_again_after_work_is_a_new_episode() {
     assert_eq!(asked(&cx, id), 2, "{:?}", kinds(&cx, id));
 }
 
+#[test]
+fn a_question_beats_the_blocked_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, question_probe()));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    tick(&cx, id);
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    let ev = events.iter().find(|e| e.kind == "needs_input").unwrap();
+    assert_eq!(
+        ev.payload,
+        serde_json::json!({"question": "Reuse PR #32?", "options": ["Reuse", "Open new"]})
+    );
+}
+
+#[test]
+fn a_permission_takes_its_message_and_the_menu_on_screen() {
+    let dir = tempfile::tempdir().unwrap();
+    let screen = "Do you want to run it?\n❯ 1. Yes\n  2. No\n";
+    let probe = agent::on_screen(agent::permission("Allow Bash?", seen()), screen);
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probe));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    tick(&cx, id);
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    let ev = events.iter().find(|e| e.kind == "needs_input").unwrap();
+    assert_eq!(
+        ev.payload,
+        serde_json::json!({"question": "Allow Bash?", "options": ["Yes", "No"]})
+    );
+}
+
 /// Claude Code's folder-trust screen as a pane showed it.
 const TRUST_SCREEN: &str =
     include_str!("../../../../adapters/box_agent/claude/fixtures/folder_trust.txt");
 
-/// An agent that has reported nothing since its launch marker, with `tail` on its pane.
-fn at_launch(tail: &str) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(rec(HookKind::Starting { launch: None })),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: tail.to_owned(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
-}
-
-fn trust_engine(quiet: bool) -> FakeEngine {
-    let engine = FakeEngine::new()
+fn trust_engine() -> FakeEngine {
+    FakeEngine::new()
         .prompt("trust this folder", FirstRunPrompt::FolderTrust)
-        .probes(SESSION, at_launch(TRUST_SCREEN));
-    if quiet {
-        engine.hooks_quiet_during_first_run()
-    } else {
-        engine
-    }
+        .probes(
+            SESSION,
+            agent::on_screen(agent::read(None, seen(), 0), TRUST_SCREEN),
+        )
 }
 
 #[test]
 fn a_first_run_screen_lets_the_box_idle_without_asking() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(true)));
+    let (cx, _) = cx(dir.path(), &Arc::new(trust_engine()));
     let id = working_box(&cx, true);
     tick(&cx, id);
     tick(&cx, id);
@@ -212,24 +209,15 @@ fn a_first_run_screen_lets_the_box_idle_without_asking() {
 }
 
 #[test]
-fn a_first_run_prompt_counts_only_for_an_agent_whose_hooks_wait_it_out() {
-    let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(false)));
-    let id = working_box(&cx, true);
-    tick(&cx, id);
-    assert!(!kinds(&cx, id).contains(&"idled".to_owned()));
-}
-
-#[test]
 fn first_run_words_after_the_agent_reported_are_not_a_prompt() {
     let dir = tempfile::tempdir().unwrap();
-    let mut probes = at_launch(TRUST_SCREEN);
-    probes.hook = HookRead::Fresh(rec(HookKind::Busy));
-    let engine = trust_engine(true).probes(SESSION, probes);
+    let probe = agent::on_screen(agent::working(seen()), TRUST_SCREEN);
+    let engine = trust_engine().probes(SESSION, probe);
     let (cx, _) = cx(dir.path(), &Arc::new(engine));
     let id = working_box(&cx, true);
     tick(&cx, id);
     assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
+    assert!(!kinds(&cx, id).contains(&"idled".to_owned()));
 }
 
 #[test]
@@ -244,11 +232,11 @@ fn a_reading_waiting_on_a_prompt_or_first_run_screen_is_blocked() {
         };
         Reading::new(Some(activity), PaneLiveness::Live, true, false)
     };
-    assert!(waiting(Source::Hooks).blocked());
+    assert!(waiting(Source::Status).blocked());
     assert!(waiting(Source::FirstRun).blocked());
     let idle = Activity {
         state: AgentState::Idle,
-        source: Source::Hooks,
+        source: Source::Status,
     };
     assert!(!Reading::new(Some(idle), PaneLiveness::Live, true, false).blocked());
 }

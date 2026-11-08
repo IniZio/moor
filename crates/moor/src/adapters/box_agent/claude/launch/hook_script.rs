@@ -1,198 +1,134 @@
 //! The script Claude Code's hooks run in the Box.
 
-/// Writes `agent-state.json` beside itself: `hook.sh STATE EVENT`, hook JSON on stdin.
-/// `ts` is when it ran and `turn` when the prompt of the current turn was submitted, both in
-/// milliseconds on the Box's clock; every report but a prompt's carries `turn` forward.
+/// Leaves what herdr-core cannot read off the terminal in its `moor-agent` doc:
+/// `hook.sh EVENT`, hook JSON on stdin. Claude Code reports its own status to the terminal.
+/// A prompt or a resume leaves only the session id; a Stop adds its last message and the
+/// background work it left running; a question tool adds its questions.
 /// The read is capped in size and time, so a closed or silent stdin never stalls the agent.
 /// A Stop's last message is rebuilt from the transcript's final assistant reply, as Claude Code's
 /// `last_assistant_message` holds only the reply's last text block; a transcript whose reply does
 /// not end with that block has not caught up, and the payload's text stands.
-/// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
-/// follows the question with a generic permission notice that names nothing it asked.
-/// What herdr-core cannot read off the terminal goes to its `moor-agent` doc: the session id, a
-/// Stop's last message and background work, and a question tool's questions; a prompt or a
-/// resume clears them. Claude Code reports its own status to the terminal.
 /// `background_local` says every piece of background work is a local shell or subagent, the only
 /// kinds whose end the Box can see; remote or MCP work runs on with nothing to show for it.
-/// A busy record keeps the tool's name and, cut short, the input fields the `doing` line
-/// reads; never the tool's output or any other input.
+/// A Box without python3 or node leaves no note.
 pub(super) const HOOK_SCRIPT: &str = r#"#!/bin/sh
-d=${0%/*}
 in=
 if command -v timeout >/dev/null 2>&1; then in=$(timeout 2 head -c 65536 2>/dev/null); fi
-if [ "$2" = Notification ] && grep -q '"state": *"waiting_input", *"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
-t="$d/agent-state.json.tmp.$$"
 if command -v python3 >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in python3 -c '
-import json, os, sys, time
+import json, os, subprocess, sys
 try:
     d = json.loads(os.environ.get("MOOR_HOOK_IN", ""))
 except ValueError:
     d = {}
 if not isinstance(d, dict):
     d = {}
-o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time() * 1000)}
-for k in ("session_id", "message", "notification_type", "last_assistant_message"):
-    if isinstance(d.get(k), str):
-        o[k] = d[k]
-if sys.argv[2] == "Stop" and isinstance(d.get("transcript_path"), str):
-    try:
-        with open(d["transcript_path"], "rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 1048576))
-            lines = f.read().decode("utf-8", "replace").splitlines()
-        texts = []
-        for line in lines:
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(e, dict) or e.get("isSidechain"):
-                continue
-            m = e.get("message")
-            if e.get("type") == "user":
-                texts = []
-            elif e.get("type") == "assistant" and isinstance(m, dict) and isinstance(m.get("content"), list):
-                texts += [b["text"] for b in m["content"] if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str) and b["text"].strip()]
-        whole = "\n\n".join(texts)
-        last = o.get("last_assistant_message")
-        if whole and (last is None or whole.rstrip().endswith(last.strip())):
-            o["last_assistant_message"] = whole
-    except Exception:
-        pass
-bg = d.get("background_tasks")
-if isinstance(bg, list):
-    run = [t for t in bg if isinstance(t, dict) and t.get("status", "running") == "running"]
-    names = [str(t.get("description") or t.get("type") or t.get("id") or "")[:200] for t in run]
-    o["background"] = [n for n in names if n][:10]
-    o["background_local"] = all(t.get("type") in ("shell", "subagent") for t in run)
-try:
-    p = json.load(open(sys.argv[3] + "/agent-state.json"))
-    if not isinstance(p, dict):
-        p = {}
-except (OSError, ValueError):
-    p = {}
-if sys.argv[2] == "UserPromptSubmit":
-    o["turn"] = o["ts"]
-elif isinstance(p.get("turn"), int):
-    o["turn"] = p["turn"]
-if sys.argv[2] == "Notification" and "last_assistant_message" not in o:
-    if p.get("state") == "idle" and isinstance(p.get("last_assistant_message"), str):
-        o["last_assistant_message"] = p["last_assistant_message"]
-    if p.get("state") == "idle" and isinstance(p.get("background"), list):
-        o["background"] = p["background"]
-        o["background_local"] = p.get("background_local") is True
+n = {}
+if isinstance(d.get("session_id"), str):
+    n["session_id"] = d["session_id"]
+if sys.argv[1] == "Stop":
+    said = d.get("last_assistant_message") if isinstance(d.get("last_assistant_message"), str) else None
+    if isinstance(d.get("transcript_path"), str):
+        try:
+            with open(d["transcript_path"], "rb") as f:
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 1048576))
+                lines = f.read().decode("utf-8", "replace").splitlines()
+            texts = []
+            for line in lines:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(e, dict) or e.get("isSidechain"):
+                    continue
+                m = e.get("message")
+                if e.get("type") == "user":
+                    texts = []
+                elif e.get("type") == "assistant" and isinstance(m, dict) and isinstance(m.get("content"), list):
+                    texts += [b["text"] for b in m["content"] if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str) and b["text"].strip()]
+            whole = "\n\n".join(texts)
+            if whole and (said is None or whole.rstrip().endswith(said.strip())):
+                said = whole
+        except Exception:
+            pass
+    if said is not None:
+        n["said"] = said[:262144]
+    bg = d.get("background_tasks")
+    if isinstance(bg, list):
+        run = [t for t in bg if isinstance(t, dict) and t.get("status", "running") == "running"]
+        names = [str(t.get("description") or t.get("type") or t.get("id") or "")[:200] for t in run]
+        n["background"] = [x for x in names if x][:10]
+        n["background_local"] = all(t.get("type") in ("shell", "subagent") for t in run)
 ti = d.get("tool_input")
-if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
-    o["questions"] = ti["questions"]
-if sys.argv[1] == "working" and isinstance(d.get("tool_name"), str):
-    o["tool"] = d["tool_name"][:100]
-    if isinstance(ti, dict):
-        o["tool_input"] = {k: ti[k][:300] for k in ("command", "file_path", "notebook_path", "url") if isinstance(ti.get(k), str)}
-n = {k: o[k] for k in ("session_id", "background", "background_local") if k in o}
-if sys.argv[2] == "Stop" and isinstance(o.get("last_assistant_message"), str):
-    n["said"] = o["last_assistant_message"][:262144]
-if sys.argv[2] == "PreToolUse" and "questions" in o:
-    n["questions"] = o["questions"]
-if sys.argv[2] in ("UserPromptSubmit", "Stop", "SessionStart") or "questions" in n:
-    import subprocess
-    def call(m, p):
-        r = subprocess.run(["herdr-core", "connect"], input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": m, "params": p}) + "\n", capture_output=True, text=True, timeout=5)
-        return json.loads(r.stdout.splitlines()[0]).get("result")
-    try:
-        for _ in range(3):
-            v = call("doc.get", {"name": "moor-agent"})["version"]
-            if call("doc.set", {"name": "moor-agent", "value": n, "version": v}) is not None:
-                break
-    except Exception:
-        pass
-print(json.dumps(o))' "$1" "$2" "$d"
+if sys.argv[1] == "PreToolUse" and isinstance(ti, dict) and isinstance(ti.get("questions"), list):
+    n["questions"] = ti["questions"]
+def call(m, p):
+    r = subprocess.run(["herdr-core", "connect"], input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": m, "params": p}) + "\n", capture_output=True, text=True, timeout=5)
+    return json.loads(r.stdout.splitlines()[0]).get("result")
+try:
+    for _ in range(3):
+        v = call("doc.get", {"name": "moor-agent"})["version"]
+        if call("doc.set", {"name": "moor-agent", "value": n, "version": v}) is not None:
+            break
+except Exception:
+    pass' "$1"
 elif command -v node >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in node -e '
 let d = {};
 try { d = JSON.parse(process.env.MOOR_HOOK_IN || ""); } catch (e) {}
 if (d === null || typeof d !== "object" || Array.isArray(d)) d = {};
-const o = { state: process.argv[1], event: process.argv[2], ts: Date.now() };
-for (const k of ["session_id", "message", "notification_type", "last_assistant_message"]) {
-  if (typeof d[k] === "string") o[k] = d[k];
-}
-if (process.argv[2] === "Stop" && typeof d.transcript_path === "string") {
-  try {
-    const fs = require("fs");
-    const fd = fs.openSync(d.transcript_path, "r");
-    const size = fs.fstatSync(fd).size;
-    const buf = Buffer.alloc(Math.min(size, 1048576));
-    fs.readSync(fd, buf, 0, buf.length, size - buf.length);
-    fs.closeSync(fd);
-    let texts = [];
-    for (const line of buf.toString("utf8").split("\n")) {
-      let e;
-      try { e = JSON.parse(line); } catch (err) { continue; }
-      if (!e || typeof e !== "object" || e.isSidechain) continue;
-      const m = e.message;
-      if (e.type === "user") texts = [];
-      else if (e.type === "assistant" && m && Array.isArray(m.content)) {
-        for (const b of m.content) if (b && b.type === "text" && typeof b.text === "string" && b.text.trim()) texts.push(b.text);
+const ev = process.argv[1];
+const n = {};
+if (typeof d.session_id === "string") n.session_id = d.session_id;
+if (ev === "Stop") {
+  let said = typeof d.last_assistant_message === "string" ? d.last_assistant_message : undefined;
+  if (typeof d.transcript_path === "string") {
+    try {
+      const fs = require("fs");
+      const fd = fs.openSync(d.transcript_path, "r");
+      const size = fs.fstatSync(fd).size;
+      const buf = Buffer.alloc(Math.min(size, 1048576));
+      fs.readSync(fd, buf, 0, buf.length, size - buf.length);
+      fs.closeSync(fd);
+      let texts = [];
+      for (const line of buf.toString("utf8").split("\n")) {
+        let e;
+        try { e = JSON.parse(line); } catch (err) { continue; }
+        if (!e || typeof e !== "object" || e.isSidechain) continue;
+        const m = e.message;
+        if (e.type === "user") texts = [];
+        else if (e.type === "assistant" && m && Array.isArray(m.content)) {
+          for (const b of m.content) if (b && b.type === "text" && typeof b.text === "string" && b.text.trim()) texts.push(b.text);
+        }
       }
-    }
-    const whole = texts.join("\n\n");
-    const last = o.last_assistant_message;
-    if (whole && (last === undefined || whole.trimEnd().endsWith(last.trim()))) o.last_assistant_message = whole;
-  } catch (err) {}
-}
-if (Array.isArray(d.background_tasks)) {
-  const run = d.background_tasks
-    .filter((t) => t && typeof t === "object" && (t.status === undefined || t.status === "running"));
-  o.background_local = run.every((t) => t.type === "shell" || t.type === "subagent");
-  o.background = run
-    .map((t) => String(t.description || t.type || t.id || "").slice(0, 200))
-    .filter((n) => n)
-    .slice(0, 10);
-}
-let p = {};
-try { p = JSON.parse(require("fs").readFileSync(process.argv[3] + "/agent-state.json", "utf8")); } catch (e) {}
-if (p === null || typeof p !== "object") p = {};
-if (process.argv[2] === "UserPromptSubmit") o.turn = o.ts;
-else if (Number.isInteger(p.turn)) o.turn = p.turn;
-if (process.argv[2] === "Notification" && !("last_assistant_message" in o)) {
-  if (p.state === "idle" && typeof p.last_assistant_message === "string") o.last_assistant_message = p.last_assistant_message;
-  if (p.state === "idle" && Array.isArray(p.background)) {
-    o.background = p.background;
-    o.background_local = p.background_local === true;
+      const whole = texts.join("\n\n");
+      if (whole && (said === undefined || whole.trimEnd().endsWith(said.trim()))) said = whole;
+    } catch (err) {}
+  }
+  if (said !== undefined) n.said = said.slice(0, 262144);
+  if (Array.isArray(d.background_tasks)) {
+    const run = d.background_tasks
+      .filter((t) => t && typeof t === "object" && (t.status === undefined || t.status === "running"));
+    n.background = run
+      .map((t) => String(t.description || t.type || t.id || "").slice(0, 200))
+      .filter((x) => x)
+      .slice(0, 10);
+    n.background_local = run.every((t) => t.type === "shell" || t.type === "subagent");
   }
 }
 const ti = d.tool_input;
-if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;
-if (process.argv[1] === "working" && typeof d.tool_name === "string") {
-  o.tool = d.tool_name.slice(0, 100);
-  if (ti && typeof ti === "object") {
-    o.tool_input = {};
-    for (const k of ["command", "file_path", "notebook_path", "url"]) if (typeof ti[k] === "string") o.tool_input[k] = ti[k].slice(0, 300);
+if (ev === "PreToolUse" && ti && typeof ti === "object" && Array.isArray(ti.questions)) n.questions = ti.questions;
+const call = (m, p) => {
+  const r = require("child_process").spawnSync("herdr-core", ["connect"], { input: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) + "\n", timeout: 5000, encoding: "utf8" });
+  return JSON.parse(String(r.stdout).split("\n")[0]).result;
+};
+try {
+  for (let i = 0; i < 3; i++) {
+    const v = call("doc.get", { name: "moor-agent" }).version;
+    if (call("doc.set", { name: "moor-agent", value: n, version: v }) !== undefined) break;
   }
-}
-const n = {};
-for (const k of ["session_id", "background", "background_local"]) if (k in o) n[k] = o[k];
-if (process.argv[2] === "Stop" && typeof o.last_assistant_message === "string") n.said = o.last_assistant_message.slice(0, 262144);
-if (process.argv[2] === "PreToolUse" && "questions" in o) n.questions = o.questions;
-if (["UserPromptSubmit", "Stop", "SessionStart"].includes(process.argv[2]) || "questions" in n) {
-  const call = (m, p) => {
-    const r = require("child_process").spawnSync("herdr-core", ["connect"], { input: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) + "\n", timeout: 5000, encoding: "utf8" });
-    return JSON.parse(String(r.stdout).split("\n")[0]).result;
-  };
-  try {
-    for (let i = 0; i < 3; i++) {
-      const v = call("doc.get", { name: "moor-agent" }).version;
-      if (call("doc.set", { name: "moor-agent", value: n, version: v }) !== undefined) break;
-    }
-  } catch (e) {}
-}
-console.log(JSON.stringify(o));' "$1" "$2" "$d"
-else
-  ts=$(date +%s%3N 2>/dev/null)
-  case $ts in ''|*[!0-9]*) ts=$(($(date +%s) * 1000)) ;; esac
-  if [ "$2" = UserPromptSubmit ]; then turn=$ts
-  else turn=$(sed -n 's/.*"turn": *\([0-9][0-9]*\).*/\1/p' "$d/agent-state.json" 2>/dev/null); fi
-  printf '{"state":"%s","event":"%s","ts":%s,"turn":%s}\n' "$1" "$2" "$ts" "${turn:-null}"
-fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"
+} catch (e) {}' "$1"
+fi
 exit 0
 "#;

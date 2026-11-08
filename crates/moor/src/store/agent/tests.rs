@@ -1,10 +1,9 @@
-//! Tests for session rows, the hook cache and `idle_since`.
+//! Tests for session rows, agent reads and `idle_since`.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{HookKind, HookRecord};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
@@ -13,8 +12,8 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use moor_schema::tables::{Boxes, HookCache, Launches, Sessions};
-use sea_query::{Expr, ExprTrait as _, Func, Query};
+use moor_schema::tables::{Boxes, Launches, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use crate::store::db::{self, DbExt as _};
 use crate::store::select::newest_session;
@@ -76,20 +75,6 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
                 .column(Boxes::IdleSince)
                 .from(Boxes::Table)
                 .and_where(Expr::col(Boxes::Id).eq(id.get())),
-            |r| r.get(0),
-        )
-        .unwrap()
-}
-
-/// How many hook reports are cached, across all Boxes.
-fn hook_rows(store: &Store) -> i64 {
-    store
-        .reader()
-        .unwrap()
-        .row(
-            Query::select()
-                .expr(Func::count(Expr::col(HookCache::Session)))
-                .from(HookCache::Table),
             |r| r.get(0),
         )
         .unwrap()
@@ -233,37 +218,6 @@ fn begin_session_on_unknown_box_is_not_found() {
 }
 
 #[test]
-fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock) = open(dir.path());
-    let id = add(&store, "t");
-    assert_eq!(store.hook(id).unwrap(), None);
-    let kinds = [
-        HookKind::Starting { launch: None },
-        HookKind::Busy,
-        HookKind::Idle,
-        HookKind::Blocked,
-    ];
-    for (i, kind) in kinds.into_iter().enumerate() {
-        clock.sleep(Duration::from_millis(10));
-        let record = HookRecord {
-            kind,
-            session_id: (i % 2 == 0).then(|| "sess".to_owned()),
-            message: (i == 3).then(|| "ok?".to_owned()),
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
-            turn: None,
-        };
-        store.put_hook(id, &record).unwrap();
-        let cache = store.hook(id).unwrap().unwrap();
-        assert_eq!(cache.record, record);
-        assert_eq!(cache.at, clock.now());
-    }
-    assert_eq!(hook_rows(&store), 1);
-}
-
-#[test]
 fn idle_since_is_set_on_quiet_and_cleared_on_busy() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
@@ -316,35 +270,6 @@ fn rejected_step_leaves_idle_since_unchanged() {
     assert_eq!(idle_since(&store, id), want);
 }
 
-#[test]
-fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _clock) = open(dir.path());
-    let id = add(&store, "t");
-    let first = Query::select()
-        .column(Sessions::Id)
-        .from(Sessions::Table)
-        .and_where(Expr::col(Sessions::Box).eq(id.get()))
-        .and_where(Expr::col(Sessions::Ordinal).eq(1))
-        .take();
-    store
-        .writer()
-        .run(
-            Query::insert()
-                .into_table(HookCache::Table)
-                .columns([HookCache::Session, HookCache::Record, HookCache::At])
-                .values_panic([
-                    db::sub(first),
-                    r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#.into(),
-                    1.into(),
-                ]),
-        )
-        .unwrap();
-    let rec = store.hook(id).unwrap().unwrap().record;
-    assert_eq!(rec.kind, HookKind::Blocked);
-    assert_eq!(rec.message.as_deref(), Some("X"));
-}
-
 fn set_session_state(store: &Store, id: BoxId, state: &str) {
     store
         .writer()
@@ -391,74 +316,56 @@ fn begin_session_records_the_current_box_session() {
 }
 
 #[test]
-fn hook_follows_the_current_session() {
+fn an_agent_is_unread_only_after_a_read_older_than_two_minutes() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    let record = |kind| HookRecord {
-        kind,
-        session_id: None,
-        message: None,
-        options: Vec::new(),
-        doing: None,
-        at: Ts::from_millis(5),
-        turn: None,
-    };
-    store.put_hook(id, &record(HookKind::Busy)).unwrap();
-    set_session_state(&store, id, "ended");
-    let second = store.open_session(id).unwrap();
-    assert_eq!(store.hook(id).unwrap(), None);
-    store.put_hook(id, &record(HookKind::Idle)).unwrap();
-    let conn = store.writer();
-    let cached: i64 = conn
-        .row(
-            Query::select()
-                .column(HookCache::Session)
-                .from(HookCache::Table)
-                .and_where(Expr::col(HookCache::Session).eq(second.id)),
-            |r| r.get(0),
-        )
+    let launch = store.begin_session(id, "s1", None).unwrap();
+    let read_at = Ts::from_millis(10_000);
+    store.note_agent_read(launch, read_at).unwrap();
+    let at = |secs: i64| Ts::from_millis(10_000 + secs * 1_000);
+    assert!(!store.agent_unread(id, at(0)).unwrap());
+    assert!(!store.agent_unread(id, at(119)).unwrap());
+    assert!(store.agent_unread(id, at(120)).unwrap());
+    assert!(store.agent_unread(id, at(600)).unwrap());
+    store.note_agent_read(launch, at(600)).unwrap();
+    assert!(!store.agent_unread(id, at(601)).unwrap());
+}
+
+#[test]
+fn an_agent_never_read_is_not_unread() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    store.begin_session(id, "s1", None).unwrap();
+    assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
+}
+
+#[test]
+fn a_box_with_no_live_session_is_not_unread() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
+    let launch = store.begin_session(id, "s1", None).unwrap();
+    store
+        .note_agent_read(launch, Ts::from_millis(1_000))
         .unwrap();
-    drop(conn);
-    let total = hook_rows(&store);
-    assert_eq!((cached, total), (second.id, 2));
-    assert_eq!(store.hook(id).unwrap().unwrap().record.kind, HookKind::Idle);
+    store.end_session(launch, Some(0), None).unwrap();
+    assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
 }
 
 #[test]
-fn a_hook_report_keeps_its_doing_line_through_the_cache() {
+fn a_read_of_an_ended_launch_is_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = working(&store, "t");
-    let record = HookRecord {
-        kind: HookKind::Busy,
-        session_id: None,
-        message: None,
-        options: Vec::new(),
-        doing: Some("Bash: cargo test".to_owned()),
-        at: Ts::from_millis(900),
-        turn: None,
-    };
-    store.put_hook(id, &record).unwrap();
-    assert_eq!(store.hook(id).unwrap().unwrap().record, record);
-}
-
-#[test]
-fn a_waiting_hook_keeps_what_it_waits_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
     let id = add(&store, "t");
-    let record = HookRecord {
-        kind: HookKind::Waiting {
-            on: vec!["gh run watch".to_owned(), "tests".to_owned()],
-        },
-        session_id: None,
-        message: Some("Watching.".to_owned()),
-        options: Vec::new(),
-        doing: None,
-        at: Ts::from_millis(500),
-        turn: None,
-    };
-    store.put_hook(id, &record).unwrap();
-    assert_eq!(store.hook(id).unwrap().unwrap().record, record);
+    let first = store.begin_session(id, "s1", None).unwrap();
+    store.end_session(first, Some(0), None).unwrap();
+    store
+        .note_agent_read(first, Ts::from_millis(1_000))
+        .unwrap();
+    set_session_state(&store, id, "working");
+    store.begin_session(id, "s2", None).unwrap();
+    assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
 }

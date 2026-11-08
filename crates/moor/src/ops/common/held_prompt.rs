@@ -1,11 +1,10 @@
 //! Gives the agent the prompt a start that had to queue asked of it, exactly once.
 //!
-//! A relaunched agent is not told at once: right after the launch no hook of its new session has
-//! been read, so one slow probe refuses the steer, and the hook file may still hold the old
-//! session's last report. The status sweep gives it once the new session reports Idle, and tries
-//! again on a later sweep when that steer fails.
+//! A relaunched agent is not told at once: right after the launch it has reported no status yet,
+//! so one slow probe refuses the steer. The status sweep gives it once the new session reports
+//! Idle, and tries again on a later sweep when that steer fails.
 
-use moor_core::activity::AgentState;
+use moor_core::activity::{AgentState, Source};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 
@@ -54,11 +53,11 @@ pub(crate) fn give_on_sweep(
     if row.lifecycle != BoxLifecycle::Ready || store.held_prompt(row.id)?.is_none() {
         return Ok(());
     }
-    let idle = reading
+    let reported_idle = reading
         .activity
         .as_ref()
-        .is_some_and(|a| a.state == AgentState::Idle);
-    if !idle || !reported_since_launch(store, row)? || failed_tries(store, row)? >= MAX_TRIES {
+        .is_some_and(|a| a.state == AgentState::Idle && a.source == Source::Status);
+    if !reported_idle || failed_tries(store, row)? >= MAX_TRIES {
         return Ok(());
     }
     let Ok(_held) = BoxLock::acquire(
@@ -89,16 +88,6 @@ fn give(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     }
     store.set_held_prompt(row.id, None)?;
     Ok(())
-}
-
-/// Whether the live agent session has reported through its hook since it launched.
-fn reported_since_launch(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let Some(session) = store.live_session(row.id)? else {
-        return Ok(false);
-    };
-    Ok(store
-        .hook(row.id)?
-        .is_some_and(|c| c.record.at >= session.started_at))
 }
 
 /// Failed tries since the agent's session last started.

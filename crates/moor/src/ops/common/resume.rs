@@ -1,6 +1,6 @@
 //! Tells the multiplexer how to resume a pane's agent session.
 
-use moor_core::activity::{AgentState, PaneStatus};
+use moor_core::seam::surface::PaneStatus;
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg};
 use moor_core::{BoxName, Warning};
 
@@ -10,16 +10,6 @@ use crate::store::{SessionRow, Store};
 
 /// Agent label registered with the multiplexer.
 const AGENT: &str = "claude";
-
-/// The pane status that shows `state`.
-pub(crate) const fn pane_status(state: &AgentState) -> PaneStatus {
-    match state {
-        AgentState::Working | AgentState::Waiting { .. } => PaneStatus::Working,
-        AgentState::Idle => PaneStatus::Idle,
-        AgentState::NeedsInput { .. } => PaneStatus::Blocked,
-        _ => PaneStatus::Unknown,
-    }
-}
 
 /// Registers how to resume session `agent` in `pane`, for Box `name`; true when registered.
 ///

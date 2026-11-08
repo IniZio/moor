@@ -50,6 +50,7 @@ struct State {
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     refreshed_logins: Vec<(BoxHandle, usize)>,
+    touches: Vec<BoxHandle>,
     copies: Vec<CopyCall>,
     files: Vec<(String, String, String)>,
     peeks: Vec<PeekCall>,
@@ -268,34 +269,17 @@ impl Driver for FakeDriver {
             .map(|(_, _, text)| text.clone()))
     }
 
-    fn put_file(
-        &self,
-        handle: &BoxHandle,
-        path: &BoxPath,
-        bytes: &[u8],
-        mode: u32,
-    ) -> Result<(), DriverError> {
-        let mut s = self.st();
-        s.note(format!("put_file {}", handle.as_str()));
-        s.puts
-            .push((handle.clone(), path.clone(), bytes.to_vec(), mode));
-        if !s.live.iter().any(|h| h == handle.as_str()) {
-            return Err(DriverError::NotFound);
-        }
-        if let Some(e) = s.fail_put.take() {
-            return Err(e);
-        }
-        let (h, p) = (handle.as_str(), path.as_str());
-        let text = String::from_utf8_lossy(bytes).into_owned();
-        match s.files.iter_mut().find(|(fh, fp, _)| fh == h && fp == p) {
-            Some(f) => f.2 = text,
-            None => s.files.push((h.to_owned(), p.to_owned(), text)),
-        }
-        Ok(())
+    fn put_file(&self, h: &BoxHandle, p: &BoxPath, b: &[u8], mode: u32) -> Result<(), DriverError> {
+        self.put(h, p, b, mode)
     }
 
     fn exec_piped(&self, h: &BoxHandle, s: &ExecSpec, p: Pipes) -> piped::Ended {
         self.piped(h, s, p)
+    }
+
+    fn touch(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        self.st().touches.push(handle.clone());
+        Ok(())
     }
 
     fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
@@ -388,6 +372,7 @@ impl Driver for FakeDriver {
 
 mod acquire;
 mod checkpoints;
+mod files;
 mod knobs;
 mod piped;
 mod runs;

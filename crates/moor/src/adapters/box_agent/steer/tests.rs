@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
+use moor_core::seam::surface::{PaneObs, PaneStatus};
 use moor_core::{BoxHandle, BoxPath};
 
 use crate::adapters::box_agent::claude::Claude;

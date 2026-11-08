@@ -1,4 +1,4 @@
-//! Agent session rows and the last hook report cached per box.
+//! Agent session rows.
 
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
@@ -255,7 +255,61 @@ impl Store {
         drop(conn);
         Ok(())
     }
+
+    /// Keep that the agent of live session `id` answered a read at `at`.
+    pub(crate) fn note_agent_read(&self, id: i64, at: Ts) -> Result<(), StoreError> {
+        let conn = self.writer();
+        conn.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::AgentReadAt, at.as_millis())
+                .and_where(Expr::col(Launches::Id).eq(id))
+                .and_where(Expr::col(Launches::EndedAt).is_null()),
+        )?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// Keep that a `needs_input` was written for the status of live session `id` set at `at`, on
+    /// the Box's clock; whether one was written for it already.
+    pub(crate) fn note_asked(&self, id: i64, at: Ts) -> Result<bool, StoreError> {
+        let conn = self.writer();
+        let changed = conn.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::AskedAt, at.as_millis())
+                .and_where(Expr::col(Launches::Id).eq(id))
+                .and_where(
+                    Expr::col(Launches::AskedAt)
+                        .is_null()
+                        .or(Expr::col(Launches::AskedAt).ne(at.as_millis())),
+                ),
+        )?;
+        drop(conn);
+        Ok(changed == 0)
+    }
+
+    /// Whether the live agent of `box_id` has answered a read, but none for so long that it may
+    /// have started a turn unseen.
+    pub(crate) fn agent_unread(&self, box_id: BoxId, now: Ts) -> Result<bool, StoreError> {
+        let Some(live) = self.live_session(box_id)? else {
+            return Ok(false);
+        };
+        let conn = self.reader()?;
+        let at: Option<i64> = conn.row(
+            Query::select()
+                .column(Launches::AgentReadAt)
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Id).eq(live.id)),
+            |r| r.get(0),
+        )?;
+        let ttl = i64::try_from(AGENT_READ_TTL.as_millis()).unwrap_or(i64::MAX);
+        Ok(at.is_some_and(|at| now.as_millis().saturating_sub(at) >= ttl))
+    }
 }
+
+/// How long a read of an agent stands for a dropped one.
+const AGENT_READ_TTL: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// A session from a `launches` row.
 fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
@@ -272,8 +326,6 @@ fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
         session: r.get(9)?,
     })
 }
-
-mod hook;
 
 #[cfg(test)]
 mod tests;

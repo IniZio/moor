@@ -1,51 +1,12 @@
-use moor_core::activity::{HookKind, HookRecord};
+use moor_core::activity::Question;
 use moor_core::seam::agent_adapter::{AgentAdapter, FirstRunPrompt, Key, NOTHING_TO_ARCHIVE};
-use moor_core::seam::clock::Ts;
+use serde_json::json;
 
 use super::Claude;
-
-fn parse(raw: &str) -> Option<HookRecord> {
-    Claude.parse_hook(raw.as_bytes())
-}
-
-fn kind(raw: &str) -> Option<HookKind> {
-    parse(raw).map(|r| r.kind)
-}
 
 #[test]
 fn escape_interrupts_the_agent() {
     assert_eq!(Claude.interrupt_key(), Key::Escape);
-}
-
-#[test]
-fn working_state_is_busy() {
-    assert_eq!(
-        kind(r#"{"state":"working","event":"UserPromptSubmit","ts":1760000000}"#),
-        Some(HookKind::Busy)
-    );
-}
-
-#[test]
-fn idle_state_is_idle() {
-    assert_eq!(kind(r#"{"state":"idle","ts":1}"#), Some(HookKind::Idle));
-}
-
-#[test]
-fn starting_state_is_starting() {
-    assert_eq!(
-        kind(r#"{"state":"starting","ts":1}"#),
-        Some(HookKind::Starting { launch: None })
-    );
-}
-
-#[test]
-fn a_starting_marker_names_its_launch() {
-    assert_eq!(
-        kind(r#"{"state":"starting","launch":"a1b2c3","ts":1}"#),
-        Some(HookKind::Starting {
-            launch: Some("a1b2c3".to_owned())
-        })
-    );
 }
 
 #[test]
@@ -54,114 +15,54 @@ fn claude_runs_no_hook_while_a_first_run_screen_is_up() {
 }
 
 #[test]
-fn waiting_input_carries_the_message() {
-    let rec = parse(r#"{"state":"waiting_input","message":"Allow rm?","ts":1}"#).unwrap();
-    assert_eq!(rec.kind, HookKind::Blocked);
-    assert_eq!(rec.message.as_deref(), Some("Allow rm?"));
+fn the_note_keeps_the_session_id_and_the_last_reply() {
+    let note = Claude.parse_note(&json!({"session_id": "s-1", "said": "Done."}));
+    assert_eq!(note.session_id.as_deref(), Some("s-1"));
+    assert_eq!(note.said.as_deref(), Some("Done."));
+    let empty = Claude.parse_note(&json!({"session_id": 7}));
+    assert_eq!(empty.session_id, None);
+    assert_eq!(empty.said, None);
 }
 
 #[test]
-fn waiting_input_without_message_has_none() {
-    let rec = parse(r#"{"state":"waiting_input","ts":1}"#).unwrap();
-    assert_eq!(rec.kind, HookKind::Blocked);
-    assert_eq!(rec.message, None);
-}
-
-#[test]
-fn idle_carries_the_last_message_and_never_the_nudge_text() {
-    let rec = parse(r#"{"state":"idle","last_assistant_message":"Done.","ts":1}"#).unwrap();
-    assert_eq!(rec.message.as_deref(), Some("Done."));
-    let raw = r#"{"state":"idle","notification_type":"idle_prompt","message":"waiting","ts":1}"#;
-    assert_eq!(parse(raw).unwrap().message, None);
-}
-
-#[test]
-fn session_id_is_kept_when_a_string() {
-    let rec = parse(r#"{"state":"idle","session_id":"s-1","ts":1}"#).unwrap();
-    assert_eq!(rec.session_id.as_deref(), Some("s-1"));
-    let rec = parse(r#"{"state":"idle","ts":1}"#).unwrap();
-    assert_eq!(rec.session_id, None);
-}
-
-#[test]
-fn idle_prompt_notification_is_idle_not_blocked() {
+fn the_note_reads_the_first_question_with_its_option_labels() {
+    let note = Claude.parse_note(&json!({"questions": [
+        {"question": "Which fruit?", "options": [{"label": "Apple"}, {"label": "Banana"}]},
+        {"question": "Later?"}
+    ]}));
     assert_eq!(
-        kind(r#"{"state":"waiting_input","notification_type":"idle_prompt","message":"x","ts":1}"#),
-        Some(HookKind::Idle)
+        note.question,
+        Some(Question {
+            text: "Which fruit?".to_owned(),
+            options: vec!["Apple".to_owned(), "Banana".to_owned()],
+        })
     );
+    assert_eq!(Claude.parse_note(&json!({"questions": []})).question, None);
 }
 
 #[test]
-fn timestamp_is_milliseconds() {
-    let rec = parse(r#"{"state":"working","ts":1760000000123}"#).unwrap();
-    assert_eq!(rec.at, Ts::from_millis(1_760_000_000_123));
+fn the_note_lists_background_work_and_whether_all_of_it_is_local() {
+    let note = Claude.parse_note(&json!({
+        "background": ["gh run watch", 3],
+        "background_local": true
+    }));
+    assert_eq!(note.background, ["gh run watch"]);
+    assert!(note.background_local);
+    let empty = Claude.parse_note(&json!({"background": [], "background_local": "yes"}));
+    assert!(empty.background.is_empty());
+    assert!(!empty.background_local);
 }
 
 #[test]
-fn invalid_json_is_absent() {
-    assert_eq!(parse("not json"), None);
-    assert_eq!(Claude.parse_hook(&[0xff, 0xfe]), None);
-}
-
-#[test]
-fn truncated_json_is_absent() {
-    assert_eq!(parse(r#"{"state":"working","ts":17600"#), None);
-}
-
-#[test]
-fn non_object_json_is_absent() {
-    assert_eq!(parse("[1,2]"), None);
-}
-
-#[test]
-fn missing_state_is_absent() {
-    assert_eq!(parse(r#"{"ts":1}"#), None);
-}
-
-#[test]
-fn unknown_state_is_absent() {
-    assert_eq!(parse(r#"{"state":"napping","ts":1}"#), None);
-}
-
-#[test]
-fn missing_ts_is_absent() {
-    assert_eq!(parse(r#"{"state":"idle"}"#), None);
-}
-
-#[test]
-fn string_ts_is_absent() {
-    assert_eq!(parse(r#"{"state":"idle","ts":"1760000000"}"#), None);
-}
-
-#[test]
-fn negative_ts_is_absent() {
-    assert_eq!(parse(r#"{"state":"idle","ts":-1}"#), None);
-}
-
-const RULE: &str = "────────────────";
-
-fn prompt(tail: &str) -> Option<String> {
-    Claude.pane_prompt(tail)
-}
-
-#[test]
-fn pane_prompt_is_the_line_above_the_input_box() {
-    let tail = format!("Allow rm?\n\n{RULE}\n> \n{RULE}\n  ? for shortcuts");
-    assert_eq!(prompt(&tail).as_deref(), Some("Allow rm?"));
-    let boxed = "Allow rm?\n╭──────╮\n│ >    │\n╰──────╯\n  esc to interrupt";
-    assert_eq!(prompt(boxed).as_deref(), Some("Allow rm?"));
-}
-
-#[test]
-fn pane_prompt_skips_blank_lines_and_the_footer() {
-    let tail = format!("Allow rm?\n  \n\n{RULE}\n> \n{RULE}\n  esc to interrupt");
-    assert_eq!(prompt(&tail).as_deref(), Some("Allow rm?"));
-}
-
-#[test]
-fn pane_prompt_needs_an_input_box_and_text_above_it() {
-    assert_eq!(prompt("esc to interrupt"), None);
-    assert_eq!(prompt(&format!("{RULE}\n> \n{RULE}\nfooter")), None);
+fn a_note_that_is_not_an_object_is_empty() {
+    assert_eq!(
+        Claude.parse_note(&json!(null)),
+        moor_core::activity::Note::default()
+    );
+    assert_eq!(
+        Claude.parse_note(&json!([1, 2])),
+        moor_core::activity::Note::default()
+    );
 }
 
 fn first_run(tail: &str) -> Option<FirstRunPrompt> {
@@ -407,52 +308,6 @@ fn claudes_folder_trust_screen_is_a_first_run_prompt() {
 }
 
 #[test]
-fn a_busy_record_reads_the_tool_and_its_argument_as_the_doing_line() {
-    let raw = r#"{"state":"working","event":"PostToolUse","ts":5,"tool":"Bash","tool_input":{"command":"cargo test -p moor --locked"}}"#;
-    assert_eq!(
-        parse(raw).unwrap().doing.as_deref(),
-        Some("Bash: cargo test")
-    );
-}
-
-#[test]
-fn only_a_busy_record_has_a_doing_line() {
-    let raw =
-        r#"{"state":"idle","event":"Stop","ts":5,"tool":"Bash","tool_input":{"command":"make"}}"#;
-    assert_eq!(parse(raw).unwrap().doing, None);
-}
-
-#[test]
-fn a_tool_named_with_odd_characters_has_no_doing_line() {
-    let raw = r#"{"state":"working","ts":5,"tool":"Bash\nSECRET=1"}"#;
-    assert_eq!(parse(raw).unwrap().doing, None);
-}
-
-#[test]
-fn a_browser_tool_names_its_host_and_other_tools_name_nothing_else() {
-    let nav = r#"{"state":"working","ts":5,"tool":"mcp__playwright__browser_navigate","tool_input":{"url":"https://login.example.com/sso?code=1"}}"#;
-    assert_eq!(
-        parse(nav).unwrap().doing.as_deref(),
-        Some("mcp__playwright__browser_navigate: login.example.com")
-    );
-    let other = r#"{"state":"working","ts":5,"tool":"mcp__linear__get_issue","tool_input":{"url":"https://x.test/secret"}}"#;
-    assert_eq!(
-        parse(other).unwrap().doing.as_deref(),
-        Some("mcp__linear__get_issue")
-    );
-}
-
-#[test]
-fn a_long_command_word_is_cut_to_the_line_cap() {
-    let raw = format!(
-        r#"{{"state":"working","ts":5,"tool":"Bash","tool_input":{{"command":"{}"}}}}"#,
-        "x".repeat(300)
-    );
-    let line = parse(&raw).unwrap().doing.unwrap();
-    assert!(line.chars().count() <= 80, "{line}");
-}
-
-#[test]
 fn transcript_script_finds_the_sessions_of_a_workdir_reached_through_a_symlink() {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
@@ -479,74 +334,4 @@ fn transcript_script_finds_the_sessions_of_a_workdir_reached_through_a_symlink()
         NOTHING_TO_ARCHIVE
     );
     assert!(real.join(".moor/t.tgz").exists());
-}
-
-#[test]
-fn idle_with_background_work_is_waiting_and_with_none_is_idle() {
-    let raw = r#"{"state":"idle","last_assistant_message":"Watching.","background":["gh run watch"],"ts":1}"#;
-    let rec = parse(raw).unwrap();
-    assert_eq!(
-        rec.kind,
-        HookKind::Waiting {
-            on: vec!["gh run watch".to_owned()]
-        }
-    );
-    assert_eq!(rec.message.as_deref(), Some("Watching."));
-    assert_eq!(
-        kind(r#"{"state":"idle","background":[],"ts":1}"#),
-        Some(HookKind::Idle)
-    );
-}
-
-fn asked(message: Option<&str>, options: &[&str]) -> HookRecord {
-    HookRecord {
-        kind: HookKind::Blocked,
-        session_id: None,
-        message: message.map(str::to_owned),
-        options: options.iter().map(|o| (*o).to_owned()).collect(),
-        doing: None,
-        at: Ts::from_millis(1),
-        turn: None,
-    }
-}
-
-const PERMISSION: Option<&str> = Some("Claude needs your permission");
-const RECAP: &str = "※ recap: fixed the lint and pushed\n\n───\n> \n───\n  ? for shortcuts\n";
-
-#[test]
-fn a_permission_prompt_with_only_an_empty_input_on_screen_is_gone() {
-    assert!(Claude.prompt_gone(&asked(PERMISSION, &[]), RECAP));
-    let to_use = asked(Some("Claude needs your permission to use Bash"), &[]);
-    assert!(Claude.prompt_gone(&to_use, RECAP));
-}
-
-#[test]
-fn a_permission_dialog_on_screen_is_not_gone() {
-    let rec = asked(PERMISSION, &[]);
-    for tail in [
-        "Do you want to proceed?\n❯ 1. Yes\n  2. No\n",
-        "❯ 1. Yes\n  2. Yes, and don't ask again for this very long command\n     that wrapped\n  3. No\n",
-        "⚠ Claude Code will automatically block this request in 1:35, to avoid holding up\n",
-        "Esc to cancel · Tab to amend\n",
-        "Do you want to make this edit?\n",
-    ] {
-        assert!(!Claude.prompt_gone(&rec, tail), "{tail}");
-    }
-}
-
-#[test]
-fn only_a_permission_prompt_can_be_found_gone() {
-    assert!(!Claude.prompt_gone(&asked(Some("Enter the token"), &[]), RECAP));
-    assert!(!Claude.prompt_gone(&asked(None, &[]), RECAP));
-    assert!(!Claude.prompt_gone(&asked(PERMISSION, &["Yes", "No"]), RECAP));
-    let idle = HookRecord {
-        kind: HookKind::Idle,
-        ..asked(PERMISSION, &[])
-    };
-    assert!(!Claude.prompt_gone(&idle, RECAP));
-}
-
-#[test]
-fn a_blank_pane_shows_nothing_about_a_prompt() {
-    assert!(!Claude.prompt_gone(&asked(PERMISSION, &[]), " \n\n"));
 }

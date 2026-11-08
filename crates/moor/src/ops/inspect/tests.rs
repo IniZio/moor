@@ -3,11 +3,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::user::{Caller, Identity};
 use moor_core::{BoxId, BoxName, InspectReq, ProviderId, Request};
@@ -15,6 +16,7 @@ use moor_core::{BoxId, BoxName, InspectReq, ProviderId, Request};
 use super::run;
 use crate::cx::Cx;
 use crate::ops::authz::authorize;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -85,17 +87,9 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
     id
 }
 
-/// Probes whose pane shows `tail` as a working agent.
-fn pane(tail: String) -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Working,
-            tail,
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A read of a working agent whose screen shows `tail`.
+fn pane(tail: &str) -> Probe {
+    agent::on_screen(agent::working(Ts::from_millis(0)), tail)
 }
 
 fn numbered(n: usize) -> String {
@@ -108,7 +102,7 @@ fn with_pane(n: usize) -> (tempfile::TempDir, Cx, BoxId) {
     let driver = Arc::new(FakeDriver::new());
     let setup = cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&setup, &driver);
-    let engine = Arc::new(FakeEngine::new().probes("s-a", pane(numbered(n))));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", pane(&numbered(n))));
     let cx = cx(dir.path(), &driver, &engine);
     (dir, cx, id)
 }

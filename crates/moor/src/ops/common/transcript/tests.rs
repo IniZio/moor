@@ -12,7 +12,7 @@ use moor_core::seam::engine::EngineError;
 use moor_core::{BoxName, ProviderId};
 use serde_json::json;
 
-use super::{save, save_pending};
+use super::save;
 use crate::blobs::fs::FsBlobs;
 use crate::blobs::{BlobKey, Blobs};
 use crate::cx::Cx;
@@ -278,7 +278,7 @@ fn a_save_failing_for_want_of_a_link_is_recorded_as_pending() {
 }
 
 #[test]
-fn a_save_failing_otherwise_is_not_pending() {
+fn a_save_failing_otherwise_is_not_marked_unlinked() {
     let engine =
         FakeEngine::new().fail_transcript(EngineError::Transcript("stream: bad base64".into()));
     let (_dir, cx) = fx(engine);
@@ -290,48 +290,6 @@ fn a_save_failing_otherwise_is_not_pending() {
             .and_then(|f| f.get("unlinked")),
         Some(&json!(false))
     );
-    save_pending(&cx, cx.store().unwrap(), &row).unwrap();
-    assert_eq!(failed_events(&cx, &row).len(), 1);
-}
-
-#[test]
-fn a_pending_save_is_made_when_asked_and_stops_being_pending() {
-    let engine = Arc::new(
-        FakeEngine::new()
-            .transcript_text("abc")
-            .fail_transcript(not_linked()),
-    );
-    let (_dir, cx) = fx(FakeEngine::new());
-    let cx = cx.with_engine(engine.clone());
-    let (row, session) = ready(&cx);
-    let store = cx.store().unwrap();
-    save(&cx, store, &row, &session, Trigger::Turn);
-    save_pending(&cx, store, &row).unwrap();
-    save_pending(&cx, store, &row).unwrap();
-    assert_eq!(engine.transcripts().len(), 2);
-    let kinds: Vec<String> = store
-        .events(row.id, 100)
-        .unwrap()
-        .into_iter()
-        .map(|e| e.kind)
-        .collect();
-    assert_eq!(kinds.iter().filter(|k| *k == "transcript_saved").count(), 1);
-}
-
-#[test]
-fn a_pending_save_that_fails_again_stays_pending() {
-    let engine = Arc::new(FakeEngine::new().fail_transcript(not_linked()));
-    let (_dir, cx) = fx(FakeEngine::new());
-    let cx = cx.with_engine(engine.clone());
-    let (row, session) = ready(&cx);
-    let store = cx.store().unwrap();
-    save(&cx, store, &row, &session, Trigger::Turn);
-    engine.fail_next_transcript(not_linked());
-    save_pending(&cx, store, &row).unwrap();
-    assert_eq!(failed_events(&cx, &row).len(), 2);
-    engine.fail_next_transcript(not_linked());
-    save_pending(&cx, store, &row).unwrap();
-    assert_eq!(failed_events(&cx, &row).len(), 3);
 }
 
 fn round_trip(blobs: Arc<dyn Blobs>) {

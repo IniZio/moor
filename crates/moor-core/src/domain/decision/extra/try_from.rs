@@ -228,14 +228,12 @@ impl TryFrom<Event> for ExtraEvent {
                 session,
                 message,
                 submit_retried,
-                hook_before,
-                new_turn,
+                turn_before,
             } => Ok(Self::Steered {
                 session,
                 message,
                 submit_retried,
-                hook_before,
-                new_turn,
+                turn_before,
             }),
             Event::TurnDone { steer, outcome } => Ok(Self::TurnDone { steer, outcome }),
             Event::ProxyStarted {

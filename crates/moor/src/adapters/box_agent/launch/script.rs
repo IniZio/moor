@@ -6,9 +6,23 @@ use moor_core::seam::agent_adapter::{BoxSetup, LaunchCtx};
 use moor_core::seam::proc::Tool;
 
 use super::super::agent_env;
-use super::super::probe::HOOK_FILE;
 use super::super::profile_writer::FAILURES_FILE;
 use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE};
+
+/// The line that removes the temp dirs of the Box's earlier launches, all but `tmp`: the agent
+/// is exec'd, so no exit trap removes its own.
+fn remove_earlier(tmp: &BoxPath) -> String {
+    tmp.as_str()
+        .rsplit_once('-')
+        .map(|(stem, _)| {
+            format!(
+                "for d in {}-*; do [ \"$d\" = {} ] || rm -rf \"$d\"; done",
+                quote(stem),
+                quote(tmp.as_str())
+            )
+        })
+        .unwrap_or_default()
+}
 
 /// Where the agent script lands on the Box.
 pub(super) fn script_path(cred: &BoxPath) -> Result<BoxPath, NameError> {
@@ -18,7 +32,7 @@ pub(super) fn script_path(cred: &BoxPath) -> Result<BoxPath, NameError> {
 /// [`script_stripping`] with no names to strip.
 #[cfg(test)]
 pub(super) fn script(
-    paths: (&BoxPath, &BoxPath, &str),
+    paths: (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
@@ -32,10 +46,9 @@ pub(super) fn script(
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
 /// names and crabbox's own names are unset before anything else runs, and the `env` exports run
 /// just before the profile `writers`, which run last before the agent, with the agent on `PATH`
-/// and the Proxy reachable. The starting marker it writes to the hook file names the launch by
-/// `nonce`.
+/// and the Proxy reachable.
 pub(super) fn script_stripping(
-    (cred, tmp, nonce): (&BoxPath, &BoxPath, &str),
+    (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
@@ -45,24 +58,23 @@ pub(super) fn script_stripping(
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
     let brief = quote(BoxPath::under(workdir, BRIEF_FILE)?.as_str());
-    let state = quote(BoxPath::under(workdir, HOOK_FILE)?.as_str());
     let staged = quote(BoxPath::under(cred.as_str(), "brief.md")?.as_str());
     let agent = std::iter::once(Tool::Agent.program().to_owned())
         .chain(argv.iter().cloned())
         .collect::<Vec<_>>();
     let remove = format!("rm -rf {}", quote(cred.as_str()));
     let remove_all = format!("{remove} {}", quote(tmp.as_str()));
+    let earlier = remove_earlier(tmp);
     let tmp = quote(tmp.as_str());
     let mut lines = vec![
         format!("trap {} EXIT", quote(&remove_all)),
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
-        format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
-            "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"launch\":\"%s\",\"ts\":%s000}}\\n' {} \"$(date +%s)\" > {state} || exit 1",
-            quote(nonce)
+            "mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"
         ),
+        earlier,
         format!("{} || exit 1", hooks.step),
         preseed.step.clone(),
         AGENT_PATH_LINE.to_owned(),
@@ -94,6 +106,10 @@ pub(super) fn script_stripping(
         }
         lines.push(format!("mv {all} {failures}"));
     }
-    lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
+    lines.push(format!(
+        "cd {} && exec {}",
+        quote(workdir),
+        command_line(&agent)
+    ));
     Ok(lines.join("\n"))
 }

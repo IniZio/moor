@@ -1,11 +1,11 @@
 //! Starts the agent again for a Working Box whose pane is gone or has exited.
 
-use moor_core::activity::PaneStatus;
 use moor_core::config::BoxSettings;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::PaneStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};

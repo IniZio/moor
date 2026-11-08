@@ -1,13 +1,14 @@
-//! A hook read that drops out says nothing about the agent, so it moves no timer.
+//! A read that drops out says nothing about the agent, so it moves no timer.
 
 use std::time::Duration;
 
-use moor_core::activity::HOOK_TTL;
+use moor_core::activity::Probe;
 use moor_core::config::DEFAULT_SLEEP_AFTER;
 use moor_core::seam::clock::Clock;
 
 use super::super::*;
 use crate::ops::common::autosleep;
+use crate::testing::agent::{said, waiting, working};
 use crate::testing::clock::FakeClock;
 
 const SAID: &str = "done 9:55 AM";
@@ -20,28 +21,20 @@ struct Rig {
     clock: Arc<FakeClock>,
 }
 
-fn dropped() -> Probes {
-    Probes {
-        hook: HookRead::TimedOut,
-        pane: PaneRead::TimedOut,
-    }
+const READ_TTL: Duration = Duration::from_secs(120);
+
+fn dropped() -> Probe {
+    Probe::TimedOut
 }
 
-fn fresh(kind: HookKind) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            message: Some(SAID.to_owned()),
-            at: NOW,
-            ..rec(kind)
-        }),
-        pane: PaneRead::Absent,
-    }
+fn idle_saying() -> Probe {
+    said(SAID, NOW)
 }
 
 /// A Box that went Idle at `NOW` on a fresh report.
 fn rig() -> (tempfile::TempDir, Rig) {
     let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new().probes(SESSION, fresh(HookKind::Idle)));
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, idle_saying()));
     let clock = Arc::new(FakeClock::new(NOW));
     let driver = Arc::new(FakeDriver::new());
     let cx = Cx::fake(
@@ -84,7 +77,7 @@ impl Rig {
         r
     }
 
-    fn reads(&self, probes: Probes) {
+    fn reads(&self, probes: Probe) {
         self.engine.set_probes(SESSION, probes);
     }
 
@@ -100,11 +93,11 @@ impl Rig {
 }
 
 #[test]
-fn a_dropped_read_past_the_cache_leaves_an_idle_box_idle() {
+fn a_dropped_read_after_a_while_leaves_an_idle_box_idle() {
     let (_d, rig) = rig();
     let since = row(&rig.cx, rig.id).idle_since;
     rig.reads(dropped());
-    let r = rig.pass(HOOK_TTL);
+    let r = rig.pass(READ_TTL);
     assert_eq!(state(&r), (AgentState::Unknown, Source::Timeout));
     assert!(is_idle(&row(&rig.cx, rig.id)));
     assert_eq!(row(&rig.cx, rig.id).idle_since, since);
@@ -118,7 +111,7 @@ fn reads_that_keep_dropping_out_write_one_idle_and_let_the_box_sleep() {
         rig.reads(dropped());
         rig.pass(Duration::from_secs(gap));
         assert_eq!(rig.sleeps(), 0, "an unread agent is not put to sleep");
-        rig.reads(fresh(HookKind::Idle));
+        rig.reads(idle_saying());
         rig.pass(Duration::from_secs(10));
     }
     assert_eq!(rig.count("busy"), 0);
@@ -145,11 +138,11 @@ fn an_unread_agent_still_sleeps_at_the_awake_cap() {
 }
 
 #[test]
-fn a_busy_report_after_a_drop_out_brings_the_box_back_and_stops_its_sleep() {
+fn a_working_status_after_a_drop_out_brings_the_box_back_and_stops_its_sleep() {
     let (_d, rig) = rig();
     rig.reads(dropped());
     rig.pass(DEFAULT_SLEEP_AFTER * 2);
-    rig.reads(fresh(HookKind::Busy));
+    rig.reads(working(NOW));
     rig.pass(Duration::from_secs(5));
     assert!(is_working(&row(&rig.cx, rig.id)));
     assert_eq!(row(&rig.cx, rig.id).idle_since, None);
@@ -158,27 +151,9 @@ fn a_busy_report_after_a_drop_out_brings_the_box_back_and_stops_its_sleep() {
 }
 
 #[test]
-fn a_cached_busy_report_brings_the_box_back() {
-    let (_d, rig) = rig();
-    rig.reads(fresh(HookKind::Busy));
-    rig.pass(Duration::from_secs(5));
-    rig.cx
-        .store()
-        .unwrap()
-        .apply(Decision::new(rig.id).session(SessionInput::AgentQuiet))
-        .unwrap();
-    rig.reads(dropped());
-    let r = rig.pass(Duration::from_secs(5));
-    assert_eq!(state(&r), (AgentState::Working, Source::HooksCached));
-    assert!(is_working(&row(&rig.cx, rig.id)));
-}
-
-#[test]
 fn a_wait_on_background_work_brings_the_box_back() {
     let (_d, rig) = rig();
-    rig.reads(fresh(HookKind::Waiting {
-        on: vec!["cargo test".to_owned()],
-    }));
+    rig.reads(waiting(&["cargo test"], false, NOW));
     rig.pass(Duration::from_secs(5));
     assert!(is_working(&row(&rig.cx, rig.id)));
 }
@@ -189,7 +164,7 @@ fn an_unread_box_with_a_run_in_flight_does_not_sleep() {
     let _run = begin(&rig.cx, rig.id);
     rig.reads(dropped());
     rig.pass(DEFAULT_SLEEP_AFTER * 2);
-    rig.reads(fresh(HookKind::Idle));
+    rig.reads(idle_saying());
     rig.pass(Duration::from_secs(5));
     assert_eq!(rig.sleeps(), 0);
 }
@@ -218,7 +193,7 @@ fn a_blocked_agent_sleeps_on_the_shorter_prompt_time() {
                 question: None,
                 options: Vec::new(),
             },
-            source: Source::Hooks,
+            source: Source::Status,
         }),
         PaneLiveness::Live,
         true,
@@ -229,20 +204,39 @@ fn a_blocked_agent_sleeps_on_the_shorter_prompt_time() {
 }
 
 #[test]
-fn a_cache_row_that_cannot_be_decoded_counts_as_unread() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new());
-    let (cx, _) = cx(dir.path(), &engine);
-    let id = working_box(&cx, true);
-    cache_row(dir.path(), id, r#"{"kind":"nope"}"#);
-    assert!(cx.store().unwrap().agent_unread(id, NOW).unwrap());
-}
-
-#[test]
-fn an_agent_with_no_report_yet_does_not_count_as_unread() {
+fn an_agent_with_no_successful_read_does_not_count_as_unread() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     assert!(!cx.store().unwrap().agent_unread(id, NOW).unwrap());
+}
+
+#[test]
+fn an_agent_counts_as_unread_two_minutes_after_its_last_successful_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, working(NOW)));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    run_once(&cx, id);
+    let store = cx.store().unwrap();
+    let before = NOW.saturating_add(READ_TTL.saturating_sub(Duration::from_millis(1)));
+    assert!(!store.agent_unread(id, before).unwrap());
+    assert!(store
+        .agent_unread(id, NOW.saturating_add(READ_TTL))
+        .unwrap());
+}
+
+#[test]
+fn a_failed_read_does_not_refresh_the_last_successful_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, working(NOW)));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    run_once(&cx, id);
+    let later = NOW.saturating_add(READ_TTL);
+    let cx = cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, dropped())));
+    let store = cx.store().unwrap();
+    read(&cx, store, &row(&cx, id), later, PROBE_DEADLINE).unwrap();
+    assert!(store.agent_unread(id, later).unwrap());
 }

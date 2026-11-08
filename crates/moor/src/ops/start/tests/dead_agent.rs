@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use moor_core::activity::{PaneObs, PaneStatus};
+use moor_core::activity::Probe;
 use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::relaunch::{gone, session, started};
 use super::state::WORKING;
 use super::{req, world, World};
 use crate::ops::start::run;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -22,18 +23,13 @@ fn prompt_req(name: &str) -> StartReq {
     }
 }
 
-/// A pane observation of an agent that exited with `code` after printing `tail`.
-fn exited(code: i32, tail: &str) -> PaneObs {
-    PaneObs {
-        status: PaneStatus::Unknown,
-        tail: tail.to_owned(),
-        prompt: None,
-        exit_marker: Some(code),
-    }
+/// A read of an agent that exited with `code` after printing `tail`.
+fn exited(code: i32, tail: &str) -> Probe {
+    agent::on_screen(agent::exited(Some(code)), tail)
 }
 
-/// A pane observation of a launch script the prelude stopped because the Proxy CA could not be written.
-pub(super) fn ca_stopped() -> PaneObs {
+/// A read of a launch script the prelude stopped because the Proxy CA could not be written.
+pub(super) fn ca_stopped() -> Probe {
     exited(1, &format!("moor: {CA}\nmoor: agent exited 1"))
 }
 
@@ -43,8 +39,12 @@ pub(super) fn recorded_failure(w: &World, id: BoxId) -> Option<String> {
     row.launch_failure.map(|f| f.message)
 }
 
-fn launching() -> World {
-    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
+fn launching(read: Probe) -> World {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .probes("p-1", read),
+    );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     w
@@ -52,11 +52,7 @@ fn launching() -> World {
 
 #[test]
 fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
-    let w = launching();
-    w.surface.push_pane_obs(
-        "p-1",
-        Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
-    );
+    let w = launching(exited(127, "sh: claude: not found\nmoor: agent exited 127"));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
@@ -86,8 +82,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
 
 #[test]
 fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
-    let w = launching();
-    w.surface.push_pane_obs("p-1", Ok(ca_stopped()));
+    let w = launching(ca_stopped());
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     let f = v.agent.reason.unwrap();
@@ -102,11 +97,7 @@ fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
 fn a_launch_stopped_by_the_egress_proxy_fails_with_its_reason_and_no_fallback() {
     let reason = "the egress proxy could not start: tinyproxy is not installed and the Box has \
                   no apt-get; moor installs it only with apt";
-    let w = launching();
-    w.surface.push_pane_obs(
-        "p-1",
-        Ok(exited(1, &format!("moor: {reason}\nmoor: agent exited 1"))),
-    );
+    let w = launching(exited(1, &format!("moor: {reason}\nmoor: agent exited 1")));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     let f = v.agent.reason.unwrap();
@@ -115,9 +106,9 @@ fn a_launch_stopped_by_the_egress_proxy_fails_with_its_reason_and_no_fallback() 
 
 #[test]
 fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
-    let (w, _engine, id) = started();
+    let (w, engine, id) = started();
     gone(&w);
-    w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    engine.set_probes("p-2", ca_stopped());
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, CA);
@@ -127,8 +118,7 @@ fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
 
 #[test]
 fn any_other_exit_code_is_named_in_the_failure() {
-    let w = launching();
-    w.surface.push_pane_obs("p-1", Ok(exited(2, "")));
+    let w = launching(exited(2, ""));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let f = v.agent.reason.unwrap();
     assert_eq!(f.message, "the agent exited 2 right after launch");
@@ -138,8 +128,7 @@ fn any_other_exit_code_is_named_in_the_failure() {
 
 #[test]
 fn a_dead_agent_shows_as_failed_and_wait_fails() {
-    let w = launching();
-    w.surface.push_pane_obs("p-1", Ok(exited(127, "")));
+    let w = launching(exited(127, ""));
     run(&w.cx, &prompt_req("demo")).unwrap();
     let show = ShowReq {
         target: None,
@@ -168,9 +157,9 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
 
 #[test]
 fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
-    let (w, _engine, id) = started();
+    let (w, engine, id) = started();
     gone(&w);
-    w.surface.push_pane_obs("p-2", Ok(exited(127, "")));
+    engine.set_probes("p-2", exited(127, ""));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);

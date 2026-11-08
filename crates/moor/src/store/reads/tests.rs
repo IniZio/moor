@@ -115,30 +115,22 @@ fn unanswered_steer_is_the_newest_steer_without_turn_done() {
         store.unanswered_steer(id).unwrap(),
         Some(SteerMark {
             id: newest,
-            hook_before: None,
-            new_turn: false,
+            turn_before: None,
         })
     );
 }
 
 #[test]
-fn unanswered_steer_reads_the_hook_time_before_the_send() {
+fn unanswered_steer_reads_the_turn_count_before_the_send() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let id = add(&store, "a");
-    let steer = event(
-        &store,
-        id,
-        "steered",
-        r#"{"hook_before":1234,"new_turn":true}"#,
-        10,
-    );
+    let steer = event(&store, id, "steered", r#"{"turn_before":7}"#, 10);
     assert_eq!(
         store.unanswered_steer(id).unwrap(),
         Some(SteerMark {
             id: steer,
-            hook_before: Some(Ts::from_millis(1234)),
-            new_turn: true,
+            turn_before: Some(7),
         })
     );
 }

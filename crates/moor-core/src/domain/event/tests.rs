@@ -138,8 +138,7 @@ fn all_events() -> Vec<Event> {
             session: s("x"),
             message: s("m"),
             submit_retried: true,
-            hook_before: Some(4),
-            new_turn: true,
+            turn_before: Some(4),
         },
         Event::ProxyStarted {
             box_port: 1,

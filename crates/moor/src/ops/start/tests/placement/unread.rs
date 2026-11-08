@@ -2,58 +2,44 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes, HOOK_TTL};
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Pending, Ready};
 
 use super::pressure::{tick, BELOW_RESERVE};
 use super::stored_check::holds;
 use super::*;
+use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
-fn report_of(w: &World, kind: HookKind) -> HookRecord {
-    HookRecord {
-        kind,
-        session_id: None,
-        message: None,
-        options: Vec::new(),
-        doing: None,
-        at: w.cx.clock().now(),
-        turn: None,
-    }
-}
+/// How long a read of an agent stands for a dropped one.
+const UNREAD_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// Moor saw `id`'s agent report idle just now.
+/// Moor read `id`'s agent just now.
 fn seen_idle(w: &World, id: BoxId) {
-    let record = report_of(w, HookKind::Idle);
-    w.cx.store().unwrap().put_hook(id, &record).unwrap();
+    let store = w.cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.note_agent_read(live.id, w.cx.clock().now()).unwrap();
 }
 
-/// Reads of `id`'s agent have failed for as long as a cached report stands in.
+/// Reads of `id`'s agent have failed for as long as the last good read stands in.
 pub(super) fn unread(w: &World, id: BoxId) {
     seen_idle(w, id);
-    w.cx.clock().sleep(HOOK_TTL);
+    w.cx.clock().sleep(UNREAD_AFTER);
 }
 
-/// Hook reads fail for `dropped`, say idle for `read`, and say busy for `busy`.
+/// Reads fail for `dropped`, say idle for `read`, and say busy for `busy`.
 fn reads(mut w: World, dropped: &[BoxId], read: &[BoxId], busy: &[BoxId]) -> World {
     let session = |id: &BoxId| format!("moor-{}", id.get());
-    let fresh = |kind: HookKind| Probes {
-        hook: HookRead::Fresh(report_of(&w, kind)),
-        pane: PaneRead::Absent,
-    };
+    let at = w.cx.clock().now();
     let mut engine = FakeEngine::new();
     for id in dropped {
-        let gone = Probes {
-            hook: HookRead::TimedOut,
-            pane: PaneRead::TimedOut,
-        };
-        engine = engine.probes(&session(id), gone);
+        engine = engine.probes(&session(id), Probe::TimedOut);
     }
     for id in read {
-        engine = engine.probes(&session(id), fresh(HookKind::Idle));
+        engine = engine.probes(&session(id), agent::idle(at));
     }
     for id in busy {
-        engine = engine.probes(&session(id), fresh(HookKind::Busy));
+        engine = engine.probes(&session(id), agent::working(at));
     }
     w.cx = w.cx.with_engine(Arc::new(engine));
     w

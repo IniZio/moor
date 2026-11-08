@@ -4,7 +4,7 @@ use crate::testing::db::column_where;
 use moor_schema::tables::Launches;
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -23,6 +23,7 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::store::db::DbExt as _;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -118,36 +119,14 @@ fn fx() -> Fx {
     fx_with(FakeEngine::new(), true)
 }
 
-/// Probes that read a blocked agent waiting on `question`.
-fn blocked(question: &str) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Blocked,
-            session_id: None,
-            message: Some(question.to_owned()),
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(0),
-            turn: None,
-        }),
-        pane: PaneRead::Absent,
-    }
+/// A read of an agent blocked on a permission, asking `question`.
+fn blocked(question: &str) -> Probe {
+    agent::permission(question, Ts::from_millis(0))
 }
 
-/// Probes that read an agent working.
-fn working() -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Busy,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(0),
-            turn: None,
-        }),
-        pane: PaneRead::Absent,
-    }
+/// A read of a working agent.
+fn working() -> Probe {
+    agent::working(Ts::from_millis(0))
 }
 
 fn text(t: &str) -> SteerReq {
@@ -241,8 +220,7 @@ fn text_goes_to_the_agent_and_is_recorded() {
             "session": "agent-1",
             "message": "do x",
             "submit_retried": false,
-            "hook_before": 0,
-            "new_turn": true,
+            "turn_before": 1,
         })]
     );
     assert!(f.cx.take_warnings().is_empty());
@@ -329,15 +307,7 @@ fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
 
 #[test]
 fn an_exited_agent_names_its_code() {
-    let exited = Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(moor_core::activity::PaneObs {
-            status: moor_core::activity::PaneStatus::Idle,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: Some(3),
-        }),
-    };
+    let exited = agent::exited(Some(3));
     let engine = FakeEngine::new()
         .probes("agent-1", exited)
         .steer_result(Err(EngineError::PaneGone));
@@ -404,26 +374,11 @@ fn a_menu_choice_that_leaves_the_agent_blocked_warns() {
 
 #[test]
 fn a_first_run_screen_refuses_every_steer_and_sends_nothing() {
-    let at_launch = Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Starting { launch: None },
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(0),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: include_str!("../../adapters/box_agent/claude/fixtures/folder_trust.txt")
-                .to_owned(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    };
+    let at_launch = agent::on_screen(
+        agent::read(None, Ts::from_millis(0), 0),
+        include_str!("../../adapters/box_agent/claude/fixtures/folder_trust.txt"),
+    );
     let engine = FakeEngine::new()
-        .hooks_quiet_during_first_run()
         .prompt("trust this folder", FirstRunPrompt::FolderTrust)
         .probes("agent-1", at_launch);
     let f = fx_with(engine, true);
@@ -543,15 +498,7 @@ fn a_session_without_an_id_records_its_pane_in_the_event() {
 
 #[test]
 fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
-    let exited = Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(moor_core::activity::PaneObs {
-            status: moor_core::activity::PaneStatus::Idle,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: Some(3),
-        }),
-    };
+    let exited = agent::exited(Some(3));
     let engine = FakeEngine::new()
         .probes("agent-1", exited)
         .transcript_text("abc")

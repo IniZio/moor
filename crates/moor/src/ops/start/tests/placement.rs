@@ -366,19 +366,7 @@ fn idle(w: &World, id: BoxId) {
 
 /// Makes the agents of `ids` report Idle, so a start's settle pass keeps idle Boxes idle.
 fn agents_report_idle(mut w: World, ids: &[BoxId]) -> World {
-    use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
-    let idle = Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: w.cx.clock().now(),
-            turn: None,
-        }),
-        pane: PaneRead::Absent,
-    };
+    let idle = crate::testing::agent::idle(w.cx.clock().now());
     let engine = ids
         .iter()
         .fold(crate::testing::engine::FakeEngine::new(), |e, id| {

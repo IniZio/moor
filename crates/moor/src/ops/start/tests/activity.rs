@@ -1,14 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{
-    AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
-    STARTUP_GRACE,
-};
+use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxId, BoxName, ShowReq};
+use moor_core::{BoxId, ShowReq};
 
 use super::state::WORKING;
 use super::state::{idle, working};
@@ -19,6 +16,7 @@ use crate::ops::start::run;
 use crate::store::db::Conn;
 use crate::store::db::DbExt as _;
 use crate::store::BoxRow;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -27,32 +25,23 @@ use sea_query::{Expr, ExprTrait as _, Query};
 
 const SESSION: &str = "s-1";
 
-/// Probes with `hook` and a pane that reports `pane`.
-fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
-    let at = Ts::from_millis(w.cx.clock().now().as_millis() - 1000);
-    Probes {
-        hook: hook.map_or(HookRead::Absent, |kind| {
-            HookRead::Fresh(HookRecord {
-                kind,
-                session_id: None,
-                message: None,
-                options: Vec::new(),
-                doing: None,
-                at,
-                turn: None,
-            })
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: pane,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A second before the fake clock's now.
+fn just_before(w: &World) -> Ts {
+    Ts::from_millis(w.cx.clock().now().as_millis() - 1000)
+}
+
+/// An idle agent whose status changed just before now.
+fn idle_now(w: &World) -> Probe {
+    agent::idle(just_before(w))
+}
+
+/// A working agent whose status changed just before now.
+fn working_now(w: &World) -> Probe {
+    agent::working(just_before(w))
 }
 
 /// A started `demo` with a live session, probed as `probes` says; idle first when `idle`.
-fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) {
+fn started(idle: bool, probes: impl FnOnce(&World) -> Probe) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     let id = BoxId::new(run(&w.cx, &super::agentless_req("demo")).unwrap().boxed.id);
     let store = w.cx.store().unwrap();
@@ -89,9 +78,7 @@ fn idle_since(w: &World, id: BoxId) -> Option<i64> {
 
 #[test]
 fn start_idles_a_working_box_whose_hook_reports_idle_then_wakes_it() {
-    let (w, id) = started(false, |w| {
-        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
-    });
+    let (w, id) = started(false, idle_now);
     assert!(working(&row(&w, id)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.attached);
@@ -105,27 +92,17 @@ fn start_idles_a_working_box_whose_hook_reports_idle_then_wakes_it() {
 
 #[test]
 fn start_wakes_an_idle_box_whose_hook_reports_working() {
-    let (w, id) = started(true, |w| {
-        probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
-    });
+    let (w, id) = started(true, working_now);
     assert!(idle(&row(&w, id)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(working(&row(&w, id)));
 }
 
-/// A started `demo` whose session is older than the startup grace, with no hook report
-/// and a fresh pane read of `pane`.
-fn aged_pane_only(pane: PaneStatus) -> (World, BoxId) {
-    let (w, id) = started(false, |w| probes(w, None, pane));
+#[test]
+fn start_does_not_quiet_a_box_whose_agent_reports_no_status() {
+    let (w, id) = started(false, |w| agent::read(None, just_before(w), 0));
     w.cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
-    (w, id)
-}
-
-/// Reads `pane` with no hook report, returning the reading's state, then starts the Box.
-/// Asserts the pane-only reading never quiets the Box.
-fn start_on_pane_only(pane: PaneStatus) -> AgentState {
-    let (w, id) = aged_pane_only(pane);
     let store = w.cx.store().unwrap();
     let reading = read(
         &w.cx,
@@ -136,27 +113,14 @@ fn start_on_pane_only(pane: PaneStatus) -> AgentState {
     )
     .unwrap();
     let activity = reading.activity.expect("a live session has a reading");
-    assert!(matches!(activity.source, Source::Herdr | Source::Pane));
+    assert_eq!(activity.state, AgentState::Unknown);
+    assert_eq!(activity.source, Source::Terminal);
     assert!(!reading.may_quiet);
 
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.attached);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(working(&row(&w, id)));
-    activity.state
-}
-
-#[test]
-fn start_does_not_quiet_a_box_on_a_pane_only_idle_report() {
-    assert_eq!(start_on_pane_only(PaneStatus::Idle), AgentState::Idle);
-}
-
-#[test]
-fn start_does_not_quiet_a_box_on_a_pane_only_blocked_report() {
-    assert!(matches!(
-        start_on_pane_only(PaneStatus::Blocked),
-        AgentState::NeedsInput { .. }
-    ));
 }
 
 /// The newest session id of a Box.
@@ -177,7 +141,7 @@ fn newest_session(w: &World, id: BoxId) -> i64 {
 
 #[test]
 fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
-    let (w, id) = started(false, |w| probes(w, None, PaneStatus::Unknown));
+    let (w, id) = started(false, |w| agent::read(None, just_before(w), 0));
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_session(id).unwrap() {
         store.end_session(live.id, Some(0), None).unwrap();
@@ -204,9 +168,7 @@ fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
 
 #[test]
 fn start_sleeps_an_idle_box_past_the_threshold() {
-    let (w, id) = started(true, |w| {
-        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
-    });
+    let (w, id) = started(true, idle_now);
     w.cx.clock().sleep(Duration::from_mins(31));
     run(&w.cx, &super::agentless_req("other")).unwrap();
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Asleep);
@@ -220,9 +182,7 @@ fn kinds(w: &World, id: BoxId) -> Vec<String> {
 
 #[test]
 fn restarting_an_idle_box_whose_agent_is_busy_ends_working_with_a_busy_event() {
-    let (w, id) = started(true, |w| {
-        probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
-    });
+    let (w, id) = started(true, working_now);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(working(&row(&w, id)));
@@ -231,9 +191,7 @@ fn restarting_an_idle_box_whose_agent_is_busy_ends_working_with_a_busy_event() {
 
 #[test]
 fn restarting_an_idle_box_whose_agent_is_live_and_idle_ends_working_with_a_busy_event() {
-    let (w, id) = started(true, |w| {
-        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
-    });
+    let (w, id) = started(true, idle_now);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(working(&row(&w, id)));
@@ -242,9 +200,7 @@ fn restarting_an_idle_box_whose_agent_is_live_and_idle_ends_working_with_a_busy_
 
 #[test]
 fn restarting_a_working_box_whose_agent_is_busy_leaves_it_working() {
-    let (w, id) = started(false, |w| {
-        probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
-    });
+    let (w, id) = started(false, working_now);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(working(&row(&w, id)));
@@ -253,9 +209,7 @@ fn restarting_a_working_box_whose_agent_is_busy_leaves_it_working() {
 
 #[test]
 fn a_fresh_start_settles_another_box() {
-    let (w, id) = started(false, |w| {
-        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
-    });
+    let (w, id) = started(false, idle_now);
     run(&w.cx, &req("other")).unwrap();
     assert!(idle(&row(&w, id)));
     assert!(kinds(&w, id).contains(&"idled".to_owned()));
@@ -270,10 +224,7 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
         .unwrap()
         .begin_session(id, SESSION, None)
         .unwrap();
-    let engine = Arc::new(FakeEngine::new().probes(
-        SESSION,
-        probes(&w, Some(HookKind::Idle), PaneStatus::Unknown),
-    ));
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, idle_now(&w)));
     w.cx = w.cx.with_engine(engine);
     let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
     raw.run(
@@ -289,29 +240,6 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
 }
 
-/// A started `demo` whose session sits in pane `p-9` and whose hook reports session `agent-1`.
-fn hooked() -> (World, BoxId) {
-    let mut w = world(FakeDriver::new());
-    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
-    w.cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, Some("p-9"))
-        .unwrap();
-    let mut p = probes(&w, Some(HookKind::Busy), PaneStatus::Working);
-    p.hook = HookRead::Fresh(HookRecord {
-        kind: HookKind::Busy,
-        session_id: Some("agent-1".into()),
-        message: None,
-        options: Vec::new(),
-        doing: None,
-        at: Ts::from_millis(w.cx.clock().now().as_millis() - 1000),
-        turn: None,
-    });
-    w.cx =
-        w.cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, p)));
-    (w, id)
-}
-
 fn registrations(w: &World) -> Vec<String> {
     w.surface
         .calls()
@@ -320,85 +248,9 @@ fn registrations(w: &World) -> Vec<String> {
         .collect()
 }
 
-fn show_box() -> ShowReq {
-    ShowReq {
-        target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
-        events: None,
-        agent: false,
-        reports: false,
-        artifacts: false,
-        pane: false,
-    }
-}
-
 #[test]
-fn the_first_hook_session_id_is_registered_once() {
-    let (w, _id) = hooked();
-    w.surface.have_pane("p-9");
-    run(&w.cx, &req("demo")).unwrap();
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
-}
-
-#[test]
-fn an_id_a_show_stored_first_is_still_registered_by_the_next_start() {
-    let (w, id) = hooked();
-    w.surface.have_pane("p-9");
-    show::run(&w.cx, &show_box()).unwrap();
-    assert_eq!(row(&w, id).agent_session_id.as_deref(), Some("agent-1"));
-    assert!(registrations(&w).is_empty());
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
-}
-
-#[test]
-fn a_failed_registration_is_tried_again_by_a_later_start() {
-    let (w, _id) = hooked();
-    run(&w.cx, &req("demo")).unwrap();
-    assert!(w
-        .cx
-        .take_warnings()
-        .iter()
-        .any(|x| x.code == "resume_not_registered"));
-    w.surface.have_pane("p-9");
-    run(&w.cx, &req("demo")).unwrap();
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w).len(), 2);
-    assert_eq!(
-        registrations(&w).last().map(String::as_str),
-        Some("register_resume p-9 claude agent-1")
-    );
-}
-
-#[test]
-fn a_stored_id_is_registered_when_the_hook_is_absent() {
-    let (w, id) = started(false, |w| probes(w, None, PaneStatus::Working));
-    let set = Fields {
-        agent_session_id: Field::Set("agent-1".into()),
-        ..Fields::default()
-    };
-    w.cx.store()
-        .unwrap()
-        .apply(Decision::new(id).set(set))
-        .unwrap();
-    w.cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, Some("p-9"))
-        .unwrap();
-    w.surface.have_pane("p-9");
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
-}
-
-#[test]
-fn an_exited_pane_with_a_stored_id_registers_nothing() {
-    let (w, id) = started(false, |w| {
-        let mut p = probes(w, None, PaneStatus::Working);
-        if let PaneRead::Fresh(obs) = &mut p.pane {
-            obs.exit_marker = Some(0);
-        }
-        p
-    });
+fn an_exited_agent_with_a_stored_id_registers_nothing() {
+    let (w, id) = started(false, |_| agent::exited(Some(0)));
     let store = w.cx.store().unwrap();
     store.begin_session(id, SESSION, Some("p-9")).unwrap();
     let set = Fields {
@@ -421,9 +273,7 @@ fn an_exited_pane_with_a_stored_id_registers_nothing() {
 
 #[test]
 fn a_box_whose_setup_failed_still_settles_its_live_agent() {
-    let (w, id) = started(false, |w| {
-        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
-    });
+    let (w, id) = started(false, idle_now);
     let failed = Decision::new(id).set(Fields {
         setup_failed_at: Field::Set(w.cx.clock().now().as_millis()),
         ..Fields::default()

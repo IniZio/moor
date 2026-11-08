@@ -7,11 +7,11 @@ use super::*;
 use crate::moor::Moor;
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Reply, ScriptedProc};
-use moor_core::activity::PaneStatus;
 use moor_core::name::{BoxHandle, BoxName, BoxPath};
 use moor_core::request::SessionsReq;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Tool;
+use moor_core::seam::surface::PaneStatus;
 use moor_core::seam::surface::{PaneRef, ResumeReg};
 use moor_core::Request;
 

@@ -12,25 +12,14 @@ pub(super) fn agents_report(
     idle: &[BoxId],
     busy: &[BoxId],
 ) -> (World, std::sync::Arc<crate::testing::engine::FakeEngine>) {
-    use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
-    let probes = |kind: HookKind| Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: w.cx.clock().now(),
-            turn: None,
-        }),
-        pane: PaneRead::Absent,
-    };
+    use crate::testing::agent;
+    let at = w.cx.clock().now();
     let mut engine = crate::testing::engine::FakeEngine::new();
     for id in idle {
-        engine = engine.probes(&format!("moor-{}", id.get()), probes(HookKind::Idle));
+        engine = engine.probes(&format!("moor-{}", id.get()), agent::idle(at));
     }
     for id in busy {
-        engine = engine.probes(&format!("moor-{}", id.get()), probes(HookKind::Busy));
+        engine = engine.probes(&format!("moor-{}", id.get()), agent::working(at));
     }
     let engine = std::sync::Arc::new(engine);
     w.cx = w.cx.with_engine(engine.clone());

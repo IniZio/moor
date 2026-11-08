@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use moor_core::boxscript::{command_line, quote};
 use moor_core::name::BoxName;
-use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -15,32 +14,28 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, WorkspaceRef};
 use super::holder;
 use super::AGENT_PATH_LINE;
 
-/// Where the agent's exit status lands, relative to the Box workdir.
-const EXIT_FILE: &str = ".moor/agent.exit";
-
 /// The Box command that attaches to the agent's terminal and exits with the agent's
 /// status once the terminal is over. A terminal already over is not attached.
-fn attach(exit_file: &str) -> String {
+fn attach() -> String {
     format!(
         "{AGENT_PATH_LINE}; if {}; then {}; fi; {}",
         holder::alive(),
         holder::attach(),
-        exited(exit_file)
+        holder::exit_code()
     )
 }
 
 /// The Box command that replaces any agent terminal with one running the script
 /// file at `script`, then attaches. A Box without herdr-core refuses to start the agent: on the
 /// bare link a dropped connection would end it again.
-fn start(exit_file: &str, script: &str) -> String {
-    let inner = format!("sh {}; echo $? > {exit_file}", quote(script));
+fn start(script: &str) -> String {
     format!(
         "{AGENT_PATH_LINE}; if ! command -v {} >/dev/null 2>&1; then \
          echo {} >&2; exit {NO_HOLDER_EXIT}; fi; {} {}",
         holder::PROGRAM,
         quote(&refusal()),
-        holder::open(exit_file, &inner),
-        attach(exit_file),
+        holder::open(script),
+        attach(),
     )
 }
 
@@ -54,11 +49,6 @@ fn refusal() -> String {
 /// The exit status of that refusal, the shell's command-not-found status.
 const NO_HOLDER_EXIT: u8 = 127;
 
-/// The Box command that exits with the agent's recorded status, or 1 when it left none.
-fn exited(exit_file: &str) -> String {
-    format!("if [ -s {exit_file} ]; then exit \"$(cat {exit_file})\"; fi; exit 1")
-}
-
 /// The host pane's shell line: run `box_cmd` on the Box through `connect`, then print the exit
 /// marker with its status. moor asks the Box whether the agent outlived a pane that ended.
 fn line(connect: &[String], box_cmd: &str) -> String {
@@ -71,13 +61,8 @@ fn line(connect: &[String], box_cmd: &str) -> String {
 
 /// The pane line that starts the agent script at `script` on the Box. The script travels as a
 /// file, not inside this line: each shell layer between here and the holder would quote it again.
-pub(super) fn pane_line(
-    connect: &[String],
-    workdir: &str,
-    script: &str,
-) -> Result<String, NameError> {
-    let exit_file = quote(BoxPath::under(workdir, EXIT_FILE)?.as_str());
-    Ok(line(connect, &start(&exit_file, script)))
+pub(super) fn pane_line(connect: &[String], script: &str) -> String {
+    line(connect, &start(script))
 }
 
 /// The command that relays the agent's terminal through `connect`.
@@ -102,21 +87,12 @@ pub(in crate::adapters::box_agent) fn reattach(
     let connect = driver
         .connect_argv(&s.handle)
         .map_err(|e| failed(e.to_string()))?;
-    let exit_file = quote(
-        BoxPath::under(s.workdir.as_str(), EXIT_FILE)
-            .map_err(|e| failed(e.to_string()))?
-            .as_str(),
-    );
     surface
         .open_pane(
             ws,
             &PaneCmd {
                 label: format!("agent:{}", name.as_str()),
-                argv: vec![
-                    "sh".to_owned(),
-                    "-c".to_owned(),
-                    line(&connect, &attach(&exit_file)),
-                ],
+                argv: vec!["sh".to_owned(), "-c".to_owned(), line(&connect, &attach())],
                 env: Vec::new(),
             },
         )
@@ -157,7 +133,7 @@ fn fate_by(run: impl Fn(String) -> Result<i32, EngineError>) -> Result<AgentFate
     if run(format!("{AGENT_PATH_LINE}; {}", holder::alive()))? == 0 {
         return Ok(AgentFate::Running);
     }
-    let exit = run(exited(EXIT_FILE))?;
+    let exit = run(format!("{AGENT_PATH_LINE}; {}", holder::exit_code()))?;
     Ok(AgentFate::Ended { exit: Some(exit) })
 }
 

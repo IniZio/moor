@@ -365,10 +365,8 @@ pub enum ExtraEvent {
         message: String,
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
-        /// When the newest hook report read before the send was written, in Box-clock ms.
-        hook_before: Option<i64>,
-        /// Whether the steer typed a prompt that starts a turn of its own.
-        new_turn: bool,
+        /// The ended-turn count of the agent's terminal the steer's turn must pass.
+        turn_before: Option<u64>,
     },
     /// The agent finished the turn a steer started.
     TurnDone {

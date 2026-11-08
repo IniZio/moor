@@ -185,55 +185,6 @@ pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), C
     Ok(())
 }
 
-/// Whether the live session's latest save failed because the Box's machine was not linked.
-fn pending(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let events = store.events(row.id, usize::MAX)?;
-    let latest = events
-        .iter()
-        .rev()
-        .take_while(|e| e.kind != "session_started")
-        .find(|e| e.kind.starts_with("transcript_"));
-    Ok(latest.is_some_and(|e| {
-        e.kind == "transcript_failed"
-            && e.payload
-                .get("unlinked")
-                .and_then(serde_json::Value::as_bool)
-                == Some(true)
-    }))
-}
-
-/// Saves again the transcript whose last save failed for want of a link, now that the link is
-/// back. The archive holds every turn so far, so one save covers each turn that failed. A failure
-/// for the same reason stays pending; a save equal to the stored one ends the pending state with
-/// a skip, since nothing was lost.
-pub(crate) fn save_pending(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    if !pending(store, row)? {
-        return Ok(());
-    }
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "transcript",
-        Duration::ZERO,
-    ) else {
-        return Ok(());
-    };
-    let Some(row) = store.box_row(row.id)? else {
-        return Ok(());
-    };
-    let Some(session) = store.live_session(row.id)? else {
-        return Ok(());
-    };
-    if let Some(saved) = save(cx, store, &row, &session, Trigger::Turn) {
-        store.set_transcript_digest(session.id, &saved.digest)?;
-        if pending(store, &row)? {
-            record_skipped(store, &row, Trigger::Turn, "already saved");
-        }
-    }
-    Ok(())
-}
-
 /// How long the Box may take to build and stream the archive for `trigger`.
 ///
 /// A turn save holds the Box lock that a steer or close waits on, and the next turn saves again,

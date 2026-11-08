@@ -1,26 +1,21 @@
 //! The Claude Code profile: launch arguments, hook setup and hook state file parsing.
 
-use moor_core::activity::{HookKind, HookRecord};
-use moor_core::name::{BoxPath, NameError};
+use moor_core::activity::{Note, Question};
+use moor_core::name::NameError;
 use moor_core::seam::agent_adapter::{
     AgentAdapter, AgentInstall, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
     NOTHING_TO_ARCHIVE,
 };
-use moor_core::seam::clock::Ts;
 use serde_json::Value;
 
-mod doing;
 mod install;
 mod launch;
-mod permission;
 mod profile;
 mod wait;
 
-/// The background work a stop record names, one line per piece; empty when it names none.
-fn background(record: &Value) -> Vec<String> {
-    record
-        .get("background")
-        .and_then(Value::as_array)
+/// The lines of a JSON array of strings; empty when it is none.
+fn lines(v: Option<&Value>) -> Vec<String> {
+    v.and_then(Value::as_array)
         .map(|b| {
             b.iter()
                 .filter_map(Value::as_str)
@@ -30,100 +25,48 @@ fn background(record: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Parses the state file Claude Code's hooks write.
+/// Reads the note Claude Code's hooks leave.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Claude;
 
 impl AgentAdapter for Claude {
-    fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
-        let value: Value = serde_json::from_slice(raw).ok()?;
-        let text = |key: &str| value.get(key).and_then(Value::as_str);
-        let idle_prompt = text("notification_type") == Some("idle_prompt");
-        let on = background(&value);
-        let idle = if on.is_empty() {
-            HookKind::Idle
-        } else {
-            HookKind::Waiting { on }
-        };
-        let kind = match text("state")? {
-            _ if idle_prompt => idle,
-            "starting" => HookKind::Starting {
-                launch: text("launch").map(str::to_owned),
-            },
-            "working" => HookKind::Busy,
-            "idle" => idle,
-            "waiting_input" => HookKind::Blocked,
-            _ => return None,
-        };
-        let ms = |key: &str| value.get(key).and_then(Value::as_i64).filter(|t| *t >= 0);
-        let at = ms("ts")?;
-        let blocked = kind == HookKind::Blocked;
+    fn parse_note(&self, v: &Value) -> Note {
+        let text = |key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
         // A question tool's record carries its questions; the first is the one on screen.
-        let asked = value
+        let asked = v
             .get("questions")
             .and_then(Value::as_array)
-            .and_then(|q| q.first())
-            .filter(|_| blocked);
-        let question = asked
-            .and_then(|q| q.get("question"))
-            .and_then(Value::as_str);
-        let message = match kind {
-            HookKind::Blocked => question.or_else(|| text("message")),
-            HookKind::Idle | HookKind::Waiting { .. } => text("last_assistant_message"),
-            HookKind::Starting { .. } | HookKind::Busy => None,
-        }
-        .map(str::to_owned);
-        let options = asked
-            .and_then(|q| q.get("options"))
-            .and_then(Value::as_array)
-            .map(|opts| {
-                opts.iter()
-                    .filter_map(|o| o.get("label").and_then(Value::as_str))
-                    .map(str::to_owned)
-                    .collect()
+            .and_then(|q| q.first());
+        let question = asked.and_then(|q| {
+            Some(Question {
+                text: q.get("question")?.as_str()?.to_owned(),
+                options: q
+                    .get("options")
+                    .and_then(Value::as_array)
+                    .map(|opts| {
+                        opts.iter()
+                            .filter_map(|o| o.get("label").and_then(Value::as_str))
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })
-            .unwrap_or_default();
-        let doing = (kind == HookKind::Busy)
-            .then(|| doing::line(&value))
-            .flatten();
-        Some(HookRecord {
-            kind,
-            session_id: text("session_id").map(str::to_owned),
-            message,
-            options,
-            doing,
-            at: Ts::from_millis(at),
-            turn: ms("turn").map(Ts::from_millis),
-        })
+        });
+        Note {
+            session_id: text("session_id"),
+            said: text("said"),
+            question,
+            background: lines(v.get("background")),
+            background_local: v.get("background_local").and_then(Value::as_bool) == Some(true),
+        }
     }
 
     fn install(&self) -> Option<AgentInstall> {
         Some(install::native())
     }
 
-    fn wait_check_script(&self, hook_file: &BoxPath) -> Option<String> {
-        Some(wait::script(hook_file.as_str(), "/proc"))
-    }
-
-    fn prompt_gone(&self, record: &HookRecord, tail: &str) -> bool {
-        permission::gone(record, tail)
-    }
-
-    fn pane_prompt(&self, tail: &str) -> Option<String> {
-        let lines: Vec<&str> = tail.lines().collect();
-        let starts = |c: char| move |l: &&str| l.trim_start().starts_with(c);
-        let top = lines.iter().rposition(starts('╭')).or_else(|| {
-            let mut rules = lines.iter().enumerate().filter(|(_, l)| starts('─')(l));
-            rules.next_back()?;
-            rules.next_back().map(|(i, _)| i)
-        })?;
-        lines
-            .iter()
-            .take(top)
-            .rev()
-            .map(|l| l.trim())
-            .find(|l| !l.is_empty())
-            .map(str::to_owned)
+    fn wait_check_script(&self) -> Option<String> {
+        Some(wait::script("/proc"))
     }
 
     fn hooks_quiet_during_first_run(&self) -> bool {

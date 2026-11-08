@@ -1,21 +1,19 @@
-//! An agent pane that ends while the agent still runs on the Box keeps the session.
+//! An asleep Box is not read, and keeps its session until a wake reads it again.
 
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{AgentFate, EngineError};
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
-use super::turn::steer;
-use super::{cx, is_working, row, run_once, working_box, SESSION};
+use super::{cx, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
 use crate::ops::common::agent_stop::stop_agent;
-use crate::store::Store;
 use crate::testing::engine::FakeEngine;
 
 /// A working Box in workspace `ws` whose live session runs in pane `p1`.
@@ -29,31 +27,6 @@ fn attached_box(cx: &Cx) -> BoxId {
     store.apply(Decision::new(id).set(set)).unwrap();
     store.begin_session(id, SESSION, Some("p1")).unwrap();
     id
-}
-
-/// Settles one reading of a Box whose pane ended with exit 1, given what the Box answers.
-fn settle_exited(fates: Vec<Result<AgentFate, EngineError>>) -> (Cx, Arc<FakeEngine>, BoxId) {
-    settle_exited_after(fates, |_, _| {})
-}
-
-/// As [`settle_exited`], with `before` run on the Box ahead of the reading.
-fn settle_exited_after(
-    fates: Vec<Result<AgentFate, EngineError>>,
-    before: impl FnOnce(&Cx, BoxId),
-) -> (Cx, Arc<FakeEngine>, BoxId) {
-    let dir = tempfile::tempdir().unwrap().keep();
-    let engine = Arc::new(
-        FakeEngine::new()
-            .probes(SESSION, exited_probes())
-            .transcript_text("abc")
-            .fates(fates),
-    );
-    let (cx, _) = cx(&dir, &engine);
-    let id = attached_box(&cx);
-    before(&cx, id);
-    let reading = run_once(&cx, id);
-    settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
-    (cx, engine, id)
 }
 
 /// The kinds of `id`'s events from the given ones on, oldest first.
@@ -81,122 +54,6 @@ fn unreachable() -> Result<AgentFate, EngineError> {
         step: "fate",
         message: "ssh: connection refused".to_owned(),
     })
-}
-
-#[test]
-fn a_running_agent_gets_a_new_pane_and_keeps_its_session() {
-    let (cx, engine, id) = settle_exited(vec![Ok(AgentFate::Running)]);
-    let seen = kinds(&cx, id, WATCHED);
-    let names: Vec<&str> = seen.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(names, ["agent_link_lost", "agent_link_restored"]);
-    let (lost, restored) = (&seen.first().unwrap().1, &seen.last().unwrap().1);
-    assert_eq!(lost.get("pane").unwrap(), "p1");
-    assert_eq!(lost.get("exit").unwrap(), 1);
-    assert_eq!(restored.get("pane").unwrap(), "reattached-1");
-    let live = cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert_eq!(live.pane.as_deref(), Some("reattached-1"));
-    assert_eq!(engine.reattached().len(), 1);
-    assert!(engine.transcripts().is_empty());
-}
-
-/// The calls reaching the agent of a Box after `edit` changed its store, and the error settling
-/// it gave.
-fn asked_of_a_box(edit: impl FnOnce(&Store, BoxId)) -> (Vec<&'static str>, String) {
-    let dir = tempfile::tempdir().unwrap().keep();
-    let engine = Arc::new(
-        FakeEngine::new()
-            .probes(SESSION, exited_probes())
-            .fates(vec![Ok(AgentFate::Running)]),
-    );
-    let (cx, _) = cx(&dir, &engine);
-    let id = attached_box(&cx);
-    edit(cx.store().unwrap(), id);
-    let reading = run_once(&cx, id);
-    let store = cx.store().unwrap();
-    let settled = settle(&cx, store, &row(&cx, id), &reading);
-    stop_agent(&cx, store, &row(&cx, id), None).unwrap();
-    (
-        engine.asked(),
-        settled
-            .err()
-            .map(|e| e.error.to_string())
-            .unwrap_or_default(),
-    )
-}
-
-#[test]
-fn a_box_held_by_herdr_core_is_asked_after_reattached_and_stopped() {
-    let (asked, error) = asked_of_a_box(|_, _| {});
-    assert_eq!(asked, ["fate", "reattach", "stop"]);
-    assert_eq!(error, "");
-}
-
-#[test]
-fn a_box_another_holder_kept_is_not_asked_after_but_is_still_stopped() {
-    for held in [Some("tmux"), None] {
-        let (asked, error) = asked_of_a_box(|store, id| store.set_holders(id, held).unwrap());
-        assert_eq!(asked, ["stop"], "{held:?}");
-        assert!(error.contains("close the Box and recreate it"), "{error}");
-    }
-}
-
-#[test]
-fn a_reattached_agent_stays_working() {
-    let (cx, _, id) = settle_exited(vec![Ok(AgentFate::Running)]);
-    assert!(kinds(&cx, id, &["idled"]).is_empty());
-    assert!(is_working(&row(&cx, id)));
-}
-
-#[test]
-fn a_reattached_agent_keeps_its_steered_turn_open() {
-    let (cx, _, id) = settle_exited_after(vec![Ok(AgentFate::Running)], |cx, id| {
-        steer(cx, id);
-    });
-    assert!(kinds(&cx, id, &["turn_done"]).is_empty());
-    let store = cx.store().unwrap();
-    assert!(store.unanswered_steer(id).unwrap().is_some());
-}
-
-#[test]
-fn an_ended_agent_ends_the_session_with_the_exit_the_box_kept() {
-    let (cx, engine, id) = settle_exited(vec![Ok(AgentFate::Ended { exit: Some(42) })]);
-    let seen = kinds(&cx, id, WATCHED);
-    let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
-    assert_eq!(ended.1.get("exit").unwrap(), 42);
-    assert!(!seen.iter().any(|(k, _)| k.starts_with("agent_link")));
-    assert!(engine.reattached().is_empty());
-    assert!(cx.store().unwrap().live_session(id).unwrap().is_none());
-}
-
-#[test]
-fn a_box_that_stays_unreachable_ends_the_session_and_says_so() {
-    let (cx, engine, id) = settle_exited((0..8).map(|_| unreachable()).collect());
-    cx.clock().sleep(std::time::Duration::from_secs(600));
-    let reading = run_once(&cx, id);
-    settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
-    let seen = kinds(&cx, id, WATCHED);
-    let lost = seen.iter().find(|(k, _)| k == "agent_unreachable").unwrap();
-    assert_eq!(lost.1.get("attempts").unwrap(), 4);
-    assert!(lost
-        .1
-        .get("error")
-        .and_then(serde_json::Value::as_str)
-        .unwrap()
-        .contains("connection refused"));
-    let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
-    assert_eq!(ended.1.get("exit").unwrap(), 1);
-    assert!(engine.reattached().is_empty());
-}
-
-#[test]
-fn a_box_reached_on_a_later_try_reattaches() {
-    let (cx, engine, id) =
-        settle_exited(vec![unreachable(), unreachable(), Ok(AgentFate::Running)]);
-    let seen = kinds(&cx, id, WATCHED);
-    assert!(!seen
-        .iter()
-        .any(|(k, _)| k == "agent_unreachable" || k == "session_ended"));
-    assert_eq!(engine.reattached().len(), 1);
 }
 
 /// A Box whose pane ended with exit 1 once `suspend` put it to sleep, read and settled twice.
@@ -269,12 +126,12 @@ fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
     );
     assert!(engine.asked().is_empty());
     assert!(engine.transcripts().is_empty());
-    assert!(engine.reattached().is_empty());
     let store = cx.store().unwrap();
     let wake = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Wake)
         .box_input(BoxInput::Wake);
     store.apply(wake).unwrap();
+    engine.set_probes(SESSION, crate::testing::agent::working(super::seen()));
     let reading = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &reading).unwrap();
     assert_eq!(engine.probe_count(SESSION), 1, "polling resumes on wake");
@@ -289,23 +146,4 @@ fn stopping_the_agent_of_an_asleep_box_does_not_reach_for_the_guest() {
     let (cx, engine, id) = polled_asleep(suspend, false);
     stop_agent(&cx, cx.store().unwrap(), &row(&cx, id), None).unwrap();
     assert!(engine.asked().is_empty());
-}
-
-#[test]
-fn a_transcript_that_failed_for_want_of_a_link_is_saved_once_the_agent_is_reattached() {
-    let (cx, engine, id) = settle_exited_after(vec![Ok(AgentFate::Running)], |cx, id| {
-        let failed = ExtraEvent::TranscriptFailed {
-            trigger: "turn".to_owned(),
-            error: "box: machine 2 is not linked".to_owned(),
-            unlinked: true,
-        };
-        let store = cx.store().unwrap();
-        let live = store.live_session(id).unwrap().unwrap();
-        store.set_registered_session(live.id, "agent-1").unwrap();
-        store.apply(Decision::new(id).event(failed)).unwrap();
-    });
-    assert_eq!(engine.transcripts().len(), 1);
-    let saved = kinds(&cx, id, &["transcript_saved"]);
-    assert_eq!(saved.len(), 1);
-    assert_eq!(saved.first().unwrap().1.get("trigger").unwrap(), "turn");
 }

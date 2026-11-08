@@ -1,6 +1,6 @@
-//! The agent's last message, read from the hook report that says it went idle.
+//! The agent's last message, read from the note its hooks left when it went idle.
 
-use moor_core::activity::{Activity, AgentState, HookCache, HookKind, HookRead, Source};
+use moor_core::activity::{Activity, AgentState, Probe, Source};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 
 use crate::error::CommandError;
@@ -12,23 +12,19 @@ const SAID_MAX: usize = 4000;
 /// Stands for the characters cut from the middle.
 const ELIDED: &str = "\n…\n";
 
-/// The agent's last message, cut in the middle, when a hook, fresh or cached, reports it idle with one.
-pub(super) fn said(
-    activity: &Activity,
-    hook: &HookRead,
-    cache: Option<&HookCache>,
-) -> Option<String> {
-    if !matches!(activity.source, Source::Hooks | Source::HooksCached)
-        || activity.state != AgentState::Idle
+/// The agent's last message, cut in the middle, when it reports idle and its hooks left one.
+pub(super) fn said(activity: &Activity, probe: &Probe) -> Option<String> {
+    if activity.source != Source::Status
+        || !matches!(
+            activity.state,
+            AgentState::Idle | AgentState::Waiting { .. }
+        )
     {
         return None;
     }
-    let rec = match hook {
-        HookRead::Fresh(rec) => Some(rec),
-        _ => cache.map(|c| &c.record),
-    };
-    rec.filter(|rec| rec.kind == HookKind::Idle)
-        .and_then(|rec| rec.message.as_deref())
+    probe
+        .note()
+        .and_then(|n| n.said.as_deref())
         .map(|text| ends(text, SAID_MAX))
 }
 

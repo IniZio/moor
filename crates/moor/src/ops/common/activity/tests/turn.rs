@@ -2,18 +2,18 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, Probes};
+use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
-use super::{cx, hook, row, run_once, settle, working_box, SESSION};
+use super::{cx, row, run_once, seen, settle, working_box, SESSION};
 use crate::cx::Cx;
 use crate::store::EventRow;
+use crate::testing::agent::{at_turn, idle, permission, said};
 use crate::testing::engine::FakeEngine;
 
-fn fx(probes: Probes) -> (tempfile::TempDir, Cx, BoxId) {
+fn fx(probes: Probe) -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
@@ -25,14 +25,13 @@ pub(super) fn steer(cx: &Cx, id: BoxId) -> i64 {
     steer_after(cx, id, None)
 }
 
-/// A steer sent once the report written at `hook_before` had been read.
-fn steer_after(cx: &Cx, id: BoxId, hook_before: Option<Ts>) -> i64 {
+/// A steer sent once the agent's terminal had ended `turn_before` turns.
+pub(super) fn steer_after(cx: &Cx, id: BoxId, turn_before: Option<u64>) -> i64 {
     let event = ExtraEvent::Steered {
         session: SESSION.to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
-        hook_before: hook_before.map(Ts::as_millis),
-        new_turn: false,
+        turn_before,
     };
     let applied = cx
         .store()
@@ -57,8 +56,8 @@ fn first(v: &[EventRow]) -> &EventRow {
 }
 
 #[test]
-fn an_idle_hook_after_a_steer_ends_its_turn_once() {
-    let (_dir, cx, id) = fx(hook(HookKind::Idle));
+fn an_idle_status_after_a_steer_ends_its_turn_once() {
+    let (_dir, cx, id) = fx(idle(seen()));
     let steered = steer(&cx, id);
     settle_once(&cx, id);
     settle_once(&cx, id);
@@ -71,8 +70,8 @@ fn an_idle_hook_after_a_steer_ends_its_turn_once() {
 }
 
 #[test]
-fn a_blocked_hook_after_a_steer_needs_input() {
-    let (_dir, cx, id) = fx(hook(HookKind::Blocked));
+fn a_blocked_status_after_a_steer_needs_input() {
+    let (_dir, cx, id) = fx(permission("Allow Bash?", seen()));
     steer(&cx, id);
     settle_once(&cx, id);
     let done = events(&cx, id, "turn_done");
@@ -101,7 +100,7 @@ fn an_exited_pane_after_a_steer_ends_the_turn_before_the_session() {
 
 #[test]
 fn the_turn_is_noted_before_the_state_step() {
-    let (_dir, cx, id) = fx(hook(HookKind::Idle));
+    let (_dir, cx, id) = fx(idle(seen()));
     steer(&cx, id);
     settle_once(&cx, id);
     let done = events(&cx, id, "turn_done");
@@ -112,7 +111,7 @@ fn the_turn_is_noted_before_the_state_step() {
 
 #[test]
 fn no_steer_writes_no_turn_done() {
-    let (_dir, cx, id) = fx(hook(HookKind::Idle));
+    let (_dir, cx, id) = fx(idle(seen()));
     settle_once(&cx, id);
     assert!(events(&cx, id, "turn_done").is_empty());
 }
@@ -122,7 +121,7 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(
         FakeEngine::new()
-            .probes(SESSION, hook(HookKind::Idle))
+            .probes(SESSION, idle(seen()))
             .transcript_text("abc"),
     );
     let (cx, _) = cx(dir.path(), &engine);
@@ -160,26 +159,26 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
 }
 
 #[test]
-fn an_idle_hook_from_before_the_steer_keeps_the_turn_open() {
-    let mut probes = hook(HookKind::Idle);
-    if let HookRead::Fresh(rec) = &mut probes.hook {
-        rec.at = Ts::from_millis(0);
-    }
-    let (_dir, cx, id) = fx(probes);
-    steer_after(&cx, id, Some(Ts::from_millis(0)));
+fn an_idle_agent_whose_ended_turns_have_not_passed_the_steer_keeps_the_turn_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, said("Done.", seen())));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    steer_after(&cx, id, Some(1));
     settle_once(&cx, id);
     assert!(events(&cx, id, "turn_done").is_empty());
     assert!(events(&cx, id, "idled").is_empty());
     assert!(events(&cx, id, "agent_said").is_empty());
+    engine.set_probes(SESSION, at_turn(said("Done.", seen()), 2));
+    settle_once(&cx, id);
+    assert_eq!(events(&cx, id, "turn_done").len(), 1);
+    assert_eq!(events(&cx, id, "agent_said").len(), 1);
+    assert_eq!(events(&cx, id, "idled").len(), 1);
 }
 
 #[test]
-fn an_idle_hook_after_the_steer_tells_what_the_agent_said() {
-    let mut probes = hook(HookKind::Idle);
-    if let HookRead::Fresh(rec) = &mut probes.hook {
-        rec.message = Some("docs lists one file".to_owned());
-    }
-    let (_dir, cx, id) = fx(probes);
+fn an_idle_status_after_the_steer_tells_what_the_agent_said() {
+    let (_dir, cx, id) = fx(said("docs lists one file", seen()));
     steer(&cx, id);
     settle_once(&cx, id);
     let said = events(&cx, id, "agent_said");

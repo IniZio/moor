@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::Probe;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
@@ -18,6 +18,7 @@ mod expire;
 
 use super::Moor;
 use crate::cx::Cx;
+use crate::testing::agent::idle;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -76,25 +77,9 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     id
 }
 
-/// Probes whose hook says the agent is idle, written just before the fake clock's now.
-fn idle_hook(cx: &Cx) -> Probes {
-    Probes {
-        hook: HookRead::Fresh(HookRecord {
-            kind: HookKind::Idle,
-            session_id: None,
-            message: None,
-            options: Vec::new(),
-            doing: None,
-            at: Ts::from_millis(cx.clock().now().as_millis() - 1000),
-            turn: None,
-        }),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
-        }),
-    }
+/// A read of an idle agent whose status changed just before the fake clock's now.
+fn idle_status(cx: &Cx) -> Probe {
+    idle(Ts::from_millis(cx.clock().now().as_millis() - 1000))
 }
 
 /// A Working Box whose fake engine reports quiet, with the context that settles it.
@@ -102,7 +87,7 @@ fn quiet_agent(dir: &Path) -> Cx {
     let driver = Arc::new(FakeDriver::new().exec_stdout([""]));
     let cx = engine_cx(dir, &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", "s-a");
-    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_hook(&cx)));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", idle_status(&cx)));
     engine_cx(dir, &driver, &engine)
 }
 

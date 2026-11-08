@@ -1,13 +1,15 @@
-//! The record a question tool's hook writes, and the notice that follows it.
+//! The note a question tool's hook leaves, and the state it gives once the agent blocks.
 
-use moor_core::activity::{decide, AgentState, HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::{decide, AgentState, BlockKind, Status};
 use moor_core::seam::agent_adapter::AgentAdapter;
 use moor_core::seam::clock::Ts;
 use serde_json::json;
 use tempfile::TempDir;
 
 use super::super::super::Claude;
-use super::{any_interpreter, ctx, forced, install, run_hook_on, state_file, Interp};
+use super::{ctx, forced_with_core, install, note_of, on_host, run_hook_on, Interp};
+use crate::testing::agent;
+use crate::testing::hc;
 
 const QUESTION: &str = "Draft PR #32 already exists. How should I proceed?";
 const LABELS: [&str; 3] = [
@@ -31,29 +33,19 @@ fn ask_payload() -> String {
     .to_string()
 }
 
-fn notice_payload() -> String {
-    json!({
-        "session_id": "s-42",
-        "message": "Claude needs your permission",
-        "notification_type": "permission_prompt",
-    })
-    .to_string()
-}
-
-/// The state the hook file now gives, read as a probe would.
-fn reported(raw: &[u8]) -> AgentState {
-    let rec = Claude.parse_hook(raw).unwrap();
-    let probes = Probes {
-        hook: HookRead::Fresh(rec),
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: String::new(),
-            prompt: None,
-            exit_marker: None,
+/// The state a blocked-on-a-question agent with the note now in `core` reads as.
+fn reported(core: &hc::Core) -> AgentState {
+    let at = Ts::from_millis(4_000_000_000_000);
+    let blocked = agent::read(
+        Some(Status::Blocked {
+            kind: Some(BlockKind::Question),
+            msg: None,
         }),
-    };
-    let now = Ts::from_millis(4_000_000_000_000);
-    decide(&probes, None, now, Ts::from_millis(0), None).state
+        at,
+        1,
+    );
+    let probe = agent::with_note(blocked, note_of(core));
+    decide(&probe, at, Ts::from_millis(0), None).state
 }
 
 fn asking() -> AgentState {
@@ -63,79 +55,25 @@ fn asking() -> AgentState {
     }
 }
 
-fn check_question_and_options(path: Option<&str>) {
+fn check_question_and_options(core: &hc::Core, path: &str) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
-    run_hook_on(
-        &c,
-        "waiting_input",
-        "PreToolUse",
-        Some(&ask_payload()),
-        path,
-    );
-    assert_eq!(reported(&state_file(&c)), asking());
-}
-
-fn check_notice_keeps_question(path: Option<&str>) {
-    let t = TempDir::new().unwrap();
-    let c = ctx(t.path());
-    install(&Claude.hook_writer(&c).unwrap());
-    run_hook_on(
-        &c,
-        "waiting_input",
-        "PreToolUse",
-        Some(&ask_payload()),
-        path,
-    );
-    run_hook_on(
-        &c,
-        "waiting_input",
-        "Notification",
-        Some(&notice_payload()),
-        path,
-    );
-    assert_eq!(reported(&state_file(&c)), asking());
-    run_hook_on(&c, "working", "PostToolUse", Some("{}"), path);
-    run_hook_on(
-        &c,
-        "waiting_input",
-        "Notification",
-        Some(&notice_payload()),
-        path,
-    );
-    let after = Claude.parse_hook(&state_file(&c)).unwrap();
-    assert_eq!(
-        after.message.as_deref(),
-        Some("Claude needs your permission")
-    );
+    run_hook_on(&c, "PreToolUse", Some(&ask_payload()), Some(path));
+    assert_eq!(reported(core), asking());
 }
 
 #[test]
-fn a_question_tool_record_reports_its_question_and_options() {
-    if any_interpreter() {
-        check_question_and_options(None);
-    }
+fn a_question_tool_note_reports_its_question_and_options() {
+    on_host(check_question_and_options);
 }
 
 #[test]
-fn a_question_tool_record_reports_its_question_with_python3_only() {
-    forced(Interp::Python, check_question_and_options);
+fn a_question_tool_note_reports_its_question_with_python3_only() {
+    forced_with_core(Interp::Python, check_question_and_options);
 }
 
 #[test]
-fn a_question_tool_record_reports_its_question_with_node_only() {
-    forced(Interp::Node, check_question_and_options);
-}
-
-#[test]
-fn a_permission_notice_leaves_a_pending_question_in_place() {
-    if any_interpreter() {
-        check_notice_keeps_question(None);
-    }
-}
-
-#[test]
-fn a_permission_notice_leaves_a_pending_question_in_place_with_node_only() {
-    forced(Interp::Node, check_notice_keeps_question);
+fn a_question_tool_note_reports_its_question_with_node_only() {
+    forced_with_core(Interp::Node, check_question_and_options);
 }

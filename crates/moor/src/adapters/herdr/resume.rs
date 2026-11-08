@@ -3,8 +3,8 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use moor_core::activity::PaneStatus;
 use moor_core::seam::clock::Clock;
+use moor_core::seam::surface::PaneStatus;
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg, SurfaceError};
 
 use super::Herdr;
