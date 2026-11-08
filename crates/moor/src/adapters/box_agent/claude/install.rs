@@ -13,6 +13,17 @@ const INSTALLER_URL: &str = "https://claude.ai/install.sh";
 /// The directory that holds the installed versions, one executable per version.
 const INSTALL_DIR: &str = "~/.local/share/claude";
 
+/// The oldest Claude Code that reports its status to its terminal, which moor reads.
+const MIN_VERSION: &str = "2.1.295";
+
+/// Exits 0 only when the agent at `cmd` runs and is at least [`MIN_VERSION`].
+fn new_enough(cmd: &str) -> String {
+    format!(
+        "{{ n=$({cmd} --version 2>/dev/null | cut -d' ' -f1); [ -n \"$n\" ] && \
+         [ \"$(printf '%s\\n' {MIN_VERSION} \"$n\" | sort -V | head -n 1)\" = {MIN_VERSION} ]; }}"
+    )
+}
+
 /// Newest installed version's path in the shell variable `v`; empty when none is installed.
 const NEWEST: &str =
     "v=$(ls -1 \"$HOME/.local/share/claude/versions\" 2>/dev/null | sort -V | tail -n 1)";
@@ -39,12 +50,16 @@ fn script() -> String {
     };
     [
         AGENT_PATH_LINE.to_owned(),
-        format!("command -v {program} >/dev/null 2>&1 && exit 0"),
+        format!(
+            "command -v {program} >/dev/null 2>&1 && {} && exit 0",
+            new_enough(&program)
+        ),
         NEWEST.to_owned(),
         format!(
-            "if [ -n \"$v\" ] && \"$HOME/.local/share/claude/versions/$v\" --version >/dev/null 2>&1; then \
+            "if [ -n \"$v\" ] && {}; then \
              mkdir -p \"$HOME/.local/bin\" && ln -sf \"$HOME/.local/share/claude/versions/$v\" \"$HOME/.local/bin/{}\" \
              && command -v {program} >/dev/null 2>&1 && exit 0; fi",
+            new_enough("\"$HOME/.local/share/claude/versions/$v\""),
             Tool::Agent.program()
         ),
         format!(
@@ -68,8 +83,9 @@ pub(super) fn native() -> AgentInstall {
     AgentInstall {
         script: script(),
         present: format!(
-            "{AGENT_PATH_LINE}\ncommand -v {} >/dev/null 2>&1",
-            quote(Tool::Agent.program())
+            "{AGENT_PATH_LINE}\ncommand -v {} >/dev/null 2>&1 && {}",
+            quote(Tool::Agent.program()),
+            new_enough(&quote(Tool::Agent.program()))
         ),
         dirs: vec![INSTALL_DIR.to_owned()],
         check: CHECK.to_owned(),
