@@ -1,0 +1,30 @@
+name: Rust toolchain, build cache and pinned tools
+description: Install the pinned toolchain, restore the target cache for a job, and install the pinned cargo tools.
+
+inputs:
+  cache:
+    description: Cache name. Jobs that build the same artifacts share one name so they restore the same target.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install toolchain from rust-toolchain.toml
+      shell: bash
+      run: rustup show active-toolchain || rustup toolchain install
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: target
+        key: cargo-target-${{ inputs.cache }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+        restore-keys: |
+          cargo-target-${{ inputs.cache }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
+          cargo-target-${{ inputs.cache }}-${{ runner.os }}-
+
+    - id: tools
+      shell: bash
+      run: echo "list=$(make -s print-tool-versions)" >> "$GITHUB_OUTPUT"
+
+    - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      with:
+        tool: ${{ steps.tools.outputs.list }}
