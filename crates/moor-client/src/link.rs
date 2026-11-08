@@ -1,22 +1,20 @@
 //! The machine link: one WebSocket a machine agent dials to the runner. A few JSON text frames
 //! prove who the agent is; then the socket carries yamux, one stream per exec, hook or relay.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{Connector, MaybeTlsStream};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 pub mod broker;
+mod dial;
 pub mod lease;
 pub mod ops;
 pub mod reach;
@@ -24,6 +22,7 @@ pub mod status;
 mod stream;
 pub mod sweep;
 
+pub use dial::{dial, dial_found, Dialed};
 pub use stream::{drive, Asked, Channel};
 
 #[cfg(test)]
@@ -341,29 +340,6 @@ pub fn url(server: &str) -> Result<String, String> {
         return Err(format!("{server} is not an http or https address"));
     };
     Ok(format!("{ws}{PATH}"))
-}
-
-/// A socket dialed to `server`'s link, verified against the bundled web roots.
-pub type Dialed = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-/// Dials `server`'s link.
-///
-/// # Errors
-/// The address is bad, or the connection or upgrade fails or takes over [`DIAL_TIMEOUT`].
-pub async fn dial(server: &str) -> Result<Dialed, String> {
-    let url = url(server)?;
-    let tls = Connector::Rustls(Arc::new(crate::remote::tls_config()?));
-    let dialing = tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(tls));
-    let (ws, _) = tokio::time::timeout(DIAL_TIMEOUT, dialing)
-        .await
-        .map_err(|_| {
-            format!(
-                "cannot reach {url}: no answer in {}s",
-                DIAL_TIMEOUT.as_secs()
-            )
-        })?
-        .map_err(|e| format!("cannot reach {url}: {e}"))?;
-    Ok(ws)
 }
 
 /// Takes the WebSocket upgrade on `stream`; a request for any path but [`PATH`] gets 404.

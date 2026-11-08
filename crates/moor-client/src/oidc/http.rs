@@ -95,6 +95,19 @@ impl Http {
         url: &str,
         body: &serde_json::Value,
     ) -> Result<T, String> {
+        self.post_json_found(url, body)?
+            .ok_or_else(|| format!("{url} answered 404 Not Found: "))
+    }
+
+    /// As [`Http::post_json`], but `None` when nothing is served at `url` (404).
+    ///
+    /// # Errors
+    /// As [`Http::post_json`], for every other error status.
+    pub fn post_json_found<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<Option<T>, String> {
         secure(url)?;
         let mut resp = self
             .0
@@ -105,6 +118,9 @@ impl Http {
             .map_err(|e| format!("cannot reach {url}: {e}"))?;
         let status = resp.status();
         let bytes = read(resp.body_mut()).map_err(|e| format!("{url}: {e}"))?;
+        if status == http::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if !status.is_success() {
             let why = serde_json::from_slice::<serde_json::Value>(&bytes)
                 .ok()
@@ -112,7 +128,9 @@ impl Http {
                 .unwrap_or_default();
             return Err(format!("{url} answered {status}: {why}"));
         }
-        serde_json::from_slice(&bytes).map_err(|e| format!("{url}: {e}"))
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| format!("{url}: {e}"))
     }
 }
 
