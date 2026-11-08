@@ -29,9 +29,12 @@ mod serve;
 pub mod service;
 pub mod settings;
 mod status;
+mod stop;
 mod sweep;
 pub mod up;
 mod upgrade;
+
+pub use stop::{until_stopped, Ended};
 
 /// What the agent keeps after pairing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,37 +86,6 @@ pub fn state_dir() -> PathBuf {
 /// Pairing left nothing usable in `dir`, or the server says this agent must be updated.
 pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> Result<(), String> {
     run_with(dir, machine, false, log).await
-}
-
-/// How work run by [`until_stopped`] ended.
-pub enum Ended<T> {
-    /// The work finished with this.
-    Done(T),
-    /// The host asked the agent to stop with this signal.
-    Stopped(&'static str),
-}
-
-/// Runs `work` until it ends or the host asks the agent to stop with SIGTERM or SIGINT. A stop
-/// ends every boot going on before it returns, so no crabbox outlives the agent.
-///
-/// # Errors
-/// `work` failed, or the agent cannot watch for those signals.
-pub async fn until_stopped<T>(
-    work: impl std::future::Future<Output = Result<T, String>>,
-) -> Result<Ended<T>, String> {
-    use tokio::signal::unix::{signal, SignalKind};
-    let watch = |kind| signal(kind).map_err(|e| format!("cannot watch for signals: {e}"));
-    let (mut term, mut int) = (
-        watch(SignalKind::terminate())?,
-        watch(SignalKind::interrupt())?,
-    );
-    let asked = tokio::select! {
-        ended = work => return ended.map(Ended::Done),
-        _ = term.recv() => "SIGTERM",
-        _ = int.recv() => "SIGINT",
-    };
-    pool::stop_boots().await;
-    Ok(Ended::Stopped(asked))
 }
 
 /// As [`run`]; with `auto_update`, the agent moves to the release of the server it links to.
