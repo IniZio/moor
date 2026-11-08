@@ -70,7 +70,7 @@ enum Change {
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler(router = (Self::tool_router() + Self::webhook_router() + Self::workflow_router() + Self::events_router() + Self::inspect_router() + Self::failed_router() + Self::artifact_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::webhook_router() + Self::workflow_router() + Self::events_router() + Self::inspect_router() + Self::failed_router() + Self::artifact_router() + Self::exec_router()))]
 impl ServerHandler for Tools {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(

@@ -95,7 +95,7 @@ for a fresh header before it connects:
 | Scope | Allows |
 | --- | --- |
 | `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `list_workflow_runs`, `list_events`, `GET /events`, `GET /boxes/.../artifacts/...`, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled` |
+| `moor:write` | `start_box`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled` |
 
 A token without `moor:write` gets an error from the write tools and can still
 read.
@@ -110,6 +110,7 @@ read.
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |
 | `send_to_box` | `box`, `text` |
+| `exec_in_box` | `box`, `command`; optional `timeout_seconds` |
 | `close_box` | `box`; optional `force` |
 | `retry_box` | `box` |
 | `close_failed_boxes` | optional `force` |
@@ -128,6 +129,27 @@ that could not be checked for them. `force: true` closes it anyway and discards
 that work, the same as `moor close --force`. It is false by default. Like
 `moor close --force`, `force: true` also interrupts a start that is running the
 Box's setup, so a stuck setup does not keep the Box open.
+
+`exec_in_box` runs a short command in one of your Boxes, the same way
+`moor exec` does, and returns `exit`, `timed_out`, `stdout`, `stderr`,
+`stdout_truncated` and `stderr_truncated`. Use it to see inside a Box, such as
+`free -m; df -h; ps aux --sort=-rss | head; docker stats --no-stream`, without
+asking its agent:
+
+- `command` is shell text. It gets no stdin and no terminal.
+- It runs beside the agent and takes no Box lock, so it never waits on a run
+  or a start.
+- An asleep Box is woken first, as `moor exec` wakes it. The timeout starts
+  once the command starts.
+- The command is killed after `timeout_seconds`, 30 by default and 120 at
+  most. Then `timed_out` is true and `exit` is absent.
+- Each of stdout and stderr keeps its first 64 KiB. The `_truncated` flag says
+  more was cut. Pipe through `tail` to keep the end instead.
+- Every command leaves an `exec_ran` event on the Box with `command`, `exit`
+  and `timed_out`, so you can see in `list_events` what an agent ran there.
+
+It acts only on your own Boxes and needs `moor:write`, because the command can
+change anything the Box's user can.
 
 `retry_box` re-runs setup on a Box whose setup failed, the same as `moor retry`.
 It refuses a Box in any other state. It returns when the retry finishes; follow
@@ -252,6 +274,7 @@ the agent when they do not settle it.
 | `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. A start's `step_finished` events carry `{step, ms, ok}` for `dotfiles`, `agent_install`, `profile`, `acquire`, `proxy`, `clone_others`, `launch` and `plugins`. |
 | `inspect_box` | The tail of the agent's terminal, the agent's recent messages, its state and `stuck`. |
 | `get_artifact` | The record of an artifact the agent published and the path to download its bytes from. Never the bytes. |
+| `exec_in_box` | Whatever a command run inside the Box prints: memory, processes, disks, docker. Needs `moor:write`. |
 
 `inspect_box` takes `box` and optionally `lines` (40 by default, at most 200)
 and `said` (5 by default, at most 20). It returns `pane`, the last `lines` lines
@@ -275,8 +298,8 @@ The pane is a snapshot of the terminal, not the transcript. It shows what is on
 screen now, so a long output may have scrolled away, and a full-screen program
 fills it with drawing. It is the best way to see a prompt the agent waits on.
 
-Nothing here shows the environment of the host, the Proxy's own log, the
-agent's private reasoning or the Boxes of other users. The egress and
+Nothing here shows the environment of the controller's host, the Proxy's own
+log, the agent's private reasoning or the Boxes of other users. The egress and
 credential events say that a request was refused or withheld, and for which
 host and rule, but never carry a token, a path, a query or a body.
 
