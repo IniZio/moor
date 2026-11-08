@@ -1,0 +1,97 @@
+:root {
+	--sl-font: var(--moor-font-body);
+	--sl-font-mono: var(--moor-font-mono);
+	--sl-text-body: var(--moor-text-base);
+	--sl-text-code: var(--moor-text-sm);
+	--sl-text-h1: var(--moor-text-4xl);
+	--sl-text-h2: var(--moor-text-2xl);
+	--sl-text-h3: var(--moor-text-xl);
+	--sl-text-h4: var(--moor-text-lg);
+	--sl-line-height: var(--moor-leading-body);
+	--sl-line-height-headings: var(--moor-leading-heading);
+	--sl-content-width: 46rem;
+
+	--sl-color-white: var(--moor-peat-50);
+	--sl-color-gray-1: var(--moor-peat-100);
+	--sl-color-gray-2: var(--moor-peat-200);
+	--sl-color-gray-3: var(--moor-peat-300);
+	--sl-color-gray-4: var(--moor-peat-500);
+	--sl-color-gray-5: var(--moor-peat-700);
+	--sl-color-gray-6: var(--moor-peat-800);
+	--sl-color-black: var(--moor-peat-900);
+
+	--sl-color-accent-low: var(--moor-heather-900);
+	--sl-color-accent: var(--moor-heather-400);
+	--sl-color-accent-high: var(--moor-heather-200);
+
+	--sl-color-orange-low: var(--moor-gorse-800);
+	--sl-color-orange: var(--moor-gorse-400);
+	--sl-color-orange-high: var(--moor-gorse-300);
+	--sl-color-green-low: var(--moor-moss-800);
+	--sl-color-green: var(--moor-moss-400);
+	--sl-color-green-high: var(--moor-moss-300);
+	--sl-color-blue-low: var(--moor-loch-800);
+	--sl-color-blue: var(--moor-loch-400);
+	--sl-color-blue-high: var(--moor-loch-300);
+	--sl-color-purple-low: var(--moor-heather-900);
+	--sl-color-purple: var(--moor-heather-400);
+	--sl-color-purple-high: var(--moor-heather-200);
+	--sl-color-red-low: var(--moor-rust-800);
+	--sl-color-red: var(--moor-rust-400);
+	--sl-color-red-high: var(--moor-rust-300);
+
+	--sl-shadow-sm: var(--moor-shadow-sm);
+	--sl-shadow-md: var(--moor-shadow-md);
+	--sl-shadow-lg: var(--moor-shadow-lg);
+}
+
+:root[data-theme='light'] {
+	--sl-color-white: var(--moor-peat-950);
+	--sl-color-gray-1: var(--moor-peat-900);
+	--sl-color-gray-2: var(--moor-peat-800);
+	--sl-color-gray-3: var(--moor-peat-600);
+	--sl-color-gray-4: var(--moor-peat-400);
+	--sl-color-gray-5: var(--moor-peat-200);
+	--sl-color-gray-6: var(--moor-peat-100);
+	--sl-color-gray-7: var(--moor-peat-50);
+	--sl-color-black: var(--moor-peat-25);
+
+	--sl-color-accent-low: var(--moor-heather-100);
+	--sl-color-accent: var(--moor-heather-600);
+	--sl-color-accent-high: var(--moor-heather-700);
+
+	--sl-color-orange-low: var(--moor-gorse-100);
+	--sl-color-orange: var(--moor-gorse-400);
+	--sl-color-orange-high: var(--moor-gorse-700);
+	--sl-color-green-low: var(--moor-moss-100);
+	--sl-color-green: var(--moor-moss-600);
+	--sl-color-green-high: var(--moor-moss-800);
+	--sl-color-blue-low: var(--moor-loch-100);
+	--sl-color-blue: var(--moor-loch-400);
+	--sl-color-blue-high: var(--moor-loch-700);
+	--sl-color-purple-low: var(--moor-heather-100);
+	--sl-color-purple: var(--moor-heather-500);
+	--sl-color-purple-high: var(--moor-heather-700);
+	--sl-color-red-low: var(--moor-rust-100);
+	--sl-color-red: var(--moor-rust-400);
+	--sl-color-red-high: var(--moor-rust-700);
+}
+
+:is(h1, h2, h3, h4, h5, .site-title) {
+	font-family: var(--moor-font-heading);
+	font-weight: var(--moor-weight-heading);
+	letter-spacing: -0.01em;
+}
+
+.sl-markdown-content :not(pre) > code {
+	border-radius: var(--moor-radius-sm);
+	padding: 0.1em 0.35em;
+}
+
+.sl-markdown-content a {
+	text-underline-offset: 0.2em;
+}
+
+.expressive-code .frame {
+	--ec-brdRad: var(--moor-radius-md);
+}

@@ -1,2 +1,5 @@
 /target
 /docker-compose.override.yaml
+/site/node_modules
+/site/dist
+/site/.astro
