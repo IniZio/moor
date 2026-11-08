@@ -81,6 +81,7 @@ chart:
 	helm lint --strict $(CHART) $(CHART_VALUES)
 	helm lint --strict $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml
 	helm template moor $(CHART) $(CHART_VALUES) >/dev/null
+	@! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -n 'pathType: Exact' || { echo "chart: the cloudflare-tunnel ingress class drops a whole Ingress with an Exact path; use Prefix"; exit 1; }
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
 	helm template moor $(CHART) $(CHART_VALUES) | grep -q 'command: \[moor-machine-runner\]'
 	! helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false | grep -q 'moor-machine-runner'
