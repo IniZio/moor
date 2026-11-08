@@ -35,7 +35,6 @@ moor::adapters::rng
 moor::adapters::git	moor::adapters::proc
 moor::adapters::sockets	
 moor::adapters::crabbox	moor::adapters::proc,moor::adapters::sockets,moor::keys
-moor::adapters::herdr	moor::adapters::proc
 moor::adapters::box_agent	
 moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env

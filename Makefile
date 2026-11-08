@@ -5,25 +5,16 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 BINSTALL_VERSION := 1.26.2
 LLVM_COV_VERSION := 0.9.1
-ZIG_VERSION := 0.17.0
 HELM_VERSION := 3.21.3
-ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
-# The same release for the other runners the release build installs it on.
-ZIG_SHA256_x86_64-linux := $(ZIG_SHA256)
-ZIG_SHA256_aarch64-linux := 9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8
-ZIG_SHA256_x86_64-macos := 4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98f25f95529c6
-ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
-ZIG_PLATFORM ?= x86_64-linux
-PTY := --features moor/pty-surface
 
 PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
 export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
 
 help:
-	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -155,7 +146,7 @@ ci:
 	$(MAKE) test
 
 build:
-	cargo build --workspace --release --locked $(PTY)
+	cargo build --workspace --release --locked
 
 dev-s3:
 	docker compose up -d s3
@@ -165,12 +156,6 @@ dev-s3:
 unit-s3:
 	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --locked -p moor --lib --run-ignored only -E 'test(/::s3_/)'
 
-lint-pty:
-	cargo clippy -p moor --all-targets --locked $(PTY) -- -D warnings
-
-unit-pty:
-	cargo test -p moor --lib --locked $(PTY) -- adapters::pty adapters::box_agent::steer wire::
-
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
 
@@ -178,12 +163,9 @@ nested-e2e:
 	tools/nested-e2e.sh
 
 # Single source of the pins for CI's install-action step.
-.PHONY: print-tool-versions print-zig print-helm
+.PHONY: print-tool-versions print-helm
 print-helm:
 	@echo "$(HELM_VERSION)"
-
-print-zig:
-	@echo "$(ZIG_VERSION) $(ZIG_SHA256_$(ZIG_PLATFORM))"
 
 print-tool-versions:
 	@echo "cargo-deny@$(DENY_VERSION),cargo-machete@$(MACHETE_VERSION),cargo-nextest@$(NEXTEST_VERSION),taplo@$(TAPLO_VERSION),typos@$(TYPOS_VERSION)"

@@ -16,7 +16,6 @@ OUT=$D/out
 export MOOR_CONFIG=$D/config.yaml
 export MOOR_STATE_DIR=$STATE
 export XDG_CONFIG_HOME=$STATE/xdg
-export ZIG=${ZIG:-$NESTED/bin/zig}
 export PATH=$REPO_DIR/target/debug:$PATH
 
 log() { printf 'nested-e2e: %s\n' "$*" | tee -a "$OUT/run.log" >&2; }
@@ -96,8 +95,6 @@ nodes:
   local:
     runtime: external
     max_boxes: 1
-surface:
-  kind: pty
 controller:
   socket: $CTL/controller.sock
 EOF
@@ -119,17 +116,11 @@ build() {
 		log "build skipped: target/debug/moor is newer than every tracked file"
 		return 0
 	fi
-	log "building with the pty surface"
-	local tries=0
-	until timeout 2400 cargo build --workspace --locked --features moor/pty-surface >"$OUT/build.log" 2>&1; do
-		tries=$((tries + 1))
-		local src
-		src=$(ls -td "$REPO_DIR"/target/debug/build/ghostty-vt-sys-*/out/src 2>/dev/null | head -1)
-		if [ "$tries" -gt 30 ] || [ -z "$src" ] || ! "$REPO_DIR/tools/zig-seed.sh" "$src" "$OUT/build.log"; then
-			log "build failed, see $OUT/build.log"
-			return 1
-		fi
-	done
+	log "building"
+	if ! timeout 2400 cargo build --workspace --locked >"$OUT/build.log" 2>&1; then
+		log "build failed, see $OUT/build.log"
+		return 1
+	fi
 	# Cargo leaves the binary alone when no Rust changed, so mark it current.
 	touch "$REPO_DIR/target/debug/moor"
 }

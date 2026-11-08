@@ -6,8 +6,4 @@ passt = "passt"
 PASST = "PASST"
 
 [files]
-extend-exclude = [
-  "target/",
-  "Cargo.lock",
-  "crates/moor/src/adapters/herdr/testdata/",
-]
+extend-exclude = ["target/", "Cargo.lock"]

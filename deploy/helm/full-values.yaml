@@ -10,7 +10,6 @@ database:
   url: postgres://example:example@db.example.com:5432/moor
   readers: 8
 controller:
-  surface: pty
   agentModel: opus
   nodes:
     cloud: {runtime: external, max_boxes: 1}
