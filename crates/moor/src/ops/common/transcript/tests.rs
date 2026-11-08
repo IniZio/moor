@@ -137,6 +137,36 @@ fn a_later_unchanged_save_keeps_the_earlier_archive() {
 }
 
 #[test]
+fn a_turn_save_gives_up_sooner_than_the_last_save_of_a_session() {
+    let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
+    let dir = tempfile::tempdir().unwrap();
+    let cx = Cx::fake(
+        dir.path(),
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new()),
+        Arc::new(ScriptedProc::new()),
+    )
+    .with_engine(engine.clone());
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    for trigger in [
+        Trigger::Turn,
+        Trigger::Exit,
+        Trigger::End,
+        Trigger::Close,
+        Trigger::Relaunch,
+    ] {
+        save(&cx, store, &row, &session, trigger);
+    }
+    let secs: Vec<u64> = engine
+        .transcript_deadlines()
+        .iter()
+        .map(|d| d.0.as_secs())
+        .collect();
+    assert_eq!(secs, [15, 60, 60, 60, 60]);
+}
+
+#[test]
 fn a_failure_records_the_error_and_saves_nothing() {
     let engine =
         FakeEngine::new().fail_transcript(EngineError::Transcript("archive: exit 3".into()));

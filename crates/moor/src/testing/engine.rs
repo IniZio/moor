@@ -39,7 +39,7 @@ struct State {
     quiet_first_run: bool,
     steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
     steers: Vec<(String, Steer)>,
-    transcripts: Vec<String>,
+    transcripts: Vec<(String, Deadline)>,
     transcript_text: Option<String>,
     later_texts: VecDeque<String>,
     fail_transcript: Option<EngineError>,
@@ -164,7 +164,6 @@ impl FakeEngine {
         self.st().steers.clone()
     }
 
-    /// The session ids transcripts were requested for, in call order.
     /// Queues what the next calls to `agent_fate` answer, in order; an empty queue answers
     /// that the agent ended with its pane.
     pub(crate) fn fates(self, fates: Vec<Result<AgentFate, EngineError>>) -> Self {
@@ -182,8 +181,14 @@ impl FakeEngine {
         self.st().reattached.clone()
     }
 
+    /// The session ids transcripts were requested for, in call order.
     pub(crate) fn transcripts(&self) -> Vec<String> {
-        self.st().transcripts.clone()
+        self.st().transcripts.iter().map(|t| t.0.clone()).collect()
+    }
+
+    /// The deadline each transcript request gave the archive, in call order.
+    pub(crate) fn transcript_deadlines(&self) -> Vec<Deadline> {
+        self.st().transcripts.iter().map(|t| t.1).collect()
     }
 
     /// Launches from now on put the agent under `kind`, as after an `agent.holder` change.
@@ -359,10 +364,10 @@ impl Engine for FakeEngine {
         Ok(PaneRef::new(pane))
     }
 
-    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
+    fn transcript(&self, s: &SessionRef, dest: &Path, d: Deadline) -> Result<(), EngineError> {
         let (hook, fail, text) = {
             let mut st = self.st();
-            st.transcripts.push(s.id.clone());
+            st.transcripts.push((s.id.clone(), d));
             (
                 st.on_transcript.clone(),
                 st.fail_transcript.take(),

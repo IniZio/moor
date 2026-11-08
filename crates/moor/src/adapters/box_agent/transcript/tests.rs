@@ -48,7 +48,7 @@ fn run(d: &Arc<FakeDriver>, dest: &Path) -> Result<(), EngineError> {
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
     )
-    .transcript(&session(), dest)
+    .transcript(&session(), dest, Deadline(Duration::from_secs(15)))
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn the_archive_runs_in_one_batch_not_a_separate_exec() {
 }
 
 #[test]
-fn the_archive_deadline_is_fifteen_seconds() {
+fn the_given_deadline_bounds_the_archive_batch() {
     let d = live(FakeDriver::new().run_stdouts(["", "YWJj"]));
     let dir = tempfile::tempdir().unwrap();
     run(&d, &dir.path().join("out")).unwrap();
