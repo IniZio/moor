@@ -101,6 +101,7 @@ Start fix-typo on acme/web?
 | 8 | Chart has `runner.enabled: false`. Agent retries forever against a server with no runner. | Default on. Agent exits with a clear message. |
 | 9 | A first-time teammate has no front yet and nowhere to start. | Account page in the gate. |
 | 10 | Docs repeat install, enroll and login steps up to 4 times. | Rewrite per the layout below. |
+| 11 | A failed setup line names the command but not its output. | `setup_failed` carries the stderr tail and any credential the Proxy withheld during the line. |
 
 ## Docs layout
 
