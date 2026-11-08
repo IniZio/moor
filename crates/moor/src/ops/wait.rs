@@ -30,6 +30,11 @@ const MIN_READ: Duration = Duration::from_secs(1);
 
 /// Run `wait`.
 pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
+    run_polling(cx, req, POLL)
+}
+
+/// Like [`run`], pausing `poll` between polls.
+fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, CommandError> {
     let clock = cx.clock();
     let started = clock.instant();
     reconcile::run(cx);
@@ -68,7 +73,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         };
         let verdict = wait_verdict(facts, want, elapsed, timeout);
         if verdict == WaitVerdict::Keep {
-            clock.sleep(POLL.min(timeout.saturating_sub(elapsed)));
+            clock.sleep(poll.min(timeout.saturating_sub(elapsed)));
             continue;
         }
         let live = in_flight.is_some();

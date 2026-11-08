@@ -16,7 +16,7 @@ use moor_core::seam::driver::{AcquireReq, SleepKind};
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq};
 
-use super::run;
+use super::{run, run_polling};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::store::{FollowClaim, NewRun};
@@ -427,7 +427,7 @@ fn a_busy_agent_times_out_at_the_default_bound() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), working());
     add_live(&cx);
-    let v = run(&cx, &req(None, None)).unwrap();
+    let v = run_polling(&cx, &req(None, None), Duration::from_secs(30)).unwrap();
     assert!(v.timed_out);
     assert_eq!(v.waited_ms, 1_800_000);
 }
