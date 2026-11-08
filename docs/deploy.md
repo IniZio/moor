@@ -1,217 +1,114 @@
-# Deploy the controller with systemd
+# Run on one host
 
-On a host, run the controller as a systemd user service with socket units.
-systemd holds the listening sockets, so a client that connects while the
-controller restarts waits in the socket's backlog and gets its answer from
-the new controller. Each socket keeps its inode across restarts.
+Take a host that [Self-host on one machine](run.md) set up and open it to
+teammates. You add the gate behind your sign-in provider, then any other
+fronts. You need a DNS name for the host, written here as `HOST`, and TLS in
+front of port 8443. You also need an OIDC client, as
+[Sign-in with OIDC](oidc.md) describes.
 
-A development run needs none of this. Without passed sockets, `moor
-controller serve` binds its own sockets.
+## Know the units
 
-## Install the units
+`moor up` runs the controller as systemd user units:
 
-`moor up` writes `moor.socket` and `moor.service` like the ones below, with absolute paths
-in place of `%S` and `%h`, your `PATH` and `MOOR_CONFIG`, and `WantedBy=default.target` on
-the service, and enables and starts them. It writes no front
-socket, so add one per front by hand. To write the units yourself, get the
-binaries with `install.sh` from the latest release (`sh install.sh moor moor-gate`). The units below assume they are in `~/.local/bin`, the controller
-config is `~/.config/moor/controller.yaml`, and the state directory is the
-default `~/.local/state/moor`. In a user unit, `%S` is that state base,
-`$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` to the same value
-in your login shell and in the systemd user manager, or leave it unset in
-both. Otherwise the CLI dials a socket path that the units never bound.
+- `moor.socket` holds the controller socket, `~/.local/state/moor/controller.sock`.
+- `moor.service` runs `moor controller serve --config ~/.config/moor/controller.yaml`.
 
-1. Write `~/.config/systemd/user/moor.socket`:
+systemd holds each socket, so a client that connects during a restart waits
+and gets its answer from the new controller. Each front gets a socket of its
+own, from the template unit `moor-front@.socket`. `moor up` writes no front
+socket, so write the template once,
+`~/.config/systemd/user/moor-front@.socket`:
 
-   ```ini
-   [Unit]
-   Description=moor controller socket
+```ini
+[Unit]
+Description=moor socket for the %i front
 
-   [Socket]
-   ListenStream=%S/moor/controller.sock
-   FileDescriptorName=controller
-   Service=moor.service
-   SocketMode=0600
-   DirectoryMode=0700
+[Socket]
+ListenStream=%S/moor/fronts/%i/front
+FileDescriptorName=front-%i
+Service=moor.service
+SocketMode=0600
+DirectoryMode=0700
 
-   [Install]
-   WantedBy=sockets.target
+[Install]
+WantedBy=sockets.target
+```
+
+Set `XDG_STATE_HOME` to the same value in your login shell and in the systemd
+user manager, or leave it unset in both. Otherwise the CLI dials a socket the
+units never bound.
+
+## Add the gate
+
+1. Add the gate's front to `~/.config/moor/controller.yaml`:
+
+   ```yaml
+   fronts:
+     authgear: {}
    ```
 
-2. If the controller config has `fronts`, write
-   `~/.config/systemd/user/moor-front@.socket`. Each instance holds one
-   front's socket:
-
-   ```ini
-   [Unit]
-   Description=moor socket for the %i front
-
-   [Socket]
-   ListenStream=%S/moor/fronts/%i/front
-   FileDescriptorName=front-%i
-   Service=moor.service
-   SocketMode=0600
-   DirectoryMode=0700
-
-   [Install]
-   WantedBy=sockets.target
-   ```
-
-3. Write `~/.config/systemd/user/moor.service`:
-
-   ```ini
-   [Unit]
-   Description=moor controller
-   Requires=moor.socket
-   After=moor.socket
-
-   [Service]
-   ExecStart=%h/.local/bin/moor controller serve --config %h/.config/moor/controller.yaml
-   KillMode=process
-   TimeoutStopSec=660
-   Restart=on-failure
-   ```
-
-4. Enable the controller socket and one front socket per entry under `fronts`:
+2. Enable its socket and restart the controller:
 
    ```sh
    systemctl --user daemon-reload
-   systemctl --user enable --now moor.socket moor-front@slack.socket
-   systemctl --user start moor.service
-   ```
-
-`KillMode=process` makes systemd signal only the controller on stop. The
-shared egress Proxy and other processes that the controller started keep
-running. systemd logs them as left-over processes when the service starts
-again. `TimeoutStopSec` must be above the config's `drain_timeout_secs`,
-30 by default, or systemd kills the controller in the middle of its drain.
-
-Every Box's credential hosts go through one shared egress Proxy. Without
-`MOOR_EGRESS_URL`, the controller runs it itself as `moor proxy serve-egress`
-on `<state dir>/egress/egress.sock`, with the key it keeps in
-`<state dir>/egress.key`. It outlives the controller, and a controller that
-finds it answering keeps it. Stop it by hand to run a new build of it. Each
-Box reaches it over a tunnel the controller holds, so a controller restart cuts
-the transfers open at that moment, and new requests wait for the tunnel to come
-back. With `MOOR_EGRESS_URL` set to a `wss://` address, Boxes dial that Proxy
-themselves, and `MOOR_EGRESS_KEY` must be the key it was given.
-
-At start the controller answers requests at once and opens each open Box's
-tunnel and machine forwards in the background, so a slow Box never holds up
-the API.
-
-## What the controller checks
-
-The controller takes the passed sockets by the `sd_listen_fds` protocol. It
-uses `LISTEN_FDS` and `LISTEN_FDNAMES` only when `LISTEN_PID` is its own pid.
-Otherwise it ignores them and binds its own sockets, as a development run
-does.
-
-The controller refuses to start, with exit code 1, when the passed sockets do
-not match the config:
-
-- A passed socket has a name other than `controller`, `runner`, `ledger` or
-  `front-<namespace>` for a namespace in `fronts`.
-- The config needs a socket that systemd did not pass. Enable the missing
-  `moor-front@<namespace>.socket`.
-- A socket is bound at a path other than the one the config gives. The controller
-  socket path is `socket` in the config, else `<state dir>/controller.sock`.
-- A socket file is open to the group or to other users. Set `SocketMode=0600`.
-
-It also exits 1 when another controller holds its lock. A start waits up to 5 s
-for the lock first, since a store migration holds it briefly. The message names
-the holder's pid and socket.
-
-The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
-as `runner`. When it is not passed, the controller binds it itself.
-
-The ledger socket, `<state dir>/ledger/proxy.sock`, may be passed as `ledger`.
-When it is not passed, the controller binds it itself. The shared egress Proxy
-and the front Proxy make their store calls on it, so they never hold the database
-URL or the vault key. Each presents its key.
-
-The machine runner binds `<state dir>/runner/links.sock` itself, mode 0600, and
-refuses to start when the file is open to the group or to other users. The
-controller and `moor link-dial` use it to reach a personal node's machine over that host's
-link. It accepts only lease and dial requests.
-
-The controller never deletes or rebinds a socket that systemd passed in.
-The passed fds are close-on-exec, so Box processes and fronts do not inherit
-them.
-
-## Upgrade the controller
-
-1. Install the new binaries over the old ones, for example with
-   `install -m 755 moor moor-slack ~/.local/bin/`.
-2. Restart the service:
-
-   ```sh
+   systemctl --user enable --now moor-front@authgear.socket
    systemctl --user restart moor.service
    ```
 
-Do not restart the socket units. That closes the sockets, and every client
-that is connected or waiting loses its connection.
+3. Start the gate:
 
-On the restart, systemd sends SIGTERM and the controller drains, as
-[Stopping the controller](config.md#stopping-the-controller) describes:
+   ```sh
+   moor-gate \
+     --front-socket ~/.local/state/moor/fronts/authgear/front \
+     --issuer https://ISSUER \
+     --client-id CLIENT_ID \
+     --mcp-resource-url https://HOST/mcp \
+     --public-url https://HOST
+   ```
 
-1. The controller stops accepting connections. New connects wait in the
-   backlog that the socket unit holds.
-2. A `wait`, `wait-events`, or `watch` gets an error frame of kind
-   `restarting` and is closed.
-3. A `start` or `retry` is not waited for. It is cut when the controller exits,
-   and the new controller follows its setup or acquires its machine once more.
-   Any other request in flight runs to its end, for up to
-   `drain_timeout_secs`. A settle pass that is already running also runs to
-   its end. The controller stops a settle pass that outlives
-   `drain_timeout_secs`, without rollback.
-4. Every connection ends with an error frame of kind `restarting`, which
-   answers any request the controller did not run.
-5. The controller exits 0. systemd starts the new controller on the same
-   sockets, and it answers the connects that waited in the backlog.
+   The gate listens on `0.0.0.0:8443` without TLS. Put your TLS ingress in
+   front of it, and let it hold a response stream open for hours. Run the gate
+   under your service manager so it restarts with the host.
 
-`moor-gate` drains on SIGTERM or SIGINT as well. It stops accepting, lets
-requests in flight end for up to `--drain-timeout-secs`
-(`MOOR_GATE_DRAIN_TIMEOUT_SECS`, 30 by default), closes open `/front` and
-`/events` streams after 5 s so clients reconnect, and exits 0.
+4. Check it from the host:
 
-While the controller is away, the gate holds `/mcp` and `/front` and dials
-again. A request that provably never ran reaches the controller once, when it
-is back. A request cut after it was sent is an error to the client, and the gate
-never sends it again. Once the hold runs out, the gate answers `503` with
-`Retry-After: 5`. Over `--controller` the hold is 30 s. On `--front-socket` a
-refused connect holds for 5 s, as any client's does, and a missing socket answers
-at once, since systemd keeps the socket through a restart.
+   ```sh
+   moor doctor --public-url https://HOST
+   ```
 
-With `--controller tls://HOST:PORT`, `--controller-ca`, `--controller-cert`,
-`--controller-key` and `--front-key` (`MOOR_GATE_FRONT_KEY`), the gate dials the
-controller's `ledger_tls` listener with a front hello, so it needs no shared
-volume. The key is the content of `fronts.authgear.remote.key_file`. The chart
-sets these with `gate.separate`. Readiness at `/.well-known/moor` never dials the
-controller, so a gap leaves the gate ready to hold. At most 512 requests wait on
-one gate. The next gets `503` with `Retry-After: 5` at once.
+Teammates can now follow [Use a team moor](use.md).
 
-The CLI and the fronts dial again only when a request provably did not run:
+## Add the webhook front
 
-- The connection dropped before the controller's hello, or the controller
-  answered `restarting` before any progress or output. Both prove a restart,
-  so the client dials again for up to 60 s of wall time.
-- The socket path exists but refuses the connection. A stale socket left by a
-  controller that died does this, and so does a controller between unlink
-  and bind. The client dials again for at most 5 s.
-- A socket path that does not exist fails at once, with the unreachable
-  message.
+So that teammates' webhooks get delivered, let the controller run
+`moor-notify`:
 
-A `wait` or `wait-events` is sent again even after progress, because it
-changes nothing. A `watch` resumes after the last cursor it delivered. The
-client reports an error and never sends a request again when its write
-failed, its connection dropped after the send, or it already showed progress
-or output. Such a request may have run. For the CLI,
-`MOOR_CONTROLLER_REDIAL_SECS` sets the 60 s limit. A value of `0` turns
-redialing off. A value that is not a whole number of seconds is a usage
-error.
+```yaml
+fronts:
+  notify:
+    command: [moor-notify]
+    webhooks: true
+```
 
-Over ssh, `moor controller attach` applies the same rules on the remote side.
-It exits 75 when the remote socket refuses the connection, and the CLI dials
-again for at most 5 s. It exits 1 when the remote socket is missing, and ssh
-exits 255 when it cannot connect. Both fail at once.
+Enable `moor-front@notify.socket` and restart the controller, as for the gate.
+`moor-notify` and `moor-machine-runner` come in the release image, not as
+release binaries. On a host, build each from a checkout, such as with
+`cargo install --path crates/moor-notify`.
+
+## Add Slack
+
+Follow [Slack app](slack.md). It adds a `slack` front the same way.
+
+## Take machines from teammates
+
+Teammates pair machines through the gate, at `https://HOST/pair`. The controller
+reaches them through the machine runner. Run it beside the controller, as the
+same user:
+
+```sh
+moor-machine-runner --socket ~/.local/state/moor/runner/runner.sock \
+  --state-dir ~/.local/state/moor-machine-runner --agents 0.0.0.0:7701
+```
+
+Route `https://HOST/machines/link` to port 7701 on your ingress. The gate
+serves `/machines/pair` and `/pair` itself.
