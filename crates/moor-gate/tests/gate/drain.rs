@@ -126,7 +126,7 @@ fn a_draining_gate_finishes_a_short_request_and_refuses_new_connections() {
     let mut stream = TcpStream::connect(&w.gate).unwrap();
     write!(
         stream,
-        "POST /machines/enroll HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n{{"
+        "POST /machines/pair HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n{{"
     )
     .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -154,7 +154,7 @@ fn a_draining_gate_serves_a_connection_queued_before_the_drain() {
     let mut stream = TcpStream::connect(&w.gate).unwrap();
     write!(
         stream,
-        "POST /machines/enroll HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+        "POST /machines/pair HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
     )
     .unwrap();
     trigger.write_all(b"x").unwrap();

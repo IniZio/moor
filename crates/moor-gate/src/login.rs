@@ -2,6 +2,7 @@
 //! sessions, for pages that must only reach a signed-in person. A started sign-in and a
 //! session both live in sealed cookies, so any gate replica sharing the key can serve them.
 
+pub(crate) mod pair;
 pub(crate) mod routes;
 mod seal;
 pub(crate) mod secrets;
@@ -92,6 +93,10 @@ impl oauth2::SyncHttpClient for Http {
 
 /// Browser sign-in for one public origin.
 pub struct Login {
+    /// The public URL, without a trailing slash.
+    public: String,
+    /// The machines pairing through this gate.
+    pairings: pair::Pairings,
     /// `<public-url>/auth/callback`.
     redirect: String,
     /// Seals and opens the sign-in and session cookies.
@@ -142,8 +147,11 @@ impl Login {
             .http_status_as_error(false)
             .max_redirects(0)
             .build();
+        let public = public_url.trim_end_matches('/').to_owned();
         Ok(Self {
-            redirect: format!("{}/auth/callback", public_url.trim_end_matches('/')),
+            redirect: format!("{public}/auth/callback"),
+            public,
+            pairings: pair::Pairings::default(),
             seal,
             endpoints: Mutex::new(None),
             http: Http(Agent::new_with_config(config)),

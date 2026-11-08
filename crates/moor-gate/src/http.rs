@@ -1,4 +1,4 @@
-//! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine enrollment,
+//! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine pairing,
 //! the pages behind browser sign-in, and 404 for the rest.
 
 use std::io::{BufRead, BufReader, Write};
@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::{routes, secrets, setup};
+use crate::login::{pair, routes, secrets, setup};
 use crate::streams::Streams;
 use crate::tools::client_down;
 use crate::{log, relay, Gate, Login};
@@ -83,6 +83,10 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
             let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
             crate::enroll::handle(stream, leftover, length, gate);
         }
+        (Some("POST"), p @ ("/machines/pair" | "/machines/pair/poll")) => {
+            let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
+            pair::agent(stream, leftover, length, p, login);
+        }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }
 }
@@ -99,7 +103,10 @@ fn respond_mcp_metadata(stream: &mut TcpStream, gate: &Gate) {
 
 /// Whether `path` is a page behind browser sign-in.
 fn behind_sign_in(path: &str) -> bool {
-    path.starts_with("/auth/") || path.starts_with("/webhooks/") || path == secrets::PATH
+    path.starts_with("/auth/")
+        || path.starts_with("/webhooks/")
+        || path == secrets::PATH
+        || path == pair::PATH
 }
 
 /// Serves a page behind browser sign-in: sign-in itself, secrets, or webhook setup.
@@ -124,6 +131,8 @@ fn browser(
         routes::handle(stream, req, gate, login);
     } else if req.target.split('?').next() == Some(secrets::PATH) {
         secrets::handle(stream, req, gate, login);
+    } else if req.target.split('?').next() == Some(pair::PATH) {
+        pair::page::handle(stream, req, gate, login);
     } else {
         setup::handle(stream, req, gate, login);
     }
