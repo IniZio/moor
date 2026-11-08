@@ -81,7 +81,7 @@ impl Tools {
                        exists, while setup continues; follow the start with box_status. Pass \
                        wait=true to block until setup and the agent launch finish. A refusal \
                        for missing secrets names them; the person stores them in a browser on \
-                       the gate's /me/secrets page, never through an agent. Needs the \
+                       the account page at the gate's root, never through an agent. Needs the \
                        moor:write scope."
     )]
     async fn start_box(

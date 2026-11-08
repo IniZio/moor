@@ -51,7 +51,7 @@ pub(super) fn checks(i: &Inputs<'_>) -> Vec<Check> {
 fn how_to_set(i: &Inputs<'_>, name: &str) -> String {
     let page = i
         .public_url
-        .map(|u| format!(", or open {}/me/secrets", u.trim_end_matches('/')))
+        .map(|u| format!(", or open {}/", u.trim_end_matches('/')))
         .unwrap_or_default();
     format!("run `moor user secret set {name}` on the host{page}")
 }

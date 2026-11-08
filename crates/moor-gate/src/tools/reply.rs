@@ -49,7 +49,7 @@ impl Reply {
     }
 
     /// The controller's refusal `why` in this tool's words: a start missing secrets sends the
-    /// person to the secrets page instead of a command only the controller's host can run.
+    /// person to the account page instead of a command only the controller's host can run.
     pub(super) fn refused(&self, why: String, answered: &ControllerResponse) -> String {
         let Self::Started(Some(origin)) = self else {
             return why;
@@ -67,10 +67,9 @@ impl Reply {
         };
         let names: Vec<&str> = needs.missing.iter().map(SecretName::as_str).collect();
         format!(
-            "missing secrets {}: ask the person to sign in at {origin}{} and store them, \
+            "missing secrets {}: ask the person to sign in at {origin}/ and store them, \
              then start again",
-            names.join(", "),
-            crate::login::secrets::PATH
+            names.join(", ")
         )
     }
 }

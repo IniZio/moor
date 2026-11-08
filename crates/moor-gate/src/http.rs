@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::{account, pair, routes, secrets, setup};
+use crate::login::{account, pair, routes, setup};
 use crate::streams::Streams;
 use crate::tools::client_down;
 use crate::{log, relay, Gate, Login};
@@ -101,7 +101,6 @@ fn respond_mcp_metadata(stream: &mut TcpStream, gate: &Gate) {
 fn behind_sign_in(path: &str) -> bool {
     path.starts_with("/auth/")
         || path.starts_with("/webhooks/")
-        || path == secrets::PATH
         || path == pair::PATH
         || account::serves(path)
 }
@@ -127,8 +126,6 @@ fn browser(
     };
     if req.target.starts_with("/auth/") {
         routes::handle(stream, req, gate, login);
-    } else if req.target.split('?').next() == Some(secrets::PATH) {
-        secrets::handle(stream, req, gate, login);
     } else if account::serves(req.target.split('?').next().unwrap_or_default()) {
         account::handle(stream, req, gate, login);
     } else if req.target.split('?').next() == Some(pair::PATH) {
