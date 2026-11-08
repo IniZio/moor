@@ -147,7 +147,11 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             format!("setup finished with failures{}", took())
         }
         "setup_finished" => format!("setup finished{}", took()),
-        "setup_failed" => format!("setup failed: {}", text("line")),
+        "setup_failed" => {
+            let why = text("why");
+            let sep = if why.is_empty() { "" } else { "\n" };
+            format!("setup failed: {}{sep}{why}", text("line"))
+        }
         "credential_failed" => format!("credential failed: {}: {}", text("which"), text("error")),
         "rejected" => format!("rejected: {}", text("reason")),
         "session_started" => "agent started".to_owned(),

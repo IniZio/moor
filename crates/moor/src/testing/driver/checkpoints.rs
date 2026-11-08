@@ -32,6 +32,8 @@ pub(super) struct LayerKnobs {
     ends_once: Vec<(String, ExecOutcome)>,
     /// Hooks run before any `exec` whose argv mentions the needle, outside the lock.
     hooks: Vec<(String, Arc<ExecHook>)>,
+    /// Run before every `copy_out`, outside the lock.
+    copy_out_hook: Option<Arc<ExecHook>>,
     /// The error the next fork ends with, once.
     fork_fails: Option<DriverError>,
     /// Run as the next fork starts, outside the lock, once; a panic there is a process dying.
@@ -199,6 +201,19 @@ impl FakeDriver {
         for hook in hooks {
             hook();
         }
+    }
+
+    /// Runs the hook set up for every `copy_out`.
+    pub(super) fn run_copy_out_hook(&self) {
+        let hook = self.st().layers.copy_out_hook.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    /// Runs `f` before every `copy_out`, outside the Driver's lock.
+    pub(crate) fn on_copy_out(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().layers.copy_out_hook = Some(Arc::new(f));
     }
 
     /// Saves checkpoint `ckpt-N` of a live Box.

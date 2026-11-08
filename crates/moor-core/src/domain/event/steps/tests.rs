@@ -65,9 +65,16 @@ fn lifecycle_events_table() {
                 setup: SetupOutcome::Failed { line: s("x") }
             }
         ),
-        vec![Event::Working, Event::SetupFailed { line: s("x") }]
+        vec![Event::Working, failed("x")]
     );
     lifecycle_events_table_rest();
+}
+
+fn failed(line: &str) -> Event {
+    Event::SetupFailed {
+        line: s(line),
+        why: None,
+    }
 }
 
 fn lifecycle_events_table_rest() {
@@ -82,7 +89,7 @@ fn lifecycle_events_table_rest() {
                 which: None
             }
         ),
-        vec![Event::SetupFailed { line: s("c") }]
+        vec![failed("c")]
     );
     assert_eq!(
         ev(
@@ -98,7 +105,7 @@ fn lifecycle_events_table_rest() {
                 which: s("gh"),
                 error: s("c")
             },
-            Event::SetupFailed { line: s("c") }
+            failed("c")
         ]
     );
     for auto in [true, false] {

@@ -205,6 +205,8 @@ pub struct Decision {
     pub branch_by_id: bool,
     /// What the sleep this Decision records decided about the caches, for its `asleep` event.
     pub cache_save: Option<CacheSave>,
+    /// Why the setup failure this Decision records happened, for its `setup_failed` event.
+    pub setup_why: Option<String>,
 }
 
 impl Decision {
@@ -234,6 +236,7 @@ impl Decision {
             requester: None,
             branch_by_id: false,
             cache_save: None,
+            setup_why: None,
         }
     }
 
@@ -248,6 +251,13 @@ impl Decision {
     #[must_use]
     pub const fn cache_save(mut self, save: Option<CacheSave>) -> Self {
         self.cache_save = save;
+        self
+    }
+
+    /// Sets why the setup failure this Decision records happened.
+    #[must_use]
+    pub fn setup_why(mut self, why: Option<String>) -> Self {
+        self.setup_why = why;
         self
     }
 

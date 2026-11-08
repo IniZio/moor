@@ -227,6 +227,7 @@ impl Driver for FakeDriver {
     }
 
     fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
+        self.run_copy_out_hook();
         let mut s = self.st();
         s.note(format!("copy_out {}", handle.as_str()));
         s.copies

@@ -50,7 +50,7 @@ impl From<ExtraEvent> for Event {
                 prompt,
                 cause,
             },
-            ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
+            ExtraEvent::SetupFailed { line } => Self::SetupFailed { line, why: None },
             ExtraEvent::SetupFinished { ms, ok } => {
                 Self::Timing(TimingEvent::SetupFinished { ms, ok })
             }
