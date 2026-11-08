@@ -162,9 +162,9 @@ You need:
    keeps its vault key beside the config:
 
    ```sh
-   mkdir -p ~/.config/moor-controller
-   printf 'socket: ~/.local/state/moor/controller.sock\n' > ~/.config/moor-controller/config.yaml
-   moor controller serve --config ~/.config/moor-controller/config.yaml &
+   mkdir -p ~/.config/moor
+   printf 'socket: ~/.local/state/moor/controller.sock\n' > ~/.config/moor/controller.yaml
+   moor controller serve --config ~/.config/moor/controller.yaml &
    export MOOR_CONTROLLER=~/.local/state/moor/controller.sock
    ```
 

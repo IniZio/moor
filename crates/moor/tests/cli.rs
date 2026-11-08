@@ -45,6 +45,9 @@ mod running_controller;
 mod session;
 #[path = "cli/ssh_controller.rs"]
 mod ssh_controller;
+#[cfg(target_os = "linux")]
+#[path = "cli/up.rs"]
+mod up;
 #[path = "cli/user.rs"]
 mod user;
 #[path = "cli/via_controller.rs"]
@@ -58,6 +61,7 @@ use moor_testkit::ChildGuard;
 use serde_json::Value;
 
 /// Captured result of one binary run.
+#[derive(Debug)]
 struct Run {
     /// Exit code.
     code: i32,
