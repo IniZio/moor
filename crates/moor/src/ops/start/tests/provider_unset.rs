@@ -26,12 +26,7 @@ fn a_box_started_with_a_provider_still_attaches_and_closes_when_the_config_drops
     let w = world_with(FakeDriver::new(), config);
     let v = start::run(&w.cx, &req("demo")).unwrap();
 
-    let later = Cx::fake_without_nodes(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-    );
+    let later = Cx::fake_without_nodes(w.dir.path(), w.driver.clone(), w.proc.clone());
     let again = start::run(&later, &req("demo")).unwrap();
     assert_eq!(again.boxed.id, v.boxed.id);
 
@@ -74,13 +69,8 @@ fn restarted_after_failed_acquire(later: impl FnOnce(&super::World) -> crate::cx
 #[test]
 fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_drops_it() {
     let provider = restarted_after_failed_acquire(|w| {
-        Cx::fake_without_nodes(
-            w.dir.path(),
-            w.driver.clone(),
-            w.surface.clone(),
-            w.proc.clone(),
-        )
-        .with_forge(w.forge.clone())
+        Cx::fake_without_nodes(w.dir.path(), w.driver.clone(), w.proc.clone())
+            .with_forge(w.forge.clone())
     });
     assert_eq!(provider, "a");
 }
@@ -89,14 +79,8 @@ fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_drops_it() 
 fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_names_another() {
     let provider = restarted_after_failed_acquire(|w| {
         let config = parse_user("config.yaml", "nodes: {b: {runtime: b}}").unwrap();
-        Cx::fake_with(
-            w.dir.path(),
-            w.driver.clone(),
-            w.surface.clone(),
-            w.proc.clone(),
-            config,
-        )
-        .with_forge(w.forge.clone())
+        Cx::fake_with(w.dir.path(), w.driver.clone(), w.proc.clone(), config)
+            .with_forge(w.forge.clone())
     });
     assert_eq!(provider, "a");
 }

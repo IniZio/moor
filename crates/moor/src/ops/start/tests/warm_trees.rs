@@ -66,7 +66,6 @@ impl Scratch {
         self.w.cx = Cx::fake_with_clock(
             self.dir.path().join("state").as_path(),
             self.w.driver.clone(),
-            self.w.surface.clone(),
             self.w.proc.clone(),
             UserConfig::default(),
             clock.clone(),

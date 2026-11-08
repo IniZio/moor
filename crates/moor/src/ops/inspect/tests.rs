@@ -20,16 +20,9 @@ use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 fn cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> Cx {
-    Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
-    .with_engine(engine.clone())
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new())).with_engine(engine.clone())
 }
 
 fn req(name: &str, lines: Option<u32>, said: Option<u32>) -> InspectReq {

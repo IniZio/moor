@@ -23,7 +23,6 @@ fn sample_box() -> BoxView {
         state_reason: None,
         base: None,
         branch: None,
-        workspace: None,
         driver: None,
         agent: None,
         run: None,

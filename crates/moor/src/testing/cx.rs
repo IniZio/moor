@@ -10,7 +10,6 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
 use moor_core::seam::proc::Proc;
-use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::BoxName;
 use moor_core::Secret;
@@ -27,25 +26,19 @@ use crate::vault::Vault;
 
 impl Cx {
     /// Test context: fake clock, a fake engine, one default credential, git over `proc`.
-    pub(crate) fn fake(
-        state_dir: &Path,
-        driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
-        proc: Arc<dyn Proc>,
-    ) -> Self {
-        Self::fake_with(state_dir, driver, surface, proc, UserConfig::default())
+    pub(crate) fn fake(state_dir: &Path, driver: Arc<dyn Driver>, proc: Arc<dyn Proc>) -> Self {
+        Self::fake_with(state_dir, driver, proc, UserConfig::default())
     }
 
     /// Test context like [`Cx::fake`] with user config `config`.
     pub(crate) fn fake_with(
         state_dir: &Path,
         driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
         config: UserConfig,
     ) -> Self {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
-        Self::fake_with_clock(state_dir, driver, surface, proc, config, clock)
+        Self::fake_with_clock(state_dir, driver, proc, config, clock)
     }
 
     /// Test context like [`Cx::fake_with`] on a clock the caller also holds.
@@ -53,12 +46,11 @@ impl Cx {
     pub(crate) fn fake_with_clock(
         state_dir: &Path,
         driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
         config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
-        let cx = Self::bare(state_dir, (driver, surface, proc), config, clock);
+        let cx = Self::bare(state_dir, (driver, proc), config, clock);
         with_requester(cx, state_dir)
     }
 
@@ -66,32 +58,20 @@ impl Cx {
     pub(crate) fn fake_bare(
         state_dir: &Path,
         driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
-        Self::bare(
-            state_dir,
-            (driver, surface, proc),
-            UserConfig::default(),
-            clock,
-        )
+        Self::bare(state_dir, (driver, proc), UserConfig::default(), clock)
     }
 
     /// Test context like [`Cx::fake`] over a user config that names no `nodes`.
     pub(crate) fn fake_without_nodes(
         state_dir: &Path,
         driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
-        let cx = Self::over_fakes(
-            state_dir,
-            (driver, surface, proc),
-            UserConfig::default(),
-            clock,
-        );
+        let cx = Self::over_fakes(state_dir, (driver, proc), UserConfig::default(), clock);
         with_requester(cx, state_dir)
     }
 
@@ -99,7 +79,7 @@ impl Cx {
     /// a `local-container` one, so tests need not repeat it.
     fn bare(
         state_dir: &Path,
-        fakes: (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
+        fakes: (Arc<dyn Driver>, Arc<dyn Proc>),
         mut config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
@@ -118,7 +98,7 @@ impl Cx {
 
     fn over_fakes(
         state_dir: &Path,
-        (driver, surface, proc): (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
+        (driver, proc): (Arc<dyn Driver>, Arc<dyn Proc>),
         config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
@@ -127,7 +107,6 @@ impl Cx {
             clock,
             rng: Arc::new(FakeRng::default()),
             driver,
-            surface,
             engine: Arc::new(FakeEngine::new()),
             forge: Arc::new(FakeForge::new()),
             proxy_host: Arc::new(FakeProxyHost::new()),

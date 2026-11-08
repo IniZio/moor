@@ -24,7 +24,6 @@ pub(super) fn serve_started(
     reconcile: impl FnOnce(&Env) -> Vec<String> + Send + 'static,
 ) -> u8 {
     log(sink, &format!("listening on {}", running.socket.display()));
-    Moor::surface_override(&running.env).inspect(|line| log(sink, line));
     let (interrupted, claimed) = Moor::from_env(&running.env).map_or_else(
         |e| (vec![e.error.to_string()], Vec::new()),
         |moor| moor.fail_interrupted_starts(),

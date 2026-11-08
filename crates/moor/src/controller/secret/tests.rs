@@ -18,7 +18,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::FakeProxyHost;
-use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
 use crate::Moor;
 
@@ -30,7 +29,6 @@ const CONFIG: &str = "box_credentials: [my-api-key]\n";
 struct World {
     driver: Arc<FakeDriver>,
     engine: Arc<FakeEngine>,
-    surface: Arc<FakeSurface>,
     _dir: tempfile::TempDir,
 }
 
@@ -38,12 +36,10 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
     let dir = tempfile::tempdir().expect("tempdir");
     let proc = Arc::new(ScriptedProc::new());
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new());
     let cx = Cx::fake_with(
         dir.path(),
         driver.clone(),
-        surface.clone(),
         proc,
         parse_user("test", CONFIG).expect("config"),
     )
@@ -52,7 +48,6 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
     let world = World {
         driver,
         engine,
-        surface,
         _dir: dir,
     };
     (cx, world)
@@ -148,7 +143,7 @@ fn start_show_steer_frames_and_the_box_never_carry_the_resolved_secret() {
     assert_box_side_clean(&w);
 }
 
-/// Everything the fake Box, agent engine and surface were handed.
+/// Everything the fake Box, and agent engine were handed.
 fn assert_box_side_clean(w: &World) {
     assert!(!w.engine.launches().is_empty(), "agent never launched");
     let seen = [
@@ -157,7 +152,6 @@ fn assert_box_side_clean(w: &World) {
         format!("{:?}", w.driver.calls()),
         format!("{:?}", w.engine.launches()),
         format!("{:?}", w.engine.steers()),
-        format!("{:?}", w.surface.opened()),
     ];
     for text in seen {
         assert!(!text.contains(SENTINEL), "box side: {text}");

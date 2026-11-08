@@ -20,7 +20,6 @@ use crate::store::{BoxRow, SessionRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use std::sync::Arc;
 
 fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
@@ -28,7 +27,6 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     let cx = Cx::fake(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(Arc::new(engine));
@@ -141,7 +139,6 @@ fn a_turn_save_gives_up_sooner_than_the_last_save_of_a_session() {
     let cx = Cx::fake(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(engine.clone());

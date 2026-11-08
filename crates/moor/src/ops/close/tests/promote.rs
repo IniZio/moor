@@ -27,7 +27,6 @@ use crate::ops::start;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const PROVIDER: &str = "local-container";
 const HOLDER_BOX: &str = "box-1";
@@ -79,7 +78,6 @@ fn world_failing(
     let cx = Cx::fake_with(
         dir.path(),
         driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         config,
     )

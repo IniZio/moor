@@ -274,7 +274,7 @@ fn run(env: Env, inv: Invocation) -> Output {
         }
     };
     let mut resp = match moor::client::configured_target(&env) {
-        Some(target) => moor::client::remote::run(&env, &target, request, &opts),
+        Some(target) => moor::client::remote::run(&env, &target, &request, &opts),
         None => call(&env, cli::inherit_run_output(request, &opts)),
     };
     resp.warnings.extend(warning);

@@ -368,7 +368,6 @@ fn show_and_list_alias() {
 
 #[test]
 fn box_verbs() {
-    assert_eq!(req(&["open", "t1"]), Request::Open(box_req("t1")));
     assert_eq!(req(&["sleep", "t1"]), Request::Sleep(box_req("t1")));
     assert_eq!(req(&["wake", "t1"]), Request::Wake(box_req("t1")));
     assert_eq!(req(&["retry", "t1"]), Request::Retry(box_req("t1")));

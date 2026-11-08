@@ -2,11 +2,13 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::testing::agent;
+use moor_core::activity::Probe;
 use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::engine::{AgentFate, EngineError};
+use moor_core::seam::engine::EngineError;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxId, StartReq};
@@ -450,14 +452,12 @@ fn launch_cut(req: &StartReq) -> (World, Arc<FakeEngine>) {
 }
 
 #[test]
-fn a_launch_already_in_flight_is_attached_to_and_never_launched_twice() {
+fn a_launch_already_in_flight_is_adopted_and_never_launched_twice() {
     let (w, engine) = launch_cut(&prompt_req());
-    engine.push_fate(Ok(AgentFate::Running));
     let store = w.cx.store().unwrap();
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 1, "no second agent");
-    assert_eq!(engine.reattached().len(), 1);
     assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
     assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
 }
@@ -465,6 +465,7 @@ fn a_launch_already_in_flight_is_attached_to_and_never_launched_twice() {
 #[test]
 fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
     let (w, engine) = launch_cut(&prompt_req());
+    engine.set_probes("moor-1", agent::gone());
     let store = w.cx.store().unwrap();
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
@@ -475,10 +476,7 @@ fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
 #[test]
 fn a_box_that_cannot_say_whether_its_agent_runs_launches_nothing() {
     let (w, engine) = launch_cut(&prompt_req());
-    engine.push_fate(Err(EngineError::Failed {
-        step: "fate",
-        message: "interrupted".to_owned(),
-    }));
+    engine.set_probes("moor-1", Probe::TimedOut);
     let store = w.cx.store().unwrap();
     fail_interrupted(&w.cx, store).unwrap();
     assert!(crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).is_err());

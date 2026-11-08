@@ -9,11 +9,13 @@ use crate::testing::engine::FakeEngine;
 /// Starts a Box with a profile, then relaunches it once the Box's failures file holds `failures`;
 /// returns the `detail` of each failed install and the warning codes of the relaunch.
 fn relaunch_with(failures: Option<&str>) -> (Vec<String>, Vec<String>) {
-    let engine = FakeEngine::new()
-        .launch_result(Ok(session("p-1")))
-        .launch_result(Ok(session("p-2")));
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2"))),
+    );
     let mut w = world_answering(None, HEAD, None);
-    w.cx = w.cx.with_engine(Arc::new(engine));
+    w.cx = w.cx.with_engine(engine.clone());
     set_profile(&w, None);
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
@@ -24,7 +26,7 @@ fn relaunch_with(failures: Option<&str>) -> (Vec<String>, Vec<String>) {
         w.driver
             .set_peek_text(boxed.handle.unwrap().as_str(), &path, text);
     }
-    gone(&w);
+    gone(&engine);
     w.cx.take_warnings();
     run(&w.cx, &req("demo")).unwrap();
     let events = w.cx.store().unwrap().events(id, 50).unwrap();

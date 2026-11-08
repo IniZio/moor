@@ -7,7 +7,6 @@ use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer};
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ErrorDetail, ErrorKind};
 
 use super::{blocked, fx_with, menu, steered, text, Fx};
@@ -22,29 +21,26 @@ fn exited() -> Probe {
     agent::exited(Some(3))
 }
 
-/// The session the relaunch starts, `agent-2` in pane `p-2`.
+/// The session the relaunch starts, `agent-2`.
 fn relaunched_session() -> SessionRef {
     SessionRef {
         id: "agent-2".to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new("p-2")),
     }
 }
 
-/// Box `t` with an agent in pane `p-1` that has an agent session to resume and a workspace.
+/// Box `t` with an agent that has an agent session to resume.
 fn resumable(engine: FakeEngine) -> Fx {
     let f = fx_with(engine.launch_result(Ok(relaunched_session())), true);
     let set = Fields {
         agent_session_id: Field::Set("stored-1".into()),
-        workspace_id: Field::Set("ws-1".into()),
         ..Fields::default()
     };
     f.cx.store()
         .unwrap()
         .apply(Decision::new(f.id).set(set))
         .unwrap();
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     f
 }
 
@@ -67,32 +63,25 @@ fn session_state(f: &Fx) -> SessionState {
 
 #[test]
 fn a_gone_agent_is_relaunched_with_its_stored_session_then_steered() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     let v = run(&f.cx, &text("hi")).unwrap();
     assert_eq!(v.sent, "hi");
     let launches = f.engine.launches();
     assert_eq!(launches.len(), 1);
     assert_eq!(launches[0].resume.as_deref(), Some("stored-1"));
-    assert_eq!(launches[0].workspace.as_str(), "ws-1");
     let causes: Vec<_> = relaunches(&f).iter().map(|e| e["cause"].clone()).collect();
     assert_eq!(causes, [serde_json::json!("steer")]);
     let sends = f.engine.steers();
-    assert_eq!(
-        sends.len(),
-        2,
-        "one failed send, one to the relaunched agent"
-    );
-    assert_eq!(sends[1].0, "agent-2");
+    assert_eq!(sends.len(), 1, "nothing goes to the gone agent");
+    assert_eq!(sends[0].0, "agent-2");
     assert_eq!(steered(&f).len(), 1);
 }
 
 #[test]
 fn an_agent_gone_again_after_its_relaunch_fails_the_steer_and_ends_the_session() {
-    let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new().steer_result(Err(EngineError::AgentGone));
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     let message = err.error.to_string();
@@ -108,15 +97,10 @@ fn an_agent_gone_again_after_its_relaunch_fails_the_steer_and_ends_the_session()
 
 #[test]
 fn a_second_steer_within_a_minute_of_the_relaunch_does_not_relaunch_again() {
-    let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Ok(moor_core::seam::engine::SteerOutcome {
-            submit_retried: false,
-            submit_checked: true,
-        }))
-        .steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     run(&f.cx, &text("one")).unwrap();
+    f.engine.set_probes("agent-2", agent::gone());
     let err = run(&f.cx, &text("two")).unwrap_err();
     assert!(
         err.error.to_string().contains("again within 60s"),
@@ -129,14 +113,8 @@ fn a_second_steer_within_a_minute_of_the_relaunch_does_not_relaunch_again() {
 
 #[test]
 fn a_gone_agent_a_minute_after_its_relaunch_is_relaunched_again() {
-    let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Ok(moor_core::seam::engine::SteerOutcome {
-            submit_retried: false,
-            submit_checked: true,
-        }))
-        .steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     run(&f.cx, &text("one")).unwrap();
     let reported = Fields {
         agent_session_id: Field::Set("stored-1".into()),
@@ -144,7 +122,7 @@ fn a_gone_agent_a_minute_after_its_relaunch_is_relaunched_again() {
     };
     let store = f.cx.store().unwrap();
     store.apply(Decision::new(f.id).set(reported)).unwrap();
-    f.surface.push_pane_obs("p-2", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-2", agent::gone());
     f.cx.clock().sleep(Duration::from_secs(61));
     run(&f.cx, &text("two")).unwrap();
     assert_eq!(f.engine.launches().len(), 2);
@@ -165,8 +143,8 @@ fn an_answer_to_an_exited_agent_relaunches_it_and_picks_the_choice() {
 
 #[test]
 fn a_steer_that_waited_out_another_relaunch_sends_to_the_new_agent() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     let store = f.cx.store().unwrap();
     let old = store.live_session(f.id).unwrap();
     run(&f.cx, &text("one")).unwrap();
@@ -229,8 +207,8 @@ fn kinds(f: &Fx, kind: &str) -> Vec<serde_json::Value> {
 
 #[test]
 fn a_fourth_automatic_relaunch_within_ten_minutes_is_refused_and_recorded_once() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     record_relaunches(&f, 3);
     f.cx.clock().sleep(Duration::from_secs(90));
     let err = run(&f.cx, &text("hi")).unwrap_err();
@@ -249,8 +227,8 @@ fn a_fourth_automatic_relaunch_within_ten_minutes_is_refused_and_recorded_once()
 
 #[test]
 fn relaunches_older_than_ten_minutes_do_not_count() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
-    let f = resumable(engine);
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
     record_relaunches(&f, 3);
     f.cx.clock().sleep(Duration::from_mins(11));
     run(&f.cx, &text("hi")).unwrap();
@@ -259,59 +237,38 @@ fn relaunches_older_than_ten_minutes_do_not_count() {
 }
 
 #[test]
-fn a_steer_to_an_agent_that_outlived_its_pane_reattaches_and_never_relaunches() {
-    let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .fates(vec![Ok(moor_core::seam::engine::AgentFate::Running)]);
+fn a_steer_refused_while_the_agent_still_runs_is_sent_again_and_never_relaunches() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::AgentGone));
     let f = resumable(engine);
     let v = run(&f.cx, &text("hi")).unwrap();
     assert_eq!(v.sent, "hi");
     assert!(f.engine.launches().is_empty(), "no second agent");
     assert!(relaunches(&f).is_empty());
-    assert_eq!(f.engine.reattached().len(), 1);
-    assert_eq!(
-        f.engine.steers().len(),
-        2,
-        "one failed send, one after the reattach"
-    );
+    assert_eq!(f.engine.steers().len(), 2, "one failed send, one retry");
     assert_eq!(steered(&f).len(), 1);
     assert_ne!(session_state(&f), SessionState::Ended);
-    let kinds: Vec<String> =
-        f.cx.store()
-            .unwrap()
-            .events(f.id, 100)
-            .unwrap()
-            .into_iter()
-            .map(|e| e.kind)
-            .filter(|k| k.starts_with("agent_link") || k == "session_ended")
-            .collect();
-    assert_eq!(kinds.len(), 2, "{kinds:?}");
-    assert!(!kinds.contains(&"session_ended".to_owned()), "{kinds:?}");
+    let ended = kinds(&f, "session_ended");
+    assert!(ended.is_empty(), "{ended:?}");
 }
 
 #[test]
-fn a_pane_lost_again_right_after_a_reattach_is_reattached_again() {
-    let running = || Ok(moor_core::seam::engine::AgentFate::Running);
+fn a_steer_refused_twice_while_the_agent_still_runs_is_sent_a_third_time() {
     let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Err(EngineError::PaneGone))
-        .fates(vec![running(), running()]);
+        .steer_result(Err(EngineError::AgentGone))
+        .steer_result(Err(EngineError::AgentGone));
     let f = resumable(engine);
     let v = run(&f.cx, &text("hi")).unwrap();
     assert_eq!(v.sent, "hi");
     assert!(f.engine.launches().is_empty(), "no second agent");
-    assert_eq!(f.engine.reattached().len(), 2);
     assert_ne!(session_state(&f), SessionState::Ended);
 }
 
 #[test]
-fn a_pane_lost_after_every_reattach_fails_the_steer_without_naming_a_relaunch() {
-    let running = || Ok(moor_core::seam::engine::AgentFate::Running);
+fn a_steer_refused_every_time_while_the_agent_still_runs_fails_without_naming_a_relaunch() {
     let engine = FakeEngine::new()
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Err(EngineError::PaneGone))
-        .steer_result(Err(EngineError::PaneGone))
-        .fates(vec![running(), running()]);
+        .steer_result(Err(EngineError::AgentGone))
+        .steer_result(Err(EngineError::AgentGone))
+        .steer_result(Err(EngineError::AgentGone));
     let f = resumable(engine);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     let message = err.error.to_string();

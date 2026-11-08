@@ -13,14 +13,12 @@ use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// Context acting as the test requester, with user config `config`, over `forge`.
 fn cx_over(dir: &Path, config: UserConfig, forge: FakeForge) -> Cx {
     Cx::fake_with(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         config,
     )
@@ -221,7 +219,6 @@ fn a_config_naming_no_provider_shows_the_provider_as_unset() {
     let cx = Cx::fake_without_nodes(
         d.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let v = run(

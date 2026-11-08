@@ -6,7 +6,7 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
-use super::super::holder::{exit_code, open, SESSION};
+use super::super::holder::open;
 use super::*;
 
 /// A `curl` that logs its call and leaves `$HOME/release.tar.gz` in its `-o` file.
@@ -273,41 +273,4 @@ fn opening_the_terminal_replaces_any_agent_under_its_name_so_a_box_holds_one() {
     let opened = open("/x/agent.sh");
     assert!(opened.starts_with("herdr-core kill"), "{opened}");
     assert!(!opened.contains("--rm"), "{opened}");
-}
-
-/// The exit status of `holder::exit_code()` run on `core`.
-fn exit_code_on(core: &crate::testing::hc::Core) -> Option<i32> {
-    Command::new("sh")
-        .args(["-c", &exit_code()])
-        .env("PATH", core.path())
-        .status()
-        .unwrap()
-        .code()
-}
-
-#[test]
-fn the_exit_code_is_the_one_hc_holds_for_the_ended_terminal() {
-    let Some(core) = crate::testing::hc::core() else {
-        return;
-    };
-    core.hc(&[
-        "run",
-        "--bg",
-        "--no-parent",
-        "--name",
-        SESSION,
-        "sh",
-        "-c",
-        "exit 7",
-    ]);
-    core.wait_get(SESSION, "\"finished\"");
-    assert_eq!(exit_code_on(&core), Some(7));
-}
-
-#[test]
-fn the_exit_code_is_one_when_there_is_no_terminal() {
-    let Some(core) = crate::testing::hc::core() else {
-        return;
-    };
-    assert_eq!(exit_code_on(&core), Some(1));
 }

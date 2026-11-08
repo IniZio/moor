@@ -69,10 +69,6 @@ impl AgentAdapter for Claude {
         Some(wait::script("/proc"))
     }
 
-    fn hooks_quiet_during_first_run(&self) -> bool {
-        true
-    }
-
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
         let trusting = tail.to_lowercase().contains("trust");
         tail.lines().rev().find_map(|raw| {

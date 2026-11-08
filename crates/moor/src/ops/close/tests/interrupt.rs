@@ -15,12 +15,11 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 /// A Ready Box whose setup a start is running: the setup intent is recorded and the start's
 /// interruptible hold is the returned lock, whose stop flag is `cancel`.
 fn in_setup(cancel: &Cancel) -> (Fx, BoxLock) {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new());
+    let f = fx_with(FakeDriver::new());
     f.cx.store()
         .unwrap()
         .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Setup {
@@ -66,15 +65,14 @@ fn a_forced_close_whose_start_does_not_stop_leaves_the_box_alone() {
     let cancel = Cancel::default();
     let (f, _held) = in_setup(&cancel);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let (dir, driver, surface, proc, at) = (
+    let (dir, driver, proc, at) = (
         f.dir.path().to_owned(),
         f.driver.clone(),
-        f.surface.clone(),
         f.proc.clone(),
         clock.clone(),
     );
     let closer = std::thread::spawn(move || {
-        let cx = Cx::fake_with_clock(&dir, driver, surface, proc, UserConfig::default(), at);
+        let cx = Cx::fake_with_clock(&dir, driver, proc, UserConfig::default(), at);
         run(&cx, &req(true))
             .map(|_| ())
             .map_err(|e| (e.kind, e.error.to_string()))

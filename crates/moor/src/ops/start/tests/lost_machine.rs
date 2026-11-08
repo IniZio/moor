@@ -8,6 +8,7 @@ use moor_core::{BoxHandle, BoxId};
 use super::relaunch::{gone, started};
 use super::{req, World};
 use crate::ops::start::run;
+use crate::testing::engine::FakeEngine;
 
 fn handle_of(w: &World, id: BoxId) -> Option<BoxHandle> {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
@@ -19,15 +20,15 @@ fn kinds(w: &World, id: BoxId) -> Vec<String> {
     events.into_iter().map(|e| e.kind).collect()
 }
 
-fn vanish(w: &World) {
+fn vanish(w: &World, engine: &FakeEngine) {
     w.driver.release(&BoxHandle::new("box-1")).unwrap();
-    gone(w);
+    gone(engine);
 }
 
 #[test]
 fn a_start_alone_gets_a_new_machine_for_a_box_whose_machine_vanished() {
     let (w, engine, id) = started();
-    vanish(&w);
+    vanish(&w, &engine);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(handle_of(&w, id), Some(BoxHandle::new("box-2")));
     let kinds = kinds(&w, id);

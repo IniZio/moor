@@ -63,7 +63,6 @@ fn a_repo_the_account_cannot_see_is_refused_before_any_machine() {
         "repo o/n is not visible to your GitHub account"
     );
     assert!(w.driver.calls().is_empty(), "{:?}", w.driver.calls());
-    assert!(w.surface.calls().is_empty());
     let name = repo_req("demo").name;
     assert!(w
         .cx
@@ -100,7 +99,6 @@ fn an_unknown_base_is_a_usage_error() {
     let err = run(&w.cx, &req).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
     assert!(w.driver.calls().is_empty());
-    assert!(w.surface.calls().is_empty());
     let rows: i64 = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db"))
         .unwrap()
         .row(

@@ -10,9 +10,9 @@ use crate::adapters::box_agent::profile_writer::FAILURES_FILE;
 const MANIFEST: &str =
     "claude:\n  marketplaces:\n    m: https://github.com/acme/market\n  plugins:\n    - p@m\n";
 
-fn launched(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    agent(&d, &s).launch(&req(&s)).unwrap();
+fn launched(req: impl FnOnce() -> LaunchReq) -> String {
+    let d = driver(FakeDriver::new());
+    agent(&d).launch(&req()).unwrap();
     script_of(&d)
 }
 
@@ -22,9 +22,9 @@ fn at(script: &str, needle: &str) -> usize {
 
 #[test]
 fn the_profile_writers_run_after_the_path_and_proxy_and_before_the_agent() {
-    let script = launched(|s| LaunchReq {
+    let script = launched(|| LaunchReq {
         profile: Some(parse(MANIFEST).unwrap()),
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     let brief = at(&script, "install -m 600");
     let path = at(&script, AGENT_PATH_LINE);
@@ -52,9 +52,9 @@ fn a_box_without_a_profile_runs_no_writer() {
 #[test]
 fn the_profile_env_is_exported_after_the_proxy_and_before_the_writers_and_the_agent() {
     let manifest = "claude:\n  env:\n    BUN_OPTIONS: \"--preload={profile}/claude/x.js\"\n    NOTE: \"$(touch x)\"\n";
-    let script = launched(|s| LaunchReq {
+    let script = launched(|| LaunchReq {
         profile: Some(parse(manifest).unwrap()),
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     let proxy = at(&script, "HTTPS_PROXY");
     let bun = at(
@@ -68,13 +68,13 @@ fn the_profile_env_is_exported_after_the_proxy_and_before_the_writers_and_the_ag
 
 #[test]
 fn the_repo_env_is_exported_after_the_profile_env() {
-    let script = launched(|s| LaunchReq {
+    let script = launched(|| LaunchReq {
         profile: Some(parse("claude:\n  env: {A: profile}\n").unwrap()),
         proxy: Some(Arc::new(ProxyAddr {
             box_env: vec![("A".to_owned(), "repo".to_owned())],
             ..proxy_addr()
         })),
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     assert!(
         at(&script, "export A='profile'") < at(&script, "export A='repo'"),
@@ -84,18 +84,18 @@ fn the_repo_env_is_exported_after_the_profile_env() {
 
 #[test]
 fn a_profile_without_env_exports_nothing_extra() {
-    let script = launched(|s| LaunchReq {
+    let script = launched(|| LaunchReq {
         profile: Some(parse(MANIFEST).unwrap()),
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     assert!(!script.contains("BUN_OPTIONS"), "{script}");
 }
 
 #[test]
 fn the_launch_script_of_a_box_with_plugins_installs_none() {
-    let script = launched(|s| LaunchReq {
+    let script = launched(|| LaunchReq {
         profile: Some(parse(MANIFEST).unwrap()),
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     assert!(!script.contains("plugin install"), "{script}");
     assert!(!script.contains("plugin marketplace"), "{script}");

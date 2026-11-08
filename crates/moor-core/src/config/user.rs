@@ -12,7 +12,6 @@ mod nodes;
 mod oauth;
 mod own_mcp;
 mod service;
-mod surface;
 mod tools;
 
 use std::collections::BTreeMap;
@@ -36,11 +35,7 @@ pub use nodes::NodeConfig;
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 pub use service::{MachineService, MachinesConfig};
-pub use surface::{HerdrConfig, SurfaceConfig, SurfaceKind};
 pub use tools::ToolsConfig;
-
-/// herdr session used when `surface.herdr.session` is unset.
-const DEFAULT_HERDR_SESSION: &str = "moor";
 
 /// The name a Box's agent knows the machine service's MCP server by.
 const MACHINE_MCP: &str = "machine";
@@ -284,8 +279,6 @@ pub struct UserConfig {
     pub github: Option<Option<serde_json::Value>>,
     /// Agent settings.
     pub agent: AgentConfig,
-    /// Surface settings.
-    pub surface: SurfaceConfig,
     /// Tool path overrides.
     pub tools: ToolsConfig,
     /// Proxy tool rules.
@@ -301,16 +294,6 @@ pub struct UserConfig {
 }
 
 impl UserConfig {
-    /// The herdr session every adapter call selects; `moor` when unset.
-    #[must_use]
-    pub fn herdr_session(&self) -> &str {
-        self.surface
-            .herdr
-            .session
-            .as_deref()
-            .unwrap_or(DEFAULT_HERDR_SESSION)
-    }
-
     /// The MCP servers every Box gets: `mcp_servers`, plus the machine service's server when
     /// `machines.service` is set and no entry already takes its name.
     #[must_use]

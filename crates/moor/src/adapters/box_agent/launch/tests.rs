@@ -5,20 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
+use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::box_name;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 const CRED: &str = "/home/box/.moor-cred-1-abc123";
@@ -43,18 +39,13 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d
 }
 
-fn surface(s: FakeSurface) -> Arc<FakeSurface> {
-    Arc::new(s)
-}
-
-fn req(s: &FakeSurface) -> LaunchReq {
+fn req() -> LaunchReq {
     LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: box_name("t1"),
         branch: "moor/t1".to_owned(),
         resume: None,
@@ -71,39 +62,35 @@ fn req(s: &FakeSurface) -> LaunchReq {
     }
 }
 
-fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
-    BoxAgent::new(
-        d.clone(),
-        s.clone(),
-        Arc::new(Claude),
-        Arc::new(FakeClock::new(Ts::from_millis(0))),
-    )
+fn agent(d: &Arc<FakeDriver>) -> BoxAgent {
+    BoxAgent::new(d.clone(), Arc::new(Claude))
 }
 
-fn launch(
-    d: FakeDriver,
-    s: FakeSurface,
-) -> (
-    Arc<FakeDriver>,
-    Arc<FakeSurface>,
-    Result<String, EngineError>,
-) {
-    let (d, s) = (driver(d), surface(s));
-    let r = req(&s);
-    let out = agent(&d, &s)
-        .launch(&r)
-        .map(|s| s.pane.unwrap().as_str().to_owned());
-    (d, s, out)
+fn launch(d: FakeDriver) -> (Arc<FakeDriver>, Result<SessionRef, EngineError>) {
+    let d = driver(d);
+    let out = agent(&d).launch(&req());
+    (d, out)
 }
 
-fn pane_line(s: &FakeSurface) -> String {
-    s.opened().remove(0).argv.pop().unwrap()
+/// The command that starts the agent's terminal on the Box.
+fn start_of(d: &FakeDriver) -> String {
+    let starts: Vec<String> = d
+        .execs()
+        .into_iter()
+        .filter_map(|(_, spec, _)| spec.argv.last().cloned())
+        .filter(|script| script.contains("herdr-core run"))
+        .collect();
+    assert_eq!(starts.len(), 1, "{starts:?}");
+    starts.into_iter().next().unwrap()
 }
 
 #[test]
 fn delivers_the_brief_under_the_box_home() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
-    assert_eq!(out.unwrap(), "p-2");
+    let (d, out) = launch(FakeDriver::new());
+    let session = out.unwrap();
+    assert_eq!(session.id, "");
+    assert_eq!(session.handle, BoxHandle::new("box-1"));
+    assert_eq!(session.workdir, BoxPath::under("/work", "box-1").unwrap());
     let (handle, path, bytes, mode) = d.puts().into_iter().next().unwrap();
     assert_eq!(handle, BoxHandle::new("box-1"));
     assert_eq!(path.as_str(), format!("{CRED}/brief.md"));
@@ -113,14 +100,14 @@ fn delivers_the_brief_under_the_box_home() {
 
 #[test]
 fn the_delivered_brief_carries_the_repo_notes_and_the_shape() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    let mut r = req(&s);
+    let d = driver(FakeDriver::new());
+    let mut r = req();
     r.repo_notes = Some("run make emu".to_owned());
     r.shape = Some(moor_core::shape::Shape {
         cpus: 2,
         mem_mib: 4096,
     });
-    agent(&d, &s).launch(&r).unwrap();
+    agent(&d).launch(&r).unwrap();
     let (_, _, bytes, _) = d.puts().into_iter().next().unwrap();
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.contains("## This project's Box"), "{text}");
@@ -130,7 +117,7 @@ fn the_delivered_brief_carries_the_repo_notes_and_the_shape() {
 
 #[test]
 fn delivers_the_hook_writer_files() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
     let paths: Vec<_> = d.puts().iter().map(|p| p.1.as_str().to_owned()).collect();
     assert_eq!(
@@ -145,35 +132,15 @@ fn delivers_the_hook_writer_files() {
 }
 
 #[test]
-fn opens_an_unfocused_agent_tab() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
-    out.unwrap();
-    let cmd = s.opened().remove(0);
-    assert_eq!(cmd.label, "agent:t1");
-    assert!(cmd.env.is_empty());
-    assert!(!s.calls().iter().any(|c| c.starts_with("focus")));
-}
-
-#[test]
-fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
-    out.unwrap();
-    let line = pane_line(&s);
-    assert!(line.starts_with("'ssh' '-t' 'box-1' '"), "{line}");
-    assert!(line.ends_with(r#"echo "moor: agent exited $c""#), "{line}");
-    assert!(!line.contains("exec "), "{line}");
-}
-
-#[test]
 fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let d = driver(FakeDriver::new());
     let r = LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         resume: Some("sess-9".to_owned()),
-        ..req(&s)
+        ..req()
     };
-    agent(&d, &s).launch(&r).unwrap();
+    agent(&d).launch(&r).unwrap();
     let script = script_of(&d);
     assert!(
         script.contains("'claude' '--resume' 'sess-9' '--append-system-prompt-file' '/work/box-1/.moor/brief.md' '--model' 'haiku'"),
@@ -184,9 +151,8 @@ fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
 
 #[test]
 fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
-    let (d, s, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
-    let line = pane_line(&s);
     let script = script_of(&d);
     for want in [
         &format!("trap 'rm -rf '\\''{CRED}'\\'' '\\''{TMP}'\\''' EXIT"),
@@ -199,19 +165,8 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
     ] {
         assert!(script.contains(want), "{want}: {script}");
     }
-    assert!(!line.contains("bypassPermissions"));
-    assert!(!line.contains("ANTHROPIC"));
-}
-
-fn unquote(q: &str) -> String {
-    let inner = q.strip_prefix('\'').and_then(|q| q.strip_suffix('\''));
-    inner.unwrap().replace("'\\''", "'")
-}
-
-/// The command the Box is asked to run.
-fn remote_of(line: &str) -> String {
-    let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
-    unquote(rest.split_once("; c=$?;").unwrap().0)
+    assert!(!script.contains("bypassPermissions"));
+    assert!(!script.contains("ANTHROPIC"));
 }
 
 /// The agent script the launch put on the Box.
@@ -225,24 +180,49 @@ fn script_of(d: &FakeDriver) -> String {
 
 #[test]
 fn herdr_core_holds_the_agent_running_the_script_file_under_sh() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
-    let remote = remote_of(&pane_line(&s));
+    let start = start_of(&d);
     let want = format!(
-        "herdr-core rm moor-agent >/dev/null 2>&1; herdr-core run --bg --no-parent --name moor-agent sh '{CRED}/agent.sh'"
+        "herdr-core kill moor-agent >/dev/null 2>&1; herdr-core rm moor-agent >/dev/null 2>&1; \
+         herdr-core run --bg --no-parent --name moor-agent sh '{CRED}/agent.sh' >/dev/null || exit 1;"
     );
-    assert!(remote.contains(&want), "{remote}");
-    assert!(!remote.contains("--rm"), "{remote}");
+    assert!(start.contains(&want), "{start}");
+    assert!(!start.contains("--rm"), "{start}");
+}
+
+#[test]
+fn the_start_checks_for_herdr_core_and_refuses_with_its_exit_status() {
+    let (d, out) = launch(FakeDriver::new());
+    out.unwrap();
+    let start = start_of(&d);
+    assert!(start.contains("command -v herdr-core"), "{start}");
+    assert!(start.contains("exit 127"), "{start}");
+}
+
+#[test]
+fn a_box_without_herdr_core_fails_the_start_step_and_removes_the_cred_dir() {
+    let (d, out) = launch(
+        FakeDriver::new().exec_results([0, 127].map(|code| Ok(ExecOutcome::Exited { code }))),
+    );
+    let message = match out {
+        Err(EngineError::Failed {
+            step: "start",
+            message,
+        }) => message,
+        other => format!("unexpected {other:?}"),
+    };
+    assert!(message.contains("herdr-core is not installed"), "{message}");
+    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
 }
 
 #[test]
 fn the_agent_is_reached_through_herdr_core() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    let kit = agent(&d, &s);
-    let sref = kit.launch(&req(&s)).unwrap();
+    let d = driver(FakeDriver::new());
+    let kit = agent(&d);
+    let sref = kit.launch(&req()).unwrap();
     let before = d.execs().len();
-    kit.agent_fate(&sref, Deadline(Duration::from_secs(1)))
-        .unwrap();
+    kit.probe(&sref, Deadline(Duration::from_secs(1)));
     kit.stop(&sref).unwrap();
     let mut cmds: Vec<String> = d
         .execs()
@@ -259,9 +239,9 @@ fn the_agent_is_reached_through_herdr_core() {
 
 #[test]
 fn the_install_puts_herdr_core_on_the_box_before_the_agent() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let d = driver(FakeDriver::new());
     let claude = Claude.install().unwrap();
-    let hc = agent(&d, &s).agent_install().unwrap();
+    let hc = agent(&d).agent_install().unwrap();
     let (own, rest) = hc.script.split_once(&claude.script).unwrap();
     assert!(own.contains("releases.herdr.dev/core/0.1.16/"), "{own}");
     assert!(rest.is_empty(), "{rest}");
@@ -271,7 +251,7 @@ fn the_install_puts_herdr_core_on_the_box_before_the_agent() {
 
 #[test]
 fn the_script_is_valid_shell() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
     let mut sh = moor_testkit::ChildGuard::new(
         Command::new("sh")
@@ -289,11 +269,8 @@ fn the_script_is_valid_shell() {
 }
 
 #[test]
-fn a_failed_connect_lookup_opens_no_pane_and_delivers_nothing() {
-    let (d, s, out) = launch(
-        FakeDriver::new().fail_connect(DriverError::NotFound),
-        FakeSurface::new(),
-    );
+fn a_failed_connect_lookup_delivers_nothing() {
+    let (d, out) = launch(FakeDriver::new().fail_connect(DriverError::NotFound));
     assert!(matches!(
         out,
         Err(EngineError::Failed {
@@ -301,22 +278,19 @@ fn a_failed_connect_lookup_opens_no_pane_and_delivers_nothing() {
             ..
         })
     ));
-    assert!(s.opened().is_empty());
     assert!(d.puts().is_empty());
     assert!(d.execs().is_empty());
 }
 
 #[test]
 fn a_failed_brief_write_removes_the_cred_dir() {
-    let (d, s, out) = launch(
+    let (d, out) = launch(
         FakeDriver::new().fail_put(DriverError::Timeout(std::time::Duration::from_secs(30))),
-        FakeSurface::new(),
     );
     assert!(matches!(
         out,
         Err(EngineError::Failed { step: "brief", .. })
     ));
-    assert!(s.opened().is_empty());
     let execs = d.execs();
     assert_eq!(execs.len(), 2);
     assert_eq!(
@@ -326,22 +300,11 @@ fn a_failed_brief_write_removes_the_cred_dir() {
 }
 
 #[test]
-fn a_failed_pane_open_removes_the_cred_dir() {
-    let (d, _, out) = launch(
-        FakeDriver::new(),
-        FakeSurface::new().fail_open_pane(SurfaceError::Timeout),
-    );
-    assert!(matches!(out, Err(EngineError::Failed { step: "pane", .. })));
-    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
-}
-
-#[test]
 fn a_failed_cleanup_is_named_in_the_error() {
-    let (_, _, out) = launch(
+    let (_, out) = launch(
         FakeDriver::new()
             .fail_put(DriverError::NotFound)
             .exec_results([0, 1].map(|code| Ok(ExecOutcome::Exited { code }))),
-        FakeSurface::new(),
     );
     let message = format!("{out:?}");
     assert!(
@@ -363,12 +326,10 @@ fn a_box_without_a_home_fails_before_delivering() {
         cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
-    let s = surface(FakeSurface::new());
-    let r = req(&s);
-    let out = agent(&d, &s).launch(&r);
+    let r = req();
+    let out = agent(&d).launch(&r);
     assert!(matches!(out, Err(EngineError::Failed { step: "home", .. })));
     assert!(d.puts().is_empty());
-    assert!(s.opened().is_empty());
 }
 
 fn proxy_addr() -> ProxyAddr {
@@ -381,24 +342,24 @@ fn proxy_addr() -> ProxyAddr {
     }
 }
 
-fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
+fn req_with_proxy() -> LaunchReq {
     LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(proxy_addr())),
-        ..req(s)
+        ..req()
     }
 }
 
-fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
-    (d, s)
+fn launch_with_proxy() -> Arc<FakeDriver> {
+    let d = driver(FakeDriver::new());
+    agent(&d).launch(&req_with_proxy()).unwrap();
+    d
 }
 
 #[test]
 fn a_proxy_launch_stages_only_the_brief_and_the_agent_script() {
-    let (d, _) = launch_with_proxy();
+    let d = launch_with_proxy();
     let staged: Vec<_> = d
         .puts()
         .into_iter()
@@ -416,7 +377,7 @@ fn a_proxy_launch_stages_only_the_brief_and_the_agent_script() {
 
 #[test]
 fn a_proxy_launch_removes_the_cred_dir_after_the_brief_and_exports_the_proxy_env() {
-    let (d, _) = launch_with_proxy();
+    let d = launch_with_proxy();
     let script = script_of(&d);
     assert!(script.contains(&format!("\nrm -rf '{CRED}'\n")), "{script}");
     assert!(!script.contains("GIT_CONFIG"), "{script}");
@@ -481,7 +442,7 @@ mod secret_tests;
 
 #[test]
 fn the_script_ends_with_the_agent_and_prints_no_status_of_its_own() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
     let script = script_of(&d);
     let last = script.lines().last().unwrap();

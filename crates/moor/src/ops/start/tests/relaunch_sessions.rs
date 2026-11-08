@@ -1,9 +1,10 @@
 use moor_core::{BoxId, StartReq};
 
-use super::relaunch::{gone, obs, started};
+use super::relaunch::{gone, started};
 use super::req;
 use crate::ops::start::run;
 use crate::store::db::DbExt as _;
+use crate::testing::agent;
 use moor_schema::tables::{Events, Launches, Sessions};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
@@ -39,9 +40,9 @@ fn a_first_launch_uses_the_only_session() {
 }
 
 #[test]
-fn a_relaunch_ends_the_session_and_opens_the_next() {
-    let (w, _engine, id) = started();
-    w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
+fn an_exited_agent_ends_its_session_and_the_next_start_opens_the_next() {
+    let (w, engine, id) = started();
+    engine.set_probes("p-1", agent::exited(Some(3)));
     let again = moor_core::StartReq {
         prompt: Some("ship it".into()),
         ..req("demo")
@@ -67,13 +68,13 @@ fn a_relaunch_ends_the_session_and_opens_the_next() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(causes.len(), 1);
-    assert!(causes.iter().all(|c| c.contains("relaunch")), "{causes:?}");
+    assert!(causes.iter().all(|c| c.contains("exited")), "{causes:?}");
 }
 
 #[test]
 fn a_relaunch_carries_a_new_nonce() {
     let (w, engine, _) = started();
-    gone(&w);
+    gone(&engine);
     let again = StartReq {
         prompt: Some("ship it".into()),
         ..req("demo")

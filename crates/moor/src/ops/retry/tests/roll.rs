@@ -18,7 +18,6 @@ use crate::ops::common::provision::resume_setup;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 type Closed = Result<BoxLifecycle, String>;
 
@@ -46,7 +45,6 @@ fn other_cx(w: &World) -> Cx {
     Cx::fake_with_clock(
         w.dir.path(),
         w.driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
         w.clock.clone(),

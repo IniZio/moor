@@ -22,17 +22,10 @@ use crate::testing::agent::idle;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// Context over `driver` with state under `dir` and a scripted engine.
 fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> Cx {
-    Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
-    .with_engine(engine.clone())
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new())).with_engine(engine.clone())
 }
 
 /// Adds a Working Box `name` with a live machine and an open session `session`.

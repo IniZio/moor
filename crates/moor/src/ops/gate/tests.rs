@@ -13,7 +13,6 @@ use crate::error::CommandError;
 use crate::store::{NewRun, RunOutcome};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const SHA: &str = "abcdef1234567890abcdef1234567890abcdef12";
 const OTHER: &str = "abcdef9999999999999999999999999999999999";
@@ -23,7 +22,6 @@ fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

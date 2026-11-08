@@ -25,7 +25,6 @@ mod inspect;
 mod machine_box;
 pub(crate) mod machine_hold;
 mod nodes;
-mod open;
 mod open_session;
 mod provider_ready;
 mod retry;
@@ -128,8 +127,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Retry(r) => to_value(&retry::run(cx, &r)?),
         Request::CloseFailed(r) => to_value(&close_failed::run(cx, &r)?),
-        Request::Open(r) => to_value(&open::run(cx, &r)?),
-        Request::Connect(r) => to_value(&open::connect(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
         Request::OpenSession(r) => to_value(&open_session::run(cx, &r)?),

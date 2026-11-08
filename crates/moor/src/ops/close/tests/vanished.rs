@@ -29,7 +29,6 @@ fn force_closes_a_box_whose_machine_vanished_in_one_call() {
     let f = vanished();
     let v = run(&f.cx, &req(true)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert!(v.workspace_closed);
     assert_eq!(box_state(&f), BoxState::Gone);
     let warnings = f.cx.take_warnings();
     let codes: Vec<_> = warnings.iter().map(|w| w.code.as_str()).collect();

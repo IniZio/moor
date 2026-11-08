@@ -101,14 +101,13 @@ fn launch_error(step: &'static str, message: &str) -> EngineError {
 }
 
 #[test]
-fn a_launch_records_a_session_with_its_pane() {
+fn a_launch_records_a_session() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     assert!(v.agent.launched);
     let s = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert_eq!(s.pane.as_deref(), Some("p-1"));
     assert_eq!(v.agent.session.as_deref(), Some(s.session_ref.as_str()));
     let launches = engine.launches();
     let l = launches.first().unwrap();
@@ -374,7 +373,7 @@ fn a_first_run_prompt_on_the_screen_is_recorded_and_warned() {
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
     assert_eq!(
         blocked.unwrap().1,
-        serde_json::json!({"pane": "p-1", "prompt": "folder_trust", "line": "trust this folder"})
+        serde_json::json!({"pane": "", "prompt": "folder_trust", "line": "trust this folder"})
     );
     assert!(v.agent.launched);
     assert_eq!(reads(&engine), 1);
@@ -421,7 +420,7 @@ fn a_failed_read_records_a_check_failure_and_start_succeeds() {
         .unwrap();
     assert_eq!(
         failed.1,
-        serde_json::json!({"pane": "p-1", "error": "the agent could not be read"})
+        serde_json::json!({"pane": "", "error": "the agent could not be read"})
     );
     assert!(v.agent.launched);
     assert_eq!(reads(&engine), 1);

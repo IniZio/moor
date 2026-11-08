@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::agent_adapter::NOTHING_TO_ARCHIVE;
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -12,9 +11,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use super::{decode, stream_script, ARCHIVE, STREAM_CAP, TOO_LARGE};
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 fn live(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
@@ -36,18 +33,15 @@ fn session() -> SessionRef {
         id: "s1".to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: None,
     }
 }
 
 fn run(d: &Arc<FakeDriver>, dest: &Path) -> Result<(), EngineError> {
-    BoxAgent::new(
-        d.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(Claude),
-        Arc::new(FakeClock::new(Ts::from_millis(0))),
+    BoxAgent::new(d.clone(), Arc::new(Claude)).transcript(
+        &session(),
+        dest,
+        Deadline(Duration::from_secs(15)),
     )
-    .transcript(&session(), dest, Deadline(Duration::from_secs(15)))
 }
 
 #[test]

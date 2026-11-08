@@ -145,12 +145,6 @@ impl Moor {
         wire::reconcile_proxies(env)
     }
 
-    /// The startup line when the user config's `surface.kind` overrides `$MOOR_SURFACE`.
-    #[must_use]
-    pub fn surface_override(env: &Env) -> Option<String> {
-        wire::surface_override(env)
-    }
-
     /// Leaves SIGINT and SIGTERM to the controller for the life of the process, so a streamed
     /// command ends only on its own or at its deadline. False when a stream already took them.
     pub(crate) fn leave_signals_to_controller() -> bool {

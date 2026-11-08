@@ -13,7 +13,6 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::surface::PaneRef;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
@@ -24,7 +23,6 @@ use crate::testing::agent::{exited, gone, idle, session as noted_session, workin
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const NOW: Ts = Ts::from_millis(10_000);
 const SESSION: &str = "sess-1";
@@ -57,13 +55,7 @@ impl Reading {
 
 fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
-    let cx = Cx::fake(
-        dir,
-        Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
-        proc.clone(),
-    )
-    .with_engine(engine.clone());
+    let cx = Cx::fake(dir, Arc::new(FakeDriver::new()), proc.clone()).with_engine(engine.clone());
     (cx, proc)
 }
 
@@ -416,23 +408,6 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     cx.store().unwrap().apply(d).unwrap();
     settle(&cx, cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
     assert!(is_working(&row(&cx, id)));
-}
-
-#[test]
-fn the_stored_pane_reaches_the_probe() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = Arc::new(FakeEngine::new());
-    let (cx, _) = cx(dir.path(), &engine);
-    let id = working_box(&cx, false);
-    cx.store()
-        .unwrap()
-        .begin_session(id, SESSION, Some("p1"))
-        .unwrap();
-    run_once(&cx, id);
-    assert_eq!(
-        engine.probed_pane(SESSION).as_ref().map(PaneRef::as_str),
-        Some("p1")
-    );
 }
 
 #[test]

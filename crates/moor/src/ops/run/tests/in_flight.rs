@@ -7,7 +7,6 @@ use crate::cx::Cx;
 use crate::ops::run::run;
 use crate::testing::driver::{eventually, FakeDriver};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// Runs `argv` on `f` and, once run 1 has started in the Box, calls `seen` from another thread.
 fn while_running<T: Send>(f: &Fx, argv: &[&str], seen: impl FnOnce() -> T + Send) -> T {
@@ -31,7 +30,6 @@ fn run_is_recorded_in_flight_while_the_command_runs() {
         let probe = Cx::fake(
             &dir,
             Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
         );
         let row = probe.store().unwrap().last_run(id).unwrap().unwrap();
@@ -52,7 +50,6 @@ fn the_follow_claim_lives_exactly_as_long_as_the_run() {
         let probe = Cx::fake(
             &dir,
             Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
         );
         let live = probe.store().unwrap().in_flight_run(id).unwrap();

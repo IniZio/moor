@@ -96,8 +96,6 @@ pub enum Request {
     /// Run the machine runner's rsync in the Box with its stdio streamed both ways over this
     /// connection. It takes over the connection: the controller socket closes it after the answer.
     BoxRsync(BoxRsyncReq),
-    /// Open a box's workspace.
-    Open(BoxReq),
     /// Sleep a box.
     Sleep(BoxReq),
     /// Wake a box.
@@ -106,8 +104,6 @@ pub enum Request {
     Retry(BoxReq),
     /// Close every Box whose setup failed that the caller may act on.
     CloseFailed(CloseFailedReq),
-    /// Wake a box and return the command that attaches to its workspace; the caller runs it.
-    Connect(BoxReq),
     /// Relay the agent's terminal on the Box both ways over this connection until either side
     /// ends it. It takes over the connection: the controller socket closes it after the answer.
     Attach(AttachReq),

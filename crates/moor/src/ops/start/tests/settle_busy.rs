@@ -101,12 +101,11 @@ fn a_start_with_settles_running_during_setup_still_launches() {
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let dir = w.dir.path().to_path_buf();
-    let (driver, surface, proc) = (w.driver.clone(), w.surface.clone(), w.proc.clone());
+    let (driver, proc) = (w.driver.clone(), w.proc.clone());
     w.driver.after_exec(move || {
         let other = Cx::fake_with(
             &dir,
             driver.clone(),
-            surface.clone(),
             proc.clone(),
             moor_core::config::UserConfig::default(),
         );

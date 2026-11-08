@@ -14,16 +14,13 @@ use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, EnvVar, Key, Launch
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{Engine, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::PaneRef;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{parse, script};
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::hc::{self, Core};
-use crate::testing::surface::FakeSurface;
 
 struct Stub;
 
@@ -87,7 +84,6 @@ fn session() -> SessionRef {
         id: "s1".to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new("p-1")),
     }
 }
 
@@ -107,12 +103,7 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn agent(d: &Arc<FakeDriver>) -> BoxAgent {
-    BoxAgent::new(
-        d.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(Stub),
-        Arc::new(FakeClock::new(moor_core::seam::clock::Ts::from_millis(0))),
-    )
+    BoxAgent::new(d.clone(), Arc::new(Stub))
 }
 
 /// Runs the probe script as a Box would, against `core`.

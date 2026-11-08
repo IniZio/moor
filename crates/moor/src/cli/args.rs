@@ -144,8 +144,6 @@ enum Cmd {
     CloseFailed(CloseFailedArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
-    /// Focus the Box's Workspace.
-    Open(BoxArg),
     /// Put the Box to sleep.
     Sleep(BoxArg),
     /// Wake a sleeping Box.
@@ -200,7 +198,6 @@ impl Cmd {
             Self::Close(a) => Action::Request(Request::Close(a.into())),
             Self::CloseFailed(a) => Action::Request(Request::CloseFailed(a.into())),
             Self::Cp(a) => Action::Request(Request::Cp(a.into())),
-            Self::Open(a) => Action::Request(Request::Open(a.into())),
             Self::Sleep(a) => Action::Request(Request::Sleep(a.into())),
             Self::Wake(a) => Action::Request(Request::Wake(a.into())),
             Self::Retry(a) => Action::Request(Request::Retry(a.into())),

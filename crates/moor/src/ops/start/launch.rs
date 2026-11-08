@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use moor_core::box_key::BoxKey;
 use moor_core::config::{BoxSettings, Flags, Layer};
-use moor_core::seam::surface::PaneStatus;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -12,7 +11,6 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, StartReq};
 
@@ -22,7 +20,6 @@ use crate::error::CommandError;
 use crate::ops::common::box_exec;
 use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread, warm_disk_note};
-use crate::ops::common::resume;
 use crate::ops::common::step::timed;
 use crate::ops::common::view::rfc3339;
 use crate::store::lease::{LeaseId, LeaseKind};
@@ -202,7 +199,7 @@ fn launch_agent(
             for lease in leases {
                 store.hold_lease(lease)?;
             }
-            record_session(cx, store, row, launch, session)
+            record_session(store, row, launch, session)
         }
         Err(e) => record_failure(cx, store, id, &e),
     }
@@ -231,7 +228,6 @@ fn plan_dirs(
 
 /// Records the launched `session` on the Box `row` and reports it.
 fn record_session(
-    cx: &Cx,
     store: &Store,
     row: &BoxRow,
     launch: &LaunchReq,
@@ -243,17 +239,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
-    if let Some(live) = store.live_session(id)?.filter(|_| launch.resume.is_some()) {
-        resume::ensure(
-            cx,
-            store,
-            &row.name,
-            &live,
-            launch.resume.as_deref(),
-            PaneStatus::Working,
-        )?;
-    }
+    store.begin_session(id, &sref, None)?;
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }
@@ -305,7 +291,6 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         id: row.id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
-        workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
         box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
         resume: None,

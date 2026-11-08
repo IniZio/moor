@@ -7,7 +7,6 @@ mod config;
 mod store;
 
 mod driver;
-mod surface;
 
 /// Failure of one command, classified once by whoever produced it.
 #[derive(Debug)]

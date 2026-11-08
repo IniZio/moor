@@ -3,10 +3,10 @@
 use super::*;
 
 /// The script a launch of `req` runs, on a Box whose login environment is `environ`.
-fn script_for(environ: &str, req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+fn script_for(environ: &str, req: impl FnOnce() -> LaunchReq) -> String {
+    let d = driver(FakeDriver::new());
     d.set_peek_text("box-1", &environ_path(), environ);
-    agent(&d, &s).launch(&req(&s)).unwrap();
+    agent(&d).launch(&req()).unwrap();
     script_of(&d)
 }
 
@@ -31,8 +31,8 @@ fn the_launch_script_never_runs_nono() {
 
 #[test]
 fn a_launch_puts_no_sandbox_tool_or_profile_on_the_box() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
+    let d = driver(FakeDriver::new());
+    agent(&d).launch(&req_with_proxy()).unwrap();
     for put in d.puts() {
         assert!(!put.1.as_str().contains("nono"), "{}", put.1.as_str());
     }
@@ -115,7 +115,7 @@ fn a_non_root_agent_is_not_told_it_is_sandboxed() {
 
 #[test]
 fn repo_env_is_exported_for_the_agent() {
-    let script = script_for(ENVIRON, |s| {
+    let script = script_for(ENVIRON, || {
         let addr = ProxyAddr {
             box_env: vec![("APP_NOTE".to_owned(), "it's here".to_owned())],
             ..proxy_addr()
@@ -124,7 +124,7 @@ fn repo_env_is_exported_for_the_agent() {
             profile: None,
             mcp: std::collections::BTreeMap::new(),
             proxy: Some(Arc::new(addr)),
-            ..req_with_proxy(s)
+            ..req_with_proxy()
         }
     });
     let set = script

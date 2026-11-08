@@ -10,7 +10,7 @@ use moor_core::{BoxId, ShowReq};
 use super::state::WORKING;
 use super::state::{idle, working};
 use super::{req, world, World};
-use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
+use crate::ops::common::activity::{read, PROBE_DEADLINE};
 use crate::ops::show;
 use crate::ops::start::run;
 use crate::store::db::Conn;
@@ -238,37 +238,6 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     assert!(idle(&row(&w, id)));
     let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
-}
-
-fn registrations(w: &World) -> Vec<String> {
-    w.surface
-        .calls()
-        .into_iter()
-        .filter(|c| c.starts_with("register_resume"))
-        .collect()
-}
-
-#[test]
-fn an_exited_agent_with_a_stored_id_registers_nothing() {
-    let (w, id) = started(false, |_| agent::exited(Some(0)));
-    let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION, Some("p-9")).unwrap();
-    let set = Fields {
-        agent_session_id: Field::Set("agent-1".into()),
-        ..Fields::default()
-    };
-    store.apply(Decision::new(id).set(set)).unwrap();
-    w.surface.have_pane("p-9");
-    let r = row(&w, id);
-    let reading = read(&w.cx, store, &r, w.cx.clock().now(), PROBE_DEADLINE).unwrap();
-    assert_eq!(reading.pane.as_str(), "exited");
-    settle(&w.cx, store, &r, &reading).unwrap();
-    assert!(registrations(&w).is_empty());
-    let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
-    assert!(
-        !codes.contains(&"resume_not_registered".to_owned()),
-        "{codes:?}"
-    );
 }
 
 #[test]

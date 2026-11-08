@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::seam::engine::{LaunchPrompt, LaunchReq};
 use moor_core::{BoxId, StartReq};
 
-use super::relaunch::{gone, obs, session, set_agent_session, started};
+use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, world, World};
 use crate::ops::start::{revive_after_wake, run};
 use crate::testing::driver::FakeDriver;
@@ -68,18 +68,17 @@ fn a_start_with_no_agent_and_no_prompt_launches_nothing() {
 #[test]
 fn a_promptless_start_of_a_live_agent_changes_nothing() {
     let (w, engine, id) = started();
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
     assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
     assert_eq!(engine.launches().len(), 1);
     let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert_eq!(live.pane.as_deref(), Some("p-1"));
+    assert_eq!(live.session_ref, "p-1");
 }
 
 #[test]
-fn a_promptless_start_after_the_pane_ended_resumes_the_stored_session() {
+fn a_promptless_start_after_the_terminal_ended_resumes_the_stored_session() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
     let next = second(&engine);
     assert_eq!(next.resume.as_deref(), Some("agent-1"));
@@ -87,9 +86,9 @@ fn a_promptless_start_after_the_pane_ended_resumes_the_stored_session() {
 }
 
 #[test]
-fn a_promptless_start_after_the_pane_ended_with_no_stored_session_launches_with_no_prompt() {
+fn a_promptless_start_after_the_terminal_ended_with_no_stored_session_launches_with_no_prompt() {
     let (w, engine, _id) = started();
-    gone(&w);
+    gone(&engine);
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
     let next = second(&engine);
     assert_eq!(next.resume, None);

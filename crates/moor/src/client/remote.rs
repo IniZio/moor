@@ -2,10 +2,8 @@
 //! progress, and run interactive commands locally.
 
 use std::io::Write;
-use std::process::Command;
 
-use moor_core::seam::proc::Tool;
-use moor_core::{ErrorKind, ErrorView, Request, Response};
+use moor_core::{Request, Response};
 
 use super::Target;
 use crate::cli::GlobalOpts;
@@ -17,12 +15,7 @@ use crate::env::Env;
 /// arrive. `--json` drops progress and prints the command's output to stderr, so stdout stays
 /// one envelope.
 #[must_use]
-pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> Response {
-    let interactive = matches!(request, Request::Open(_));
-    let request = match request {
-        Request::Open(t) => Request::Connect(t),
-        other => other,
-    };
+pub fn run(env: &Env, target: &Target, request: &Request, opts: &GlobalOpts) -> Response {
     let progress = |msg: &str| {
         if !opts.json {
             let mut err = std::io::stderr();
@@ -39,83 +32,12 @@ pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> R
         let _ = sink.write_all(data);
         let _ = sink.flush();
     };
-    let result = super::call(env, target, &request, progress, output);
+    let result = super::call(env, target, request, progress, output);
     match result {
-        Ok(resp) if interactive => {
-            let resp = attach(env, resp);
-            if let (Request::Connect(t), true) = (&request, resp.error.is_none()) {
-                if has_no_focus(&resp) {
-                    progress(&format!(
-                        "{} is awake; its agent's terminal is on the controller, open it in moor-herdr",
-                        t.box_name.as_str()
-                    ));
-                }
-            }
-            resp
-        }
         Ok(resp) => resp,
         Err(e) => super::failure_response(request.cmd(), &e),
     }
 }
 
-/// Runs the connect command the controller returned and reports it as `open`.
-fn attach(env: &Env, mut resp: Response) -> Response {
-    "open".clone_into(&mut resp.cmd);
-    if resp.error.is_some() {
-        return resp;
-    }
-    let Some(value) = resp.value.as_ref() else {
-        return failed("controller returned no connect command");
-    };
-    let Some(focus) = value.get("focus") else {
-        return failed("controller returned no connect command");
-    };
-    if focus.is_null() {
-        return resp;
-    }
-    let tool = focus.get("tool").and_then(|v| v.as_str()).unwrap_or("");
-    let args: Vec<String> = focus
-        .get("args")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
-    if tool != Tool::Herdr.program() {
-        return failed(&format!("controller asked to run unknown tool `{tool}`"));
-    }
-    let program = env.get(Tool::Herdr.bin_var()).unwrap_or(tool).to_owned();
-    let shown = format!("{program} {}", args.join(" "));
-    match Command::new(&program).args(&args).status() {
-        Ok(status) if status.success() => resp,
-        Ok(status) => failed(&format!("`{}` exited with {status}", shown.trim_end())),
-        Err(e) => failed(&format!("cannot run `{}`: {e}", shown.trim_end())),
-    }
-}
-
-/// Whether the controller answered `connect` with no command to run.
-fn has_no_focus(resp: &Response) -> bool {
-    resp.value
-        .as_ref()
-        .and_then(|v| v.get("focus"))
-        .is_some_and(serde_json::Value::is_null)
-}
-
 #[cfg(test)]
 mod tests;
-
-/// A failed `open` envelope.
-fn failed(message: &str) -> Response {
-    Response::err(
-        "open",
-        ErrorView {
-            kind: ErrorKind::Failed,
-            message: message.to_owned(),
-            hints: Vec::new(),
-            context: Vec::new(),
-            detail: None,
-        },
-    )
-}

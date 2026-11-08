@@ -19,7 +19,6 @@ use crate::store::NewRun;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use crate::testing::surface::FakeSurface;
 
 /// Time enough to pass the default `box.sleep_after`.
 const LONG: Duration = Duration::from_mins(6);
@@ -35,12 +34,7 @@ struct Fx {
 fn working_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store

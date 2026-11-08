@@ -2,28 +2,26 @@
 
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::engine::{SessionRef, Steer};
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath};
 
 use super::{fx_with, put_to_sleep, run, text, Fx};
+use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
-fn relaunched(pane: &str, id: &str) -> SessionRef {
+fn relaunched(id: &str) -> SessionRef {
     SessionRef {
         id: id.into(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new(pane)),
     }
 }
 
-/// A sleeping Box with a stored agent session, whose relaunch opens pane `p-2`.
+/// A sleeping Box with a stored agent session, whose relaunch is session `agent-2`.
 fn asleep() -> Fx {
-    let engine = FakeEngine::new().launch_result(Ok(relaunched("p-2", "agent-2")));
+    let engine = FakeEngine::new().launch_result(Ok(relaunched("agent-2")));
     let f = fx_with(engine, true);
     let set = Fields {
         agent_session_id: Field::Set("claude-1".into()),
-        workspace_id: Field::Set("ws-1".into()),
         ..Fields::default()
     };
     f.cx.store()
@@ -45,9 +43,9 @@ fn relaunch_events(f: &Fx) -> Vec<serde_json::Value> {
 #[test]
 fn a_cold_boot_wake_relaunches_the_agent_and_the_steer_reaches_it() {
     let f = asleep();
-    let surface = f.surface.clone();
+    let engine = f.engine.clone();
     f.driver
-        .on_wake(move || surface.push_pane_obs("p-1", Err(SurfaceError::NotFound)));
+        .on_wake(move || engine.set_probes("agent-1", agent::gone()));
     run(&f.cx, &text("carry on")).unwrap();
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     let launches = f.engine.launches();

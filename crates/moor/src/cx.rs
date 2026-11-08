@@ -15,7 +15,6 @@ use moor_core::seam::forge::Forge;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::seam::rng::Rng;
-use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
@@ -46,8 +45,6 @@ pub(crate) struct Cx {
     rng: Arc<dyn Rng>,
     /// Box backend.
     driver: Arc<dyn Driver>,
-    /// Workspace backend.
-    surface: Arc<dyn Surface>,
     /// The agent running in a Box.
     engine: Arc<dyn Engine>,
     /// Process runner.
@@ -88,8 +85,6 @@ pub(crate) struct CxParts {
     pub rng: Arc<dyn Rng>,
     /// Box backend.
     pub driver: Arc<dyn Driver>,
-    /// Workspace backend.
-    pub surface: Arc<dyn Surface>,
     /// The agent running in a Box.
     pub engine: Arc<dyn Engine>,
     /// Process runner.
@@ -117,7 +112,6 @@ impl Cx {
             clock: p.clock,
             rng: p.rng,
             driver: p.driver,
-            surface: p.surface,
             engine: p.engine,
             proc: p.proc,
             forge: p.forge,
@@ -185,11 +179,6 @@ impl Cx {
     /// Box backend.
     pub(crate) fn driver(&self) -> &dyn Driver {
         self.driver.as_ref()
-    }
-
-    /// Workspace backend.
-    pub(crate) fn surface(&self) -> &dyn Surface {
-        self.surface.as_ref()
     }
 
     /// The agent running in a Box.

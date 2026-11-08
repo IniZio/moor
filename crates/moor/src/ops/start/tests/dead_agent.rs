@@ -107,7 +107,7 @@ fn a_launch_stopped_by_the_egress_proxy_fails_with_its_reason_and_no_fallback() 
 #[test]
 fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     engine.set_probes("p-2", ca_stopped());
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
@@ -158,7 +158,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
 #[test]
 fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     engine.set_probes("p-2", exited(127, ""));
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let store = w.cx.store().unwrap();

@@ -7,7 +7,6 @@ use moor_core::seam::engine::{
     Engine, EngineError, LaunchPrompt, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath};
 
 use super::FakeEngine;
@@ -17,7 +16,6 @@ fn session(id: &str) -> SessionRef {
         id: id.to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
-        pane: None,
     }
 }
 
@@ -70,7 +68,6 @@ fn launch_req() -> LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
-        workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         resume: None,
@@ -88,17 +85,17 @@ fn launch_req() -> LaunchReq {
 }
 
 #[test]
-fn launches_are_recorded_and_succeed_with_a_pane_unless_scripted() {
+fn launches_are_recorded_and_succeed_with_an_empty_session_id_unless_scripted() {
     let e = FakeEngine::new();
     let s = e.launch(&launch_req()).unwrap();
-    assert_eq!(s.pane, Some(PaneRef::new("p-1")));
+    assert_eq!(s.id, "");
     assert_eq!(e.launches(), [launch_req()]);
 }
 
 #[test]
 fn scripted_launch_results_are_served_in_order() {
     let err = EngineError::Failed {
-        step: "pane",
+        step: "launch",
         message: "x".to_owned(),
     };
     let e = FakeEngine::new().launch_result(Err(err.clone()));
@@ -115,12 +112,12 @@ fn steers_are_recorded_and_served_in_order_then_succeed() {
     };
     let e = FakeEngine::new()
         .steer_result(Ok(retried))
-        .steer_result(Err(EngineError::PaneGone));
+        .steer_result(Err(EngineError::AgentGone));
     let text = Steer::Text("go".to_owned());
     assert_eq!(e.steer(&session("a"), &text, DL), Ok(retried));
     assert_eq!(
         e.steer(&session("a"), &Steer::Menu(2), DL),
-        Err(EngineError::PaneGone)
+        Err(EngineError::AgentGone)
     );
     assert_eq!(
         e.steer(&session("b"), &text, DL),

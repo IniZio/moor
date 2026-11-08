@@ -33,7 +33,6 @@ fn rig(probe: Probe) -> Rig {
     let cx = Cx::fake_with_clock(
         dir.path(),
         driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         moor_core::config::UserConfig::default(),
         clock.clone(),

@@ -1,12 +1,11 @@
 //! Starts the agent again for a Working Box whose pane is gone or has exited.
 
+use moor_core::activity::{Life, Probe, Term};
 use moor_core::config::BoxSettings;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::PaneStatus;
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use std::time::Duration;
@@ -14,21 +13,21 @@ use std::time::Duration;
 use super::launch;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::activity::session_ref;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::reread;
-use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, SessionRow, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
 
-/// How a session's pane ended.
+/// How a session's agent ended.
 pub(super) enum Ended {
-    /// The pane no longer exists.
+    /// Its terminal is gone.
     Gone,
-    /// The agent left its pane showing the exit marker.
-    Exited(i32),
+    /// It exited, with its exit code when it left one.
+    Exited(Option<i32>),
 }
 
 /// Launches, or relaunches, the agent of an attached Box unless `req` gives `--no-agent`.
@@ -75,8 +74,11 @@ fn launch_asked(
     if !launch::working(&row) {
         return launch::run(cx, store, req, id, setup_exit, settings);
     }
-    if let Some(s) = store.live_session(id)?.filter(|s| ended(cx, s).is_none()) {
-        on_live(cx, store, req, &row, &s);
+    if store
+        .live_session(id)?
+        .is_some_and(|s| ended(cx, &row, &s).is_none())
+    {
+        on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
@@ -85,8 +87,8 @@ fn launch_asked(
         store_prompt(store, req, id)?;
         return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
     };
-    let Some(end) = ended(cx, &old) else {
-        on_live(cx, store, req, &row, &old);
+    let Some(end) = ended(cx, &row, &old) else {
+        on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
@@ -117,27 +119,9 @@ pub(super) fn nothing_to_resume() -> CommandError {
     CommandError::new(ErrorKind::Refused, "no agent session to resume")
 }
 
-/// Handles a start that finds the agent live: warns of a prompt it cannot take, and with
-/// `--resume` registers the session with the multiplexer again.
-fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &SessionRow) {
+/// Tells a start that found the agent live that its prompt went nowhere.
+fn on_live(cx: &Cx, req: &StartReq, row: &BoxRow) {
     warn_prompt_ignored(cx, req, &row.name);
-    let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
-        return;
-    };
-    let state = cx
-        .surface()
-        .pane_obs(&PaneRef::new(pane), Deadline(PANE_DEADLINE))
-        .map_or(PaneStatus::Unknown, |obs| obs.status);
-    if let Some(agent) = row.agent_session_id.as_deref().filter(|a| !a.is_empty()) {
-        if resume::report(cx, &row.name, pane, agent, state) {
-            if let Err(e) = store.set_registered_session(session.id, agent) {
-                cx.warn(Warning {
-                    code: "resume_record_failed".to_owned(),
-                    message: format!("could not record the resume registration: {e}"),
-                });
-            }
-        }
-    }
 }
 
 /// Stores a given prompt on the Box, replacing any it holds, so the launch sends it.
@@ -190,7 +174,7 @@ pub(super) fn relaunch(
     }
     let exit = match end {
         Ended::Gone => None,
-        Ended::Exited(code) => Some(*code),
+        Ended::Exited(code) => *code,
     };
     // A resumed session keeps writing the same file on a disk that survived, so a copy now adds nothing.
     let saved = if launch.resume.is_some() && !recreated {
@@ -231,13 +215,21 @@ pub(super) fn record_relaunch(
     Ok(())
 }
 
-/// How the pane of `session` ended; none while it is live, or when it cannot be read.
-pub(super) fn ended(cx: &Cx, session: &SessionRow) -> Option<Ended> {
-    let pane = PaneRef::new(session.pane.as_deref()?);
-    match cx.surface().pane_obs(&pane, Deadline(PANE_DEADLINE)) {
-        Ok(obs) => obs.exit_marker.map(Ended::Exited),
-        Err(SurfaceError::NotFound) => Some(Ended::Gone),
-        Err(_) => None,
+/// How the agent of `session` ended: its exit, or gone with its terminal; none while it runs,
+/// or when it cannot be read.
+pub(super) fn ended(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Option<Ended> {
+    let sref = session_ref(row, session)?;
+    match cx.engine().probe(&sref, Deadline(PANE_DEADLINE)) {
+        Probe::Read { term: None, .. } => Some(Ended::Gone),
+        Probe::Read {
+            term:
+                Some(Term {
+                    life: Life::Finished { exit },
+                    ..
+                }),
+            ..
+        } => Some(Ended::Exited(exit)),
+        Probe::Read { .. } | Probe::TimedOut => None,
     }
 }
 

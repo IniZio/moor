@@ -132,15 +132,17 @@ fn a_failed_fetch_runs_no_setup_sh() {
 
 #[test]
 fn a_relaunch_does_not_run_setup_sh_again() {
-    let engine = FakeEngine::new()
-        .launch_result(Ok(session("p-1")))
-        .launch_result(Ok(session("p-2")));
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2"))),
+    );
     let mut w = world_answering(None, HEAD, None);
-    w.cx = w.cx.with_engine(Arc::new(engine));
+    w.cx = w.cx.with_engine(engine.clone());
     set_profile(&w, None);
     started(&w);
     assert_eq!(setup_execs(&w).len(), 1);
-    gone(&w);
+    gone(&engine);
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(setup_execs(&w).len(), 1);
 }

@@ -17,42 +17,39 @@ use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
+    engine: Arc<FakeEngine>,
     id: BoxId,
 }
 
-/// Box `t` with a ready machine and, when `session`, a live launch in pane `p-1` that registered an
-/// agent session.
+/// Box `t` with a ready machine and, when `session`, a live launch that registered an agent
+/// session.
 fn fx_with(session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
-    let surface = Arc::new(FakeSurface::new());
     let proc = Arc::new(ScriptedProc::new());
     proc.on(
         Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx = Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine);
+    let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
-        let launch = store.begin_session(id, "s-1", Some("p-1")).unwrap();
+        let launch = store.begin_session(id, "s-1", None).unwrap();
         store.set_registered_session(launch, "agent-1").unwrap();
-        surface.have_pane("p-1");
     }
     Fx {
         _dir: dir,
         cx,
         driver,
-        surface,
+        engine,
         id,
     }
 }
@@ -147,7 +144,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
         ended_event.payload.get("cause").and_then(|c| c.as_str()),
         Some("requested")
     );
-    assert!(f.surface.calls().iter().any(|c| c == "close_pane p-1"));
+    assert!(f.engine.asked().contains(&"stop"));
     assert!(store.live_session(f.id).unwrap().is_none());
     let row = store.open_box_by_name(&BoxName::parse_allow_bare("t").unwrap());
     let row = row.unwrap().unwrap();
@@ -185,11 +182,7 @@ fn a_launch_that_already_stopped_still_ends_the_session() {
         ended.payload.get("cause").and_then(|c| c.as_str()),
         Some("requested")
     );
-    assert!(!f
-        .surface
-        .calls()
-        .iter()
-        .any(|c| c.starts_with("close_pane")));
+    assert!(!f.engine.asked().contains(&"stop"));
     assert_eq!(count(&f, "transcript_saved"), 0);
 }
 
@@ -244,17 +237,4 @@ fn an_asleep_box_wakes_before_the_session_ends() {
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     assert_eq!(count(&f, "session_ended"), 1);
-}
-
-#[test]
-fn a_pane_that_will_not_close_keeps_the_session_live() {
-    let f = fx_with(true);
-    f.surface
-        .set_fail_close_pane(moor_core::seam::surface::SurfaceError::Failed {
-            summary: "boom".into(),
-        });
-    let err = run(&f.cx, &req()).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("the Session stays live"));
-    assert_eq!(count(&f, "session_ended"), 0);
 }

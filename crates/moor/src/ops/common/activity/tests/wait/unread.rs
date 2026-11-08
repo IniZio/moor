@@ -37,14 +37,9 @@ fn rig() -> (tempfile::TempDir, Rig) {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, idle_saying()));
     let clock = Arc::new(FakeClock::new(NOW));
     let driver = Arc::new(FakeDriver::new());
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
-    .with_engine(engine.clone())
-    .with_clock(clock.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()))
+        .with_engine(engine.clone())
+        .with_clock(clock.clone());
     let id = working_box(&cx, true);
     let rig = Rig {
         cx,
@@ -177,7 +172,6 @@ fn a_blocked_agent_sleeps_on_the_shorter_prompt_time() {
     let cx = Cx::fake(
         dir.path(),
         rig.driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(rig.engine.clone())

@@ -17,7 +17,6 @@ use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 use moor_core::domain::box_state::BoxLifecycle;
 
 const PROVIDER: &str = "local-container";
@@ -25,7 +24,6 @@ const PROVIDER: &str = "local-container";
 struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     _dir: tempfile::TempDir,
 }
 
@@ -55,12 +53,10 @@ fn world(config: UserConfig) -> World {
     );
     proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new());
-    let cx = Cx::fake_with(dir.path(), driver.clone(), surface.clone(), proc, config);
+    let cx = Cx::fake_with(dir.path(), driver.clone(), proc, config);
     World {
         cx,
         driver,
-        surface,
         _dir: dir,
     }
 }
@@ -180,8 +176,6 @@ fn queued_start_records_the_limit_and_keeps_the_workspace() {
         .find(|e| e.kind == "pending")
         .expect("pending event");
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
-    let calls = w.surface.calls();
-    assert!(calls.contains(&"ensure_workspace moor:waiter".to_owned()));
     assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 

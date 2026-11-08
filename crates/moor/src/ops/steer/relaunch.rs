@@ -21,14 +21,14 @@ const RECENT_EVENTS: usize = 50;
 /// How a gone agent was brought back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Revived {
-    /// A new pane attached to the agent, which never stopped.
-    Reattached,
+    /// The agent never stopped.
+    Running,
     /// A new agent started, by this steer or by another op.
     Relaunched,
 }
 
-/// Relaunches the gone agent of `target`, resuming its stored agent session, or attaches a new
-/// pane when the agent still runs on the Box.
+/// Relaunches the gone agent of `target`, resuming its stored agent session, unless the agent
+/// still runs on the Box.
 ///
 /// An agent that another op relaunched while this one waited for the Box lock is left to run.
 ///
@@ -50,7 +50,7 @@ pub(super) fn once(
     }
     if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
         match link::recover(cx, store, &row, &launch, gone.code)? {
-            Fate::Reattached => return Ok(Revived::Reattached),
+            Fate::Running => return Ok(Revived::Running),
             Fate::Ended(exit) => gone.code = exit,
             Fate::Unreachable => return Err(unreachable(name)),
         }

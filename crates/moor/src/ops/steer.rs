@@ -61,7 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         return Err(gone.error);
     }
     let mut revived = relaunch::once(cx, store, target, gone)?;
-    let mut reattached_again = false;
+    let mut seen_running = false;
     loop {
         let again = match attempt(cx, store, req, target)? {
             Attempt::Sent(v) => return Ok(v),
@@ -69,9 +69,9 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         };
         match revived {
             Revived::Relaunched => return Err(relaunch::ended_again(cx, store, target, &again)?),
-            Revived::Reattached if reattached_again => return Err(relaunch::lost_again(target.1)),
-            Revived::Reattached => {
-                reattached_again = true;
+            Revived::Running if seen_running => return Err(relaunch::lost_again(target.1)),
+            Revived::Running => {
+                seen_running = true;
                 revived = relaunch::once(cx, store, target, again)?;
             }
         }
@@ -208,7 +208,7 @@ fn attempt(
         Steer::Menu(n) => n.to_string(),
         Steer::Interrupt => "(interrupt)".to_owned(),
     };
-    let Some(outcome) = send(cx, name, &sref, &steer)? else {
+    let Some(outcome) = send(cx, &sref, &steer)? else {
         let code = if let Some(AgentState::Exited { code }) = before {
             code
         } else {
@@ -304,24 +304,11 @@ fn is_exit_req(req: &SteerReq) -> bool {
     req.menu.is_none() && req.text.as_deref().is_some_and(|t| t.trim() == "/exit")
 }
 
-/// Sends `steer`; `None` when the agent's pane is gone.
-fn send(
-    cx: &Cx,
-    name: &str,
-    sref: &SessionRef,
-    steer: &Steer,
-) -> Result<Option<SteerOutcome>, CommandError> {
+/// Sends `steer`; `None` when the agent has exited.
+fn send(cx: &Cx, sref: &SessionRef, steer: &Steer) -> Result<Option<SteerOutcome>, CommandError> {
     match cx.engine().steer(sref, steer, Deadline(STEER_DEADLINE)) {
         Ok(o) => Ok(Some(o)),
-        Err(EngineError::PaneGone) => Ok(None),
-        Err(EngineError::NoSession) => Err(CommandError::new(
-            ErrorKind::Refused,
-            format!(
-                "the agent has no pane; relaunch with {}",
-                relaunch_hint(name)
-            ),
-        )
-        .with_detail(ErrorDetail::AgentGone)),
+        Err(EngineError::AgentGone) => Ok(None),
         Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
     }
 }

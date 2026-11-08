@@ -22,7 +22,6 @@ use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const SESSION: &str = "sess-1";
 
@@ -34,7 +33,6 @@ fn cx_with(dir: &Path, engine: &Arc<FakeEngine>) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(engine.clone())

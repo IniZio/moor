@@ -14,7 +14,6 @@ use super::list;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
@@ -33,7 +32,6 @@ fn cx(dir: &std::path::Path) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_config(config)

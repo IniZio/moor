@@ -12,7 +12,6 @@ use crate::profile::Manifest;
 use crate::seam::agent_adapter::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
-use crate::seam::surface::{PaneRef, WorkspaceRef};
 use crate::shape::Shape;
 
 /// A stored agent session and where it runs.
@@ -22,10 +21,8 @@ pub struct SessionRef {
     pub id: String,
     /// The Box the agent runs in.
     pub handle: BoxHandle,
-    /// The Box workdir; the hook file lives under it.
+    /// The Box workdir the agent runs in.
     pub workdir: BoxPath,
-    /// The agent's pane, if one exists.
-    pub pane: Option<PaneRef>,
 }
 
 /// The first prompt the agent starts with.
@@ -68,8 +65,6 @@ pub struct LaunchReq {
     pub handle: BoxHandle,
     /// The Box workdir the agent runs in.
     pub workdir: BoxPath,
-    /// The Workspace that gets the agent's tab.
-    pub workspace: WorkspaceRef,
     /// The Box the agent works on.
     pub box_name: BoxName,
     /// The Box branch the agent pushes to.
@@ -130,7 +125,6 @@ impl PartialEq for LaunchReq {
         self.id == other.id
             && self.handle == other.handle
             && self.workdir == other.workdir
-            && self.workspace == other.workspace
             && self.box_name == other.box_name
             && self.branch == other.branch
             && self.resume == other.resume
@@ -185,9 +179,9 @@ pub enum EngineError {
         /// What went wrong.
         message: String,
     },
-    /// The agent's pane no longer exists.
-    #[error("the agent pane is gone")]
-    PaneGone,
+    /// The agent has exited.
+    #[error("the agent has exited")]
+    AgentGone,
     /// The Box has no agent session.
     #[error("no agent session")]
     NoSession,
@@ -213,9 +207,6 @@ pub trait Engine: Send + Sync {
 
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
-
-    /// Whether the agent runs no hook while a first-run screen holds its pane.
-    fn hooks_quiet_during_first_run(&self) -> bool;
 
     /// How to install the agent on a Box that lacks it; `None` when the engine has no installer.
     fn agent_install(&self) -> Option<AgentInstall> {
@@ -256,12 +247,11 @@ pub trait Engine: Send + Sync {
     /// read); the caller must not launch then.
     fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError>;
 
-    /// Sends `steer` to the agent's pane. Text is never typed twice.
+    /// Sends `steer` to the agent's terminal. Text is never typed twice.
     ///
     /// # Errors
-    /// [`EngineError::NoSession`] when the session has no pane; [`EngineError::PaneGone`]
-    /// when the pane no longer exists or shows that the agent exited;
-    /// [`EngineError::Failed`] when a send fails.
+    /// [`EngineError::AgentGone`] when the agent has exited; [`EngineError::Failed`] when a
+    /// send fails.
     fn steer(
         &self,
         s: &SessionRef,
@@ -282,50 +272,13 @@ pub trait Engine: Send + Sync {
         deadline: Deadline,
     ) -> Result<(), EngineError>;
 
-    /// Ends the agent of session `s` where it runs, for an agent that outlives its pane.
+    /// Ends the agent of session `s` where it runs.
     ///
     /// # Errors
     /// [`EngineError::Failed`] when the Box could not be told to end it.
     fn stop(&self, _s: &SessionRef) -> Result<(), EngineError> {
         Ok(())
     }
-
-    /// Whether the agent of session `s` still runs after its pane ended. An agent that runs as
-    /// its pane's child ended with it, its exit unknown here.
-    ///
-    /// # Errors
-    /// [`EngineError::Box`] when the Box could not be reached.
-    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
-        Ok(AgentFate::Ended { exit: None })
-    }
-
-    /// Opens a new pane in `ws` attached to the still running agent of session `s`.
-    ///
-    /// # Errors
-    /// [`EngineError::Failed`] when no pane could be opened.
-    fn reattach(
-        &self,
-        _s: &SessionRef,
-        _ws: &WorkspaceRef,
-        _name: &BoxName,
-    ) -> Result<PaneRef, EngineError> {
-        Err(EngineError::Failed {
-            step: "reattach",
-            message: "this agent cannot outlive its pane".to_owned(),
-        })
-    }
-}
-
-/// What became of an agent whose pane ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentFate {
-    /// The agent still runs on the Box.
-    Running,
-    /// The agent ended, with its exit status when the Box kept it.
-    Ended {
-        /// The agent's exit status.
-        exit: Option<i32>,
-    },
 }
 
 #[cfg(test)]

@@ -40,7 +40,7 @@ fn an_interrupt_reaches_a_blocked_agent_without_a_menu_choice() {
 fn an_interrupt_never_relaunches_a_gone_agent() {
     let engine = FakeEngine::new()
         .probes("agent-1", working())
-        .steer_result(Err(EngineError::PaneGone));
+        .steer_result(Err(EngineError::AgentGone));
     let f = fx_with(engine, true);
     let err = run(&f.cx, &interrupt()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

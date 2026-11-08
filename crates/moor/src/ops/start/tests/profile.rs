@@ -274,7 +274,7 @@ fn a_relaunch_reuses_the_stored_commit_without_reading_the_forge() {
     set_profile(&w, None);
     let first = run(&w.cx, &req("demo")).unwrap();
     let asked = w.forge.files_asked().len();
-    super::relaunch::gone(&w);
+    super::relaunch::gone(&engine);
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(w.forge.files_asked().len(), asked);

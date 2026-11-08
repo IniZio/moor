@@ -138,8 +138,7 @@ fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_once_settled() {
 #[test]
 fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_before_settling() {
     let (w, engine, _) = super::relaunch::started();
-    w.surface
-        .push_pane_obs("p-1", Ok(super::relaunch::obs(Some(3))));
+    engine.set_probes("p-1", agent::exited(Some(3)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.agent.launched);
     let all = engine.launches();

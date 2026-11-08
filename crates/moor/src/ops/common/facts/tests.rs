@@ -10,13 +10,11 @@ use crate::store::BoxRow;
 use crate::testing::cx::{box_repo, new_box, new_box_of};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 fn cx(dir: &std::path::Path) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

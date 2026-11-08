@@ -54,7 +54,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         }
         (next, view)
     };
-    // As in `start`, the new pane is watched with the Box lock free.
+    // As in `start`, the new agent is watched with the Box lock free.
     let view = watch_launch(cx, store, id, view);
     if !view.launched {
         let message = view.reason.map_or_else(
@@ -67,7 +67,6 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         box_name: name.to_owned(),
         session: next.id,
         ordinal: next.ordinal,
-        pane: store.live_session(id)?.and_then(|s| s.pane),
     })
 }
 

@@ -72,7 +72,7 @@ fn a_relaunch_ensures_the_proxy_again() {
         w.cx.with_engine(engine.clone())
             .with_proxy_host(Arc::new(fake.clone()));
     run(&w.cx, &prompt_req()).unwrap();
-    gone(&w);
+    gone(&engine);
     run(&w.cx, &prompt_req()).unwrap();
     let launches = engine.launches();
     assert_eq!(launches.len(), 2);

@@ -10,17 +10,16 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ErrorKind, ProviderId};
 
 use super::{wake_and_revive, wake_box_if_asleep, wake_with_tunnel};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
+use crate::testing::agent::gone;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 mod guest;
 mod tunnel;
@@ -34,18 +33,16 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     engine: Arc<FakeEngine>,
     id: BoxId,
 }
 
-/// A launched session whose pane is `pane`.
-fn session(pane: &str) -> SessionRef {
+/// A launched session.
+fn session() -> SessionRef {
     SessionRef {
         id: String::new(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new(pane)),
     }
 }
 
@@ -76,11 +73,9 @@ fn git_proc() -> Arc<ScriptedProc> {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let surface = Arc::new(FakeSurface::new());
-    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-2"))));
+    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session())));
     let proc = git_proc();
-    let cx =
-        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
@@ -119,7 +114,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
         _dir: dir,
         cx,
         driver,
-        surface,
         engine,
         id,
     }
@@ -346,13 +340,12 @@ fn waking_only_the_box_does_not_look_the_workdir_up() {
     assert_eq!(workdir_calls(&f), 0);
 }
 
-/// Gives the Box a live agent session in pane `p-1` that can be resumed.
+/// Gives the Box a live agent session that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
-    store.begin_session(f.id, "agent-1", Some("p-1")).unwrap();
+    store.begin_session(f.id, "agent-1", None).unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),
-        workspace_id: Field::Set("ws-1".into()),
         ..Fields::default()
     };
     store.apply(Decision::new(f.id).set(set)).unwrap();
@@ -374,7 +367,7 @@ fn waking_a_box_whose_agent_is_gone_relaunches_it() {
     let f = fx();
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.engine.launches().len(), 1);
@@ -387,23 +380,22 @@ fn waking_a_box_whose_agent_is_gone_relaunches_it() {
 }
 
 #[test]
-fn every_wake_of_a_box_relaunches_its_gone_agent_into_the_same_workspace() {
+fn every_wake_of_a_box_relaunches_its_gone_agent() {
     let f = fx();
     with_agent(&f);
     let store = f.cx.store().unwrap();
-    for (n, pane) in [(1, "p-1"), (2, "p-2")] {
+    for (n, session) in [(1, "agent-1"), (2, "moor-1")] {
         let reported = Fields {
             agent_session_id: Field::Set("agent-1".into()),
             ..Fields::default()
         };
         store.apply(Decision::new(f.id).set(reported)).unwrap();
         sleep(&f);
-        f.surface.push_pane_obs(pane, Err(SurfaceError::NotFound));
+        f.engine.set_probes(session, gone());
         assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
         let launches = f.engine.launches();
         assert_eq!(launches.len(), n, "wake {n} relaunched the agent");
         let last = launches.last().unwrap();
-        assert_eq!(last.workspace.as_str(), "ws-1");
         assert_eq!(last.resume.as_deref(), Some("agent-1"));
         assert_eq!(relaunched(&f).len(), n);
     }
@@ -434,7 +426,7 @@ fn waking_only_the_box_does_not_probe_the_agent() {
             reason: None,
         }))
         .unwrap();
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert!(f.engine.launches().is_empty());
     assert!(relaunched(&f).is_empty());
@@ -445,7 +437,7 @@ fn plain_wake_leaves_a_gone_agent_alone() {
     let f = fx();
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     let store = f.cx.store().unwrap();
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(f.engine.launches().is_empty());
@@ -453,7 +445,7 @@ fn plain_wake_leaves_a_gone_agent_alone() {
 
 const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
 
-/// A pane observation of a launch script the prelude stopped because the Proxy CA could not be written.
+/// What the agent's probe shows of a launch script the prelude stopped because the Proxy CA could not be written.
 fn ca_stopped() -> moor_core::activity::Probe {
     crate::testing::agent::on_screen(
         crate::testing::agent::exited(Some(1)),
@@ -471,7 +463,7 @@ fn a_wake_relaunch_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
     let f = fx();
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     f.engine.set_probes("moor-1", ca_stopped());
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
@@ -484,8 +476,7 @@ fn a_wake_relaunch_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
 fn a_relaunch_after_a_failed_sleep_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
     let f = fx_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("no".into())));
     with_agent(&f);
-    f.surface.have_pane("p-1");
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     f.engine.set_probes("moor-1", ca_stopped());
     let req = moor_core::BoxReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
@@ -497,10 +488,9 @@ fn a_relaunch_after_a_failed_sleep_stopped_by_an_unwritable_proxy_ca_records_the
 }
 
 #[test]
-fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
+fn an_agent_gone_after_sleep_is_relaunched_on_wake() {
     let f = fx();
     with_agent(&f);
-    f.surface.have_pane("p-1");
     crate::ops::sleep::run(
         &f.cx,
         &moor_core::BoxReq {
@@ -508,8 +498,7 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
         },
     )
     .unwrap();
-    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.engine.launches().len(), 1);
@@ -520,13 +509,11 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
 fn a_box_that_cannot_sleep_gets_its_agent_back() {
     let f = fx_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("no".into())));
     with_agent(&f);
-    f.surface.have_pane("p-1");
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine.set_probes("agent-1", gone());
     let req = moor_core::BoxReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
     };
     assert!(crate::ops::sleep::run(&f.cx, &req).is_err());
-    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
     assert_eq!(f.engine.launches().len(), 1);
     assert_eq!(relaunched(&f).len(), 1);
 }

@@ -145,8 +145,6 @@ pub struct BoxView {
     pub base: Option<String>,
     /// Branch name.
     pub branch: Option<String>,
-    /// Workspace id.
-    pub workspace: Option<String>,
     /// The Box, when one exists.
     pub driver: Option<DriverView>,
     /// Agent activity.
@@ -381,8 +379,6 @@ pub struct CloseView {
     pub boxed: BoxView,
     /// Box was deleted.
     pub box_deleted: bool,
-    /// Workspace was closed.
-    pub workspace_closed: bool,
     /// Agent was stopped.
     pub agent_stopped: bool,
     /// Transcript path.

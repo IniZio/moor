@@ -18,7 +18,7 @@ fn launch_errors_display() {
         failed.to_string(),
         "launch failed at brief: box file write failed"
     );
-    assert_eq!(EngineError::PaneGone.to_string(), "the agent pane is gone");
+    assert_eq!(EngineError::AgentGone.to_string(), "the agent has exited");
     assert_eq!(EngineError::NoSession.to_string(), "no agent session");
 }
 
@@ -29,7 +29,6 @@ fn req() -> LaunchReq {
         id: BoxId::new(7),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("web/fix-bug").unwrap(),
         branch: String::new(),
         resume: None,

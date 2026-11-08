@@ -29,7 +29,6 @@ fn timed(driver: FakeDriver) -> (World, Arc<FakeClock>) {
     w.cx = Cx::fake_with_clock(
         w.dir.path(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         UserConfig::default(),
         clock.clone(),

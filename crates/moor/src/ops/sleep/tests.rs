@@ -9,7 +9,6 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
-use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
@@ -20,13 +19,11 @@ use crate::store::{FollowClaim, NewRun};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     id: BoxId,
 }
 
@@ -34,13 +31,7 @@ struct Fx {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let surface = Arc::new(FakeSurface::new());
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
@@ -82,7 +73,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
         _dir: dir,
         cx,
         driver,
-        surface,
         id,
     }
 }
@@ -297,13 +287,7 @@ fn an_asleep_box_is_left_alone() {
 fn starting() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new());
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
@@ -324,7 +308,6 @@ fn starting() -> Fx {
         _dir: dir,
         cx,
         driver,
-        surface,
         id,
     }
 }
@@ -411,48 +394,6 @@ fn sleep_label_follows_provider_sleep_support() {
         let v = run(&f.cx, &req()).unwrap();
         assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
     }
-}
-
-/// Give the Box a live agent session in pane `p-1`.
-fn with_agent_pane(f: &Fx) {
-    f.surface.have_pane("p-1");
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "agent-1", Some("p-1"))
-        .unwrap();
-}
-
-#[test]
-fn sleep_closes_the_agent_pane() {
-    let f = idle();
-    with_agent_pane(&f);
-    run(&f.cx, &req()).unwrap();
-    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
-    assert_eq!(sleep_calls(&f), 1);
-}
-
-#[test]
-fn sleep_closes_the_pane_before_pausing_the_box() {
-    let f = idle();
-    with_agent_pane(&f);
-    f.surface
-        .set_fail_close_pane(SurfaceError::Unavailable("boom".into()));
-    let err = run(&f.cx, &req()).unwrap_err();
-    assert!(err.error.to_string().contains("agent pane"), "{err:?}");
-    assert_eq!(sleep_calls(&f), 0);
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
-    assert_eq!(session(&f), SessionState::Idle);
-}
-
-#[test]
-fn sleep_with_the_pane_already_gone_still_sleeps() {
-    let f = idle();
-    f.cx.store()
-        .unwrap()
-        .begin_session(f.id, "agent-1", Some("p-1"))
-        .unwrap();
-    run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]

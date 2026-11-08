@@ -20,7 +20,6 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::FakeProxyHost;
-use crate::testing::surface::FakeSurface;
 use moor_testkit::FakeEgress;
 
 mod detached;
@@ -84,13 +83,8 @@ fn context(
     egress_port: u16,
 ) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
-    let cx = Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        proc.clone(),
-    )
-    .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)));
+    let cx = Cx::fake(dir, driver.clone(), proc.clone())
+        .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)));
     (cx, proc)
 }
 

@@ -15,7 +15,6 @@ use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use crate::Moor;
 
 const DAY: Duration = Duration::from_hours(24);
@@ -34,7 +33,6 @@ fn world(driver: FakeDriver) -> World {
     let cx = Cx::fake_with_clock(
         dir.path(),
         driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
         clock.clone(),

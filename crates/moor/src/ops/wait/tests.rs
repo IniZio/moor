@@ -25,7 +25,6 @@ use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const PID: u32 = 4242;
 const SESSION: &str = "sess-1";
@@ -38,12 +37,7 @@ fn cx(dir: &Path) -> (Cx, Arc<ScriptedProc>) {
 /// Like [`cx`], over `driver`.
 fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
-    let cx = Cx::fake(
-        dir,
-        Arc::new(driver),
-        Arc::new(FakeSurface::new()),
-        proc.clone(),
-    );
+    let cx = Cx::fake(dir, Arc::new(driver), proc.clone());
     (cx, proc)
 }
 

@@ -14,7 +14,6 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
@@ -92,7 +91,6 @@ mod workdir;
 struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     proc: Arc<ScriptedProc>,
     forge: Arc<FakeForge>,
     dir: tempfile::TempDir,
@@ -106,13 +104,8 @@ fn world(driver: FakeDriver) -> World {
 /// Builds a world whose user config names no `box.provider`.
 fn world_without_nodes(driver: FakeDriver) -> World {
     let mut w = world_with(driver, UserConfig::default());
-    w.cx = Cx::fake_without_nodes(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-    )
-    .with_forge(w.forge.clone());
+    w.cx = Cx::fake_without_nodes(w.dir.path(), w.driver.clone(), w.proc.clone())
+        .with_forge(w.forge.clone());
     w
 }
 
@@ -124,20 +117,12 @@ fn world_with(driver: FakeDriver, config: UserConfig) -> World {
     let driver = Arc::new((1..=4).fold(driver, |d, n| {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
-    let surface = Arc::new(FakeSurface::new());
     let forge = Arc::new(FakeForge::new());
-    let cx = Cx::fake_with(
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        proc.clone(),
-        config,
-    )
-    .with_forge(forge.clone());
+    let cx =
+        Cx::fake_with(dir.path(), driver.clone(), proc.clone(), config).with_forge(forge.clone());
     World {
         cx,
         driver,
-        surface,
         proc,
         forge,
         dir,
@@ -206,7 +191,6 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     assert!(!v.attached);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
     assert_eq!(v.boxed.base, None);
-    assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
     let want = format!("moor/{}-demo", v.boxed.id);
     assert_eq!(v.boxed.branch.as_deref(), Some(want.as_str()));
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
@@ -222,7 +206,6 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
     let v = run(&w.cx, &agentless_req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
-    assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
     assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
@@ -306,7 +289,6 @@ fn open_name_attaches_without_touching_the_box() {
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
     assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1", "list"]);
-    assert_eq!(w.surface.calls().len(), 1);
 }
 
 #[test]
@@ -345,7 +327,6 @@ fn start_after_acquire_failure_gets_a_new_box() {
         w.driver.calls(),
         ["acquire", "release box-1", "acquire", "peek_file box-1"]
     );
-    assert_eq!(w.surface.calls().len(), 1);
 }
 
 #[test]
@@ -403,7 +384,6 @@ fn unresolved_credential_rejects_before_any_side_effect() {
         err.value.as_ref().unwrap().pointer("/box/lifecycle"),
         Some(&serde_json::json!("rejected"))
     );
-    assert!(w.surface.calls().is_empty());
     assert!(w.driver.calls().is_empty());
     let name = box_name("demo");
     assert!(w

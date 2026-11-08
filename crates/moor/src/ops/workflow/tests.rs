@@ -22,7 +22,6 @@ use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 pub(super) const DAY: i64 = 86_400_000;
 /// The first 09:00 UTC after the fake clock's start.
@@ -45,14 +44,8 @@ fn rig_with(config: UserConfig) -> Rig {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
     let forge = Arc::new(FakeForge::new());
-    let cx = Cx::fake_with(
-        dir.path(),
-        driver,
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-        config,
-    )
-    .with_forge(forge.clone());
+    let cx = Cx::fake_with(dir.path(), driver, Arc::new(ScriptedProc::new()), config)
+        .with_forge(forge.clone());
     Rig {
         cx,
         forge,

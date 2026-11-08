@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::engine::{AgentFate, EngineError, Steer};
+use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::StartReq;
 
 use super::pressure::{tick, wake_up};
@@ -106,10 +106,8 @@ fn a_new_start_on_an_issue_that_queued_launches_on_that_issue_when_promoted() {
 }
 
 #[test]
-fn a_prompt_held_for_an_asleep_box_reaches_a_reattached_agent_once() {
-    let engine = FakeEngine::new()
-        .launch_result(Ok(session("p-1")))
-        .fates(vec![Ok(AgentFate::Running)]);
+fn a_prompt_held_for_an_asleep_box_reaches_a_running_agent_once() {
+    let engine = FakeEngine::new().launch_result(Ok(session("p-1")));
     let (w, hv, engine, id) = queued_with_prompt(engine, "carry on");
     tick(&w, hv, 32_768, 0, 0);
     assert_eq!(
@@ -131,7 +129,7 @@ fn a_prompt_held_for_an_asleep_box_reaches_a_relaunched_agent_once_it_reports_id
             .launch_result(Ok(session("p-2"))),
     );
     let (w, hv, engine, id) = queued_with_prompt(engine, "carry on");
-    gone(&w);
+    gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
     let all = engine.launches();
     assert_eq!(all.len(), 2);
@@ -157,7 +155,7 @@ fn a_held_prompt_whose_steer_fails_once_is_given_on_a_later_sweep_exactly_once()
             })),
     );
     let (w, hv, engine, id) = queued_with_prompt(engine, "carry on");
-    gone(&w);
+    gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
     sweep(&w);
     assert!(kinds(&w, id).contains(&"prompt_not_given".to_owned()));
@@ -187,7 +185,7 @@ fn a_held_prompt_stops_being_tried_after_its_failed_tries() {
         engine = engine.steer_result(fail());
     }
     let (w, hv, engine, id) = queued_with_prompt(reports_idle(engine), "carry on");
-    gone(&w);
+    gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
     for _ in 0..5 {
         sweep(&w);
@@ -213,7 +211,7 @@ fn a_relaunch_that_starts_on_the_stored_prompt_is_not_told_it_again() {
             ..Fields::default()
         }),
     );
-    gone(&w);
+    gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
     let all = engine.launches();
     assert_eq!(all.get(1).and_then(|l| l.prompt.text()), Some("carry on"));
