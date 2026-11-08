@@ -120,8 +120,9 @@ format:
 unit:
 	$(MAKE) --no-print-directory -j2 -O unit-nextest unit-doc
 
+# PARTITION=count:1/3 runs the first third of the tests, so CI can spread them over jobs.
 unit-nextest:
-	cargo nextest run --workspace --all-targets --locked
+	cargo nextest run --workspace --all-targets --locked $(if $(PARTITION),--partition $(PARTITION))
 
 unit-doc:
 	cargo test --workspace --doc --locked
@@ -133,7 +134,7 @@ dev-db:
 
 unit-pg:
 	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-schema)'
-	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --locked -p moor --lib --test cli -E '(kind(lib) & test(/^store::/) - test(/^store::db::sqlite::/)) | (binary(cli) & test(/^controller_lock::/))'
+	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked -E 'package(moor) & ((kind(lib) & test(/^store::/) - test(/^store::db::sqlite::/)) | (binary(cli) & test(/^controller_lock::/)))'
 
 overlap:
 	@set -f; tools/stack-overlap.sh --pretty '$(BASE)' $(if $(HEAD),'$(HEAD)') $(if $(FILES),--files $(FILES))
@@ -155,7 +156,10 @@ dev-s3:
 	docker compose run --rm s3-bucket
 
 unit-s3:
-	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --locked -p moor --lib --run-ignored only -E 'test(/::s3_/)'
+	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor) & kind(lib) & test(/::s3_/)'
+
+unit-egress:
+	cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-core) & kind(lib) & test(exec_env::tests::egress_load)'
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
