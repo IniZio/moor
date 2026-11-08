@@ -1,15 +1,11 @@
 #!/bin/sh
 set -eu
 
-CH_VERSION=v52.0-moor.1
-CH_SHA256=f0052b204ea9e22b9428845ff6f22b6f7738d1b49e29e00b7e3a2856ab1f098c
-PASST_REV=a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
-PASST_SHA256=cf4746812d3e2461f7582b7b8089591ce4e8b9d1f45beb28d9c177c365346907
 GO_VERSION=go1.27.3
 GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 CRABBOX_COMMIT=ee5e5205c9d95f54f7420bed587bc88b91efeeb4
 CRABBOX_VERSION=0.79.1-moor.17
-ADAPTER_REV=6bf18df14800994c2b607dce8872fa30c2939021
+ADAPTER_VERSION=v0.2.0
 
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
 BIN=$NESTED/bin
@@ -45,7 +41,7 @@ link_bin() {
 
 # Packages the adapter and the inner VM need.
 need=""
-for pair in qemu-img:qemu-utils resize2fs:e2fsprogs rsync:rsync ssh:openssh-client git:git curl:curl make:make cc:build-essential; do
+for pair in qemu-img:qemu-utils resize2fs:e2fsprogs rsync:rsync ssh:openssh-client git:git curl:curl; do
 	command -v "${pair%%:*}" >/dev/null || need="$need ${pair#*:}"
 done
 if [ -n "$need" ]; then
@@ -58,26 +54,6 @@ if [ -e /dev/kvm ] && [ "$(id -u)" != 0 ]; then
 	user=$(id -un)
 	id -nG "$user" | tr ' ' '\n' | grep -qx kvm || as_root usermod -aG kvm "$user"
 fi
-
-if ! fresh cloud-hypervisor "$CH_VERSION"; then
-	fetch "https://github.com/IniZio/cloud-hypervisor/releases/download/$CH_VERSION/cloud-hypervisor-static" \
-		"$CH_SHA256" "$NESTED/dl/cloud-hypervisor-$CH_VERSION"
-	install -m 0755 "$NESTED/dl/cloud-hypervisor-$CH_VERSION" "$BIN/cloud-hypervisor"
-	done_step cloud-hypervisor "$CH_VERSION"
-fi
-link_bin cloud-hypervisor
-
-# Ubuntu's passt predates --vhost-user, so build the pinned release.
-if ! fresh passt "$PASST_REV"; then
-	fetch "https://passt.top/passt/snapshot/passt-$PASST_REV.tar.gz" "$PASST_SHA256" "$NESTED/dl/passt-$PASST_REV.tar.gz"
-	src=$(mktemp -d)
-	tar -xzf "$NESTED/dl/passt-$PASST_REV.tar.gz" -C "$src" --strip-components=1
-	make -C "$src" -j"$(nproc)" passt >/dev/null
-	install -m 0755 "$src/passt" "$BIN/passt"
-	rm -rf "$src"
-	done_step passt "$PASST_REV"
-fi
-link_bin passt
 
 # git_rev dir url rev: a checkout of exactly rev, without history.
 git_rev() {
@@ -100,13 +76,18 @@ if ! fresh crabbox "$CRABBOX_COMMIT-$CRABBOX_VERSION"; then
 fi
 link_bin crabbox
 
-if ! fresh crabbox-cloudhypervisor "$ADAPTER_REV"; then
-	toolchain=$(rustup show active-toolchain | cut -d' ' -f1)
-	src=$(mktemp -d)
-	git_rev "$src" https://github.com/IniZio/crabbox-cloudhypervisor "$ADAPTER_REV"
-	(cd "$src" && RUSTUP_TOOLCHAIN=$toolchain timeout 1800 cargo install --path . --locked --root "$NESTED/cargo" --force)
-	install -m 0755 "$NESTED/cargo/bin/crabbox-cloudhypervisor" "$BIN/crabbox-cloudhypervisor"
-	rm -rf "$src"
-	done_step crabbox-cloudhypervisor "$ADAPTER_REV"
+# The adapter installs its own cloud-hypervisor and passt, as it does for a user.
+# Its crabbox registration goes to a scratch file so the host's config stays alone.
+if ! fresh crabbox-cloudhypervisor "$ADAPTER_VERSION"; then
+	timeout 600 curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$NESTED/dl/adapter-install.sh" \
+		"https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/$ADAPTER_VERSION/install.sh"
+	CRABBOX_CLOUDHYPERVISOR_INSTALL_DIR=$BIN CRABBOX_CLOUDHYPERVISOR_VERSION=$ADAPTER_VERSION \
+		sh "$NESTED/dl/adapter-install.sh"
+	XDG_DATA_HOME=$NESTED/data CRABBOX_CONFIG=$NESTED/crabbox-install.yaml \
+		"$BIN/crabbox-cloudhypervisor" install
+	done_step crabbox-cloudhypervisor "$ADAPTER_VERSION"
 fi
+for b in cloud-hypervisor passt; do ln -sf "$NESTED/data/crabbox-cloudhypervisor/bin/$b" "$BIN/$b"; done
+link_bin cloud-hypervisor
+link_bin passt
 link_bin crabbox-cloudhypervisor
