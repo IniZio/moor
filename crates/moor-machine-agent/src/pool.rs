@@ -133,6 +133,11 @@ async fn features(pool: &Pool) -> Vec<String> {
     features
 }
 
+/// Asks every warmup and fork going on to stop, and waits until crabbox has ended them all.
+pub async fn stop_boots() {
+    flight::stop_all().await;
+}
+
 /// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`
 /// in, a warmup boots with `boot`.
 pub async fn lease(

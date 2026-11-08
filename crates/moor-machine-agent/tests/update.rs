@@ -386,10 +386,11 @@ impl Opener {
     }
 }
 
-/// A crabbox whose warmup claims its slug and waits for `$HOME/go`.
+/// A crabbox whose warmup claims its slug and waits for `$HOME/go`, or for its home to go.
 const SLOW_WARMUP: &str = r#"#!/bin/sh
 case "$1" in
-  warmup) touch "$HOME/claimed"; while [ ! -e "$HOME/go" ]; do sleep 0.02; done ;;
+  warmup) touch "$HOME/claimed"
+    while [ -d "$HOME" ] && [ ! -e "$HOME/go" ]; do sleep 0.02; done ;;
   list) echo '[]' ;;
 esac
 "#;

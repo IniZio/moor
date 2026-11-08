@@ -11,7 +11,7 @@ use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::service::Manager;
 use moor_machine_agent::up::{self, down, Runtime, Up};
-use moor_machine_agent::{run_with, state_dir, update, Machine, Pool};
+use moor_machine_agent::{run_with, state_dir, until_stopped, update, Machine, Pool};
 
 /// Command line.
 #[derive(Parser)]
@@ -227,9 +227,12 @@ fn run_here(
         ..Machine::from_env()
     };
     let rt = runtime()?;
-    rt.block_on(run_with(&state_dir(), machine, auto_update, &|line| {
-        say(line);
-    }))
+    rt.block_on(until_stopped(run_with(
+        &state_dir(),
+        machine,
+        auto_update,
+        &|line| say(line),
+    )))
 }
 
 /// Adds what warm starts need to the crabbox user config, saying what changed.
@@ -262,7 +265,8 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
 /// Does `verb` to lease `slug` here, with `boot` on a warmup, and prints the answer.
 fn lease_here(flags: PoolFlags, verb: Verb, slug: Option<&str>, boot: &Boot) -> ExitCode {
     on_pool(flags, |rt, home, pool| {
-        let reply = rt.block_on(lease(&home, &pool, verb, slug, None, boot));
+        let leased = async { Ok(lease(&home, &pool, verb, slug, None, boot).await) };
+        let reply = rt.block_on(until_stopped(leased))?;
         let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
         let _ = writeln!(std::io::stdout(), "{line}");
         match reply {
