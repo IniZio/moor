@@ -1,18 +1,14 @@
-//! One agent process: its own process group, input on stdin and a credential on a pipe, both
-//! written after the spawn, its output read line by line, and the whole group killed when the
+//! One agent process: its own process group, input on stdin written after the spawn, its output read line by line, and the whole group killed when the
 //! watcher is done, so nothing outlives the run.
 
 use std::io::Write as _;
-use std::io::{self, BufRead as _, BufReader, PipeWriter, Read};
-use std::os::fd::OwnedFd;
+use std::io::{self, BufRead as _, BufReader, Read};
 use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use command_fds::{CommandFdExt as _, FdMapping};
-use moor_core::secret::Secret;
 use rustix::process::{kill_process_group, Pid, Signal};
 
 /// How long a process that closed its output may take to exit before its group is killed.
@@ -20,14 +16,6 @@ const EXIT_GRACE: Duration = Duration::from_secs(5);
 
 /// Most bytes kept from one output stream; the rest is read and dropped.
 const MAX_OUTPUT: usize = 1 << 20;
-
-/// A credential and the descriptor the child reads it on.
-pub(super) struct Credential<'a> {
-    /// The credential.
-    pub(super) secret: &'a Secret,
-    /// The descriptor of the pipe's read end in the child.
-    pub(super) fd: i32,
-}
 
 /// The running process's standard output, one line at a time.
 pub(super) struct Lines {
@@ -69,33 +57,22 @@ pub(super) enum Left {
     Stopped,
 }
 
-/// Runs `cmd` in its own process group with `input` on stdin and `credential`, when given, on
-/// its pipe, and hands its output to `watch`. When `watch` returns, any process the group still
+/// Runs `cmd` in its own process group with `input` on stdin and hands its output to `watch`. When `watch` returns, any process the group still
 /// holds is killed. Returns what `watch` returned and the first [`MAX_OUTPUT`] bytes of stderr.
 pub(super) fn supervise<T>(
     mut cmd: Command,
     input: &[u8],
-    credential: Option<Credential<'_>>,
     watch: impl FnOnce(&Lines) -> (T, Left),
 ) -> io::Result<(T, Vec<u8>)> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    let credential = credential
-        .map(|c| pipe_at(&mut cmd, c.fd).map(|pipe| (pipe, c.secret)))
-        .transpose()?;
     let mut child = cmd.spawn()?;
-    // Dropping `cmd` closes this process's copy of the pipe's read end, so a write to a child
-    // that is gone fails instead of blocking.
-    drop(cmd);
     let group = Pid::from_child(&child);
     thread::scope(|scope| {
         let stdin = child.stdin.take();
         scope.spawn(move || stdin.map(|mut stdin| stdin.write_all(input)));
-        if let Some((mut pipe, secret)) = credential {
-            scope.spawn(move || pipe.write_all(secret.expose()));
-        }
         let (tx, rx) = mpsc::channel();
         let stdout = child.stdout.take();
         scope.spawn(move || read_lines(stdout, &tx));
@@ -122,18 +99,6 @@ pub(super) fn supervise<T>(
 )]
 pub(super) fn now() -> Instant {
     Instant::now()
-}
-
-/// Maps a new pipe's read end to `fd` in `cmd`; returns its write end.
-fn pipe_at(cmd: &mut Command, fd: i32) -> io::Result<PipeWriter> {
-    let (reader, writer) = io::pipe()?;
-    let mapping = FdMapping {
-        parent_fd: OwnedFd::from(reader),
-        child_fd: fd,
-    };
-    cmd.fd_mappings(vec![mapping])
-        .map_err(|_| io::Error::other("credential pipe: descriptor in use"))?;
-    Ok(writer)
 }
 
 /// Waits for `child` to exit, at most `limit`; an error from the wait ends it early.

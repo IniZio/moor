@@ -1,42 +1,15 @@
-//! What `/moor login` and `/moor logout` ask of the controller, each as the Slack user it
-//! concerns: enroll and store the secret, or delete it.
+//! What `/moor logout` asks of the controller as the Slack user it concerns: delete the
+//! secret.
 
 use moor_client::ClientError;
-use moor_core::request::{EnrollReq, Request, SecretDeleteReq, SecretSetReq, SecretValue};
+use moor_core::request::{Request, SecretDeleteReq};
 use moor_core::response::{ExitClass, Response};
-use moor_core::secret::Secret;
 use serde_json::Value;
 
 use crate::account::Account;
 
 /// Sends one request to the controller as the Slack user it names.
 pub(crate) type Call<'a> = dyn FnMut(&str, Request) -> Result<Response, ClientError> + 'a;
-
-/// Creates `user`'s moor user when it has none, then stores `token` as its secret for
-/// `account`. The order matters: the controller refuses `secret-set` from a user not yet
-/// enrolled.
-pub(crate) fn store(
-    call: &mut Call<'_>,
-    user: &str,
-    account: Account,
-    token: &Secret,
-) -> Result<(), String> {
-    let name = account.secret()?;
-    send(
-        call,
-        user,
-        Request::Enroll(EnrollReq {
-            identity: None,
-            email: None,
-        }),
-    )?;
-    let set = SecretSetReq {
-        identity: None,
-        name,
-        value: SecretValue::new(token.expose().to_vec()),
-    };
-    send(call, user, Request::SecretSet(set)).map(drop)
-}
 
 /// Deletes `user`'s secret for `account`; whether there was one.
 pub(crate) fn delete(call: &mut Call<'_>, user: &str, account: Account) -> Result<bool, String> {

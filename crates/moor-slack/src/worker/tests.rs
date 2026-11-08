@@ -25,7 +25,6 @@ use crate::command::BoxEvent;
 use moor_core::name::{BoxName, SessionId};
 
 use crate::db::{BoxState, Db, SlackBox};
-use crate::login::TokenCheck;
 use crate::socket::Mention;
 
 fn db(dir: &std::path::Path) -> Db {
@@ -154,16 +153,12 @@ fn with_hooks(
             .push((c.to_owned(), t.to_owned(), text.to_owned()));
         after_post();
     };
-    let mut check_token = |_: &TokenCheck| Ok(());
-    let mut modal = |_: &str, _: &str| {};
     let mut respond = |_: &str, _: &str| {};
     let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         ephemeral: &mut ephemeral,
-        check_token: &mut check_token,
-        modal: &mut modal,
         respond: &mut respond,
         log,
     };
@@ -499,99 +494,3 @@ mod post_first;
 mod refusal_kind;
 mod start_notes;
 mod stop;
-
-/// Links the claude and github tokens in one job, where GitHub refuses its token.
-#[test]
-fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed() {
-    use crate::account::Account;
-    use crate::credentials::SlackUser;
-    use moor_core::secret::Secret;
-
-    let stored = RefCell::new(Vec::new());
-    let mut call = |_: &str, req: Request| {
-        if let Request::SecretSet(set) = &req {
-            stored.borrow_mut().push(set.name.as_str().to_owned());
-        }
-        Ok(Response::ok(req.cmd(), Some(json!({}))))
-    };
-    let mut check_token = |check: &TokenCheck| match check.account {
-        Account::Claude => Ok(()),
-        Account::GitHub => Err("GitHub refused this token: 401. Nothing was stored.".to_owned()),
-    };
-    let shown = RefCell::new(Vec::new());
-    let mut modal =
-        |view: &str, text: &str| shown.borrow_mut().push((view.to_owned(), text.to_owned()));
-    let mut reply = |_: &str, _: &str, _: &str| {};
-    let mut respond = |_: &str, _: &str| {};
-    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
-    let mut fx = Fx {
-        call: &mut call,
-        reply: &mut reply,
-        ephemeral: &mut ephemeral,
-        check_token: &mut check_token,
-        modal: &mut modal,
-        respond: &mut respond,
-        log: &|_| {},
-    };
-    let check = |account, named| TokenCheck {
-        user: SlackUser::parse("U1").unwrap(),
-        account,
-        view_id: "V1".into(),
-        token: Secret::new(b"tok".to_vec()),
-        named,
-    };
-    let both = [check(Account::GitHub, true), check(Account::Claude, true)];
-    super::login::link(&mut fx, &both);
-    super::login::link(&mut fx, &both[1..]);
-    super::login::link(&mut fx, &[check(Account::Claude, false)]);
-    assert_eq!(stored.into_inner(), ["claude", "claude", "claude"]);
-    let want = "GitHub refused this token: 401. Nothing was stored.\nLinked Claude.";
-    assert_eq!(
-        shown.into_inner(),
-        [
-            ("V1".to_owned(), want.to_owned()),
-            ("V1".to_owned(), "Linked Claude.".to_owned()),
-            ("V1".to_owned(), "Linked.".to_owned()),
-        ]
-    );
-}
-
-#[test]
-fn a_both_form_line_that_does_not_name_its_account_gets_the_account_first() {
-    use crate::account::Account;
-    use crate::credentials::SlackUser;
-    use moor_core::secret::Secret;
-
-    let mut call = |_: &str, req: Request| Ok(Response::ok(req.cmd(), Some(json!({}))));
-    let mut check_token = |check: &TokenCheck| match check.account {
-        Account::Claude => {
-            Err("The coordinator is unavailable: no binary. Nothing was stored.".to_owned())
-        }
-        Account::GitHub => Ok(()),
-    };
-    let shown = RefCell::new(Vec::new());
-    let mut modal = |_: &str, text: &str| shown.borrow_mut().push(text.to_owned());
-    let mut reply = |_: &str, _: &str, _: &str| {};
-    let mut respond = |_: &str, _: &str| {};
-    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
-    let mut fx = Fx {
-        call: &mut call,
-        reply: &mut reply,
-        ephemeral: &mut ephemeral,
-        check_token: &mut check_token,
-        modal: &mut modal,
-        respond: &mut respond,
-        log: &|_| {},
-    };
-    let check = |account| TokenCheck {
-        user: SlackUser::parse("U1").unwrap(),
-        account,
-        view_id: "V1".into(),
-        token: Secret::new(b"tok".to_vec()),
-        named: true,
-    };
-    super::login::link(&mut fx, &[check(Account::Claude), check(Account::GitHub)]);
-    let want =
-        "Claude: The coordinator is unavailable: no binary. Nothing was stored.\nLinked GitHub.";
-    assert_eq!(shown.into_inner(), [want]);
-}

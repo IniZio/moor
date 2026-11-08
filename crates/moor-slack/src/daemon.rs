@@ -15,14 +15,11 @@ use crate::api::{Api, BotIdentity};
 use crate::config::{parse_config, Config, CoordinatorAgent};
 use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
-use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
 use crate::dial::Dial;
 use crate::email::Emails;
 use crate::feed::Feed;
-use crate::github::GitHub;
 use crate::identity::{Link, Team};
-use crate::login::{self, Checks, TokenCheck};
 use crate::reports::Reports;
 use crate::secret_file::read_secret;
 use crate::socket;
@@ -57,10 +54,6 @@ pub struct Settings {
     pub proxy_port: Option<u16>,
     /// The PEM certificate of the CA the front Proxy signs with.
     pub proxy_ca_pem: Option<String>,
-    /// The variables that name the egress proxy the front shim gave the daemon, such as
-    /// `HTTPS_PROXY` and `NO_PROXY`, with their values; empty where the front reaches the
-    /// internet directly.
-    pub egress_proxy: Vec<(String, OsString)>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
     /// Set when the daemon is asked to stop: it stops acking events, finishes the request in
@@ -78,8 +71,6 @@ struct Loaded {
     app_token: Secret,
     /// Bot token for posting replies and opening modals.
     bot_token: Arc<Secret>,
-    /// The checked coordinator agent, or why it cannot run.
-    coordinator: Result<Arc<dyn Agent>, String>,
     /// `slack.db`, opened at this build's schema; the Socket Mode thread records mentions in it.
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
@@ -108,7 +99,6 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         api,
         app_token,
         bot_token,
-        coordinator,
         db,
         db_path,
         left,
@@ -133,6 +123,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         jobs: jobs_tx,
         log: Arc::clone(log),
         clock: settings.clock,
+        account_url: cfg.account_url.clone(),
     };
     let socket = recorder.spawn(app_token, roleplay, &settings.stop);
     let feed = Feed {
@@ -147,11 +138,8 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let reports = Reports::beside(&feed);
     let worker = Worker {
         db_path,
-        state_dir: settings.state_dir.clone(),
         api,
         bot_token,
-        coordinator,
-        github: GitHub::new(&cfg.github_api_base),
         link,
         emails,
         log: Arc::clone(log),
@@ -215,7 +203,6 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         api,
         app_token,
         bot_token,
-        coordinator,
         db,
         db_path,
         left,
@@ -257,7 +244,6 @@ fn probe(cfg: &Config, settings: &Settings, log: &Log) -> Result<Arc<dyn Agent>,
     let host = HostEnv {
         home: settings.home.clone(),
         user: settings.user.clone(),
-        egress_proxy: settings.egress_proxy.clone(),
     };
     let c = &cfg.coordinator;
     let binary = c.binary.as_deref();
@@ -299,16 +285,10 @@ fn expand_home(path: &Path, home: Option<&Path>) -> PathBuf {
 struct Worker {
     /// Path of `slack.db`; the worker opens its own connection.
     db_path: PathBuf,
-    /// The front's state dir, which holds the token files.
-    state_dir: PathBuf,
     /// Web API client.
     api: Arc<Api>,
     /// Bot token for posting replies.
     bot_token: Arc<Secret>,
-    /// The checked coordinator agent, or why it cannot run.
-    coordinator: Result<Arc<dyn Agent>, String>,
-    /// GitHub, which checks a pasted token.
-    github: GitHub,
     /// The controller; each request opens its own connection and speaks for one Slack user.
     link: Link,
     /// Adds the profile email to the requests that enroll a user.
@@ -340,24 +320,6 @@ impl Worker {
                 (self.log)(&format!("slack: ephemeral failed: {e}"));
             }
         };
-        let mut check_token = |check: &TokenCheck| {
-            let claude = self.coordinator.as_ref();
-            let claude = claude
-                .map(|c| &**c as &dyn CredentialCheck)
-                .map_err(String::as_str);
-            let checks = Checks {
-                claude,
-                github: &self.github,
-                state_dir: &self.state_dir,
-            };
-            checks.run(check)
-        };
-        let mut modal = |view_id: &str, text: &str| {
-            let view = login::notice(text);
-            if let Err(e) = self.api.update_view(&self.bot_token, view_id, &view) {
-                (self.log)(&format!("slack: login modal update failed: {e}"));
-            }
-        };
         let mut respond = |url: &str, text: &str| {
             if let Err(e) = self.api.respond(url, text) {
                 (self.log)(&format!("slack: command answer failed: {e}"));
@@ -367,8 +329,6 @@ impl Worker {
             call: &mut call,
             reply: &mut reply,
             ephemeral: &mut ephemeral,
-            check_token: &mut check_token,
-            modal: &mut modal,
             respond: &mut respond,
             log: &*self.log,
         };

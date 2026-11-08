@@ -18,7 +18,6 @@ use crate::command::{failed, start_notes, started, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::error_text::error_text;
-use crate::login::TokenCheck;
 
 /// How often the worker reads `slack.db` for Boxes to start or close.
 const POLL: Duration = Duration::from_millis(500);
@@ -31,10 +30,6 @@ pub(crate) struct Fx<'a> {
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Shows `(channel, user, thread, text)` to that user only, in the thread.
     pub(crate) ephemeral: &'a mut dyn FnMut(&str, &str, &str, &str),
-    /// Checks a pasted token with its account; `Err` is the modal text that says why not.
-    pub(crate) check_token: &'a mut dyn FnMut(&TokenCheck) -> Result<(), String>,
-    /// Replaces the login modal `(view id)` with a notice of `(text)`.
-    pub(crate) modal: &'a mut dyn FnMut(&str, &str),
     /// Answers a slash command through its `(response_url, text)`.
     pub(crate) respond: &'a mut dyn FnMut(&str, &str),
     /// Writes one diagnostic line.
@@ -65,7 +60,6 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::CheckToken(checks)) => login::link(fx, &checks),
             Ok(Job::Unlink {
                 user,
                 account,

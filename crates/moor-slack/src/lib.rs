@@ -20,7 +20,6 @@ mod email;
 mod error_text;
 mod escape;
 mod feed;
-mod github;
 mod identity;
 mod login;
 mod machine;
@@ -37,7 +36,6 @@ mod upload;
 mod watchers;
 mod worker;
 
-pub use coordinator::claude::wiring::EGRESS_PROXY_VARS;
 pub use coordinator::mcp::{close_inherited, serve_tools, ToolSettings};
 pub use daemon::{run, Settings};
 pub use dial::Dial;

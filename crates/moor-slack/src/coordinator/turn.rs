@@ -1,5 +1,5 @@
 //! One coordinator turn: the agent's process with the context on stdin, the check of what it
-//! loaded, and the time limits. Every agent runs through here; none holds a credential.
+//! loaded, and the time limits. Every agent runs through here.
 
 use std::time::Duration;
 
@@ -73,7 +73,7 @@ pub(crate) fn run(
             .collect(),
     };
     let limits = turn.limits;
-    let ran = supervise(cmd, turn.input.as_bytes(), None, |lines| {
+    let ran = supervise(cmd, turn.input.as_bytes(), |lines| {
         spawned(lines.pid);
         watch(agent, lines, &allowed, limits, log)
     });

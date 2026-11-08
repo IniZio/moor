@@ -13,7 +13,7 @@ use crate::worker::Job;
 const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
     `/moor repo add <owner/name>`, `/moor repo remove <owner/name>` and \
     `/moor repo default <owner/name>` change them. \
-    `/moor login [claude|github]` links a token of yours and \
+    `/moor login` says where to link your tokens and \
     `/moor logout [claude|github]` unlinks it. \
     `/moor mcp add` adds an MCP server of yours, `/moor mcp list` shows them and \
     `/moor mcp remove <name>` drops one. \
@@ -40,10 +40,15 @@ enum RepoCmd<'a> {
 
 /// Handles one `/moor` command before its ack. Returns what the ack carries and the
 /// worker's job, if any.
-pub(crate) fn record(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
+pub(crate) fn record(
+    slash: &Slash,
+    db: &Db,
+    now: i64,
+    account_url: Option<&str>,
+) -> rusqlite::Result<(Kept, Option<Job>)> {
     let verb = slash.text.split_whitespace().next().unwrap_or_default();
     if verb.eq_ignore_ascii_case("login") {
-        return login::login(slash, db, now).map(|kept| (kept, None));
+        return Ok((login::login(account_url), None));
     }
     if verb.eq_ignore_ascii_case("mcp") {
         return crate::mcp::slash(slash, db, now);

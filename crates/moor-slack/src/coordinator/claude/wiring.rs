@@ -17,22 +17,12 @@ use crate::coordinator::{ProxyAccess, ToolServer};
 /// The file in a turn's workdir that names the front's tool server.
 pub(super) const MCP_CONFIG: &str = "mcp.json";
 
-/// The working directory of every turn and of the token check, so that no `CLAUDE.md` above
+/// The working directory of every turn, so that no `CLAUDE.md` above
 /// the state dir, such as `~/.claude/CLAUDE.md`, is a project file of the turn.
 pub(super) const CWD: &str = "/";
 
 /// What a turn's `CLAUDE_CODE_OAUTH_TOKEN` holds; the Proxy injects the real token in its place.
 const OAUTH_PLACEHOLDER: &str = "moor-proxy";
-
-/// The variables the front shim names the front's egress proxy in.
-pub const EGRESS_PROXY_VARS: [&str; 6] = [
-    "HTTPS_PROXY",
-    "https_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "NO_PROXY",
-    "no_proxy",
-];
 
 /// `PATH` in a turn's cleared environment.
 const PATH: &str = "/usr/local/bin:/usr/bin:/bin";

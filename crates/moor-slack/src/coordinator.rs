@@ -6,7 +6,7 @@ use std::process::Command;
 
 use moor_core::secret::Secret;
 
-use crate::credentials::{AgentKind, CredentialCheck};
+use crate::credentials::AgentKind;
 
 pub(crate) mod brief;
 pub(crate) mod claude;
@@ -103,7 +103,7 @@ pub(crate) enum Event {
 /// What is specific to one kind of coordinator agent: the command of a turn with its cleared
 /// environment and its way to the front Proxy, how the output reads, and what makes a workdir
 /// unsafe for it.
-pub(crate) trait Agent: CredentialCheck + Send + Sync {
+pub(crate) trait Agent: Send + Sync {
     /// Which agent this is.
     fn kind(&self) -> AgentKind;
 

@@ -22,9 +22,7 @@ use super::{
 mod proxy;
 mod roleplay;
 use super::{AfterAck, Click, Press, Slash, TokenSubmission};
-use crate::account::Account;
 use crate::api::Api;
-use crate::login::Form;
 
 impl Intake for mpsc::Sender<Inbound> {
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
@@ -451,8 +449,8 @@ fn submission(callback: &str, token: &str) -> serde_json::Value {
 }
 
 #[test]
-fn a_login_submission_is_forwarded_with_its_token_trimmed() {
-    let (acks, got) = forwarded(submission("moor_login", "  tok-123\n"));
+fn an_add_server_submission_is_forwarded_with_its_token_trimmed() {
+    let (acks, got) = forwarded(submission("moor_mcp", "  tok-123\n"));
     assert_eq!(acks, vec![r#"{"envelope_id":"env-v"}"#]);
     let want = Inbound::Submission(TokenSubmission {
         envelope_id: "env-v".into(),
@@ -462,18 +460,19 @@ fn a_login_submission_is_forwarded_with_its_token_trimmed() {
         tokens: vec![("token".into(), Secret::new(b"tok-123".to_vec()))],
     });
     assert_eq!(got, vec![want]);
-    let (_, got) = forwarded(submission("other_modal", "tok-123"));
-    assert!(got.is_empty());
+    for other in ["moor_login", "other_modal"] {
+        let (_, got) = forwarded(submission(other, "tok-123"));
+        assert!(got.is_empty(), "{other}");
+    }
 }
 
-/// An intake that asks for the login modal after each ack and records each request.
+/// An intake that asks for the add-server modal after each ack and records each request.
 struct Opening(Arc<AtomicBool>, RefCell<Vec<AfterAck>>);
 
 impl Intake for Opening {
     fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
-        let then = AfterAck::Login {
+        let then = AfterAck::Mcp {
             trigger_id: "t1".into(),
-            form: Form::One(Account::Claude),
         };
         Ok(Kept {
             ack: None,
@@ -493,7 +492,7 @@ impl Intake for Opening {
 }
 
 #[test]
-fn the_login_modal_opens_after_the_ack() {
+fn the_add_server_modal_opens_after_the_ack() {
     let acked = Arc::new(AtomicBool::new(false));
     let seen = Arc::clone(&acked);
     let command = json!({"type":"slash_commands","envelope_id":"env-s","payload":{"text":"login","user_id":"U1","channel_id":"C1","trigger_id":"t1"}});
@@ -507,9 +506,8 @@ fn the_login_modal_opens_after_the_ack() {
     let intake = Opening(acked, RefCell::default());
     session(&url, &intake).expect("session ends cleanly");
     server.join().expect("server");
-    let want = AfterAck::Login {
+    let want = AfterAck::Mcp {
         trigger_id: "t1".into(),
-        form: Form::One(Account::Claude),
     };
     assert_eq!(intake.1.into_inner(), vec![want]);
 }

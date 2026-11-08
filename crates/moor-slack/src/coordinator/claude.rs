@@ -1,49 +1,24 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
-//! turn, the front Proxy it reaches through `HTTPS_PROXY`, the pasted token a login check reads
-//! on a pipe at fd 3, the `mcp.json` that names the front's tool server, the `stream-json`
+//! turn, the front Proxy it reaches through `HTTPS_PROXY`, the `mcp.json` that names the front's tool server, the `stream-json`
 //! events of its output, and the instruction files it would load.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use moor_core::secret::Secret;
 use serde_json::Value;
 
-use super::process::{now, supervise, Credential, Left, Next};
+use super::process::{now, supervise, Left, Next};
 use super::{Agent, Answer, Event, Loaded, TurnSetup};
-use crate::credentials::{AgentKind, CheckError, CredentialCheck};
+use crate::credentials::AgentKind;
 
-/// Oldest Claude Code that reads a login check's token from the descriptor [`TOKEN_FD_VAR`]
-/// names.
+/// Oldest Claude Code the front runs.
 const MIN_VERSION: [u32; 3] = [2, 1, 304];
-
-/// The variable that names a login check's token pipe; it holds the number, never the token.
-const TOKEN_FD_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR";
-
-/// The token pipe's descriptor in the child.
-const TOKEN_FD: i32 = 3;
-
-/// Model of the token check, the cheapest one that answers.
-const CHECK_MODEL: &str = "haiku";
-
-/// Input of the token check.
-const CHECK_INPUT: &str = "Reply OK.";
-
-/// Longest the token check runs before its process group is killed.
-const CHECK_LIMIT: Duration = Duration::from_secs(60);
 
 /// Longest `--version` runs before its process group is killed.
 const VERSION_LIMIT: Duration = Duration::from_secs(30);
-
-/// What the login modal asks for.
-pub(crate) const LOGIN_PROMPT: &str =
-    "Paste the token that `claude setup-token` printed on your machine.";
-
-/// Longest reason taken from Claude's output.
-const MAX_REASON: usize = 300;
 
 /// The host values a cleared environment keeps.
 #[derive(Debug, Clone, Default)]
@@ -52,8 +27,6 @@ pub(crate) struct HostEnv {
     pub(crate) home: Option<PathBuf>,
     /// `USER` of the daemon.
     pub(crate) user: Option<String>,
-    /// The front's egress proxy variables; only the login check takes them, turns use the Proxy.
-    pub(crate) egress_proxy: Vec<(String, OsString)>,
 }
 
 /// A Claude Code binary that passed the version gate.
@@ -65,16 +38,6 @@ pub(crate) struct Claude {
     version: String,
     /// What its cleared environment keeps.
     host: HostEnv,
-}
-
-/// What one process run left behind.
-struct Ran {
-    /// Standard output, up to 1 MiB.
-    stdout: Vec<u8>,
-    /// Standard error, up to 1 MiB.
-    stderr: Vec<u8>,
-    /// True when the run hit its limit and its group was killed.
-    timed_out: bool,
 }
 
 impl Claude {
@@ -97,8 +60,8 @@ impl Claude {
         cmd.arg("--version");
         clear_env(&mut cmd, &host);
         let shown = binary.display();
-        let ran = run(cmd, b"", None, VERSION_LIMIT).map_err(|e| format!("{shown}: {e}"))?;
-        let out = String::from_utf8_lossy(&ran.stdout);
+        let ran = run(cmd, b"", VERSION_LIMIT).map_err(|e| format!("{shown}: {e}"))?;
+        let out = String::from_utf8_lossy(&ran);
         let version = out.split_whitespace().next().unwrap_or_default().to_owned();
         match parse_version(&version) {
             Some(found) if found >= MIN_VERSION => Ok(Self {
@@ -238,52 +201,6 @@ fn loaded(event: &Value) -> Loaded {
     }
 }
 
-impl CredentialCheck for Claude {
-    fn check_format(&self, token: &Secret) -> Result<(), String> {
-        moor_core::secret::check_claude_token(token).map_err(|why| format!("it {why}"))
-    }
-
-    /// Runs one turn on `haiku` with `token` on the pipe and the input "Reply OK.", with
-    /// `config_dir`, through the front's egress proxy; `Ok` when Claude answers without an error.
-    fn check(&self, config_dir: &Path, token: &Secret) -> Result<(), CheckError> {
-        let unavailable = |why: String| CheckError::Unavailable(redact(&why, token));
-        let mut cmd = self.base(CHECK_MODEL, config_dir);
-        cmd.env(TOKEN_FD_VAR, TOKEN_FD.to_string())
-            .envs(self.host.egress_proxy.clone());
-        let shown = self.binary.display();
-        let ran = run(cmd, CHECK_INPUT.as_bytes(), Some(token), CHECK_LIMIT)
-            .map_err(|e| unavailable(format!("{shown}: {e}")))?;
-        if ran.timed_out {
-            let limit = CHECK_LIMIT.as_secs();
-            return Err(unavailable(format!(
-                "Claude Code gave no answer in {limit} s"
-            )));
-        }
-        let stderr = String::from_utf8_lossy(&ran.stderr);
-        let result = result_event(&ran.stdout);
-        let said = result.as_ref().map_or(&*stderr, |r| r.text.as_str());
-        if said.contains("Not logged in") {
-            let version = &self.version;
-            let why = format!("Claude Code {version} did not read the token pipe");
-            return Err(unavailable(why));
-        }
-        match result {
-            Some(result) if !result.is_error => Ok(()),
-            Some(result) => {
-                let status = result.api_error_status.map(|s| format!("API error {s}"));
-                let reason = first_line(&result.text).or(status);
-                let reason = reason.unwrap_or_else(|| "an error with no text".to_owned());
-                Err(CheckError::Refused(redact(&reason, token)))
-            }
-            None => {
-                let last = stderr.lines().rev().find(|l| !l.trim().is_empty());
-                let why = last.map_or("Claude Code printed no result", str::trim);
-                Err(unavailable(why.to_owned()))
-            }
-        }
-    }
-}
-
 /// `major.minor.patch`, when `text` is one.
 fn parse_version(text: &str) -> Option<[u32; 3]> {
     let mut parts = text.split('.').map(str::parse::<u32>);
@@ -305,17 +222,6 @@ struct ResultEvent {
     api_error_status: Option<u64>,
 }
 
-/// The last `result` event in `stdout`.
-fn result_event(stdout: &[u8]) -> Option<ResultEvent> {
-    let text = String::from_utf8_lossy(stdout);
-    let event = text
-        .lines()
-        .rev()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .find(|event| event.get("type").and_then(Value::as_str) == Some("result"))?;
-    Some(parse_result(&event))
-}
-
 /// The fields of one `result` event.
 fn parse_result(event: &Value) -> ResultEvent {
     ResultEvent {
@@ -335,26 +241,11 @@ fn first_line(text: &str) -> Option<String> {
     Some(line.to_owned())
 }
 
-/// `text` cut to [`MAX_REASON`] characters, with `token` replaced wherever it appears.
-fn redact(text: &str, token: &Secret) -> String {
-    let token = String::from_utf8_lossy(token.expose());
-    let text = if token.trim().is_empty() {
-        text.to_owned()
-    } else {
-        text.replace(token.trim(), "[token]")
-    };
-    text.chars().take(MAX_REASON).collect()
-}
-
-/// Runs `cmd` with `input` on stdin and `token`, when given, on a pipe at [`TOKEN_FD`], and
-/// collects its output. At `limit` the whole process group is killed.
-fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> io::Result<Ran> {
-    let credential = token.map(|secret| Credential {
-        secret,
-        fd: TOKEN_FD,
-    });
+/// Runs `cmd` with `input` on stdin and collects its output. At `limit` the whole process
+/// group is killed.
+fn run(cmd: Command, input: &[u8], limit: Duration) -> io::Result<Vec<u8>> {
     let deadline = now() + limit;
-    let ((stdout, timed_out), stderr) = supervise(cmd, input, credential, |lines| {
+    let ((stdout, _), _) = supervise(cmd, input, |lines| {
         let mut out = Vec::new();
         loop {
             match lines.next(deadline) {
@@ -367,11 +258,7 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
             }
         }
     })?;
-    Ok(Ran {
-        stdout,
-        stderr,
-        timed_out,
-    })
+    Ok(stdout)
 }
 
 mod instructions;

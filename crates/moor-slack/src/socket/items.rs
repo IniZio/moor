@@ -6,8 +6,6 @@ use std::fmt;
 use moor_core::secret::Secret;
 use serde_json::Value;
 
-use crate::login::Form;
-
 /// A `/moor` slash command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Slash {
@@ -79,14 +77,7 @@ pub(crate) struct Kept {
 /// Work the socket thread does right after an ack, because it cannot wait for the worker.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum AfterAck {
-    /// Open the login modal with this trigger, which Slack honours for 3 s.
-    Login {
-        /// The command's trigger id.
-        trigger_id: String,
-        /// What the modal asks for.
-        form: Form,
-    },
-    /// Open the add-server modal with this trigger.
+    /// Open the add-server modal with this trigger, which Slack honours for 3 s.
     Mcp {
         /// The command's trigger id.
         trigger_id: String,

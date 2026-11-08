@@ -41,14 +41,6 @@ impl Account {
         }
     }
 
-    /// What the login modal asks this account's user to paste.
-    pub(crate) const fn login_prompt(self) -> &'static str {
-        match self {
-            Self::Claude => crate::coordinator::claude::LOGIN_PROMPT,
-            Self::GitHub => "Paste the output of `gh auth token` from your machine.",
-        }
-    }
-
     /// The account called `word`.
     pub(crate) fn parse(word: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|account| account.name() == word)
