@@ -25,7 +25,7 @@ fn slack_section_parses_with_default_api_base() {
     assert_eq!(s.app_token_file, std::path::PathBuf::from("/x/app"));
     assert_eq!(s.bot_token_file, std::path::PathBuf::from("/x/bot"));
     assert_eq!(s.api_base, "https://slack.com/api");
-    assert_eq!(s.github_api_base, "https://api.github.com");
+    assert_eq!(s.account_url, None);
     let s = parse_config("s.yaml", &slack_with("api_base: http://127.0.0.1:9000\n"))
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(s.api_base, "http://127.0.0.1:9000");
@@ -60,20 +60,20 @@ fn slack_api_base_must_be_https_or_loopback_without_trailing_slash() {
 }
 
 #[test]
-fn the_github_api_base_is_checked_like_the_api_base() {
+fn the_account_url_is_checked_like_the_api_base() {
     let s = parse_config(
         "s.yaml",
-        &slack_with("github_api_base: http://localhost:9\n"),
+        &slack_with("account_url: https://moor.example.com\n"),
     )
     .unwrap();
-    assert_eq!(s.github_api_base, "http://localhost:9");
+    assert_eq!(s.account_url.as_deref(), Some("https://moor.example.com"));
     for base in [
-        "http://api.github.com",
+        "http://moor.example.com",
         "ftp://x",
-        "https://api.github.com/",
+        "https://moor.example.com/",
     ] {
-        let e = err(&slack_with(&format!("github_api_base: {base}\n")));
-        assert_eq!(e.path, "github_api_base", "{base}");
+        let e = err(&slack_with(&format!("account_url: {base}\n")));
+        assert_eq!(e.path, "account_url", "{base}");
     }
 }
 

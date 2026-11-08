@@ -19,11 +19,6 @@ pub(crate) const MCP_CALLBACK: &str = "moor_mcp";
 /// The add modal's `private_metadata`, which tells a submission from a login one.
 pub(crate) const MCP_FORM: &str = "mcp";
 
-/// True for the `private_metadata` of a modal this module handles.
-pub(crate) fn owns(account: &str) -> bool {
-    account == MCP_FORM || account.starts_with(oauth::FINISH_PREFIX)
-}
-
 /// Shown under the key input.
 const KEY_HINT: &str = "Bearer token or API key. Visible while you type, only to you.";
 

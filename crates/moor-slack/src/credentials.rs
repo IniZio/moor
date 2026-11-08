@@ -1,13 +1,10 @@
-//! Each person's agent credential: what it looks like and how to check it before the front
-//! stores it in the vault belongs to the agent, behind [`CredentialCheck`]. Each user also has
-//! their own config dir for that agent under the state dir.
+//! The agent a person's turns run on, the Slack user ids the front acts for, and each user's
+//! own config dir for that agent under the state dir.
 
 use std::fs::{self, DirBuilder};
 use std::io;
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
-
-use moor_core::secret::Secret;
 
 /// The agent a credential belongs to; its name is a path component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,25 +27,6 @@ impl AgentKind {
             Self::Claude => "Claude",
         }
     }
-}
-
-/// Why a check did not accept a credential.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum CheckError {
-    /// The agent answered with an error; the text is its first line.
-    Refused(String),
-    /// The check could not ask the agent at all; the text says why.
-    Unavailable(String),
-}
-
-/// How one agent checks a credential before the front stores it.
-pub(crate) trait CredentialCheck {
-    /// Why `credential` cannot be this agent's credential, found without asking the agent.
-    fn check_format(&self, credential: &Secret) -> Result<(), String>;
-
-    /// Asks the agent once whether it takes `credential`, with `config_dir` as the agent's
-    /// own config dir for this user.
-    fn check(&self, config_dir: &Path, credential: &Secret) -> Result<(), CheckError>;
 }
 
 /// A Slack user id checked to be safe as one path component: `U` or `W`, then 1 to 31

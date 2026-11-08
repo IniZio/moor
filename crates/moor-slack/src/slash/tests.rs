@@ -19,7 +19,7 @@ fn slash(envelope_id: &str, user: &str, channel: &str, text: &str) -> Slash {
 
 /// Records `s`; returns the ack text and the job.
 fn run(db: &Db, s: &Slash) -> (String, Option<Job>) {
-    let (kept, job) = record(s, db, 1_000).unwrap();
+    let (kept, job) = record(s, db, 1_000, Some("https://moor.example.com")).unwrap();
     assert_eq!(kept.then, None);
     let ack = kept.ack.unwrap();
     (ack["text"].as_str().unwrap().to_owned(), job)

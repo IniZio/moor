@@ -16,10 +16,10 @@ pub struct Config {
     /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
     #[serde(default = "default_api_base")]
     pub api_base: String,
-    /// GitHub API base URL without a trailing `/`, where a pasted `gh auth token` is checked;
-    /// `https://` or loopback `http://` only.
-    #[serde(default = "default_github_api_base")]
-    pub github_api_base: String,
+    /// The gate's public URL without a trailing `/`, where people link their tokens;
+    /// `/moor login` sends them there. `https://` or loopback `http://` only.
+    #[serde(default)]
+    pub account_url: Option<String>,
     /// Minutes a Box's turn may run before its thread gets a line saying so, and again after
     /// each further so many minutes of the same turn.
     #[serde(default = "default_long_turn_minutes")]
@@ -117,11 +117,6 @@ fn default_api_base() -> String {
     "https://slack.com/api".to_owned()
 }
 
-/// The public GitHub API.
-fn default_github_api_base() -> String {
-    "https://api.github.com".to_owned()
-}
-
 /// Parses and validates a front config document.
 ///
 /// # Errors
@@ -154,7 +149,9 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
         }
     }
     base_ok("api_base", &cfg.api_base)?;
-    base_ok("github_api_base", &cfg.github_api_base)?;
+    if let Some(url) = &cfg.account_url {
+        base_ok("account_url", url)?;
+    }
     if cfg.long_turn_minutes == 0 {
         return Err(("long_turn_minutes", "must be at least 1"));
     }

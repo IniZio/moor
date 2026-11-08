@@ -5,7 +5,6 @@ use serde_json::Value;
 
 use super::roleplay::roleplayed;
 use super::{Click, Mention, Press, Roleplay, Slash, TokenSubmission};
-use crate::login::LOGIN_CALLBACK;
 use crate::mcp::MCP_CALLBACK;
 use crate::stop::STOP_ACTION;
 
@@ -23,14 +22,14 @@ pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
     })
 }
 
-/// The login modal inside an `interactive` `view_submission` envelope, if it is one.
+/// The add-server modal inside an `interactive` `view_submission` envelope, if it is one.
 pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
     let payload = envelope.get("payload")?;
     if payload.get("type")?.as_str()? != "view_submission" {
         return None;
     }
     let view = payload.get("view")?;
-    if ![LOGIN_CALLBACK, MCP_CALLBACK].contains(&view.get("callback_id")?.as_str()?) {
+    if view.get("callback_id")?.as_str()? != MCP_CALLBACK {
         return None;
     }
     let tokens = view

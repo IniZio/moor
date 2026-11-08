@@ -9,7 +9,6 @@
 )]
 
 pub(crate) mod controller;
-pub(crate) mod github_fake;
 mod real;
 pub(crate) mod slack_fake;
 
@@ -23,7 +22,6 @@ use moor_core::controller::PROTOCOL;
 use moor_testkit::ChildGuard;
 
 use controller::FakeController;
-use github_fake::FakeGitHub;
 pub(crate) use real::{front_socket, RealController};
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
@@ -57,8 +55,6 @@ pub(crate) struct Rig {
     root: tempfile::TempDir,
     /// The fake Slack the daemon talks to.
     pub(crate) slack: FakeSlack,
-    /// The fake GitHub API the daemon checks pasted tokens with.
-    pub(crate) github: FakeGitHub,
     /// The daemon process, once spawned.
     daemon: Option<ChildGuard>,
 }
@@ -78,7 +74,6 @@ impl Rig {
         let rig = Self {
             root,
             slack,
-            github: FakeGitHub::start(),
             daemon: None,
         };
         secret_file(&rig.path("app.token"), APP_TOKEN);
@@ -95,9 +90,8 @@ impl Rig {
         std::fs::write(
             self.path("slack.yaml"),
             format!(
-                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\napi_base: {}\ngithub_api_base: {}\n",
+                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\napi_base: {}\naccount_url: https://moor.example.com\n",
                 self.slack.api_base(),
-                self.github.api_base(),
             ),
         )
         .unwrap();

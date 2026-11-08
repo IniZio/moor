@@ -3,7 +3,6 @@
 use moor_core::name::BoxName;
 
 use crate::account::Account;
-use crate::login::TokenCheck;
 use crate::machine::MachineJob;
 use crate::mcp::McpJob;
 use crate::profile::ProfileJob;
@@ -20,8 +19,6 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Check each pasted token and store it in the vault when its account takes it.
-    CheckToken(Vec<TokenCheck>),
     /// Delete `user`'s secret for `account` from the vault and tell the user through
     /// `response_url`.
     Unlink {

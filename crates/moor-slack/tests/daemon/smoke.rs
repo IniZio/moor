@@ -14,7 +14,6 @@ use moor_core::request::{
 use moor_core::response::{ExitClass, Response};
 use moor_core::user::{Identity, SecretName};
 use serde_json::json;
-use std::time::Duration;
 
 use super::support::slack_fake::TEAM;
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
@@ -184,29 +183,30 @@ fn secret_names(front: &Path, user: &str) -> Vec<String> {
 }
 
 #[test]
-fn login_github_through_the_front_fills_that_users_vault_in_a_real_controller_and_no_one_elses() {
+fn logout_through_the_front_empties_only_that_users_vault_in_a_real_controller() {
     let mut rig = Rig::new();
     let _controller = rig.real_controller();
+    let front = rig.front_socket();
+    for user in [USER, OTHER] {
+        enroll(&front, user);
+        let set = Request::SecretSet(SecretSetReq {
+            identity: None,
+            name: SecretName::parse("github").unwrap(),
+            value: SecretValue::new(b"gho_fake_real_vault_5c20e1".to_vec()),
+        });
+        assert_eq!(ask_as(&front, user, set).class, ExitClass::Ok);
+    }
     rig.spawn_daemon_on_front();
     rig.slack.wait_connected();
-    let front = rig.front_socket();
     rig.slack
-        .send_slash("env-1", super::support::CHANNEL, USER, "login github");
-    let opened = rig
-        .slack
-        .wait_views("views.open", 1, Duration::from_secs(10));
-    let token = "gho_fake_real_vault_5c20e1";
-    rig.slack
-        .send_submission("env-2", USER, &opened[0]["view"], token);
-    let updated = rig
-        .slack
-        .wait_views("views.update", 1, Duration::from_secs(20));
-    let text = updated[0]["view"]["blocks"][0]["text"]["text"]
-        .as_str()
-        .unwrap();
-    assert_eq!(text, "Linked.", "{}", rig.stderr());
-    assert_eq!(secret_names(&front, USER), ["github"]);
-    enroll(&front, OTHER);
-    assert_eq!(secret_names(&front, OTHER), Vec::<String>::new());
-    assert!(!rig.stderr().contains(token), "the token reached the log");
+        .send_slash("env-1", super::support::CHANNEL, USER, "logout github");
+    let answers = rig.slack.wait_responses(1);
+    assert_eq!(
+        answers[0].1,
+        "Unlinked your GitHub token.",
+        "{}",
+        rig.stderr()
+    );
+    assert_eq!(secret_names(&front, USER), Vec::<String>::new());
+    assert_eq!(secret_names(&front, OTHER), ["github"]);
 }

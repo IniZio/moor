@@ -14,16 +14,16 @@ use crate::email::Emails;
 use crate::identity::Link;
 use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Job};
-use crate::{login, mcp, slash, Log};
+use crate::{mcp, slash, Log};
 
 /// The Socket Mode thread's intake: records each mention and command in `slack.db`, then
 /// queues its job, all before Slack gets the ack.
 pub(super) struct Recorder {
     /// The Socket Mode thread's own `slack.db` connection.
     pub(super) db: Db,
-    /// Web API client, for the login modal.
+    /// Web API client, for the add-server modal.
     pub(super) api: Arc<Api>,
-    /// Bot token for opening the login modal.
+    /// Bot token for opening the add-server modal.
     pub(super) bot_token: Arc<Secret>,
     /// The controller, which the add-server modal asks as the Slack user before its ack.
     pub(super) link: Link,
@@ -35,6 +35,8 @@ pub(super) struct Recorder {
     pub(super) log: Log,
     /// The current time in unix seconds.
     pub(super) clock: fn() -> i64,
+    /// Where `/moor login` sends people to link their tokens.
+    pub(super) account_url: Option<String>,
 }
 
 impl Recorder {
@@ -62,8 +64,10 @@ impl Intake for Recorder {
             Inbound::Mention(mention) => {
                 worker::record(&mention, &self.db, now).map(|job| (Kept::default(), job))
             }
-            Inbound::Slash(slash) => slash::record(&slash, &self.db, now),
-            Inbound::Submission(sub) if mcp::owns(&sub.account) => {
+            Inbound::Slash(slash) => {
+                slash::record(&slash, &self.db, now, self.account_url.as_deref())
+            }
+            Inbound::Submission(sub) => {
                 let mut call = |user: &str, req| self.emails.call(&self.link, &self.db, user, req);
                 let ack = mcp::submission(&sub, &mut call);
                 Ok((
@@ -74,15 +78,6 @@ impl Intake for Recorder {
                     None,
                 ))
             }
-            Inbound::Submission(sub) => login::submission(sub, &self.db, now).map(|(ack, job)| {
-                (
-                    Kept {
-                        ack: Some(ack),
-                        then: None,
-                    },
-                    job,
-                )
-            }),
             Inbound::Click(click) => {
                 worker::click(&click, &self.db, now).map(|job| (Kept::default(), job))
             }
@@ -104,10 +99,8 @@ impl Intake for Recorder {
     /// Opens the login modal on the Socket Mode thread, because its trigger expires 3 s
     /// after the command and the worker may be busy with a Box start.
     fn after_ack(&self, then: AfterAck) {
-        let (trigger_id, form) = match then {
-            AfterAck::Login { trigger_id, form } => (trigger_id, login::form(form)),
-            AfterAck::Mcp { trigger_id } => (trigger_id, mcp::form()),
-        };
+        let AfterAck::Mcp { trigger_id } = then;
+        let form = mcp::form();
         if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
             (self.log)(&format!("slack: modal failed: {e}"));
         }
