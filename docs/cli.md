@@ -1,355 +1,199 @@
-# Command reference
+# CLI
 
-The `moor` CLI is a dev tool. It sends one request to moor's core and prints
-the result. `moor help <command>` prints the full flag list of a command.
+`moor` is the operator's and contributor's tool. `moor-machine-agent` runs on
+each paired machine. `moor help COMMAND` and `moor-machine-agent help COMMAND`
+print every flag.
 
-## Where a command runs
+## moor
 
-A command runs on a controller when one is configured. moor picks the first
-of these that is set:
+### Where a command runs
 
-1. The `MOOR_CONTROLLER` environment variable, which holds a socket path.
+A command goes to a controller when one is configured. moor picks the first of
+these that is set:
+
+1. `MOOR_CONTROLLER`, a socket path.
 2. `controller.ssh` in the user config. moor runs
-   `ssh -T <destination> moor controller attach`.
-3. `controller.socket` in the user config.
+   `ssh -T DESTINATION moor controller attach`.
+3. `controller.socket` in the user config. `moor up` sets it.
 
-With none of them set, the command runs in its own process against the local
-state directory.
+With none set, the command runs in its own process on the local state.
 
-When the client of a `moor run` goes away, the controller stops streaming the
-command and records the run as interrupted. The command in the Box gets no
-hangup, so it can keep running until it next writes output. On Ctrl-C, moor
-asks the controller to stop the run, waits for its answer, and exits 130. A
-second Ctrl-C exits 130 at once.
+The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
+`$XDG_STATE_HOME/moor`, and `~/.local/state/moor`.
 
-## Global flags
+### Global flags
 
 | Flag | Effect |
 | --- | --- |
 | `--json` | Print one JSON envelope on stdout. |
-| `--quiet` | Suppress warnings in text output. |
+| `--quiet` | Leave warnings out of text output. |
 | `--state-dir DIR` | Use `DIR` as the state directory. |
 
-The state directory holds `moor.db`. It is the first of `--state-dir`,
-`$MOOR_STATE_DIR`, `$XDG_STATE_HOME/moor`, and `$HOME/.local/state/moor`.
-
-## Box commands
+### Boxes
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME` with its machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--prompt` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
-| `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
-| `moor inspect NAME` | Shows one Box so you can tell working from stuck: its agent state, why it looks stuck, the agent's latest messages and the end of its pane. `--lines N` sets the pane lines (40 by default, at most 200) and `--said N` the messages (5 by default, at most 20). |
-| `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
-| `moor exec NAME [-i] -- CMD...` | Runs a command in the Box with stdin, stdout and stderr passed byte for byte, and exits with its exit code. See [Byte pipe](#byte-pipe-moor-exec). |
+| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME`, or attaches to the open Box of that name. |
+| `moor show [NAME]` | Shows all open Boxes, or one in detail. `list` is an alias. |
+| `moor inspect NAME` | Shows the agent's state, why it looks stuck, its latest messages, and the end of its terminal. |
+| `moor run NAME CMD...` | Runs a command in the Box's work tree and records the run. |
+| `moor exec NAME CMD...` | Runs a command with stdin, stdout, and stderr passed byte for byte, and exits with its code. Records no run. |
+| `moor steer NAME [TEXT]` | Sends text, a menu choice, or an interrupt to the agent. |
 | `moor wait NAME` | Waits until the Box reaches a state. |
-| `moor wait-events NAME...` | Waits for events from one or more Boxes. |
-| `moor steer NAME TEXT` | Sends text to the Box's agent. `--menu N` sends a menu choice instead. |
+| `moor wait-events BOXES...` | Waits for events from one or more Boxes. |
+| `moor cp NAME SRC DEST` | Copies a file or directory out of the Box to the host. |
 | `moor end NAME` | Ends the agent Session and keeps the Box open. |
-| `moor cp NAME SRC DEST` | Copies a file or directory from the Box's machine to the host. |
-| `moor sleep NAME` | Puts the Box's machine to sleep. |
-| `moor wake NAME` | Wakes a sleeping Box. |
-| `moor close NAME` | Closes the Box and releases its machine. |
-| `moor retry NAME` | Runs the setup of a Box whose setup failed again. |
-| `moor close-failed` | Closes every Box of yours whose setup failed. |
-| `moor login --server URL` | Signs you in to a moor server in the browser and saves the sign-in for every local moor client. `--no-browser` prints the address and reads the address the browser ends on, pasted. `URL` is the server's origin or its `/mcp` address; `--server` defaults to `MOOR_SERVER`. See [Sign in once](mcp.md#sign-in-once). |
-| `moor logout --server URL` | Forgets the sign-in to that server and revokes it at the identity provider. |
-| `moor status [--server URL]` | Shows who is signed in to that server, or to each one, and how long the access token has left. It never prints a token. |
-| `moor token --server URL` | Prints a fresh access token, refreshing it first when needed. `--headers` prints `{"Authorization":"Bearer …"}` for a headers helper. Exits 1 when you are not signed in. |
+| `moor sleep NAME`, `moor wake NAME` | Puts the Box to sleep, or wakes it. |
+| `moor retry NAME` | Runs the setup of a Box in `setup_failed` again. |
+| `moor close NAME` | Closes the Box and releases its VM. |
+| `moor close-failed` | Closes every Box of yours in `setup_failed`. |
 
-### `moor start` flags
+`moor start` flags:
 
 | Flag | Effect |
 | --- | --- |
-| `--prompt TEXT` | The agent's first prompt. Without it the agent starts waiting for a prompt. |
+| `--repo OWNER/NAME` | The repo to clone, as `OWNER/NAME` or a github.com URL. The default is the current checkout's `origin`. |
+| `--also OWNER/NAME` | Another repo to clone beside the first. Repeat for more. Replaces `box.also`. |
+| `--prompt TEXT` | The agent's first prompt. Without it, the agent waits. |
 | `--issue REF` | An issue reference for the Box. |
-| `--base REF` | The ref on GitHub the Box branch starts from. The default is the repo's default branch. |
-| `--repo OWNER/NAME\|URL` | The GitHub repo the Box clones, as `OWNER/NAME` or a github.com URL, instead of the current checkout's `origin`. |
-| `--also OWNER/NAME\|URL` | Another repo the Box clones beside the first one. Repeat it for more. Any use replaces `box.also` from your config. |
+| `--base REF` | The ref to branch from. The default is the repo's default branch. |
+| `--node NAME` | A node of yours, or a shared one, in place of your default. |
 | `--model MODEL` | The agent model. |
-| `--node NAME` | One of your nodes, or a shared one, in place of your default. See [Nodes](nodes.md). |
-| `--no-agent` | Do not start an agent. |
+| `--cold` | Set up from scratch, past any saved setup. |
+| `--no-agent` | Start no agent. |
 | `--resume` | Resume the agent's stored session. |
-| `--parent ID` | The parent Session. The default is `$MOOR_SESSION`. |
+| `--parent ID` | The parent Session. The default is `MOOR_SESSION`. |
 
-Without `--repo`, the CLI reads `git remote get-url origin` in its own
-directory and sends that repo as `OWNER/NAME`. It refuses an `origin` that is
-not a github.com repo. Outside a checkout it sends no repo, and the Box starts
-with an empty workdir. The controller never reads a directory on its host for
-a start.
+A start reads the repo from GitHub with the requester's `github` secret. Changes
+that are not pushed are not in the Box, and the CLI warns about them. The start
+refuses when the user lacks a secret the Box needs, and names each one.
 
-### Several repos in one Box
+Other flags:
 
-`--also` lists repos the Box clones beside the first, in order; the first stays
-primary and names the branch. Without `--also`, a start uses `box.also` from
-your config. MCP `start_box` takes the same list as `also`, where an empty list
-means none. Before any machine exists, the controller reads each listed repo's
-`.moor.yaml` on its default branch. It refuses a repo your GitHub account
-cannot push to, naming it, and refuses a repo listed twice or two repos with
-the same name, since each gets a folder of that name. Starting an open Box
-with a different list is refused: its repos stay as it started. A
-`.moor.yaml` cannot list repos.
+| Command | Flag | Effect |
+| --- | --- | --- |
+| `show` | `--agent`, `--events N`, `--reports`, `--pane` | Add the agent state, the last `N` events, the Reports, or the end of the terminal. |
+| `show` | `--session ID` | Show one Session and its child Sessions. |
+| `inspect` | `--lines N`, `--said N` | Terminal lines, 40 by default and 200 at most. Agent messages, 5 by default and 20 at most. |
+| `run` | `--record NAME` | Record the run as the gate `NAME` for `moor gate check`. |
+| `exec` | `-i` | Forward stdin from a terminal too. |
+| `steer` | `--menu N`, `--interrupt` | Send a menu choice, or the agent's interrupt key. |
+| `wait` | `--for STATE`, `--timeout S` | `idle`, `done`, `input`, or `run`. 1800 seconds by default. |
+| `wait-events` | `--kind KIND`, `--all`, `--since N`, `--timeout S` | Match kinds, wait for every Box, start after an event id. |
+| `close`, `close-failed` | `--force` | Close despite commits that are not pushed or files that are not committed. That work is lost. |
 
-Before any machine exists, the controller reads these from the GitHub API
-with the requester's own `github` secret:
-
-- the commit that `--base` names, or the default branch's commit
-- `.moor.yaml`, `.mcp.json`, and `.claude/settings.json` at that commit
-- the name of the token's account
-
-moor keeps that `.moor.yaml` in the Box's row, and every later command uses
-that copy. The controller refuses a repo that the account cannot read. The Box branch is `moor/ID-NAME`, named by
-the Box id, so a reused name starts a new branch; `--base` names a ref to start from, such as an
-earlier Box's branch. An account that cannot push gets a warning.
-Commits in the Box use the account's profile name, or its login, and its
-GitHub noreply address.
-
-The start works from what is on GitHub. Uncommitted or unpushed changes in
-your checkout are not in the Box, and the CLI warns about them. A branch with
-no upstream counts as unpushed, because without `--base` the Box starts from
-the default branch.
-
-The Box clones its repo itself, through its Proxy, from
-`https://github.com/OWNER/NAME.git`. The clone is partial
-(`--filter=blob:none`). It has the full history and fetches file contents when
-a command first needs them. A retried setup keeps the Box branch where it is,
-so it never resets commits made in the Box. The Proxy adds the user's token to a
-fetch of any GitHub repo that token can read, but to a push of the Box's repos
-only. moor does not support Git LFS objects.
-
-Work leaves the Box when the agent runs `git push origin HEAD:refs/heads/BRANCH`.
-To get it into your own checkout, run `git fetch origin BRANCH` there.
-
-### `moor show` flags
-
-| Flag | Effect |
-| --- | --- |
-| `--events N` | Add the last `N` events. |
-| `--agent` | Add the agent state: `starting`, `working`, `needs_input`, `idle`, `exited`, `unknown`, or `waiting`. `waiting` means the agent ended its turn but waits on background work it started, such as a backgrounded command, a monitor or a subagent; the Box counts as working, and `agent.waiting_on` names each piece. After 10 minutes with no hook report, moor looks for that work's processes in the Box; when it can see that none is left, the agent reads `idle` and the Box can sleep. |
-| `--reports` | Add the Box's reports. |
-| `--pane` | Add the end of the agent's terminal pane. |
-| `--session ID` | Show one Session and its child Sessions instead of a Box. |
-
-### What `moor show` reports about the machine
-
-While a Box starts, one command inside it reads how many CPUs it can run on
-(`nproc`) and its total memory (`MemTotal` in `/proc/meminfo`). moor runs that
-command in the same exec as the clone, so it adds no call to the Box.
-`moor show NAME --json` and the reply of a start put the result under
-`driver`. The text form prints a `machine:` line after the `box:` line.
-
-| Field | Meaning |
-| --- | --- |
-| `driver.cpus` | CPUs the Box can run on, as `nproc` counts them. |
-| `driver.mem_mib` | Total memory in MiB. The kernel keeps some of the memory a provider gives, so the value is a little under the size asked for. |
-
-Both fields are `null` in these cases:
-
-- A start has not read them yet.
-- The Box printed nothing usable.
-- The Box has no repo and no commit author, so it runs no clone exec.
-
-A Box started again on a new machine records that machine's numbers.
-
-### `moor run` flags
-
-The command runs under bash when the Box has bash, else under sh. One `CMD`
-argument is shell text, so `moor run NAME -- 'make lint | tee log'` works.
-
-`moor run` runs the command in the Box checkout as it is. moor never copies
-a host checkout into a Box.
-
-| Flag | Effect |
-| --- | --- |
-| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or changes a tracked file, the run fails with "the Box HEAD moved during the record run". New untracked files do not fail it. |
-
-### Byte pipe: `moor exec`
-
-`moor exec` is a transport, not a run. It passes bytes both ways untouched,
-as `ssh -T -e none` does, and keeps no run record or log. Once the command
-ends, the Box gets one `exec_ran` event with the command, its exit code and
-whether it timed out. It takes no Box lock and wakes an asleep Box first.
-
-- Stdin goes to the command until it ends, and then the command's stdin
-  closes. A terminal's stdin goes only with `-i`.
-- Stdout and stderr come back apart and unaltered. There is no terminal,
-  banner, marker or escape character.
-- moor exits with the command's exit code. moor's own failure, or a command
-  killed before it exited, exits 255.
-- When the client goes away, the command is hung up and killed.
-
-The command runs as `moor run` runs it: one `CMD` argument is shell text.
-`--tty` is not supported. A tool that reaches a machine through a command can
-use it, for example `hc machine add --name NAME --via 'moor exec NAME --'`.
-
-### `moor wait` flags
-
-| Flag | Effect |
-| --- | --- |
-| `--for STATE` | `idle`, `done`, `input`, or `run`. The default is `idle`. `idle`, `done`, and `input` all return when the agent is not working and no run is in progress. `run` returns when no run is in progress. |
-| `--timeout S` | Give up after `S` seconds. The default is 1800. |
-
-### `moor wait-events` flags
-
-| Flag | Effect |
-| --- | --- |
-| `--kind KIND` | Match only this event kind. You can repeat it. |
-| `--all` | Wait for every Box instead of any one. |
-| `--since N` | Only events after event id `N`. |
-| `--timeout S` | Give up after `S` seconds. |
-
-### `moor close` flags
-
-| Flag | Effect |
-| --- | --- |
-| `--force` | Close even when the Box has unsaved work. Unsaved work is commits that are on no branch on GitHub, and uncommitted files. You lose that work. Without `--force`, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. `--force` also stops a start that is still acquiring its machine: the boot is cancelled and what it made is released. If the controller restarts first, the next controller finishes the close. `--force` also interrupts a start that is running the Box's setup: the setup is recorded as failed with `setup interrupted by a forced close`, then the Box closes. If that start has not stopped after 30 seconds, the close is refused and the Box is left as it is. |
-
-moor creates no host worktree for a Box, so `moor close` checks only the
-Box checkout for unsaved work.
-
-### `moor retry`
-
-`moor retry NAME` runs the Box's setup again on the machine it already has,
-and prints the Box as a start does. When the provider keeps checkpoints, the
-Box moves to a new machine forked from the newest checkpoint at or below the
-line that failed, and only the lines after that checkpoint run again. Only a
-checkpoint of the Box's own commit that one of your own Boxes saved is used. It refuses
-a Box whose setup did not fail, and says which state the Box is in. After a successful retry the agent starts
-as it does on a first start, including for a Box whose setup was interrupted by
-a controller restart. If setup fails again, the Box stays in `setup_failed` and
-no agent starts. A working Box that lost its machine and failed its clone, a
-`setup:` line or its agent install on the new one is in `setup_failed` too, and
-`moor retry` resumes it from its deepest checkpoint. A retry runs the agent
-install again. moor retries a failed step by itself in one case. A line that fails over a
-[checkpoint of another commit](config.md#setup-checkpoints) gets one start from scratch.
-
-### `moor close-failed`
-
-`moor close-failed` closes every Box you may act on whose setup failed, then
-lists each Box it closed and each it could not close, with the error. It prints
-`no setup_failed Boxes` when there is none. It exits 1 when any close failed.
-`--force` closes despite unsaved work, as `moor close --force` does.
-
-`moor retry` and `moor close-failed` act only on Boxes whose lifecycle is
-`setup_failed`. A failed clone, `setup:` line or agent install puts a Box
-there, with no agent, and its `setup_failed` event names the step and its
-error, such as `agent install: exit 1` and the installer's last output lines.
-That holds for a new Box and for a working Box that lost its machine and failed
-a step on the new one. The working Box's old agent Session ends, and
-`moor retry` starts a new one.
-
-### `moor cp` paths
-
-`SRC` is a path on the Box. moor resolves a relative `SRC` from the Box's
-workdir. A relative `SRC` must not contain `..`. `DEST` is a path on the host,
-relative to the current directory.
-
-When `DEST` is a directory, the copy goes inside it. Only you can read a copied
-file (mode 0600) or a copied directory (mode 0700). A copied file replaces a
-file already at the destination. Nothing replaces a directory there, and a
-copied directory replaces nothing, not even an empty directory. moor refuses a
-`SRC` that is or holds a symlink or a special file. It also refuses a `DEST`
-that is a symlink. A failed copy leaves nothing at the destination. If moor is
-killed during a copy, it can leave a `.moor-cp-*` directory beside the
-destination. The next copy there removes any such directory older than an
-hour.
-
-## Session commands
+### Sessions
 
 | Command | What it does |
 | --- | --- |
-| `moor session open NAME --seed TEXT` | Starts a new agent Session on an open Box. `--seed-file PATH` reads the first prompt from a file. |
-| `moor session open --host --workdir DIR` | Opens a host Session in `DIR`, with no Box. `--agent NAME` and `--agent-session-id ID` set its agent. A host Session belongs to the user who opens it. |
-| `moor session set ID` | Changes the `--agent` or `--agent-session-id` recorded on a host Session. |
+| `moor session open NAME --seed TEXT` | Starts a new agent Session on an open Box. `--seed-file PATH` reads the prompt from a file. |
+| `moor session open --host --workdir DIR` | Opens a host Session with no Box. `--agent` and `--agent-session-id` set its agent. |
+| `moor session set ID` | Changes the agent or agent session recorded on a host Session. |
 | `moor session end ID` | Ends a host Session. |
 
-`moor session open` takes `--parent ID`, which defaults to `$MOOR_SESSION`.
+### Your user
 
-## User commands
-
-These commands act as your `local:<uid>` identity through a running
-controller.
+These act as your local identity through the controller.
 
 | Command | What it does |
 | --- | --- |
-| `moor user enroll` | Creates your user, or shows the one you have. |
-| `moor user secret set NAME` | Stores secret `NAME`. moor reads the value from stdin, never from the arguments. |
-| `moor user secret rm NAME` | Deletes secret `NAME`. |
-| `moor user secret ls` | Lists the names of your secrets. |
-| `moor node ls` | Lists the shared nodes and your own: name, scope, runtime, online or offline since, used and capacity, waiting Boxes and labels. |
-| `moor whoami` | Shows your identity, its user, and that user's linked identities. |
+| `moor user enroll` | Creates your user, or shows it. |
+| `moor user secret set NAME` | Stores a secret, read from stdin. |
+| `moor user secret ls`, `rm NAME` | Lists secret names, or deletes one. |
+| `moor user mcp add NAME URL` | Adds an MCP server of yours. `--header` names the header for its key. |
+| `moor user mcp finish URL`, `ls`, `rm NAME` | Finishes an OAuth sign-in, lists servers, or removes one. |
+| `moor user machine ls`, `status NAME`, `rm NAME` | Lists your machines, asks one for its state, or removes one. |
+| `moor user profile set URL[#REF]`, `show`, `rm` | Sets, shows, or clears your agent profile repo. |
+| `moor user webhook add URL` | Adds a webhook. `--event KIND` and `--header NAME` narrow it. |
+| `moor user webhook setup ID`, `finish ID`, `ls`, `rm ID` | Shows the setup with its key, finishes it, lists, or removes. |
+| `moor whoami` | Shows your identity, its user, and the user's linked identities. |
+| `moor node ls` | Lists the shared nodes and yours, with their load. |
 
-## Other commands
+### The host
 
 | Command | What it does |
 | --- | --- |
-| `moor up [--max-boxes N]` | Sets this host up: checks that crabbox selects a ready provider, writes `~/.config/moor/controller.yaml` and a `local` node in `~/.config/moor/config.yaml`, runs the controller as the systemd user units `moor.socket` and `moor.service`, enrolls you, sets the `claude` and `github` secrets you lack, then runs `moor doctor`. It reads each missing secret from `CLAUDE_CODE_OAUTH_TOKEN` or `GH_TOKEN`, else from a line of stdin. A file that exists is kept, and only a missing `controller` or `nodes` section is added. `--max-boxes` caps the node; without it, one Box per 4 GiB of memory beyond the first 4 GiB. A rerun changes nothing. |
-| `moor down` | Stops and removes the controller's user units. Config, state and secrets stay. |
-| `moor doctor [--public-url URL]` | Checks the setup after install, one line per check: config, controller, crabbox, nodes, your user, one `secret` line for each secret a Box start needs here, and the gate when `--public-url` is given. The secret lines use the repo of the checkout's origin, as `moor start` does, and each missing one carries its own `moor user secret set NAME` fix, plus the `/me/secrets` page when `--public-url` is given. With a controller set, one more `crabbox` line per node runtime says whether that provider's credentials are ready on the controller host; it lists only each failed check's name and hint. Each line is `ok`, `warn` or `fail` with the fix beside it. It exits 0 unless a check failed, and with `--json` it prints a list of `{check, status, detail, fix}`. It only reads. The CLI cannot open stored secrets, so a `set` secret is not verified. |
-| `moor version` | Prints the version, the git commit, and the envelope schema version. |
-| `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that GitHub repo would get, read through GitHub like a start. The default is the current checkout's `origin`. Only the operator may run it. |
-| `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. It does not check that `SHA` exists on origin. |
-| `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, `--parent SESSION` (only events of that Session's child Sessions), and `--follow`. |
-| `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |
-| `moor controller serve --config FILE` | Runs the controller. See [the controller config](config.md#controller-config). |
-| `moor controller attach` | Connects stdin and stdout to the controller socket. `--socket PATH` overrides the socket. |
-| `moor store migrate` | Brings the state store to this moor's latest migration and exits. See [The store database](config.md#the-store-database). |
+| `moor up [--max-boxes N]` | Sets the host up, as [Self-host on one machine](run.md) describes. A rerun changes nothing. |
+| `moor down` | Stops and removes the controller's user units. Config, state, and secrets stay. |
+| `moor doctor [--public-url URL]` | Checks the setup, one `ok`, `warn`, or `fail` line per check, each with its fix. Exits 1 when a check failed. |
+| `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that repo would get. Operator only. |
+| `moor controller serve --config FILE` | Runs the controller. |
+| `moor controller attach [--socket PATH]` | Connects stdin and stdout to the controller socket, for use over ssh. |
+| `moor store migrate` | Brings the store to this release's schema and exits. |
+| `moor store copy --to URL` | Copies the SQLite store into an empty Postgres database and exits. |
+| `moor events` | Prints stored events as JSON lines. `--since`, `--box`, `--kind`, `--parent`, and `--follow` filter them. |
+| `moor gate check SHA NAME` | Exits 0 when a run recorded as `NAME` passed on commit `SHA`. |
+| `moor call` | Runs one JSON request read from stdin. |
+| `moor version` | Prints the version, the commit, and the envelope schema. |
 
-A `moor call` request names the command in `cmd`, in kebab case:
+### A local client of a remote moor
 
-```sh
-echo '{"cmd":"show"}' | moor call
-```
+These sign in to a moor server over OIDC and keep one sign-in per server for
+every local tool. `--server` takes the origin or the `/mcp` address and falls
+back to `MOOR_SERVER`.
 
-### `box-rsync`
+| Command | What it does |
+| --- | --- |
+| `moor login --server URL` | Signs in in the browser. `--no-browser` prints the address and reads the pasted return. |
+| `moor logout --server URL` | Forgets the sign-in and revokes it. |
+| `moor status [--server URL]` | Shows who is signed in and how long the token has left. |
+| `moor token --server URL` | Prints a fresh access token. `--headers` prints it as a headers helper expects. |
+| `moor mcp --server URL` | Relays MCP over stdio to the server, with a fresh token on each call. |
+| `moor listen --server URL [--box NAME]` | Prints one line per Box event that needs a person. See [Events](events.md#moor-listen-lines). |
 
-`{"cmd":"box-rsync","box":ID,"argv":[WORD,...]}` runs `argv` in the open Box with store id
-`ID` and streams its stdin, stdout and stderr over the connection, as `exec` does. It has no
-CLI command. The machine runner sends it from `moor-machine-runner box-rsh`, which it gives
-rsync as `-e`, to mirror a Box and to put a file into one. Only the runner and the operator
-may send it.
-
-`argv` must be `rsync --server [OPTIONS] . PATH`, the command rsync hands its remote shell.
-The options are the ones the runner's rsync sends: `--sender`, `--mkpath` and the short
-option cluster. `PATH` must lie in the Box's work tree. A relative `PATH` is taken from the
-work tree root. moor refuses a path with `..`. It holds the Box lock and wakes the Box first.
-It kills a transfer still running after 10 minutes. The result gives `exit`, rsync's exit
-code, or null when the transfer was killed.
-
-## Exit codes
+### Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| 0 | The command succeeded. |
-| 1 | The command failed, or `moor start` or `moor retry` kept the Box after a failed setup line or agent install. |
+| 0 | Success. |
+| 1 | The command failed, or a start or retry kept the Box after a failed setup line. |
 | 2 | The command line or request was not valid. |
 | 3 | moor refused the command. |
 | 124 | `moor wait` timed out. |
 | 125 | `moor run` did not start the command. |
-| 130 | The command that `moor run` started was interrupted. |
+| 130 | The command `moor run` started was interrupted. |
 
-For any other result, `moor run` exits with the code of the command it ran.
+`moor run` and `moor exec` otherwise exit with the command's own code.
+`moor exec` exits 255 for its own failure.
 
-## JSON envelope
+### JSON envelope
 
-With `--json`, every command prints one envelope on stdout:
+With `--json`, every command prints one envelope:
 
 ```json
-{
-  "schema": "moor/1",
-  "cmd": "version",
-  "class": "ok",
-  "value": { "version": "0.2.0", "commit": "...", "schema": 1 },
-  "warnings": [{ "code": "...", "message": "..." }],
-  "error": null
-}
+{"schema": "moor/1", "cmd": "version", "class": "ok", "value": {}, "warnings": [], "error": null}
 ```
 
-| Field | Value |
+`class` is `ok`, `failed`, `usage`, or `refused`. `error` is `null` on
+success, else `{kind, message, hints, context}`.
+
+## moor-machine-agent
+
+| Command | What it does |
 | --- | --- |
-| `schema` | Always `moor/1`. |
-| `cmd` | The command that ran. |
-| `class` | `ok`, `failed`, `usage`, or `refused`. |
-| `value` | The command's result. `null` on failure. |
-| `warnings` | A list of `{ "code", "message" }`. |
-| `error` | `null` on success. Otherwise `{ "kind", "message", "hints", "context" }`, where `kind` is `usage`, `refused`, `failed`, `internal`, or `not_found`. |
+| `up --server URL` | Pairs the machine, checks its provider, and installs a user service that runs the agent. Rerun it to apply new flags. |
+| `down` | Stops and removes the user service. The machine stays paired. |
+| `run` | Keeps the machine linked to its server. The user service runs it. |
+| `update --version VERSION` | Installs a release in place, after checking its checksum and signature. |
+| `lease VERB [SLUG]` | Runs a lease verb on this host and prints JSON. For debugging. |
+| `dial SLUG` | Carries stdin and stdout to a lease's sshd, as an ssh `ProxyCommand`. |
+
+`up` flags:
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--server URL` | `MOOR_SERVER` | The moor server. |
+| `--name NAME` | the host name | The machine's name. |
+| `--labels a,b` | none | Labels a Box can ask for. |
+| `--runtime PROVIDER` | crabbox's provider | Offer Boxes through this crabbox provider. |
+| `--max-boxes N` | 4 | The most Boxes held at once. |
+| `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |
+| `--crabbox PATH` | `crabbox` | The crabbox program. |
+
+`run` also takes these flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--reserve-mib MIB` | Memory kept for the host. 4096 plus a tenth of the host's memory by default. |
+| `--cache-gb GB` | Disk that caches may use. |
+| `--auto-update` | Install the release the server names, then restart. |
