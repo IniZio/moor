@@ -218,6 +218,9 @@ pub struct ProviderCheck {
     /// The short error class crabbox reports, such as `config`, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class: Option<String>,
+    /// The adapter's error text as one clean, bounded line, when crabbox reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// What crabbox suggests, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,

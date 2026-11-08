@@ -65,3 +65,17 @@ fn the_error_class_shows_beside_the_check() {
         Some("aws: provider [config] (check_it)")
     );
 }
+
+#[test]
+fn the_failing_check_line_shows_crabboxs_own_error() {
+    let r = rig(Ok(json!({"providers": [
+        {"provider": "aws", "ok": false, "failing": [
+            {"check": "provider", "status": "failed", "class": "external",
+             "error": "no credentials found", "hint": "check_provider_auth_and_config"}]}
+    ]})));
+    let report = r.with(provider::controller);
+    assert_eq!(
+        lines(&report).first().map(|c| c.detail.as_str()),
+        Some("aws: provider [external]: no credentials found (check_provider_auth_and_config)")
+    );
+}

@@ -1,8 +1,8 @@
 //! `provider-ready`: whether each node runtime's provider credentials are in place here.
 //!
-//! Only the name, status and hint of a failed check leave the controller: crabbox's messages
-//! and other details hold paths, key fingerprints and adapter output. The one exception is the
-//! error class, kept only when it is a short token.
+//! Only the name, status, hint, error class and error text of a failed check leave the
+//! controller: crabbox's messages and other details hold paths, key fingerprints and adapter
+//! output. The class is kept only when it is a short token, the error only as one bounded line.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -21,6 +21,9 @@ const DEADLINE_SECS: u64 = 60;
 
 /// Longest error class kept.
 const MAX_CLASS_LEN: usize = 32;
+
+/// Longest error text kept, in characters.
+const MAX_ERROR_LEN: usize = 200;
 
 /// One entry per distinct runtime of the controller's nodes, sorted.
 ///
@@ -78,12 +81,36 @@ fn class_of(details: Option<&Value>) -> Option<String> {
     token.then(|| class.to_owned())
 }
 
+/// The error text as one line without control characters, cut to [`MAX_ERROR_LEN`].
+fn error_of(details: Option<&Value>) -> Option<String> {
+    let raw = details?.get("error")?.as_str()?;
+    let line: String = raw
+        .chars()
+        .filter_map(|c| match c {
+            c if c.is_whitespace() => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect();
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    if line.chars().count() <= MAX_ERROR_LEN {
+        return Some(line.to_owned());
+    }
+    let mut cut: String = line.chars().take(MAX_ERROR_LEN - 1).collect();
+    cut.push('…');
+    Some(cut)
+}
+
 /// The check for a crabbox that gave no report.
 fn unrunnable() -> ProviderCheck {
     ProviderCheck {
         check: "crabbox".to_owned(),
         status: "failed".to_owned(),
         class: None,
+        error: None,
         hint: None,
     }
 }
@@ -108,6 +135,7 @@ fn parse(stdout: &str) -> Option<Vec<ProviderCheck>> {
                     .to_owned(),
                 status: "failed".to_owned(),
                 class: class_of(c.get("details")),
+                error: error_of(c.get("details")),
                 hint: c
                     .get("details")
                     .and_then(|d| d.get("hint"))

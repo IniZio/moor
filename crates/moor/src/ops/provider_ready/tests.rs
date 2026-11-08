@@ -81,6 +81,7 @@ fn only_the_check_name_status_and_hint_leave_the_controller() {
             check: "provider".to_owned(),
             status: "failed".to_owned(),
             class: None,
+            error: None,
             hint: Some("set the key".to_owned()),
         }]
     );
@@ -101,6 +102,7 @@ fn a_crabbox_that_will_not_run_is_one_failing_check() {
             check: "crabbox".to_owned(),
             status: "failed".to_owned(),
             class: None,
+            error: None,
             hint: None,
         }]
     );
@@ -124,13 +126,13 @@ fn crabbox_runs_in_an_empty_directory_under_the_state_dir() {
 }
 
 #[test]
-fn only_a_short_error_class_is_kept_from_the_details() {
+fn only_a_short_error_class_is_kept_and_the_error_is_one_clean_line() {
     let dir = tempfile::tempdir().unwrap();
     let proc = Arc::new(ScriptedProc::new());
     let out = concat!(
         r#"{"ok":false,"checks":["#,
         r#"{"status":"failed","check":"provider","message":"SENTINEL-VALUE","#,
-        r#""details":{"class":"config","error":"SENTINEL-VALUE","hint":"fix it"}},"#,
+        r#""details":{"class":"config","error":"first\nsecond\u001b[31m","hint":"fix it"}},"#,
         r#"{"status":"failed","check":"other","details":{"class":"has spaces SENTINEL-VALUE"}}]}"#
     );
     proc.on(
@@ -140,10 +142,36 @@ fn only_a_short_error_class_is_kept_from_the_details() {
     );
     let v = run(&cx(dir.path(), proc, &["aws"])).unwrap();
     let text = serde_json::to_string(&v).unwrap();
-    assert!(!text.contains("SENTINEL-VALUE"), "{text}");
+    assert!(!text.contains("has spaces"), "{text}");
     let [aws] = v.providers.as_slice() else {
         return assert_eq!(v.providers.len(), 1);
     };
+    let errors: Vec<_> = aws.failing.iter().map(|c| c.error.as_deref()).collect();
+    assert_eq!(errors, [Some("first second[31m"), None]);
     let classes: Vec<_> = aws.failing.iter().map(|c| c.class.as_deref()).collect();
     assert_eq!(classes, [Some("config"), None]);
+}
+
+#[test]
+fn a_long_error_is_cut_to_one_bounded_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let proc = Arc::new(ScriptedProc::new());
+    let out = format!(
+        r#"{{"ok":false,"checks":[{{"status":"failed","check":"provider","details":{{"error":"{}"}}}}]}}"#,
+        "x".repeat(500)
+    );
+    proc.on(
+        Tool::Crabbox,
+        &["doctor", "--provider", "aws", "--json"],
+        Reply::Ok(out),
+    );
+    let v = run(&cx(dir.path(), proc, &["aws"])).unwrap();
+    let err = v
+        .providers
+        .first()
+        .and_then(|p| p.failing.first())
+        .and_then(|c| c.error.clone())
+        .expect("an error");
+    assert_eq!(err.chars().count(), 200, "{err}");
+    assert!(err.ends_with('…'));
 }
