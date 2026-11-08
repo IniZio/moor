@@ -21,7 +21,6 @@ use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
@@ -36,14 +35,13 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(engine);
-    let surface = Arc::new(FakeSurface::new());
     let proc = Arc::new(ScriptedProc::new());
     proc.on(
         moor_core::seam::proc::Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx = Cx::fake(dir.path(), driver.clone(), surface, proc).with_engine(engine.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
     store.begin_session(id, "s-1", Some("p-0")).unwrap();
@@ -128,8 +126,8 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
     assert_eq!(sessions.len(), 2);
     let next = sessions.get(1).unwrap();
     assert_eq!(
-        (v.box_name.as_str(), v.session, v.ordinal, v.pane.as_deref()),
-        ("t", next.id, 2, Some("p-1"))
+        (v.box_name.as_str(), v.session, v.ordinal),
+        ("t", next.id, 2)
     );
     assert_eq!(next.state, SessionState::Working);
     let launches = f.engine.launches();
@@ -138,10 +136,7 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
         launches.first().unwrap().prompt,
         LaunchPrompt::Text("pick up here".into())
     );
-    assert_eq!(
-        store.live_session(f.id).unwrap().unwrap().pane.as_deref(),
-        Some("p-1")
-    );
+    assert!(store.live_session(f.id).unwrap().is_some());
 }
 
 #[test]

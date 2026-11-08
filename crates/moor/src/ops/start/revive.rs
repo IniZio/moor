@@ -68,20 +68,11 @@ pub(crate) fn revive_after_wake(
         return Ok(AfterWake::Unknown);
     }
     let ended_pane = match store.live_session(id)? {
-        Some(s) if launch::working(&row) => {
-            let Some(end) = ended(cx, &s) else {
-                return Ok(AfterWake::Intact);
-            };
-            let pane_exit = match end {
-                Ended::Exited(code) => Some(code),
-                Ended::Gone => None,
-            };
-            match link::recover(cx, store, &row, &s, pane_exit)? {
-                Fate::Reattached => return Ok(AfterWake::Intact),
-                Fate::Unreachable => return Ok(AfterWake::Unknown),
-                Fate::Ended(_) => Some((s, end)),
-            }
-        }
+        Some(s) if launch::working(&row) => match link::recover(cx, store, &row, &s, None)? {
+            Fate::Running => return Ok(AfterWake::Intact),
+            Fate::Unreachable => return Ok(AfterWake::Unknown),
+            Fate::Ended(exit) => Some((s, Ended::Exited(exit))),
+        },
         Some(_) => return Ok(AfterWake::Unknown),
         None => None,
     };
@@ -110,7 +101,7 @@ pub(crate) fn revive_for_steer(
         return Ok(AgentLaunchView::default());
     }
     let ended_pane = store.live_session(id)?.map(|s| {
-        let end = ended(cx, &s).unwrap_or(Ended::Gone);
+        let end = ended(cx, &row, &s).unwrap_or(Ended::Gone);
         (s, end)
     });
     revive(cx, store, &row, ended_pane.as_ref(), "steer")

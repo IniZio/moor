@@ -1,19 +1,15 @@
-//! A launch costs two Box calls after the connect lookup.
+//! A launch costs three Box calls after the connect lookup: the home lookup, the files, the start.
 
 use std::sync::Arc;
 
 use moor_core::seam::agent_adapter::ProxyAddr;
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
-use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 
@@ -40,7 +36,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d
 }
 
-fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
+fn req(proxy: bool) -> LaunchReq {
     let name = BoxName::parse_allow_bare("t1").unwrap();
     LaunchReq {
         profile: None,
@@ -48,7 +44,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: name,
         branch: "moor/t1".to_owned(),
         resume: None,
@@ -73,26 +68,19 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
     }
 }
 
-fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
-    BoxAgent::new(
-        d.clone(),
-        s.clone(),
-        Arc::new(Claude),
-        Arc::new(FakeClock::new(Ts::from_millis(0))),
-    )
+fn agent(d: &Arc<FakeDriver>) -> BoxAgent {
+    BoxAgent::new(d.clone(), Arc::new(Claude))
 }
 
 struct Run {
     d: Arc<FakeDriver>,
-    s: Arc<FakeSurface>,
     out: Result<(), EngineError>,
 }
 
 fn launch(proxy: bool, check_codes: &[i32]) -> Run {
     let d = driver(FakeDriver::new().exec_results(exited(check_codes)));
-    let s = Arc::new(FakeSurface::new());
-    let out = agent(&d, &s).launch(&req(&s, proxy)).map(|_| ());
-    Run { d, s, out }
+    let out = agent(&d).launch(&req(proxy)).map(|_| ());
+    Run { d, out }
 }
 
 fn box_calls(d: &FakeDriver) -> Vec<String> {
@@ -108,19 +96,25 @@ fn assert_connect_argv_reused(d: &FakeDriver) {
 }
 
 #[test]
-fn a_warm_proxy_launch_makes_two_batch_calls_after_the_connect_lookup() {
+fn a_warm_proxy_launch_makes_three_batch_calls_after_the_connect_lookup() {
     let run = launch(true, &[0, 0]);
     run.out.unwrap();
-    assert_eq!(box_calls(&run.d), ["connect_argv", "batch", "batch"]);
-    assert_eq!(run.d.batch_connects().len(), 2);
+    assert_eq!(
+        box_calls(&run.d),
+        ["connect_argv", "batch", "batch", "batch"]
+    );
+    assert_eq!(run.d.batch_connects().len(), 3);
     assert_connect_argv_reused(&run.d);
 }
 
 #[test]
-fn a_launch_without_a_proxy_makes_two_batch_calls_after_the_connect_lookup() {
+fn a_launch_without_a_proxy_makes_three_batch_calls_after_the_connect_lookup() {
     let run = launch(false, &[]);
     run.out.unwrap();
-    assert_eq!(box_calls(&run.d), ["connect_argv", "batch", "batch"]);
+    assert_eq!(
+        box_calls(&run.d),
+        ["connect_argv", "batch", "batch", "batch"]
+    );
     assert_connect_argv_reused(&run.d);
 }
 
@@ -142,7 +136,6 @@ fn a_missing_agent_refuses_a_proxy_launch_before_anything_is_uploaded() {
         ["connect_argv", "batch", "batch", "exec"]
     );
     assert!(run.d.puts().is_empty());
-    assert!(run.s.opened().is_empty());
     let message = agent_failure(run);
     assert!(message.contains("`claude`"), "{message}");
     assert!(message.contains("`setup`"), "{message}");
@@ -188,8 +181,7 @@ fn a_launch_with_no_environ_reports_the_home_step() {
         cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
-    let s = Arc::new(FakeSurface::new());
-    let out = agent(&d, &s).launch(&req(&s, true));
+    let out = agent(&d).launch(&req(true));
     let got = match out {
         Err(EngineError::Failed { step, message }) => format!("{step}: {message}"),
         other => format!("unexpected {other:?}"),

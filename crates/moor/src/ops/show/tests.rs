@@ -35,7 +35,6 @@ use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 type Parts = (BoxLifecycle, SessionState);
 const WORKING: Parts = (BoxLifecycle::Ready, SessionState::Working);
@@ -46,12 +45,7 @@ fn parts(row: &BoxRow) -> Parts {
 
 /// Context over `driver` with state under `dir`.
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
-    Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new()))
 }
 
 /// Request showing everything.
@@ -248,13 +242,7 @@ fn box_shows_its_in_flight_run() {
 
 /// Context over `driver` with a scripted engine.
 fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> Cx {
-    Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
-    .with_engine(engine.clone())
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new())).with_engine(engine.clone())
 }
 
 /// Add a working Box `name` with a box live in `driver`, and a live session
@@ -476,8 +464,7 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         &["rev-parse", "--git-path", "info/exclude"],
         Reply::Ok(format!("{}/exclude\n", dir.display())),
     );
-    Cx::fake(dir, driver.clone(), Arc::new(FakeSurface::new()), proc)
-        .with_engine(Arc::new(FakeEngine::new()))
+    Cx::fake(dir, driver.clone(), proc).with_engine(Arc::new(FakeEngine::new()))
 }
 
 #[test]

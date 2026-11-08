@@ -17,15 +17,9 @@ use crate::cx::Cx;
 use crate::ops::dispatch;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
-    Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new()))
 }
 
 fn host(cx: &Cx, workdir: &str) -> i64 {

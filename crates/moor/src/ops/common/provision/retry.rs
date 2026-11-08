@@ -1,13 +1,13 @@
 //! Re-runs the steps that never finished on a ready Box whose last start ended in setup-failed.
 
+use moor_core::activity::{Life, Probe, Term};
 use moor_core::box_key::BoxKey;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
+use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::WorkspaceRef;
 use moor_core::{BoxHandle, BoxPath, BoxTarget, CloseReq, ErrorKind};
 
 use moor_core::config::Flags;
@@ -113,7 +113,7 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
 /// second launch would replace it and start its work over. A Box that cannot say launches nothing,
 /// and the next process asks again.
 fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let (Some((handle, workdir)), Some(ws)) = (machine(row), row.workspace_id.as_deref()) else {
+    let Some((handle, workdir)) = machine(row) else {
         return Ok(());
     };
     setup::await_reachable(cx, handle)?;
@@ -121,25 +121,23 @@ fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
         id: BoxKey::new(row.id).session_ref(),
         handle: handle.clone(),
         workdir,
-        pane: None,
     };
     store.require_hc_holder(row.id, row.name.as_str())?;
-    let unknown = |e: EngineError| CommandError::new(ErrorKind::Failed, e.to_string());
-    match cx
-        .engine()
-        .agent_fate(&session, Deadline(FATE_WAIT))
-        .map_err(unknown)?
-    {
-        AgentFate::Running => {
-            let ws = WorkspaceRef::new(ws);
-            let pane = cx
-                .engine()
-                .reattach(&session, &ws, &row.name)
-                .map_err(unknown)?;
-            store.begin_session(row.id, &session.id, Some(pane.as_str()))?;
+    match cx.engine().probe(&session, Deadline(FATE_WAIT)) {
+        Probe::Read {
+            term: Some(Term {
+                life: Life::Live, ..
+            }),
+            ..
+        } => {
+            store.begin_session(row.id, &session.id, None)?;
             Ok(())
         }
-        AgentFate::Ended { .. } => launch_after_retry(cx, store, row.id).map(drop),
+        Probe::Read { .. } => launch_after_retry(cx, store, row.id).map(drop),
+        Probe::TimedOut => Err(CommandError::new(
+            ErrorKind::Failed,
+            "the Box did not say whether its agent runs",
+        )),
     }
 }
 

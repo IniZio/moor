@@ -13,7 +13,6 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
-use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{ErrorKind, Warning};
 
 use crate::cx::Cx;
@@ -184,10 +183,6 @@ pub(crate) fn sleep_parked(
     // Parking takes the Proxy away, and the check runs in the Box.
     suspend_check::record(cx, store, id, settled.is_ok());
     park_tunnel(cx, id)?;
-    if let Err(e) = close_agent_pane(cx, store, id) {
-        let _ = restore_tunnel(cx, id);
-        return Err(e);
-    }
     let slept = cx.driver().sleep(handle, publish);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, id);
@@ -220,23 +215,6 @@ pub(crate) fn settled(
     } else {
         Ok(())
     })
-}
-
-/// Closes the live agent pane; a pane already gone is fine.
-fn close_agent_pane(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-    let Some(session) = store.live_session(id)? else {
-        return Ok(());
-    };
-    let Some(pane) = session.pane.as_deref() else {
-        return Ok(());
-    };
-    match cx.surface().close_pane(&PaneRef::new(pane)) {
-        Ok(()) | Err(SurfaceError::NotFound) => Ok(()),
-        Err(e) => Err(CommandError::new(
-            ErrorKind::Failed,
-            format!("could not close the agent pane: {e}; the Box stays awake"),
-        )),
-    }
 }
 
 /// A refusal with `why`.

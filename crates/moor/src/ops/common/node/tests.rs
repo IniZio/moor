@@ -14,7 +14,6 @@ use super::{backfill, configured, preflight, runtime_of};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use moor_core::user::UserId;
 
 const KEY: &str =
@@ -30,7 +29,6 @@ fn world(yaml: &str) -> World {
     let cx = Cx::fake_with(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         parse_user("config.yaml", yaml).unwrap(),
     );
@@ -42,7 +40,6 @@ fn world_without_nodes() -> World {
     let cx = Cx::fake_without_nodes(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     World { cx, _dir: dir }

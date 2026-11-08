@@ -13,7 +13,6 @@ use crate::cx::Cx;
 use crate::ops::dispatch;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
 
 pub(super) struct Fixture {
@@ -27,7 +26,6 @@ pub(super) fn fixture() -> Fixture {
     let cx = Cx::fake(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();

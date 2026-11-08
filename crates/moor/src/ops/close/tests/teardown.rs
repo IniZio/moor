@@ -12,19 +12,13 @@ use super::{box_state, fx_repo, req, row, run, Fx};
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::FakeProxyHost;
-use crate::testing::surface::FakeSurface;
 
 pub(super) const YAML: &str =
     "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
 /// A Ready Box that probes clean, with `yaml` as the `.moor.yaml` stored for its base.
 pub(super) fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
-    fx_repo(
-        driver,
-        FakeSurface::new(),
-        Some("ahead=0 dirty=0"),
-        Some(yaml),
-    )
+    fx_repo(driver, Some("ahead=0 dirty=0"), Some(yaml))
 }
 
 /// Teardown runs; the unsaved-work probe and the collection are not counted.
@@ -205,12 +199,7 @@ fn gone_box_skips_teardown() {
 
 #[test]
 fn refused_close_runs_no_teardown() {
-    let f = fx_repo(
-        FakeDriver::new(),
-        FakeSurface::new(),
-        Some("ahead=2 dirty=0"),
-        Some(YAML),
-    );
+    let f = fx_repo(FakeDriver::new(), Some("ahead=2 dirty=0"), Some(YAML));
     assert_eq!(
         run(&f.cx, &req(false)).unwrap_err().kind,
         ErrorKind::Refused

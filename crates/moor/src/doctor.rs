@@ -8,7 +8,6 @@ mod nodes;
 mod provider;
 mod render;
 mod setup;
-mod surface;
 #[cfg(test)]
 mod tests;
 mod user;
@@ -185,7 +184,6 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
     out.extend(provider::controller(i));
     out.push(nodes::check(i, &read));
     out.extend(user::checks(i));
-    out.push(surface::check(i));
     out.extend(gate::check(i));
     out
 }

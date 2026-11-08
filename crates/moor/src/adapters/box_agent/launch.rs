@@ -6,10 +6,9 @@ pub(in crate::adapters::box_agent) use moor_core::boxscript::AGENT_PATH_LINE;
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 
 use self::environ::{box_user, home_in};
 #[cfg(test)]
@@ -44,11 +43,10 @@ fn fail(step: &'static str, e: &impl ToString) -> Failure {
     }
 }
 
-/// Delivers the brief and hook files, then opens the agent's tab; a failure removes the
-/// credential directory and names the step.
+/// Delivers the brief and hook files, then starts the agent in its herdr-core terminal on the
+/// Box; a failure removes the credential directory and names the step.
 pub(super) fn launch(
     driver: &dyn Driver,
-    surface: &dyn Surface,
     profile: &dyn AgentAdapter,
     req: &LaunchReq,
 ) -> Result<SessionRef, EngineError> {
@@ -75,7 +73,6 @@ pub(super) fn launch(
     let (cred, tmp) = dirs_in(&ctx.home, req).map_err(failed)?;
     let launch = Launch {
         driver,
-        surface,
         profile,
         req,
         ctx: &ctx,
@@ -84,11 +81,10 @@ pub(super) fn launch(
         root,
     };
     match launch.deliver(&connect) {
-        Ok(pane) => Ok(SessionRef {
+        Ok(()) => Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
-            pane: Some(pane),
         }),
         Err(mut f) => {
             if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
@@ -140,8 +136,6 @@ fn open_box(
 struct Launch<'a> {
     /// Reads and writes the Box.
     driver: &'a dyn Driver,
-    /// Opens the tab.
-    surface: &'a dyn Surface,
     /// Builds the agent's arguments and hook files.
     profile: &'a dyn AgentAdapter,
     /// The launch asked for.
@@ -205,30 +199,34 @@ impl Launch<'_> {
         .map_err(|e| fail("script", &e))
     }
 
-    /// Puts the files in the Box and opens the tab.
-    fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
-        let Self {
-            surface,
-            ctx: _,
-            req,
-            ..
-        } = self;
+    /// Puts the files in the Box and starts the agent's terminal.
+    fn deliver(&self, connect: &[String]) -> Result<(), Failure> {
         let mut plan = Plan::default();
         let planned = self.plan(&mut plan);
         self.execute(connect, &plan)?;
         planned?;
         let script = script_path(self.cred).map_err(|e| fail("script", &e))?;
-        let line = detach::pane_line(connect, script.as_str());
-        surface
-            .open_pane(
-                &req.workspace,
-                &PaneCmd {
-                    label: format!("agent:{}", req.box_name.as_str()),
-                    argv: vec!["sh".to_owned(), "-c".to_owned(), line],
-                    env: Vec::new(),
-                },
-            )
-            .map_err(|e| fail("pane", &e))
+        let steps = [BoxStep::Run(detach::start(script.as_str()))];
+        let deadline = Deadline(BATCH_DEADLINE);
+        match self
+            .driver
+            .batch(&self.req.handle, connect, &steps, deadline)
+            .pop()
+        {
+            Some(Ok(StepDone::Ran {
+                outcome: ExecOutcome::Exited { code: 0 },
+                ..
+            })) => Ok(()),
+            Some(Ok(StepDone::Ran {
+                outcome: ExecOutcome::Exited { code },
+                ..
+            })) if code == i32::from(detach::NO_HOLDER_EXIT) => {
+                Err(fail("start", &detach::refusal()))
+            }
+            Some(Ok(done)) => Err(fail("start", &format!("{done:?}"))),
+            Some(Err(e)) => Err(fail("start", &e)),
+            None => Err(fail("start", &"no answer")),
+        }
     }
 }
 

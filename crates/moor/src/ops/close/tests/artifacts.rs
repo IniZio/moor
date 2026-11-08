@@ -7,12 +7,11 @@ use moor_core::domain::box_state::BoxLifecycle;
 use super::teardown::{fx_yaml, YAML};
 use super::{fx_with, req, run, Fx};
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 const BODY: &[u8] = b"hello";
 
 fn fx(driver: FakeDriver) -> Fx {
-    fx_with(driver, FakeSurface::new())
+    fx_with(driver)
 }
 
 fn listing() -> String {

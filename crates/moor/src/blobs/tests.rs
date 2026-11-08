@@ -20,7 +20,6 @@ use crate::cx::Cx;
 use crate::env::Env;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// One byte over the size that goes up in a single request.
 const OVER_ONE_PART: usize = 16 * 1024 * 1024 + 1;
@@ -65,7 +64,6 @@ pub(crate) fn cx_on(dir: &std::path::Path, blobs: Arc<dyn Blobs>) -> (Cx, BoxId)
     let cx = Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_blobs(blobs);

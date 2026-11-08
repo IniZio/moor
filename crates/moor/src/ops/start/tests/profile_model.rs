@@ -61,7 +61,7 @@ fn relaunched_models(again: &StartReq) -> Vec<Option<String>> {
         .launch_result(Ok(session("p-2")));
     let (w, engine) = model_world_with(Some("claude: {model: opus}\n"), engine);
     run(&w.cx, &req("demo")).unwrap();
-    gone(&w);
+    gone(&engine);
     run(&w.cx, again).unwrap();
     engine.launches().into_iter().map(|l| l.model).collect()
 }

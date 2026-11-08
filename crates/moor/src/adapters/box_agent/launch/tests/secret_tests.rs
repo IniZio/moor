@@ -9,19 +9,19 @@ fn names() -> Vec<String> {
     NAMES.map(String::from).to_vec()
 }
 
-fn launch_script(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    agent(&d, &s).launch(&req(&s)).unwrap();
+fn launch_script(req: impl FnOnce() -> LaunchReq) -> String {
+    let d = driver(FakeDriver::new());
+    agent(&d).launch(&req()).unwrap();
     script_of(&d)
 }
 
-fn with_names(s: &FakeSurface) -> LaunchReq {
+fn with_names() -> LaunchReq {
     LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
         prompt: LaunchPrompt::None,
-        ..req(s)
+        ..req()
     }
 }
 
@@ -40,12 +40,12 @@ fn a_launch_without_a_proxy_unsets_the_configured_secrets_before_the_agent() {
 
 #[test]
 fn a_proxy_launch_unsets_the_configured_secrets_before_the_agent() {
-    let script = launch_script(|s| LaunchReq {
+    let script = launch_script(|| LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
         prompt: LaunchPrompt::None,
-        ..req_with_proxy(s)
+        ..req_with_proxy()
     });
     assert_unsets_before_agent(&script);
 }

@@ -95,7 +95,6 @@ pub(super) fn after_a_partial_setup_with(
     w.cx = Cx::fake_with_clock(
         w.dir.path(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         UserConfig::default(),
         clock.clone(),
@@ -338,7 +337,7 @@ fn a_working_box_that_loses_its_machine_relaunches_on_its_deepest_checkpoint_wit
         .unwrap()
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &start_req).unwrap();
     assert!(v.setup.ok && v.agent.launched, "{v:?}");
     let after = row(&w, id);

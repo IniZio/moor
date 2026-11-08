@@ -14,7 +14,6 @@ use moor_core::BoxPath;
 use super::teardown::{fx_yaml, YAML};
 use super::{box_state, fx_with, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 const WORKDIR: &str = "/work/box-1";
 
@@ -42,7 +41,7 @@ fn driver_with(files: &[(&str, &str)]) -> FakeDriver {
 }
 
 fn fx(driver: FakeDriver) -> Fx {
-    fx_with(driver, FakeSurface::new())
+    fx_with(driver)
 }
 
 fn kinds(f: &Fx) -> Vec<(String, i64)> {

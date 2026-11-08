@@ -72,7 +72,7 @@ impl Request {
             Self::Cp(r) => vec![named(&r.box_name)],
             Self::BoxRsync(r) => vec![Named::Box(r.id.into())],
             Self::MachineHold(r) => vec![Named::Box(r.id.into())],
-            Self::Open(r) | Self::Sleep(r) | Self::Wake(r) | Self::Retry(r) | Self::Connect(r) => {
+            Self::Sleep(r) | Self::Wake(r) | Self::Retry(r) => {
                 vec![named(&r.box_name)]
             }
             Self::WaitEvents(r) => r.boxes.iter().map(named).collect(),

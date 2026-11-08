@@ -11,7 +11,6 @@ use crate::cx::Cx;
 use crate::testing::cx::new_box;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 #[test]
 fn a_get_says_a_closed_or_unknown_box_is_closed_and_an_open_one_is_not() {
@@ -19,7 +18,6 @@ fn a_get_says_a_closed_or_unknown_box_is_closed_and_an_open_one_is_not() {
     let cx = Cx::fake(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();

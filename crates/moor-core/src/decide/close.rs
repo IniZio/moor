@@ -53,8 +53,6 @@ pub enum BoxCheck {
 pub struct ClosePlan {
     /// Ask the Driver to release the Box; the result goes to [`release_outcome`].
     pub release_box: bool,
-    /// Close the Workspace; a Workspace that is already gone is fine.
-    pub close_workspace: bool,
     /// The decision to apply when no release runs.
     pub decision_close: Decision,
     /// Why moor closes the Box when a person did not ask; the release verdict records it too.
@@ -187,7 +185,6 @@ pub fn close_gate_with_reason(
     }
     Ok(ClosePlan {
         release_box: f.has_handle && f.box_state.is_some_and(releasable),
-        close_workspace: true,
         decision_close: Decision::new(f.box_id)
             .lifecycle(BoxLifecycleInput::Close {
                 reason: reason.clone(),

@@ -7,11 +7,11 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
+use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::{BoxId, BoxName, SteerReq};
 
 use super::relaunch::{gone, prompt_req, session, set_agent_session};
-use super::revive::{answering, elapsed_ms, notes, silent, woken_after_suspend, CRITICAL};
+use super::revive::{answering, elapsed_ms, notes, woken_after_suspend, CRITICAL};
 use super::{world, World};
 use crate::ops::start::run;
 use crate::testing::agent;
@@ -50,27 +50,27 @@ fn count_of(w: &World, id: BoxId, kind: &str) -> usize {
     events.iter().filter(|e| e.kind == kind).count()
 }
 
-/// A Box suspended mid-turn whose wake found it silent, its agent's pane since read as `pane`.
+/// A Box suspended mid-turn whose wake found it silent, its agent since read as `pane`.
 fn silent_wake(
     launches: Vec<Result<SessionRef, EngineError>>,
-    fates: Vec<Result<AgentFate, EngineError>>,
     pane: Probe,
 ) -> (World, Arc<FakeEngine>, BoxId) {
-    silent_wake_on(FakeEngine::new(), launches, fates, pane)
+    silent_wake_on(FakeEngine::new(), launches, pane)
 }
 
 /// As [`silent_wake`], on `engine`.
 fn silent_wake_on(
     engine: FakeEngine,
     launches: Vec<Result<SessionRef, EngineError>>,
-    fates: Vec<Result<AgentFate, EngineError>>,
     pane: Probe,
 ) -> (World, Arc<FakeEngine>, BoxId) {
-    let mut engine = engine.launch_result(Ok(session("p-1")));
+    let mut engine = engine
+        .launch_result(Ok(session("p-1")))
+        .probes("p-1", Probe::TimedOut);
     for l in launches {
         engine = engine.launch_result(l);
     }
-    let engine = Arc::new(engine.fates([silent(), fates].concat()));
+    let engine = Arc::new(engine);
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &prompt_req("ship it")).unwrap();
@@ -85,7 +85,7 @@ fn silent_wake_on(
 
 #[test]
 fn a_box_silent_across_sweeps_costs_one_bounded_probe_each_and_is_never_relaunched() {
-    let (w, engine, id) = silent_wake(vec![], vec![], Probe::TimedOut);
+    let (w, engine, id) = silent_wake(vec![], Probe::TimedOut);
     let sref = live_ref(&w, id);
     let before = engine.probe_count(&sref);
     for round in 1..=3 {
@@ -97,11 +97,6 @@ fn a_box_silent_across_sweeps_costs_one_bounded_probe_each_and_is_never_relaunch
             "one probe in sweep {round}"
         );
     }
-    assert_eq!(
-        engine.fates_left(),
-        0,
-        "the sweep asked the Box nothing beyond its probe"
-    );
     assert_eq!(engine.launches().len(), 1);
     assert!(notes(&engine).is_empty());
     assert!(owes(&w, id));
@@ -109,11 +104,7 @@ fn a_box_silent_across_sweeps_costs_one_bounded_probe_each_and_is_never_relaunch
 
 #[test]
 fn an_agent_the_box_says_ended_after_a_silent_wake_is_relaunched_once_and_told_once() {
-    let (w, engine, id) = silent_wake(
-        vec![Ok(session("p-2"))],
-        vec![Ok(AgentFate::Ended { exit: None })],
-        agent::exited(None),
-    );
+    let (w, engine, id) = silent_wake(vec![Ok(session("p-2"))], agent::exited(None));
     sweep(&w);
     probes_read(&w, &engine, id, running_pane());
     sweep(&w);
@@ -133,7 +124,7 @@ fn an_agent_the_box_says_ended_after_a_silent_wake_is_relaunched_once_and_told_o
 
 #[test]
 fn an_agent_still_running_after_a_silent_wake_is_told_once_that_it_is_intact() {
-    let (w, engine, id) = silent_wake(vec![], vec![], running_pane());
+    let (w, engine, id) = silent_wake(vec![], running_pane());
     sweep(&w);
     sweep(&w);
     assert_eq!(engine.launches().len(), 1, "no launch over the live agent");
@@ -149,11 +140,7 @@ fn a_relaunch_that_fails_after_a_silent_wake_is_tried_once_and_drops_the_mark() 
         step: "pane",
         message: "no pane".to_owned(),
     };
-    let (w, engine, id) = silent_wake(
-        vec![Err(failed)],
-        vec![Ok(AgentFate::Ended { exit: None })],
-        agent::exited(None),
-    );
+    let (w, engine, id) = silent_wake(vec![Err(failed)], agent::exited(None));
     for _ in 0..3 {
         sweep(&w);
     }
@@ -165,7 +152,7 @@ fn a_relaunch_that_fails_after_a_silent_wake_is_tried_once_and_drops_the_mark() 
 
 #[test]
 fn an_agent_that_ended_after_a_silent_wake_drops_the_mark_and_settles_as_usual() {
-    let (w, engine, id) = silent_wake(vec![], vec![], Probe::TimedOut);
+    let (w, engine, id) = silent_wake(vec![], Probe::TimedOut);
     let store = w.cx.store().unwrap();
     store.end_current_session(id, "exited", Some(0)).unwrap();
     sweep(&w);
@@ -179,7 +166,7 @@ fn an_agent_that_ended_after_a_silent_wake_drops_the_mark_and_settles_as_usual()
 
 #[test]
 fn an_agent_whose_box_a_start_woke_after_a_mid_turn_suspend_is_told_once() {
-    let (w, engine, id) = answering(vec![]);
+    let (w, engine, id) = answering(running_pane());
     let store = w.cx.store().unwrap();
     let suspend = BoxLifecycleInput::Suspend {
         reason: CRITICAL.to_owned(),
@@ -209,14 +196,9 @@ fn told(engine: &FakeEngine, text: &str) -> usize {
 
 #[test]
 fn an_agent_a_steer_relaunched_after_a_silent_wake_is_told_once_that_its_processes_were_lost() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
-    let (w, engine, id) = silent_wake_on(
-        engine,
-        vec![],
-        vec![Ok(AgentFate::Ended { exit: None })],
-        agent::idle(Ts::from_millis(0)),
-    );
-    gone(&w);
+    let engine = FakeEngine::new().steer_result(Err(EngineError::AgentGone));
+    let (w, engine, id) = silent_wake_on(engine, vec![], Probe::TimedOut);
+    gone(&engine);
     let req = SteerReq {
         target: BoxName::parse_allow_bare("demo").unwrap().into(),
         text: Some("go on".to_owned()),
@@ -240,8 +222,8 @@ fn an_agent_a_steer_relaunched_after_a_silent_wake_is_told_once_that_its_process
 
 #[test]
 fn an_agent_a_start_relaunched_after_a_silent_wake_is_told_once_that_its_processes_were_lost() {
-    let (w, engine, id) = silent_wake(vec![], vec![], Probe::TimedOut);
-    gone(&w);
+    let (w, engine, id) = silent_wake(vec![], Probe::TimedOut);
+    gone(&engine);
     run(&w.cx, &super::req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2, "the start relaunched the agent");
     probes_read(&w, &engine, id, running_pane());
@@ -259,7 +241,7 @@ fn an_agent_a_start_relaunched_after_a_silent_wake_is_told_once_that_its_process
 
 #[test]
 fn an_agent_that_idled_before_the_sweep_after_a_silent_wake_is_still_told_once() {
-    let (w, engine, id) = silent_wake(vec![], vec![], Probe::TimedOut);
+    let (w, engine, id) = silent_wake(vec![], Probe::TimedOut);
     let at = w.cx.clock().now().as_millis() - 1000;
     let idle = agent::idle(Ts::from_millis(at));
     engine.set_probes(&live_ref(&w, id), idle);

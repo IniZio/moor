@@ -38,12 +38,11 @@ fn value_rides_the_failure_envelope() {
     assert!(bare.value.is_none());
 }
 
-// --- seam conversions: driver, surface ---
+// --- seam conversions: driver ---
 
-mod seam_driver_surface {
+mod seam_driver {
     use super::CommandError;
     use moor_core::seam::driver::DriverError;
-    use moor_core::seam::surface::SurfaceError;
     use moor_core::ErrorKind;
     use std::time::Duration;
 
@@ -78,24 +77,6 @@ mod seam_driver_surface {
             let e = CommandError::from(err);
             assert_eq!(e.kind, ErrorKind::Failed);
             assert!(e.hints.is_empty());
-            assert_eq!(e.error.to_string(), text);
-        }
-    }
-
-    #[test]
-    fn surface_errors_are_failed_with_message() {
-        let all = [
-            SurfaceError::NotFound,
-            SurfaceError::Timeout,
-            SurfaceError::Unavailable("herdr down".into()),
-            SurfaceError::Failed {
-                summary: "s".into(),
-            },
-        ];
-        for err in all {
-            let text = err.to_string();
-            let e = CommandError::from(err);
-            assert_eq!(e.kind, ErrorKind::Failed);
             assert_eq!(e.error.to_string(), text);
         }
     }

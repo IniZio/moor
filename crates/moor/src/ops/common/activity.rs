@@ -7,7 +7,6 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::PaneRef;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
@@ -312,7 +311,6 @@ pub(crate) fn session_ref(row: &BoxRow, launch: &SessionRow) -> Option<SessionRe
         id: launch.session_ref.clone(),
         handle,
         workdir,
-        pane: launch.pane.clone().map(PaneRef::new),
     })
 }
 

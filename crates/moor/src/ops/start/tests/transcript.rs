@@ -81,7 +81,7 @@ fn relaunch_saves_the_transcript_before_ending_the_old_session() {
             .unwrap();
         seen.store(open == 1, Ordering::SeqCst);
     });
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &asked(false)).unwrap();
     assert!(v.agent.launched);
     assert!(live_at_save.load(Ordering::SeqCst));
@@ -95,7 +95,7 @@ fn a_failed_save_records_the_failure_and_the_relaunch_goes_on() {
     let (w, engine, id) = with_transcript(
         FakeEngine::new().fail_transcript(EngineError::Transcript("copy: boom".into())),
     );
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &asked(false)).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
@@ -107,9 +107,9 @@ fn a_failed_save_records_the_failure_and_the_relaunch_goes_on() {
 fn a_resuming_relaunch_skips_the_save_and_makes_no_box_call() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
-    let v = run(&w.cx, &asked(true)).unwrap();
-    assert!(v.agent.launched);
+    gone(&engine);
+    crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
+    assert_eq!(engine.launches().len(), 1);
     assert!(engine.transcripts().is_empty());
     assert_eq!(kinds(&w, id), ["transcript_skipped"]);
     let ev = w.cx.store().unwrap().events(id, 100).unwrap();
@@ -129,7 +129,7 @@ fn a_resuming_relaunch_skips_the_save_and_makes_no_box_call() {
 fn a_relaunch_with_a_new_prompt_still_saves_though_a_session_is_stored() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     let mut r = req("demo");
     r.prompt = Some("new prompt".into());
     run(&w.cx, &r).unwrap();
@@ -143,7 +143,7 @@ fn a_resuming_relaunch_on_a_recreated_box_still_saves() {
     set_agent_session(&w, id, "agent-1");
     let lost = Decision::new(id).box_input(BoxInput::DriverMissing);
     w.cx.store().unwrap().apply(lost).unwrap();
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &asked(true)).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.transcripts().len(), 1);

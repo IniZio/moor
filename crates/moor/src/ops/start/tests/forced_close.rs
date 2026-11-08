@@ -25,7 +25,6 @@ fn other_cx(w: &World) -> Cx {
     Cx::fake_with(
         w.dir.path(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         UserConfig::default(),
     )

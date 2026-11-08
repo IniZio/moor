@@ -28,7 +28,6 @@ fn timed(clone_s: u64) -> World {
     w.cx = Cx::fake_with_clock(
         w.dir.path(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         moor_core::config::UserConfig::default(),
         clock.clone(),

@@ -1,7 +1,6 @@
-//! Scripting a launch and a fate on an engine already in use.
+//! Scripting a launch on an engine already in use.
 
-use moor_core::seam::engine::{AgentFate, EngineError, LaunchReq, SessionRef};
-use moor_core::seam::surface::PaneRef;
+use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 
 use super::FakeEngine;
 
@@ -11,12 +10,7 @@ impl FakeEngine {
         self.st().launch_results.push_back(r);
     }
 
-    /// The next `agent_fate` returns `r`.
-    pub(crate) fn push_fate(&self, r: Result<AgentFate, EngineError>) {
-        self.st().fates.push_back(r);
-    }
-
-    /// Records the launch of `req` and answers as scripted, by default with pane `p-1`.
+    /// Records the launch of `req` and answers as scripted, by default with a session of no id.
     pub(super) fn scripted_launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         let mut st = self.st();
         st.launches.push(req.clone());
@@ -30,7 +24,6 @@ impl FakeEngine {
                 id: String::new(),
                 handle: req.handle.clone(),
                 workdir: req.workdir.clone(),
-                pane: Some(PaneRef::new("p-1")),
             })
         })
     }

@@ -1,11 +1,10 @@
-//! An agent pane that ended may have lost only its link: the agent can outlive it on the Box.
+//! What became of a session's agent, asked of the Box, which may not answer for a while.
 
 use std::time::Duration;
 
+use moor_core::activity::{Life, Probe, Term};
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::engine::AgentFate;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::BoxId;
 
 use crate::cx::Cx;
@@ -22,19 +21,19 @@ const UNREACHABLE_FOR: Duration = Duration::from_secs(300);
 /// Recent events searched for when the Box first went unreachable.
 const RECENT_EVENTS: usize = 200;
 
-/// Whether the session of an ended pane goes on.
+/// What became of a session's agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Fate {
-    /// A new pane attached to the agent, which still runs.
-    Reattached,
+    /// The agent still runs.
+    Running,
     /// The agent ended, with this exit status.
     Ended(Option<i32>),
     /// The Box did not answer; a later try decides.
     Unreachable,
 }
 
-/// Asks the Box what became of the agent of `launch`, whose pane ended with `pane_exit`, and
-/// attaches a new pane when it still runs. Each round of tries the Box does not answer gets an
+/// Asks the Box what became of the agent of `launch`, `pane_exit` being the exit already seen.
+/// Each round of tries the Box does not answer gets an
 /// `agent_unreachable` event; the agent counts as ended once the Box has not answered for
 /// `UNREACHABLE_FOR`. A suspended VM keeps its agent and cannot be asked, so an asleep Box decides
 /// nothing until a wake asks it. The caller holds the Box lock.
@@ -57,17 +56,29 @@ pub(crate) fn recover(
     store.require_hc_holder(row.id, row.name.as_str())?;
     let mut attempt = 0;
     loop {
-        match cx.engine().agent_fate(&sref, Deadline(TRY_DEADLINE)) {
-            Ok(AgentFate::Running) => break,
-            Ok(AgentFate::Ended { exit }) => return Ok(Fate::Ended(exit.or(pane_exit))),
-            Err(e) => {
+        match cx.engine().probe(&sref, Deadline(TRY_DEADLINE)) {
+            Probe::Read {
+                term: Some(Term {
+                    life: Life::Live, ..
+                }),
+                ..
+            } => return Ok(Fate::Running),
+            Probe::Read {
+                term:
+                    Some(Term {
+                        life: Life::Finished { exit },
+                        ..
+                    }),
+                ..
+            } => return Ok(Fate::Ended(exit.or(pane_exit))),
+            Probe::Read { term: None, .. } => return Ok(Fate::Ended(pane_exit)),
+            Probe::TimedOut => {
                 attempt += 1;
                 if attempt == TRIES {
                     let since = unreachable_since(store, row.id, launch)?;
-                    let error = e.to_string();
                     let event = ExtraEvent::AgentUnreachable {
                         attempts: TRIES,
-                        error,
+                        error: "the agent could not be read".to_owned(),
                     };
                     store.apply(Decision::new(row.id).event(event))?;
                     let bound = i64::try_from(UNREACHABLE_FOR.as_millis()).unwrap_or(i64::MAX);
@@ -81,17 +92,6 @@ pub(crate) fn recover(
             }
         }
     }
-    let Some(ws) = row.workspace_id.as_deref().map(WorkspaceRef::new) else {
-        return Ok(Fate::Ended(pane_exit));
-    };
-    let Ok(pane) = cx.engine().reattach(&sref, &ws, &row.name) else {
-        return Ok(Fate::Ended(pane_exit));
-    };
-    store.reattach_pane(row.id, launch.id, pane_exit, pane.as_str())?;
-    if let Some(old) = launch.pane.as_deref().filter(|old| *old != pane.as_str()) {
-        let _ = cx.surface().close_pane(&PaneRef::new(old.to_owned()));
-    }
-    Ok(Fate::Reattached)
 }
 
 /// When, in ms, the Box of `launch` first failed to answer since the launch began or its link

@@ -10,11 +10,6 @@ fn escape_interrupts_the_agent() {
 }
 
 #[test]
-fn claude_runs_no_hook_while_a_first_run_screen_is_up() {
-    assert!(Claude.hooks_quiet_during_first_run());
-}
-
-#[test]
 fn the_note_keeps_the_session_id_and_the_last_reply() {
     let note = Claude.parse_note(&json!({"session_id": "s-1", "said": "Done."}));
     assert_eq!(note.session_id.as_deref(), Some("s-1"));

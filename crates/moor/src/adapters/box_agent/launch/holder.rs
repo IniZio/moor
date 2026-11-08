@@ -26,24 +26,6 @@ pub(super) fn open(script: &str) -> String {
     )
 }
 
-/// Exits with the ended agent's exit code: 1 when it left none, as after a signal, and 1 too
-/// while it still runs or when there is no terminal.
-pub(super) fn exit_code() -> String {
-    format!(
-        "c=$({PROGRAM} get {SESSION} --json 2>/dev/null | sed -n 's/.*\"exit_code\":\\([0-9][0-9]*\\).*/\\1/p'); exit \"${{c:-1}}\""
-    )
-}
-
-/// Exits 0 only while the agent's terminal is live.
-pub(super) fn alive() -> String {
-    format!("{PROGRAM} get {SESSION} --json 2>/dev/null | grep -q '\"state\":\"live\"'")
-}
-
-/// Puts the calling terminal on the agent's terminal until the terminal ends.
-pub(super) fn attach() -> String {
-    format!("{PROGRAM} attach {SESSION}")
-}
-
 /// What a relayed client execs.
 pub(super) fn relay() -> String {
     format!("exec {PROGRAM} attach {SESSION}")

@@ -1,27 +1,28 @@
 //! A launch with a Proxy exports its environment.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index what they just counted"
+)]
 
 use super::*;
 
 #[test]
 fn a_launch_without_a_proxy_installs_nothing() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, out) = launch(FakeDriver::new());
     out.unwrap();
     let execs = d.execs();
-    assert_eq!(execs.len(), 1);
-    let script = execs.iter().find_map(|e| e.1.argv.last()).unwrap();
-    assert!(script.contains("command -v"), "{script}");
+    assert_eq!(execs.len(), 2);
+    let scripts: Vec<_> = execs.iter().filter_map(|e| e.1.argv.last()).collect();
+    assert!(scripts[0].contains("command -v 'claude'"), "{scripts:?}");
+    assert!(scripts[1].contains("herdr-core run"), "{scripts:?}");
     assert!(d.puts().iter().all(|p| !p.1.as_str().contains("proxy-")));
 }
 
 #[test]
 fn a_failed_put_removes_the_cred_dir() {
-    let (d, s) = (
-        driver(FakeDriver::new().fail_put(DriverError::NotFound)),
-        surface(FakeSurface::new()),
-    );
-    let out = agent(&d, &s).launch(&req_with_proxy(&s));
+    let d = driver(FakeDriver::new().fail_put(DriverError::NotFound));
+    let out = agent(&d).launch(&req_with_proxy());
     assert!(matches!(out, Err(EngineError::Failed { .. })));
-    assert!(s.opened().is_empty());
     assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
 }
 
@@ -53,7 +54,7 @@ fn a_failed_script_step_removes_the_temp_dir() {
 
 #[test]
 fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let d = driver(FakeDriver::new());
     let addr = ProxyAddr {
         box_env: vec![("APP_NOTE".to_owned(), "it's\n$(id) `id`".to_owned())],
         ..proxy_addr()
@@ -62,9 +63,9 @@ fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
-        ..req_with_proxy(&s)
+        ..req_with_proxy()
     };
-    agent(&d, &s).launch(&req).unwrap();
+    agent(&d).launch(&req).unwrap();
     let script = script_of(&d);
     let set = script
         .find("export APP_NOTE='it'\\''s\n$(id) `id`'")
@@ -74,7 +75,7 @@ fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
 
 #[test]
 fn a_repo_env_value_cannot_replace_the_root_signal() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let d = driver(FakeDriver::new());
     d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
     let addr = ProxyAddr {
         box_env: vec![("IS_SANDBOX".to_owned(), "0".to_owned())],
@@ -84,9 +85,9 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
-        ..req_with_proxy(&s)
+        ..req_with_proxy()
     };
-    agent(&d, &s).launch(&req).unwrap();
+    agent(&d).launch(&req).unwrap();
     let script = script_of(&d);
     let last = script
         .lines()
@@ -99,7 +100,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 
 #[test]
 fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let d = driver(FakeDriver::new());
     let addr = ProxyAddr {
         hosts: vec!["api.anthropic.com".to_owned()],
         ..proxy_addr()
@@ -108,9 +109,9 @@ fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
-        ..req_with_proxy(&s)
+        ..req_with_proxy()
     };
-    agent(&d, &s).launch(&req).unwrap();
+    agent(&d).launch(&req).unwrap();
     let script = script_of(&d);
     assert!(
         script.contains("export HTTPS_PROXY=\"http://127.0.0.1:4568\""),

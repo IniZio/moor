@@ -25,43 +25,27 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{Probe, WaitCheck};
-use moor_core::name::{BoxName, BoxPath};
+use moor_core::name::BoxPath;
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
-use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
+    Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneRef, Surface, WorkspaceRef};
 
-/// An agent running in a Box, read through the Driver and the Surface.
+/// An agent running in a Box, held and read by herdr-core there through the Driver.
 pub(crate) struct BoxAgent {
-    /// Reads the hook file out of the Box.
+    /// Reaches the Box.
     driver: Arc<dyn Driver>,
-    /// Observes and opens the agent's pane.
-    surface: Arc<dyn Surface>,
-    /// Parses the agent's hook file and builds its launch.
+    /// Reads the agent's note and builds its launch.
     profile: Arc<dyn AgentAdapter>,
-    /// Paces the submit key after typing.
-    clock: Arc<dyn Clock>,
 }
 
 impl BoxAgent {
-    /// A kit over the given Driver, Surface, agent adapter and clock.
-    pub(crate) fn new(
-        driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
-        profile: Arc<dyn AgentAdapter>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
-        Self {
-            driver,
-            surface,
-            profile,
-            clock,
-        }
+    /// A kit over the given Driver and agent adapter.
+    pub(crate) fn new(driver: Arc<dyn Driver>, profile: Arc<dyn AgentAdapter>) -> Self {
+        Self { driver, profile }
     }
 }
 
@@ -82,10 +66,6 @@ impl Engine for BoxAgent {
         self.profile.first_run_prompt(tail)
     }
 
-    fn hooks_quiet_during_first_run(&self) -> bool {
-        self.profile.hooks_quiet_during_first_run()
-    }
-
     fn agent_install(&self) -> Option<AgentInstall> {
         Some(launch::holder::with_agent(self.profile.install()))
     }
@@ -99,12 +79,7 @@ impl Engine for BoxAgent {
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
-        launch::launch(
-            self.driver.as_ref(),
-            self.surface.as_ref(),
-            self.profile.as_ref(),
-            req,
-        )
+        launch::launch(self.driver.as_ref(), self.profile.as_ref(), req)
     }
 
     fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError> {
@@ -118,9 +93,8 @@ impl Engine for BoxAgent {
         deadline: Deadline,
     ) -> Result<SteerOutcome, EngineError> {
         let sent = steer::steer(
-            self.surface.as_ref(),
+            self.driver.as_ref(),
             self.profile.as_ref(),
-            self.clock.as_ref(),
             s,
             steer,
             deadline,
@@ -146,18 +120,5 @@ impl Engine for BoxAgent {
 
     fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
         launch::detach::stop(self.driver.as_ref(), s)
-    }
-
-    fn agent_fate(&self, s: &SessionRef, deadline: Deadline) -> Result<AgentFate, EngineError> {
-        launch::detach::fate(self.driver.as_ref(), s, deadline)
-    }
-
-    fn reattach(
-        &self,
-        s: &SessionRef,
-        ws: &WorkspaceRef,
-        name: &BoxName,
-    ) -> Result<PaneRef, EngineError> {
-        launch::detach::reattach(self.driver.as_ref(), self.surface.as_ref(), s, ws, name)
     }
 }

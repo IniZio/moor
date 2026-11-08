@@ -14,18 +14,12 @@ use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// A Cx holding Box `t` with a live machine, the driver's connect argv for it, and the work
 /// tree the driver reports for it.
 fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
     let driver = Arc::new(FakeDriver::new());
-    let cx = Cx::fake(
-        dir,
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store

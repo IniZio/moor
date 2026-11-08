@@ -18,13 +18,11 @@ use crate::error::CommandError;
 use crate::ops::dispatch;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

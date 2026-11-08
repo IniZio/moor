@@ -12,7 +12,6 @@ use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, 
 use moor_core::domain::event::CheckedCred;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
-use moor_core::seam::surface::workspace_label;
 use moor_core::user::UserId;
 use moor_core::view::StartView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
@@ -66,12 +65,6 @@ struct Facts {
     profile: Option<profile::Gathered>,
 }
 
-/// Where the Box works.
-struct Placed {
-    /// Workspace id.
-    workspace: String,
-}
-
 /// Starts or attaches to the Box named in `req`.
 ///
 /// # Errors
@@ -101,17 +94,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
-    let placed = match place(cx, req) {
-        Ok(placed) => placed,
-        Err(e) => return raced(cx, store, (req, user), e),
-    };
-    let id = match insert(
-        store,
-        (req, user),
-        &facts,
-        &placed,
-        preflight::checked(&cfg),
-    ) {
+    let id = match insert(store, (req, user), &facts, preflight::checked(&cfg)) {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
@@ -349,14 +332,6 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     })
 }
 
-/// Ensures the Workspace; the branch is named by the Box id, which the store assigns on insert.
-fn place(cx: &Cx, req: &StartReq) -> Result<Placed, CommandError> {
-    let ws = cx.surface().ensure_workspace(&workspace_label(&req.name))?;
-    Ok(Placed {
-        workspace: ws.as_str().to_owned(),
-    })
-}
-
 /// `Set` for a present value, `Keep` otherwise.
 fn set_some<T>(v: Option<T>) -> Field<T> {
     v.map_or(Field::Keep, Field::Set)
@@ -367,14 +342,12 @@ fn insert(
     store: &Store,
     (req, user): (&StartReq, UserId),
     facts: &Facts,
-    placed: &Placed,
     checked: Vec<CheckedCred>,
 ) -> Result<BoxId, StoreError> {
     let set = Fields {
         issue: set_some(req.issue.clone()),
         prompt: set_some(req.prompt.clone()),
         base: set_some(facts.base.clone()),
-        workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };
     let new = NewBox {

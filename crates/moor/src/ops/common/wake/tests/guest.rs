@@ -4,13 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::driver::DriverError;
-use moor_core::seam::surface::Surface as _;
 use moor_core::BoxPath;
 
 use super::{fx, kinds, row, sleep, wake_and_revive, with_agent, Fx};
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
-use crate::testing::clock::FakeClock;
 
 const STALLED: DriverError = DriverError::Timeout(Duration::from_secs(5));
 
@@ -21,19 +19,14 @@ fn environ() -> BoxPath {
 fn asleep_without_agent() -> Fx {
     let mut f = fx();
     with_agent(&f);
-    f.surface.ensure_workspace("moor:t").unwrap();
     let store = f.cx.store().unwrap();
     store.end_current_session(f.id, "exited", None).unwrap();
     sleep(&f);
     let handle = row(&f).boxed.unwrap().handle.unwrap();
     f.driver
         .set_peek_text(handle.as_str(), &environ(), "HOME=/home/box\0USER=box\0");
-    f.cx = f.cx.with_engine(Arc::new(BoxAgent::new(
-        f.driver.clone(),
-        f.surface.clone(),
-        Arc::new(Claude),
-        Arc::new(FakeClock::new(moor_core::seam::clock::Ts::from_millis(0))),
-    )));
+    f.cx =
+        f.cx.with_engine(Arc::new(BoxAgent::new(f.driver.clone(), Arc::new(Claude))));
     f
 }
 

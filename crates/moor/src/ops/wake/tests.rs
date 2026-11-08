@@ -16,7 +16,6 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
@@ -29,12 +28,7 @@ struct Fx {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store

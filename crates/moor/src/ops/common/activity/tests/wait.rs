@@ -44,14 +44,9 @@ fn rig() -> (tempfile::TempDir, Rig) {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let clock = Arc::new(FakeClock::new(NOW));
     let driver = Arc::new(FakeDriver::new());
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    )
-    .with_engine(engine.clone())
-    .with_clock(clock.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()))
+        .with_engine(engine.clone())
+        .with_clock(clock.clone());
     let id = working_box(&cx, true);
     (
         dir,

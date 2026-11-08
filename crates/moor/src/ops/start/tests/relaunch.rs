@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneObs, PaneRef, PaneStatus, ResumeOutcome, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
@@ -25,27 +25,16 @@ pub(super) fn prompt_req(prompt: &str) -> StartReq {
     }
 }
 
-/// A launched session whose pane is `pane`.
-pub(super) fn session(pane: &str) -> SessionRef {
+/// A launched session whose reference is `id`.
+pub(super) fn session(id: &str) -> SessionRef {
     SessionRef {
-        id: pane.to_owned(),
+        id: id.to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new(pane)),
     }
 }
 
-/// A pane observation of a running agent, or of one that exited with `code`.
-pub(super) fn obs(exit_marker: Option<i32>) -> PaneObs {
-    PaneObs {
-        status: PaneStatus::Working,
-        tail: String::new(),
-        prompt: None,
-        exit_marker,
-    }
-}
-
-/// A world with a Working Box `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
+/// A world with a Working Box `demo` launched with "ship it" as session `p-1`; the next launch is `p-2`.
 pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(
         FakeEngine::new()
@@ -76,13 +65,13 @@ pub(super) fn set_agent_session(w: &World, id: BoxId, agent: &str) {
         .unwrap();
 }
 
-fn live_pane(w: &World, id: BoxId) -> Option<String> {
+fn live_ref(w: &World, id: BoxId) -> String {
     w.cx.store()
         .unwrap()
         .live_session(id)
         .unwrap()
         .unwrap()
-        .pane
+        .session_ref
 }
 
 fn exit_of_first_session(w: &World, id: BoxId) -> Option<i32> {
@@ -94,9 +83,9 @@ fn exit_of_first_session(w: &World, id: BoxId) -> Option<i32> {
     reader.row(first, |r| r.get(0)).unwrap()
 }
 
-/// Makes `p-1` read as gone.
-pub(super) fn gone(w: &World) {
-    w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+/// Makes `p-1` read as having no terminal.
+pub(super) fn gone(engine: &FakeEngine) {
+    engine.set_probes("p-1", agent::gone());
 }
 
 fn warning_codes(w: &World) -> Vec<String> {
@@ -104,21 +93,21 @@ fn warning_codes(w: &World) -> Vec<String> {
 }
 
 #[test]
-fn a_gone_pane_relaunches_with_a_prompt() {
+fn a_gone_terminal_relaunches_with_a_prompt() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let second = relaunch_of(&engine);
     assert_eq!(second.prompt.text(), Some("ship it"));
     assert_eq!(second.resume, None);
-    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+    assert_eq!(live_ref(&w, id), "p-2");
 }
 
 #[test]
 fn a_relaunch_records_the_given_parent_session() {
-    let (w, _engine, id) = started();
-    gone(&w);
+    let (w, engine, id) = started();
+    gone(&engine);
     let store = w.cx.store().unwrap();
     let parent = store.open_host_session("/w", None, None).unwrap();
     run(
@@ -144,24 +133,19 @@ fn a_relaunch_records_the_given_parent_session() {
 }
 
 #[test]
-fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
+fn an_exited_agent_relaunches_and_the_old_session_keeps_its_exit() {
     let (w, engine, id) = started();
-    w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
+    engine.set_probes("p-1", agent::exited(Some(3)));
     run(&w.cx, &prompt_req("ship it")).unwrap();
     assert_eq!(engine.launches().len(), 2);
-    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+    assert_eq!(live_ref(&w, id), "p-2");
     assert_eq!(exit_of_first_session(&w, id), Some(3));
-    assert!(w
-        .surface
-        .calls()
-        .iter()
-        .all(|c| !c.starts_with("close_pane")));
 }
 
 #[test]
 fn a_given_prompt_relaunches_with_a_fresh_brief_and_is_stored() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     set_agent_session(&w, id, "agent-1");
     run(&w.cx, &prompt_req("new prompt")).unwrap();
     let second = relaunch_of(&engine);
@@ -174,37 +158,36 @@ fn a_given_prompt_relaunches_with_a_fresh_brief_and_is_stored() {
 #[test]
 fn a_stored_agent_session_relaunches_with_resume() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     set_agent_session(&w, id, "agent-1");
     run(&w.cx, &resume_req()).unwrap();
     let second = relaunch_of(&engine);
     assert_eq!(second.resume.as_deref(), Some("agent-1"));
-    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+    assert_eq!(live_ref(&w, id), "p-2");
 }
 
 #[test]
 fn a_stored_agent_session_alone_relaunches_with_resume() {
     let (w, engine, id) = started();
-    gone(&w);
+    gone(&engine);
     set_agent_session(&w, id, "agent-1");
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
     assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
 }
 
 #[test]
-fn a_pane_read_error_counts_as_live() {
+fn an_unread_agent_counts_as_live() {
     let (w, engine, id) = started();
-    w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
+    engine.set_probes("p-1", Probe::TimedOut);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
+    assert_eq!(live_ref(&w, id), "p-1");
 }
 
 #[test]
-fn a_given_prompt_with_a_live_pane_warns_and_changes_nothing() {
+fn a_given_prompt_with_a_live_agent_warns_and_changes_nothing() {
     let (w, engine, id) = started();
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
     run(&w.cx, &prompt_req("new prompt")).unwrap();
     let warned = w.cx.take_warnings();
@@ -214,30 +197,29 @@ fn a_given_prompt_with_a_live_pane_warns_and_changes_nothing() {
         "--prompt ignored: the agent for demo is live; use moor steer"
     );
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
+    assert_eq!(live_ref(&w, id), "p-1");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.prompt.as_deref(), Some("ship it"));
 }
 
 #[test]
-fn a_live_pane_without_a_prompt_does_not_warn() {
+fn a_live_agent_without_a_prompt_does_not_warn() {
     let (w, _engine, _id) = started();
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
     run(&w.cx, &req("demo")).unwrap();
     assert!(!warning_codes(&w).contains(&"prompt_ignored".to_owned()));
 }
 
 #[test]
-fn the_relaunched_event_carries_both_panes_and_the_prompt() {
-    let (w, _engine, id) = started();
-    gone(&w);
-    run(&w.cx, &prompt_req("new prompt")).unwrap();
+fn the_relaunched_event_carries_the_prompt_and_its_cause() {
+    let (w, engine, id) = started();
+    gone(&engine);
+    crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
     let events = w.cx.store().unwrap().events(id, 100).unwrap();
     let e = events.iter().find(|e| e.kind == "relaunched").unwrap();
     assert_eq!(
         e.payload,
-        serde_json::json!({"old_pane": "p-1", "new_pane": "p-2", "prompt": "new prompt"})
+        serde_json::json!({"old_pane": null, "new_pane": null, "prompt": "ship it", "cause": "wake"})
     );
 }
 
@@ -252,9 +234,9 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
             })),
     );
     let mut w = world(FakeDriver::new());
-    w.cx = w.cx.with_engine(engine);
+    w.cx = w.cx.with_engine(engine.clone());
     let id = BoxId::new(run(&w.cx, &prompt_req("ship it")).unwrap().boxed.id);
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(!v.agent.launched);
     let store = w.cx.store().unwrap();
@@ -264,7 +246,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
 }
 
 #[test]
-fn a_gone_pane_with_no_prompt_and_no_agent_session_launches_with_no_prompt() {
+fn a_gone_terminal_with_no_prompt_and_no_agent_session_launches_with_no_prompt() {
     let (w, engine, id) = started();
     let clear = Fields {
         prompt: Field::Clear,
@@ -274,16 +256,16 @@ fn a_gone_pane_with_no_prompt_and_no_agent_session_launches_with_no_prompt() {
         .unwrap()
         .apply(Decision::new(id).set(clear))
         .unwrap();
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(relaunch_of(&engine).prompt, LaunchPrompt::None);
 }
 
 #[test]
-fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
+fn a_gone_terminal_start_is_refused_while_another_op_holds_the_lock() {
     let (w, engine, _id) = started();
-    gone(&w);
+    gone(&engine);
     let held = super::hold(&w, "close");
     let err = run(&w.cx, &prompt_req("ship it")).unwrap_err();
     assert_eq!(err.error.to_string(), "box busy: close in progress");
@@ -308,10 +290,10 @@ fn a_relaunch_watches_its_new_agent_for_a_first_run_prompt() {
             ),
     );
     let mut w = world(FakeDriver::new());
-    w.cx = w.cx.with_engine(engine);
+    w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &prompt_req("ship it")).unwrap();
     let id = BoxId::new(first.boxed.id);
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
@@ -319,7 +301,6 @@ fn a_relaunch_watches_its_new_agent_for_a_first_run_prompt() {
         .iter()
         .find(|e| e.kind == "agent_prompt_blocked")
         .unwrap();
-    assert_eq!(blocked.payload.get("pane"), Some(&"p-2".into()));
     assert_eq!(blocked.payload.get("prompt"), Some(&"folder_trust".into()));
 }
 
@@ -352,7 +333,6 @@ fn a_prompt_on_a_promptless_box_without_a_session_is_stored_and_launches_once() 
 fn a_second_start_without_a_prompt_does_not_launch_again() {
     let (w, engine, _id) = promptless();
     run(&w.cx, &prompt_req("late prompt")).unwrap();
-    w.surface.push_pane_obs("p-2", Ok(obs(None)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
@@ -375,7 +355,7 @@ fn an_issue_alone_launches_a_promptless_box_asking_to_resolve_it() {
 }
 
 #[test]
-fn a_prompt_on_a_promptless_box_with_a_live_pane_warns() {
+fn a_prompt_on_a_promptless_box_with_a_live_agent_warns() {
     let (w, engine, id) = started();
     let clear = Fields {
         prompt: Field::Clear,
@@ -385,7 +365,6 @@ fn a_prompt_on_a_promptless_box_with_a_live_pane_warns() {
         .unwrap()
         .apply(Decision::new(id).set(clear))
         .unwrap();
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
     run(&w.cx, &prompt_req("late prompt")).unwrap();
     assert!(warning_codes(&w).contains(&"prompt_ignored".to_owned()));
@@ -414,19 +393,10 @@ fn resume_req() -> StartReq {
     }
 }
 
-/// The resume registrations the surface saw.
-fn registrations(w: &World) -> Vec<String> {
-    w.surface
-        .calls()
-        .into_iter()
-        .filter(|c| c.starts_with("register_resume"))
-        .collect()
-}
-
 #[test]
 fn resume_without_a_stored_session_is_refused() {
     let (w, engine, _id) = started();
-    gone(&w);
+    gone(&engine);
     let e = run(&w.cx, &resume_req()).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
     assert_eq!(e.error.to_string(), "no agent session to resume");
@@ -449,79 +419,22 @@ fn resume_of_a_box_that_does_not_exist_is_refused() {
 }
 
 #[test]
-fn resume_on_a_live_pane_registers_again_and_does_not_launch() {
+fn resume_on_a_live_agent_does_not_launch() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    w.surface.have_pane("p-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
-    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-    w.cx.store()
-        .unwrap()
-        .set_registered_session(live.id, "agent-1")
-        .unwrap();
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
 }
 
 #[test]
-fn a_live_resume_records_the_registration_and_a_later_settle_sends_no_second_one() {
-    let (w, _engine, id) = started();
-    set_agent_session(&w, id, "agent-1");
-    w.surface.have_pane("p-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
-    run(&w.cx, &resume_req()).unwrap();
-    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert_eq!(live.registered_agent_session.as_deref(), Some("agent-1"));
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
-}
-
-#[test]
-fn resume_on_a_gone_pane_launches_the_resume_and_registers_the_new_pane() {
+fn resume_on_a_gone_terminal_launches_the_resume() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    w.surface.have_pane("p-2");
-    gone(&w);
+    gone(&engine);
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(v.agent.launched);
     assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
-    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
-}
-
-#[test]
-fn a_fresh_launch_registers_nothing_without_a_session_id() {
-    let (w, _engine, _id) = started();
-    assert!(registrations(&w).is_empty());
-}
-
-#[test]
-fn a_relaunch_that_resumes_registers_the_new_pane() {
-    let (w, _engine, id) = started();
-    set_agent_session(&w, id, "agent-1");
-    w.surface.have_pane("p-2");
-    gone(&w);
-    run(&w.cx, &resume_req()).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
-}
-
-#[test]
-fn a_rejected_registration_is_a_warning_not_a_failure() {
-    let (w, _engine, id) = started();
-    set_agent_session(&w, id, "agent-1");
-    w.surface.have_pane("p-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
-    w.surface
-        .set_resume_reply(ResumeOutcome::Rejected("invalid_resume_argv".into()));
-    w.cx.take_warnings();
-    run(&w.cx, &resume_req()).unwrap();
-    let warned = w.cx.take_warnings();
-    let msg = warned
-        .iter()
-        .find(|x| x.code == "resume_not_registered")
-        .unwrap();
-    assert!(msg.message.ends_with("invalid_resume_argv"), "{msg:?}");
 }
 
 /// A world with a Working prompt-less Box `demo`, no session, and stored agent session `agent-1`.
@@ -583,14 +496,4 @@ fn resume_with_a_prompt_is_not_refused_without_a_stored_session() {
         engine.launches().first().and_then(|l| l.prompt.text()),
         Some("G")
     );
-}
-
-#[test]
-fn a_surface_error_while_registering_is_a_warning() {
-    let (w, _engine, id) = started();
-    set_agent_session(&w, id, "agent-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
-    w.cx.take_warnings();
-    run(&w.cx, &resume_req()).unwrap();
-    assert!(warning_codes(&w).contains(&"resume_not_registered".to_owned()));
 }

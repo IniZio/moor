@@ -170,7 +170,7 @@ fn missing_branch_uses_a_placeholder() {
 fn clean_ready_box_is_released_and_closed() {
     let plan = close_gate(&facts(), false).ok();
     let plan = plan.expect("plan");
-    assert!(plan.release_box && plan.close_workspace);
+    assert!(plan.release_box);
     assert_eq!(
         plan.decision_close.lifecycle_input,
         Some(BoxLifecycleInput::Close { reason: None })

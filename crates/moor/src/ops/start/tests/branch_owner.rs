@@ -15,7 +15,6 @@ fn start_records_the_box_branch_by_its_id_and_makes_no_worktree() {
             .unwrap()
             .box_refs(BoxId::new(v.boxed.id), "branch");
     assert_eq!(refs.unwrap(), vec![want]);
-    assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
 }
 
 #[test]

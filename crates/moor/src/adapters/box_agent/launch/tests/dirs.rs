@@ -3,17 +3,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
-use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 
@@ -33,14 +29,13 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d
 }
 
-fn req(s: &FakeSurface) -> LaunchReq {
+fn req() -> LaunchReq {
     LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         resume: None,
@@ -57,13 +52,8 @@ fn req(s: &FakeSurface) -> LaunchReq {
     }
 }
 
-fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
-    BoxAgent::new(
-        d.clone(),
-        s.clone(),
-        Arc::new(Claude),
-        Arc::new(FakeClock::new(Ts::from_millis(0))),
-    )
+fn agent(d: &Arc<FakeDriver>) -> BoxAgent {
+    BoxAgent::new(d.clone(), Arc::new(Claude))
 }
 
 /// The agent script the launch put on the Box.
@@ -77,8 +67,8 @@ fn script_of(d: &FakeDriver) -> String {
 
 #[test]
 fn launch_dirs_names_the_dirs_the_launch_creates() {
-    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new()));
-    let (r, agent) = (req(&s), agent(&d, &s));
+    let d = driver(FakeDriver::new());
+    let (r, agent) = (req(), agent(&d));
     let (cred, tmp) = agent.launch_dirs(&r).unwrap().unwrap();
     agent.launch(&r).unwrap();
     let brief = d.puts().into_iter().next().unwrap().1;
@@ -97,8 +87,7 @@ fn launch_dirs_names_the_dirs_the_launch_creates() {
 #[test]
 fn launch_dirs_fails_at_the_home_step_when_the_home_cannot_be_read() {
     let d = driver(FakeDriver::new().fail_peek(DriverError::Timeout(Duration::from_secs(1))));
-    let s = Arc::new(FakeSurface::new());
-    let err = agent(&d, &s).launch_dirs(&req(&s)).unwrap_err();
+    let err = agent(&d).launch_dirs(&req()).unwrap_err();
     assert!(
         matches!(err, EngineError::Failed { step: "home", .. }),
         "{err:?}"

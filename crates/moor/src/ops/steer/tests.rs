@@ -27,36 +27,32 @@ use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
     id: BoxId,
 }
 
-/// Box `t` with a ready machine, an Idle state and a live session `agent-1` in pane `p-1`.
+/// Box `t` with a ready machine, an Idle state and a live session `agent-1`.
 fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(engine);
-    let surface = Arc::new(FakeSurface::new());
     let proc = Arc::new(ScriptedProc::new());
     proc.on(
         Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx =
-        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
+    let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     if session {
         cx.store()
             .unwrap()
-            .begin_session(id, "agent-1", Some("p-1"))
+            .begin_session(id, "agent-1", None)
             .unwrap();
     }
     Fx {
@@ -64,7 +60,6 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         cx,
         engine,
         driver,
-        surface,
         id,
     }
 }
@@ -276,7 +271,7 @@ fn an_asleep_box_wakes_before_the_send() {
 
 #[test]
 fn a_gone_pane_stops_the_session_and_refuses() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let engine = FakeEngine::new().probes("agent-1", agent::gone());
     let f = fx_with(engine, true);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -291,7 +286,7 @@ fn a_gone_pane_stops_the_session_and_refuses() {
 
 #[test]
 fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let engine = FakeEngine::new().steer_result(Err(EngineError::AgentGone));
     let f = fx_with(engine, true);
     let v = run(&f.cx, &text(" /exit ")).unwrap();
     assert_eq!(v.sent, " /exit ");
@@ -308,9 +303,7 @@ fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
 #[test]
 fn an_exited_agent_names_its_code() {
     let exited = agent::exited(Some(3));
-    let engine = FakeEngine::new()
-        .probes("agent-1", exited)
-        .steer_result(Err(EngineError::PaneGone));
+    let engine = FakeEngine::new().probes("agent-1", exited);
     let f = fx_with(engine, true);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(
@@ -501,8 +494,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
     let exited = agent::exited(Some(3));
     let engine = FakeEngine::new()
         .probes("agent-1", exited)
-        .transcript_text("abc")
-        .steer_result(Err(EngineError::PaneGone));
+        .transcript_text("abc");
     let f = fx_with(engine, true);
     let store = f.cx.store().unwrap();
     let current = store.live_session(f.id).unwrap().unwrap();

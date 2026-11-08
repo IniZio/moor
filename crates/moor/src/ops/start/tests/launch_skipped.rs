@@ -68,7 +68,7 @@ fn an_agentless_start_that_does_not_launch_stays_silent() {
 #[test]
 fn no_agent_beats_a_prompt_on_a_gone_pane() {
     let (w, engine, _id) = started();
-    gone(&w);
+    gone(&engine);
     let r = StartReq {
         prompt: Some("ship it".into()),
         no_agent: true,

@@ -1,16 +1,13 @@
-//! Stopping a Box's live agent: close its pane, end its session.
+//! Stopping a Box's live agent: end its terminal and its session.
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::surface::{PaneRef, SurfaceError};
-use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::store::{BoxRow, Store};
 
-/// Closes the live agent pane and ends its session, with the digest of its saved transcript;
-/// a pane already gone is fine.
+/// Ends the live agent's terminal and its session, with the digest of its saved transcript.
 ///
 /// Returns whether a session was ended.
 pub(crate) fn stop_agent(
@@ -27,18 +24,6 @@ pub(crate) fn stop_agent(
     // go ahead.
     if let Some(s) = sref.filter(|_| !row.asleep()) {
         let _ = cx.engine().stop(&s);
-    }
-    if let Some(pane) = session.pane.as_deref() {
-        match cx.surface().close_pane(&PaneRef::new(pane)) {
-            Ok(()) | Err(SurfaceError::NotFound) => {}
-            Err(e) => {
-                return Err(CommandError::new(
-                    ErrorKind::Failed,
-                    format!("could not close the agent pane: {e}; the Box stays open"),
-                )
-                .with_hint("try `moor close` again, or close the pane by hand"));
-            }
-        }
     }
     store.end_session(session.id, None, digest)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {

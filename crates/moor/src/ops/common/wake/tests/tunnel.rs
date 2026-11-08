@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::proxy_host::ProxyHostError;
-use moor_core::seam::surface::SurfaceError;
 
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
@@ -52,7 +51,8 @@ fn the_tunnel_is_up_before_the_agent_relaunches() {
     let f = hosted(fx(), &host);
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine
+        .set_probes("agent-1", crate::testing::agent::gone());
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert!(host.calls().contains(&ProxyHostCall::Restore(f.id)));
@@ -64,7 +64,8 @@ fn tunnel_failure_attempts_no_relaunch() {
     let f = hosted(fx(), &failing());
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine
+        .set_probes("agent-1", crate::testing::agent::gone());
     let store = f.cx.store().unwrap();
     let err = wake_and_revive(&f.cx, store, &row(&f)).unwrap_err();
     assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
@@ -78,7 +79,8 @@ fn waking_only_the_box_leaves_the_tunnel_and_the_agent_alone() {
     let f = hosted(fx(), &host);
     with_agent(&f);
     sleep(&f);
-    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.engine
+        .set_probes("agent-1", crate::testing::agent::gone());
     let store = f.cx.store().unwrap();
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(!host.calls().contains(&ProxyHostCall::Restore(f.id)));

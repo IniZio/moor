@@ -6,7 +6,6 @@ use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
@@ -20,7 +19,6 @@ fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }
@@ -50,19 +48,12 @@ fn store_opens_lazily_at_moor_db() {
     let cx = Cx::fake_bare(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     assert!(!dir.path().join("moor.db").exists());
     assert!(cx.store().is_ok());
     assert!(dir.path().join("moor.db").exists());
     assert!(cx.store().is_ok());
-}
-
-#[test]
-fn accessors_return_injected_values() {
-    let cx = cx(Path::new("/nonexistent"));
-    assert_eq!(cx.config().herdr_session(), "moor");
 }
 
 #[test]
@@ -94,7 +85,6 @@ fn every_context_uses_the_store_its_env_shares() {
         ..Cx::fake_bare(
             &own,
             Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
         )
     };

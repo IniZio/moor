@@ -14,7 +14,6 @@ use crate::store::db::DbExt as _;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
 use moor_schema::tables::{Boxes, Sessions};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
@@ -120,7 +119,6 @@ fn an_identity_with_no_user_is_refused_and_nothing_is_created() {
     assert!(message.starts_with("log in first"), "{message}");
     assert_eq!(box_rows(&w), 0);
     assert!(w.driver.calls().is_empty());
-    assert!(w.surface.calls().is_empty());
 }
 
 #[test]
@@ -129,7 +127,6 @@ fn a_start_outside_a_controller_socket_acts_as_no_one_and_is_refused() {
     let cx = Cx::fake_bare(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(crate::testing::proc::ScriptedProc::new()),
     );
     let err = run(&cx, &req("demo")).unwrap_err();
@@ -178,7 +175,6 @@ fn a_start_missing_secrets_is_refused_naming_every_one_and_creates_nothing() {
     assert_eq!(value.get("needs"), Some(&both), "{value}");
     assert_eq!(box_rows(&w), 0);
     assert!(w.driver.calls().is_empty());
-    assert!(w.surface.calls().is_empty());
 }
 
 #[test]

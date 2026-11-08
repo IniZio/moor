@@ -16,7 +16,6 @@ use crate::cx::Cx;
 use crate::testing::cx::new_box;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 struct World {
     _dir: tempfile::TempDir,
@@ -27,12 +26,7 @@ struct World {
 fn world(driver: FakeDriver) -> World {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let cx = Cx::fake(
-        dir.path(),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
-    );
+    let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
     World {
         _dir: dir,
         cx,

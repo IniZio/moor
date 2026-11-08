@@ -17,7 +17,7 @@ use crate::store::{BoxRow, Store};
 /// What a status sweep's read found of the agent of an awake Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Seen {
-    /// The Box answered and its agent runs, in its pane or a new one.
+    /// The Box answered and its agent runs.
     Running,
     /// The Box said its agent ended.
     Ended,
@@ -29,7 +29,7 @@ impl Seen {
     /// What `reading` and the `fate` its settle decided show of the agent.
     pub(crate) fn of(reading: &Reading, fate: Option<Fate>) -> Self {
         match fate {
-            Some(Fate::Reattached) => Self::Running,
+            Some(Fate::Running) => Self::Running,
             Some(Fate::Ended(_)) => Self::Ended,
             None if reading.pane == PaneLiveness::Live && !reading.read_failed => Self::Running,
             Some(Fate::Unreachable) | None => Self::Silent,

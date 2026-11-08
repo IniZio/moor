@@ -17,7 +17,6 @@ use crate::cx::Cx;
 use crate::store::{BoxRow, DriverRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
 /// The handle the fake driver gives its first Box.
@@ -42,7 +41,6 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     let cx = Cx::fake(
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new()),
         Arc::clone(&proc) as Arc<_>,
     );
     let got = driver

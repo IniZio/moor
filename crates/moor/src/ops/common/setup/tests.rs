@@ -24,7 +24,6 @@ use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 mod lines;
 mod output;
@@ -47,7 +46,6 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     let cx = Cx::fake_with_clock(
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
         clock,

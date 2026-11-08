@@ -16,7 +16,6 @@ use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use crate::testing::surface::FakeSurface;
 
 struct Rig {
     cx: Cx,
@@ -38,7 +37,6 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
     let cx = Cx::fake_with(
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         config,
     );

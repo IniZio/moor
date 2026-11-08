@@ -1,4 +1,4 @@
-//! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
+//! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box.
 
 use std::time::Duration;
 
@@ -11,7 +11,6 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
 use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, Warning};
 
@@ -32,10 +31,10 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// How long a forced close waits for the start it interrupted to stop.
 const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
 
-/// Closes a Box: gate, transcript save, agent stop, machine teardown and release, Workspace close.
+/// Closes a Box: gate, transcript save, agent stop, machine teardown and release.
 ///
-/// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
-/// takes the locks of the waiting Boxes. The machine is released before the Workspace closes.
+/// The Box lock is held from the gate to the release and dropped before promotion, which takes
+/// the locks of the waiting Boxes.
 /// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's keeper stops after the lock is dropped: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
@@ -77,7 +76,6 @@ pub(crate) fn run_with_reason(
     if req.force {
         release_stray(cx, store, &row)?;
     }
-    let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
@@ -104,7 +102,6 @@ pub(crate) fn run_with_reason(
     Ok(CloseView {
         boxed: box_view(&closed, cx.config()),
         box_deleted,
-        workspace_closed,
         agent_stopped,
         transcript: saved.map(|t| t.path),
         promoted,
@@ -357,25 +354,6 @@ fn wind_down(
     }
     teardown::teardown(cx, row, force)?;
     release::release(cx, store, row, plan.reason.clone())
-}
-
-/// Closes the Workspace; a missing one is success, other failures warn.
-fn close_workspace(cx: &Cx, row: &BoxRow, plan: &ClosePlan) -> bool {
-    let Some(id) = row.workspace_id.as_deref().filter(|_| plan.close_workspace) else {
-        return false;
-    };
-    match cx.surface().close_workspace(&WorkspaceRef::new(id)) {
-        Ok(()) | Err(SurfaceError::NotFound) => true,
-        Err(_) => {
-            cx.warn(Warning {
-                code: "workspace_close_failed".to_owned(),
-                message: "the Box is closed but its Workspace could not be closed; \
-                          close it by hand"
-                    .to_owned(),
-            });
-            false
-        }
-    }
 }
 
 mod check;

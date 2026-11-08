@@ -2,20 +2,22 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::seam::engine::{AgentFate, EngineError, Steer};
+use moor_core::seam::clock::Ts;
+use moor_core::seam::engine::Steer;
 use moor_core::seam::proxy_host::ProxyStatus;
-use moor_core::seam::surface::SurfaceError;
 use moor_core::BoxId;
 
 use super::dead_agent::{ca_stopped, recorded_failure, CA};
-use super::relaunch::{gone, obs, prompt_req, session, set_agent_session, started};
+use super::relaunch::{gone, prompt_req, session, set_agent_session, started};
 use super::{world, World};
 use crate::ops::common::wake::wake_and_revive;
 use crate::ops::start::{revive_after_wake, run};
 use crate::store::db::DbExt as _;
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
@@ -38,10 +40,10 @@ fn relaunched(w: &World, id: BoxId) -> Vec<serde_json::Value> {
 }
 
 #[test]
-fn a_gone_pane_after_wake_resumes_the_stored_session() {
+fn a_gone_terminal_after_wake_resumes_the_stored_session() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     revive(&w, id);
     let all = engine.launches();
     assert_eq!(all.len(), 2);
@@ -58,10 +60,10 @@ fn a_gone_pane_after_wake_resumes_the_stored_session() {
 }
 
 #[test]
-fn an_exited_pane_after_wake_relaunches_and_keeps_the_old_exit() {
+fn an_exited_agent_after_wake_relaunches_and_keeps_the_old_exit() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
+    engine.set_probes("p-1", agent::exited(Some(3)));
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
     let exit: Option<i32> =
@@ -84,19 +86,18 @@ fn an_exited_pane_after_wake_relaunches_and_keeps_the_old_exit() {
 }
 
 #[test]
-fn a_live_pane_after_wake_is_left_alone() {
+fn a_live_agent_after_wake_is_left_alone() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    w.surface.push_pane_obs("p-1", Ok(obs(None)));
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
     assert!(relaunched(&w, id).is_empty());
 }
 
 #[test]
-fn an_unreadable_pane_after_wake_counts_as_live() {
+fn an_unreadable_agent_after_wake_counts_as_live() {
     let (w, engine, id) = started();
-    w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
+    engine.set_probes("p-1", Probe::TimedOut);
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
     assert!(relaunched(&w, id).is_empty());
@@ -113,7 +114,7 @@ fn nothing_to_resume_and_no_prompt_launches_nothing() {
         .unwrap()
         .apply(Decision::new(id).set(clear))
         .unwrap();
-    gone(&w);
+    gone(&engine);
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
     assert!(relaunched(&w, id).is_empty());
@@ -136,7 +137,7 @@ fn status_calls(host: &FakeProxyHost) -> usize {
 fn the_relaunch_waits_for_the_tunnel_to_come_up() {
     let (mut w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     let host =
         FakeProxyHost::new().with_status_script([ProxyStatus::Starting, ProxyStatus::Starting, UP]);
     w.cx =
@@ -153,7 +154,7 @@ fn the_relaunch_waits_for_the_tunnel_to_come_up() {
 fn the_relaunch_waits_out_a_recent_tunnel_restart() {
     let (mut w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     let host = FakeProxyHost::new().with_status(UP);
     w.cx =
         w.cx.with_proxy_host(Arc::new(host))
@@ -177,7 +178,7 @@ fn the_relaunch_waits_out_a_recent_tunnel_restart() {
 fn the_relaunch_goes_ahead_when_the_tunnel_never_settles() {
     let (mut w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     let host = FakeProxyHost::new().with_status(ProxyStatus::Starting);
     w.cx =
         w.cx.with_proxy_host(Arc::new(host))
@@ -192,7 +193,7 @@ fn the_relaunch_goes_ahead_when_the_tunnel_never_settles() {
 fn a_relaunch_after_wake_makes_no_box_call() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     let before = w.driver.calls();
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
@@ -203,7 +204,7 @@ fn a_relaunch_after_wake_makes_no_box_call() {
 fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
-    gone(&w);
+    gone(&engine);
     engine.set_probes("p-2", ca_stopped());
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
@@ -211,15 +212,19 @@ fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_messag
     assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
 }
 
-/// As [`started`], with the Box answering `fates` when asked after its agent.
-pub(super) fn answering(
-    fates: Vec<Result<AgentFate, EngineError>>,
-) -> (World, Arc<FakeEngine>, BoxId) {
+/// As [`started`], with the Box's first session reading as `reading` when asked after its agent.
+pub(super) fn answering(reading: Probe) -> (World, Arc<FakeEngine>, BoxId) {
+    let (w, engine, id) = unanswered();
+    engine.set_probes("p-1", reading);
+    (w, engine, id)
+}
+
+/// As [`started`], with an agent session stored and nothing scripted for its reading.
+pub(super) fn unanswered() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Ok(session("p-1")))
-            .launch_result(Ok(session("p-2")))
-            .fates(fates),
+            .launch_result(Ok(session("p-2"))),
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
@@ -229,50 +234,41 @@ pub(super) fn answering(
     (w, engine, id)
 }
 
-pub(super) fn silent() -> Vec<Result<AgentFate, EngineError>> {
-    let failed = EngineError::Failed {
-        step: "fate",
-        message: "ssh: connection refused".to_owned(),
-    };
-    vec![Err(failed); 4]
+fn running() -> Probe {
+    agent::working(Ts::from_millis(1_000))
 }
 
 #[test]
-fn a_live_agent_after_wake_is_reattached_without_a_launch() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
-    gone(&w);
+fn a_live_agent_after_wake_is_left_running_without_a_launch() {
+    let (w, engine, id) = answering(running());
     revive(&w, id);
     assert_eq!(
         engine.launches().len(),
         1,
         "a launch kills the holder's terminal"
     );
-    assert_eq!(engine.reattached().len(), 1);
     assert!(relaunched(&w, id).is_empty());
     let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert_eq!(live.pane.as_deref(), Some("reattached-1"));
+    assert_eq!(live.session_ref, "p-1");
 }
 
 #[test]
 fn a_dead_agent_after_wake_relaunches_only_once_the_box_says_so() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: Some(9) })]);
-    gone(&w);
+    let (w, engine, id) = answering(agent::exited(Some(9)));
     revive(&w, id);
-    assert_eq!(engine.fates_left(), 0, "the Box was asked first");
+    assert!(engine.probe_count("p-1") > 0, "the Box was asked first");
     assert_eq!(engine.launches().len(), 2);
-    assert!(engine.reattached().is_empty());
 }
 
 #[test]
 fn a_box_that_does_not_answer_after_wake_launches_nothing_yet() {
-    let (w, engine, id) = answering(silent());
-    gone(&w);
+    let (w, engine, id) = answering(Probe::TimedOut);
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
     assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
 }
 
-/// Suspends `id` mid-turn for `reason`, ten seconds ago, then wakes it with its pane gone.
+/// Suspends `id` mid-turn for `reason`, ten seconds ago, then wakes it.
 pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
     let store = w.cx.store().unwrap();
     let suspend = BoxLifecycleInput::Suspend {
@@ -288,7 +284,6 @@ pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
     let at = w.cx.clock().now().as_millis() / 1000;
     store.set_resume_first(id, Some(at)).unwrap();
     w.cx.clock().sleep(Duration::from_secs(10));
-    gone(w);
     let row = store.box_row(id).unwrap().unwrap();
     wake_and_revive(&w.cx, store, &row).unwrap();
 }
@@ -307,8 +302,8 @@ pub(super) fn notes(engine: &FakeEngine) -> Vec<String> {
 pub(super) const CRITICAL: &str = "last-resort suspend: memory critical on hv";
 
 #[test]
-fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
+fn the_note_says_processes_are_intact_when_the_agent_was_still_running() {
+    let (w, engine, id) = answering(running());
     woken_after_suspend(&w, id, CRITICAL);
     assert_eq!(
         notes(&engine),
@@ -321,8 +316,8 @@ fn the_note_says_processes_are_intact_when_the_agent_was_reattached() {
 }
 
 #[test]
-fn a_reattached_agent_gets_its_keeper_back_and_keeps_its_terminal() {
-    let (mut w, engine, id) = answering(vec![Ok(AgentFate::Running)]);
+fn a_running_agent_gets_its_keeper_back_and_keeps_its_terminal() {
+    let (mut w, engine, id) = answering(running());
     let host = FakeProxyHost::new();
     w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
     woken_after_suspend(&w, id, CRITICAL);
@@ -333,12 +328,11 @@ fn a_reattached_agent_gets_its_keeper_back_and_keeps_its_terminal() {
         .count();
     assert_eq!(restores, 1);
     assert_eq!(engine.launches().len(), 1, "no launch over the live agent");
-    assert_eq!(engine.reattached().len(), 1);
 }
 
 #[test]
 fn the_note_says_processes_were_lost_when_the_agent_was_relaunched() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    let (w, engine, id) = answering(agent::exited(None));
     woken_after_suspend(&w, id, CRITICAL);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(
@@ -353,7 +347,7 @@ fn the_note_says_processes_were_lost_when_the_agent_was_relaunched() {
 
 #[test]
 fn the_note_names_a_stopped_machine_rather_than_memory() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    let (w, engine, id) = answering(agent::exited(None));
     woken_after_suspend(&w, id, moor_core::decide::reconcile::STOPPED_REASON);
     let said = notes(&engine);
     let first = said.first().map(String::as_str).unwrap_or_default();
@@ -368,7 +362,7 @@ fn the_note_names_a_stopped_machine_rather_than_memory() {
 
 #[test]
 fn no_note_goes_out_until_the_box_answers_and_the_mark_stays() {
-    let (w, engine, id) = answering(silent());
+    let (w, engine, id) = answering(Probe::TimedOut);
     woken_after_suspend(&w, id, CRITICAL);
     assert_eq!(notes(&engine), Vec::<String>::new());
     let store = w.cx.store().unwrap();
@@ -377,7 +371,7 @@ fn no_note_goes_out_until_the_box_answers_and_the_mark_stays() {
 
 #[test]
 fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
-    let (w, engine, id) = answering(vec![Ok(AgentFate::Ended { exit: None })]);
+    let (w, engine, id) = answering(agent::exited(None));
     let store = w.cx.store().unwrap();
     let handle = store
         .box_row(id)
@@ -391,7 +385,7 @@ fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
     crate::ops::common::reconcile::run(&w.cx);
     let row = store.box_row(id).unwrap().unwrap();
     assert!(store.resume_first(id).unwrap().is_some());
-    gone(&w);
+    gone(&engine);
     wake_and_revive(&w.cx, store, &row).unwrap();
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(
@@ -427,7 +421,7 @@ const LOST_NOTE: &str = "This Box's machine was lost and a new one replaced it, 
 
 #[test]
 fn a_stopped_box_whose_machine_is_gone_gets_a_new_one_and_leaves_the_queue() {
-    let (w, _engine, id) = answering(vec![]);
+    let (w, _engine, id) = unanswered();
     replaced_machine(&w, id);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
@@ -441,7 +435,7 @@ fn a_stopped_box_whose_machine_is_gone_gets_a_new_one_and_leaves_the_queue() {
 
 #[test]
 fn a_replaced_machine_records_the_lost_disk_and_clears_the_resume_mark() {
-    let (w, _engine, id) = answering(vec![]);
+    let (w, _engine, id) = unanswered();
     replaced_machine(&w, id);
     let store = w.cx.store().unwrap();
     assert!(store.newest_event_of(id, "disk_lost").unwrap().is_some());
@@ -450,12 +444,12 @@ fn a_replaced_machine_records_the_lost_disk_and_clears_the_resume_mark() {
 
 #[test]
 fn the_first_agent_started_on_a_replaced_machine_is_told_and_only_that_one() {
-    let (w, engine, id) = answering(vec![]);
-    gone(&w);
+    let (w, engine, id) = unanswered();
+    gone(&engine);
     replaced_machine(&w, id);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(notes(&engine), [LOST_NOTE]);
-    w.surface.push_pane_obs("p-2", Err(SurfaceError::NotFound));
+    engine.set_probes("p-2", agent::gone());
     revive(&w, id);
     assert_eq!(engine.launches().len(), 3);
     assert_eq!(notes(&engine), [LOST_NOTE], "told once");
@@ -463,12 +457,12 @@ fn the_first_agent_started_on_a_replaced_machine_is_told_and_only_that_one() {
 
 #[test]
 fn a_start_that_replaces_a_lost_machine_records_the_disk_and_tells_the_agent() {
-    let (w, engine, id) = answering(vec![]);
+    let (w, engine, id) = unanswered();
     let store = w.cx.store().unwrap();
     let row = store.box_row(id).unwrap().unwrap();
     w.driver.forget(&row.boxed.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
-    gone(&w);
+    gone(&engine);
     run(&w.cx, &super::req("demo")).unwrap();
     assert!(store.newest_event_of(id, "disk_lost").unwrap().is_some());
     assert_eq!(notes(&engine), [LOST_NOTE]);

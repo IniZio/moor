@@ -1,140 +1,45 @@
-//! The agent runs in a detached terminal on the Box, held by herdr-core, and the
-//! host pane attaches to it, so a dropped ssh link leaves the agent running and a new pane can
-//! attach to it.
+//! The agent runs in a detached terminal on the Box, held by herdr-core, so a dropped link leaves
+//! the agent running and a client can attach to it.
 
 use std::time::Duration;
 
-use moor_core::boxscript::{command_line, quote};
-use moor_core::name::BoxName;
+use moor_core::boxscript::quote;
 use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
-use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
+use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, WorkspaceRef};
 
 use super::holder;
 use super::AGENT_PATH_LINE;
 
-/// The Box command that attaches to the agent's terminal and exits with the agent's
-/// status once the terminal is over. A terminal already over is not attached.
-fn attach() -> String {
-    format!(
-        "{AGENT_PATH_LINE}; if {}; then {}; fi; {}",
-        holder::alive(),
-        holder::attach(),
-        holder::exit_code()
-    )
-}
-
-/// The Box command that replaces any agent terminal with one running the script
-/// file at `script`, then attaches. A Box without herdr-core refuses to start the agent: on the
-/// bare link a dropped connection would end it again.
-fn start(script: &str) -> String {
+/// The Box command that replaces any agent terminal with one running the script file at
+/// `script`. A Box without herdr-core refuses to start the agent: on the bare link a dropped
+/// connection would end it.
+pub(super) fn start(script: &str) -> String {
     format!(
         "{AGENT_PATH_LINE}; if ! command -v {} >/dev/null 2>&1; then \
-         echo {} >&2; exit {NO_HOLDER_EXIT}; fi; {} {}",
+         echo {} >&2; exit {NO_HOLDER_EXIT}; fi; {}",
         holder::PROGRAM,
         quote(&refusal()),
         holder::open(script),
-        attach(),
     )
 }
 
 /// What a Box without herdr-core prints before refusing to start the agent.
-fn refusal() -> String {
+pub(super) fn refusal() -> String {
     format!(
         "moor: {} is not installed on the Box; the agent needs it to outlive a dropped link",
         holder::PROGRAM
     )
 }
+
 /// The exit status of that refusal, the shell's command-not-found status.
-const NO_HOLDER_EXIT: u8 = 127;
-
-/// The host pane's shell line: run `box_cmd` on the Box through `connect`, then print the exit
-/// marker with its status. moor asks the Box whether the agent outlived a pane that ended.
-fn line(connect: &[String], box_cmd: &str) -> String {
-    format!(
-        "{} {}; c=$?; printf '\\r\\033[K'; echo \"moor: agent exited $c\"",
-        command_line(connect),
-        quote(box_cmd)
-    )
-}
-
-/// The pane line that starts the agent script at `script` on the Box. The script travels as a
-/// file, not inside this line: each shell layer between here and the holder would quote it again.
-pub(super) fn pane_line(connect: &[String], script: &str) -> String {
-    line(connect, &start(script))
-}
+pub(super) const NO_HOLDER_EXIT: u8 = 127;
 
 /// The command that relays the agent's terminal through `connect`.
 pub(crate) fn relay_argv(connect: &[String]) -> Vec<String> {
     let mut argv = connect.to_vec();
     argv.push(format!("{AGENT_PATH_LINE}; {}", holder::relay()));
     argv
-}
-
-/// Opens a pane in `ws` that attaches to the running agent of `s`.
-pub(in crate::adapters::box_agent) fn reattach(
-    driver: &dyn Driver,
-    surface: &dyn Surface,
-    s: &SessionRef,
-    ws: &WorkspaceRef,
-    name: &BoxName,
-) -> Result<PaneRef, EngineError> {
-    let failed = |message: String| EngineError::Failed {
-        step: "reattach",
-        message,
-    };
-    let connect = driver
-        .connect_argv(&s.handle)
-        .map_err(|e| failed(e.to_string()))?;
-    surface
-        .open_pane(
-            ws,
-            &PaneCmd {
-                label: format!("agent:{}", name.as_str()),
-                argv: vec!["sh".to_owned(), "-c".to_owned(), line(&connect, &attach())],
-                env: Vec::new(),
-            },
-        )
-        .map_err(|e| failed(e.to_string()))
-}
-
-/// Time allowed for each Box command that tells what became of the agent.
-const FATE_DEADLINE: Duration = Duration::from_secs(20);
-
-/// Asks the Box whether the agent's terminal still runs and, once it is over, for its status.
-pub(in crate::adapters::box_agent) fn fate(
-    driver: &dyn Driver,
-    s: &SessionRef,
-    deadline: Deadline,
-) -> Result<AgentFate, EngineError> {
-    let deadline = Deadline(deadline.0.min(FATE_DEADLINE));
-    let run = |cmd: String| {
-        let spec = ExecSpec {
-            argv: vec!["sh".to_owned(), "-c".to_owned(), cmd],
-            env: Vec::new(),
-            cwd: Some(s.workdir.clone()),
-            output: None,
-        };
-        match driver.exec(&s.handle, &spec, deadline) {
-            Ok(ExecOutcome::Exited { code }) => Ok(code),
-            Ok(ExecOutcome::Interrupted) => Err(EngineError::Failed {
-                step: "fate",
-                message: "interrupted".to_owned(),
-            }),
-            Err(e) => Err(EngineError::Box(e)),
-        }
-    };
-    fate_by(run)
-}
-
-/// What became of the agent, told by Box commands that `run` runs in the workdir.
-fn fate_by(run: impl Fn(String) -> Result<i32, EngineError>) -> Result<AgentFate, EngineError> {
-    if run(format!("{AGENT_PATH_LINE}; {}", holder::alive()))? == 0 {
-        return Ok(AgentFate::Running);
-    }
-    let exit = run(format!("{AGENT_PATH_LINE}; {}", holder::exit_code()))?;
-    Ok(AgentFate::Ended { exit: Some(exit) })
 }
 
 /// The Box command that ends the agent's terminal; it succeeds when there is none.

@@ -18,7 +18,6 @@ mod on_nodes;
 mod on_provider;
 mod on_ready;
 mod on_setup;
-mod on_surface;
 mod on_user;
 
 /// Crabbox as a `-moor` build that moor accepts.
@@ -138,8 +137,7 @@ fn checks_run_in_the_order_of_the_setup_guide() {
             "provider",
             "crabbox",
             "nodes",
-            "user",
-            "surface"
+            "user"
         ]
     );
 }

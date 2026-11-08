@@ -144,7 +144,6 @@ pub(crate) fn box_view_with_run(
         state_reason: row.state_reason.clone(),
         base: row.base.clone(),
         branch: row.branch.clone(),
-        workspace: row.workspace_id.clone(),
         driver: row.boxed.as_ref().map(|b| driver_view(b, config)),
         agent: None,
         run: run.map(run_view),

@@ -179,13 +179,12 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
 fn two_starts_racing_for_one_free_slot_bind_one_and_leave_one_pending() {
     let w = world();
     let (dir, config) = (w.dir.path().to_owned(), w.cx.config().clone());
-    let (driver, surface, proc, forge) = (&w.driver, &w.surface, &w.proc, &w.forge);
+    let (driver, proc, forge) = (&w.driver, &w.proc, &w.forge);
     let starter = |name: &'static str| {
         let (dir, config) = (dir.clone(), config.clone());
-        let (driver, surface, proc, forge) =
-            (driver.clone(), surface.clone(), proc.clone(), forge.clone());
+        let (driver, proc, forge) = (driver.clone(), proc.clone(), forge.clone());
         move || {
-            let cx = Cx::fake_with(&dir, driver, surface, proc, config).with_forge(forge);
+            let cx = Cx::fake_with(&dir, driver, proc, config).with_forge(forge);
             start::run(&cx, &req(name)).unwrap()
         }
     };

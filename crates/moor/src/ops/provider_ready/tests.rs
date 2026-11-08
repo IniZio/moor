@@ -11,7 +11,6 @@ use super::run;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
 
 const OUT: &str = concat!(
     "adapter: noise\n",
@@ -36,13 +35,7 @@ fn cx(dir: &std::path::Path, proc: Arc<ScriptedProc>, runtimes: &[&str]) -> Cx {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    Cx::fake(
-        dir,
-        Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
-        proc,
-    )
-    .with_config(UserConfig {
+    Cx::fake(dir, Arc::new(FakeDriver::new()), proc).with_config(UserConfig {
         nodes,
         ..UserConfig::default()
     })

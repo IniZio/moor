@@ -154,29 +154,22 @@ fn a_forced_close_interrupts_a_setup_a_restarted_controller_follows() {
     let (mut w, _) = restarted_mid_setup("setup: [sdkmanager]\n");
     w.driver
         .ends_exec_when(".moor/runs/", ExecOutcome::Interrupted);
-    let fresh = Cx::fake(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-    );
+    let fresh = Cx::fake(w.dir.path(), w.driver.clone(), w.proc.clone());
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
     let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
-    let (dir, driver, surface, proc, slot) = (
+    let (dir, driver, proc, slot) = (
         w.dir.path().to_owned(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         closer.clone(),
     );
     w.driver.on_exec_of(".moor/runs/", move || {
         let mut slot = slot.lock().unwrap();
         if slot.is_none() {
-            let (dir, driver, surface, proc) =
-                (dir.clone(), driver.clone(), surface.clone(), proc.clone());
+            let (dir, driver, proc) = (dir.clone(), driver.clone(), proc.clone());
             *slot = Some(std::thread::spawn(move || {
-                let other = Cx::fake_with(&dir, driver, surface, proc, UserConfig::default());
+                let other = Cx::fake_with(&dir, driver, proc, UserConfig::default());
                 close_demo_in(&other)
                     .map(|v| v.boxed.lifecycle)
                     .map_err(|e| e.error.to_string())
@@ -332,21 +325,14 @@ fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machi
     let w = world(FakeDriver::new());
     script_base_yaml(&w, None);
     let seen = Arc::new(Mutex::new(None));
-    let (dir, driver, surface, proc, got) = (
+    let (dir, driver, proc, got) = (
         w.dir.path().to_owned(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         seen.clone(),
     );
     w.driver.notes_while_acquiring(&[], move || {
-        let other = Cx::fake_with(
-            &dir,
-            driver.clone(),
-            surface.clone(),
-            proc.clone(),
-            UserConfig::default(),
-        );
+        let other = Cx::fake_with(&dir, driver.clone(), proc.clone(), UserConfig::default());
         let req = CloseReq {
             target: BoxName::parse_allow_bare("demo").unwrap().into(),
             force: false,
@@ -376,19 +362,13 @@ type Closed = Result<BoxLifecycle, String>;
 fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
     let mut w = world(FakeDriver::new().exec_ends_when("sdkmanager", ExecOutcome::Interrupted));
     script_base_yaml(&w, Some("setup: [sdkmanager --install ndk]\n"));
-    let fresh = Cx::fake(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-    );
+    let fresh = Cx::fake(w.dir.path(), w.driver.clone(), w.proc.clone());
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
     let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
-    let (dir, driver, surface, proc, slot, stop) = (
+    let (dir, driver, proc, slot, stop) = (
         w.dir.path().to_owned(),
         w.driver.clone(),
-        w.surface.clone(),
         w.proc.clone(),
         closer.clone(),
         cancel,
@@ -396,10 +376,9 @@ fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
     w.driver.on_exec(move || {
         let mut slot = slot.lock().unwrap();
         if slot.is_none() {
-            let (dir, driver, surface, proc) =
-                (dir.clone(), driver.clone(), surface.clone(), proc.clone());
+            let (dir, driver, proc) = (dir.clone(), driver.clone(), proc.clone());
             *slot = Some(std::thread::spawn(move || {
-                let other = Cx::fake_with(&dir, driver, surface, proc, UserConfig::default());
+                let other = Cx::fake_with(&dir, driver, proc, UserConfig::default());
                 close_demo_in(&other)
                     .map(|v| v.boxed.lifecycle)
                     .map_err(|e| e.error.to_string())

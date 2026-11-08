@@ -261,7 +261,7 @@ fn every_request_kind_that_names_a_box_is_refused_for_another_user() {
         unknown.is_empty(),
         "say whether these new request kinds name a Box: {unknown:?}"
     );
-    assert_eq!(checked, 26, "{kinds:?}");
+    assert_eq!(checked, 24, "{kinds:?}");
 }
 
 #[test]

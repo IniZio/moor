@@ -10,16 +10,14 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{Life, Note, Probe, Term, WaitCheck};
-use moor_core::name::{BoxName, BoxPath};
+use moor_core::name::BoxPath;
 use moor_core::profile::Manifest;
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
-    AgentFate, Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
+    Engine, EngineError, GitSource, LaunchReq, SessionRef, Steer, SteerOutcome,
 };
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::PaneRef;
-use moor_core::seam::surface::WorkspaceRef;
 
 #[derive(Default)]
 struct State {
@@ -28,13 +26,11 @@ struct State {
     fail_probe: std::collections::HashSet<String>,
     wait_checks: HashMap<String, WaitCheck>,
     counts: HashMap<String, usize>,
-    panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
     launches: Vec<LaunchReq>,
     box_home: Option<String>,
     fail_launch_dirs: Option<String>,
     prompts: Vec<(String, FirstRunPrompt)>,
-    quiet_first_run: bool,
     steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
     steers: Vec<(String, Steer)>,
     transcripts: Vec<(String, Deadline)>,
@@ -46,8 +42,6 @@ struct State {
     install: Option<AgentInstall>,
     profile_install: Option<String>,
     profile_sources: Vec<GitSource>,
-    fates: VecDeque<Result<AgentFate, EngineError>>,
-    reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
     after_steer: Vec<(String, Probe)>,
     asked: Vec<&'static str>,
@@ -121,12 +115,6 @@ impl FakeEngine {
         self
     }
 
-    /// The agent runs no hook while a first-run screen is up.
-    pub(crate) fn hooks_quiet_during_first_run(self) -> Self {
-        self.st().quiet_first_run = true;
-        self
-    }
-
     /// The next steer returns `r`; steers past the scripted ones succeed without a retry.
     pub(crate) fn steer_result(self, r: Result<SteerOutcome, EngineError>) -> Self {
         self.st().steer_results.push_back(r);
@@ -152,23 +140,6 @@ impl FakeEngine {
     /// Every steer so far as the session id and what was sent, in call order.
     pub(crate) fn steers(&self) -> Vec<(String, Steer)> {
         self.st().steers.clone()
-    }
-
-    /// Queues what the next calls to `agent_fate` answer, in order; an empty queue answers
-    /// that the agent ended with its pane.
-    pub(crate) fn fates(self, fates: Vec<Result<AgentFate, EngineError>>) -> Self {
-        self.st().fates.extend(fates);
-        self
-    }
-
-    /// Fates not yet asked for.
-    pub(crate) fn fates_left(&self) -> usize {
-        self.st().fates.len()
-    }
-
-    /// Every reattach so far, as (session id, new pane).
-    pub(crate) fn reattached(&self) -> Vec<(String, String)> {
-        self.st().reattached.clone()
     }
 
     /// The session ids transcripts were requested for, in call order.
@@ -209,7 +180,6 @@ impl Engine for FakeEngine {
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Probe {
         let mut st = self.st();
         *st.counts.entry(s.id.clone()).or_default() += 1;
-        st.panes.insert(s.id.clone(), s.pane.clone());
         if let Some(clock) = st.hang.clone() {
             drop(st);
             clock.sleep(deadline.0);
@@ -232,10 +202,6 @@ impl Engine for FakeEngine {
                 note: Note::default(),
                 screen: None,
             })
-    }
-
-    fn hooks_quiet_during_first_run(&self) -> bool {
-        self.st().quiet_first_run
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
@@ -310,27 +276,6 @@ impl Engine for FakeEngine {
             submit_retried: false,
             submit_checked: true,
         }))
-    }
-
-    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
-        self.st().asked.push("fate");
-        self.st()
-            .fates
-            .pop_front()
-            .unwrap_or(Ok(AgentFate::Ended { exit: None }))
-    }
-
-    fn reattach(
-        &self,
-        s: &SessionRef,
-        _ws: &WorkspaceRef,
-        _name: &BoxName,
-    ) -> Result<PaneRef, EngineError> {
-        let mut st = self.st();
-        st.asked.push("reattach");
-        let pane = format!("reattached-{}", st.reattached.len() + 1);
-        st.reattached.push((s.id.clone(), pane.clone()));
-        Ok(PaneRef::new(pane))
     }
 
     fn transcript(&self, s: &SessionRef, dest: &Path, d: Deadline) -> Result<(), EngineError> {

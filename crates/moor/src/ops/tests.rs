@@ -6,7 +6,6 @@ use super::dispatch;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 /// Context over fakes with no usable state.
 fn cx() -> Cx {
@@ -14,7 +13,6 @@ fn cx() -> Cx {
     Cx::fake(
         p,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

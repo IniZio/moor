@@ -11,7 +11,6 @@ use crate::ops::authz::{authorize, HOLD_OPERATOR_ONLY};
 use crate::testing::cx::new_box;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 #[test]
 fn a_local_caller_who_is_not_the_operator_is_refused() {
@@ -19,7 +18,6 @@ fn a_local_caller_who_is_not_the_operator_is_refused() {
     let cx = Cx::fake(
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();

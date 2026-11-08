@@ -31,7 +31,6 @@ fn empty_doc_is_defaults() {
 fn valueless_sections_are_defaults() {
     for key in [
         "box",
-        "surface",
         "tools",
         "drivers",
         "agent",
@@ -63,7 +62,6 @@ fn leading_zero_text_needs_quotes() {
 #[test]
 fn defaults() {
     let c = UserConfig::default();
-    assert_eq!(c.herdr_session(), "moor");
     assert!(c.nodes.is_empty());
     assert_eq!(c.box_.size, None);
 }
@@ -92,14 +90,11 @@ fn a_single_node_parses_as_the_default() {
 }
 
 #[test]
-fn box_session_and_tools_parse() {
+fn box_and_tools_parse() {
     let c = ok("box: {size: large, sleep_after: 30m}\n\
-         surface: {herdr: {session: work}}\n\
          tools: {crabbox: /opt/crabbox, git: git2}\n");
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
-    assert_eq!(c.herdr_session(), "work");
-    assert_eq!(c.surface.kind, None);
     assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
     assert_eq!(c.tools.herdr, None);
@@ -472,27 +467,6 @@ fn launch_timeout_defaults_to_three_minutes_and_parses() {
 fn a_launch_timeout_that_is_not_a_duration_is_refused() {
     let err = parse_user("user.yaml", "box: {launch_timeout: soon}").unwrap_err();
     assert!(err.to_string().contains("box.launch_timeout"), "{err}");
-}
-
-#[test]
-fn surface_kind_parses() {
-    assert_eq!(
-        ok("surface: {kind: pty}").surface.kind,
-        Some(SurfaceKind::Pty)
-    );
-    assert_eq!(
-        ok("surface: {kind: herdr}").surface.kind,
-        Some(SurfaceKind::Herdr)
-    );
-    err("surface: {kind: tmux}");
-}
-
-#[test]
-fn surface_kind_names_parse_as_the_config_spells_them() {
-    assert_eq!(SurfaceKind::parse("pty"), Some(SurfaceKind::Pty));
-    assert_eq!(SurfaceKind::parse("herdr"), Some(SurfaceKind::Herdr));
-    assert_eq!(SurfaceKind::parse("Pty"), None);
-    assert_eq!(SurfaceKind::parse(""), None);
 }
 
 #[test]

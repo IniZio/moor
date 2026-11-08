@@ -198,15 +198,9 @@ fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() 
     start(&w).unwrap_err();
     let execs_before = w.driver.execs().len();
 
-    let later = crate::cx::Cx::fake_with(
-        w.dir.path(),
-        w.driver.clone(),
-        w.surface.clone(),
-        w.proc.clone(),
-        yaml("b"),
-    )
-    .with_forge(w.forge.clone())
-    .with_engine(Arc::new(FakeEngine::new()));
+    let later = crate::cx::Cx::fake_with(w.dir.path(), w.driver.clone(), w.proc.clone(), yaml("b"))
+        .with_forge(w.forge.clone())
+        .with_engine(Arc::new(FakeEngine::new()));
     let again = run(
         &later,
         &StartReq {

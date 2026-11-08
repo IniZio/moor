@@ -12,7 +12,6 @@ use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::surface::PaneRef;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, ProviderId, StartReq};
 
 use super::run;
@@ -25,7 +24,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::surface::FakeSurface;
 
 mod bring_up;
 
@@ -57,7 +55,6 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
     let cx = Cx::fake_with_clock(
         dir.path(),
         driver.clone(),
-        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
         clock.clone(),
@@ -205,22 +202,21 @@ fn retry_where_the_machine_is_gone_acquires_a_new_one_and_runs_setup() {
     assert_eq!(acquires, 2);
 }
 
-/// A launched session on pane `p-1`.
+/// A launched session.
 fn pane_session() -> SessionRef {
     SessionRef {
         id: String::new(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        pane: Some(PaneRef::new("p-1")),
     }
 }
 
-/// A world with a failing first setup step whose engine opens a pane on its first launch.
+/// A world with a failing first setup step whose engine answers a launch with a session.
 fn world_with_engine(driver: FakeDriver) -> (World, Arc<FakeEngine>) {
     yaml_world_with_engine("setup: [a]\n", driver)
 }
 
-/// A world serving `.moor.yaml` text `yaml` whose engine opens a pane on its first launch.
+/// A world serving `.moor.yaml` text `yaml` whose engine answers a launch with a session.
 fn yaml_world_with_engine(yaml: &str, driver: FakeDriver) -> (World, Arc<FakeEngine>) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(pane_session())));
     let mut w = world(yaml, driver);
