@@ -27,7 +27,7 @@ export default defineConfig({
 			sidebar: [
 				{ label: 'Get started', items: [{ label: 'What is moor', link: '/' }, 'use'] },
 				{ label: 'Use', items: ['mcp', 'herdr', 'machines', 'workflows', 'notify', 'listen'] },
-				{ label: 'Self-host', items: ['run', 'deploy', 'kubernetes', 'slack', 'web'] },
+				{ label: 'Self-host', items: ['run', 'deploy', 'kubernetes', 'slack'] },
 				{ label: 'Reference', items: ['cli', 'config'] },
 				{ label: 'Concepts', items: ['nodes', 'providers'] },
 			],

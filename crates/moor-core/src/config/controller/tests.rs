@@ -125,20 +125,6 @@ fn removed_proof_cap_key_is_unknown() {
 }
 
 #[test]
-fn removed_web_key_points_to_moor_web() {
-    for text in [
-        "web: {port: 8765, token_file: x}\n",
-        "web: ~\n",
-        "web:\n",
-        "web: null\n",
-    ] {
-        let e = err(text);
-        assert_eq!(e.path, "web", "{text}");
-        assert!(e.to_string().contains("moor-web"), "{text}: {e}");
-    }
-}
-
-#[test]
 fn removed_slack_key_says_to_delete_it() {
     for text in [
         "slack: {app_token_file: /x/app, bot_token_file: /x/bot, channels: [C1], users: [U1]}\n",
@@ -184,12 +170,16 @@ fn a_reserved_or_malformed_front_namespace_is_refused() {
 fn a_front_command_is_an_argv() {
     let c = parse_controller(
         "c.yaml",
-        "fronts:\n  web:\n    command: [moor-web, --port, '8080']\n  slack: {}\n",
+        "fronts:\n  web:\n    command: [moor-front, --port, '8080']\n  slack: {}\n",
     )
     .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(
         c.fronts.get("web").and_then(|f| f.command.as_deref()),
-        Some(["moor-web", "--port", "8080"].map(String::from).as_slice())
+        Some(
+            ["moor-front", "--port", "8080"]
+                .map(String::from)
+                .as_slice()
+        )
     );
     assert_eq!(c.fronts.get("slack").map(|f| f.command.clone()), Some(None));
 }
@@ -218,14 +208,14 @@ fn a_front_state_dir_is_an_absolute_path() {
 fn a_front_read_only_list_holds_absolute_paths() {
     let c = parse_controller(
         "c.yaml",
-        "fronts:\n  web:\n    read_only: [/etc/moor-web]\n",
+        "fronts:\n  web:\n    read_only: [/etc/moor-front]\n",
     )
     .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(
         c.fronts.get("web").map(|f| f.read_only.clone()),
-        Some(vec![std::path::PathBuf::from("/etc/moor-web")])
+        Some(vec![std::path::PathBuf::from("/etc/moor-front")])
     );
-    let e = err("fronts:\n  web:\n    read_only: [etc/moor-web]\n");
+    let e = err("fronts:\n  web:\n    read_only: [etc/moor-front]\n");
     assert_eq!(e.path, "fronts.web.read_only", "{e}");
     assert!(e.to_string().contains("must hold absolute paths"), "{e}");
 }

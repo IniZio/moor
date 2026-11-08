@@ -3474,24 +3474,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moor-web"
-version = "0.2.0"
-dependencies = [
- "clap",
- "moor-client",
- "moor-core",
- "moor-migrate",
- "moor-testkit",
- "rusqlite",
- "rustix",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "signal-hook 0.4.4",
- "tempfile",
-]
-
-[[package]]
 name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

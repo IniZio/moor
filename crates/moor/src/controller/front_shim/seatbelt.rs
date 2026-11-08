@@ -22,7 +22,7 @@ use signal_hook::iterator::Signals;
 use super::{code, enforced, supported, Asked, Layout, POLL};
 
 /// The host paths every front may read: the shell and tools a script front runs, the locale
-/// data, name service config and certificates in `/etc`. moor-web and moor-slack need none of
+/// data, name service config and certificates in `/etc`. moor-slack needs none of
 /// them; macOS maps the dyld cache and system frameworks for any process. A path through a
 /// symlink, such as `/etc` to `/private/etc`, may be read by either name.
 pub(in crate::controller) const SYSTEM: [&str; 4] =

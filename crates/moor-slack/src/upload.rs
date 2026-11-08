@@ -234,7 +234,7 @@ impl Read for Checked {
     }
 }
 
-/// A size as moor-web shows it: bytes below 1 KB, else KB, MB or GB, with one decimal below 10.
+/// A size for people to read: bytes below 1 KB, else KB, MB or GB, with one decimal below 10.
 fn size_text(n: u64) -> String {
     if n < 1024 {
         return format!("{n} B");

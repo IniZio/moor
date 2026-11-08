@@ -14,7 +14,6 @@ members = [
   "crates/moor-schema",
   "crates/moor-slack",
   "crates/moor-testkit",
-  "crates/moor-web",
   "tools/layering",
   "tools/test-children",
   "tools/migration-numbers",

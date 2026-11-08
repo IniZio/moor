@@ -118,7 +118,6 @@ For operators:
   the controller config, and the vault key.
 - [Nodes](docs/nodes.md), [providers and the Proxy](docs/providers.md), and
   [machines](docs/machines.md): where Boxes run.
-- [Web front](docs/web.md): a local web page for the controller.
 
 For developers:
 

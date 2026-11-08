@@ -33,14 +33,6 @@ pub struct ControllerConfig {
     /// close off. None means 86400.
     pub close_setup_failed_after_secs: Option<u64>,
     /// Removed key, kept only so a stale config gets a pointed error.
-    /// Double option so a present-but-null `web:` still counts as present.
-    #[serde(default, deserialize_with = "present_key")]
-    #[allow(
-        clippy::option_option,
-        reason = "outer Some means the key was present, even when null"
-    )]
-    web: Option<Option<serde_json::Value>>,
-    /// Removed key, kept only so a stale config gets a pointed error.
     #[serde(default, deserialize_with = "present_key")]
     #[allow(
         clippy::option_option,
@@ -212,13 +204,6 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     check_intervals(&cfg, file)?;
     if let Some((key, why)) = cfg.blobs.problem() {
         return Err(ConfigError::new(key, why).in_file(file));
-    }
-    if cfg.web.is_some() {
-        return Err(ConfigError::new(
-            "web",
-            "was removed from the controller config; run the separate moor-web daemon for the web UI",
-        )
-        .in_file(file));
     }
     if cfg.slack.is_some() {
         return Err(ConfigError::new(
