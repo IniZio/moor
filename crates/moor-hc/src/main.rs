@@ -1,4 +1,4 @@
-//! `moor-hc`: keeps one hc machine per up moor Box and pipes hc's bytes into each Box.
+//! `moor-hc`: keeps one hc machine per open moor Box and pipes hc's bytes into each Box.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -45,8 +45,9 @@ enum Cmd {
     },
     /// Forget the saved sign-in.
     Logout,
-    /// Keep one hc machine per up Box: add one as a Box comes up, remove it as the Box sleeps
-    /// or closes. Machines moor-hc did not add are never touched.
+    /// Keep one hc machine per open Box: add one as a Box opens, remove it as the Box closes.
+    /// An asleep Box keeps its machine, which hc shows unreachable until the Box wakes.
+    /// Machines moor-hc did not add are never touched.
     Sync {
         /// Seconds between passes.
         #[arg(long, default_value_t = 5)]

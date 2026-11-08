@@ -1,7 +1,7 @@
-//! Which of the person's Boxes are up: ready, with the agent's hc running in them. Only those
-//! get a machine, because `exec` wakes an asleep Box and hc redials a machine it lost.
+//! The person's open Boxes, and whether one is up: ready, with the agent's hc running in it.
+//! A Box gets its machine once it is up and keeps it until it closes; only an up one is dialed.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use moor_client::Client;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -31,6 +31,14 @@ struct AgentRow {
 }
 
 impl Row {
+    /// Not closed: still shown, and still a machine in hc.
+    const fn open(&self) -> bool {
+        !matches!(
+            self.lifecycle,
+            BoxLifecycle::Closed | BoxLifecycle::Rejected
+        )
+    }
+
     /// Ready, with the hc that holds the agent's terminal running.
     fn up(&self) -> bool {
         self.lifecycle == BoxLifecycle::Ready && self.agent.as_ref().is_some_and(|a| a.launched)
@@ -57,14 +65,17 @@ fn show(client: &Client, wire: Value) -> Result<ShowValue, Error> {
     Ok(serde_json::from_value(reply.value.unwrap_or(Value::Null))?)
 }
 
-/// The names of the person's up Boxes.
-pub fn up_boxes(client: &Client) -> Result<BTreeSet<String>, Error> {
+/// The person's open Boxes, each mapped to whether it is up.
+pub fn open_boxes(client: &Client) -> Result<BTreeMap<String, bool>, Error> {
     let shown = show(client, json!({"cmd": "show"}))?;
     Ok(shown
         .boxes
         .into_iter()
-        .filter(Row::up)
-        .map(|r| r.name)
+        .filter(Row::open)
+        .map(|r| {
+            let up = r.up();
+            (r.name, up)
+        })
         .collect())
 }
 

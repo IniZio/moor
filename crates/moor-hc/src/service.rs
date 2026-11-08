@@ -36,7 +36,7 @@ impl Service {
             .map(|w| systemd_quote(w))
             .collect();
         format!(
-            "[Unit]\nDescription=moor-hc: one hc machine per up moor Box\n\n[Service]\nExecStart={}\nEnvironment={}\nRestart=always\nRestartSec=10\nKillMode=process\n\n[Install]\nWantedBy=default.target\n",
+            "[Unit]\nDescription=moor-hc: one hc machine per open moor Box\n\n[Service]\nExecStart={}\nEnvironment={}\nRestart=always\nRestartSec=10\nKillMode=process\n\n[Install]\nWantedBy=default.target\n",
             words.join(" "),
             systemd_quote(&format!("PATH={}", self.path)),
         )

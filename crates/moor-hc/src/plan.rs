@@ -1,9 +1,9 @@
-//! What sync changes so hc has one machine per up Box.
+//! What sync changes so hc has one machine per open Box.
 //!
-//! The plan is pure: the up Boxes and the machines hc lists in, steps out. Machines whose via
+//! The plan is pure: the open Boxes and the machines hc lists in, steps out. Machines whose via
 //! command moor-hc did not write for this controller are never removed and keep their names.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::via::{Link, Via};
@@ -26,7 +26,7 @@ pub struct Machine {
 /// One change to hc's machines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
-    /// Forget a machine moor-hc added: its Box is no longer up, or it runs an old binary.
+    /// Forget a machine moor-hc added: its Box closed, or it runs an old binary.
     Remove {
         /// The machine.
         name: String,
@@ -49,10 +49,18 @@ impl fmt::Display for Step {
     }
 }
 
-/// The steps that leave one machine per Box in `boxes`, reached by `exe` over `link`. Removals
-/// come first, so a name they free can be taken again.
+/// The steps that leave one machine per open Box in `boxes`, each mapped to whether it is up,
+/// reached by `exe` over `link`. Removals come first, so a name they free can be taken again.
+///
+/// hc adds only a machine it can reach, so a Box gets its machine once it is up and keeps it
+/// while it sleeps; a machine on an old binary is replaced only while its Box is up.
 #[must_use]
-pub fn plan(exe: &str, link: &Link, boxes: &BTreeSet<String>, machines: &[Machine]) -> Vec<Step> {
+pub fn plan(
+    exe: &str,
+    link: &Link,
+    boxes: &BTreeMap<String, bool>,
+    machines: &[Machine],
+) -> Vec<Step> {
     let mut covered = BTreeSet::new();
     let mut steps = Vec::new();
     let mut taken = BTreeSet::new();
@@ -61,8 +69,11 @@ pub fn plan(exe: &str, link: &Link, boxes: &BTreeSet<String>, machines: &[Machin
             taken.insert(m.name.clone());
             continue;
         };
-        let keep =
-            via.exe == exe && boxes.contains(&via.box_name) && covered.insert(via.box_name.clone());
+        let current = match boxes.get(&via.box_name) {
+            None => false,
+            Some(&up) => via.exe == exe || !up,
+        };
+        let keep = current && covered.insert(via.box_name.clone());
         if keep {
             taken.insert(m.name.clone());
         } else {
@@ -71,7 +82,8 @@ pub fn plan(exe: &str, link: &Link, boxes: &BTreeSet<String>, machines: &[Machin
             });
         }
     }
-    for box_name in boxes.iter().filter(|b| !covered.contains(*b)) {
+    let wanted = boxes.iter().filter(|(b, &up)| up && !covered.contains(*b));
+    for (box_name, _) in wanted {
         let name = machine_name(link, box_name, &taken);
         taken.insert(name.clone());
         steps.push(Step::Add {
