@@ -115,7 +115,11 @@ impl Tools {
     }
 
     /// Types to a Box's agent.
-    #[tool(description = "Send text to a Box's agent, to steer it. Needs the moor:write scope.")]
+    #[tool(
+        description = "Send text to a Box's agent, to steer it. When the agent is blocked on a \
+                       question (needs_input), send one of its options, by name or 1-based \
+                       number, to answer it. Needs the moor:write scope."
+    )]
     async fn send_to_box(
         &self,
         context: RequestContext<RoleServer>,
