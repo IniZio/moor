@@ -284,12 +284,18 @@ pub trait Engine: Send + Sync {
         deadline: Deadline,
     ) -> Result<SteerOutcome, EngineError>;
 
-    /// Archives the agent's transcript in the Box and copies the archive to `dest` on the host.
+    /// Archives the agent's transcript in the Box and copies the archive to `dest` on the host,
+    /// giving up on building and streaming the archive once `deadline` passes.
     ///
     /// # Errors
     /// [`EngineError::Transcript`] names the step that failed; [`EngineError::NothingToArchive`]
     /// when the agent left no transcript.
-    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError>;
+    fn transcript(
+        &self,
+        s: &SessionRef,
+        dest: &Path,
+        deadline: Deadline,
+    ) -> Result<(), EngineError>;
 
     /// Ends the agent of session `s` where it runs, for an agent that outlives its pane.
     ///

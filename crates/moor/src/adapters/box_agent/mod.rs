@@ -158,8 +158,19 @@ impl Engine for BoxAgent {
         Ok(sent)
     }
 
-    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
-        transcript::save(self.driver.as_ref(), self.profile.as_ref(), s, dest)
+    fn transcript(
+        &self,
+        s: &SessionRef,
+        dest: &Path,
+        deadline: Deadline,
+    ) -> Result<(), EngineError> {
+        transcript::save(
+            self.driver.as_ref(),
+            self.profile.as_ref(),
+            s,
+            dest,
+            deadline,
+        )
     }
 
     fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {

@@ -11,6 +11,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, SessionRef};
+use moor_core::seam::proc::Deadline;
 
 use crate::blobs::BlobKey;
 use crate::cx::Cx;
@@ -48,7 +49,7 @@ pub(crate) fn save(
         return None;
     }
     let s = session_ref(row, session)?;
-    let event = match try_save(cx, store, row, session, &s) {
+    let event = match try_save(cx, store, row, session, &s, archive_deadline(trigger)) {
         Ok(None) => return None,
         Ok(Some((saved, false))) => return Some(saved),
         Ok(Some((saved, true))) => {
@@ -233,6 +234,20 @@ pub(crate) fn save_pending(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), C
     Ok(())
 }
 
+/// How long the Box may take to build and stream the archive for `trigger`.
+///
+/// A turn save holds the Box lock that a steer or close waits on, and the next turn saves again,
+/// so it gives up early. Every other save is the last chance to keep the session's transcript, and
+/// a busy Box can take longer than a turn save allows.
+const fn archive_deadline(trigger: Trigger) -> Deadline {
+    match trigger {
+        Trigger::Turn => Deadline(Duration::from_secs(15)),
+        Trigger::Exit | Trigger::End | Trigger::Close | Trigger::Relaunch => {
+            Deadline(Duration::from_mins(1))
+        }
+    }
+}
+
 /// Records `event`; a store failure is dropped so the caller carries on.
 fn record(store: &Store, row: &BoxRow, event: ExtraEvent) {
     let _ = store.apply(Decision::new(row.id).event(event));
@@ -248,6 +263,7 @@ fn try_save(
     row: &BoxRow,
     session: &SessionRow,
     s: &SessionRef,
+    deadline: Deadline,
 ) -> Result<Option<(Saved, bool)>, TryError> {
     let events = store
         .events(row.id, usize::MAX)
@@ -255,25 +271,31 @@ fn try_save(
     let n = next_number(events.iter().map(|e| e.kind.as_str()));
     let key = BlobKey::transcript(row.id, session.id, n);
     let staged = staged(cx, row, session, n)?;
-    let result = archive_and_store(cx, s, session, &events, &key, &staged);
+    let result = archive(cx, s, &staged, deadline)
+        .and_then(|()| store_archive(cx, session, &events, &key, &staged));
     let _ = fs::remove_file(&staged);
     result
 }
 
-/// [`try_save`] once it knows where the archive is staged.
-fn archive_and_store(
+/// Brings the archive to `staged`.
+fn archive(cx: &Cx, s: &SessionRef, staged: &Path, deadline: Deadline) -> Result<(), TryError> {
+    cx.engine()
+        .transcript(s, staged, deadline)
+        .map_err(|e| match e {
+            EngineError::NothingToArchive => TryError::NothingToArchive,
+            EngineError::Box(DriverError::Transport { .. }) => TryError::Unlinked(e.to_string()),
+            e => TryError::Failed(e.to_string()),
+        })
+}
+
+/// [`try_save`] once the archive is staged.
+fn store_archive(
     cx: &Cx,
-    s: &SessionRef,
     session: &SessionRow,
     events: &[EventRow],
     key: &BlobKey,
     staged: &Path,
 ) -> Result<Option<(Saved, bool)>, TryError> {
-    cx.engine().transcript(s, staged).map_err(|e| match e {
-        EngineError::NothingToArchive => TryError::NothingToArchive,
-        EngineError::Box(DriverError::Transport { .. }) => TryError::Unlinked(e.to_string()),
-        e => TryError::Failed(e.to_string()),
-    })?;
     fs::set_permissions(staged, Permissions::from_mode(0o600))
         .map_err(|e| format!("chmod {}: {e}", staged.display()))?;
     let file = fs::File::open(staged).map_err(|e| format!("read {}: {e}", staged.display()))?;

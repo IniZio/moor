@@ -4,7 +4,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
@@ -15,9 +14,6 @@ use moor_core::seam::proc::{Deadline, OUTPUT_CAP};
 
 /// Where the archive is built, relative to the Box workdir.
 const ARCHIVE: &str = ".moor/transcripts.tgz";
-
-/// Wall-clock allowance for building the archive.
-const ARCHIVE_DEADLINE: Duration = Duration::from_secs(15);
 
 /// The largest archive streamed over the batch ssh; a bigger one is copied out instead.
 ///
@@ -107,12 +103,14 @@ fn streamed(done: Option<Result<StepDone, DriverError>>) -> Result<Option<Vec<u8
 
 /// Builds the archive on the Box and brings it to `dest`.
 ///
-/// One batch builds the archive and prints it as base64; an archive over the cap is copied out.
+/// One batch builds the archive and prints it as base64 within `deadline`; an archive over the
+/// cap is copied out.
 pub(super) fn save(
     driver: &dyn Driver,
     profile: &dyn AgentAdapter,
     s: &SessionRef,
     dest: &Path,
+    deadline: Deadline,
 ) -> Result<(), EngineError> {
     let fail = |what: &str, why: String| EngineError::Transcript(format!("{what}: {why}"));
     let script = format!(
@@ -128,7 +126,7 @@ pub(super) fn save(
         BoxStep::Run(stream_script(s.workdir.as_str(), STREAM_CAP)),
     ];
     let mut done = driver
-        .batch(&s.handle, &connect, &steps, Deadline(ARCHIVE_DEADLINE))
+        .batch(&s.handle, &connect, &steps, deadline)
         .into_iter();
     match done.next() {
         Some(Ok(StepDone::Ran {
