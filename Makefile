@@ -20,10 +20,10 @@ PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
 export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg dev-s3 unit-s3
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
 
 help:
-	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db unit-s3 dev-s3 ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -70,6 +70,16 @@ lint:
 # The chart with only its required values, then with every optional block on.
 CHART := deploy/helm/moor
 CHART_VALUES := -f deploy/helm/required-values.yaml
+docs-dev:
+	@command -v bun >/dev/null || { echo "docs-dev: bun is not installed"; exit 1; }
+	bun install --cwd site --frozen-lockfile
+	bun run --cwd site dev
+
+docs-build:
+	@command -v bun >/dev/null || { echo "docs-build: bun is not installed"; exit 1; }
+	bun install --cwd site --frozen-lockfile
+	bun run --cwd site build
+
 chart:
 	@command -v helm >/dev/null || { echo "chart: helm $(HELM_VERSION) is not installed"; exit 1; }
 	helm lint --strict $(CHART) $(CHART_VALUES)

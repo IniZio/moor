@@ -1,0 +1,167 @@
+/*
+  Shared by the docs site and the account page. Raw scales take moorland
+  names (peat, heather, moss, gorse, loch, rust); pages use the semantic
+  tokens below them, which swap for dark mode.
+*/
+:root {
+	--moor-peat-25: #fdfbf8;
+	--moor-peat-50: #f8f5f0;
+	--moor-peat-100: #efeae2;
+	--moor-peat-200: #ddd5c9;
+	--moor-peat-300: #c3b8a8;
+	--moor-peat-400: #9d9182;
+	--moor-peat-500: #7a6f62;
+	--moor-peat-600: #5d544a;
+	--moor-peat-700: #463f37;
+	--moor-peat-800: #312c26;
+	--moor-peat-900: #221e1a;
+	--moor-peat-950: #171411;
+
+	--moor-heather-50: #f8f3fa;
+	--moor-heather-100: #efe3f4;
+	--moor-heather-200: #dcc4e8;
+	--moor-heather-300: #c39ed6;
+	--moor-heather-400: #a876c0;
+	--moor-heather-500: #8d58a6;
+	--moor-heather-600: #74438b;
+	--moor-heather-700: #5e3671;
+	--moor-heather-800: #472a55;
+	--moor-heather-900: #2f1d39;
+
+	--moor-moss-100: #e6efd9;
+	--moor-moss-300: #b5cc90;
+	--moor-moss-400: #8fae5f;
+	--moor-moss-600: #557434;
+	--moor-moss-800: #2e4119;
+
+	--moor-gorse-100: #fbf0c8;
+	--moor-gorse-300: #f2d377;
+	--moor-gorse-400: #e7b83a;
+	--moor-gorse-700: #8a6410;
+	--moor-gorse-800: #4a3810;
+
+	--moor-loch-100: #dde9f2;
+	--moor-loch-300: #a3c3dc;
+	--moor-loch-400: #6f9fc4;
+	--moor-loch-700: #2f5f86;
+	--moor-loch-800: #1f3a52;
+
+	--moor-rust-100: #f8e0da;
+	--moor-rust-300: #eea996;
+	--moor-rust-400: #e07a62;
+	--moor-rust-700: #9c3a26;
+	--moor-rust-800: #4f2219;
+
+	--moor-font-body: 'Figtree Variable', 'Figtree', ui-sans-serif, system-ui, sans-serif;
+	--moor-font-heading: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', var(--moor-font-body);
+	--moor-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+	--moor-text-xs: 0.8125rem;
+	--moor-text-sm: 0.9375rem;
+	--moor-text-base: 1.0625rem;
+	--moor-text-lg: 1.25rem;
+	--moor-text-xl: 1.5rem;
+	--moor-text-2xl: 1.8rem;
+	--moor-text-3xl: 2.16rem;
+	--moor-text-4xl: 2.6rem;
+	--moor-leading-body: 1.65;
+	--moor-leading-heading: 1.15;
+	--moor-weight-body: 420;
+	--moor-weight-strong: 640;
+	--moor-weight-heading: 680;
+
+	--moor-space-1: 0.25rem;
+	--moor-space-2: 0.5rem;
+	--moor-space-3: 0.75rem;
+	--moor-space-4: 1rem;
+	--moor-space-6: 1.5rem;
+	--moor-space-8: 2rem;
+	--moor-space-12: 3rem;
+	--moor-space-16: 4rem;
+
+	--moor-radius-sm: 6px;
+	--moor-radius-md: 10px;
+	--moor-radius-lg: 16px;
+	--moor-radius-pill: 999px;
+
+	--moor-color-bg: var(--moor-peat-25);
+	--moor-color-bg-raised: #ffffff;
+	--moor-color-bg-sunken: var(--moor-peat-50);
+	--moor-color-text: var(--moor-peat-900);
+	--moor-color-text-muted: var(--moor-peat-600);
+	--moor-color-border: var(--moor-peat-200);
+	--moor-color-border-strong: var(--moor-peat-300);
+	--moor-color-accent: var(--moor-heather-600);
+	--moor-color-accent-strong: var(--moor-heather-700);
+	--moor-color-accent-soft: var(--moor-heather-100);
+	--moor-color-on-accent: #ffffff;
+	--moor-color-success: var(--moor-moss-600);
+	--moor-color-success-soft: var(--moor-moss-100);
+	--moor-color-warning: var(--moor-gorse-700);
+	--moor-color-warning-soft: var(--moor-gorse-100);
+	--moor-color-danger: var(--moor-rust-700);
+	--moor-color-danger-soft: var(--moor-rust-100);
+	--moor-color-info: var(--moor-loch-700);
+	--moor-color-info-soft: var(--moor-loch-100);
+	--moor-color-focus: var(--moor-heather-500);
+
+	--moor-shadow-sm: 0 1px 2px rgb(49 44 38 / 0.08), 0 1px 1px rgb(49 44 38 / 0.06);
+	--moor-shadow-md: 0 4px 10px rgb(49 44 38 / 0.08), 0 2px 4px rgb(49 44 38 / 0.06);
+	--moor-shadow-lg: 0 16px 32px rgb(49 44 38 / 0.12), 0 4px 8px rgb(49 44 38 / 0.06);
+}
+
+:root[data-theme='dark'] {
+	--moor-color-bg: var(--moor-peat-900);
+	--moor-color-bg-raised: var(--moor-peat-800);
+	--moor-color-bg-sunken: var(--moor-peat-950);
+	--moor-color-text: var(--moor-peat-100);
+	--moor-color-text-muted: var(--moor-peat-300);
+	--moor-color-border: var(--moor-peat-700);
+	--moor-color-border-strong: var(--moor-peat-600);
+	--moor-color-accent: var(--moor-heather-300);
+	--moor-color-accent-strong: var(--moor-heather-200);
+	--moor-color-accent-soft: var(--moor-heather-900);
+	--moor-color-on-accent: var(--moor-heather-900);
+	--moor-color-success: var(--moor-moss-300);
+	--moor-color-success-soft: var(--moor-moss-800);
+	--moor-color-warning: var(--moor-gorse-300);
+	--moor-color-warning-soft: var(--moor-gorse-800);
+	--moor-color-danger: var(--moor-rust-300);
+	--moor-color-danger-soft: var(--moor-rust-800);
+	--moor-color-info: var(--moor-loch-300);
+	--moor-color-info-soft: var(--moor-loch-800);
+	--moor-color-focus: var(--moor-heather-400);
+
+	--moor-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+	--moor-shadow-md: 0 4px 10px rgb(0 0 0 / 0.3), 0 2px 4px rgb(0 0 0 / 0.2);
+	--moor-shadow-lg: 0 16px 32px rgb(0 0 0 / 0.4), 0 4px 8px rgb(0 0 0 / 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--moor-color-bg: var(--moor-peat-900);
+		--moor-color-bg-raised: var(--moor-peat-800);
+		--moor-color-bg-sunken: var(--moor-peat-950);
+		--moor-color-text: var(--moor-peat-100);
+		--moor-color-text-muted: var(--moor-peat-300);
+		--moor-color-border: var(--moor-peat-700);
+		--moor-color-border-strong: var(--moor-peat-600);
+		--moor-color-accent: var(--moor-heather-300);
+		--moor-color-accent-strong: var(--moor-heather-200);
+		--moor-color-accent-soft: var(--moor-heather-900);
+		--moor-color-on-accent: var(--moor-heather-900);
+		--moor-color-success: var(--moor-moss-300);
+		--moor-color-success-soft: var(--moor-moss-800);
+		--moor-color-warning: var(--moor-gorse-300);
+		--moor-color-warning-soft: var(--moor-gorse-800);
+		--moor-color-danger: var(--moor-rust-300);
+		--moor-color-danger-soft: var(--moor-rust-800);
+		--moor-color-info: var(--moor-loch-300);
+		--moor-color-info-soft: var(--moor-loch-800);
+		--moor-color-focus: var(--moor-heather-400);
+
+		--moor-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+		--moor-shadow-md: 0 4px 10px rgb(0 0 0 / 0.3), 0 2px 4px rgb(0 0 0 / 0.2);
+		--moor-shadow-lg: 0 16px 32px rgb(0 0 0 / 0.4), 0 4px 8px rgb(0 0 0 / 0.25);
+	}
+}
