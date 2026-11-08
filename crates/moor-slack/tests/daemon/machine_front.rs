@@ -85,18 +85,20 @@ fn add_minion(rig: &Rig, user: &str) {
 }
 
 #[test]
-fn machine_add_says_how_to_enroll_and_stores_nothing() {
+fn machine_add_gives_the_install_and_up_commands_and_stores_nothing() {
     let (rig, _controller) = rig();
     rig.slack.send_slash("env-1", CHANNEL, USER, "machine add");
     let ack = rig.slack.wait_ack_payload("env-1");
     let text = ack["text"].as_str().unwrap();
-    for part in [
-        "moor-machine-agent enroll --server",
-        "--runtime cloudhypervisor",
-        "moor-machine-agent run --runtime cloudhypervisor",
-    ] {
-        assert!(text.contains(part), "{text}");
-    }
+    assert!(
+        text.contains("install.sh | sh -s moor-machine-agent"),
+        "{text}"
+    );
+    assert!(
+        text.contains("moor-machine-agent up --server <url>"),
+        "{text}"
+    );
+    assert!(!text.contains("enroll"), "{text}");
     assert!(machines(&rig.front_socket(), USER).is_empty());
 }
 

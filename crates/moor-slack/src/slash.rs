@@ -18,7 +18,7 @@ const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
     `/moor mcp add` adds an MCP server of yours, `/moor mcp list` shows them and \
     `/moor mcp remove <name>` drops one. \
     `/moor machine list` shows your machines, `/moor machine remove <name>` drops one and \
-    `/moor machine add` says how to enroll one. \
+    `/moor machine add` says how to add one. \
     `/moor profile` shows your agent profile, `/moor profile set <url>[#ref]` sets it and \
     `/moor profile remove` clears it.";
 

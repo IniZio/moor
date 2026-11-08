@@ -14,7 +14,7 @@ fn a_start_with_no_node_fails_before_any_driver_call_and_says_how_to_get_one() {
     assert_eq!(e.kind, ErrorKind::Refused);
     let msg = e.error.to_string();
     assert!(
-        msg.contains("enroll a machine with moor-machine-agent enroll --runtime"),
+        msg.contains("add a machine with moor-machine-agent up"),
         "{msg}"
     );
     assert_eq!(w.driver.calls(), Vec::<String>::new());

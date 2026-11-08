@@ -1,5 +1,5 @@
 //! `/moor machine list|remove`: a person's own machines. A machine joins by running
-//! `moor-machine-agent enroll` on it, so `add` only says how. Nothing secret is stored here.
+//! `moor-machine-agent up` on it, so `add` only says how. Nothing secret is stored here.
 //! These are setup commands; nothing reads words in a thread.
 
 use moor_core::request::{AsReq, MachineRemoveReq, Request};
@@ -13,14 +13,14 @@ use crate::mcp::{name_ok, text_ack, BAD_ID};
 use crate::socket::{Kept, Slash};
 use crate::worker::Job;
 
-/// The reply to `/moor machine add`: machines enroll themselves.
-const ENROLL: &str = "A machine joins by enrolling itself. On it, run \
-    `moor-machine-agent enroll --server <this server> --name <name> --runtime cloudhypervisor`, \
-    then `moor-machine-agent run --runtime cloudhypervisor`.";
+/// The reply to `/moor machine add`: machines pair themselves.
+const ADD: &str = "A machine joins by pairing itself. On it, run \
+    `curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent`, \
+    then `moor-machine-agent up --server <url>` with this moor's address, and open the link it prints.";
 
 /// The reply to a `/moor machine` that is not one of the three.
 const USAGE: &str = "Usage: `/moor machine list` shows your machines, \
-    `/moor machine remove <name>` drops one and `/moor machine add` says how to enroll one.";
+    `/moor machine remove <name>` drops one and `/moor machine add` says how to add one.";
 
 /// A `/moor machine list` or `/moor machine remove` for the worker; no `name` means list.
 #[derive(Debug, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub(crate) struct MachineJob {
     pub(crate) response_url: Option<String>,
 }
 
-/// `/moor machine ...`: `add` answers how to enroll, `list` and `remove` queue a
+/// `/moor machine ...`: `add` answers how to add one, `list` and `remove` queue a
 /// job whose answer goes to the user alone through the command's `response_url`.
 pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
     let first = db.atomically(|| db.event_once(&slash.envelope_id, now))?;
@@ -51,7 +51,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
         })
     };
     let (kept, job) = match (words.next(), words.next(), words.next()) {
-        (Some("add"), None, _) => (text_ack(ENROLL), None),
+        (Some("add"), None, _) => (text_ack(ADD), None),
         (Some("list"), None, _) => (text_ack("Looking up your machines…"), Some(job(None))),
         (Some("remove"), Some(name), None) if name_ok(name) => (
             text_ack(&format!("Removing `{name}`…")),
@@ -80,8 +80,7 @@ pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
         .and_then(Value::as_array)
         .map_or(&[][..], Vec::as_slice);
     if machines.is_empty() {
-        return "You have no machines. Enroll one with `moor-machine-agent enroll` on it."
-            .to_owned();
+        return "You have no machines. Add one with `moor-machine-agent up` on it.".to_owned();
     }
     let listed = send(call, user, Request::NodeList(AsReq { identity: None }))
         .ok()

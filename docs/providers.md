@@ -141,7 +141,7 @@ external:
 - `config.checkpoints` makes the adapter's `doctor` fail unless `cloud-hypervisor`
   is the patched `v52.0-moor.1`, since a guest's network is dead after a checkpoint
   on a stock build.
-- On a node, `moor-machine-agent enroll` and every `moor-machine-agent run` add
+- On a node, `moor-machine-agent up` and every `moor-machine-agent run` add
   both `checkpoints` keys when missing, for `--runtime external`. They never change
   a value you set, so `false` on either opts the node out, and `moor node ls` shows
   that as the reason. A failing `doctor` shows there too. crabbox's `doctor` also

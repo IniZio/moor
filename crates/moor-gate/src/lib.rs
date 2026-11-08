@@ -18,7 +18,6 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 mod artifact;
 mod artifacts_http;
-mod enroll;
 mod events_http;
 mod http;
 mod login;

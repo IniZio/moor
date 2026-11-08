@@ -68,8 +68,8 @@ spec:
         paths:
           {{- $paths := list "/front" "/.well-known/moor" }}
           {{- if .Values.mcp.enabled }}{{ $paths = concat $paths (list "/mcp" "/.well-known/oauth-protected-resource" "/events") }}{{ end }}
-          {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks") }}{{ end }}
-          {{- if .Values.runner.enabled }}{{ $paths = append $paths "/machines/enroll" }}{{ end }}
+          {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks" "/pair") }}{{ end }}
+          {{- if .Values.runner.enabled }}{{ $paths = append $paths "/machines/pair" }}{{ end }}
           {{- range $paths }}
           - path: {{ . }}
             pathType: Prefix

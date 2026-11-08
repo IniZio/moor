@@ -249,8 +249,7 @@ fn no_candidates_at_all_fails() {
     );
 }
 
-const ENROLL: &str =
-    "no node can host this Box: enroll a machine with moor-machine-agent enroll --runtime <provider>";
+const ENROLL: &str = "no node can host this Box: add a machine with moor-machine-agent up";
 
 #[test]
 fn without_a_shared_node_the_first_personal_node_binds() {

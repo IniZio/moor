@@ -239,12 +239,11 @@ command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
 
 ### Per-user machines
 
-A teammate can enroll machines of their own, with labels. An example is a Mac
+A teammate can pair machines of their own, with labels. An example is a Mac
 that builds iOS apps. On the Mac:
 
 ```sh
-moor-machine-agent enroll --server https://moor.example.com --name mac --labels macos,ios-sim
-moor-machine-agent run --allow-exec
+moor-machine-agent up --server https://moor.example.com --name mac --labels macos,ios-sim --allow-exec
 ```
 
 Then, anywhere the teammate uses moor:
@@ -254,7 +253,7 @@ moor user machine ls
 moor user machine rm mac
 ```
 
-Enrolling a name again replaces that machine and its key. Names match
+Pairing a name again replaces that machine and its key. Names match
 `[a-z][a-z0-9_-]*`, 64 bytes at most. Labels match `[a-z0-9][a-z0-9-]*`, 32
 bytes at most. A machine has at most 16 labels, which moor stores sorted and
 without repeats. moor stores only the machine's public key. The machine dials
@@ -267,19 +266,20 @@ with the `machine_claim` tool, and the repo's `machine.labels` in
 
 A machine of your own can run your Boxes as a personal node, which only you
 can use. The host runs crabbox with a provider adapter, such as
-cloud-hypervisor, and each Box gets its own VM there. Enroll the host with the
-runtime it offers:
+cloud-hypervisor, and each Box gets its own VM there. Pair the host with the
+runtime it offers; without `--runtime` it takes the provider crabbox is configured with:
 
 ```sh
-moor-machine-agent enroll --server https://moor.example.com --name hv --runtime cloudhypervisor
+moor-machine-agent up --server https://moor.example.com --name hv --runtime cloudhypervisor
 ```
 
 The runtime matches `[a-z][a-z0-9-]*`, 64 bytes at most. The node is named for
 the machine, and is online while its agent is linked. `moor user machine ls`
 shows each machine's pool.
 
-`moor-machine-agent run --runtime RUNTIME` serves the node. `--max-boxes N`
-caps the Boxes the host holds, and `--cache-gb N` says how much disk caches
+The service `up` installs runs `moor-machine-agent run --runtime RUNTIME`, which
+serves the node. `--max-boxes N` on `up` caps the Boxes the host holds, and
+`--cache-gb N` on `run` says how much disk caches
 may use. On each link the agent reports both, with the features its crabbox
 provider declares, such as `cache-volume`. The server stores them. A Box
 placed on the machine gets cache volumes only while the machine is linked,

@@ -242,20 +242,44 @@ fn default_config(home: &Path) -> std::path::PathBuf {
     home.join(dir).join("crabbox/config.yaml")
 }
 
-const ENROLL: [&str; 6] = [
-    "enroll",
-    "--server",
-    "http://127.0.0.1:1",
-    "--name",
-    "n",
-    "--paste",
-];
+/// A server that takes machines: every poll is for an unknown code.
+fn server_that_pairs() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut head = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut head);
+            let body = r#"{"error":"expired_token"}"#;
+            let reply = format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = std::io::Write::write_all(&mut stream, reply.as_bytes());
+        }
+    });
+    address
+}
 
 #[test]
-fn enroll_for_the_external_provider_writes_the_setting_and_says_so() {
+fn up_for_the_external_provider_writes_the_setting_before_asking_crabbox() {
     let home = tempfile::tempdir().unwrap();
-    let mut args = ENROLL.to_vec();
-    args.extend(["--runtime", "external"]);
+    let crabbox = home.path().join("crabbox");
+    std::fs::write(&crabbox, "#!/bin/sh\necho 'failed  kvm  missing'\nexit 1\n").unwrap();
+    std::fs::set_permissions(&crabbox, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let server = server_that_pairs();
+    let crabbox = crabbox.to_string_lossy();
+    let args = [
+        "up",
+        "--server",
+        &server,
+        "--name",
+        "n",
+        "--runtime",
+        "external",
+        "--crabbox",
+        &crabbox,
+    ];
     let out = agent(home.path(), &args);
     assert_eq!(
         checkpoints(&default_config(home.path())),
@@ -274,13 +298,6 @@ fn the_directories_it_makes_are_the_users_alone() {
     let crabbox = config.parent().unwrap();
     assert_eq!(mode(crabbox), 0o700);
     assert_eq!(mode(crabbox.parent().unwrap()), 0o700);
-}
-
-#[test]
-fn enroll_without_a_runtime_writes_nothing() {
-    let home = tempfile::tempdir().unwrap();
-    agent(home.path(), &ENROLL);
-    assert!(!default_config(home.path()).exists());
 }
 
 #[test]
@@ -315,5 +332,5 @@ fn a_run_with_an_unreadable_config_warns_and_goes_on() {
     let out = agent(home.path(), &["run", "--runtime", "external"]);
     let said = String::from_utf8(out.stderr).unwrap();
     assert!(said.contains("cannot parse"), "{said}");
-    assert!(said.contains("enroll first"), "{said}");
+    assert!(said.contains("run moor-machine-agent up first"), "{said}");
 }
