@@ -186,7 +186,7 @@ fn with_no_node_at_all_a_start_is_refused_saying_how_to_get_one() {
     let e = preflight(&w.cx, UserId::new(1), &spec).unwrap_err();
     let msg = e.error.to_string();
     assert!(
-        msg.contains("enroll a machine with moor-machine-agent"),
+        msg.contains("add a machine with moor-machine-agent up"),
         "{msg}"
     );
 }
