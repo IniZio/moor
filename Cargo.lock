@@ -3299,6 +3299,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-hc"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "moor-client",
+ "moor-core",
+ "moor-testkit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "moor-herdr"
 version = "0.2.0"
 dependencies = [
