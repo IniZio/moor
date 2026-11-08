@@ -12,13 +12,12 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_router, RoleServer};
-use schemars::JsonSchema;
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::mcp::{Auth, READ, WRITE};
 use crate::{rewrite, Person};
 
+mod args;
 mod artifact;
 mod events;
 mod exec;
@@ -32,6 +31,7 @@ mod start;
 mod webhook;
 mod workflow;
 
+use args::{BoxArgs, CloseArgs, SendArgs, StartArgs};
 use reply::Reply;
 use start::start_request;
 
@@ -42,56 +42,6 @@ pub(crate) struct Tools {
     pub(crate) controller: Client,
     /// The gate's public origin when it serves browser sign-in, for webhook setup links.
     pub(crate) public_url: Option<std::sync::Arc<str>>,
-}
-
-/// Arguments of `start_box`.
-#[derive(Deserialize, JsonSchema)]
-struct StartArgs {
-    /// The repo to clone, as `owner/name`.
-    repo: String,
-    /// More repos to clone beside `repo`, each as `owner/name` and each one you can push to;
-    /// your configured `box.also` when left out, none when empty.
-    also: Option<Vec<String>>,
-    /// A name for the Box; one is made up when left out.
-    name: Option<String>,
-    /// What the Box's agent should do first.
-    prompt: Option<String>,
-    /// The revision to branch from; the repo's default branch when left out.
-    base: Option<String>,
-    /// A node `list_nodes` shows you; omit to start on the node `list_nodes` says a start picks.
-    node: Option<String>,
-    /// Set the Box up from scratch, past any setup kept from earlier Boxes; false by default.
-    #[serde(default)]
-    cold: Option<bool>,
-    /// Wait for setup and the agent launch to finish before returning; false by default, so
-    /// the call returns once the Box exists and `box_status` shows its progress.
-    wait: Option<bool>,
-}
-
-/// Arguments of the tools that name one Box.
-#[derive(Deserialize, JsonSchema)]
-struct BoxArgs {
-    /// The Box's name, as `list_boxes` shows it.
-    r#box: String,
-}
-
-/// Arguments of `close_box`.
-#[derive(Deserialize, JsonSchema)]
-struct CloseArgs {
-    /// The Box's name, as `list_boxes` shows it.
-    r#box: String,
-    /// Close even when the Box holds unpushed commits or uncommitted files, or could not be
-    /// checked for them, discarding that work. False by default, like the CLI's `--force`.
-    force: Option<bool>,
-}
-
-/// Arguments of `send_to_box`.
-#[derive(Deserialize, JsonSchema)]
-struct SendArgs {
-    /// The Box's name.
-    r#box: String,
-    /// The text to type to the Box's agent.
-    text: String,
 }
 
 #[tool_router]
