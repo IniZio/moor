@@ -29,7 +29,10 @@ pub fn outcome(output: &str) -> Option<&str> {
 /// previous Box's agent made and no Box keeps.
 const DROP_WORKTREES: &str = r#"  here=$(pwd -P)
   git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | tail -n +2 |
-    while IFS= read -r w; do case $w in "$here"/?*) rm -rf -- "$w";; esac; done
+    while IFS= read -r w; do
+      r=$(cd -- "$w" 2>/dev/null && pwd -P) || continue
+      case $r in "$here"/?*) rm -rf -- "$r";; esac
+    done
   rm -rf -- .git/worktrees
 "#;
 
@@ -70,7 +73,7 @@ impl Work {
         match self {
         Self::Discard => (
             "force=-f".to_owned(),
-            ": > .git/info/exclude; git clean -ffdq || { moor_tree_cold 'git clean failed'; return 0; }".to_owned(),
+            "rm -f -- .git/info/exclude; git clean -ffdq || { moor_tree_cold 'git clean failed'; return 0; }".to_owned(),
             format!(
                 "{SUBMODULE_GIT} submodule update -q --recursive --force &&\n      \
                  git submodule foreach -q --recursive 'git clean -ffdq'"

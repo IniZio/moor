@@ -503,4 +503,59 @@ fn a_restart_of_the_same_box_keeps_its_linked_worktree() {
     assert!(o.tree().join(".git/worktrees/audit").exists());
 }
 
+#[test]
+fn a_tree_without_git_info_still_refreshes() {
+    let o = Origin::new("noinfo");
+    ok(&o, BOX1, &o.base);
+    let gone = o.sh(&o.tree(), "rm -rf .git/info", &[]);
+    assert!(gone.status.success(), "{gone:?}");
+    let out = ok(&o, BOX2, &o.base);
+    assert_eq!(super::outcome(&out), Some("refreshed"), "{out}");
+}
+
+#[test]
+fn a_path_the_last_box_excluded_is_cleaned_for_a_new_box() {
+    let o = Origin::new("secret");
+    ok(&o, BOX1, &o.base);
+    let made = o.sh(
+        &o.tree(),
+        "echo secret >> .git/info/exclude; touch secret",
+        &[],
+    );
+    assert!(made.status.success(), "{made:?}");
+    ok(&o, BOX2, &o.base);
+    assert!(!o.tree().join("secret").exists());
+}
+
+#[test]
+fn a_worktree_listed_through_dot_dot_leaves_its_sibling_alone() {
+    let o = left_with_linked_worktree();
+    let rigged = o.sh(
+        &o.tree(),
+        "mkdir ../victim && echo keep > ../victim/f && \
+         printf '%s\\n' \"$PWD/../victim/.git\" > .git/worktrees/audit/gitdir",
+        &[],
+    );
+    assert!(rigged.status.success(), "{rigged:?}");
+    ok(&o, BOX2, &o.base);
+    let victim = o.tree().parent().unwrap().join("victim/f");
+    assert_eq!(std::fs::read_to_string(victim).unwrap(), "keep\n");
+    assert!(!o.tree().join(".git/worktrees").exists());
+}
+
+#[test]
+fn a_worktrees_dir_swapped_for_a_symlink_leaves_its_target_alone() {
+    let o = left_with_linked_worktree();
+    let rigged = o.sh(
+        &o.tree(),
+        "mv .worktrees ../outside && ln -s ../outside .worktrees",
+        &[],
+    );
+    assert!(rigged.status.success(), "{rigged:?}");
+    ok(&o, BOX2, &o.base);
+    let kept = o.tree().parent().unwrap().join("outside/audit/.cache/f");
+    assert!(kept.exists(), "the symlink's target was deleted");
+    assert!(!o.tree().join(".git/worktrees").exists());
+}
+
 mod keeping_work;
