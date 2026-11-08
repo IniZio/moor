@@ -275,8 +275,10 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
             format!("peek_file {HOLDER_BOX}"),
             format!("exec {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
-            // The promoted Box has no repo origin, setup or author, so it runs no exec.
+            // The promoted Box has no repo origin, setup or author, so it runs no exec; it only
+            // looks once for its new guest.
             "acquire".into(),
+            "peek_file box-2".into(),
         ]
     );
 }

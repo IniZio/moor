@@ -115,7 +115,7 @@ fn a_start_on_a_full_node_is_pending_there_with_the_reason() {
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let reason = row.unwrap().unwrap().state_reason.unwrap_or_default();
     assert!(reason.contains("ci is full (1 of 1 Boxes)"), "{reason}");
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn two_starts_racing_for_one_free_slot_bind_one_and_leave_one_pending() {
     let mut got = [a.queued, b.queued];
     got.sort_unstable();
     assert_eq!(got, [false, true]);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
 const VOLUMES: &str = "cache: {volumes: [{name: sdk, path: /opt/sdk}]}\n";
