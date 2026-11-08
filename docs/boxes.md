@@ -5,8 +5,9 @@ into the agent's own terminal, take it over in herdr. Each front shows the same
 Box, so you can start in one and follow in another.
 
 Before you start, link your `claude` and `github` secrets on the account page
-at `https://HOST`. A start without them is refused, and the refusal names each
-missing secret.
+at `https://HOST`. In Slack, `/moor login` replies with a link to that page. A
+start without the secrets is refused, and the refusal names each one that is
+missing.
 
 ## From Claude Code
 

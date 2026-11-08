@@ -18,13 +18,13 @@ runs each Box as a cloud-hypervisor VM on the host. crabbox reaches it as its
 `external` provider. Your user needs access to `/dev/kvm`.
 
 ```sh
-curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.1.0/install.sh | sh
+curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/latest/download/install.sh | sh
 crabbox-cloudhypervisor install
 ```
 
 Then select the provider in the file that `crabbox config path` prints, as the
-provider's README shows. `moor up` prints these same commands when crabbox
-selects no provider.
+provider's README shows. When crabbox selects no provider, `moor up` prints
+the install commands for the release it was built against.
 
 ## Turn on warm starts
 
