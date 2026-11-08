@@ -248,18 +248,22 @@ fn end_host_session_prints_id_and_workdir() {
 }
 
 /// A Box named `name` in `lifecycle`, with an optional Box state.
-fn lifecycle_box(name: &str, lifecycle: &str, box_state: Option<&str>) -> serde_json::Value {
+pub(super) fn lifecycle_box(
+    name: &str,
+    lifecycle: &str,
+    box_state: Option<&str>,
+) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
     json!({"id": 7, "name": name, "lifecycle": lifecycle, "session_state": "idle", "driver": b})
 }
 
 #[test]
-fn start_prints_name_state_box_and_how_to_open() {
+fn start_prints_name_state_box_and_how_to_see_it() {
     let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": false});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n"
+        "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n"
     );
 }
 
@@ -286,7 +290,7 @@ fn retry_prints_like_start_with_its_own_verb() {
     let (out, _) = render(&Response::ok("retry", Some(v)), false);
     assert_eq!(
         out,
-        "retried alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n"
+        "retried alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n"
     );
 }
 
@@ -300,7 +304,7 @@ fn start_says_setup_failed_and_keeps_the_open_hint() {
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready, setup failed\nopen it with: moor open alpha\n"
+        "started alpha (#7): ready/idle, box ready, setup failed\nsee it with: moor show alpha\n"
     );
 }
 
@@ -315,7 +319,7 @@ fn start_names_the_failed_step_its_tail_the_box_and_how_to_close_it() {
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready, setup failed\nopen it with: moor open alpha\n\
+        "started alpha (#7): ready/idle, box ready, setup failed\nsee it with: moor show alpha\n\
          setup failed in Box box-9:\n  npm ERR! missing\n  exit 1\nclose it with: moor close alpha\n"
     );
 }
@@ -330,7 +334,7 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
         let (out, _) = render(&Response::ok("start", Some(v)), false);
         assert_eq!(
             out,
-            "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n"
+            "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n"
         );
     }
 }
@@ -344,7 +348,7 @@ fn start_shows_the_tail_of_a_passing_setup() {
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n\
+        "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n\
          setup: ok in 4s, last 2 lines:\n  Got dependencies!\n  done\n"
     );
 }
@@ -386,7 +390,7 @@ fn start_prints_inline_warnings_and_promotions() {
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n\
+        "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n\
          started from the queue: beta, gamma\nwarning: agent dispatch failed: no pane\n"
     );
 }
@@ -410,7 +414,7 @@ fn start_draws_the_work_tree_outcome_as_its_own_line() {
         assert_eq!(
             out,
             format!(
-                "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n{line}"
+                "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n{line}"
             )
         );
     }
@@ -425,7 +429,7 @@ fn start_keeps_its_output_for_a_launched_agent() {
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
-        "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n"
+        "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n"
     );
 }
 
@@ -585,3 +589,5 @@ fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
     );
     assert_eq!(node(None), "mini  personal  cloudhypervisor  online  2/-\n");
 }
+
+mod hints;
