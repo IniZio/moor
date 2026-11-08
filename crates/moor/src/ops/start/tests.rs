@@ -33,6 +33,7 @@ mod dotfiles;
 mod evict;
 mod exited_start;
 mod forced_close;
+mod fresh_guest;
 mod identity;
 mod interrupted;
 mod launch_deadline;
@@ -221,7 +222,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
     assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
 #[test]
@@ -303,7 +304,7 @@ fn open_name_attaches_without_touching_the_box() {
     let again = run(&w.cx, &agentless_req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
-    assert_eq!(w.driver.calls(), ["acquire", "list"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1", "list"]);
     assert_eq!(w.surface.calls().len(), 1);
 }
 
@@ -339,7 +340,10 @@ fn start_after_acquire_failure_gets_a_new_box() {
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire", "release box-1", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "release box-1", "acquire", "peek_file box-1"]
+    );
     assert_eq!(w.surface.calls().len(), 1);
 }
 
@@ -360,7 +364,10 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "peek_file box-1", "acquire", "peek_file box-2"]
+    );
     let [first_nonce, again_nonce] = w.driver.acquired_nonces().try_into().unwrap();
     assert_ne!(first_nonce, again_nonce);
 }
@@ -450,7 +457,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
 #[test]
@@ -466,7 +473,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
 #[test]
@@ -480,10 +487,16 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         .unwrap();
     let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "peek_file box-1", "acquire", "peek_file box-2"]
+    );
     let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
     assert!(run.is_none());
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "peek_file box-1", "acquire", "peek_file box-2"]
+    );
 }
 
 /// Starts `demo`, then leaves it as a provisioning that lost its Box handle.

@@ -15,6 +15,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
+use crate::ops::common::guest;
 use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
 use crate::store::lease::LeaseKind;
@@ -251,7 +252,8 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
 /// `advance` moves the Box on to working; a failed line or agent install moves any Box to
-/// setup-failed, one that was already working included.
+/// setup-failed, one that was already working included. The machine may have just come up, so
+/// nothing touches it before its guest answers.
 fn run_and_record(
     cx: &Cx,
     store: &Store,
@@ -260,6 +262,7 @@ fn run_and_record(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
+    guest::await_guest(cx, store, id, target.handle)?;
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
     let on_fork = target;
     let (target, reran, stale) = &warm_rerun::after_clone(target, &cloned);

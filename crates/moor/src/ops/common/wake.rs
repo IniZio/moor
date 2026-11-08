@@ -3,19 +3,19 @@
 //! The caller holds the Box lock and passes a row read after taking it.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{BoxPath, BoxReq, ErrorKind, Warning};
+use moor_core::{BoxReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::guest;
 use crate::ops::common::held_prompt;
 use crate::ops::common::node::now;
 use crate::ops::common::park::restore_tunnel;
@@ -24,13 +24,6 @@ use crate::ops::common::resume_gate::{room_to_wake, Turn};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::ops::start::{revive_after_wake, AfterWake};
 use crate::store::{BoxRow, Store};
-
-/// A file any guest can read, or lack, so reading it shows only that the guest answers.
-const GUEST_PROBE: &str = "/proc/self/environ";
-/// Longest a wake waits for the guest to answer before the op goes on without it.
-const GUEST_WAIT: Duration = Duration::from_mins(2);
-/// Pause between looks at the guest.
-const GUEST_POLL: Duration = Duration::from_secs(1);
 
 /// Wake the Box and its machine when either is Asleep, leaving the Proxy tunnel parked.
 ///
@@ -218,30 +211,12 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
     })
 }
 
-/// Waits until the guest of a resumed Box answers, since a resume ends when the VM runs, before its
-/// sshd does. Past `GUEST_WAIT` an `agent_unreachable` event says so, and the op's own call fails.
+/// Waits for the guest of `row`'s resumed machine; see [`guest::await_guest`].
 pub(crate) fn await_guest(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some(handle) = row.boxed.as_ref().and_then(|b| b.handle.as_ref()) else {
         return Ok(());
     };
-    let probe =
-        BoxPath::restore(GUEST_PROBE).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
-    let bound = i64::try_from(GUEST_WAIT.as_millis()).unwrap_or(i64::MAX);
-    let from = cx.clock().now().as_millis();
-    let mut attempts = 0;
-    loop {
-        attempts += 1;
-        let Err(e) = cx.driver().peek_file(handle, &probe) else {
-            return Ok(());
-        };
-        if cx.clock().now().as_millis().saturating_sub(from) >= bound {
-            let error = format!("no answer within {}s of waking: {e}", GUEST_WAIT.as_secs());
-            let event = ExtraEvent::AgentUnreachable { attempts, error };
-            store.apply(Decision::new(row.id).event(event))?;
-            return Ok(());
-        }
-        cx.clock().sleep(GUEST_POLL);
-    }
+    guest::await_guest(cx, store, row.id, handle)
 }
 
 /// Leaves an asleep Box Pending for `reason` until its node has room; a promotion wakes it then.

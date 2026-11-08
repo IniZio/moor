@@ -88,7 +88,8 @@ fn starting_an_asleep_box_looks_for_its_guest_until_it_answers() {
     let (w, _engine, _id) = asleep_after_failed_launch();
     let stalled = DriverError::Timeout(std::time::Duration::from_secs(5));
     w.driver.silent_peeks(vec![stalled.clone(), stalled]);
+    let before = w.driver.peeks().len();
     let v = run(&w.cx, &prompt_req("carry on")).unwrap();
     assert!(v.agent.launched, "{:?}", v.agent);
-    assert_eq!(w.driver.peeks().len(), 3);
+    assert_eq!(w.driver.peeks().len() - before, 3);
 }
