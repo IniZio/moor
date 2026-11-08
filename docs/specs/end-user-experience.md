@@ -119,8 +119,9 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 - **moor-web goes now.** The account page replaces it.
 - **moor-herdr stays until the owner's herdr is an hc client.** Then it goes too.
 - **A Box closes only when a person closes it.** Sleep already frees its capacity. Closing on PR merge stays in the backlog.
-
-- **hc connect is a small `moor-hc` bridge.** hc reaches a machine only over SSH or a `--via` command that carries stdin and stdout, so any shape needs a local bridge. herdr's TUI reaches only herdr servers over SSH, so it keeps the moor-herdr plugin.
+- **hc connect goes through a small `moor-hc` bridge.**
+  - hc reaches a machine only over SSH or a `--via` command that carries stdin and stdout. So any shape needs a local bridge.
+  - herdr's TUI reaches only herdr servers over SSH. It keeps the moor-herdr plugin.
   - Now, the bridge keeps one hc machine per Box in sync and relays each through the Box's own hc. moor core does not change.
   - Later, moor answers the hc protocol itself as one machine holding all of a person's Boxes. It moves behind the same bridge once hc's protocol settles or herdr becomes an hc client. The teammate's setup does not change.
 
