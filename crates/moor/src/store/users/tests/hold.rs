@@ -258,3 +258,51 @@ fn a_box_cannot_name_another_users_machine() {
     let mine = r.claim_as(theirs, other, &claim_op(Some("studio"), None));
     assert_eq!(held_slot(&mine), Some(0), "its owner still gets it");
 }
+
+#[test]
+fn a_claim_without_labels_skips_a_pool_host() {
+    let r = Rig::new(1);
+    let host = UserMachine::parse("hv1", &[])
+        .and_then(|m| m.with_pool("fake"))
+        .unwrap();
+    r.store.set_user_machine(r.user, &host).unwrap();
+    let a = r.new_box("a");
+    let op = HoldOp::Claim {
+        labels: Vec::new(),
+        machine: None,
+        ports: None,
+        wait_until: None,
+    };
+
+    let got = r.store.hold_machine(a, r.user, &op, None, &[]).unwrap();
+
+    assert_eq!(
+        got,
+        HoldValue::Held {
+            machine: "mini".to_owned(),
+            machine_id: r.mini,
+            slot: 0,
+            ports: Vec::new(),
+        }
+    );
+}
+
+#[test]
+fn a_claim_naming_a_pool_host_is_refused() {
+    let r = Rig::new(1);
+    let host = UserMachine::parse("hv1", &[])
+        .and_then(|m| m.with_pool("fake"))
+        .unwrap();
+    r.store.set_user_machine(r.user, &host).unwrap();
+    let a = r.new_box("a");
+
+    let got = r.claim_as(a, r.user, &claim_op(Some("hv1"), None));
+
+    assert_eq!(
+        got,
+        HoldValue::Refused {
+            reason: "machine hv1 is a pool host, which only hosts Boxes".to_owned()
+        }
+    );
+    assert!(!r.has_row(a));
+}
