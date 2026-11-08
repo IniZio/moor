@@ -249,3 +249,53 @@ fn gh_node_paging_queries_are_allowed() {
         nodes { requestedReviewer { ...on Team { slug name } ...on User { login } } } } } } }";
     needs(reviewers, &json!({"id": "PR_1"}), &["PR_1"]);
 }
+
+const SEARCH_PROBE: &str = r#"query SearchType_enumValues{SearchType: __type(name: "SearchType"){enumValues(includeDeprecated: true){name}}}"#;
+
+const ADVANCED: &str = r"
+fragment pr on PullRequest{number,title,state,url,headRefName,headRepositoryOwner{id,login,...on User{name}},isCrossRepository,isDraft,createdAt}
+query PullRequestSearch($q: String!, $type: SearchType!, $limit: Int!, $endCursor: String) {
+  search(query: $q, type: $type, first: $limit, after: $endCursor) {
+    issueCount
+    nodes { ...pr }
+    pageInfo { hasNextPage endCursor }
+  }
+}";
+
+#[test]
+fn gh_search_type_probe_is_allowed() {
+    allowed(SEARCH_PROBE, &json!({}));
+    let other_type = r#"{ __type(name: "Repository") { enumValues { name } } }"#;
+    denied(other_type, &json!({}), "enumValues");
+    let leaf = r#"{ __type(name: "SearchType") { enumValues { name description } } }"#;
+    denied(leaf, &json!({}), "description");
+    let extra = r#"{ __type(name: "SearchType") { enumValues { name } description } }"#;
+    denied(extra, &json!({}), "description");
+}
+
+#[test]
+fn gh_advanced_search_is_confined_to_the_box_repo() {
+    let q = "author:app/dependabot repo:IniZio/moor state:open type:pr";
+    allowed(
+        ADVANCED,
+        &json!({"q": q, "type": "ISSUE_ADVANCED", "limit": 1}),
+    );
+    allowed(ADVANCED, &json!({"q": q, "type": "ISSUE", "limit": 1}));
+    for (q, needle) in [
+        ("repo:IniZio/moor repo:victim/secrets", "victim/secrets"),
+        ("repo:victim/secrets is:pr", "victim/secrets"),
+        ("repo:IniZio/moor OR org:victim", "OR"),
+        ("repo:IniZio/moor AND is:pr", "AND"),
+        ("repo:IniZio/moor NOT is:pr", "NOT"),
+        ("repo:IniZio/moor (org:victim)", "(org:victim)"),
+        ("repo:IniZio/moor -repo:other/x", "-repo:other/x"),
+        ("(repo:IniZio/moor OR repo:other/x)", "(repo:IniZio/moor"),
+    ] {
+        let vars = json!({"q": q, "type": "ISSUE_ADVANCED", "limit": 1});
+        denied(ADVANCED, &vars, needle);
+    }
+    for kind in ["REPOSITORY", "USER", "ISSUE_SEMANTIC"] {
+        let vars = json!({"q": q, "type": kind, "limit": 1});
+        denied(ADVANCED, &vars, "type: ISSUE");
+    }
+}
