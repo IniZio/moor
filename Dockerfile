@@ -6,7 +6,6 @@
 ARG RUST_IMAGE=rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
 ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9
 ARG NODE_IMAGE=node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
-ARG FETCH_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 # The -moor line of crabbox: moor refuses any other build. The tag names the crabbox version
 # the commit was released as.
@@ -19,35 +18,12 @@ ARG AGENT37_COMMIT=507f3ce84580ee014a24b8f166101cda56f4f376
 
 ARG CLAUDE_CODE_VERSION=2.1.312
 
-ARG HERDR_VERSION=0.9.5
-ARG HERDR_SHA256_AMD64=14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
-ARG HERDR_SHA256_ARM64=17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
-
 # Splits the dependency build from moor's own crates, so the dependencies stay a cached layer.
 ARG CARGO_CHEF_VERSION=0.1.78
 
 ARG ZIG_VERSION=0.17.0
 ARG ZIG_SHA256_AMD64=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 ARG ZIG_SHA256_ARM64=9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8
-
-
-# herdr, checked against its published digest.
-FROM ${FETCH_IMAGE} AS fetch
-ARG TARGETARCH
-ARG HERDR_VERSION HERDR_SHA256_AMD64 HERDR_SHA256_ARM64
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl \
- && rm -rf /var/lib/apt/lists/*
-RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) herdr_sha=$HERDR_SHA256_AMD64; herdr_arch=x86_64 ;; \
-      arm64) herdr_sha=$HERDR_SHA256_ARM64; herdr_arch=aarch64 ;; \
-      *) echo "unsupported arch $TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    mkdir -p /out; \
-    curl -fsSL -o /tmp/herdr "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-${herdr_arch}"; \
-    echo "$herdr_sha  /tmp/herdr" | sha256sum -c -; \
-    install -m 0755 /tmp/herdr /out/herdr
 
 
 # The -moor crabbox build, from a pinned commit.
@@ -150,7 +126,6 @@ RUN apt-get update \
  && install -d -o 10001 -g 10001 -m 0700 /var/lib/moor \
  && install -d -m 0755 /etc/moor
 
-COPY --from=fetch /out/herdr /usr/local/bin/
 COPY --from=crabbox /out/crabbox /usr/local/bin/
 COPY --from=rust /out/crabbox-agent37 /usr/local/bin/
 COPY --from=build /out/ /usr/local/bin/
