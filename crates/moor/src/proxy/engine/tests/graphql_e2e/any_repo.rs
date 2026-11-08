@@ -7,15 +7,20 @@ use ureq::http::Request;
 use super::rejected::events_after;
 use super::{rig_spec, Rig, Seen, PLACEHOLDER, SECRET};
 
-/// A running Box on `o/r` with the default `github-api` rule.
+/// A running Box on `o/r`, started with `--also o/lib`, with the default `github-api` rule.
 fn default_rule_rig() -> Rig {
     let repo = ForgeRepo::new("o", "r");
-    let rules = resolve_rules(&ProxyConfig::default(), std::slice::from_ref(&repo), false)
-        .unwrap()
-        .into_iter()
-        .filter(|r| r.name == "github-api")
-        .collect();
-    rig_spec(repo, Vec::new(), rules, None)
+    let also = ForgeRepo::new("o", "lib");
+    let rules = resolve_rules(
+        &ProxyConfig::default(),
+        &[repo.clone(), also.clone()],
+        false,
+    )
+    .unwrap()
+    .into_iter()
+    .filter(|r| r.name == "github-api")
+    .collect();
+    rig_spec(repo, vec![also], rules, None)
 }
 
 /// Sends `method path` to `api.github.com`; what the fake upstream received, the raw path intact.
@@ -58,6 +63,11 @@ fn a_get_on_any_repo_gets_the_credential_with_or_without_a_token() {
         "/repos/cli/cli/releases/assets/5",
         "/repos/cli/cli/tags",
         "/repos/cli/cli/tags?per_page=100",
+        "/repos/o/r/contents/README.md",
+        "/repos/o/lib/contents",
+        "/repos/o/lib/contents/",
+        "/repos/o/lib/contents/src/lib.rs?ref=main",
+        "/repos/cli/cli/contents/x",
     ] {
         for authorization in [None, Some(token.as_str())] {
             let seen = send(&rig, "GET", path, authorization);
@@ -84,6 +94,7 @@ fn a_write_on_an_any_repo_path_gets_no_credential() {
             "/repos/cli/cli/releases",
             "/repos/cli/cli/releases/1",
             "/repos/cli/cli/tags",
+            "/repos/cli/cli/contents/x",
         ] {
             assert_uncredentialed(&rig, method, path);
         }
@@ -96,8 +107,9 @@ fn other_endpoints_and_confusing_paths_get_no_credential() {
     let rig = default_rule_rig();
     for path in [
         "/repos/cli/cli/pulls",
-        "/repos/cli/cli/contents/x",
         "/repos/cli/cli/actions/secrets",
+        "/repos/cli/cli/contents/../pulls",
+        "/repos/cli/cli/contents-x/y",
         "/repos/cli/cli/pulls/1/releases/1",
         "/repos/cli/cli/releases-x/1",
         "/repos/cli/cli/tags/1",
