@@ -28,7 +28,7 @@ flowchart TD
 	A[moor up] --> B{/dev/kvm usable?}
 	B -- no --> B1[print: add yourself to kvm group] --> X[exit 1]
 	B -- yes --> C{crabbox provider ready?}
-	C -- no --> C1[run: crabbox install cloudhypervisor] --> C
+	C -- no --> C1[run: crabbox-cloudhypervisor install] --> C
 	C -- yes --> D[write controller and user config<br/>local node, pty surface if no herdr]
 	D --> E[install and start user service]
 	E --> F[enroll local user]
@@ -76,14 +76,15 @@ Start fix-typo on acme/web?
 ## Decisions
 
 - **One bootstrap verb per binary.** `moor up` and `moor-machine-agent up`. Both converge to the same end state on rerun.
-- **crabbox installs its own provider stack.** `crabbox install cloudhypervisor` fetches the pinned cloud-hypervisor, passt and adapter. moor stays provider-neutral and only checks readiness.
+- **Each provider installs its own stack.** `crabbox-cloudhypervisor install` fetches the pinned cloud-hypervisor and passt. crabbox core knows no provider binaries. moor only checks readiness.
 - **Pair by code through the gate.** Works headless and with any OIDC issuer. Replaces the `localhost:53682` callback and `--paste`.
 - **No enrollment approval.** A personal node runs only its owner's Boxes, so approval guards nothing new. Revisit for shared machines.
-- **Personal node falls back to shared when offline.** The start status says so. A full personal node still queues.
+- **An offline personal node fails the start.** No fallback to shared. The front shows node state before the start, so the failure is no surprise.
+- **Account page in the gate.** A minimal page for secrets, machines and connect commands. Built with Vite and Preact, embedded in `moor-gate` with `rust-embed`. Design tokens live in one CSS file that the docs theme also uses.
 - **One capacity flag.** `--max-boxes` on `up`. `enroll --slots` goes.
 - **Node visibility in every front.** A `list_nodes` tool over MCP and the Slack coordinator, and the herdr picker gets a node field.
 - **Generic sign-in keys.** `authgear.*` becomes `oidc.*` in config and chart.
-- **Docs on Starlight.** Static output for pageship, Pagefind search with no setup, plain Markdown in `docs/`. Ships `llms.txt`.
+- **Docs on Starlight, hosted on GitHub Pages.** Static output, Pagefind search with no setup, plain Markdown in `docs/`. Ships `llms.txt`.
 
 ## Gaps
 
@@ -93,11 +94,11 @@ Start fix-typo on acme/web?
 | 2 | `moor doctor` skips KVM, `moor-egress-forward` and crabbox config checks. | Add the checks. Controller logs node and provider state at start. |
 | 3 | Default surface is herdr. A plain host fails without it. | Pick pty when herdr is absent. |
 | 4 | No bootstrap command. | `moor up`. |
-| 5 | Provider stack built from source. | `crabbox install` in the crabbox fork. |
+| 5 | Provider stack built from source. | `crabbox-cloudhypervisor install`. |
 | 6 | Agent join needs flags twice, browser loopback and hand-run supervision. | `moor-machine-agent up`, pairing code, user service. |
 | 7 | Machines visible only in the dev CLI. Slack `/moor machine` prints a wrong command and no state. | `list_nodes` everywhere. Fix Slack. |
 | 8 | Chart has `runner.enabled: false`. Agent retries forever against a server with no runner. | Default on. Agent exits with a clear message. |
-| 9 | Offline personal node fails every start. | Fall back to shared. |
+| 9 | A first-time teammate has no front yet and nowhere to start. | Account page in the gate. |
 | 10 | Docs repeat install, enroll and login steps up to 4 times. | Rewrite per the layout below. |
 
 ## Docs layout
@@ -146,15 +147,13 @@ flowchart LR
 	G5[5 crabbox install] --> G4[4 moor up]
 	G5 --> G6[6 agent up]
 	G8[8 chart runner default] --> G6
-	G7[7 list_nodes] --> G9[9 fallback]
-	S[docs site skeleton] --> D[10 rewrite per journey]
+	T[design tokens] --> G9[9 account page]
+	T --> S[docs site skeleton]
+	G7[7 list_nodes] --> G9
+	S --> D[10 rewrite per journey]
 	G4 --> D
 	G6 --> D
 ```
 
 Items with no arrow into them start in parallel.
 
-## Open questions
-
-- Should the gate keep a small account page for secrets, machines and connect commands? A first-time teammate has no front yet, and the gate already serves `/me/secrets`.
-- Where does the docs site live? A pageship subdomain needs a name.
