@@ -89,7 +89,7 @@ change, because root opens `/dev/kvm` without it and the image may have no
 start a command that opens `/dev/kvm` in a Box session that already exists with
 `sg kvm -c '<command>'`.
 
-`make nested-e2e` checks the whole path. It builds moor with the pty surface,
+`make nested-e2e` checks the whole path. It builds moor,
 unless `target/debug/moor` is newer than every tracked file, runs a controller
 with one `runtime: external` node that drives `crabbox-cloudhypervisor`
 (2 vCPU, 4 GiB), and starts a Box on `IniZio/moor-nested-check`, a scratch repo
@@ -136,7 +136,6 @@ This starts one Box from a git repo on your machine with a CLI you built.
 You need:
 
 - the Rust toolchain that `rust-toolchain.toml` pins
-- `herdr` on `PATH`
 - crabbox 0.79.1-moor.6 or a newer `-moor` build of
   [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
   the `local-container` provider
@@ -207,7 +206,7 @@ You need:
    ```
 
    Run it inside a checkout of a GitHub repo, or name one with
-   `--repo OWNER/NAME`. moor creates the herdr workspace and the machine, the
+   `--repo OWNER/NAME`. moor creates the machine, the
    machine clones the repo, and then the agent starts.
 
 7. Follow the Box, and close it when the agent is done:

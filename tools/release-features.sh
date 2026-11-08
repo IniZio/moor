@@ -3,7 +3,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib/repo-root.sh"
 cd_repo_root
 bad=0
-own=$(cargo tree --locked -q -p moor -e normal,build,features --target all -i moor --features "${TEST_UPSTREAM_FEATURES:-pty-surface}")
+own=$(cargo tree --locked -q -p moor -e normal,build,features --target all -i moor)
 others=$(cargo tree --locked -q --workspace -e normal,build,features --target all -i moor)
 if grep -q 'feature "test-upstream"' <<<"$own$others"; then
   echo "release-features: a release build of moor enables the feature"

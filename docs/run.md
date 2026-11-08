@@ -88,7 +88,7 @@ moor start smoke --repo OWNER/NAME --prompt "Say hello and stop"
 ```
 
 `moor doctor` prints one line per check (controller, provider, node, user,
-secrets, surface) with a fix for each that fails.
+secrets) with a fix for each that fails.
 `moor start` refuses with every missing secret named, if one is missing.
 Close the Box with `moor close smoke` once it is ready.
 
@@ -102,7 +102,7 @@ place to link tokens, run the [Slack front](slack.md) or point them at the
 ## On Kubernetes
 
 The release image, `ghcr.io/inizio/moor`, holds the controller, the gate,
-the Slack front, crabbox and `herdr`. The Helm chart runs the
+the Slack front and crabbox. The Helm chart runs the
 controller and the gate from it; [Run moor on Kubernetes](kubernetes.md)
 installs it. The controller config, the node, and the
 gate's flags are the same as above. Read [Deploy the controller with systemd](deploy.md) for how the

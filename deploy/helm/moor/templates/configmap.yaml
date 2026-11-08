@@ -62,10 +62,6 @@ data:
     box:
       node: {{ . }}
     {{- end }}
-    {{- with .Values.controller.surface }}
-    surface:
-      kind: {{ . }}
-    {{- end }}
     {{- with .Values.controller.agentModel }}
     agent:
       model: {{ . | quote }}

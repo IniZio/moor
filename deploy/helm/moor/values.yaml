@@ -35,8 +35,6 @@ blobs:
 
 controller:
   uid: 10001
-  # surface.kind in the controller config. Empty keeps the image default, MOOR_SURFACE=pty; a set value overrides it.
-  surface: ""
   # agent.model in the controller config: the model a Box's agent starts with. Empty leaves the agent's own default.
   agentModel: ""
   # Shared nodes as {name: {runtime, labels, max_boxes}}; empty runs Boxes only on enrolled machines.
