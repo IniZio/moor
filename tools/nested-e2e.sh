@@ -83,6 +83,8 @@ external:
       large: {cpus: 2, memoryMiB: 4096}
       beast: {cpus: 2, memoryMiB: 4096}
     cacheDir: $NESTED
+    cloudHypervisor: $NESTED/bin/cloud-hypervisor
+    passt: $NESTED/bin/passt
     stateDir: $D/ch-state
     runtimeDir: $D/run
     cgroup: "off"
