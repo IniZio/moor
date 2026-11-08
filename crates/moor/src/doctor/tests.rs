@@ -138,7 +138,6 @@ fn checks_run_in_the_order_of_the_setup_guide() {
             "provider",
             "crabbox",
             "egress",
-            "crabbox-cfg",
             "nodes",
             "user"
         ]
