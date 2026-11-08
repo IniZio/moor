@@ -266,3 +266,57 @@ fn a_real_controller_records_the_enrolled_machine() {
     );
     assert_eq!(row, want);
 }
+
+/// A server that serves the gate's sign-in document and answers every other path with 404, as an
+/// install whose ingress does not route the machine paths does.
+fn without_machine_paths(gate: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    let gate = gate.to_owned();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut head = [0u8; 1024];
+            let n = std::io::Read::read(&mut stream, &mut head).unwrap_or(0);
+            let head = String::from_utf8_lossy(&head[..n]);
+            let (status, body) = if head.starts_with("GET /.well-known/moor ") {
+                let doc = ureq::get(format!("{gate}/.well-known/moor"))
+                    .call()
+                    .unwrap()
+                    .body_mut()
+                    .read_to_string()
+                    .unwrap();
+                ("200 OK", doc)
+            } else {
+                ("404 Not Found", String::new())
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    address
+}
+
+#[test]
+fn a_server_that_routes_no_enroll_path_is_said_to_take_no_machines() {
+    let w = world();
+    let home = tempfile::tempdir().unwrap();
+    let server = without_machine_paths(&w.gate);
+    let mut person = Person {
+        via_loopback: true,
+        paste: None,
+    };
+    let mut req = request(&w, false);
+    req.server = server.clone();
+    let err = enroll(&req, home.path(), 0, &mut person).unwrap_err();
+    let host = server.trim_start_matches("http://");
+    assert_eq!(
+        err,
+        format!(
+            "the server at {host} takes no machines; its operator must enable the machine runner"
+        )
+    );
+    assert!(!home.path().join("state.json").exists());
+}

@@ -120,8 +120,9 @@ pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<St
     let signed = oidc::sign_in(&req.server, port, ui)?;
     let body = json!({"access_token": signed.access_token, "pubkey": pubkey, "name": req.name,
         "labels": req.labels, "slots": req.slots, "pool": req.pool});
-    let got: Enrolled =
-        Http::new().post_json(&format!("{}/machines/enroll", signed.server), &body)?;
+    let got: Enrolled = Http::new()
+        .post_json_found(&format!("{}/machines/enroll", signed.server), &body)?
+        .ok_or_else(|| takes_no_machines(&signed.server))?;
     let state = State {
         server: signed.server,
         machine_id: got.machine_id,
@@ -211,6 +212,7 @@ async fn keep_linked(
                 relinked.get_or_insert_with(tokio::time::Instant::now);
                 ("the server is handing over".to_owned(), true)
             }
+            Err(Turned::NoMachines) => return Err(takes_no_machines(&state.server)),
             Err(Turned::Failed(why)) => (why, false),
         };
         if handing_over || old.as_ref().is_some_and(|l| !l.is_finished()) {
@@ -238,8 +240,19 @@ enum Turned {
     Update(String),
     /// The server is stopping and hands its links to another; dial again shortly.
     Relink,
+    /// The server routes no link path, so no machine can ever link to it.
+    NoMachines,
     /// Anything else; dialing again may work.
     Failed(String),
+}
+
+/// What to tell the person when `server` answers 404 where machines enroll or link.
+fn takes_no_machines(server: &str) -> String {
+    let host = server
+        .trim_end_matches('/')
+        .split_once("://")
+        .map_or(server, |(_, rest)| rest);
+    format!("the server at {host} takes no machines; its operator must enable the machine runner")
 }
 
 /// Dials `state`'s server and proves the machine with `key`; the link, once it is up, and the
@@ -249,7 +262,10 @@ async fn connect(
     key: &PrivateKey,
     machine: &Machine,
 ) -> Result<(link::Carried, String), Turned> {
-    let mut ws = link::dial(&state.server).await.map_err(Turned::Failed)?;
+    let mut ws = link::dial_found(&state.server)
+        .await
+        .map_err(Turned::Failed)?
+        .ok_or(Turned::NoMachines)?;
     let hello = Frame::Hello {
         machine_id: state.machine_id,
         version: VERSION.to_owned(),

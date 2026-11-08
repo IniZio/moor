@@ -79,8 +79,9 @@ to turn on:
   first.
 - `slack.enabled` runs the [Slack front](slack.md) beside the controller.
 - `notify.enabled` runs the [webhook front](notify.md).
-- `runner.enabled` runs the machine runner, so [machines](machines.md) can
-  enroll through the gate.
+- `runner.enabled` is on by default and runs the machine runner, so
+  [machines](machines.md) can enroll through the gate. Set it false to take
+  no machines; `moor-machine-agent` then says the server takes no machines.
 - `controller.nodes` and `controller.defaultNode` declare shared
   [nodes](nodes.md).
 - `egress.enabled` moves the shared egress Proxy out of the controller's pod.

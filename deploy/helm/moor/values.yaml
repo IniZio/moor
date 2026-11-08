@@ -73,7 +73,7 @@ notify:
   resources: {}
 
 runner:
-  enabled: false
+  enabled: true
   # true runs the runner as <release>-runner, a Deployment of its own, in place of a sidecar of the
   # controller pod: a controller deploy or a runner roll then costs each machine one redial. Needs egress.enabled.
   separate: false
