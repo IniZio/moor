@@ -21,9 +21,6 @@ use super::proxy_env;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
-/// Where the hook script remembers the last status it printed to the terminal, relative to the
-/// Box workdir; a launch clears it so the first status of the new run prints.
-const STATUS_OSC_FILE: &str = ".moor/status-osc";
 /// The agent script, in the credential directory, which the script removes once it runs.
 const SCRIPT_FILE: &str = "agent.sh";
 /// Time allowed for removing the credential directory.
