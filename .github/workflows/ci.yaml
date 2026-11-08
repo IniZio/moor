@@ -40,45 +40,19 @@ jobs:
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-  test:
+  lint:
     needs: stack
     if: needs.stack.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    services:
-      postgres:
-        image: postgres:17.6
-        env:
-          POSTGRES_USER: moor
-          POSTGRES_PASSWORD: moor
-          POSTGRES_DB: moor
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U moor" --health-interval 2s --health-timeout 5s
-          --health-retries 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install toolchain from rust-toolchain.toml
-        run: rustup show active-toolchain || rustup toolchain install
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - uses: ./.github/actions/rust
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-
-
-      - id: tools
-        run: echo "list=$(make -s print-tool-versions)" >> "$GITHUB_OUTPUT"
-
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: ${{ steps.tools.outputs.list }}
+          cache: lint
 
       - id: helm
         run: echo "version=$(make -s print-helm)" >> "$GITHUB_OUTPUT"
@@ -101,6 +75,25 @@ jobs:
           BASE: origin/${{ github.base_ref || github.ref_name }}
       - run: make chart
       - run: make audit
+
+  unit:
+    needs: stack
+    if: needs.stack.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust
+        with:
+          cache: test
+
       - name: Allow unprivileged user namespaces for the front tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install the herdr-core moor pins
@@ -108,7 +101,38 @@ jobs:
           curl -fsSL https://releases.herdr.dev/core/0.1.16/herdr-core-linux-x86_64.tar.gz -o "$RUNNER_TEMP/hc.tar.gz"
           echo "58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45  $RUNNER_TEMP/hc.tar.gz" | sha256sum -c -
           sudo tar -xzf "$RUNNER_TEMP/hc.tar.gz" -C /usr/local/bin herdr-core
-      - run: make unit
+      - run: make unit-nextest PARTITION=count:${{ matrix.shard }}/3
+
+  integration:
+    needs: stack
+    if: needs.stack.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: moor
+          POSTGRES_PASSWORD: moor
+          POSTGRES_DB: moor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U moor" --health-interval 2s --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust
+        with:
+          cache: test
+
+      - name: Allow unprivileged user namespaces for the front tests
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Run the doc tests
+        run: make unit-doc
       - name: Check the store schema and run the store tests on Postgres
         run: make unit-pg
       - name: Round-trip blobs through a real S3-compatible store
@@ -118,7 +142,21 @@ jobs:
       - name: Run the egress proxy under parallel load through a real tinyproxy
         run: |
           sudo apt-get install -y tinyproxy-bin
-          cargo test -p moor-core --locked --lib -- --ignored exec_env::tests::egress_load
+          make unit-egress
+
+  test:
+    needs: [stack, lint, unit, integration]
+    if: always() && needs.stack.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every test job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            [ "$r" = success ] || { echo "a test job finished $r"; exit 1; }
+          done
 
   macos-fronts:
     needs: stack
