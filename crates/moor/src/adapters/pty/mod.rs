@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use moor_core::activity::{PaneObs, PaneStatus};
+use moor_core::seam::surface::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
     FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
