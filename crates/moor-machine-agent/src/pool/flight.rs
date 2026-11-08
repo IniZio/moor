@@ -86,6 +86,17 @@ pub(super) async fn stop(dir: &Path) {
     let _ = landing(flight.ending).await;
 }
 
+/// Asks every boot going on to stop and waits for them all.
+pub(super) async fn stop_all() {
+    let going: Vec<Flight> = flights().values().cloned().collect();
+    for flight in &going {
+        let _ = flight.stop.send(true);
+    }
+    for flight in going {
+        let _ = landing(flight.ending).await;
+    }
+}
+
 /// Resolves when the boot this code runs for is asked to stop; never outside a boot.
 pub(super) async fn stop_asked() {
     let Ok(mut stopping) = STOP.try_with(Clone::clone) else {

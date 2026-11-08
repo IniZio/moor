@@ -300,6 +300,44 @@ fn dial_carries_bytes_both_ways_through_the_proxy_command() {
     assert_eq!(back, "SSH-2.0-hello\n");
 }
 
+/// A crabbox whose warmup writes its pid and runs for as long as its home exists.
+const ENDLESS_WARMUP: &str = r#"#!/bin/sh
+[ "$1" = warmup ] || exit 0
+echo $$ > "$HOME/warmup.pid"
+while [ -d "$HOME" ]; do sleep 0.02; done
+"#;
+
+#[test]
+fn a_terminated_agent_ends_the_warmup_it_started() {
+    let home = tempfile::tempdir().unwrap();
+    moor_testkit::write_executable(&home.path().join("crabbox"), ENDLESS_WARMUP).unwrap();
+    let child = agent(home.path(), &["lease", "warmup", "moor-1a2b3c4d-7"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(child);
+    let pid_file = home.path().join("warmup.pid");
+    let pid = (0..1000)
+        .find_map(|_| {
+            let pid = std::fs::read_to_string(&pid_file).unwrap_or_default();
+            if pid.ends_with('\n') {
+                return Some(pid);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            None
+        })
+        .expect("crabbox warmup never started");
+    child.terminate().unwrap();
+    let alive = Command::new("ps")
+        .args(["-p", pid.trim()])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    assert!(!alive, "crabbox warmup {} outlived the agent", pid.trim());
+}
+
 #[test]
 fn a_pool_host_cannot_also_allow_exec() {
     let home = home();

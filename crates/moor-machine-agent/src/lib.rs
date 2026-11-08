@@ -85,6 +85,29 @@ pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> R
     run_with(dir, machine, false, log).await
 }
 
+/// Runs `work` until it ends or the host asks the agent to stop with SIGTERM or SIGINT. A stop
+/// ends every boot going on before it returns, so no crabbox outlives the agent.
+///
+/// # Errors
+/// `work` failed, the agent was asked to stop, or it cannot watch for those signals.
+pub async fn until_stopped<T>(
+    work: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let watch = |kind| signal(kind).map_err(|e| format!("cannot watch for signals: {e}"));
+    let (mut term, mut int) = (
+        watch(SignalKind::terminate())?,
+        watch(SignalKind::interrupt())?,
+    );
+    let asked = tokio::select! {
+        ended = work => return ended,
+        _ = term.recv() => "SIGTERM",
+        _ = int.recv() => "SIGINT",
+    };
+    pool::stop_boots().await;
+    Err(format!("stopped by {asked}"))
+}
+
 /// As [`run`]; with `auto_update`, the agent moves to the release of the server it links to.
 ///
 /// It installs that release, then starts it in this process's place with the same arguments
