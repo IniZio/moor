@@ -188,11 +188,13 @@ async fn keep_linked(
     // The link a relink left open; while it is, the new runner is coming up, so no backoff.
     let mut old: Option<tokio::task::JoinHandle<String>> = None;
     let mut relinked: Option<tokio::time::Instant> = None;
+    let mut ever_linked = false;
     loop {
         let (why, handing_over) = match connect(state, key, machine).await {
             Ok((carried, theirs)) => {
                 log(&format!("linked to {}", state.server));
                 tell.send_replace(theirs);
+                ever_linked = true;
                 wait = FIRST_WAIT;
                 relinked = None;
                 match held::hold(carried, machine, &boxes, &recent).await {
@@ -212,7 +214,12 @@ async fn keep_linked(
                 relinked.get_or_insert_with(tokio::time::Instant::now);
                 ("the server is handing over".to_owned(), true)
             }
-            Err(Turned::NoMachines) => return Err(takes_no_machines(&state.server)),
+            Err(Turned::NoMachines) if !ever_linked => {
+                return Err(takes_no_machines(&state.server))
+            }
+            Err(Turned::NoMachines) => {
+                ("the server answered 404 on the link path".to_owned(), false)
+            }
             Err(Turned::Failed(why)) => (why, false),
         };
         if handing_over || old.as_ref().is_some_and(|l| !l.is_finished()) {
