@@ -478,6 +478,7 @@ fn a_real_controller_enrolls_the_token_email() {
     assert_eq!(email, "alice@example.com");
 }
 
+mod account;
 mod artifacts;
 mod drain;
 mod events;

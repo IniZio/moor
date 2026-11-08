@@ -23,6 +23,7 @@ http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["service", "tokio", "http1"] }
+rust-embed = { version = "8", features = ["debug-embed"] }
 rmcp = { version = "3.7", default-features = false, features = [
   "server",
   "macros",

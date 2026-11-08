@@ -20,14 +20,14 @@ const VALUE: &str = "sk-ant-oat01-s3cret<&>";
 const STORED: &str = "ghp_alreadyStored";
 
 /// Each enrolled identity's secrets, by name.
-type Vault = HashMap<String, BTreeMap<String, String>>;
+pub(super) type Vault = HashMap<String, BTreeMap<String, String>>;
 
-struct World {
-    addr: String,
-    issuer: Issuer,
+pub(super) struct World {
+    pub(super) addr: String,
+    pub(super) issuer: Issuer,
     /// Every request the controller got, `secret-set` values redacted.
-    seen: Arc<Mutex<Vec<Value>>>,
-    vault: Arc<Mutex<Vault>>,
+    pub(super) seen: Arc<Mutex<Vec<Value>>>,
+    pub(super) vault: Arc<Mutex<Vault>>,
     _dir: tempfile::TempDir,
 }
 
@@ -72,9 +72,16 @@ fn answer(vault: &mut Vault, first: &[(&str, &str)], who: &str, inner: &Value) -
                 .unwrap_or_default();
             Response::ok("x", Some(json!({"names": names})))
         }
+        "node-list" => Response::ok("x", Some(nodes())),
         "start-needs" | "start" => needs(vault, who, inner),
         _ => Response::ok("x", None),
     }
+}
+
+/// The answer to `node-list`: one personal node, online with room.
+fn nodes() -> Value {
+    json!({"nodes": [{"name": "hv", "scope": "personal", "runtime": "cloud-hypervisor",
+        "online": true, "used": 1, "waiting": 0, "max_boxes": 4, "labels": []}], "at": 100})
 }
 
 /// The answer to `start-needs`, or the refusal of a `start` missing secrets.
@@ -104,7 +111,7 @@ fn needs(vault: &Vault, who: &str, inner: &Value) -> Response {
 
 /// A gate with `/mcp`, with browser sign-in when `login` is set; each new user starts with
 /// the secrets in `first`.
-fn world(login: bool, first: &'static [(&'static str, &'static str)]) -> World {
+pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)]) -> World {
     let issuer = Issuer::start(CLIENT_ID);
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
@@ -175,7 +182,7 @@ impl World {
     }
 
     /// The `cmd` of every request the controller got, in order.
-    fn cmds(&self) -> Vec<String> {
+    pub(super) fn cmds(&self) -> Vec<String> {
         let seen = self.seen.lock().unwrap();
         seen.iter()
             .map(|r| r["request"]["cmd"].as_str().unwrap_or_default().to_owned())

@@ -11,7 +11,7 @@ PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
 export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap nested-e2e chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
 
 help:
 	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
@@ -70,6 +70,12 @@ docs-build:
 	@command -v bun >/dev/null || { echo "docs-build: bun is not installed"; exit 1; }
 	bun install --cwd site --frozen-lockfile
 	bun run --cwd site build
+
+# Rebuilds the account page the gate embeds; commit the result with the source change.
+web:
+	@command -v bun >/dev/null || { echo "web: bun is not installed"; exit 1; }
+	bun install --cwd crates/moor-gate/web --frozen-lockfile
+	bun run --cwd crates/moor-gate/web build
 
 chart:
 	@command -v helm >/dev/null || { echo "chart: helm $(HELM_VERSION) is not installed"; exit 1; }

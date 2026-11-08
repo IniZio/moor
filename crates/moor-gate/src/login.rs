@@ -2,6 +2,7 @@
 //! sessions, for pages that must only reach a signed-in person. A started sign-in and a
 //! session both live in sealed cookies, so any gate replica sharing the key can serve them.
 
+pub(crate) mod account;
 pub(crate) mod pair;
 pub(crate) mod routes;
 mod seal;

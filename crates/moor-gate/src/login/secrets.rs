@@ -32,11 +32,13 @@ const SOURCES: [(&str, &str); 2] = [
 ];
 
 /// One secret as the page lists it.
-struct Row {
+#[derive(serde::Serialize)]
+pub(super) struct Row {
     /// The secret's name.
-    name: String,
+    pub(super) name: String,
     /// Whether the person has stored it.
-    set: bool,
+    #[serde(rename = "linked")]
+    pub(super) set: bool,
 }
 
 /// Serves one `/me/secrets` request.
@@ -102,7 +104,7 @@ fn save(
 }
 
 /// The secrets the person's Boxes need and whether each is set, asked as the session's person.
-fn rows(gate: &Gate, session: &Session) -> Result<Vec<Row>, String> {
+pub(super) fn rows(gate: &Gate, session: &Session) -> Result<Vec<Row>, String> {
     let ask = |request| tools::act_as(&gate.controller, &session.person, request);
     let unreadable = |e: serde_json::Error| format!("the controller's answer is unreadable: {e}");
     let needs = ask(ControllerRequest::StartNeeds(StartNeedsReq {

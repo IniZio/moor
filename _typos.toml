@@ -6,4 +6,4 @@ passt = "passt"
 PASST = "PASST"
 
 [files]
-extend-exclude = ["target/", "Cargo.lock"]
+extend-exclude = ["target/", "Cargo.lock", "crates/moor-gate/web/dist/"]

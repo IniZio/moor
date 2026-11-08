@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::{pair, routes, secrets, setup};
+use crate::login::{account, pair, routes, secrets, setup};
 use crate::streams::Streams;
 use crate::tools::client_down;
 use crate::{log, relay, Gate, Login};
@@ -103,6 +103,7 @@ fn behind_sign_in(path: &str) -> bool {
         || path.starts_with("/webhooks/")
         || path == secrets::PATH
         || path == pair::PATH
+        || account::serves(path)
 }
 
 /// Serves a page behind browser sign-in: sign-in itself, secrets, or webhook setup.
@@ -120,6 +121,7 @@ fn browser(
         method,
         target: req.path.unwrap_or_default(),
         cookies: headers_named(req, "cookie"),
+        csrf: header(req, "x-moor-csrf"),
         length: header(req, "content-length").and_then(|v| v.trim().parse().ok()),
         leftover,
     };
@@ -127,6 +129,8 @@ fn browser(
         routes::handle(stream, req, gate, login);
     } else if req.target.split('?').next() == Some(secrets::PATH) {
         secrets::handle(stream, req, gate, login);
+    } else if account::serves(req.target.split('?').next().unwrap_or_default()) {
+        account::handle(stream, req, gate, login);
     } else if req.target.split('?').next() == Some(pair::PATH) {
         pair::page::handle(stream, req, gate, login);
     } else {

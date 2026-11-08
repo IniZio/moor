@@ -28,6 +28,8 @@ pub(crate) struct Request<'a> {
     pub(crate) target: &'a str,
     /// Every `Cookie` header value.
     pub(crate) cookies: Vec<&'a str>,
+    /// The `X-Moor-Csrf` header, which a script posts where a form would carry a field.
+    pub(crate) csrf: Option<&'a str>,
     /// The declared body length.
     pub(crate) length: Option<usize>,
     /// Body bytes read with the head.
@@ -195,12 +197,23 @@ pub(super) fn escape(text: &str) -> String {
 /// The form-encoded body, when it fits and arrives whole.
 pub(super) fn read_form(
     stream: &mut TcpStream,
-    mut body: Vec<u8>,
+    body: Vec<u8>,
     length: Option<usize>,
 ) -> Option<HashMap<String, String>> {
-    let length = length.filter(|n| *n <= FORM_MAX)?;
+    let body = read_body(stream, body, length, FORM_MAX)?;
+    Some(form_urlencoded::parse(&body).into_owned().collect())
+}
+
+/// The body, when it is at most `max` bytes and arrives whole.
+pub(super) fn read_body(
+    stream: &mut TcpStream,
+    mut body: Vec<u8>,
+    length: Option<usize>,
+    max: usize,
+) -> Option<Vec<u8>> {
+    let length = length.filter(|n| *n <= max)?;
     body.truncate(length);
     let owed = u64::try_from(length.saturating_sub(body.len())).ok()?;
     stream.take(owed).read_to_end(&mut body).ok()?;
-    (body.len() == length).then(|| form_urlencoded::parse(&body).into_owned().collect())
+    (body.len() == length).then_some(body)
 }
