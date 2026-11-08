@@ -329,7 +329,53 @@ fn text_to_a_blocked_agent_is_refused_with_its_prompt() {
     assert_eq!(err.kind, ErrorKind::Refused);
     let msg = err.error.to_string();
     assert!(msg.contains("waiting for: Allow edit?"), "{msg}");
-    assert!(msg.contains("--menu N"), "{msg}");
+    assert!(!msg.contains("Workspace"), "{msg}");
+    assert!(f.engine.steers().is_empty());
+}
+
+fn which_color() -> Probe {
+    agent::asking("Which color?", &["red", "blue"], Ts::from_millis(0))
+}
+
+#[test]
+fn an_option_named_as_text_answers_the_question() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", working())
+        .then_probes("agent-1", which_color());
+    let f = fx_with(engine, true);
+    let v = run(&f.cx, &text("  Blue ")).unwrap();
+    assert!(v.answered_menu);
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Menu(2))]
+    );
+}
+
+#[test]
+fn an_option_number_as_text_answers_the_question() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", working())
+        .then_probes("agent-1", which_color());
+    let f = fx_with(engine, true);
+    run(&f.cx, &text("1")).unwrap();
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Menu(1))]
+    );
+}
+
+#[test]
+fn other_text_to_a_question_is_refused_with_its_options() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", which_color()), true);
+    for t in ["green", "3"] {
+        let err = run(&f.cx, &text(t)).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Refused);
+        let msg = err.error.to_string();
+        assert!(msg.contains("waiting for: Which color?"), "{msg}");
+        assert!(msg.contains("1. red") && msg.contains("2. blue"), "{msg}");
+        assert!(msg.contains("send one of"), "{msg}");
+        assert!(!msg.contains("Workspace"), "{msg}");
+    }
     assert!(f.engine.steers().is_empty());
 }
 
