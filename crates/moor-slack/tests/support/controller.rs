@@ -163,7 +163,7 @@ impl FakeController {
             .collect()
     }
 
-    /// Ends host Session `session` from outside the front, as moor-web does.
+    /// Ends host Session `session` from outside the front.
     pub(crate) fn end_host(&self, session: i64) {
         let index = usize::try_from(session - 100).unwrap();
         self.lock().hosts[index].1 = true;

@@ -142,7 +142,7 @@ them.
 ## Upgrade the controller
 
 1. Install the new binaries over the old ones, for example with
-   `install -m 755 moor moor-slack moor-web ~/.local/bin/`.
+   `install -m 755 moor moor-slack ~/.local/bin/`.
 2. Restart the service:
 
    ```sh

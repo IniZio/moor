@@ -1060,9 +1060,9 @@ with.
 
 ```yaml
 fronts:
-  web:
-    command: [moor-web, --port, "8080"]
-    state_dir: /home/me/.local/state/moor-web
+  board:
+    command: [my-board, --port, "8080"]
+    state_dir: /home/me/.local/state/my-board
     ports: [8080]
   slack: {}
 ```
@@ -1198,7 +1198,7 @@ when `/etc/resolv.conf` resolves under `/tmp`.
 
 The controller creates the `state_dir` and its `tmp` subdirectory, mode 0700,
 and sets `MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`.
-moor-web and moor-slack keep their state in `MOOR_FRONT_STATE_DIR` when
+moor-slack keeps its state in `MOOR_FRONT_STATE_DIR` when
 `--state-dir` is not given.
 
 Fronts need unprivileged user namespaces and Landlock, and no program on the

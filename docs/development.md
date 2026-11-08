@@ -11,7 +11,6 @@
 | [moor-slack](../crates/moor-slack) | The Slack front. |
 | [moor-listen](../crates/moor-listen) | Holds the gate's listen stream open and prints a line per Box event. |
 | [moor-notify](../crates/moor-notify) | The webhook front: posts a person's Box events to a URL. |
-| [moor-web](../crates/moor-web) | The web front. |
 | [moor-testkit](../crates/moor-testkit) | Helpers that the other crates' tests share. |
 
 [tools](../tools) holds the lint scripts that `make lint` runs. One of them,
@@ -54,7 +53,7 @@ Each failing check prints a `fix:` line. In short:
 
 Each database's schema is an ordered list of migrations. moor.db's are written
 once in Rust with sea-query, in [crates/moor-schema](../crates/moor-schema),
-and rendered for SQLite and for Postgres. moor-slack and moor-web still use
+and rendered for SQLite and for Postgres. moor-slack still uses
 `V<n>__<name>.sql` files. When moor opens a database, it applies the missing
 migrations in one `BEGIN IMMEDIATE` transaction and records each one in
 `refinery_schema_history`. A second process that opens the database waits for

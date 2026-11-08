@@ -11,7 +11,7 @@
 
 use std::fs;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -250,7 +250,7 @@ fn hidden_program_and_note(root: &Path, python: &Path) -> PathBuf {
     program
 }
 
-/// A sibling binary of `moor` in the target dir, such as `moor-web`.
+/// A sibling binary of `moor` in the target dir, such as `moor-slack`.
 fn sibling(name: &str) -> PathBuf {
     let path = Path::new(env!("CARGO_BIN_EXE_moor")).with_file_name(name);
     assert!(path.is_file(), "build {name} first: {}", path.display());
@@ -428,37 +428,6 @@ fn the_check_tries_a_write_the_sandbox_refuses() {
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         "sandbox enforced: a write outside the allow-list was refused"
-    );
-}
-
-#[test]
-fn moor_web_serves_under_the_sandbox() {
-    let ctl = Controller::start(|root, _| {
-        let token = root.join("web-token");
-        fs::write(&token, "t0ken\n").unwrap();
-        fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
-        let command = serde_json::json!([sibling("moor-web"), "--token-file", token]);
-        format!(
-            "  web:\n    command: {command}\n    state_dir: {}\n    read_only: [{}]\n",
-            root.join("web").display(),
-            token.display(),
-        )
-    });
-    let url = wait_for("moor-web's address", || ctl.line("web", "http://"));
-    let port = url.trim_end_matches('/').rsplit(':').next().unwrap();
-    let mut http = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
-    write!(
-        http,
-        "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer t0ken\r\nConnection: close\r\n\r\n"
-    )
-    .unwrap();
-    let mut said = String::new();
-    http.read_to_string(&mut said).unwrap();
-    assert!(said.starts_with("HTTP/1.1 200"), "{said}\n{}", ctl.log());
-    assert!(
-        ctl.root.join("web").join("web.db").exists(),
-        "{}",
-        ctl.log()
     );
 }
 
