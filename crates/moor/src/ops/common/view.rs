@@ -108,6 +108,12 @@ fn run_view(r: &RunRow) -> RunView {
     }
 }
 
+/// The name of the node `row` was placed on, when one is recorded.
+pub(crate) fn node_of(cx: &crate::cx::Cx, row: &BoxRow) -> Option<String> {
+    let spec = cx.store().ok()?.box_spec(row.id).ok()?;
+    spec.node.map(|n| n.to_string())
+}
+
 /// Map a Box row to the shared view; `agent` and `run` stay empty.
 pub(crate) fn box_view(row: &BoxRow, config: &UserConfig) -> BoxView {
     box_view_with_run(row, None, config)

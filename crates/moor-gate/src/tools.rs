@@ -4,7 +4,7 @@
 use moor_client::Client;
 use moor_core::name::BoxName;
 use moor_core::request::{
-    BoxTarget, CloseReq, EnrollReq, Request as ControllerRequest, ShowReq, SteerReq,
+    AsReq, BoxTarget, CloseReq, EnrollReq, Request as ControllerRequest, ShowReq, SteerReq,
 };
 use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::progress;
@@ -57,7 +57,7 @@ struct StartArgs {
     prompt: Option<String>,
     /// The revision to branch from; the repo's default branch when left out.
     base: Option<String>,
-    /// A node you may use; omit for your default.
+    /// A node `list_nodes` shows you; omit to start on the node `list_nodes` says a start picks.
     node: Option<String>,
     /// Set the Box up from scratch, past any setup kept from earlier Boxes; false by default.
     #[serde(default)]
@@ -106,10 +106,26 @@ impl Tools {
             .await
     }
 
+    #[tool(
+        description = "List the nodes you may start Boxes on: each one's name, whether it is \
+                       yours or shared, its runtime, whether it is online or since when it is \
+                       offline, its used and total Box slots, its free memory and whether warm \
+                       starts are on, plus start: the node a start_box with no node would use \
+                       now and whether it starts, waits or is refused. Call this before \
+                       start_box when the person names no node, and tell them where the Box \
+                       will go; an offline personal node refuses the start and never falls \
+                       back to a shared one. Needs the moor:read scope."
+    )]
+    async fn list_nodes(&self, context: RequestContext<RoleServer>) -> CallToolResult {
+        let request = ControllerRequest::NodeList(AsReq { identity: None });
+        self.run(&context, READ, Ok(request), Reply::AsIs).await
+    }
+
     /// Starts a Box.
     #[tool(
         description = "Start a Box on a GitHub repo given as owner/name, optionally with a name, \
-                       a first prompt for its agent and a base revision. Returns once the Box \
+                       a first prompt for its agent and a base revision. The answer names the \
+                       node the Box went to. Returns once the Box \
                        exists, while setup continues; follow the start with box_status. Pass \
                        wait=true to block until setup and the agent launch finish. A refusal \
                        for missing secrets names them; the person stores them in a browser on \

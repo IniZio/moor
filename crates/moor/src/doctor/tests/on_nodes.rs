@@ -35,6 +35,8 @@ fn listing(nodes: Vec<NodeView>) -> Rig {
             r.cmd(),
             serde_json::to_value(NodeListValue {
                 nodes: nodes.clone(),
+                at: 0,
+                start: None,
             })
             .unwrap(),
         )

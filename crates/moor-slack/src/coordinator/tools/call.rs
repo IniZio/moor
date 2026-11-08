@@ -9,6 +9,8 @@ use super::answer::number;
 pub(crate) enum Call {
     /// `list_boxes`.
     ListBoxes,
+    /// `list_nodes`.
+    ListNodes,
     /// `start_box`.
     StartBox {
         /// What the Box should do.
@@ -122,6 +124,7 @@ impl Call {
         let boxed = || text("box");
         match name {
             "list_boxes" => Ok(Self::ListBoxes),
+            "list_nodes" => Ok(Self::ListNodes),
             "start_box" => Ok(Self::StartBox {
                 prompt: text("prompt")?,
                 repo: text("repo").ok(),

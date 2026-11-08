@@ -113,6 +113,7 @@ fn start_view_keys_match_wire_shape() {
         boxed: sample_box(),
         attached: false,
         queued: false,
+        node: None,
         promoted: vec!["a".into()],
         work_tree: Some(WorkTreeView::ColdAfter { reason: "x".into() }),
         setup: SetupView {

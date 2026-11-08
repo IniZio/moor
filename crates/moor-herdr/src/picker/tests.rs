@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use moor_core::request::SecretValue;
 use moor_core::user::SecretName;
+use moor_core::view::node::{NodeListValue, NodeScope, NodeView, PickOutcome, StartPick};
 use moor_core::view::user::StartNeedsValue;
 
 use super::{accepted, refusal, run, start_request, Bench, Controller, Prompt, Start};
@@ -62,6 +63,8 @@ struct Ctl {
     values: std::cell::RefCell<Vec<(String, String)>>,
     /// Start requests, accepted or not.
     attempts: std::cell::Cell<usize>,
+    /// What the controller says of the person's nodes.
+    nodes: NodeListValue,
 }
 
 impl Ctl {
@@ -126,6 +129,10 @@ impl Vault for Ctl {
 }
 
 impl Controller for Ctl {
+    fn nodes(&self) -> Result<NodeListValue, Error> {
+        Ok(self.nodes.clone())
+    }
+
     fn open(&self) -> Result<Vec<Shown>, Error> {
         let mut now = self.open.clone();
         now.extend(self.started.borrow().iter().map(|s| live(&s.name, &s.repo)));
@@ -163,6 +170,11 @@ fn ctl() -> Ctl {
         vault: std::cell::RefCell::default(),
         values: std::cell::RefCell::default(),
         attempts: std::cell::Cell::new(0),
+        nodes: NodeListValue {
+            nodes: Vec::new(),
+            at: 0,
+            start: None,
+        },
     }
 }
 
@@ -485,4 +497,83 @@ fn a_login_required_refusal_keeps_what_is_missing() {
     );
     let other = refusal(refused(None, &value)).unwrap_err();
     assert!(matches!(other, Error::Refused(m) if m == "log in first"));
+}
+
+fn node(name: &str, scope: NodeScope, online: bool) -> NodeView {
+    NodeView {
+        name: name.to_owned(),
+        scope,
+        owner: None,
+        runtime: "cloudhypervisor".to_owned(),
+        online,
+        offline_since: (!online).then_some(0),
+        used: 1,
+        waiting: 0,
+        max_boxes: Some(4),
+        mem_free_mib: None,
+        disk_free_mib: None,
+        disk_low: false,
+        mem_psi_centi: None,
+        mem_report_age_secs: None,
+        pressure_since: None,
+        warm_starts: None,
+        box_memory_mib: None,
+        labels: Vec::new(),
+    }
+}
+
+fn with_nodes(answers: &[&str]) -> (Screen, Ctl, Herd) {
+    let mut ctl = ctl();
+    ctl.nodes = NodeListValue {
+        at: 0,
+        nodes: vec![
+            node("ci", NodeScope::Shared, true),
+            node("mini", NodeScope::Personal, true),
+        ],
+        start: Some(StartPick {
+            node: Some("mini".to_owned()),
+            outcome: PickOutcome::Starts,
+            reason: None,
+        }),
+    };
+    pick_with(Screen::typing(answers), ctl)
+}
+
+#[test]
+fn the_picker_shows_the_nodes_and_where_a_start_goes_and_an_empty_answer_takes_it() {
+    let (screen, ctl, _) = with_nodes(&["box", "2", "tidy", "", "", ""]);
+    for part in [
+        "mini (yours, cloudhypervisor) online, 1 of 4 Boxes",
+        "goes to mini",
+    ] {
+        assert!(
+            screen.said.iter().any(|l| l.contains(part)),
+            "{:?}",
+            screen.said
+        );
+    }
+    assert_eq!(
+        ctl.started.borrow().first().map(|s| s.node.clone()),
+        Some(None)
+    );
+}
+
+#[test]
+fn naming_another_node_sends_it_and_a_name_that_is_not_listed_asks_again() {
+    let (screen, ctl, _) = with_nodes(&["box", "2", "tidy", "rack", "ci", "", ""]);
+    assert!(screen.said.iter().any(|l| l.contains("no node named rack")));
+    assert_eq!(
+        ctl.started.borrow().first().and_then(|s| s.node.as_deref()),
+        Some("ci")
+    );
+}
+
+#[test]
+fn the_start_request_carries_the_node() {
+    let start = Start {
+        node: Some("ci".to_owned()),
+        ..tidy()
+    };
+    let wire = serde_json::to_value(start_request(&start).unwrap()).unwrap();
+    assert_eq!(wire.get("node"), Some(&serde_json::json!("ci")));
 }

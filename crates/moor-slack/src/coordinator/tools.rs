@@ -62,6 +62,7 @@ pub(crate) struct Scope<'a> {
 pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
     let ran = match call {
         Call::ListBoxes => list(scope),
+        Call::ListNodes => Ok(nodes::list(scope)),
         Call::StartBox {
             prompt,
             repo,
@@ -351,6 +352,8 @@ mod call;
 pub(crate) use call::Call;
 
 mod control;
+
+mod nodes;
 
 mod start;
 use start::start;

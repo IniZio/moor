@@ -9,6 +9,7 @@ use std::time::Duration;
 use moor_client::Client;
 use moor_core::request::Request;
 use moor_core::response::{ErrorDetail, Response};
+use moor_core::view::node::NodeListValue;
 use rustix::termios::{self, LocalModes, OptionalActions};
 use serde_json::json;
 
@@ -31,6 +32,8 @@ pub trait Prompt {
 
 /// The controller calls the picker makes.
 pub trait Controller: Vault {
+    /// The nodes the person may start on, and where a start naming none goes.
+    fn nodes(&self) -> Result<NodeListValue, Error>;
     /// Every open Box.
     fn open(&self) -> Result<Vec<Shown>, Error>;
     /// Starts the Box `start` describes, returning once the controller lists it or refuses it.
@@ -49,6 +52,8 @@ pub struct Start {
     pub base: Option<String>,
     /// The agent's first prompt; `None` leaves the agent waiting for one.
     pub prompt: Option<String>,
+    /// The node to run on; `None` for the one the controller picks.
+    pub node: Option<String>,
 }
 
 /// The herdr calls only the picker makes, besides [`Herdr`]'s.
@@ -102,6 +107,17 @@ impl Prompt for Tty {
 }
 
 impl Controller for Client {
+    fn nodes(&self) -> Result<NodeListValue, Error> {
+        let reply = self.request(request(json!({"cmd": "node-list"}))?, |_| {})?;
+        if let Some(e) = reply.error {
+            return Err(Error::Refused(e.message));
+        }
+        reply
+            .value
+            .and_then(|v| serde_json::from_value(v).ok())
+            .ok_or_else(|| Error::Refused("the node list was not readable".to_owned()))
+    }
+
     fn open(&self) -> Result<Vec<Shown>, Error> {
         open_boxes(self)
     }
@@ -170,6 +186,7 @@ pub fn start_request(start: &Start) -> Result<Request, Error> {
         "repo": start.repo,
         "base": start.base,
         "prompt": start.prompt,
+        "node": start.node,
     }))
 }
 
@@ -269,7 +286,10 @@ fn ask_repo(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<String>, 
 }
 
 /// Asks what the new Box starts from; `None` when the input ends first.
-fn ask_start(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<Start>, Error> {
+fn ask_start(
+    prompt: &mut dyn Prompt,
+    (boxes, nodes): (&[Shown], &NodeListValue),
+) -> Result<Option<Start>, Error> {
     let Some(repo) = ask_repo(prompt, boxes)? else {
         return Ok(None);
     };
@@ -281,6 +301,9 @@ fn ask_start(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<Start>, 
         }
     })?;
     let Some(name) = name else { return Ok(None) };
+    let Some(NodeChoice(node)) = ask_node(prompt, nodes)? else {
+        return Ok(None);
+    };
     let Some(base) = prompt.ask("Base branch or ref (empty for the repo's default): ")? else {
         return Ok(None);
     };
@@ -292,7 +315,37 @@ fn ask_start(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<Start>, 
         repo,
         base: given(&base),
         prompt: given(&first),
+        node,
     }))
+}
+
+/// The node the person chose; none leaves the pick to the controller.
+struct NodeChoice(Option<String>);
+
+/// Shows the nodes and where a start goes, and asks whether to use another when there is a
+/// choice; `None` once the input ends.
+fn ask_node(prompt: &mut dyn Prompt, nodes: &NodeListValue) -> Result<Option<NodeChoice>, Error> {
+    if nodes.nodes.is_empty() {
+        return Ok(Some(NodeChoice(None)));
+    }
+    for n in &nodes.nodes {
+        prompt.say(&n.line(nodes.at))?;
+    }
+    if let Some(pick) = &nodes.start {
+        prompt.say(&pick.sentence())?;
+    }
+    if nodes.nodes.len() < 2 {
+        return Ok(Some(NodeChoice(None)));
+    }
+    let chosen = ask_until(prompt, "Node (empty for the one above): ", |a| {
+        let a = a.trim();
+        if a.is_empty() || nodes.nodes.iter().any(|n| n.name == a) {
+            return Ok(NodeChoice(given(a)));
+        }
+        let yours: Vec<&str> = nodes.nodes.iter().map(|n| n.name.as_str()).collect();
+        Err(format!("There is no node named {a}: {}.", yours.join(", ")))
+    })?;
+    Ok(chosen)
 }
 
 /// Asks for the Box, starts it, syncs and brings its workspace to the front.
@@ -302,7 +355,15 @@ fn start_box(
     (ctl, bench): (&dyn Controller, &mut dyn Bench),
     attach: &dyn Fn(&str) -> String,
 ) -> Result<(), Error> {
-    let Some(start) = ask_start(prompt, boxes)? else {
+    let nodes = ctl.nodes().unwrap_or_else(|e| {
+        let _ = prompt.say(&format!("Could not read your nodes: {e}"));
+        NodeListValue {
+            nodes: Vec::new(),
+            at: 0,
+            start: None,
+        }
+    });
+    let Some(start) = ask_start(prompt, (boxes, &nodes))? else {
         return Ok(());
     };
     prompt.say(&format!("Starting {} on {}...", start.name, start.repo))?;

@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 use super::{claims, mpsc, now, sign, world_with, World};
 
 mod inspect;
+mod nodes;
 mod tool_list;
 mod webhook;
 mod workflow;

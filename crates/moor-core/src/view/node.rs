@@ -79,11 +79,133 @@ pub struct NodeView {
     pub labels: Vec<String>,
 }
 
+/// What starting a Box with no node named would do right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PickOutcome {
+    /// The Box starts at once.
+    Starts,
+    /// The Box waits for room on the node.
+    Waits,
+    /// The start fails.
+    Refused,
+}
+
+/// The node a start would pick for the caller, and what happens there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartPick {
+    /// The node it picks; none when no node can host the Box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
+    /// What happens on it.
+    pub outcome: PickOutcome,
+    /// Why it waits or fails.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// Value of `node-list`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeListValue {
     /// The nodes the caller sees, shared first.
     pub nodes: Vec<NodeView>,
+    /// When the controller read the nodes, unix seconds.
+    #[serde(default)]
+    pub at: i64,
+    /// What a start naming no node would do for the caller; none when the caller is no one user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<StartPick>,
+}
+
+impl NodeView {
+    /// `used of max` slots, or `used` alone on a node with no limit.
+    #[must_use]
+    pub fn slots(&self) -> String {
+        self.max_boxes.map_or_else(
+            || self.used.to_string(),
+            |m| format!("{} of {m}", self.used),
+        )
+    }
+
+    /// How it stands: online or offline since when, slots, free memory and warm starts.
+    #[must_use]
+    pub fn status(&self, now: i64) -> String {
+        let state = match self.offline_since {
+            _ if self.online => "online".to_owned(),
+            Some(since) => format!("offline for {}", ago(since, now)),
+            None => "offline".to_owned(),
+        };
+        let mut out = format!("{state}, {} Boxes", self.slots());
+        if let Some(free) = self.mem_free_mib {
+            out = format!("{out}, {} GiB free", free / 1024);
+        }
+        match self.warm_starts {
+            Some(WarmStarts::On) => out.push_str(", warm starts on"),
+            Some(WarmStarts::Off { .. }) => out.push_str(", warm starts off"),
+            None => {}
+        }
+        out
+    }
+
+    /// One line: name, scope, runtime and [`Self::status`].
+    #[must_use]
+    pub fn line(&self, now: i64) -> String {
+        let scope = match self.scope {
+            NodeScope::Shared => "shared",
+            NodeScope::Personal => "yours",
+        };
+        format!(
+            "{} ({scope}, {}) {}",
+            self.name,
+            self.runtime,
+            self.status(now)
+        )
+    }
+}
+
+impl StartPick {
+    /// One sentence on what a start does.
+    #[must_use]
+    pub fn sentence(&self) -> String {
+        let node = self.node.as_deref().unwrap_or("no node");
+        match (self.outcome, &self.reason) {
+            (PickOutcome::Starts, _) => format!("A start with no node named goes to {node}."),
+            (PickOutcome::Waits, Some(r)) => {
+                format!("A start with no node named waits on {node}: {r}.")
+            }
+            (PickOutcome::Refused, Some(r)) => format!("A start with no node named fails: {r}."),
+            (_, None) => format!(
+                "A start with no node named is {:?} on {node}.",
+                self.outcome
+            ),
+        }
+    }
+}
+
+impl NodeListValue {
+    /// The listing as text for a person: one line per node, then what a start would do.
+    #[must_use]
+    pub fn text(&self) -> String {
+        if self.nodes.is_empty() {
+            return "No node is available to you. Add your machine with `moor-machine-agent enroll`."
+                .to_owned();
+        }
+        let mut out: Vec<String> = self.nodes.iter().map(|n| n.line(self.at)).collect();
+        if let Some(pick) = &self.start {
+            out.push(pick.sentence());
+        }
+        out.join("\n")
+    }
+}
+
+/// How long ago `since` was at `now`, both unix seconds, in its largest whole unit.
+fn ago(since: i64, now: i64) -> String {
+    let secs = now.saturating_sub(since).max(0);
+    match secs {
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86_400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86_400),
+    }
 }
 
 /// One provider check that failed, as `provider-ready` shows it.

@@ -43,12 +43,16 @@ pub(super) fn started(name: &BoxName, branch: Option<&str>, notes: &[String]) ->
         .fold(head, |text, note| format!("{text}\n{}", escape(note)))
 }
 
-/// What a start reply says besides its Box: how the work tree started, then each warning. A
+/// What a start reply says besides its Box: the node it went to, how the work tree started, then each warning. A
 /// `show` reply carries neither, so a start settled through `show` posts no notes.
 pub(super) fn start_notes(value: Option<&Value>) -> Vec<String> {
     let Some(value) = value else {
         return Vec::new();
     };
+    let node = value
+        .get("node")
+        .and_then(Value::as_str)
+        .map(|n| format!("Node: {n}"));
     let tree = value.get("work_tree");
     let state = tree.and_then(|t| t.get("state")).and_then(Value::as_str);
     let reason = tree.and_then(|t| t.get("reason")).and_then(Value::as_str);
@@ -64,7 +68,7 @@ pub(super) fn start_notes(value: Option<&Value>) -> Vec<String> {
         .flatten()
         .filter_map(Value::as_str)
         .map(|w| format!("Warning: {w}"));
-    tree.into_iter().chain(warnings).collect()
+    node.into_iter().chain(tree).chain(warnings).collect()
 }
 
 /// Thread reply after a failed start; `message` is the controller's error text.
