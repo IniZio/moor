@@ -75,6 +75,15 @@ fn a_label_drops_the_repo_owner_and_stands_alone_without_a_repo() {
 }
 
 #[test]
+fn a_name_that_already_starts_with_the_repo_shows_it_once() {
+    assert_eq!(
+        label(Some("oursky/hkfc"), "hkfc/w2-daily"),
+        "◈ hkfc/w2-daily"
+    );
+    assert_eq!(label(Some("oursky/moor"), "moorish/x"), "◈ moor/moorish/x");
+}
+
+#[test]
 fn waking_a_box_sends_the_core_wake_request() {
     let wire = super::wake_wire("fix");
     let parsed = super::request(wire).unwrap();
