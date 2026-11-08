@@ -61,7 +61,7 @@ pub(super) fn step(
         return Ok(false);
     }
     let quiet = input == SessionInput::AgentQuiet;
-    if !said::record(store, row, quiet, reading.said.as_deref())? {
+    if !said::record(store, row, quiet, reading)? {
         return Ok(false);
     }
     let mut decision = Decision::new(row.id).session(input.clone());

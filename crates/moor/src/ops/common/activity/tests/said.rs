@@ -140,3 +140,42 @@ fn two_settles_from_one_read_record_the_message_once() {
         .collect();
     assert_eq!(said.len(), 1, "{said:?}");
 }
+
+#[test]
+fn a_run_after_the_reply_does_not_say_it_again() {
+    use crate::store::{NewRun, RunOutcome};
+    use moor_core::domain::decision::Decision;
+    use moor_core::domain::session_state::SessionInput;
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, said("Done.", seen())));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let store = cx.store().unwrap();
+    let tick = || settle(&cx, store, &row(&cx, id), &run_once(&cx, id)).unwrap();
+    tick();
+    let new = NewRun {
+        box_id: id,
+        argv: vec!["make".into()],
+        record: None,
+        sha: None,
+        pid: 4242,
+    };
+    let (run, _claim) = store.begin_run(new).unwrap();
+    store
+        .apply(Decision::new(id).session(SessionInput::RunStarted))
+        .unwrap();
+    tick();
+    let out = RunOutcome {
+        exit: Some(0),
+        interrupted: false,
+        error: None,
+    };
+    store.finish_run(run, out).unwrap();
+    tick();
+    let said: Vec<_> = said_then_idled(&cx, id)
+        .into_iter()
+        .filter(|(kind, _)| kind == "agent_said")
+        .collect();
+    assert_eq!(said.len(), 1, "one reply is said once: {said:?}");
+}

@@ -54,7 +54,7 @@ tables! {
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
-        RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt }
+        RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt, SaidAt }
     BoxRefs { Id, Box, Kind, Value }
     Events { Id, Box, Session, Kind, Payload, Ts }
     Runs { Id, Box, Argv, Record, Sha, Pid, StartedAt, FinishedAt, Exit, Interrupted }

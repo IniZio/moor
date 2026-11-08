@@ -22,6 +22,7 @@ mod pause_publish;
 mod proxy_key;
 mod proxy_state;
 mod resume_memory;
+mod said_at;
 mod suspend_check;
 pub mod tables;
 mod warm_starts;
@@ -111,6 +112,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V65__drop_panes",
         write: drop_panes::write,
+    },
+    Step {
+        name: "V66__said_at",
+        write: said_at::write,
     },
 ];
 
