@@ -22,6 +22,34 @@ pub(super) fn note_turn_done(
     let Some(steer) = store.unanswered_steer(row.id)? else {
         return Ok(false);
     };
+    let Some((steer, outcome)) = answer(store, row, reading, steer, now)? else {
+        return Ok(false);
+    };
+    store.record_turn_done(row.id, steer, outcome)?;
+    Ok(true)
+}
+
+/// Whether a steer's turn is still open by `reading`: unanswered, and not over yet.
+pub(crate) fn turn_open(
+    store: &Store,
+    row: &BoxRow,
+    reading: &Reading,
+    now: Ts,
+) -> Result<bool, CommandError> {
+    let Some(steer) = store.unanswered_steer(row.id)? else {
+        return Ok(false);
+    };
+    Ok(answer(store, row, reading, steer, now)?.is_none())
+}
+
+/// The answer `reading` gives to `steer`, when its turn is over.
+fn answer(
+    store: &Store,
+    row: &BoxRow,
+    reading: &Reading,
+    steer: SteerMark,
+    now: Ts,
+) -> Result<Option<(i64, TurnOutcome)>, CommandError> {
     let facts = TurnFacts {
         steer: Some(steer),
         term: reading.term.as_ref().map(|t| TermTurn {
@@ -34,12 +62,10 @@ pub(super) fn note_turn_done(
         }),
         exited: reading.pane == PaneLiveness::Exited,
     };
-    let done = turn_done(&facts);
-    let Some((steer, outcome)) = done.or(never_began(store, row, reading, steer, now)?) else {
-        return Ok(false);
-    };
-    store.record_turn_done(row.id, steer, outcome)?;
-    Ok(true)
+    turn_done(&facts).map_or_else(
+        || never_began(store, row, reading, steer, now),
+        |done| Ok(Some(done)),
+    )
 }
 
 /// Ends a steer whose turn never showed: its text never reached the agent as a prompt. An agent

@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
 use moor_core::view::AttentionView;
@@ -14,7 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::view::{agent_view, box_view_with_run, hide_unsupported_sleep};
 use crate::ops::common::{activity, reconcile};
-use crate::store::{BoxRow, RunRow};
+use crate::store::{BoxRow, RunRow, Store};
 
 /// Longest pause between polls.
 const POLL: Duration = Duration::from_millis(250);
@@ -63,7 +64,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         }
         let in_flight = store.in_flight_run(id)?;
         let facts = WaitFacts {
-            agent_active: reading.busy(),
+            agent_active: agent_active(store, &row, &reading, clock.now())?,
             run_in_flight: in_flight.is_some(),
         };
         let verdict = wait_verdict(facts, want, elapsed, timeout);
@@ -87,6 +88,16 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             run: shown.as_ref().map(|r| run_view(r, live)),
         });
     }
+}
+
+/// Whether the agent counts as working: it says so, or a steered turn is still open.
+fn agent_active(
+    store: &Store,
+    row: &BoxRow,
+    reading: &activity::Reading,
+    now: Ts,
+) -> Result<bool, CommandError> {
+    Ok(reading.busy() || activity::turn_open(store, row, reading, now)?)
 }
 
 /// How long one agent read may take once `elapsed` of `timeout` has passed.
