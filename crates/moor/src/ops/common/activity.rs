@@ -19,6 +19,7 @@ use crate::ops::common::transcript;
 use crate::store::{BoxRow, SessionRow, Store};
 
 use launch::launch_overdue;
+pub(crate) use turn::turn_open;
 
 /// Allowance for one probe: the Box lookup (5 s) then one Box command, each with 2.5 s of grace
 /// to stop the child.

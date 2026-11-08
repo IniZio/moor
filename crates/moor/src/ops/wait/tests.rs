@@ -541,3 +541,38 @@ fn waiting_for_the_run_ignores_open_limits() {
     let v = run(&cx, &req(Some(WaitFor::Run), None)).unwrap();
     assert_eq!(v.wait_for, WaitFor::Run);
 }
+
+/// Records a steer to `demo` sent once its agent had ended `turn_before` turns.
+fn steered(cx: &Cx, id: BoxId, turn_before: u64) {
+    let event = moor_core::domain::decision::ExtraEvent::Steered {
+        session: SESSION.to_owned(),
+        message: "go".to_owned(),
+        submit_retried: false,
+        turn_before: Some(turn_before),
+    };
+    cx.store()
+        .unwrap()
+        .apply(Decision::new(id).event(event))
+        .unwrap();
+}
+
+#[test]
+fn idle_waits_for_a_steered_turn_the_agent_has_not_begun() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), agent::at_turn(idle(), 3));
+    let id = add_live(&cx);
+    steered(&cx, id, 3);
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out, "the prompt's turn is still open");
+}
+
+#[test]
+fn idle_returns_once_the_steered_turn_has_ended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), agent::at_turn(idle(), 4));
+    let id = add_live(&cx);
+    steered(&cx, id, 3);
+    let v = run(&cx, &req(None, Some(5))).unwrap();
+    assert!(!v.timed_out);
+    assert_eq!(v.waited_ms, 0);
+}
