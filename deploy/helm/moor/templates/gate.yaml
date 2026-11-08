@@ -80,7 +80,7 @@ spec:
           {{- end }}
           {{- if .Values.gate.login }}
           - path: /
-            pathType: Exact
+            pathType: Prefix
             backend:
               service:
                 name: {{ $.Release.Name }}-gate
