@@ -102,10 +102,11 @@ impl Withheld {
     }
 
     /// Reports `event` to `sink` once per `(rule, method, shape)` when it is a
-    /// credential-less passthrough to a credential host.
+    /// credential-less passthrough to a credential host that the host refused. A public
+    /// download that succeeds without the credential lacked nothing.
     fn report(&self, event: &NetworkAuditEvent, sink: &dyn EgressSink) {
         if event.managed_credential_active != Some(false)
-            || event.status.is_none()
+            || !matches!(event.status, Some(401 | 403 | 404))
             || event.credential_capture_action.is_some()
         {
             return;

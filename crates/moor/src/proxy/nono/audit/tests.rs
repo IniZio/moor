@@ -368,7 +368,7 @@ fn passthrough(host: &str, method: &str, path: &str) -> NetworkAuditEvent {
             "target": host,
             "method": method,
             "path": path,
-            "status": 200,
+            "status": 404,
             "managed_credential_active": false,
         }),
     )
@@ -510,6 +510,42 @@ fn withheld_needs_a_response_status() {
         }),
     );
     assert!(run_withheld(&[pending]).is_empty());
+}
+
+fn answered(host: &str, path: &str, status: u16) -> NetworkAuditEvent {
+    event(
+        "allow",
+        &json!({
+            "target": host,
+            "method": "GET",
+            "path": path,
+            "status": status,
+            "managed_credential_active": false,
+        }),
+    )
+}
+
+#[test]
+fn a_request_that_succeeds_without_the_credential_is_not_withheld() {
+    let got = run_withheld(&[
+        answered(
+            "api.github.com",
+            "/oven-sh/bun/releases/latest/download/bun-linux-x64.zip",
+            302,
+        ),
+        answered("api.github.com", "/repos/acme/widgets", 200),
+    ]);
+    assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn a_request_refused_without_the_credential_is_withheld() {
+    let got = run_withheld(&[
+        answered("api.github.com", "/user", 401),
+        answered("api.github.com", "/user/a", 403),
+        answered("api.github.com", "/repos/acme/widgets/pulls/1", 404),
+    ]);
+    assert_eq!(got.len(), 3, "{got:?}");
 }
 
 #[test]

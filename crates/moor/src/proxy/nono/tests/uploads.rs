@@ -135,7 +135,9 @@ fn any_other_method_or_path_is_withheld_without_the_placeholder() {
                 only.head
             );
         }
-        let want = format!("withheld(localhost, github-uploads, {method})");
-        assert!(log.contains(&want), "{method} {path}: {log:?}");
+        let answered = format!("allowed({method}, localhost, 200)");
+        assert!(log.contains(&answered), "{method} {path}: {log:?}");
+        let lacked = log.iter().any(|l| l.starts_with("withheld("));
+        assert!(!lacked, "a 200 lacked no credential: {log:?}");
     }
 }
