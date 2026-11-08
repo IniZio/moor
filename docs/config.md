@@ -1,14 +1,16 @@
-# Configuration reference
+# Configuration
 
-moor reads three YAML files. moor rejects unknown keys in each file. An empty
-file means every key takes its default, except `nodes`: `moor start` of a new Box
-fails until one node is configured, or one of your own machines is enrolled.
+moor reads three YAML files and rejects unknown keys in each. An empty file
+means every key takes its default.
 
 | File | Who writes it | Where it is |
 | --- | --- | --- |
-| [User config](#user-config) | You | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `$HOME/.config/moor/config.yaml` |
-| [`.moor.yaml`](#mooryaml) | The repo | The repo's base commit, read through GitHub when the Box starts |
-| [Controller config](#controller-config) | Whoever runs the controller | The path given to `moor controller serve --config` |
+| [User config](#user-config) | The operator, or `moor up` | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `~/.config/moor/config.yaml` |
+| [`.moor.yaml`](#mooryaml) | The repo | The repo root, read through GitHub at the Box's base commit |
+| [Controller config](#controller-config) | The operator, or `moor up` | The path given to `moor controller serve --config` |
+
+The controller reads the user config of the host user it runs as. On a team
+moor, that file holds the operator's defaults for everyone.
 
 ## User config
 
@@ -16,22 +18,22 @@ fails until one node is configured, or one of your own machines is enrolled.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.size` | `small`, `medium`, `large`, or `xlarge` | none | The Box size. A `.moor.yaml` value wins over this one. With no size anywhere, the provider decides the machine. |
-| `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `5m` | How long a Box stays idle before moor puts it to sleep. |
-| `box.sleep_after_blocked` | duration | `5m` | How long a Box stays idle while its agent waits on an unanswered prompt or a first-run screen before moor puts it to sleep. The shorter of this and `box.sleep_after` applies. An answer, a steer, or a message wakes the Box. |
-| `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or a message wakes the Box and the agent resumes. A Box slept mid-turn shows "turn unfinished" while asleep and resumes the turn on wake. |
-| `box.launch_timeout` | duration such as `30s`, `3m`, or `1h` | `3m` | How long a Box's agent may take to start a session, or to reach a first-run screen, before moor records `launch_timed_out`, warns, and counts the Box as quiet so it can sleep. Restart the agent to try again. After 3 relaunches in 10 minutes, moor stops restarting an agent on its own. It refuses the next relaunch with a message and records `relaunch_capped`. |
-| `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first repo when the start lists none. See [Several repos in one Box](cli.md#several-repos-in-one-box). |
+| `box.size` | `small`, `medium`, `large`, `xlarge` | none | The Box size. `.moor.yaml` wins. With no size, the provider decides. |
+| `box.node` | string | the only node | The default shared node. Required when `nodes` has more than one entry. |
+| `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names none. |
+| `box.sleep_after` | duration, such as `45m` | `5m` | How long a Box stays idle before it sleeps. |
+| `box.sleep_after_blocked` | duration | `5m` | How long a Box waits on an unanswered prompt before it sleeps. The shorter of the two applies. |
+| `box.max_awake` | duration | `2h` | How long a Box stays awake after a start or wake, even while its agent works. A message wakes it and the turn resumes. |
+| `box.launch_timeout` | duration | `3m` | How long the agent may take to start before moor records `launch_timed_out`. |
 
 ### Nodes
 
-A node is a place that runs Boxes. List the shared ones, which every user may
-use, under `nodes`:
+A shared node is open to every user:
 
 ```yaml
 nodes:
   fast:
-    runtime: cloudhypervisor
+    runtime: external
     labels: [big]
     max_boxes: 8
 box:
@@ -41,71 +43,38 @@ box:
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `nodes.<name>.runtime` | string | required | The crabbox provider the node's Boxes run on. |
-| `nodes.<name>.labels` | list of strings | none | Labels a Box may require of the node. |
-| `nodes.<name>.max_boxes` | integer, at least 1 | none | The most live Boxes on the node; unlimited when unset. |
-| `box.node` | string | the only node | The shared node new Boxes run on. Required when `nodes` has more than one entry, and it must name one. A repo cannot set it. |
+| `nodes.<name>.labels` | list of strings | none | Labels a repo may require. |
+| `nodes.<name>.max_boxes` | integer, at least 1 | unlimited | The most live Boxes on the node. Free memory may allow fewer. |
 
-A node name matches `[a-z][a-z0-9-]*`. `runtime` is a bare crabbox provider id.
-`nodes` is required for a shared node: a config without it, and without an
-enrolled [personal node](#personal-nodes), cannot start a new Box. Existing
-Boxes stay on the node they started on.
-`moor node ls` shows each node's runtime, link, load and labels.
-
-The keys `box.provider`, `box.max_boxes` and `drivers.<provider>.max_boxes`
-were removed. moor rejects them and names the node key that replaces them:
-`nodes: {name: {runtime: <provider>, max_boxes: N}}`.
+A node name matches `[a-z][a-z0-9-]*`. Without a shared node, Boxes start only
+on personal nodes. Personal nodes need no config. See
+[Add your machine](add-machine.md).
 
 ### `drivers`
 
-`drivers.<provider>` holds settings for one runtime. To limit its Boxes, set
-`max_boxes` on a [node](#nodes). See
-[Box providers](providers.md) for how providers work.
+`drivers.<provider>` holds settings for one crabbox provider.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `lookup_timeout_secs` | integer, at least 1 | 5, or 20 for `external` | How long moor waits for crabbox to look up a Box's ssh target. |
-| `strip_env` | list of variable names | empty | Variables that the provider puts in the Box. moor removes them from every command it runs there. |
-| `cache_volumes` | boolean | `true` | Whether this provider's Boxes get [cache volumes](#cache-volumes). `false` starts every Box on the provider cold. Each such Box records a `cache_cold` event. |
+| `lookup_timeout_secs` | integer | 5, or 20 for `external` | How long moor waits for crabbox to find a Box's ssh target. |
+| `strip_env` | list of names | empty | Variables the provider puts in the Box that moor removes from every command. |
+| `cache_volumes` | boolean | `true` | `false` starts every Box on the provider cold. |
 
 ### `box_credentials`
 
-A list of secret names that a `start` checks. A `.moor.yaml` can list names
-too. Each name is a secret of the Box's user and matches `[a-z][a-z0-9_-]*`.
-moor rejects a `start` whose user lacks one of these secrets. A name may not be
-a secret that a Proxy rule injects, such as `claude` or `github`. moor checks
-the names in a `.moor.yaml` against the default rules only.
-
-moor does not put these secrets into the Box. A secret reaches a Box's requests
-only through a Proxy rule whose `credential` names it.
+Secret names a start checks for, beyond the ones the Proxy rules need. A
+`.moor.yaml` can list names too. moor never puts these secrets in the Box. A
+secret reaches a request only through a Proxy rule.
 
 ### `mcp_servers`
 
-`mcp_servers.<name>` adds an MCP server for the agent. Give exactly one of
-`command` or `url`.
+`mcp_servers.<name>` gives every Box's agent an MCP server. Give `command`,
+with `args` and `env`, for a stdio server, or `url`, with `type` and
+`headers`, for a remote one.
 
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `type` | string | The transport, such as `http`, `sse`, or `stdio`. |
-| `command` | string | The program to run. |
-| `args` | list of strings | The program's arguments. |
-| `env` | map | The program's environment. |
-| `url` | string | The server URL. |
-| `headers` | map | Request headers. |
-
-moor gives each server to the agent at launch.
-
-One `headers` value may hold one `${NAME}`, which names the Box user's secret
-`NAME`. The `url` must then be `https://`. The Box never holds the secret. The
-agent sees `moor-proxy` in its place, and moor adds a Proxy rule `mcp-<name>`
-that sets the header with the real secret on requests to the URL's host.
-`NAME` may not be a secret that another Proxy rule injects. moor refuses
-`${NAME}` in `args`, `env`, `url`, or anywhere else, because a stdio server
-runs in the Box and would hold the secret.
-
-This example adds a read-only Linear server. The server's read-only endpoint
-and a key with only read permission make it read-only. To make the key in
-Linear, go to Settings → Security & access → Personal API keys → Only select
-permissions → Read.
+One `headers` value may hold one `${NAME}`, a secret of the Box's user. The
+agent sees `moor-proxy` in its place, and the Proxy sets the real value on
+requests to the URL's host. The `url` must then be `https://`.
 
 ```yaml
 mcp_servers:
@@ -115,86 +84,38 @@ mcp_servers:
       Authorization: "Bearer ${linear-api-key}"
 ```
 
-#### Per-user MCP servers
-
-The `mcp_servers` in the user config are shared defaults. Every Box gets them.
-Each teammate can also add servers of their own, which only their Boxes get. A
-teammate adds one from a front, or with the dev CLI:
-
-```sh
-moor user mcp add linear https://mcp.linear.app/mcp/readonly
-moor user secret set mcp_linear   # the key, read from stdin
-moor user mcp ls
-moor user mcp rm linear           # also deletes the key
-```
-
-A user's server is an HTTP server with one key. The key is the user secret
-`mcp_<name>`, stored encrypted in the vault. The Box sees `moor-proxy` in its
-place, and the Proxy sets the real header on requests to the URL's host. By
-default the header is `Authorization: Bearer <key>`. With `--header X-Api-Key`,
-the key goes alone in that header. Names match `[a-z][a-z0-9_-]*`, and URLs
-must be `https://`.
-
-At start, a user's server replaces a shared one of the same name, and the start
-says so. moor leaves out a server whose key the user has not stored, and the
-start names it in one note. The start is never refused for a missing key. The
-same holds for shared servers.
-
-#### Signing in over OAuth
-
-Added without a key, a server is probed. When it answers 401 and names its resource metadata, the controller signs the user in as an OAuth client under the MCP authorization spec, and the reply carries a `sign_in` address. The user opens it, signs in, and hands back the address the browser ends on, even when that page fails to load:
-
-```sh
-moor user mcp add notion https://mcp.notion.com/mcp   # prints sign_in
-moor user mcp finish 'http://localhost:33418/oauth/callback?code=...&state=...&iss=...'
-```
-
-The sign-in expires after 10 minutes. The access token becomes the secret `mcp_<name>`, so the Proxy injects it like a key, and `mcp ls` shows `signed_in` with the token's expiry. The refresh token and client registration are sealed apart, and the Proxy never reads them. `mcp rm` deletes both. Shared `mcp_servers:` never sign in.
-
-The controller registers itself with each authorization server (RFC 7591) unless the operator names a client for that server's host:
+A person adds servers of their own with `/moor mcp add` in Slack or
+`moor user mcp add`. Theirs replace a shared server of the same name. A server
+added without a key signs in over OAuth. The controller registers itself with
+each authorization server unless `oauth.clients` names a client for its host:
 
 ```yaml
 oauth:
-  callback_url: https://moor.example.com/oauth/callback   # optional; the loopback address otherwise
+  callback_url: https://moor.example.com/oauth/callback
   clients:
     auth.example.com:
       client_id: moor
-      client_secret: "..."   # optional; users never see it
 ```
 
 ### Per-user agent profile
 
-A teammate can name a GitHub repo as their agent profile:
+A person names a GitHub repo as their agent profile with
+`moor user profile set https://github.com/OWNER/NAME[#REF]` or
+`/moor profile set`. Each new Box of theirs applies it. The repo may hold:
 
-```sh
-moor user profile set https://github.com/alice/agent-profile       # tracks the default branch
-moor user profile set https://github.com/alice/agent-profile#v2    # a branch, tag or sha
-moor user profile show
-moor user profile rm
-```
+| Path | What it does |
+| --- | --- |
+| `moor-profile.yaml` | Model, plugin marketplaces, plugins, and `env` per agent. |
+| `AGENTS.md` | Instructions for any agent. |
+| `skills/<name>/SKILL.md` | Agent Skills. |
+| `claude/settings.json` | Merged into `~/.claude/settings.json`. |
+| `codex/config.toml` | Merged into `~/.codex/config.toml`. |
+| `setup.sh` | Runs once per new Box, as the Box user, within 10 minutes. |
 
-Only `https://github.com/OWNER/NAME` addresses are accepted. moor stores the
-address and the ref, never a credential; the repo is read with the user's own
-`github` secret. The repo may hold:
-
-```
-moor-profile.yaml        # model, plugin marketplaces, plugins and env per agent
-AGENTS.md                # agent-neutral instructions
-skills/<name>/SKILL.md   # Agent Skills
-claude/settings.json     # merged into ~/.claude/settings.json
-codex/config.toml        # merged into ~/.codex/config.toml
-setup.sh                 # installs the tools the profile's plugins need
-```
-
-Each new Box reads the profile when it starts.
-
-A marketplace under `marketplaces` is `https://github.com/OWNER/NAME`, and a trailing
-`#<ref>` pins a branch, tag or commit.
-
-An agent section of `moor-profile.yaml` can set `env`, environment variables the
-agent process starts with. This is the way to set one a tool reads only at
-process start, which the agent's own `settings.json` `env` is too late for. For
-example, to preload a script into every Box's Claude Code under Bun:
+An agent's `env` sets variables its process starts with. `{home}` and
+`{profile}` expand to the Box user's home and the profile checkout. Nothing
+else expands. Names that look like credentials, and `PATH`, are dropped with a
+warning. The repo's `env` wins over the profile's.
 
 ```yaml
 claude:
@@ -202,100 +123,10 @@ claude:
     BUN_OPTIONS: "--preload={profile}/claude/no-agent-summary.js"
 ```
 
-- Values are literal strings. `{home}` becomes the Box user's home and
-  `{profile}` the profile checkout (`~/.moor-profile/person`, as an absolute
-  path). Nothing else is expanded and the value is quoted, so `$(...)`, backticks
-  and `$VAR` stay as written. Quote values that YAML would read as a number or a
-  boolean.
-- The names follow the same rules as the repo's `env` in
-  [`.moor.yaml`](#mooryaml): a name that looks like a credential (it contains
-  `TOKEN`, `SECRET`, `KEY`, `PASSWORD`, `PASSWD` or `CREDENTIAL`), `PATH`, and
-  the other names moor sets itself or that can load code into the agent are
-  refused. A refused name is dropped with a profile warning, and the Box still
-  starts.
-- When the repo's `env` sets the same name, the repo's value replaces the
-  profile's. The two are never merged, so a repo's `BUN_OPTIONS` drops the
-  profile's flags. moor drops the profile's value with a profile warning that
-  names the variable, so an override is never silent.
+### Machines
 
-When the repo has a `setup.sh` at its root, each new Box runs `sh setup.sh` once
-after fetching the profile, from the checkout (`~/.moor-profile/person`), as the
-Box user, with the same environment and Proxy as the repo's `setup` commands and
-a 10 minute limit. A relaunch of the same Box does not run it again. The script's
-`PATH`, like the agent's, starts with `~/.local/bin`, then `~/.bun/bin`, so a
-binary the script installs must land in one of those or in a directory already
-on the Box's `PATH` such as `/usr/local/bin` (that needs root in the Box). moor
-installs no `gh`, so a Box has `gh` only when the Box image or this script puts
-it there. An agent without `gh` pushes its branch with git and says it could not
-open the pull request. A failure
-(non-zero exit, timeout) is reported as a profile warning with the end of the
-log, and the Box still starts. It runs on every new Box that does not fork a
-[checkpoint holding the profile](#setup-checkpoints), so keep it fast and safe to
-rerun. For example, to give bun-based hooks their runtime:
-
-```sh
-command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
-```
-
-### Per-user machines
-
-A teammate can pair machines of their own, with labels. An example is a Mac
-that builds iOS apps. On the Mac:
-
-```sh
-moor-machine-agent up --server https://moor.example.com --name mac --labels macos,ios-sim --allow-exec
-```
-
-Then, anywhere the teammate uses moor:
-
-```sh
-moor user machine ls
-moor user machine rm mac
-```
-
-Pairing a name again replaces that machine and its key. Names match
-`[a-z][a-z0-9_-]*`, 64 bytes at most. Labels match `[a-z0-9][a-z0-9-]*`, 32
-bytes at most. A machine has at most 16 labels, which moor stores sorted and
-without repeats. moor stores only the machine's public key. The machine dials
-out to moor, so it needs no open port. A Box gets a machine only by claiming one
-with the `machine_claim` tool, and the repo's `machine.labels` in
-[`.moor.yaml`](#mooryaml) are the labels that claim asks for by default. See
-[Claiming a machine](machines.md#claiming-a-machine).
-
-### Personal nodes
-
-A machine of your own can run your Boxes as a personal node, which only you
-can use. The host runs crabbox with a provider adapter, such as
-cloud-hypervisor, and each Box gets its own VM there. Pair the host with the
-runtime it offers; without `--runtime` it takes the provider crabbox is configured with:
-
-```sh
-moor-machine-agent up --server https://moor.example.com --name hv --runtime cloudhypervisor
-```
-
-The runtime matches `[a-z][a-z0-9-]*`, 64 bytes at most. The node is named for
-the machine, and is online while its agent is linked. `moor user machine ls`
-shows each machine's pool.
-
-The service `up` installs runs `moor-machine-agent run --runtime RUNTIME`, which
-serves the node. `--max-boxes N` on `up` caps the Boxes the host holds, and
-`--cache-gb N` on `run` says how much disk caches
-may use. On each link the agent reports both, with the features its crabbox
-provider declares, such as `cache-volume`. The server stores them. A Box
-placed on the machine gets cache volumes only while the machine is linked,
-online and reports `cache-volume`.
-
-A start tries your personal nodes before the shared ones, so no config key is
-needed. `moor start` refuses, with the reason, when a node you named is not
-yours, or its agent is not linked. moor reaches the Box's VM through the
-host's agent, and sleeping the Box pauses the VM. A Box on a personal node
-gets cache volumes when its machine reports `cache-volume`, and starts cold
-otherwise.
-
-### The machine service
-
-A service on the host can act on the machine that a Box holds. The operator
-names the service under `machines.service`:
+`machines.service` routes a Box's requests for `host` to the machine runner,
+and the Proxy adds headers that name the Box and its machine:
 
 ```yaml
 machines:
@@ -304,47 +135,10 @@ machines:
     upstream: 127.0.0.1:7700
 ```
 
-A plain `http://` request from a Box to `host`, on any port, goes through that
-Box's Proxy to `upstream`. The Proxy drops every `X-Moor-*` header that the Box
-sent. It then adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's
-name), and `X-Moor-Machine-Id` (its id from enrollment), so the service can
-trust them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
-Box that holds no machine at that moment. `upstream` must be a loopback address
-and port, or moor refuses the config. Without `machines.service`, `host` is a
-host like any other. The shared egress Proxy routes the service the same way
-when it is started with `moor proxy serve-egress --machine-service HOST=ADDR`,
-where `ADDR` is `host:port` and the host may be a DNS name, looked up on each request.
-When the service listens beyond loopback, start `moor-machine-runner` with
-`--service-key` (or `MOOR_MACHINE_SERVICE_KEY`) and give the Proxy the same key in
-`MOOR_MACHINE_SERVICE_KEY`. The Proxy then sends it as `X-Moor-Service-Key`, and the
-runner refuses any request naming a Box without it.
-
-Every Box's agent also gets the service as the MCP server `machine`, at
-`http://<host>/mcp`. An entry named `machine` in `mcp_servers` replaces it.
-
-### Sync excludes
-
-`machines.sync` in the user config and `machine.sync` in `.moor.yaml` name what
-a sync to the machine leaves alone. These are folders that a machine builds for
-itself, which a Box on another platform must not overwrite. Each layer has two
-keys. `presets` is `true` (the default), `false`, or the names of the presets
-that the layer drops. `exclude` is a list of at most 64 rsync patterns of the
-layer's own. A preset stays only when both layers keep it. The repo's patterns
-follow the presets, then the user's patterns.
-
-| Preset | Patterns |
-| --- | --- |
-| `node` | `node_modules` |
-| `cocoapods` | `Pods` |
-| `gradle` | `.gradle` |
-| `xcode` | `DerivedData`, `*.xcworkspace/xcuserdata` |
-| `dart` | `.dart_tool` |
-| `rust` | `target` |
-
-A pattern without a leading `/` matches at any depth. moor refuses a pattern
-that is empty, starts with `-`, or holds a newline or NUL, and names its key.
-moor resolves the list when the Box starts and its machine is attached. The
-Proxy sends the list to the machine service as `X-Moor-Machine-Exclude`.
+`machines.sync` sets what a sync to a tool machine leaves alone, for every
+repo. `presets` is `true`, `false`, or the presets to drop. The presets are
+`node`, `cocoapods`, `gradle`, `xcode`, `dart`, and `rust`. `exclude` adds up
+to 64 rsync patterns.
 
 ```yaml
 machines:
@@ -355,89 +149,29 @@ machines:
 
 ### `proxy`
 
-`proxy.rules.<name>` defines a Proxy rule. A rule with the name of a default
-rule adds to that default.
+`proxy.rules.<name>` defines a Proxy rule. A rule named after a default rule
+adds to it.
 
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `hosts` | list of host names | The exact hosts the rule serves. |
-| `credential` | string | The name of the Box user's secret the rule injects, matching `[a-z][a-z0-9_-]*`. |
-| `inject.header` | string | The header that carries the credential. The default is `Authorization`. |
-| `inject.form` | string | The header value. `{secret}` stands for the credential. |
-| `inject.basic_user` | string | The HTTP Basic auth user. moor sends the credential as the password. A rule takes `form` or `basic_user`, not both. |
-| `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. A trailing `/**` needs at least one, so `/x/**` does not match `/x`. `{repo}` names each of the Box's repos, and `{any_repo}` matches any one `owner/name`. moor refuses `{any_repo}` on a `git-receive-pack` path. |
-| `box_env` | map | Environment variables for the Box. Values can use `{repo}`. |
-| `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
+| Key | Meaning |
+| --- | --- |
+| `hosts` | The exact hosts the rule serves. |
+| `credential` | The secret of the Box's user that the rule injects. |
+| `inject.header` | The header that carries it. `Authorization` by default. |
+| `inject.form` | The header value. `{secret}` stands for the secret. |
+| `inject.basic_user` | Send the secret as the HTTP Basic password for this user. |
+| `allow` | `*`, or `METHODS /path` entries. `{repo}` is a repo of the Box, and `{any_repo}` is any `owner/name`. |
+| `box_env` | Variables for the Box. Values can use `{repo}`. |
+| `requires_repo` | Drop the rule for a Box with no repo. |
 
-A rule whose `allow` is `*` adds its credential to every request to its hosts,
-whatever the method. That includes PUT and DELETE, so for a private npm
-registry the rule also covers `npm publish` and unpublish. A rule with no
-`allow` acts like `*`.
-
-A rule with `METHODS /path` entries adds the credential only when an entry
-matches. It never adds the credential when an upstream could read the path
-differently than moor does. Such a path has an encoded `/` or `.` (`%2f`,
-`%2e`), a `;`, a `\`, a `%` that is left after one decoding, or a control
-character. A Box's Proxy forwards that request without the credential, and a
-front's Proxy refuses it. `GET /**` is a path entry too. npm asks a registry
-for a scoped package as `/@scope%2fname`, so a rule for a private npm registry
-needs `allow: ["*"]`.
-
-The default rules are `claude` for `api.anthropic.com`, which injects the
-`claude` secret, and `github-api`, `github-git`, and `github-uploads` for
-`api.github.com`, `github.com`, and `uploads.github.com`, which inject the
-`github` secret. They are in
-[defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml). A user
-rule that extends a default cannot set `hosts` or `credential`. Its `allow`
-entries come after the default's, and its `box_env` values win.
-
-A GraphQL request outside the Box's repos leaves without the credential. The
-Proxy sends `GH_TOKEN` from the `api.github.com` rule's `box_env` in its place,
-so GitHub answers 401. Keep that value a placeholder. A real token set there
-goes to GitHub on those requests. With no `GH_TOKEN`, or one with a space or
-control character, those requests carry no `Authorization`.
-
-The Box can fetch and clone any GitHub repo the user's `github` token can read.
-It can push only to the Box's own repos. The `github-git` rule allows
-`GET /{any_repo}.git/info/refs` and `POST /{any_repo}.git/git-upload-pack` for
-every repo and `POST /{repo}.git/git-receive-pack` for the Box's repos alone.
-A Box with no repo gets git access only when it has a profile, and then it can
-only fetch.
-
-The Box can also read, through the API, any GitHub repo that token can read.
-The `github-api` rule adds the token to `GET /repos/{any_repo}`,
-`GET /repos/{any_repo}/releases`, `GET /repos/{any_repo}/releases/**` and
-`GET /repos/{any_repo}/tags`. That includes private repos, as git fetch does.
-These reads count against that token's rate limit. Any other request on a repo
-outside the Box leaves without the token, including every write. A Box with no
-repo does not get the `github-api` rule, so its API requests reach GitHub
-directly.
-
-For the Box's own repos, the rule also adds the token to
-`GET /repos/{repo}/dependabot/alerts`, `GET /repos/{repo}/dependabot/alerts/*`
-and `GET /repos/{repo}/branches/*/protection/required_status_checks`. The Box
-can read Dependabot alerts and the required checks of a branch. It cannot
-dismiss an alert, because the rule has no write method on those paths.
-
-A submodule on GitHub comes through the same rule as the clone, so a Box gets
-any submodule that token can read, on any owner. An `ssh://git@github.com/` or
-`git@github.com:` URL in `.gitmodules` is fetched over https, for moor's own
-submodule fetches only, because a Box has no ssh key. Run yourself, a git command
-that needs such a submodule's remote still tries ssh. A private submodule's
-https URL must end in `.git`, the only path the rule allows; otherwise it reaches
-GitHub without the token, so moor leaves that submodule out and warns.
-
-Only the hosts of these rules go through the Proxy. The Box reaches every
-other host directly. See
-[Which traffic goes through the Proxy](providers.md#which-traffic-goes-through-the-proxy).
+The default rules are `claude` for `api.anthropic.com` and `github-api`,
+`github-git`, and `github-uploads` for GitHub. They are in
+[defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml).
+[The Proxy and secrets](proxy.md) explains what they allow.
 
 ### `cache`
 
-The same keys as the [`.moor.yaml` `cache:` section](#cache-volumes), for
-every Box this config starts. `cache.presets: false` turns the presets off for
-every repo, and a list drops those presets for every repo. A repo cannot turn
-them back on. `cache.volumes` declares volumes kept per user, shared across
-that user's repos.
+The `.moor.yaml` [`cache` keys](#cache-volumes), applied to every Box. A
+volume declared here is kept per user, across all their repos.
 
 ```yaml
 cache:
@@ -447,535 +181,162 @@ cache:
       path: ~/.cargo/bin
 ```
 
-### Refused keys
-
-moor refuses a user config that has a `credentials` or `github` key. Each
-moor user stores their own secrets with `moor user secret set NAME`, and the
-`github-uploads` rule applies to every Box with a repo.
-
-moor also refuses `proxy.direct` in a user config and a `proxy` key in
-`.moor.yaml`. Every host that no rule serves is already direct.
-
 ### Other keys
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `agent.model` | string | none | The default agent model. `moor start --model` wins over it. |
-| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. A failed install puts the Box in `setup_failed` with the installer's error in its `setup_failed` event, and `moor retry NAME` runs the install again. The same switch covers herdr-core 0.1.16, which keeps the agent's terminal alive on the Box when the link drops: moor installs it into `~/.local/share/moor/herdr-core` on a Box that lacks it, from herdr-core's own release (`releases.herdr.dev`), and refuses a download whose sha256 differs from the one moor pins. A Box without herdr-core refuses to start the agent. A Box whose agent an older moor started under tmux cannot be attached to or reconciled; moor names the Box and says to close and recreate it. |
-| `dotfiles.path` | absolute path or `~/...` | none | A dotfiles directory that moor installs on each new machine. |
-| `dotfiles.install` | relative path | none | The install script inside `dotfiles.path`. |
-| `tools.crabbox`, `tools.herdr`, `tools.claude`, `tools.ssh`, `tools.git` | path | the name on `PATH` | The program moor runs for each tool. |
-| `controller.socket` | path | none | Send CLI commands to the controller on this socket. |
-| `controller.ssh` | ssh destination | none | Send CLI commands over `ssh` to `moor controller attach` on that host. Set either `socket` or `ssh`, not both. |
-| `state_dir` | path | none | moor parses this key but does not use it. Use `--state-dir` or `MOOR_STATE_DIR`. |
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `agent.model` | none | The default agent model. `moor start --model` wins. |
+| `agent.install` | `true` | Install the agent in a Box that lacks it. |
+| `dotfiles.path`, `dotfiles.install` | none | A dotfiles directory and its install script, run on each new Box. |
+| `tools.crabbox`, `tools.claude`, `tools.ssh`, `tools.git` | the name on `PATH` | The program moor runs for each tool. |
+| `controller.socket` | none | Send CLI commands to the controller on this socket. |
+| `controller.ssh` | none | Send CLI commands over ssh to `moor controller attach`. |
+
+moor refuses `credentials`, `github`, and `proxy.direct` in a user config.
+Secrets belong to each user, and a host that no rule serves is already direct.
 
 ## `.moor.yaml`
 
-A repo's `.moor.yaml` configures its Boxes.
-
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `brief` | string | Notes from the repo's author for the Box's agent, such as how to start services, what is installed, and which test users exist. The agent reads the brief verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
-| `checkpoint.across_commits` | bool | Whether a Box may start from a checkpoint saved at another commit. Default `true`. See [Setup checkpoints](#setup-checkpoints). |
-| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. A group a line, dotfiles or the profile's `setup.sh` adds the Box user to reaches the agent: when the Box's open ssh login lacks one, moor logs in anew before the agent starts. Calls already running finish on the old login. A terminal holder (`herdr-core`) that one of those steps started keeps its old groups for terminals it opens later, so stop it before the step ends. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. On a provider that keeps checkpoints, moor checkpoints the clone, each line that runs longer than 20 seconds and the last line. Checkpoints are per user, like caches: a Box only starts from one that its own user's Box saved for the same repo and lines. A Box whose work tree is not the base commit unchanged when setup starts, such as one on a branch already on GitHub, saves none. |
-| `teardown` | list of shell commands | Commands that run when the Box closes. |
-| `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
+| `brief` | string | Notes the agent reads before it starts. |
+| `setup` | list of commands | Run on each new Box. A failing line puts the Box in `setup_failed`. |
+| `teardown` | list of commands | Run when the Box closes. |
+| `env` | map | Plain variables for the Box. `PATH` is reserved. Credential-like names never reach the agent. |
+| `box.size` | `small`, `medium`, `large`, `xlarge` | 4, 8, 16, or 32 GiB. Wins over the user config. |
+| `node.labels` | list | Labels the node must carry. |
+| `machine.labels`, `machine.ports` | lists | The tool machine a Box claims by default, and the ports to forward. |
+| `machine.sync.presets`, `machine.sync.exclude` | as `machines.sync` | Paths a sync leaves alone, added to the user config's. |
+| `checkpoint.across_commits` | bool | `false` keeps saved setup per commit. `true` by default. |
+| `cache` | map | See [Cache volumes](#cache-volumes). |
+| `box_credentials` | list | Secrets the user must hold for a start. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
-| `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. With no size anywhere, the provider decides the machine. A machine with less than 7/8 of the size's memory (4, 8, 16 or 32 GiB) still starts the Box and warns with `machine_short`. |
-| `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
-| `machine.labels`, `machine.ports` | lists | Attach one of the requester's own enrolled machines that has every label. The Box gets a slot `k` on that machine. Each listed port `p` is moved to `p + 10·k`, and served at that number on both the Box and the machine's loopback, over the machine's link. Slot 0 keeps the listed numbers. Without a free matching machine, the Box starts without one and the start says why. |
-| `machine.sync.presets`, `machine.sync.exclude` | `true`, `false`, or preset names to drop, and a list of rsync patterns | Paths that the machine runner's `sync` neither copies to the machine nor deletes there. See [Sync excludes](#sync-excludes). |
-| `cache` | map | Which presets to keep and which other directories to keep across Boxes. See [Cache volumes](#cache-volumes). |
 
-moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
-starts, and keeps that copy for the Box's life. Setup, the agent, `moor run`,
-and the teardown all use that copy. A change the agent makes to the file in the
-Box never changes what moor runs. A changed `.moor.yaml` takes effect in the
-next Box after it is pushed.
+moor reads the file at the Box's base commit and keeps that copy for the Box's
+life. [Set up a repo](repo.md) shows the keys in use.
 
 ### Setup checkpoints
 
-On a provider that keeps checkpoints, setup runs in layers. The clone is the
-first layer. Each `setup:` line is the next one. moor checkpoints the machine
-after the clone and after the last line. It also checkpoints after any line
-that ran over 20 seconds.
+On a provider with checkpoints, moor saves the Box after the clone and after
+the last `setup` line. It also saves after each line that runs over 20 seconds. One more
+layer above them holds the dotfiles, the agent install, and the profile. Each
+layer's key covers the user, the repo, the machine class, the cache plan, and
+the text of every line up to it. No key holds a commit unless
+`checkpoint.across_commits` is `false`.
 
-Each layer has a key. The clone's key covers the user, the repo, the cache plan
-and the machine class. Each line's key covers the key below it and the line's
-text. Changing a line changes its key and every key above it. No key holds a
-commit, so a Box at a new commit finds the checkpoint. Checkpoints are kept per
-provider. A personal node is its own provider, so a Box on another node never
-uses them.
+A new Box forks the deepest layer whose key matches. At the same commit, it
+runs only the lines above that layer. At another commit, it resets tracked
+files, keeps ignored ones, and runs every line again. A chain lives 7 days and
+rolls forward 8 times at most. `moor start --cold` skips it.
 
-A new Box starts on a fork of the deepest checkpoint whose key matches its own
-layers. Its events then hold `warm_started` with the layer it started from, the
-number of lines, the fork's time, the setup time that layer took from scratch, and
-`steps`, the timed steps the provider reports of the fork. When the fork fails, the Box is set up from scratch on a new machine. Its events
-hold `warm_start_failed` with the provider's error, and the start warns with
-`checkpoint_failed`.
-
-A Box at the checkpoint's own commit runs only the lines above that layer. moor fetches
-first and moves the tree to the Box's branch when GitHub has it, so pushed commits come
-back. It drops the source Box's branches and refs. It keeps untracked files and tracked
-changes, which a skipped line may have made. A tree that is not the base unchanged runs
-every line again in one script, and moor saves no checkpoint from it. A line that leaves an
-untracked file causes this on every such Box, so keep setup outputs ignored. A Box at
-another commit works differently:
-
-1. moor refreshes the tree as it refreshes a [kept work tree](#work-tree). Tracked
-   files reset, untracked files go, and ignored files stay.
-2. Every setup line runs again on that tree, so a line sees the new commit's files.
-3. `warm_started` holds `rerun_from`, the commit the disk holds.
-
-moor saves that Box's disk over the layer it forked, at the Box's commit, in two cases:
-
-- The lines took over 20 seconds.
-- The Box's lines or profile have no layer yet, so every later Box would pay for them.
-
-It saves only when the tree is that commit with no changes. A tree a line left changed, or a
-HEAD a line moved, warns `checkpoint_skipped`. So a later Box forks near its own commit. The
-save costs one checkpoint pause per layer. A retry or a restart of such a Box saves nothing.
-
-When a line fails there, the start warns `warm_rerun_failed`, and the event of that
-name holds the line and its log tail. moor releases the fork and sets the Box up once
-from scratch on a new machine. A line that also fails there ends in `setup_failed`.
-
-When the line passes there, the old disk was the cause. That Box's checkpoints replace the
-layers kept, and moor retires the rest of the chain from other commits, so no later Box pays
-for it again. A line that also fails there is the commit's fault, and the chain stays for the
-commit that fixes it. A replaced checkpoint goes from the disk once nothing depends on it.
-
-**A guard can hide a new commit from its line.** This line skips its work once
-`dist/` exists, so the Box keeps the old commit's output and reports no error:
-
-```sh
-[ -f dist/out ] || make dist
-```
-
-A guard on output derived from tracked files must check content, such as a stored
-hash of its sources:
-
-```sh
-[ "$(cat dist/sum 2>/dev/null)" = "$(cksum src)" ] || { make dist && cksum src > dist/sum; }
-```
-
-A guard on an installed tool is fine when the line's text pins its version, since
-changing the text changes the key. State outside the work tree that derives from
-tracked files has the same risk. A daemon a line started keeps running from the
-checkpoint until its line restarts it.
-
-After a rerun, the start reply and the agent's brief name the oldest commit the disk's
-ignored files may come from. They say how many tracked paths changed since, and name the
-ignored paths the disk still holds. They warn that a setup line may have skipped rebuilding
-those paths. The event is `warm_rerun`.
-
-A rolled-forward checkpoint keeps that oldest commit. So a Box at the checkpoint's own commit
-also gets the note, though its lines do not run again. Only a disk set up from scratch at its
-commit gets none. A checkpoint that rolled forward before moor kept that commit cannot say how old its
-ignored files are. The next Box sets its chain up from scratch once, and warns
-`checkpoint_chain_expired`.
-
-A line that moves `HEAD` off the base commit, such as `git pull`, stops later checkpoints
-of that Box. The start warns `checkpoint_skipped`.
-
-A repo that cannot change such a guard sets `checkpoint.across_commits: false`. Its
-key then holds the base commit, so each commit gets its own chain and a new commit
-starts from scratch.
-
-One more layer sits above the last line. It holds the dotfiles, the agent install, the profile's
-`setup.sh`, and its marketplaces and plugins, which moor installs before the agent starts. Its
-key covers the top line's key and these:
-
-- The install script and the install commands.
-- The profile's commit.
-- The commit of each marketplace.
-- The repo's `env` and the Proxy rules' env.
-- The dotfiles' files and their install script.
-
-moor saves the layer only when all of those steps succeed, so a Box with `profile_failed` saves
-none and the next Box tries again. A Box that forks it runs none of those steps, and
-`warm_started` holds `finished: true`. A Box at another commit also stands on it, and reruns
-only its setup lines. The steps run on it before those lines, not after.
-
-moor still asks a Box that forks this layer whether its agent can start. A setup line or a lost
-cache can remove the agent, so a Box that has none runs all those steps again.
-
-**A new commit of a marketplace reaches your next Box.** moor looks up the commit of each
-marketplace when a Box starts. That is one forge call per marketplace, made in parallel and
-bounded at 5 seconds. A marketplace pinned to a whole commit id needs no call. A new commit forks
-the layer below, runs those steps once, and saves a new layer. No setup line runs again.
-
-moor warns with `profile_source_unresolved` when a marketplace gives no commit in time or is not
-on the forge. That Box forks the layer below, runs those steps, and saves no layer of its own.
-A marketplace off the forge therefore never keeps this layer.
-
-**A checkpoint keeps what `setup.sh` installed until the profile's commit changes.** A `setup.sh`
-that installs `latest` stays at the version it got when moor saved the layer, however old that
-is. Pin versions in your profile, and push a commit when you want a newer one. A new profile
-commit forks the layer below, so no setup line runs again, and runs those steps once more. A Box
-at another commit in that case saves the new layer at its commit, so it pays once.
-
-A plugin that fails to install stays missing on that Box, and moor reports it. moor installs
-plugins with the repo's `env`, not the `env` of your profile.
-
-The layer belongs to one user, as every key does. It holds what the user's `setup.sh` and
-plugins wrote under the home. moor saves it before the agent first starts, and the Proxy places
-credentials on the wire, so no agent login or forge token of moor's is on it. Claude Code writes
-`machineID`, `userID` and `firstStartTime` to `~/.claude.json` when `claude plugin` first runs.
-A Box's first launch removes them, so it makes its own, and a relaunch keeps them.
-
-A chain lives 7 days from when it was set up from scratch, and rolls forward 8 times at most,
-since each roll is a delta that holds the last on the disk. A Box that finds a chain past either
-limit warns `checkpoint_chain_expired`, sets up from scratch, and starts a new chain. moor runs
-no background rebuild, so the Box that crosses a limit pays. `moor start --cold` skips kept
-checkpoints too, and that Box's saves replace the layers it went past. `--cold` applies only to
-a Box it creates, and warns `cold_ignored` on one that exists.
-
-Checkpoints never fill the node's disk. The floor is the one a node keeps
-before it takes a Box. It is 10% of the filesystem, and at least 20 GiB. Before a Box
-starts or retries, and before moor saves a checkpoint, moor checks the disk
-the provider keeps checkpoints on. While it is below the floor, moor deletes
-checkpoints, one at a time:
-
-1. First, a chain of a repo when the same user has a newer chain of that repo. A new
-   chain follows a change of cache plan or machine class, or a new commit under
-   `checkpoint.across_commits: false`.
-2. Then the checkpoint used longest ago.
-
-Two kinds are never deleted. One is a checkpoint a pending or setting-up Box
-forked or saved. The other is the deepest checkpoint of a Box whose setup
-failed, since `moor retry` resumes from it. Each deletion adds
-`checkpoint_evicted` to the events of the Box that asked for room. The event
-holds the checkpoint, the repo, its size, the reason (`superseded` or
-`least_recently_used`) and the free and needed MiB. When nothing is left to
-delete, the Box sets up without saving a checkpoint, and warns
-`checkpoint_skipped`.
-
-moor measures that disk only for a provider on the controller's own host, such
-as cloud-hypervisor through the `external` provider. It reads the filesystem
-holding `$XDG_CACHE_HOME`, or `~/.cache`. For a cloud provider, moor has no
-disk to read and deletes no checkpoint.
-
-moor does not see the provider's base image. After changing the image, close
-the Boxes and delete the provider's checkpoints, or new Boxes start from the
-old image.
+The events `warm_started`, `warm_rerun`, `checkpoint_skipped`, and
+`checkpoint_evicted` record what happened.
 
 ### Cache volumes
 
-A cache volume is a directory in the Box that the provider keeps across Boxes,
-so a second Box does not download the same packages again. Each Box gets a
-private copy of the newest kept copy when it starts. When the Box closes, its
-copy becomes the newest. On a provider that can [save at a
-pause](providers.md#saving-at-a-pause), so does a Box that goes to sleep with its
-agent quiet and no run in flight. A Box suspended at work saves nothing. Two Boxes
-never write the same copy, and the newest save wins. The provider decides where the copies live and how big they grow.
-See [Cache volumes](providers.md#cache-volumes). A provider without cache
-volumes starts every Box cold.
-
-A Box whose plan would hold volumes but starts without them records one
-`cache_cold` event. Its `reason` is one of `switched_off` (the provider's
-`cache_volumes` is `false`), `provider_unsupported`, `machine_offline` and
-`machine_lacks_feature` (a personal node's machine is not linked and online,
-or does not report `cache-volume`), `no_user` (the Box has no owning user) or
-`refused` (the declarations clash). `detail` says it in a sentence. `box_status`
-returns it as `cache_cold`, and a Box that is still starting lists it in its
-steps. The Box works, so it is neither stuck nor failed. A Box with no volumes
-to keep records nothing.
-
-A start also warns `cache_unavailable` when the provider cannot keep volumes
-that the repo or the operator declared. Presets alone start cold without that
-warning, and the operator's `cache_volumes: false` and a Box with no user
-never warn.
+A cache volume is a directory the provider keeps across Boxes. Each Box gets a
+private copy of the newest save. Closing the Box saves its copy.
 
 ```yaml
 cache:
-  presets: [docker]          # drop these presets; false drops all; default: all on
-  work_tree: {size_gb: 60}   # false: clone fresh in every Box; default: true, 40 GB
+  presets: [docker]
+  work_tree: {size_gb: 60}
   volumes:
-    - name: android-sdk      # [a-z][a-z0-9-]{0,31}
+    - name: android-sdk
       path: /opt/android-sdk
-      size_gb: 12            # a hint; the provider's default when unset
-      restore:               # optional; runs first in a new Box that restored it
+      size_gb: 12
+      restore:
         - rm -rf /opt/android-sdk/.temp
 ```
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `cache.presets` | `true`, `false`, or a list of preset names | `true` | Which presets this repo keeps. A list names the presets to drop. |
-| `cache.work_tree` | `true`, `false`, or `{size_gb: N}` | `true` | Whether the repo's work tree is kept. See [Work tree](#work-tree). |
-| `cache.volumes[].name` | string | required | The volume's name, unique in the Box. |
-| `cache.volumes[].path` | path | required | The directory kept. It is `~/<dir>` (the Box user's home), `/opt/<dir>`, `/var/cache/<dir>`, or exactly `/var/lib/containerd` or `/var/lib/containers` (nothing below them). Letters, digits, `/`, and `._-+@` only. |
-| `cache.volumes[].size_gb` | integer, at least 1 | none | A size hint. The provider caps it. |
-| `cache.volumes[].restore` | list of shell commands | empty | Commands that run in a new Box that restored the volume, before the clone and setup. A command that fails empties the volume. |
-
-A layer declares at most 8 volumes. Two volumes may not share a name, and
-their paths may not be equal or nested. A repo volume and an operator volume
-that clash leave the Box cold, with a `cache_refused` warning. moor drops a
-declared volume on, above, or inside Docker's data paths (`~/docker`,
-`/var/lib/containerd`) with its own `cache_refused` warning, even when the
-docker preset is off. The Box keeps the rest of its volumes.
-
-#### The agent
-
-When moor installs the agent in a Box (see `agent.install`), the directory that
-holds the install is a volume named `agent`. moor keeps it per user, shared by
-every repo that the user starts a Box in. A later Box restores the volume and
-links the cached version instead of downloading the agent again. The volume's
-restore step runs the newest cached version, so a half-finished install is
-emptied and downloaded again. A provider without cache volumes keeps nothing and says nothing, and
-the install runs in every Box.
-
-#### Presets
-
-Every Box with a repo gets these presets unless a layer drops them. A volume
-that a repo or the operator declares on the same name or directory replaces
-the preset. Paths are each tool's default on Linux, except npm and Yarn. moor
-points their caches at `~/.cache` in every command. A preset keeps only what a
-tool downloads or can rebuild, so losing it costs time and never correctness.
-Tool settings and keys beside those directories, such as `~/.m2/settings.xml`
-and `~/.android/adbkey`, are not kept.
-
-| Preset | Paths | Where the tool documents it |
+| Key | Default | Meaning |
 | --- | --- | --- |
-| `cache` | `~/.cache` | The [XDG cache root](https://specifications.freedesktop.org/basedir-spec/latest/). It holds npm and Yarn (moor sets `npm_config_cache`, `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it), Go's build cache, pip, and ccache and sccache. |
-| `pnpm` | `~/.local/share/pnpm/store` | [pnpm `storeDir`](https://pnpm.io/settings/store#storedir) |
-| `bun` | `~/.bun/install/cache` | [Bun global cache](https://bun.sh/docs/install/cache) |
-| `docker` | `~/docker`, `/var/lib/containerd` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)) and the containerd image store that Docker 29 uses by default ([containerd image store](https://docs.docker.com/engine/storage/containerd/)). Cleaned when a new Box restores it, see below. |
-| `podman` | `~/.local/share/containers` | [rootless `graphroot`](https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md) |
-| `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` | [Gradle user home](https://docs.gradle.org/current/userguide/directory_layout.html) |
-| `dart` | `~/.pub-cache` | [`PUB_CACHE`](https://dart.dev/tools/pub/environment-variables) |
-| `rust` | `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup` | [Cargo home](https://doc.rust-lang.org/cargo/guide/cargo-home.html), [`RUSTUP_HOME`](https://rust-lang.github.io/rustup/environment-variables.html) |
-| `go` | `~/go/pkg/mod` | [`GOPATH`/`GOMODCACHE`](https://pkg.go.dev/cmd/go). The build cache is in `cache`. |
-| `maven` | `~/.m2/repository` | [Local repository](https://maven.apache.org/guides/introduction/introduction-to-repositories.html) |
-| `cocoapods` | `~/.cocoapods/repos` | [Specs repos](https://guides.cocoapods.org/using/the-podfile.html) |
-| `bundler` | `~/.bundle/cache`, `~/.local/share/gem` | [Bundler `cache`](https://bundler.io/man/bundle-config.1.html) and RubyGems' user gem directory |
-| `android` | `~/.android/cache`, `~/.android/build-cache` | The Android Gradle plugin's and `sdkmanager`'s caches |
-| `android-sdk` | `/opt/android-sdk` | moor exports `ANDROID_HOME` and `ANDROID_SDK_ROOT` there when the directory exists and the repo's `env` does not set them. [Android SDK](https://developer.android.com/tools/variables) |
+| `cache.presets` | `true` | `false` drops every preset. A list names the presets to drop. |
+| `cache.work_tree` | `true` | Keep the repo's work tree, so ignored build outputs survive. `{size_gb: N}` sizes it. |
+| `cache.volumes[].name` | required | `[a-z][a-z0-9-]{0,31}`, unique in the Box. |
+| `cache.volumes[].path` | required | `~/<dir>`, `/opt/<dir>`, `/var/cache/<dir>`, `/var/lib/containerd`, or `/var/lib/containers`. |
+| `cache.volumes[].size_gb` | provider's | A size hint. |
+| `cache.volumes[].restore` | empty | Commands run first in a Box that restored the volume. A failure empties it. |
 
-In every Box that uses the Proxy, CMake builds go through
-[ccache](https://ccache.dev/) when the Box has it. moor sets
-`CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` to `ccache` unless
-the variable is already set, so a value from your repo's `env` or setup wins.
-Set a variable to an empty string to turn it off, because CMake reads an empty
-launcher as none. ccache keeps its data in `~/.cache`, which the `cache` preset
-already keeps.
+A layer declares at most 8 volumes, with no shared names and no nested paths.
+moor refuses the paths it writes for each Box. Those include `~/.ssh`,
+`~/.claude`, `~/moor`, and `~/.gradle` itself.
 
-moor also turns on [Gradle's build cache](https://docs.gradle.org/current/userguide/build_cache.html)
-in every Box that uses the Proxy, with or without a JDK yet, by keeping
-`org.gradle.caching=true` in a marked block of `~/.gradle/gradle.properties`.
-A line of your own for `org.gradle.caching` in that file removes moor's block,
-and `--no-build-cache` turns the cache off for one build. The user home file
-outranks a project's `gradle.properties`, so a repo that sets
-`org.gradle.caching=false` there still gets the cache. To turn it off for a
-repo, write the line to `~/.gradle/gradle.properties` in its setup.
-
-The `docker` preset's restore step runs with no Docker daemon up, so nothing
-from the last Box starts again. It hashes every content blob in
-`/var/lib/containerd` against its name, four at a time, which adds 2 to 4
-seconds per GiB to the start of a Box with a large Docker cache. A blob that
-does not match fails the step. Otherwise it removes every container, volume, and
-network, and any unfinished pull, so only images and build cache are kept. A
-missing blob is not detected. An image that starts Docker itself has Docker
-stopped first and started again after.
-
-Restore steps are the first thing provisioning runs, once per Box. Rerunning a
-start does not run them again. moor skips a volume whose paths hold nothing.
-When a step fails, moor empties that volume, and the start goes on. The Box
-records a `cache_emptied` event with the volume and the reason, lists it in its
-steps, and warns `cache_emptied`. It is neither stuck nor failed. Each volume
-with restore steps is kept in a store of its own, so emptying one never empties
-another.
-
-#### Submodules
-
-A Box's clone also fetches the repo's submodules, nested ones included, as a
-partial clone like the repo itself. A repo with no `.gitmodules` pays nothing.
-A failed submodule does not fail the start, because an agent may not need it
-and a private one may be refused. The Box starts without it and the start warns
-with the code `submodule`, naming the path and git's reason. The same happens
-to any submodule still fetching 20 minutes into the clone. A Box missing a
-submodule saves no clone checkpoint, and a retry fetches the submodule again.
-
-#### Work tree
-
-Every Box with a repo also keeps its work tree, in a volume named `worktree`.
-A later Box of the same user and repo then starts with the previous Box's
-ignored build outputs (`build/`, `target/`, `.cxx`) instead of a fresh clone.
-The workdir is `~/moor/repos/<repo name>` in every Box of that repo. With that
-fixed path, tools that record absolute paths, such as CMake, Gradle, and cargo,
-reuse their outputs. Docker Compose's default project name is the repo name.
-
-When the Box starts on a kept tree, moor refreshes the tree before anything
-else runs:
-
-1. It fetches, and takes the remote's tags, so a tag moved there moves here too.
-2. It checks out the Box branch from the remote, or from the base when the
-   remote has no such branch.
-3. It resets every tracked file, and removes untracked files and nested repos.
-   Ignored files stay.
-4. It removes every remote but the repo's own. It deletes every ref except the
-   Box branch, the remote's branches, and the tags, along with the reflogs.
-
-A submodule already in the tree follows its new commit, and one that is not
-is fetched as on a fresh clone. A file whose content did not change keeps its
-modification time. When any step fails, moor empties the directory and clones fresh, as on the first Box, so the
-start never fails because of the kept tree.
-
-The start's reply says which case happened in a `work_tree` field. The CLI
-prints the field as its own line:
-
-- `work tree: refreshed`
-- `work tree: cold`
-- `work tree: cold after: <reason>` when the refresh ran and fell back to a
-  fresh clone. This case also warns, with the code `work_tree`.
-
-A Box that keeps no tree, or that has already refreshed its tree, such as on a
-rerun of the start, says nothing. `cold` does not say why there was no tree to
-refresh. The cause can be a first Box or a provider that kept none.
-
-The close keeps the tree whatever it holds, including unpushed work. The copy
-is not a backup. A close without `--force` still refuses unpushed work, because
-the refresh in the next Box drops every ref that reaches it, along with stashes
-and reflogs. The objects themselves can stay in the kept tree, so
-`git fsck --lost-found` in a later Box of the same user and repo may find them.
-Ignored files such as `.env` are kept too. A provider may skip saving a tree
-that barely grew since it was restored.
-
-The work tree has a store of its own, so emptying Docker's volume never touches
-it. `size_gb` is the
-size hint for that store. A repo whose name has a character other than
-letters, digits, and `._-+@` gets no work tree. A declared volume named
-`worktree` replaces it.
-
-#### Who shares a cache
-
-| Declared by | Kept for |
+| Preset | Paths |
 | --- | --- |
-| A preset, the work tree, or `.moor.yaml` | One user and one repo |
-| The operator's user config | One user, across all their repos |
+| `cache` | `~/.cache`, which also holds npm, Yarn, Go builds, pip, and ccache |
+| `pnpm` | `~/.local/share/pnpm/store` |
+| `bun` | `~/.bun/install/cache` |
+| `docker` | `~/docker`, `/var/lib/containerd` |
+| `podman` | `~/.local/share/containers` |
+| `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
+| `dart` | `~/.pub-cache` |
+| `rust` | `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup` |
+| `go` | `~/go/pkg/mod` |
+| `maven` | `~/.m2/repository` |
+| `cocoapods` | `~/.cocoapods/repos` |
+| `bundler` | `~/.bundle/cache`, `~/.local/share/gem` |
+| `android` | `~/.android/cache`, `~/.android/build-cache` |
+| `android-sdk` | `/opt/android-sdk` |
 
-Another user's Box never sees a cache. A repo cannot widen its own scope. The
-scope follows the file a volume is declared in, and `.moor.yaml` has no key for
-it. Each state directory makes its own random salt for the keys, so a fresh
-state directory starts every cache cold.
+A preset, the work tree, and a `.moor.yaml` volume are kept per user and repo.
+A user config volume is kept per user. Another user's Box never sees a cache.
 
-#### What is never cached
-
-moor refuses a path that is, holds, or sits inside a directory that moor writes
-for each Box or that holds the Box's own state. These are `~/.moor-*` (the
-Proxy CA and moor's own files), `~/.moor`, `~/moor` (the Box workdirs),
-`~/.ssh`, `~/.claude` (the agent's state), `~/.config/gh` (the gh login),
-`~/.gradle/gradle.properties`, and `~/.gradle/moor-proxy-truststore.p12`. So
-moor refuses `~/.gradle` itself. The `gradle` preset keeps `~/.gradle/caches`
-and `~/.gradle/wrapper` beside those files. Secrets never reach a cache,
-because moor keeps them in the Proxy, not in the Box.
-
-`moor env` lists each volume's name and paths. It never shows a key.
+The kept work tree lives at `~/moor/repos/<repo name>` in every Box of the repo.
+On a new Box, moor fetches, checks out the Box branch, resets tracked files,
+and removes untracked ones. Ignored files stay. Any failure falls back to a
+fresh clone.
 
 ## Controller config
 
-`moor controller serve --config FILE` reads this file.
+`moor controller serve --config FILE` reads this file. `vault.key` lives in the
+same directory.
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. The controller refuses to start if this or a socket under the state dir is longer than a Unix socket path allows (107 bytes on Linux, 103 on macOS); use a shorter path. |
-| `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
-| `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
-| `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
-| `workflow_min_interval_secs` | integer, above 0 | 3600 | The shortest gap a [workflow](workflows.md) cron may leave between two firings. Lower it only to try a workflow quickly. |
-| `drain_timeout_secs` | integer | 30 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
-| `blobs` | map | `kind: fs` | Where artifacts, Reports and transcripts live. See [Blob storage](#blob-storage). |
-| `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
-| `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. `client_ca` is the PEM CA bundle every client's certificate must chain to; a client without one fails the handshake. The listener answers the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. A machine runner whose hello is `{"runner":{"v":1,"key":KEY}}`, with `KEY` the controller's `MOOR_MACHINE_SERVICE_KEY`, is served as on the runner socket; it presents its client certificate from `--controller-cert`. A remote front whose hello is `{"front":{"v":1,"ns":NS,"key":KEY}}`, with `KEY` the content of its `fronts.NS.remote.key_file`, is served as on that front's socket. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem --ledger-cert CLIENT.pem --ledger-key CLIENT.key`. |
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `socket` | `<state dir>/controller.sock` | The controller socket. |
+| `state_dir` | the CLI's state directory | The state directory. |
+| `settle_every_secs` | 5 | Seconds between passes that update each Box's agent state. |
+| `close_setup_failed_after_secs` | 86400 | How long a Box may stay `setup_failed` before moor closes it. 0 keeps it. |
+| `workflow_min_interval_secs` | 3600 | The shortest gap a workflow cron may leave between firings. |
+| `drain_timeout_secs` | 30 | How long a SIGTERM waits for requests in flight. |
+| `blobs` | `kind: fs` | Where artifacts, Reports, and transcripts live. See [Blob storage](#blob-storage). |
+| `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
+| `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 
-The controller refuses a config that has a `web`, `slack`, or `repos` key.
+The controller refuses a `web`, `slack`, or `repos` key.
 
-### The store database
+### `fronts`
 
-The controller keeps its state in `moor.db`, a SQLite file in the state
-directory. To keep it in a Postgres database instead, set `MOOR_DATABASE_URL`
-to a `postgres://` or `postgresql://` URL. When the variable is unset or empty,
-moor uses `moor.db` as before. The URL holds the database password, so moor
-reads it only from the environment, never from a config file. Pass it from a
-secret. Messages show the URL without its password or query.
+`fronts.<namespace>` gives one front its own socket at
+`<state dir>/fronts/<namespace>/front`. With a `command`, the controller runs
+the front and restarts it when it exits.
 
-A moor process opens one writer connection and at most `MOOR_DATABASE_READERS`
-read connections to the database, 4 when the variable is unset or empty. It
-takes a whole number of 1 or more and refuses anything else. A read that finds
-every reader in use waits up to 30 seconds, then fails and names the cap, so a
-burst of reads never opens more connections than the cap. Size it so the
-writer plus readers of every moor process on the database stays under the
-database role's connection limit. A controller adds one lock connection, and a
-second controller waiting during a rollout holds only that one.
+```yaml
+fronts:
+  authgear: {}
+  notify:
+    command: [moor-notify]
+    webhooks: true
+```
 
-One controller runs on a Postgres database at a time. It holds a session advisory
-lock on one connection of its own, from before it migrates until the process
-exits. Another controller blocks on that lock with no socket and only that
-connection, and takes over as soon as the holder's session ends. A holder whose
-lock connection dies exits at once, so a database restart restarts the
-controller. TCP keepalives on the connection end a session with a dead peer in
-about 11 seconds on the server and 6 on the client. The URL must reach Postgres
-directly or through a session-mode pooler: the lock is checked from a second
-connection, and a controller that does not hold it refuses to start. The
-controller rewrites `controller.alive` in the state directory every 5 seconds as
-a liveness probe's input, because a frozen holder keeps its session.
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `command` | none | The program and arguments to run. Without it, start the front yourself. |
+| `state_dir` | none | The one directory the front may write. |
+| `read_only` | empty | Real paths outside the system directories that the front may read. |
+| `ports` | empty | TCP ports forwarded from the host's `127.0.0.1` to the front. |
+| `proxy_rules` | empty | Rules the front Proxy serves to the front. The only one is `claude`. |
+| `webhooks` | `false` | Whether the front delivers users' webhooks. |
+| `remote.key_file` | none | For a front in another pod, the key its hello presents to `ledger_tls`. |
 
-Every moor that opens the store reads `MOOR_DATABASE_URL`: the controller,
-`moor store migrate`, and the CLI when no controller is set. The controller
-passes the URL to no Proxy and no front. On Postgres the state directory still holds this host's own files, such
-as the sockets and the Proxy logs, so the controller still needs one.
-
-The URL's query takes libpq's TLS fields:
-
-| Field | Values | Default | Meaning |
-| --- | --- | --- | --- |
-| `sslmode` | `disable`, `prefer`, `require`, `verify-ca`, `verify-full` | `prefer` | `disable` never uses TLS. `prefer` uses TLS when the server offers it, and `require` refuses a server that does not. Neither checks the server's certificate. `verify-ca` also checks that a trusted root signed the certificate. `verify-full` also checks that the certificate names the host in the URL. |
-| `sslrootcert` | path to a PEM file | the system's roots | The roots that may sign the server's certificate. With `require`, setting it checks the certificate as `verify-ca` does, as libpq does. |
-
-moor passes the query's other fields, such as `connect_timeout` or
-`application_name`, to the Postgres client as written. A connection attempt
-gives up after 10 seconds unless `connect_timeout` sets another limit.
-
-moor writes through one connection, and each transaction holds a Postgres
-advisory lock, so writes run one at a time as they do on SQLite. Reads use
-read-only connections, and moor keeps up to 8 of them open between reads. When
-the server closes a connection, for example when Postgres restarts, the call on
-that connection fails and the next call connects again. moor does not retry a
-failed write.
-
-Each moor brings the store to its latest migration when it opens the store, on
-Postgres as on SQLite. When two moors open the store at once, one migrates and
-the other waits on a Postgres advisory lock. A moor older than the store's
-latest migration opens it unchanged and warns. `moor store migrate` opens the
-store, migrates it, prints where the store lives, and exits 0. On a store a
-newer moor migrated, it prints the warning instead and still exits 0. It exits
-1 and says why when it cannot open the store. A deploy can run it with the same
-`MOOR_DATABASE_URL` and `MOOR_STATE_DIR` before the first controller starts. It
-need not run on later deploys, as a new controller migrates once it holds the
-lock. On Postgres, `moor store migrate` and any command with no controller set
-take the same lock, and are refused, naming the holder, while a controller has it.
-
-### Closing failed Boxes
-
-A Box whose lifecycle is `setup_failed` holds a machine that nothing uses: its
-machine, clone, credentials, a `setup:` line or the agent install failed, so no
-agent worked in it. The
-settle pass closes such a Box once `close_setup_failed_after_secs` have passed
-since setup failed, which is a day unless the config says otherwise. A retry
-that fails again restarts that clock. The close is forced, releases the
-machine, drops the Box's lease rows, and records a `closed` event with the
-reason `setup_failed_expired`. A Box that will not close is logged as a
-`settle:` line, and the next pass tries it again.
-
-A working Box that lost its machine and failed its clone, a `setup:` line or its
-agent install on the new one is a `setup_failed` Box too, so this pass closes it after the same time. Set
-the key to 0 to keep failed Boxes until someone closes them by hand or with
-`moor close-failed`.
+The gate uses the `authgear` namespace. On Linux, a front the controller runs
+gets its own user, mount, PID, and network namespaces and a root built from an
+allow-list. It reaches the network only through an egress proxy that refuses
+private addresses. A host that forbids unprivileged user namespaces or lacks
+Landlock starts no front, and the controller logs `fronts not started`.
 
 ### Blob storage
-
-Artifacts, Reports and transcripts live under the state directory by default,
-owner-only. To keep them in a bucket on any S3-compatible endpoint, name it:
 
 ```yaml
 blobs:
@@ -988,431 +349,19 @@ blobs:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `fs` | `fs` or `s3`. |
-| `endpoint` | required | The endpoint URL, `http` or `https`. |
-| `bucket` | required | The bucket. It must already exist. |
+| `kind` | `fs` | `fs` keeps blobs in the state directory. `s3` uses a bucket. |
+| `endpoint`, `bucket` | required | The S3-compatible endpoint and an existing bucket. |
 | `region` | `us-east-1` | The signing region. |
 | `prefix` | none | Put before every key, so controllers can share a bucket. |
-| `credentials_dir` | none | A directory holding the files `access_key_id` and `secret_access_key`, such as a mounted Secret. Without it, the controller reads `MOOR_BLOBS_ACCESS_KEY_ID` and `MOOR_BLOBS_SECRET_ACCESS_KEY`. |
+| `credentials_dir` | none | Holds `access_key_id` and `secret_access_key`. Else moor reads `MOOR_BLOBS_ACCESS_KEY_ID` and `MOOR_BLOBS_SECRET_ACCESS_KEY`. |
 
-Keys are the same under every backend:
+### The store database
 
-| Blob | Key |
-| --- | --- |
-| Artifact | `artifacts/<box>/v<version>/<name>` |
-| Artifact manifest | `artifacts/<box>/artifact-manifest.json` |
-| Report | `reports/<box>/<kind>.v<version>.md` |
-| Transcript | `transcripts/<box>/<session>-<n>.tgz` |
+The controller keeps its state in `moor.db` in the state directory. To use
+Postgres, set `MOOR_DATABASE_URL` to a `postgres://` URL in the environment.
+moor never reads it from a file.
 
-The controller refuses to start without credentials. It reads them once at
-start, so a rotated key needs a restart. A store that cannot be reached shows
-only when it is used. Reading an artifact then answers an error naming the
-store. Collecting from a Box warns and tries again after the Box's next turn, and
-Box work carries on. A Box that cannot save everything is not slept. A Box closed
-while the store is away loses what was not saved, with a warning, as any failed
-collect does.
-
-Run logs, setup logs and clone logs stay on local disk under the state
-directory.
-
-Moving a state directory's blobs to a bucket copies each file to the key of the
-same relative path. Stored rows need no change.
-
-### Stopping the controller
-
-On SIGTERM, the controller drains and then exits 0. The drain does these
-things:
-
-1. It stops accepting connections. A client that connects now waits in the
-   socket's backlog and fails when the controller exits. Under systemd socket
-   units, the next controller answers it instead. See
-   [Deploy the controller with systemd](deploy.md). A connection accepted at
-   the moment the drain began gets an error frame of kind `restarting`.
-2. A `wait`, `wait-events`, or `watch` gets an error frame of kind
-   `restarting` and is closed. Send it again once a controller listens.
-3. A `start` or `retry` is not waited for. It is cut when the controller exits,
-   and the next controller follows its setup or acquires its machine once more.
-   Any other request in flight, such as a `close` or `run`, runs to its end. The
-   controller waits up to `drain_timeout_secs` for these requests, then exits
-   anyway.
-4. No request runs once the drain began. Each connection ends with an
-   error frame of kind `restarting` that names no request. A request that was
-   half sent, sent behind another, or sent just after the signal can be sent
-   again.
-5. No new settle pass starts. A pass already running finishes the Box it is
-   on, such as an auto-sleep, then stops, and the drain waits for it.
-
-A command that `moor run` streams keeps running through the drain. SIGINT
-does not drain. It stops the controller at once. Under a service manager,
-set the stop timeout above `drain_timeout_secs`.
-
-### `fronts`
-
-A front in another pod sets `fronts.<namespace>.remote.key_file`, a file holding
-the key its hello presents to `ledger_tls`. Its connections are served as on its
-socket, so it may assert only identities in its own namespace. A remote front
-needs `ledger_tls` and takes no `command`. Its `proxy_rules` run on the shared
-egress Proxy, so the controller starts no front Proxy for it and a controller
-restart leaves its leases in place. Each lease comes with the CA that Proxy signs
-with.
-
-`fronts.<namespace>` gives one front its own socket:
-
-```yaml
-fronts:
-  board:
-    command: [my-board, --port, "8080"]
-    state_dir: /home/me/.local/state/my-board
-    ports: [8080]
-  slack: {}
-```
-
-[moor-notify](notify.md), which posts Box events to a webhook, runs as the
-`notify` front.
-
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
-| `state_dir` | absolute path, not under `/tmp` | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
-| `ports` | list of TCP ports, 1 to 65535 | empty | Ports a client on the host reaches the front on at `127.0.0.1`. The front listens on the same port inside its own network namespace. The controller forwards each port from the host's `127.0.0.1` only, never its other addresses, and nothing else reaches the front from outside. The controller does not guess the ports from `command`. On macOS the front shares the host's network, so the key changes nothing there. |
-| `read_only` | list of absolute real paths | empty | Files or directories outside the system directories that the front may read, such as a config or token file under `HOME`. |
-| `proxy_rules` | list of rule names | empty | The rules the front Proxy serves to this front. The only rule is `claude`. It injects the user's `claude` secret on `POST /v1/messages`, `GET /api/claude_code/settings`, and `GET /api/claude_code/policy_limits` at `api.anthropic.com`. |
-| `webhooks` | bool | `false` | Whether this front delivers the users' webhooks. Only such a front may send `webhook-claim`, which leases the oldest pending delivery of each webhook with its URL, key and body, and `webhook-report`, which ends a delivery and records its outcome on the webhook. |
-
-#### The front Proxy
-
-When an event is written for a Box, the same transaction queues one delivery
-for each webhook of the Box's user that names the event's kind. A webhook has at
-most one delivery leased at a time, and gets its deliveries oldest first. A
-lease the front does not report on in time ends, and the next claim hands the
-delivery out again. Deliveries wait until a front with `webhooks: true` claims
-them.
-
-When an entry lists `proxy_rules`, with or without a `command`, the controller
-runs `moor proxy serve-fronts` as a child, and starts it again with backoff
-whenever it exits. The front Proxy listens on
-`<state dir>/fronts/<namespace>/proxy`, and the controller writes the CA
-certificate to `<state dir>/fronts/<namespace>/ca.pem`. The front's shim binds
-a loopback port in the front's network namespace and passes each connection to
-that socket. The front finds the port in `MOOR_FRONT_PROXY_PORT`. The Proxy
-signs with a CA kept in `<state dir>/proxy/fronts`. It reads leases and the
-users' secrets through the controller's ledger socket, presenting a key the
-controller passes it in `MOOR_PROXY_KEY`. The front gets the CA
-certificate as PEM text in `MOOR_FRONT_PROXY_CA_PEM`, so the front sees no
-controller path. The shim's pid 1 holds the front's directory open and is not
-dumpable, so the front cannot reach the directory through `/proc/1/fd`. The
-bridge needs the Linux shim. On macOS no front gets a Proxy, so a coordinator
-front there says the controller gave it no Proxy.
-
-A front asks for a lease with `proxy-lease`, as an identity of its own
-namespace. The controller grants the lease only when that identity's user holds
-every secret the front's rules inject, and only while the Proxy runs. A CONNECT
-reaches the Proxy's nono only when its proxy password is a live lease of the
-same front. nono then injects that user's secrets and refuses every host that
-no rule lists. The store keeps a hash of each lease, never the lease, and the
-controller ends every lease when it starts.
-
-#### Sockets and processes
-
-For each entry the controller listens on
-`<state dir>/fronts/<namespace>/front`, mode 0600 in 0700 directories.
-That directory holds only the front's socket and, with `proxy_rules`, its
-Proxy's socket and `ca.pem`, so a front run in a container of its own needs
-only that directory mounted. Under systemd, the controller takes the socket
-that systemd passes as `front-<namespace>` instead of binding it. A namespace
-matches `[a-z][a-z0-9-]*`. It is not `local`, and not `proxy`, which names the
-front Proxy in the controller log.
-
-A front without a `command` runs elsewhere. On Linux,
-`moor front-run --dir <state dir>/fronts/<namespace> -- COMMAND...` runs it with
-`MOOR_FRONT_SOCKET` set to the directory's `front` socket. When the directory
-holds `ca.pem`, it also bridges a loopback port to the `proxy` socket, sets
-`MOOR_FRONT_PROXY_PORT` and sets `MOOR_FRONT_PROXY_CA_PEM` to the
-certificate. It passes SIGTERM and SIGINT on and exits with the front's status.
-
-When an entry has a `command`, the controller starts it at startup. The front
-gets an `O_PATH` file descriptor to its own socket as fd 3, and
-`MOOR_FRONT_SOCKET=/proc/self/fd/3` names it, so the front connects to that
-path. The front's stdin is empty and its stdout is the controller's. Each
-line it writes to stderr goes to the controller log as `front <namespace>:
-<line>`.
-
-Each front runs under `moor front-shim`, in its own user, mount, PID, and
-network namespaces, with the controller's uid and gid and no capabilities.
-There the state dir is an empty read-only tmpfs, and the controller socket and
-the vault key read as `/dev/null`. `/proc` shows only the front's own
-processes, so fd 3 is the front's only way to the controller. The shim is pid 1
-of that namespace. It reaps orphans, passes SIGTERM and SIGINT to the front,
-and exits with the front's status. If the controller's shim dies, the kernel
-kills every process in the namespace.
-
-On Linux, each front runs in a root of its own, built from an allow-list.
-Nothing else of the host exists there, so the front cannot reach a Unix socket
-elsewhere, such as the D-Bus session bus, Docker's, or LXD's. The root holds
-these:
-
-- **Read and run.** `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, and `/etc` where
-  they exist, and the file `/etc/resolv.conf` points to. The front's program.
-  The controller resolves `command`'s first word on its `PATH` to a real path
-  and runs that path. Each `read_only` path.
-- **Devices.** `/dev/null`, `zero`, `full`, `random`, `urandom`, and `tty`, and
-  the `fd`, `stdin`, `stdout`, and `stderr` links.
-- **Processes.** A fresh `/proc` that shows only the front's own processes.
-- **Write.** Only the `state_dir`, its `tmp` subdirectory, which is the
-  front's `/tmp`, and `/dev/null`. Every other mount is read-only. So chmod,
-  chown, utimes, and xattr changes fail with `Read-only file system`, even
-  through a file descriptor, including the front's own socket on fd 3.
-  Landlock also refuses writes outside them.
-- **Network.** The front has a network namespace of its own with nothing but
-  its loopback, so it has no route out. Everything outbound goes through the
-  front's egress proxy. The shim runs the egress proxy in the host's network
-  and names it in `HTTPS_PROXY`, `HTTP_PROXY`, and their lowercase forms, with
-  `NO_PROXY` set to the front's own loopback. The egress proxy takes only
-  `CONNECT` to port 443 or 80. It resolves the host once and answers 403 when
-  any address it resolves to lies in `0.0.0.0/8`, `10.0.0.0/8`,
-  `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`,
-  `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4`,
-  `240.0.0.0/4`, `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, or `ff00::/8`,
-  or is an address of a host interface, public ones included. Otherwise it
-  connects to the addresses it checked, without resolving again, so a second
-  DNS answer cannot point it elsewhere. It holds at most 64 tunnels per front,
-  answers 429 past that, and logs one `egress:` line per decision with the
-  host, port, address, decision, and reason. The egress proxy keeps the front
-  off the host's loopback, its other interfaces (such as docker0, tailscale0,
-  or an LXD bridge), the LAN, and other fronts. The egress proxy reads the
-  host's addresses when the front starts, so it does not deny an address the
-  host gains later until that front restarts. Only the `ports` the entry lists
-  reach the front from outside, from the host's `127.0.0.1`. The loopback is
-  the front's own, so a front's config cannot point at a service on the host's
-  loopback. For moor-slack, an `api_base` of `http://127.0.0.1:...` does not
-  work when the controller runs it.
-
-A `read_only` path must be a real path. The controller refuses one with a
-symlink or `..` in it. It also refuses one that is `/tmp` or lies under it,
-because the front's own tmp dir is mounted there and would hide it. It also
-refuses one that equals, holds, or lies inside the controller's state dir, the
-dir of its config file (which holds the vault key), the vault key, or the
-controller socket. When a system dir above holds one of those, the controller
-refuses to start, because every front could read it. It also refuses to start
-when `/etc/resolv.conf` resolves under `/tmp`.
-
-The controller creates the `state_dir` and its `tmp` subdirectory, mode 0700,
-and sets `MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`.
-moor-slack keeps its state in `MOOR_FRONT_STATE_DIR` when
-`--state-dir` is not given.
-
-Fronts need unprivileged user namespaces and Landlock, and no program on the
-host beyond moor. When the host forbids user namespaces
-(`kernel.unprivileged_userns_clone=0`, `user.max_user_namespaces=0`, or
-`kernel.apparmor_restrict_unprivileged_userns=1`) or lacks Landlock, the
-controller logs `fronts not started` with the reason, starts no front, and
-keeps serving. `moor front-shim --check` makes that call. It enters the
-namespaces, brings the front's loopback up, enters the front's root, applies
-the sandbox, and confirms that the sandbox refuses a write outside the
-allow-list.
-
-On macOS the shim has no namespaces. It applies nono's Seatbelt profile, which
-denies by default, to itself and the front. The front may read `/usr`, `/bin`,
-`/etc` (and `/var/run/resolv.conf`), its program, and each `read_only` path. It
-may write only its `state_dir` and `/dev/null`. It may connect to no Unix
-socket but its own and the DNS resolver's. Outbound TCP is not restricted.
-`MOOR_FRONT_SOCKET` holds the socket's path, because macOS cannot pass it on
-fd 3. The front shares the shim's process group. The shim kills that group
-when the front exits or the controller goes away, and the controller kills it
-when the drain timeout ends. There is no pid file on macOS.
-
-On macOS, a process the front starts that calls `setsid` or `setpgid` leaves
-the group. The group kill misses that process, so it outlives the front and the
-controller, still under the Seatbelt profile. Linux has no such gap, because
-the front's PID namespace ends with the front.
-
-While a front runs, `<state dir>/fronts/<namespace>.pid` holds the shim's pid
-on the first line and its start time from `/proc/<pid>/stat` on the second.
-When the front exits, the controller starts it again after 0.5 s. The wait
-doubles each time, up to 30 s, and goes back to 0.5 s after a run that lasted
-60 s.
-
-When the controller drains on SIGTERM, it sends SIGTERM to each front at once
-and starts none again. It exits after it has reaped each front's outer shim.
-The rest of that front's processes follow by death signal a few milliseconds
-later. The controller kills a front still running when `drain_timeout_secs`
-ends.
-
-A front can outlive a controller that crashed. The next controller reads each
-pid file. When the process there still has the recorded start time, the
-controller sends it SIGTERM, and then SIGKILL after 5 s. A pid with another
-start time belongs to another process, and the controller leaves it alone. The
-next controller never adopts a front.
-
-A moor user owns secrets, such as a Claude or GitHub token. An identity names
-a person on one front, as `<namespace>:<rest>`. A front may send the verified
-email of the person with `enroll`, and identities that assert the same email
-are one user. The controller socket cannot send one. Every request on a front socket except
-`version` must assert an identity in that front's namespace. Any other request
-gets `must assert an identity`. On the controller socket, the controller reads
-the peer's uid from the kernel and acts as `local:<uid>`. It refuses any other
-identity.
-
-A front acts for one of its people by wrapping a request in `as`:
-
-```json
-{"cmd": "as", "identity": "slack:T1/U1", "request": {"cmd": "steer", "box": "demo", "text": "go"}}
-```
-
-The controller never reads its own working directory. The CLI makes a
-relative `cp` destination or `env` repo absolute before it sends the request.
-The CLI wraps a `start`, `start-needs`, or `env` that names no repo in `in`,
-with its own directory:
-
-```json
-{"cmd": "in", "dir": "/home/me/app", "request": {"cmd": "start", "name": "demo"}}
-```
-
-Only the operator may send `in`. A `start` with no repo and no `in` gets
-`no repo`.
-
-### Who may act on a Box
-
-A Box acts for the user who started it. Only that user and the local operator
-may act on the Box, for example to run, steer, show, close, sleep, or wake it,
-or read its artifacts. Only the operator may copy files out of it, because `cp`
-writes on the controller host. A front gets `cp to the host is operator-only`.
-Only the operator may send `machine-hold`, which the machine runner sends for
-the Box its Proxy named. A front gets `machine-hold is the machine runner's,
-which is operator-only`. It claims one of the machines of the Box's own user
-or lets go of the claim:
-
-```json
-{"cmd": "machine-hold", "id": 7, "op": {"claim": {"labels": ["macos"], "wait_until": 1767225600000}}}
-{"cmd": "machine-hold", "id": 7, "op": "release"}
-```
-
-A claim may name `labels`, one `machine`, `ports` and `wait_until` (Unix
-milliseconds). Labels and ports left out come from the repo's `.moor.yaml`
-`machine:` section, and the syncs leave alone what its `machine.sync` names.
-The value's `state` is `held` (with `machine`, `ssh`, `slot` and `ports`),
-`waiting` (with `position` and `reason`) while a `wait_until` has not passed,
-`refused` (with `reason`, such as the Boxes that hold every slot or a machine
-that is not the user's), or `released` (with the `machine` let go, if any). A
-Box that already holds a slot gets the same `held` again.
-The local operator is a peer on the controller socket with the controller's
-own uid. A front socket is never the operator, whatever identity it asserts. A
-Box with no user is the operator's alone.
-
-Anyone else gets `not your Box`. A Box that does not exist gets the same reply,
-so nobody can probe Box ids. Box names are global, so a `start` can tell a name
-that an open Box uses from a free one. A list, such as `moor show` with no Box
-or `sessions`, shows only the caller's Boxes. `gate` reads only the recorded
-runs of those Boxes. A warning in a reply never names a Box that the caller
-may not see.
-
-A watch carries only the events of the caller's Boxes. A watch frame may assert
-an `identity`, which the controller checks like a request's. A front's watch
-carries the Boxes of the user it asserts. A watch on a front socket that
-asserts no identity, or one the socket may not assert, carries no events. A
-watch frame may also carry a `parent` Session id, which narrows the stream to
-events of that Session's child Sessions. It never widens what the viewer may
-see.
-
-A host Session belongs to the user who opens it. That user and the operator
-may list, show, update, end, and bind it, and start Boxes under it. Anyone else
-gets `not your Box`, as for a Session that does not exist, and their lists
-leave it out. A host Session the operator opens is the operator's only. An
-identity with no user gets `log in first` when it opens one.
-
-Only the operator names a host Session's `workdir`. The controller refuses
-anyone else who names one. Their Session gets a directory of its own under the
-controller's state, `users/<user>/sessions/<session>`, created owner-only. A
-`key` on `open-host-session` is the caller's own opaque name for the Session,
-at most 256 bytes. While the caller has a live host Session with that key,
-opening again returns it. A key never matches another user's Session.
-
-`env` reads the controller host's configs, so only the operator may send it.
-
-### Attach to a Box's terminal
-
-An `attach` request attaches a client to the Box agent's live terminal. The
-client's keys go to the session, and the screen comes back as bytes. The Box's
-owner or the operator may use it. Anyone else gets `not your Box`. An asleep
-Box is refused.
-
-The client detaches by closing its write side. The relay then ends with one of
-three reasons:
-
-- `client`: the client closed its side or went away.
-- `agent`: the agent's session ended.
-- `link`: the connection to the Box dropped, or the controller restarted.
-
-After the last client leaves, the agent's terminal returns to 200x120.
-
-### The agent's status in its terminal
-
-A Claude Code agent prints its status to its own terminal as a Program Status
-Protocol sequence, so any terminal runtime that understands it shows the state
-with no moor-specific client. The form is `ESC ] 7501 ; state=<state>:app=claude ESC \`,
-where `<state>` is `working`, `idle`, `done`, `blocked:kind=permission` or
-`blocked:kind=question`. Each state prints once, when it changes, and `done`
-prints when the agent exits.
-
-A client that attaches after the last change shows the status at once, not at
-the next transition. herdr-core keeps the last status and replays it to each
-client that attaches.
-
-## Secrets a Box uses
-
-Each Proxy rule names the secret it injects. A Box's Proxy injects the
-secrets of the Box's user only. The Proxy reads each secret from the vault on
-every request and keeps no copy, so a changed secret counts from the next
-request. After `moor user secret rm`, the next request that needs the secret
-fails, and the Box records `proxy_credential_failed`.
-
-The secret names come from the rules that apply to the Box. A Box on GitHub
-needs `claude` and `github`, and a rule you add under `proxy.rules` adds its
-own name. `moor start` refuses, before it creates anything, when the user
-lacks one of them. The refusal names every missing secret at once, in its
-`value.missing`. A front can ask first with `start-needs`, which answers with
-`needs` and `missing` for the caller and starts nothing:
-
-```json
-{"cmd": "start-needs", "identity": "slack:T1/U1", "repo": "acme/demo"}
-```
-
-A person who reaches moor only over MCP stores these secrets in a browser at
-the gate's `/me/secrets` page. See [Browser sign-in](mcp.md#browser-sign-in).
-
-`moor doctor` sends `start-needs` with the checkout's repo and reports each
-need as set or not set. For provider credentials it sends `provider-ready`,
-which runs `crabbox doctor --provider RUNTIME --json` on the controller host
-for each distinct node runtime and answers with the failed checks' `check`,
-`status` and `hint` only:
-
-```json
-{"cmd": "provider-ready"}
-```
-
-`spec.json`, the file the controller writes for each Proxy, names the user and
-the path of `vault.key`. It never holds a secret or the key itself. The Proxy
-loads the key with the same checks as the controller and never creates one.
-
-## Vault key
-
-The controller encrypts each user secret in `moor.db` with
-[age](https://age-encryption.org) to one X25519 key. The key is `vault.key`
-in the controller config's directory. The controller creates it with mode
-0600 on its first start.
-
-The controller refuses to start, and leaves the file as it is, when
-`vault.key` is a symlink, is not a regular file, belongs to another user, or
-is open to group or others. The controller also refuses a config inside the
-state directory, so the key never sits next to `moor.db`.
-
-### Back up the vault
-
-Back up `moor.db` and `vault.key`, and keep the two copies apart. Neither file
-alone gives a secret back. If you lose `vault.key`, every stored secret is
-lost, and each user must set them again.
-
-The encryption protects secrets in a copy of `moor.db`, such as a backup, a
-disk image, or a file attached to a bug report. It does not protect them from
-a process that runs as the controller's user, because that process can read
-`vault.key` too.
+- `MOOR_DATABASE_READERS` caps read connections, 4 by default.
+- The URL takes `sslmode` and `sslrootcert`, as libpq does.
+- One controller runs on a database at a time. The next waits on an advisory
+  lock and takes over when the holder exits.
