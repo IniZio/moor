@@ -11,28 +11,10 @@ use serde_json::{json, Value};
 use crate::gate::{Gate, Stream};
 use crate::token::Fail;
 
+use self::line::{disk_line, newest_worth, question_line, quiet_line, SAID};
+
 /// Every Box resource's URI starts with this.
 const PREFIX: &str = "moor://box/";
-
-/// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 13] = [
-    "idled",
-    "needs_input",
-    "agent_stalled",
-    "agent_resumed",
-    "node_disk_low",
-    "node_disk_recovered",
-    "setup_failed",
-    "session_failed",
-    "launch_timed_out",
-    "box_failed",
-    "relaunch_capped",
-    "disk_lost",
-    "closed",
-];
-
-/// Longest the line's agent text runs.
-const SAID: usize = 200;
 
 /// First wait after a lost stream.
 const FIRST: Duration = Duration::from_secs(2);
@@ -317,11 +299,7 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
         .call(token, "resources/read", json!({"uri": uri}))
         .ok()?;
     let status: Value = serde_json::from_str(read.pointer("/contents/0/text")?.as_str()?).ok()?;
-    let event = status.get("events")?.as_array()?.iter().rev().find(|e| {
-        e.get("kind")
-            .and_then(Value::as_str)
-            .is_some_and(|k| WORTH.contains(&k))
-    })?;
+    let event = newest_worth(status.get("events")?.as_array()?)?;
     let kind = event.get("kind")?.as_str()?;
     let key = format!("{uri}#{}", event.get("id")?);
     let name = uri.strip_prefix(PREFIX).unwrap_or(uri);
@@ -335,6 +313,7 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
     let payload = event.get("payload");
     let line = quiet_line(name, kind, payload)
         .or_else(|| disk_line(name, kind, payload))
+        .or_else(|| question_line(name, kind, payload))
         .unwrap_or_else(|| {
             said.map_or_else(
                 || format!("moor: box {name} {kind}"),
@@ -344,37 +323,4 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
     Some((key, line, kind == "closed"))
 }
 
-/// The line for a stall or its end, from the event's payload; none for other kinds.
-fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
-    let mins = payload?.get("quiet_secs")?.as_u64()? / 60;
-    match kind {
-        "agent_stalled" => {
-            let doing = payload?.get("doing").and_then(Value::as_str);
-            Some(doing.filter(|d| !d.is_empty()).map_or_else(
-                || format!("moor: box {name} stalled: no progress for {mins} min"),
-                |d| format!("moor: box {name} stalled: no progress for {mins} min while {d}"),
-            ))
-        }
-        "agent_resumed" => Some(format!("moor: box {name} resumed after {mins} min")),
-        _ => None,
-    }
-}
-
-/// The line for a node's disk running low or coming back; none for other kinds.
-fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
-    if kind == "disk_lost" {
-        return Some(format!(
-            "moor: box {name} disk_lost: its machine was replaced, so anything not pushed is gone"
-        ));
-    }
-    if !matches!(kind, "node_disk_low" | "node_disk_recovered") {
-        return None;
-    }
-    let payload = payload?;
-    let node = payload.get("node")?.as_str()?;
-    let free = payload.get("free_mib")?.as_u64()? / 1024;
-    let total = payload.get("total_mib")?.as_u64()? / 1024;
-    Some(format!(
-        "moor: box {name} {kind}: {node} has {free} GiB free of {total} GiB"
-    ))
-}
+mod line;
