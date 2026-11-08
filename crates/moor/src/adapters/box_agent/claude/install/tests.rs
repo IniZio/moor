@@ -15,7 +15,7 @@ const FAKE_CURL: &str = "#!/bin/sh\n\
 
 /// An installer that puts a working `claude` in `~/.local/bin`, as Anthropic's does.
 const INSTALLER: &str =
-    "mkdir -p \"$HOME/.local/bin\" && printf '#!/bin/sh\\n' >\"$HOME/.local/bin/claude\" \
+    "mkdir -p \"$HOME/.local/bin\" && printf '#!/bin/sh\\necho 2.1.319\\n' >\"$HOME/.local/bin/claude\" \
     && chmod +x \"$HOME/.local/bin/claude\" && echo ran >>\"$HOME/log\"\n";
 
 /// An installer that finishes without leaving the agent behind.
@@ -38,7 +38,7 @@ impl TestBox {
         moor_testkit::write_executable(&bin.join("curl"), FAKE_CURL).unwrap();
         for tool in [
             "sh", "bash", "mktemp", "rm", "cp", "cat", "chmod", "mkdir", "printf", "ls", "sort",
-            "tail", "ln",
+            "tail", "ln", "cut", "head",
         ] {
             let host = ["/usr/bin", "/bin"]
                 .iter()
@@ -115,9 +115,19 @@ fn a_box_with_the_agent_downloads_nothing() {
     let b = TestBox::new(INSTALLER);
     let dir = b.home.path().join(".local/bin");
     std::fs::create_dir_all(&dir).unwrap();
-    moor_testkit::write_executable(&dir.join("claude"), "#!/bin/sh\n").unwrap();
+    moor_testkit::write_executable(&dir.join("claude"), "#!/bin/sh\necho 2.1.295\n").unwrap();
     assert_eq!(b.run(&[]).1, 0);
     assert_eq!(b.log(), "");
+}
+
+#[test]
+fn an_agent_too_old_to_report_its_status_is_replaced_by_the_installer() {
+    let b = TestBox::new(INSTALLER);
+    let dir = b.home.path().join(".local/bin");
+    std::fs::create_dir_all(&dir).unwrap();
+    moor_testkit::write_executable(&dir.join("claude"), "#!/bin/sh\necho 2.1.294\n").unwrap();
+    assert_eq!(b.run(&[]).1, 0);
+    assert!(b.log().contains("ran"), "{}", b.log());
 }
 
 #[test]
@@ -180,7 +190,7 @@ fn the_install_names_the_directory_that_holds_it() {
     assert_eq!(native().dirs, ["~/.local/share/claude"]);
 }
 
-const VERSION_BIN: &str = "#!/bin/sh\necho 1.2.3\n";
+const VERSION_BIN: &str = "#!/bin/sh\necho 2.1.319\n";
 
 impl TestBox {
     /// Puts a cached version `name` in the install directory, as a restored cache volume does.
