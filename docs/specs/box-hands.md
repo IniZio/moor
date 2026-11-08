@@ -1,104 +1,76 @@
 # Box hands
 
-A Box's agent survives heavy work in its own Box. The agent can change
-`.moor.yaml` and see the result without asking a person.
+A Box is its identity plus its agent session. The VM is the Box's hands. Hands
+can die, starve or need rebuilding. The session should carry on in new hands.
 
-A Box is its identity plus its session. Both already live with the controller.
-The store holds `agent_session_id`, and the blob store holds transcripts. The VM
-is the Box's hands. Hands can be starved, rebuilt or swapped while the session
-carries on.
+Today the session is pinned to one VM. This charter makes it portable, then
+builds the pieces that depend on that.
 
-## Problems today
+## Today
 
-- The agent shares the guest with the work it starts. No cgroup, OOM score or
-  CPU weight protects `hc` or claude. A build that fills guest memory can make
-  the guest kernel kill the agent first.
-- moor reads `.moor.yaml` from GitHub when the Box starts and keeps that copy for
-  the Box's life. `retry_box` works only on a `SetupFailed` Box, and reuses the
-  stored copy.
-- The agent has no moor tools in the Box. It cannot test a setup change, so a
-  broken `.moor.yaml` surfaces in the next teammate's Box.
+- The store holds `agent_session_id`. Claude's own history sits in
+  `~/.claude/projects` on the Box disk. Relaunch needs that disk for `--resume`.
+- Transcripts reach the blob store on exit, turn, relaunch and close. Nothing
+  restores them, so after `disk_lost` the conversation is gone.
+- `box.node` is set once. A Box never moves to another node.
+- moor learns agent state from a hook file and pane text read over ssh. Liveness
+  is inferred. Unreachable for 300 s counts as ended, and busy with no hook for
+  600 s counts as stalled.
+- Box, session and link carry no generation. Stale work is kept out by a
+  host-local Box lock, `UNIQUE(box, ordinal)` and re-checks after the lock.
+- A steer to an asleep Box with no live session is refused. Only `start` holds
+  a prompt durably.
+- The agent in a Box has no moor tools, so it cannot test a `.moor.yaml` change.
 
 ## Decisions
 
 | Decision | Reason |
 | --- | --- |
-| claude stays in the guest | Claude Code runs Bash, Read and Edit where it runs. Moving it out means replacing its tools and couples moor to one harness. |
-| Guest slices protect the agent | Cheapest fix. Host-side suspend already handles host pressure, and nothing handles guest pressure. |
-| Rebox swaps hands, keeps the session | Same Box id, thread and session. New VM from the branch's `.moor.yaml`, then `--resume`. |
-| Setup test runs in a scratch Box | The agent's own session is never at risk from a broken setup. |
-| Box tools reach only the Box's own repo and branch | Scoped in the Proxy, so a Box cannot start Boxes for other repos. |
-| Rebox and setup test read the pushed branch | One source for `.moor.yaml`. No upload of guest files. |
+| The session lives with the controller, not the VM | Hands can then be swapped, moved or rebuilt without losing the conversation. |
+| Restore Claude's own session files, not a text replay | Replaying recent events as a prompt drops context. `--resume` keeps all of it. |
+| Every agent run gets a generation | Stale relaunch, wake and sweep work is dropped by number, not by re-checks. |
+| Steers go to a durable inbox per Box | A sender never waits on a wake and never gets refused for a sleeping Box. |
+| Agent events reach moor as a sequenced stream through `hc` | Exit and status arrive as events. A reader that reconnects replays what it missed. |
+| Box tools use grants that cannot widen | A Box can act on its own repo and branch only. |
+| claude stays in the guest under `hc` | Claude Code runs its tools where it runs. |
 
-## Guest slices
+## Steps
+
+Each step ends in a run on a real Box.
+
+1. **Portable session.** Archive `~/.claude/projects` for the session with each
+   transcript save. Restore it onto a fresh VM before launch, then `--resume`.
+   Proof. Close a Box's VM mid-conversation, start it on a new VM, and its next
+   turn recalls the earlier turns.
+2. **Box inbox.** A steer is stored, then delivered once the agent is ready.
+   Delivery is at least once, keyed by message id. Proof. Steer an asleep Box
+   and a Box whose agent died. Both get the message exactly once.
+3. **Run generation.** Each launch bumps a generation on the session. Wake,
+   relaunch, settle and delivery carry it, and a stale one is dropped. Proof.
+   Two racing relaunches start one agent. Then the re-check guards it covers go.
+4. **Event stream.** `hc` forwards the agent's status as numbered events. moor
+   reads from its last number after a reconnect. Proof. Kill the link mid-turn,
+   reconnect, and no status change is lost or repeated. Then hook-file and pane
+   polling go.
+5. **Box tools.** A grant scoped to the Box's repo and branch. Setup test
+   starts a throwaway Box from the branch and returns the setup log. Rebox moves
+   the session into hands built from the branch's `.moor.yaml`. Proof. A Box breaks and fixes its `.moor.yaml`, then reboxes
+   and keeps its conversation.
 
 ```
-guest
-├─ moor-agent.slice   hc, claude, hooks   memory.min, cpu.weight high, oom_score_adj -1000
-└─ work.slice         everything the agent starts   memory.max = guest RAM - agent reserve
+1 portable session ──▶ 5 rebox, node moves, disk_lost recovery
+2 inbox         ┐
+3 generation    ├ independent, any order
+4 event stream  ┘
 ```
 
-Claude's Bash children move into `work.slice` so builds and tests never count
-against the agent's reserve.
+## Not in scope
 
-Proof. stress-ng fills guest memory and CPU in a real Box. The agent still
-answers a steer within 10 s. The OOM kill lands in `work.slice`. Measured
-before and after on the same Box size.
+- Replacing Claude Code's terminal with an agent protocol adapter.
+- A new storage layer. Checkpoints and the blob store cover what is needed.
+- Moving claude out of the guest.
 
-## Rebox
+## To prove before step 1 code
 
-```
-agent pushes branch ─▶ rebox(box)
-  controller: read .moor.yaml at branch head
-  provision new VM (setup, caches, checkpoints as a start)
-  restore Claude session store from latest transcript save
-  launch agent with --resume, tell it the hands changed
-  retire old VM
-```
-
-Rebox fails closed. If setup fails on the new VM, the old VM keeps running and
-the agent hears the setup log.
-
-Proof. A real Box edits `.moor.yaml`, pushes and reboxes. Its next turn
-sees the new setup with its conversation intact.
-
-## Setup test
-
-`test_setup(branch)` starts a scratch Box from the branch, runs setup only,
-returns pass or fail with the setup log, and closes the scratch Box. It counts
-against the same capacity as any Box.
-
-Proof. A real Box breaks `.moor.yaml` and gets the failing log back. It fixes
-the file and gets a pass. The scratch Box is gone in both cases.
-
-## Guards today
-
-Agents already die in practice. moor answers with guards keyed on "pane gone or
-silent", never on a guest OOM kill.
-
-| Guard | With slices | With rebox |
-| --- | --- | --- |
-| `revive` relaunch on wake or steer | fires rarely | replaced by a swap when the guest is gone |
-| 300 s unreachable counts as ended (`link::recover`) | fires rarely | replaced by a swap |
-| `relaunch_capped`, 3 per 10 min | kept, crash-loop breaker | kept |
-| transcript archive deadlines, 15 s and 60 s | can shrink | kept, last pull before swap |
-| `agent_stalled` after 600 s | kept | candidate swap trigger |
-
-Reattach, `await_guest`, `resume_owed`, `tell_after_suspend` and the transcript
-saves stay. They handle link loss and host-pressure suspend, not agent death.
-
-## Order
-
-1. Guest slices. No dependency.
-2. Setup test. Needs the Box tool path through the Proxy.
-3. Rebox. Reuses the setup test's tool path and the transcript save.
-
-## Settled
-
-- Rebox reads the pushed branch only. It refuses while the Box has unpushed work.
-- Agent reserve comes from the stress-ng measurement, not a guess.
-
-## To prove before rebox code
-
-- Restoring the Claude session store from the transcript archive gives a working
-  `--resume` on a new VM.
+- Restoring `~/.claude/projects` onto a new VM with the same work tree path
+  gives a working `--resume`.
