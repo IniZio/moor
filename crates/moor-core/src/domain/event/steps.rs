@@ -27,14 +27,12 @@ pub fn lifecycle_events(
         BoxLifecycleInput::Ready { setup } => match setup {
             SetupOutcome::Ok => vec![Event::Working],
             SetupOutcome::Failed { line } => {
-                vec![Event::Working, Event::SetupFailed { line: line.clone() }]
+                vec![Event::Working, setup_failed(line.clone())]
             }
         },
         BoxLifecycleInput::WorkingSetupFailed { cause }
         | BoxLifecycleInput::SetupFailed { cause, which: None } => {
-            vec![Event::SetupFailed {
-                line: cause.clone(),
-            }]
+            vec![setup_failed(cause.clone())]
         }
         BoxLifecycleInput::SetupFailed {
             cause,
@@ -44,9 +42,7 @@ pub fn lifecycle_events(
                 which: which.clone(),
                 error: cause.clone(),
             },
-            Event::SetupFailed {
-                line: cause.clone(),
-            },
+            setup_failed(cause.clone()),
         ],
         BoxLifecycleInput::Sleep { auto, reason } => vec![Event::Asleep {
             auto: *auto,
@@ -64,6 +60,14 @@ pub fn lifecycle_events(
             from: origin,
             reason: reason.clone(),
         }],
+    }
+}
+
+/// A `setup_failed` event for `line` that says nothing more.
+fn setup_failed(line: impl Into<String>) -> Event {
+    Event::SetupFailed {
+        line: line.into(),
+        why: None,
     }
 }
 

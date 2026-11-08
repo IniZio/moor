@@ -29,6 +29,9 @@ pub enum Event {
     SetupFailed {
         /// The failing output line or cause.
         line: String,
+        /// Why the line failed: its exit code, the end of its output and what the Proxy withheld.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        why: Option<String>,
     },
     /// A credential could not be delivered.
     CredentialFailed {

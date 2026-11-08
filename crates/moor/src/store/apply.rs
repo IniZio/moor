@@ -122,7 +122,11 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreEr
         (None, Some(s)) => session_events(s),
         (None, None) => Vec::new(),
     };
-    for e in &with_cache_save(stepped, d.cache_save) {
+    let stepped = with_setup_why(
+        with_cache_save(stepped, d.cache_save),
+        d.setup_why.as_deref(),
+    );
+    for e in &stepped {
         ids.push(insert_event(tx, id, e, now)?);
     }
     let mut events = Vec::new();
@@ -188,6 +192,16 @@ fn with_cache_save(mut events: Vec<Event>, save: Option<CacheSave>) -> Vec<Event
     for e in &mut events {
         if let Event::Asleep { cache_save, .. } = e {
             *cache_save = save;
+        }
+    }
+    events
+}
+
+/// `events` with a `setup_failed` event saying why its line failed.
+fn with_setup_why(mut events: Vec<Event>, why: Option<&str>) -> Vec<Event> {
+    for e in &mut events {
+        if let Event::SetupFailed { why: slot, .. } = e {
+            *slot = why.map(str::to_owned);
         }
     }
     events

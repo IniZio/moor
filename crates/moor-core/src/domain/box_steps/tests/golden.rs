@@ -345,7 +345,10 @@ fn golden_setup_failure_with_credential_reports_both_events() {
                 which: "w".into(),
                 error: "e".into(),
             },
-            Event::SetupFailed { line: "e".into() },
+            Event::SetupFailed {
+                line: "e".into(),
+                why: None
+            },
         ]
     );
 }
@@ -354,7 +357,13 @@ fn golden_setup_failure_with_credential_reports_both_events() {
 fn golden_setup_failure_without_credential_reports_one_event() {
     let l = failed("c", None);
     let got = lifecycle_events(Some(B::SettingUp), B::SetupFailed, &l);
-    assert_eq!(got, vec![Event::SetupFailed { line: "c".into() }]);
+    assert_eq!(
+        got,
+        vec![Event::SetupFailed {
+            line: "c".into(),
+            why: None
+        }]
+    );
 }
 
 #[test]
@@ -421,7 +430,13 @@ fn golden_ready_events_report_a_failed_setup_line() {
     );
     assert_eq!(
         bad,
-        vec![Event::Working, Event::SetupFailed { line: "l".into() }]
+        vec![
+            Event::Working,
+            Event::SetupFailed {
+                line: "l".into(),
+                why: None
+            }
+        ]
     );
 }
 

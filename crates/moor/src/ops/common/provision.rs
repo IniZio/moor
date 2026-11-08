@@ -302,12 +302,9 @@ fn run_and_record(
     }
     let install_failed = installed.is_err();
     let outcome = step_outcome(&run, installed);
-    let failed_at = if matches!(outcome, SetupOutcome::Failed { .. }) {
-        Field::Set(cx.clock().now().as_millis())
-    } else {
-        Field::Clear
-    };
+    let failed_at = stamped_when_failed(cx, &outcome);
     let done = setup_ended(done, advance, outcome)
+        .setup_why(why::setup_why(store, id, &run))
         .set(Fields {
             setup_failed_at: failed_at,
             steps_pending_at: Field::Clear,
@@ -322,6 +319,14 @@ fn run_and_record(
         install_failed,
         warm_disk,
     })
+}
+
+/// `setup_failed_at` for a setup that ended in `outcome`: now when it failed, else cleared.
+fn stamped_when_failed(cx: &Cx, outcome: &SetupOutcome) -> Field<i64> {
+    match outcome {
+        SetupOutcome::Failed { .. } => Field::Set(cx.clock().now().as_millis()),
+        SetupOutcome::Ok => Field::Clear,
+    }
 }
 
 mod acquired;
@@ -343,6 +348,7 @@ mod retry;
 mod setup_run;
 mod target;
 mod warm_rerun;
+mod why;
 pub(crate) use warm_rerun::warm_disk_note;
 #[cfg(test)]
 mod tests;

@@ -42,7 +42,10 @@ fn all_events() -> Vec<Event> {
             from: BoxLifecycle::Checking,
         },
         Event::Working,
-        Event::SetupFailed { line: s("l") },
+        Event::SetupFailed {
+            line: s("l"),
+            why: None,
+        },
         Event::CredentialFailed {
             which: s("w"),
             error: s("e"),

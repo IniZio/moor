@@ -53,7 +53,7 @@ impl TryFrom<Event> for ExtraEvent {
                 prompt,
                 cause,
             }),
-            Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
+            Event::SetupFailed { line, .. } => Ok(Self::SetupFailed { line }),
             Event::Timing(TimingEvent::SetupFinished { ms, ok }) => {
                 Ok(Self::SetupFinished { ms, ok })
             }
