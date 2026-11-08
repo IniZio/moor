@@ -29,8 +29,9 @@ flowchart TD
 	B -- no --> B1[print: add yourself to kvm group] --> X[exit 1]
 	B -- yes --> C{crabbox provider ready?}
 	C -- no --> C1[run: crabbox-cloudhypervisor install] --> C
-	C -- yes --> D[write controller and user config<br/>local node, pty surface if no herdr]
+	C -- yes --> D[write controller and user config<br/>local node]
 	D --> E[install and start user service]
+	%% pty is the only surface, so no terminal tool to install
 	E --> F[enroll local user]
 	F --> G{claude and github secrets set?}
 	G -- no --> G1[prompt: claude setup-token, gh auth token]
@@ -75,6 +76,7 @@ Start fix-typo on acme/web?
 
 ## Decisions
 
+- **One path per concern.** No fallbacks between equivalent mechanisms. pty is the only surface, hc the only holder, and each provider checks its own host needs.
 - **One bootstrap verb per binary.** `moor up` and `moor-machine-agent up`. Both converge to the same end state on rerun.
 - **Each provider installs its own stack.** `crabbox-cloudhypervisor install` fetches the pinned cloud-hypervisor and passt. crabbox core knows no provider binaries. moor only checks readiness.
 - **Pair by code through the gate.** Works headless and with any OIDC issuer. Replaces the `localhost:53682` callback and `--paste`.
@@ -92,7 +94,7 @@ Start fix-typo on acme/web?
 | --- | --- | --- |
 | 1 | `install.sh` installs only `moor`. Release lacks `moor-egress-forward`, so the first Box fails late. | Ship it in the tarball. Install the operator set by default. |
 | 2 | `moor doctor` skips KVM, `moor-egress-forward` and crabbox config checks. | Add the checks. Controller logs node and provider state at start. |
-| 3 | Default surface is herdr. A plain host fails without it. | Pick pty when herdr is absent. |
+| 3 | Default surface is herdr. A plain host fails without it. Two surfaces and two holders are kept alive. | One path each. pty is the only surface and is always built. hc is the only holder. |
 | 4 | No bootstrap command. | `moor up`. |
 | 5 | Provider stack built from source. | `crabbox-cloudhypervisor install`. |
 | 6 | Agent join needs flags twice, browser loopback and hand-run supervision. | `moor-machine-agent up`, pairing code, user service. |
