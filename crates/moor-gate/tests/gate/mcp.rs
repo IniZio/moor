@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 
 use super::{claims, mpsc, now, sign, world_with, World};
 
+mod exec;
 mod inspect;
 mod tool_list;
 mod webhook;
@@ -40,16 +41,16 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                     let box_name = inner["name"].as_str().or_else(|| inner["box"].as_str());
                     let cmd = inner["cmd"].as_str().unwrap_or_default();
                     if cmd == "start" {
-                        started.lock().unwrap().insert(box_name.unwrap().to_owned());
-                        if box_name.unwrap().ends_with("/slow") {
-                            std::thread::sleep(std::time::Duration::from_secs(3));
-                        }
+                        note_start(&started, box_name.unwrap());
                     }
                     if cmd == "show"
                         && inner["box"].is_string()
                         && !is_known(&started, box_name.unwrap())
                     {
                         writeln!(reply, "{}", not_found(&frame["id"])).unwrap();
+                        continue;
+                    }
+                    if exec::answer(&frame, &mut reply) {
                         continue;
                     }
                     if let Some(early) = inspect::early(cmd, inner, &frame["id"]) {
@@ -78,6 +79,14 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
         }
     });
     rx
+}
+
+/// Remembers that Box `name` started; a `/slow` one takes three seconds to.
+fn note_start(started: &Mutex<HashSet<String>>, name: &str) {
+    started.lock().unwrap().insert(name.to_owned());
+    if name.ends_with("/slow") {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
 }
 
 /// A `show` of one Box by name, which `start_box` sends to see whether the Box exists yet.

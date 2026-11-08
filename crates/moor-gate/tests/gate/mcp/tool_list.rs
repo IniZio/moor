@@ -24,6 +24,7 @@ fn the_tools_are_listed() {
             "box_status",
             "close_box",
             "close_failed_boxes",
+            "exec_in_box",
             "get_artifact",
             "inspect_box",
             "list_boxes",

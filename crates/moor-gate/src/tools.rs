@@ -21,6 +21,7 @@ use crate::{rewrite, Person};
 
 mod artifact;
 mod events;
+mod exec;
 pub(crate) use events::{fetch, EventsArgs};
 pub(crate) use listen::client_down;
 mod failed;
@@ -343,6 +344,27 @@ pub(crate) fn act_as(
     send(controller, person, request, Reply::AsIs)
 }
 
+/// Makes `person` a moor user if they are not one yet.
+fn enroll(client: &Client, person: &Person) -> Result<(), String> {
+    let enroll = ControllerRequest::Enroll(EnrollReq {
+        identity: None,
+        email: None,
+    });
+    call(client, person, enroll).and_then(|reply| answer(&reply))
+}
+
+/// Runs `request` as `person`; the controller's answer, refusal or not.
+fn call(
+    client: &Client,
+    person: &Person,
+    request: ControllerRequest,
+) -> Result<ControllerResponse, String> {
+    let acting = rewrite::act(request, person)?;
+    client
+        .request(acting, |_| {})
+        .map_err(|e| format!("the controller is unreachable: {e}"))
+}
+
 /// Enrolls `person`, then runs `request` as them; the controller's value, or why not.
 fn send(
     client: &Client,
@@ -350,21 +372,12 @@ fn send(
     request: ControllerRequest,
     reply: Reply,
 ) -> Result<Value, String> {
-    let enroll = ControllerRequest::Enroll(EnrollReq {
-        identity: None,
-        email: None,
-    });
-    let call = |request| {
-        let acting = rewrite::act(request, person)?;
-        client
-            .request(acting, |_| {})
-            .map_err(|e| format!("the controller is unreachable: {e}"))
-    };
+    let call = |request| call(client, person, request);
     let ask = |request| {
         let reply = call(request)?;
         answer(&reply).map(|()| reply.value.unwrap_or_default())
     };
-    ask(enroll)?;
+    enroll(client, person)?;
     let answered = call(request)?;
     answer(&answered).map_err(|why| reply.refused(why, &answered))?;
     let mut value = answered.value.unwrap_or_default();
