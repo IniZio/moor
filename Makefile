@@ -120,7 +120,6 @@ format:
 unit:
 	$(MAKE) --no-print-directory -j2 -O unit-nextest unit-doc
 
-# PARTITION=count:1/3 runs the first third of the tests, so CI can spread them over jobs.
 unit-nextest:
 	cargo nextest run --workspace --all-targets --locked $(if $(PARTITION),--partition $(PARTITION))
 
