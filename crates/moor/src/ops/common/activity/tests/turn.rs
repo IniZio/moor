@@ -32,6 +32,7 @@ pub(super) fn steer_after(cx: &Cx, id: BoxId, turn_before: Option<u64>) -> i64 {
         message: "go".to_owned(),
         submit_retried: false,
         turn_before,
+        status_before: None,
     };
     let applied = cx
         .store()

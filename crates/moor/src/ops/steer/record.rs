@@ -11,6 +11,8 @@ use crate::store::{SessionRow, Store};
 pub(super) struct Mark {
     /// The ended-turn count of the agent's terminal the steer's turn must pass.
     pub(super) turn_before: Option<u64>,
+    /// When the status the agent showed was set, when no turn was running.
+    pub(super) status_before: Option<i64>,
     /// Whether the submit key was pressed a second time.
     pub(super) submit_retried: bool,
 }
@@ -29,6 +31,7 @@ pub(super) fn record(
         message: message.to_owned(),
         submit_retried: mark.submit_retried,
         turn_before: mark.turn_before,
+        status_before: mark.status_before,
     };
     let applied = store.apply(Decision::new(id).event(event))?;
     applied

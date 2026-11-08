@@ -8,6 +8,7 @@ use moor_core::activity::{Activity, AgentState, Source, Status, Term};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
@@ -224,6 +225,7 @@ fn attempt(
     let starts_turn = !(matches!(steer, Steer::Interrupt) && idle(reading.term.as_ref()));
     let mark = Mark {
         turn_before: turn_before(reading.term.as_ref(), &steer).filter(|_| starts_turn),
+        status_before: status_before(reading.term.as_ref()).filter(|_| starts_turn),
         submit_retried: outcome.submit_retried,
     };
     let steer_id = record(store, id, &session, &sent, mark)?;
@@ -295,6 +297,13 @@ fn turn_before(term: Option<&Term>, steer: &Steer) -> Option<u64> {
     let working = matches!(term.status, Some(Status::Working { .. }));
     let queued = working && matches!(steer, Steer::Text(_));
     Some(term.turn + u64::from(queued))
+}
+
+/// When the status of an agent not working was set: any later status that is not working ends
+/// the steer's turn, even one that ends no turn, such as an interrupted question.
+fn status_before(term: Option<&Term>) -> Option<i64> {
+    let term = term.filter(|t| !matches!(t.status, Some(Status::Working { .. })))?;
+    term.status_at.map(Ts::as_millis)
 }
 
 /// Whether the agent's terminal reports no turn running, so an interrupt has nothing to stop.

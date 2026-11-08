@@ -348,6 +348,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
         message: "go".to_owned(),
         submit_retried: false,
         turn_before: None,
+        status_before: None,
     };
     cx.store()
         .unwrap()
