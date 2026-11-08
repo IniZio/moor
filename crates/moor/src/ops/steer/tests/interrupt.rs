@@ -87,3 +87,24 @@ fn an_interrupt_to_an_idle_agent_leaves_its_session_idle() {
         "the interrupt is answered at the next read"
     );
 }
+
+#[test]
+fn an_interrupt_that_leaves_a_blocked_agent_idle_ends_its_turn() {
+    use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
+
+    let asking = agent::at_turn(agent::permission("Allow?", Ts::from_millis(1_000)), 5);
+    let f = fx_with(FakeEngine::new().probes("agent-1", asking), true);
+    run(&f.cx, &interrupt()).unwrap();
+    let after = agent::at_turn(agent::idle(Ts::from_millis(2_000)), 5);
+    f.engine.set_probes("agent-1", after);
+    let store = f.cx.store().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
+    let reading = read(&f.cx, store, &row, f.cx.clock().now(), PROBE_DEADLINE).unwrap();
+    settle(&f.cx, store, &row, &reading).unwrap();
+    assert!(
+        store.unanswered_steer(f.id).unwrap().is_none(),
+        "the idle status hc set after the interrupt ends the turn"
+    );
+    let row = store.box_row(f.id).unwrap().unwrap();
+    assert!(row.session.is_quiet(), "the Box goes idle");
+}

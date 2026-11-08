@@ -67,6 +67,7 @@ fn steered(cx: &Cx, id: BoxId) {
         message: "go".to_owned(),
         submit_retried: false,
         turn_before: None,
+        status_before: None,
     };
     cx.store()
         .unwrap()

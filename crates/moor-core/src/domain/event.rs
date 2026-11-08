@@ -238,6 +238,10 @@ pub enum Event {
         /// The ended-turn count of the agent's terminal the steer's turn must pass.
         #[serde(skip_serializing_if = "Option::is_none")]
         turn_before: Option<u64>,
+        /// When the status the agent showed at the send was set, on the Box's clock, in
+        /// milliseconds; none when a turn was running then.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_before: Option<i64>,
     },
     /// The Proxy for the box is ready to accept connections.
     ProxyStarted {

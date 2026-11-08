@@ -104,6 +104,7 @@ impl Rig {
             message: "go".to_owned(),
             submit_retried: false,
             turn_before,
+            status_before: None,
         };
         let store = self.cx.store().unwrap();
         store.apply(Decision::new(self.id).event(event)).unwrap();

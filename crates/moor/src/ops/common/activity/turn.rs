@@ -59,6 +59,7 @@ fn answer(
                 Some(Status::Working { .. }) | None => TurnSignal::Other,
             },
             turn: t.turn,
+            status_at: t.status_at.map(Ts::as_millis),
         }),
         exited: reading.pane == PaneLiveness::Exited,
     };

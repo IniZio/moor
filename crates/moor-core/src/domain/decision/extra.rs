@@ -359,6 +359,9 @@ pub enum ExtraEvent {
         submit_retried: bool,
         /// The ended-turn count of the agent's terminal the steer's turn must pass.
         turn_before: Option<u64>,
+        /// When the status the agent showed at the send was set, on the Box's clock; none when
+        /// a turn was running then.
+        status_before: Option<i64>,
     },
     /// The agent finished the turn a steer started.
     TurnDone {

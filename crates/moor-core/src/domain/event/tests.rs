@@ -136,6 +136,7 @@ fn all_events() -> Vec<Event> {
             message: s("m"),
             submit_retried: true,
             turn_before: Some(4),
+            status_before: None,
         },
         Event::ProxyStarted {
             box_port: 1,

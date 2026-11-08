@@ -197,6 +197,7 @@ impl Store {
         Ok(Some(SteerMark {
             id: steer.id,
             turn_before: steer.payload.get("turn_before").and_then(Value::as_u64),
+            status_before: steer.payload.get("status_before").and_then(Value::as_i64),
         }))
     }
 

@@ -21,6 +21,8 @@ pub struct SteerMark {
     pub id: i64,
     /// The ended-turn count the steer's turn must pass; none when the send could not tell.
     pub turn_before: Option<u64>,
+    /// When the status the agent showed at the send was set; none when a turn was running.
+    pub status_before: Option<i64>,
 }
 
 /// The agent's terminal now.
@@ -30,6 +32,8 @@ pub struct TermTurn {
     pub signal: TurnSignal,
     /// How many turns have ended.
     pub turn: u64,
+    /// When its status was set.
+    pub status_at: Option<i64>,
 }
 
 /// What the turn decider can observe.
@@ -46,7 +50,7 @@ pub struct TurnFacts {
 /// The steer's event id and outcome once the turn it belongs to is done.
 ///
 /// An exit wins. Otherwise an idle or blocked terminal counts once its ended turns are past the
-/// steer's mark.
+/// steer's mark, and an idle one also once its status was set after the one the steer saw.
 #[must_use]
 pub fn turn_done(f: &TurnFacts) -> Option<(i64, TurnOutcome)> {
     let steer = f.steer?;
@@ -54,7 +58,11 @@ pub fn turn_done(f: &TurnFacts) -> Option<(i64, TurnOutcome)> {
         return Some((steer.id, TurnOutcome::Exited));
     }
     let term = f.term?;
-    if steer.turn_before.is_some_and(|before| term.turn <= before) {
+    let moved = term.signal == TurnSignal::Idle
+        && steer
+            .status_before
+            .is_some_and(|before| term.status_at.is_some_and(|at| at != before));
+    if !moved && steer.turn_before.is_some_and(|before| term.turn <= before) {
         return None;
     }
     match term.signal {

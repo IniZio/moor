@@ -116,6 +116,7 @@ fn unanswered_steer_is_the_newest_steer_without_turn_done() {
         Some(SteerMark {
             id: newest,
             turn_before: None,
+            status_before: None,
         })
     );
 }
@@ -131,6 +132,7 @@ fn unanswered_steer_reads_the_turn_count_before_the_send() {
         Some(SteerMark {
             id: steer,
             turn_before: Some(7),
+            status_before: None,
         })
     );
 }

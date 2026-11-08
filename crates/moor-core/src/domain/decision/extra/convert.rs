@@ -214,11 +214,13 @@ impl From<ExtraEvent> for Event {
                 message,
                 submit_retried,
                 turn_before,
+                status_before,
             } => Self::Steered {
                 session,
                 message,
                 submit_retried,
                 turn_before,
+                status_before,
             },
             ExtraEvent::TurnDone { steer, outcome } => Self::TurnDone { steer, outcome },
             ExtraEvent::ProxyStarted {
