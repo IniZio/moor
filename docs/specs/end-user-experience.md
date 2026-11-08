@@ -130,7 +130,7 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 | --- | --- | --- |
 | Join | Secrets only in Slack `/moor login`. No page at `HOST`. | Account page, then Slack points to it. |
 | Start | Works from Claude Code and Slack. Node shown. | None. |
-| Watch | Claude Code, Slack and herdr show state. | hc client view once connect exists. |
+| Watch | Claude Code, Slack and herdr show state. Claude Code hears Box events only through the moor plugin, which runs the dev CLI's `moor listen`. | Events over the HTTP MCP connection, so no CLI is needed. hc client view once connect exists. |
 | Take over | herdr plugin, or dev CLI `moor exec`. | Open 1. |
 | Result | Branch, artifacts, sleep. | None. |
 | Close | Any front. | None. |
