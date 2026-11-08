@@ -19,7 +19,7 @@ export interface Account {
 	csrf: string;
 	secrets: Secret[];
 	machines: { nodes: Node[]; at: number };
-	connect: { mcp_url: string | null };
+	connect: { mcp_url: string | null; server_url: string };
 }
 
 /** Thrown when the session ended; the page offers sign-in again. */

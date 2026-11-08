@@ -62,6 +62,8 @@ struct View<'a> {
 struct Connect<'a> {
     /// The MCP endpoint to add to Claude Code, when this gate serves one.
     mcp_url: Option<&'a str>,
+    /// This gate's public origin, which `moor-machine-agent up --server` takes.
+    server_url: &'a str,
 }
 
 /// The body of a secret write.
@@ -86,7 +88,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, _) if p.starts_with(ASSETS) => {
             file(&mut stream, p.trim_start_matches("/account/"), "");
         }
-        ("GET", API, Some(session)) => show(&mut stream, gate, &session),
+        ("GET", API, Some(session)) => show(&mut stream, gate, login, &session),
         ("PUT", p, session) if p.starts_with(SECRETS) => {
             // Read the body before any answer: closing on unread bytes resets the connection
             // and the browser never sees the status.
@@ -151,7 +153,7 @@ fn failed(stream: &mut TcpStream, what: &str, why: &str) {
 }
 
 /// The page's data for the session's person, asked of the controller as them.
-fn show(stream: &mut TcpStream, gate: &Gate, session: &Session) {
+fn show(stream: &mut TcpStream, gate: &Gate, login: &Login, session: &Session) {
     let secrets = match rows(gate, session) {
         Ok(rows) => rows,
         Err(why) => return failed(stream, "secrets", &why),
@@ -173,6 +175,7 @@ fn show(stream: &mut TcpStream, gate: &Gate, session: &Session) {
         machines,
         connect: Connect {
             mcp_url: gate.mcp.as_ref().map(crate::Mcp::resource_url),
+            server_url: login.public(),
         },
     };
     json(stream, "200 OK", &json!(view));
