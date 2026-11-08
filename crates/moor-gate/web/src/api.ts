@@ -1,39 +1,48 @@
-export interface Secret {
-	name: string;
-	linked: boolean;
-}
+import * as v from 'valibot';
 
-export interface Node {
-	name: string;
-	scope: 'shared' | 'personal';
-	runtime: string;
-	online: boolean;
-	offline_since?: number;
-	used: number;
-	max_boxes?: number;
-	mem_free_mib?: number;
-}
+const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
 
-export interface Account {
-	email: string;
-	csrf: string;
-	secrets: Secret[];
-	machines: { nodes: Node[]; at: number };
-	connect: { mcp_url: string | null; server_url: string };
-}
+const NodeSchema = v.object({
+	name: v.string(),
+	scope: v.picklist(['shared', 'personal']),
+	runtime: v.string(),
+	online: v.boolean(),
+	offline_since: v.optional(v.number()),
+	used: v.number(),
+	max_boxes: v.optional(v.number()),
+	mem_free_mib: v.optional(v.number()),
+});
+
+const AccountSchema = v.object({
+	email: v.string(),
+	csrf: v.string(),
+	secrets: v.array(SecretSchema),
+	machines: v.object({ nodes: v.array(NodeSchema), at: v.number() }),
+	connect: v.object({ mcp_url: v.nullable(v.string()), server_url: v.string() }),
+});
+
+const FailureSchema = v.object({ error: v.string() });
+
+export type Secret = v.InferOutput<typeof SecretSchema>;
+export type Node = v.InferOutput<typeof NodeSchema>;
+export type Account = v.InferOutput<typeof AccountSchema>;
 
 /** Thrown when the session ended; the page offers sign-in again. */
 export class SignedOut extends Error {}
 
-async function answer(res: Response): Promise<unknown> {
+/** The gate's answer parsed as `schema`, or why it is not one. */
+async function answer<T extends v.GenericSchema>(res: Response, schema: T): Promise<v.InferOutput<T>> {
 	if (res.status === 401) throw new SignedOut();
-	const body = await res.json().catch(() => ({}));
-	if (!res.ok) throw new Error(body.error ?? `The gate answered ${res.status}.`);
-	return body;
+	const body: unknown = await res.json().catch(() => null);
+	if (!res.ok) {
+		const failure = v.safeParse(FailureSchema, body);
+		throw new Error(failure.success ? failure.output.error : `The gate answered ${res.status}.`);
+	}
+	return v.parse(schema, body);
 }
 
 export async function load(): Promise<Account> {
-	return (await answer(await fetch('/account/api'))) as Account;
+	return answer(await fetch('/account/api'), AccountSchema);
 }
 
 export async function link(csrf: string, name: string, value: string): Promise<Secret> {
@@ -42,7 +51,7 @@ export async function link(csrf: string, name: string, value: string): Promise<S
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
 		body: JSON.stringify({ value }),
 	});
-	return (await answer(res)) as Secret;
+	return answer(res, SecretSchema);
 }
 
 export async function signOut(csrf: string): Promise<void> {
