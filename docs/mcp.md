@@ -41,7 +41,7 @@ names the issuer and the scopes.
   `max_boxes`, free memory, and whether warm starts are on. Its `start` field
   names the node a start with no `node` would use.
 - `start_box` takes repos as `owner/name`. It refuses before it creates
-  anything when you lack a secret, and links `https://HOST/me/secrets`. It
+  anything when you lack a secret, and links the account page. It
   returns once the Box exists, with the fields `box_status` gives. With
   `wait: true`, it returns once setup and the agent launch finish. A start on
   a name that is open attaches to that Box.

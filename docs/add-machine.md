@@ -18,7 +18,8 @@ A machine serves in one of two ways:
    curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent
    ```
 
-2. Pair the machine:
+2. Pair the machine. The Machines section of the account page shows this
+   line ready to copy:
 
    ```sh
    moor-machine-agent up --server https://HOST

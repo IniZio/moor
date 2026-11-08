@@ -82,6 +82,6 @@ in the chart instead.
 2. Run `/moor repo add OWNER/NAME` there.
 3. Mention the bot with some work.
 
-The bot answers in a thread. A person with no `claude` secret is asked to
-link one. [Fronts](fronts.md#moor-slack) lists the front's flags, its config
+The bot answers in a thread. A person with no `claude` secret gets a link to
+the account page, where they link it. `/moor login` gives the same link. [Fronts](fronts.md#moor-slack) lists the front's flags, its config
 keys, and every slash command.

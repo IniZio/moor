@@ -67,7 +67,7 @@ channel.
 | `/moor repo add OWNER/NAME` | Adds a repo to the channel. |
 | `/moor repo remove NAME` | Removes a repo. |
 | `/moor repo default NAME` | Makes `NAME` the channel's default repo. |
-| `/moor login [claude\|github]` | Opens a form to link your Claude or GitHub token. |
+| `/moor login` | Replies with a link to the account page, where you link your secrets. |
 | `/moor logout [claude\|github]` | Deletes that secret. `claude` by default. |
 | `/moor mcp add` | Opens a form to add an MCP server of yours, with a name, an `https://` URL, and a key. Leave the key empty to sign in over OAuth. |
 | `/moor mcp list` | Lists your MCP servers. |

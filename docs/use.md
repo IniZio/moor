@@ -24,7 +24,7 @@ the agent's requests, so neither enters the Box.
 2. Run `gh auth token`. Paste what it prints into the **github** field. The
    token must be able to push to the repos you work on.
 
-Both secrets now show as set. The page never shows a value again.
+Both secrets now show as **Linked**. The page never shows a value again.
 
 ## 3. Connect Claude Code
 
