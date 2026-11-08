@@ -120,6 +120,7 @@ fn the_view_lists_secrets_machines_and_the_connect_line_and_never_a_value() {
     assert_eq!(v["machines"]["nodes"][0]["name"], "hv");
     assert_eq!(v["machines"]["nodes"][0]["max_boxes"], 4);
     assert_eq!(v["connect"]["mcp_url"], format!("http://{}/mcp", w.addr));
+    assert_eq!(v["connect"]["server_url"], format!("http://{}", w.addr));
     assert!(!v.to_string().contains("alreadyStored"), "{v}");
 }
 

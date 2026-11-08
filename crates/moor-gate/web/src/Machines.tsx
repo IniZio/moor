@@ -1,4 +1,5 @@
 import type { Account, Node } from './api';
+import { Command } from './Connect';
 
 function state(n: Node): string {
 	if (n.online) return 'Online';
@@ -12,14 +13,17 @@ function slots(n: Node): string {
 	return `${Math.max(0, n.max_boxes - n.used)} of ${n.max_boxes} free`;
 }
 
-export function Machines({ machines }: { machines: Account['machines'] }) {
+export function Machines({ machines, serverUrl }: { machines: Account['machines']; serverUrl: string }) {
 	return (
 		<section>
 			<h2>Machines</h2>
 			{machines.nodes.length === 0 ? (
-				<p class="muted">
-					No machine yet. Add yours with <code>moor-machine-agent enroll</code>; it is optional.
-				</p>
+				<>
+					<p class="muted">No machine of yours yet. Adding one is optional. Run this on it:</p>
+					<ul class="cards">
+						<Command label="Add this machine" line={`moor-machine-agent up --server ${serverUrl}`} />
+					</ul>
+				</>
 			) : (
 				<ul class="cards">
 					{machines.nodes.map((n) => (

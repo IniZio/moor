@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-function Command({ label, line }: { label: string; line: string }) {
+export function Command({ label, line }: { label: string; line: string }) {
 	const [copied, setCopied] = useState(false);
 	const copy = () =>
 		navigator.clipboard.writeText(line).then(() => {

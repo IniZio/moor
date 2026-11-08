@@ -46,7 +46,7 @@ export function App() {
 				<button class="quiet" onClick={leave}>Sign out</button>
 			</header>
 			<Secrets account={account} onLinked={refresh} />
-			<Machines machines={account.machines} />
+			<Machines machines={account.machines} serverUrl={account.connect.server_url} />
 			<Connect url={account.connect.mcp_url} />
 		</main>
 	);

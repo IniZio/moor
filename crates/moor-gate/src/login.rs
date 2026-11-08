@@ -159,6 +159,11 @@ impl Login {
         })
     }
 
+    /// The public origin, without a trailing slash.
+    pub(crate) fn public(&self) -> &str {
+        &self.public
+    }
+
     /// The issuer's endpoints, reading its discovery document the first time.
     fn endpoints(&self, verifier: &Verifier) -> Result<Endpoints, String> {
         let known = self

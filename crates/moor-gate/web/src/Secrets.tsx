@@ -1,10 +1,19 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { type Account, link, SignedOut } from './api';
 
-const HINTS: Record<string, string> = {
-	claude: 'Run `claude setup-token` on your own machine and paste what it prints.',
-	github: 'Paste what `gh auth token` prints, or a fine-grained token that can push to your repos.',
+const HINTS: Record<string, ComponentChildren> = {
+	claude: (
+		<>
+			Run <code>claude setup-token</code> on your own machine and paste what it prints.
+		</>
+	),
+	github: (
+		<>
+			Paste what <code>gh auth token</code> prints, or a fine-grained token that can push to your repos.
+		</>
+	),
 };
 
 function Row({ account, name, linked, onLinked }: { account: Account; name: string; linked: boolean; onLinked: () => void }) {
