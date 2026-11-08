@@ -339,6 +339,10 @@ fn all_events() -> Vec<Event> {
             tail: s("boom"),
         }),
         Event::Timing(TimingEvent::ColdAsked),
+        Event::Stall(StallEvent::PromptNotGiven {
+            attempt: 1,
+            error: s("e"),
+        }),
     ]
 }
 
@@ -445,6 +449,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::WarmRerun { .. }) => 82,
         Event::Timing(TimingEvent::WarmRerunFailed { .. }) => 83,
         Event::Timing(TimingEvent::ColdAsked) => 84,
+        Event::Stall(StallEvent::PromptNotGiven { .. }) => 85,
     }
 }
 
@@ -452,7 +457,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 85);
+    assert_eq!(all.len(), 86);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

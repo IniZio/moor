@@ -309,6 +309,13 @@ pub enum ExtraEvent {
         /// The filesystem's size in MiB.
         total_mib: u64,
     },
+    /// A prompt held for a start that queued could not be given to the agent.
+    PromptNotGiven {
+        /// Which try this was, from 1.
+        attempt: u32,
+        /// What went wrong.
+        error: String,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.

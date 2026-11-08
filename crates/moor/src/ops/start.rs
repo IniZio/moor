@@ -21,12 +21,12 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::facts::{repo_config_of, resolved, settings_of};
+use super::common::held_prompt;
 use super::common::node;
 use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::common::reconcile;
-use super::common::wake::give_held_prompt;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -265,9 +265,9 @@ fn attach(
     if req.prompt.is_some() {
         store.set_held_prompt(row.id, None)?;
     } else if agent.launched {
-        give_held_prompt(cx, store, row, AfterWake::Relaunched)?;
+        held_prompt::give_after_wake(cx, store, row, AfterWake::Relaunched)?;
     } else {
-        give_held_prompt(cx, store, row, AfterWake::Intact)?;
+        held_prompt::give_after_wake(cx, store, row, AfterWake::Intact)?;
     }
     let mut v = queued_view(cx, row, true);
     if let Some(p) = reprovisioned {
@@ -299,7 +299,8 @@ pub(crate) fn settle_all(
 /// Moves one open Box with a ready machine between Working and Idle, then lets it auto-sleep.
 fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     let settled = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)
-        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|()| reading));
+        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|()| reading))
+        .and_then(|reading| held_prompt::give_on_sweep(cx, store, row, &reading).map(|()| reading));
     match settled {
         Ok(reading) => autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading)),
         Err(e) => cx.warn(Warning {
