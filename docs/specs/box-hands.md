@@ -157,10 +157,11 @@ stands after the steps above. A cell names the step or the code behind it.
 
 Where moor is not ahead.
 
-- **Cost control.** agentrun meters dollars at its model proxy. moor's Claude
-  credential is a subscription token from `claude setup-token`, stored as the
-  user secret `claude`. A per-request dollar cap would cap nothing. Compute is the metered cost, and the awake limit and
-  autosleep bound it. An API key through the Proxy gets no cap today.
+- **Cost control.** agentrun meters dollars at its model proxy. moor runs on
+  each user's subscription token, stored as the user secret `claude`. Users
+  enter their Boxes to steer, so a subscription fits. A per-request
+  dollar cap would cap nothing. Compute is the metered cost, and the awake
+  limit and autosleep bound it. moor adds no spend cap.
 - **Triggers.** agentrun fires on signed inbound webhooks. moor takes outside
   events through a front, which is where a team already meets its Boxes.
 - **Rolling deploys.** Rivet runs two versions at once with N-1 reads and
