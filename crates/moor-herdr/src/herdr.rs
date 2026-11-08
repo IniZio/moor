@@ -27,6 +27,9 @@ pub struct Space {
     /// The rolled-up agent state of its panes.
     #[serde(default)]
     pub agent_status: String,
+    /// Whether it is the workspace on screen.
+    #[serde(default)]
+    pub focused: bool,
 }
 
 /// A workspace just made, and its first pane.
@@ -49,6 +52,8 @@ pub trait Herdr {
     fn run(&mut self, pane: &str, command: &str) -> Result<(), Error>;
     /// Sets metadata tokens on `workspace`; an empty value clears that token.
     fn tag(&mut self, workspace: &str, tokens: &[(&str, &str)]) -> Result<(), Error>;
+    /// Closes `workspace` with its panes.
+    fn close(&mut self, workspace: &str) -> Result<(), Error>;
     /// The first pane of `workspace`.
     fn first_pane(&mut self, workspace: &str) -> Result<Option<String>, Error>;
     /// Sets the agent dot of `pane`.
@@ -125,11 +130,6 @@ impl Cli {
         self.call(&args).map(drop)
     }
 
-    /// Closes `workspace` with its panes.
-    pub fn close_space(&self, workspace: &str) -> Result<(), Error> {
-        self.call(&["workspace", "close", workspace]).map(drop)
-    }
-
     /// The string at `path` in `value`.
     fn text(value: &Value, path: &str) -> Result<String, Error> {
         value
@@ -191,6 +191,10 @@ impl Herdr for Cli {
             args.extend(["--token", pair.as_str()]);
         }
         self.call(&args).map(drop)
+    }
+
+    fn close(&mut self, workspace: &str) -> Result<(), Error> {
+        self.call(&["workspace", "close", workspace]).map(drop)
     }
 
     fn first_pane(&mut self, workspace: &str) -> Result<Option<String>, Error> {
