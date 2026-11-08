@@ -112,13 +112,6 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
-    /// Files were copied.
-    Copied {
-        /// The copy source.
-        from: String,
-        /// The copy destination.
-        to: String,
-    },
     /// An agent session started.
     SessionStarted {
         /// The session id.
@@ -368,6 +361,9 @@ pub enum Event {
         /// Lowercase hex SHA-256 of the contents.
         sha256: String,
     },
+    /// Files were copied out of the Box, or a command ran in it, from outside.
+    #[serde(untagged)]
+    Access(AccessEvent),
     /// The user's machine attached to the Box.
     #[serde(untagged)]
     Machine(MachineEvent),
@@ -384,10 +380,11 @@ pub enum Event {
     #[serde(untagged)]
     Timing(TimingEvent),
 }
-pub use self::{boxes::box_events, checked::CheckedCred, machine::MachineEvent};
-pub use self::{profile::*, steps::*};
+pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred};
+pub use self::{machine::MachineEvent, profile::*, steps::*};
 pub use kind::{NodeDiskEvent, StallEvent, ASSERTED_KINDS, EVENT_KINDS};
 pub use post_clone::{PostCloneStep, ProviderStep, StepName, TimingEvent, MAX_STEPS};
+mod access;
 mod boxes;
 mod checked;
 pub mod close_reason;

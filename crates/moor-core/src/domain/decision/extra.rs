@@ -33,6 +33,15 @@ pub enum ExtraEvent {
         /// The copy destination.
         to: String,
     },
+    /// A command ran in the Box through `exec` and ended.
+    ExecRan {
+        /// The command, as shell text.
+        command: String,
+        /// Its exit code; none when it was killed or the link dropped first.
+        exit: Option<i32>,
+        /// True when it ran past its timeout and was killed.
+        timed_out: bool,
+    },
     /// An agent session started.
     SessionStarted {
         /// The session id.

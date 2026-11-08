@@ -61,6 +61,7 @@ fn req(argv: &[&str]) -> ExecReq {
     ExecReq {
         target: BoxName::parse_allow_bare("t").unwrap().into(),
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
+        timeout_secs: None,
     }
 }
 

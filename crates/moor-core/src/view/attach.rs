@@ -29,4 +29,7 @@ pub struct ExecView {
     /// The command's exit code; absent when it was killed or the link dropped first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit: Option<i32>,
+    /// True when the command ran past the request's timeout and was killed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub timed_out: bool,
 }

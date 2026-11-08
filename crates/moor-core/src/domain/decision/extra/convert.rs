@@ -1,7 +1,9 @@
 //! Conversion of a decision's events to stored events.
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent};
+use crate::domain::event::{
+    AccessEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent,
+};
 
 impl From<ExtraEvent> for Event {
     #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
@@ -21,7 +23,16 @@ impl From<ExtraEvent> for Event {
                 interrupted,
                 error,
             },
-            ExtraEvent::Copied { from, to } => Self::Copied { from, to },
+            ExtraEvent::Copied { from, to } => Self::Access(AccessEvent::Copied { from, to }),
+            ExtraEvent::ExecRan {
+                command,
+                exit,
+                timed_out,
+            } => Self::Access(AccessEvent::ExecRan {
+                command,
+                exit,
+                timed_out,
+            }),
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
             ExtraEvent::LaunchTimedOut { after_secs } => Self::LaunchTimedOut { after_secs },

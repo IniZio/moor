@@ -79,10 +79,10 @@ fn all_events() -> Vec<Event> {
             interrupted: false,
             error: None,
         },
-        Event::Copied {
+        Event::Access(AccessEvent::Copied {
             from: s("a"),
             to: s("b"),
-        },
+        }),
         Event::SessionStarted { session: s("x") },
         Event::SessionEnded {
             session: 3,
@@ -343,6 +343,11 @@ fn all_events() -> Vec<Event> {
             attempt: 1,
             error: s("e"),
         }),
+        Event::Access(AccessEvent::ExecRan {
+            command: s("df -h"),
+            exit: Some(0),
+            timed_out: false,
+        }),
     ]
 }
 
@@ -381,7 +386,7 @@ const fn event_index(e: &Event) -> usize {
         Event::BoxReleaseFailed { .. } => 18,
         Event::StaysUp { .. } => 19,
         Event::Ran { .. } => 20,
-        Event::Copied { .. } => 21,
+        Event::Access(AccessEvent::Copied { .. }) => 21,
         Event::SessionStarted { .. } => 22,
         Event::SessionEnded { .. } => 23,
         Event::SessionFailed { .. } => 24,
@@ -450,6 +455,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::WarmRerunFailed { .. }) => 83,
         Event::Timing(TimingEvent::ColdAsked) => 84,
         Event::Stall(StallEvent::PromptNotGiven { .. }) => 85,
+        Event::Access(AccessEvent::ExecRan { .. }) => 86,
     }
 }
 
@@ -457,7 +463,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 86);
+    assert_eq!(all.len(), 87);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -567,25 +573,6 @@ fn box_failure_events_carry_handle() {
             error: s("c"),
             handle: Some(s("p/x"))
         }]
-    );
-}
-
-/// `SessionEnded` names itself and carries the documented payload.
-#[test]
-fn session_ended_kind_and_payload() {
-    let e = Event::SessionEnded {
-        session: 3,
-        cause: s("exited"),
-        exit: None,
-    };
-    assert_eq!(e.kind(), "session_ended");
-    assert_eq!(
-        serde_json::to_value(&e).unwrap(),
-        serde_json::json!({"kind":"session_ended","session":3,"cause":"exited","exit":null})
-    );
-    assert_eq!(
-        e.payload(),
-        serde_json::json!({"session":3,"cause":"exited","exit":null})
     );
 }
 

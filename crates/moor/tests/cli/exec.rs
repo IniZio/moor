@@ -96,7 +96,10 @@ fn serve_once(socket: &Path) -> JoinHandle<Request> {
             stop: &|| false,
         };
         let ended = pump(child, Vec::new(), pipes).unwrap();
-        let view = ExecView { exit: ended.code };
+        let view = ExecView {
+            exit: ended.code,
+            timed_out: false,
+        };
         let envelope = Response::ok("exec", Some(serde_json::to_value(view).unwrap()));
         let answer = ServerFrame::Response {
             id: "1".to_owned(),
