@@ -27,6 +27,11 @@ impl Moor {
     pub(crate) fn resolve_interrupted_workflow_runs(&self) -> Vec<String> {
         workflow::resolve_interrupted(&self.cx)
     }
+
+    /// One line per configured node for the start-up log: its runtime and provider state.
+    pub(crate) fn node_startup_lines(&self) -> Vec<String> {
+        crate::ops::provider_ready::startup_lines(&self.cx)
+    }
 }
 
 /// Starts the claimed firing `job` on a new thread, as its owner.

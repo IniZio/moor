@@ -4,6 +4,7 @@
 //! and the memory rules of the scheduler, so the doctor and a real start agree.
 
 mod gate;
+mod host;
 mod nodes;
 mod provider;
 mod render;
@@ -182,6 +183,7 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
         provider::check(i, &read),
     ];
     out.extend(provider::controller(i));
+    out.extend(host::checks(i));
     out.push(nodes::check(i, &read));
     out.extend(user::checks(i));
     out.extend(gate::check(i));

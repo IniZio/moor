@@ -26,7 +26,7 @@ mod machine_box;
 pub(crate) mod machine_hold;
 mod nodes;
 mod open_session;
-mod provider_ready;
+pub(crate) mod provider_ready;
 mod retry;
 mod run;
 mod sessions;

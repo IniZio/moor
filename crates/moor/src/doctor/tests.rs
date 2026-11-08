@@ -14,6 +14,7 @@ use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::rng::FakeRng;
 
+mod on_host;
 mod on_nodes;
 mod on_provider;
 mod on_ready;
@@ -136,6 +137,8 @@ fn checks_run_in_the_order_of_the_setup_guide() {
             "controller",
             "provider",
             "crabbox",
+            "egress",
+            "crabbox-cfg",
             "nodes",
             "user"
         ]
