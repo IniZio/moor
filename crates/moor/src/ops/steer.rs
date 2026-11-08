@@ -221,12 +221,15 @@ fn attempt(
         gone.finish(cx, store, id)?;
         return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
     };
+    let starts_turn = !(matches!(steer, Steer::Interrupt) && idle(reading.term.as_ref()));
     let mark = Mark {
-        turn_before: turn_before(reading.term.as_ref(), &steer),
+        turn_before: turn_before(reading.term.as_ref(), &steer).filter(|_| starts_turn),
         submit_retried: outcome.submit_retried,
     };
     let steer_id = record(store, id, &session, &sent, mark)?;
-    open_turn(store, &row)?;
+    if starts_turn {
+        open_turn(store, &row)?;
+    }
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(Attempt::Sent(SteerValue {
         box_name: name.to_owned(),
@@ -292,6 +295,11 @@ fn turn_before(term: Option<&Term>, steer: &Steer) -> Option<u64> {
     let working = matches!(term.status, Some(Status::Working { .. }));
     let queued = working && matches!(steer, Steer::Text(_));
     Some(term.turn + u64::from(queued))
+}
+
+/// Whether the agent's terminal reports no turn running, so an interrupt has nothing to stop.
+fn idle(term: Option<&Term>) -> bool {
+    term.is_some_and(|t| matches!(t.status, Some(Status::Idle | Status::Error { .. })))
 }
 
 /// Whether `steer` asks the agent to exit.
