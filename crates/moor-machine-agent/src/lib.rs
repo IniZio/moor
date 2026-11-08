@@ -1,5 +1,5 @@
-//! The machine agent: runs on a person's own computer, enrolls it with their sign-in, and keeps
-//! it linked to the server, running the execs, hooks and relays the server asks of its Boxes.
+//! The machine agent: runs on a person's own computer, pairs it with its owner, and keeps it
+//! linked to the server, running the execs, hooks and relays the server asks of its Boxes.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -9,9 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moor_client::link::{self, Frame};
-use moor_client::oidc::{self, Http, Ui};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 
@@ -24,6 +22,7 @@ mod files;
 mod held;
 pub mod linked;
 mod listen;
+pub mod pair;
 pub mod pool;
 mod release;
 mod serve;
@@ -31,26 +30,10 @@ pub mod service;
 pub mod settings;
 mod status;
 mod sweep;
+pub mod up;
 mod upgrade;
 
-/// What `enroll` asks for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Enroll {
-    /// The moor server.
-    pub server: String,
-    /// The machine's name, unique among its owner's machines.
-    pub name: String,
-    /// The machine's labels.
-    pub labels: Vec<String>,
-    /// How many Boxes may hold the machine at once.
-    pub slots: u16,
-    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
-    pub pool: Option<String>,
-    /// Replace the machine's key instead of keeping it.
-    pub new_key: bool,
-}
-
-/// What the agent keeps after enrolling.
+/// What the agent keeps after pairing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct State {
     /// The moor server, without a trailing slash.
@@ -65,21 +48,8 @@ pub struct State {
     pub slots: u16,
 }
 
-/// What the gate answers an enrollment with.
-#[derive(Deserialize)]
-struct Enrolled {
-    /// The machine's id.
-    machine_id: i64,
-    /// The machine's name.
-    name: String,
-    /// The owner's verified email.
-    owner: String,
-    /// The slots the controller recorded.
-    capacity: u16,
-}
-
 /// The private key file, OpenSSH format.
-const KEY: &str = "id_ed25519";
+pub(crate) const KEY: &str = "id_ed25519";
 /// The agent's release, which the server checks.
 const VERSION: &str = match option_env!("MOOR_VERSION") {
     Some(v) => v,
@@ -106,43 +76,11 @@ pub fn state_dir() -> PathBuf {
     state.join("moor-machine-agent")
 }
 
-/// Enrolls this machine: keeps or makes its key in `dir`, signs its owner in (the browser
-/// returns to loopback `port`; 0 takes any free one), and saves the controller's answer.
-///
-/// # Errors
-/// The key or state cannot be read or written, the sign-in fails, or
-/// the server refuses the enrollment.
-pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<State, String> {
-    private_dir(dir).map_err(|e| format!("cannot prepare {}: {e}", dir.display()))?;
-    let key = key(&dir.join(KEY), req.new_key)?;
-    let pubkey = key
-        .public_key()
-        .to_openssh()
-        .map_err(|e| format!("cannot encode the public key: {e}"))?;
-    let signed = oidc::sign_in(&req.server, port, ui)?;
-    let body = json!({"access_token": signed.access_token, "pubkey": pubkey, "name": req.name,
-        "labels": req.labels, "slots": req.slots, "pool": req.pool});
-    let got: Enrolled = Http::new()
-        .post_json_found(&format!("{}/machines/enroll", signed.server), &body)?
-        .ok_or_else(|| takes_no_machines(&signed.server))?;
-    let state = State {
-        server: signed.server,
-        machine_id: got.machine_id,
-        owner: got.owner,
-        name: got.name,
-        slots: got.capacity,
-    };
-    let text = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
-    write_private(&dir.join("state.json"), text.as_bytes())
-        .map_err(|e| format!("cannot save the state: {e}"))?;
-    Ok(state)
-}
-
-/// Keeps this machine linked to its server with the key and state enrollment left in `dir`,
+/// Keeps this machine linked to its server with the key and state pairing left in `dir`,
 /// dialing again after every drop, and telling `log` each change.
 ///
 /// # Errors
-/// Enrollment left nothing usable in `dir`, or the server says this agent must be updated.
+/// Pairing left nothing usable in `dir`, or the server says this agent must be updated.
 pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> Result<(), String> {
     run_with(dir, machine, false, log).await
 }
@@ -162,28 +100,71 @@ pub async fn run_with(
 ) -> Result<(), String> {
     let machine = Arc::new(machine);
     let path = dir.join("state.json");
-    let text = fs::read_to_string(&path)
-        .map_err(|e| format!("cannot read {}: {e}; enroll first", path.display()))?;
+    let text = fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "cannot read {}: {e}; run moor-machine-agent up first",
+            path.display()
+        )
+    })?;
     let state: State = serde_json::from_str(&text)
         .map_err(|e| format!("{} is not the agent's state: {e}", path.display()))?;
-    let key = read_key(&dir.join(KEY))?
-        .ok_or_else(|| format!("{} has no key; enroll first", dir.display()))?;
+    let key = read_key(&dir.join(KEY))?.ok_or_else(|| {
+        format!(
+            "{} has no key; run moor-machine-agent up first",
+            dir.display()
+        )
+    })?;
+    let own = Own {
+        state,
+        key,
+        linked: dir.join(linked::FILE),
+    };
     let (tell, offers) = tokio::sync::watch::channel(String::new());
     tokio::select! {
-        done = keep_linked(&state, &key, &machine, auto_update, log, &tell) => done,
+        done = keep_linked(&own, &machine, auto_update, log, &tell) => done,
         never = upgrade::follow(offers, auto_update, log) => match never {},
     }
 }
 
-/// Keeps `machine` linked to `state`'s server, telling `tell` the server's release on each link.
+/// What pairing left for this machine to link with.
+struct Own {
+    /// The pairing.
+    state: State,
+    /// The machine's key.
+    key: PrivateKey,
+    /// The file kept while a link holds, which `up` waits for.
+    linked: PathBuf,
+}
+
+/// Holds the link `carried` until it ends, keeping `own.linked` meanwhile.
+async fn hold(
+    own: &Own,
+    carried: link::Carried,
+    machine: &Arc<Machine>,
+    boxes: &Arc<listen::Boxes>,
+    recent: &Arc<status::Recent>,
+    log: &(dyn Fn(&str) + Sync),
+) -> held::Ended {
+    log(&format!("linked to {}", own.state.server));
+    if let Err(e) = linked::write(&own.linked, &own.state.server) {
+        log(&format!("cannot write {}: {e}", own.linked.display()));
+    }
+    let ended = held::hold(carried, machine, boxes, recent).await;
+    if matches!(ended, held::Ended::Closed(_)) {
+        let _ = fs::remove_file(&own.linked);
+    }
+    ended
+}
+
+/// Keeps `machine` linked to `own`'s server, telling `tell` the server's release on each link.
 async fn keep_linked(
-    state: &State,
-    key: &PrivateKey,
+    own: &Own,
     machine: &Arc<Machine>,
     auto_update: bool,
     log: &(dyn Fn(&str) + Sync),
     tell: &tokio::sync::watch::Sender<String>,
 ) -> Result<(), String> {
+    let state = &own.state;
     let boxes = listen::Boxes::new(state.slots);
     let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
@@ -192,14 +173,13 @@ async fn keep_linked(
     let mut relinked: Option<tokio::time::Instant> = None;
     let mut ever_linked = false;
     loop {
-        let (why, handing_over) = match connect(state, key, machine).await {
+        let (why, handing_over) = match connect(state, &own.key, machine).await {
             Ok((carried, theirs)) => {
-                log(&format!("linked to {}", state.server));
                 tell.send_replace(theirs);
                 ever_linked = true;
                 wait = FIRST_WAIT;
                 relinked = None;
-                match held::hold(carried, machine, &boxes, &recent).await {
+                match hold(own, carried, machine, &boxes, &recent, log).await {
                     held::Ended::Closed(why) => (why, false),
                     held::Ended::Relinked(link) => {
                         old = Some(link);
@@ -255,8 +235,8 @@ enum Turned {
     Failed(String),
 }
 
-/// What to tell the person when `server` answers 404 where machines enroll or link.
-fn takes_no_machines(server: &str) -> String {
+/// What to tell the person when `server` answers 404 where machines pair or link.
+pub(crate) fn takes_no_machines(server: &str) -> String {
     let host = server
         .trim_end_matches('/')
         .split_once("://")
@@ -327,7 +307,7 @@ pub(crate) fn unix_now() -> i64 {
 }
 
 /// The ed25519 key at `path`, or `None` when there is none.
-fn read_key(path: &Path) -> Result<Option<PrivateKey>, String> {
+pub(crate) fn read_key(path: &Path) -> Result<Option<PrivateKey>, String> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -343,17 +323,15 @@ fn read_key(path: &Path) -> Result<Option<PrivateKey>, String> {
 }
 
 /// Creates `dir` if needed and makes it the owner's alone.
-fn private_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn private_dir(dir: &Path) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
 }
 
-/// The ed25519 key at `path`, made there when absent or when `fresh`.
-fn key(path: &Path, fresh: bool) -> Result<PrivateKey, String> {
-    if !fresh {
-        if let Some(key) = read_key(path)? {
-            return Ok(key);
-        }
+/// The ed25519 key at `path`, made there when absent.
+pub(crate) fn key(path: &Path) -> Result<PrivateKey, String> {
+    if let Some(key) = read_key(path)? {
+        return Ok(key);
     }
     let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519)
         .map_err(|e| format!("cannot make a key: {e}"))?;
@@ -366,7 +344,7 @@ fn key(path: &Path, fresh: bool) -> Result<PrivateKey, String> {
 }
 
 /// Replaces `path` with `bytes`, readable by the owner alone at every moment.
-fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     let _ = fs::remove_file(&tmp);
     let mut file = OpenOptions::new()

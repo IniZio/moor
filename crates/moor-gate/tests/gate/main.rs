@@ -480,7 +480,6 @@ fn a_real_controller_enrolls_the_token_email() {
 
 mod artifacts;
 mod drain;
-mod enroll;
 mod events;
 mod events_http;
 mod hold;

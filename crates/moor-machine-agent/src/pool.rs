@@ -17,6 +17,7 @@ pub use reach::{carry, dial, splice, Sshd};
 
 mod cache;
 mod checkpoint;
+pub(crate) use checkpoint::doctor_failures;
 mod crabbox;
 mod flight;
 mod memory;

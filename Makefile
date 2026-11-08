@@ -88,7 +88,8 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
 	helm template moor $(CHART) $(CHART_VALUES) | grep -q 'command: \[moor-machine-runner\]'
 	! helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false | grep -q 'moor-machine-runner'
-	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx | grep -q 'path: /machines/enroll'
+	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx | grep -q 'path: /machines/pair'
+	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx --set gate.login=true | grep -q 'path: /pair$$'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \

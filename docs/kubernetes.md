@@ -80,7 +80,7 @@ to turn on:
 - `slack.enabled` runs the [Slack front](slack.md) beside the controller.
 - `notify.enabled` runs the [webhook front](notify.md).
 - `runner.enabled` is on by default and runs the machine runner, so
-  [machines](machines.md) can enroll through the gate. Set it false to take
+  [machines](machines.md) can pair through the gate, with `gate.login` on. Set it false to take
   no machines; `moor-machine-agent` then says the server takes no machines.
 - `controller.nodes` and `controller.defaultNode` declare shared
   [nodes](nodes.md).

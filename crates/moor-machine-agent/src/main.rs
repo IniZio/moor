@@ -1,18 +1,17 @@
-//! `moor-machine-agent`: enrolls this computer with a moor server and keeps it linked.
+//! `moor-machine-agent`: pairs this computer with a moor server and keeps it linked.
 
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::mpsc::Sender;
 
 use clap::{Parser, Subcommand};
-use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
-use std::path::PathBuf;
 
 use moor_client::link::lease::{Boot, Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
-use moor_machine_agent::settings::{self, Ensured};
-use moor_machine_agent::{enroll, run_with, state_dir, update, Enroll, Machine, Pool};
+use moor_machine_agent::service::Manager;
+use moor_machine_agent::up::{self, down, Runtime, Up};
+use moor_machine_agent::{run_with, state_dir, update, Machine, Pool};
 
 /// Command line.
 #[derive(Parser)]
@@ -26,31 +25,12 @@ struct Args {
 /// Subcommands.
 #[derive(Subcommand)]
 enum Command {
-    /// Signs in as this machine's owner and enrolls it.
-    Enroll {
-        /// The moor server, such as `https://moor.example.com`.
-        #[arg(long, env = "MOOR_SERVER")]
-        server: String,
-        /// The machine's name, unique among your machines.
-        #[arg(long)]
-        name: String,
-        /// Labels a Box can ask for, comma separated.
-        #[arg(long, value_delimiter = ',')]
-        labels: Vec<String>,
-        /// How many Boxes may hold this machine at once.
-        #[arg(long, default_value_t = 1)]
-        slots: u16,
-        /// Offer Boxes on this machine through crabbox PROVIDER, such as `cloudhypervisor`.
-        #[arg(long, value_name = "PROVIDER")]
-        runtime: Option<String>,
-        /// Do not open a browser; paste the address the sign-in ends on.
-        #[arg(long)]
-        paste: bool,
-        /// Make a new key instead of keeping this machine's.
-        #[arg(long)]
-        new_key: bool,
-    },
-    /// Keeps this enrolled machine linked to its server until stopped.
+    /// Pairs this machine with its owner, checks its provider, and runs the agent as a user
+    /// service that starts at login; rerun it to apply new flags.
+    Up(UpFlags),
+    /// Stops and removes the user service; the machine stays paired.
+    Down,
+    /// Keeps this paired machine linked to its server until stopped; the user service runs it.
     Run {
         /// Serve Boxes from a crabbox runtime.
         #[command(flatten)]
@@ -98,6 +78,58 @@ enum Command {
     },
 }
 
+/// What `up` takes.
+#[derive(clap::Args)]
+struct UpFlags {
+    /// The moor server, such as `https://moor.example.com`.
+    #[arg(long, env = "MOOR_SERVER")]
+    server: String,
+    /// The machine's name, unique among your machines; this host's name by default.
+    #[arg(long)]
+    name: Option<String>,
+    /// Labels a Box can ask for, comma separated.
+    #[arg(long, value_delimiter = ',')]
+    labels: Vec<String>,
+    /// Offer Boxes on this machine through this crabbox provider; the one crabbox is configured
+    /// with by default.
+    #[arg(long, value_name = "PROVIDER")]
+    runtime: Option<String>,
+    /// Host no Boxes; run the `exec` scripts the server sends for Boxes that attach this machine.
+    #[arg(long, conflicts_with = "runtime")]
+    allow_exec: bool,
+    /// The most Boxes this machine holds at once; memory may allow fewer.
+    #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..))]
+    max_boxes: u16,
+    /// The crabbox program.
+    #[arg(long, default_value = "crabbox")]
+    crabbox: PathBuf,
+}
+
+/// Brings this machine to linked as `flags` say.
+fn up_here(flags: UpFlags) -> ExitCode {
+    let runtime = match (flags.allow_exec, flags.runtime) {
+        (true, _) => Runtime::Exec,
+        (false, Some(provider)) => Runtime::Provider(provider),
+        (false, None) => Runtime::CrabboxDefault,
+    };
+    let home = Machine::from_env().home;
+    let req = Up {
+        server: flags.server,
+        name: flags.name.unwrap_or_else(host_name),
+        labels: flags.labels,
+        max_boxes: flags.max_boxes,
+        runtime,
+        crabbox: flags.crabbox,
+        home: home.clone(),
+    };
+    done(up::up(
+        &req,
+        &state_dir(),
+        &Manager::here(&home),
+        &mut |line| say(line),
+    ))
+}
+
 /// The pool a host serves.
 #[derive(clap::Args)]
 struct PoolFlags {
@@ -139,48 +171,14 @@ fn verb(s: &str) -> Result<Verb, String> {
         .map_err(|_| format!("{s:?} is not a lease verb"))
 }
 
-/// The console, with or without the browser.
-struct Terminal {
-    /// Opens the sign-in in the platform's browser.
-    browser: bool,
-}
-
-impl Ui for Terminal {
-    fn say(&mut self, line: &str) {
-        Console.say(line);
-    }
-
-    fn open(&mut self, url: &str) {
-        if self.browser {
-            Console.open(url);
-        }
-    }
-
-    fn pasted(&mut self, to: Sender<String>) {
-        Console.pasted(to);
-    }
-}
-
 fn main() -> ExitCode {
     let ended = match Args::parse().command {
-        Command::Enroll {
-            server,
-            name,
-            labels,
-            slots,
-            runtime,
-            paste,
-            new_key,
-        } => {
-            let req = Enroll {
-                server,
-                name,
-                labels,
-                slots,
-                pool: runtime,
-                new_key,
-            };
-            return enroll_here(&req, paste);
+        Command::Up(flags) => return up_here(flags),
+        Command::Down => {
+            return done(down(
+                &Manager::here(&Machine::from_env().home),
+                &state_dir(),
+            ));
         }
         Command::Run {
             pool,
@@ -234,18 +232,9 @@ fn run_here(
     }))
 }
 
-/// Adds what warm starts need to the crabbox user config, saying what changed; a failure only
-/// leaves this host's Boxes starting cold.
+/// Adds what warm starts need to the crabbox user config, saying what changed.
 fn apply_settings(provider: &str) {
-    let path = settings::config_path(&Machine::from_env().home);
-    match settings::ensure(&path, provider) {
-        Ok(Ensured::Added) => say(&format!(
-            "turned on checkpoints in {}; set them to false there to opt out",
-            path.display()
-        )),
-        Ok(Ensured::Kept) => {}
-        Err(e) => say(&format!("cannot turn on checkpoints: {e}")),
-    }
+    up::apply_settings(&Machine::from_env().home, provider, &mut |line| say(line));
 }
 
 /// Installs release `version` in place of this executable and says what changed.
@@ -308,18 +297,11 @@ fn say(line: &str) {
     let _ = writeln!(std::io::stderr(), "moor-machine-agent: {line}");
 }
 
-/// Enrolls this machine, signing in through the browser unless `paste`.
-fn enroll_here(req: &Enroll, paste: bool) -> ExitCode {
-    if let Some(provider) = &req.pool {
-        apply_settings(provider);
-    }
-    let mut ui = Terminal { browser: !paste };
-    match enroll(req, &state_dir(), REDIRECT_PORT, &mut ui) {
-        Ok(state) => {
-            ui.say(&format!(
-                "Enrolled {} as machine {} for {}.",
-                state.name, state.machine_id, state.owner
-            ));
+/// Shows how a command ended: its last line, or why it failed.
+fn done(ended: Result<String, String>) -> ExitCode {
+    match ended {
+        Ok(line) => {
+            say(&line);
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -327,4 +309,12 @@ fn enroll_here(req: &Enroll, paste: bool) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// This host's name, the machine's name when none is given.
+fn host_name() -> String {
+    rustix::system::uname()
+        .nodename()
+        .to_string_lossy()
+        .into_owned()
 }

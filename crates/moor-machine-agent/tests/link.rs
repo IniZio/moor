@@ -256,10 +256,10 @@ async fn a_machine_that_is_not_enrolled_is_refused() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn run_needs_an_enrolled_state() {
+async fn run_before_up_says_to_run_up() {
     let w = world().await;
     let err = run(w.dir.path(), machine(), &|_| {}).await.unwrap_err();
-    assert!(err.contains("enroll first"), "{err}");
+    assert!(err.contains("run moor-machine-agent up first"), "{err}");
 }
 
 /// An agent for machine 7 linked to `w`'s runner, its home and hooks under `home`.

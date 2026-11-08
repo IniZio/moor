@@ -478,23 +478,32 @@ every Box shares.
 
 ## Enrolling a machine
 
-The machine's owner installs `moor-machine-agent` on it
-(`curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent`) and enrolls it once.
-Enrolling signs the owner in through the browser and makes a key that only
-this machine holds:
+The machine's owner installs `moor-machine-agent` on it and runs `up`:
 
 ```sh
-moor-machine-agent enroll --server https://moor.example.com --name mac --labels macos,ios-sim
+curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent
+moor-machine-agent up --server https://moor.example.com
 ```
 
-To run your own Boxes on the machine, enroll it with `--runtime PROVIDER`. It
-becomes a personal node; see [Personal nodes](config.md#personal-nodes).
+`up` asks `crabbox doctor` whether the provider is ready and prints its fixes
+when not. The provider is `--runtime`, or else the one crabbox is configured
+with; with neither, `up` stops and says to pass `--runtime`. It then makes a key that
+only this machine holds and prints a link and a code. Open the link on any
+device, sign in, check the code and add the machine; the code lasts 10 minutes.
+Pairing needs browser sign-in on the gate and one gate replica, since a code
+waits in the gate's memory. `up` then installs and starts a user service (a
+systemd user unit on Linux, a launch agent on macOS) that runs
+`moor-machine-agent run`, waits for its first link and prints
+`linked: NAME, N Box slots`. Run `up` again to apply new flags; it keeps the
+pairing. `moor-machine-agent down` stops and removes the service. On Linux,
+`loginctl enable-linger` keeps the service running after you log out.
 
-Then keep the agent running, for example as a launch agent or a systemd user
-service:
+The machine becomes a personal node; see [Personal nodes](config.md#personal-nodes).
+A machine that runs `exec` scripts and hosts no Boxes, such as a Mac for iOS
+builds, pairs with `--allow-exec` instead:
 
 ```sh
-moor-machine-agent run --allow-exec
+moor-machine-agent up --server https://moor.example.com --name mac --labels macos,ios-sim --allow-exec
 ```
 
 The agent dials the runner and serves the Box's calls over that link. It runs

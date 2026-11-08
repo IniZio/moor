@@ -77,7 +77,7 @@ pub(super) async fn off(home: &Path, pool: &Pool, features: &[String]) -> Option
 
 /// What failed in doctor's output, each once: the adapter's own `FAIL` lines, which the provider
 /// check carries among its passing ones, and crabbox's `failed` checks other than that carrier.
-fn doctor_failures<'a>(said: &'a str, err: &'a str) -> Vec<&'a str> {
+pub(crate) fn doctor_failures<'a>(said: &'a str, err: &'a str) -> Vec<&'a str> {
     let all = || said.lines().chain(err.lines());
     let adapter = all().filter(|l| l.starts_with("FAIL "));
     let carrier = |l: &&str| l.starts_with("failed") && l.contains("external provider command");

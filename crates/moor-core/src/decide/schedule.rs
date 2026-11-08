@@ -147,11 +147,7 @@ fn unknown(want: &NodeName, visible: &[&Node], requester: UserId) -> Verdict {
 /// The failure when no node is a candidate at all.
 fn nowhere(default: Option<&NodeName>) -> Verdict {
     fail(default.map_or_else(
-        || {
-            "no node can host this Box: enroll a machine with moor-machine-agent enroll \
-             --runtime <provider>"
-                .to_owned()
-        },
+        || "no node can host this Box: add a machine with moor-machine-agent up".to_owned(),
         |d| format!("no node can host this Box: shared default `{d}` does not exist"),
     ))
 }

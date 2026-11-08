@@ -24,13 +24,12 @@ names the default shared node; it is required when `nodes` has more than one
 entry. Shared nodes are optional. Without one, Boxes start only on personal
 nodes.
 
-A personal node is a machine its owner enrolled with a runtime. Only its owner
+A personal node is a machine its owner paired with a runtime. Only its owner
 can use it. The node is named for the machine and is online while the machine's
 agent is linked:
 
 ```sh
-moor-machine-agent enroll --server https://moor.example.com --name hv --runtime cloudhypervisor
-moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
+moor-machine-agent up --server https://moor.example.com --name hv --max-boxes 4
 ```
 
 ## Memory
