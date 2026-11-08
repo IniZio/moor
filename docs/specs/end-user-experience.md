@@ -42,7 +42,7 @@ open https://HOST            sign in with the team's OIDC
   Secrets   claude [paste]   github [paste]        both linked
   Machines  none             [add your machine]    optional
   Connect   Claude Code      claude mcp add --transport http moor https://HOST/mcp
-            hc               hc machine add ... (one line per Box, see Take over)
+            hc               moor-hc login https://HOST   (once, see Take over)
             Slack            mention @moor in a channel
 ```
 
@@ -120,9 +120,15 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 - **moor-herdr stays until the owner's herdr is an hc client.** Then it goes too.
 - **A Box closes only when a person closes it.** Sleep already frees its capacity. Closing on PR merge stays in the backlog.
 
-## Open
+- **hc connect is a small `moor-hc` bridge.** hc reaches a machine only over SSH or a `--via` command that carries stdin and stdout, so any shape needs a local bridge. herdr's TUI reaches only herdr servers over SSH, so it keeps the moor-herdr plugin.
+  - Now, the bridge keeps one hc machine per Box in sync and relays each through the Box's own hc. moor core does not change.
+  - Later, moor answers the hc protocol itself as one machine holding all of a person's Boxes. It moves behind the same bridge once hc's protocol settles or herdr becomes an hc client. The teammate's setup does not change.
 
-1. **hc connect.** `hc machine add --via 'moor exec NAME --'` needs the dev CLI and one line per Box. A teammate needs one line per moor that lists all their Boxes. Either a small `moor-hc` helper does it, or moor speaks the hc protocol at `https://HOST/hc`.
+```
+moor-hc login https://HOST          once, browser sign-in
+moor-hc sync                        user service: adds and removes hc machines as Boxes open and close
+  hc machine add --name BOX --temp --via 'moor-hc exec BOX --'
+```
 
 ## Gaps against today
 
@@ -131,6 +137,6 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 | Join | Secrets only in Slack `/moor login`. No page at `HOST`. | Account page, then Slack points to it. |
 | Start | Works from Claude Code and Slack. Node shown. | None. |
 | Watch | Claude Code, Slack and herdr show state. Claude Code hears Box events only through the moor plugin, which runs the dev CLI's `moor listen`. | Events over the HTTP MCP connection, so no CLI is needed. hc client view once connect exists. |
-| Take over | herdr plugin, or dev CLI `moor exec`. | Open 1. |
+| Take over | herdr plugin, or dev CLI `moor exec`. | `moor-hc` bridge. |
 | Result | Branch, artifacts, sleep. | None. |
 | Close | Any front. | None. |
