@@ -35,4 +35,4 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 `moor-boxes` skill has Claude run `moor listen --box <name>` in the background for
 each Box it starts or is asked to watch; no listener runs until then. Both use
 the sign-in from `moor login --server ...`, run once. Install steps are in
-[docs/mcp.md](../docs/mcp.md#get-told-inside-claude-code).
+[docs/notify.md](../docs/notify.md#in-claude-code).
