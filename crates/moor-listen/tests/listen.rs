@@ -332,6 +332,31 @@ fn busy_prints_nothing() {
 }
 
 #[test]
+fn an_idle_that_follows_a_question_does_not_repeat_the_last_reply() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    world.happen("repo/a", 1, "idled", "ready");
+    assert_eq!(listen.line(), "moor: box repo/a idled: ready");
+    let asked = json!({"question": "Which color?", "options": ["red", "blue"]});
+    world.happen_with("repo/a", 2, "needs_input", asked);
+    world
+        .fake
+        .lock()
+        .unwrap()
+        .said
+        .insert("repo/a".to_owned(), "ready".to_owned());
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a needs_input: Which color? (red, blue)"
+    );
+    world.happen("repo/a", 3, "idled", "ready");
+    std::thread::sleep(Duration::from_millis(500));
+    world.happen("repo/a", 4, "idled", "Picked blue.");
+    assert_eq!(listen.line(), "moor: box repo/a idled: Picked blue.");
+}
+
+#[test]
 fn a_box_started_after_open_is_picked_up_through_list_changed() {
     let world = world(&["repo/a"]);
     let listen = world.listen();
