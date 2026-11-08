@@ -143,6 +143,7 @@ fn only_a_short_error_class_is_kept_and_the_error_is_one_clean_line() {
     let v = run(&cx(dir.path(), proc, &["aws"])).unwrap();
     let text = serde_json::to_string(&v).unwrap();
     assert!(!text.contains("has spaces"), "{text}");
+    assert!(!text.contains("SENTINEL-VALUE"), "{text}");
     let [aws] = v.providers.as_slice() else {
         return assert_eq!(v.providers.len(), 1);
     };
