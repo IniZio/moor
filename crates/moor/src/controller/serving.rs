@@ -31,6 +31,7 @@ pub(super) fn serve_started(
     for line in interrupted {
         log(sink, &format!("start: {line}"));
     }
+    log_nodes_in_background(&running.env, sink);
     resume_setups_in_background(claimed, &running.env, sink);
     for line in Moor::from_env(&running.env).map_or_else(
         |e| vec![e.error.to_string()],
@@ -61,6 +62,21 @@ pub(super) fn serve_started(
     fronts.wait();
     Moor::end_keepers();
     0
+}
+
+/// Logs one line per configured node on a thread of its own, since asking each provider can be
+/// slow and a start must not wait for it.
+fn log_nodes_in_background(env: &Arc<Env>, sink: &Sink) {
+    let (env, sink) = (Arc::clone(env), Arc::clone(sink));
+    std::thread::spawn(move || {
+        let lines = Moor::from_env(&env).map_or_else(
+            |e| vec![e.error.to_string()],
+            |moor| moor.node_startup_lines(),
+        );
+        for line in lines {
+            log(&sink, &line);
+        }
+    });
 }
 
 /// Picks up, each on a thread of its own, the starts an earlier process left in `claimed`; the

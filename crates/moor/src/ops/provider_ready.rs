@@ -4,7 +4,7 @@
 //! controller: crabbox's messages and other details hold paths, key fingerprints and adapter
 //! output. The class is kept only when it is a short token, the error only as one bounded line.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -43,6 +43,43 @@ pub(crate) fn run(cx: &Cx) -> Result<ProviderReadyValue, CommandError> {
         })
         .collect();
     Ok(ProviderReadyValue { providers })
+}
+
+/// One line per configured node for the controller log: its runtime and whether the provider is
+/// ready or why not. Never fails; a store error is the line.
+pub(crate) fn startup_lines(cx: &Cx) -> Vec<String> {
+    let nodes = match all(cx) {
+        Ok(nodes) => nodes,
+        Err(e) => return vec![format!("nodes: {}", e.error)],
+    };
+    if nodes.is_empty() {
+        return vec!["no node configured; no Box can start".to_owned()];
+    }
+    let runtimes: BTreeSet<&str> = nodes.iter().map(|n| n.runtime.as_str()).collect();
+    let failing: BTreeMap<&str, Vec<ProviderCheck>> = runtimes
+        .into_iter()
+        .map(|rt| (rt, doctor(cx, rt)))
+        .collect();
+    nodes
+        .iter()
+        .map(|n| {
+            let state = match failing.get(n.runtime.as_str()).map(Vec::as_slice) {
+                Some([]) | None => "provider ready".to_owned(),
+                Some(checks) => format!(
+                    "provider not ready: {}",
+                    checks.iter().map(reason).collect::<Vec<_>>().join(", ")
+                ),
+            };
+            format!("node {} ({}): {state}", n.name, n.runtime)
+        })
+        .collect()
+}
+
+/// A failed check and its hint, as one phrase.
+fn reason(c: &ProviderCheck) -> String {
+    c.hint
+        .as_ref()
+        .map_or_else(|| c.check.clone(), |h| format!("{} ({h})", c.check))
 }
 
 /// The failed checks of `crabbox doctor` for `provider`.

@@ -7,7 +7,7 @@ use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::seam::proc::Tool;
 use moor_core::view::node::ProviderCheck;
 
-use super::run;
+use super::{run, startup_lines};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -168,4 +168,39 @@ fn a_long_error_is_cut_to_one_bounded_line() {
         .expect("an error");
     assert_eq!(err.chars().count(), 200, "{err}");
     assert!(err.ends_with('…'));
+}
+
+#[test]
+fn startup_lines_name_each_node_with_its_provider_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Crabbox,
+        &["doctor", "--provider", "aws", "--json"],
+        Reply::Fail {
+            code: 1,
+            stdout: OUT.to_owned(),
+            stderr: String::new(),
+        },
+    );
+    proc.on(
+        Tool::Crabbox,
+        &["doctor", "--provider", "static", "--json"],
+        Reply::Ok(r#"{"ok":true,"checks":[]}"#.to_owned()),
+    );
+    let lines = startup_lines(&cx(dir.path(), proc, &["static", "aws"]));
+    assert_eq!(
+        lines,
+        [
+            "node n0 (static): provider ready",
+            "node n1 (aws): provider not ready: provider (set the key)",
+        ]
+    );
+}
+
+#[test]
+fn startup_lines_say_when_no_node_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = startup_lines(&cx(dir.path(), Arc::new(ScriptedProc::new()), &[]));
+    assert_eq!(lines, ["no node configured; no Box can start"]);
 }
