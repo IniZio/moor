@@ -62,3 +62,28 @@ fn an_interrupt_is_refused_at_a_first_run_screen_and_sends_nothing() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(f.engine.steers().is_empty());
 }
+
+#[test]
+fn an_interrupt_to_an_idle_agent_leaves_its_session_idle() {
+    use moor_core::domain::decision::Decision;
+    use moor_core::domain::session_state::SessionInput;
+
+    use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
+
+    let idle = agent::at_turn(agent::idle(Ts::from_millis(0)), 6);
+    let f = fx_with(FakeEngine::new().probes("agent-1", idle), true);
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    run(&f.cx, &interrupt()).unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
+    let reading = read(&f.cx, store, &row, f.cx.clock().now(), PROBE_DEADLINE).unwrap();
+    settle(&f.cx, store, &row, &reading).unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
+    assert!(row.session.is_quiet(), "no turn ran, so none is left open");
+    assert!(
+        store.unanswered_steer(f.id).unwrap().is_none(),
+        "the interrupt is answered at the next read"
+    );
+}
