@@ -230,7 +230,7 @@ fn a_failing_setup_names_the_step_tail_and_box_in_json_and_text() {
     assert!(out.contains(
         "setup failed in Box box-1:\n  moor setup: $ a\n  boom: no such file\nretry it with: moor retry demo\nclose it with: moor close demo\n"
     ));
-    assert!(out.contains("open it with: moor open demo\n"));
+    assert!(out.contains("see it with: moor show demo\n"));
 }
 
 #[test]

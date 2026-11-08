@@ -130,7 +130,7 @@ fn promoted_line(value: &Value, out: &mut String) {
     }
 }
 
-/// Text form of `start`: a status line, how to open a Box that has a machine, then notes.
+/// Text form of `start`: a status line, how to see a Box that has a machine, then notes.
 fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
     let (head, state) = box_head(value, "box")?;
     let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
@@ -153,7 +153,7 @@ fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
     };
     if matches!(box_state, Some("ready" | "starting" | "asleep")) {
         let name = view.get("name")?.as_str()?;
-        let _ = writeln!(out, "open it with: moor open {name}");
+        let _ = writeln!(out, "see it with: moor show {name}");
     }
     work_tree_line(value, &mut out);
     setup_output(value, &mut out);
