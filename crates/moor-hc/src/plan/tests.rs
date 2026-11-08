@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{machine_name, plan, Machine, Step};
 use crate::via::{Link, Via};
@@ -31,8 +31,12 @@ fn theirs(name: &str) -> Machine {
     }
 }
 
-fn boxes(names: &[&str]) -> BTreeSet<String> {
-    names.iter().map(|&n| n.to_owned()).collect()
+fn boxes(names: &[&str]) -> BTreeMap<String, bool> {
+    names.iter().map(|&n| (n.to_owned(), true)).collect()
+}
+
+fn asleep(names: &[&str]) -> BTreeMap<String, bool> {
+    names.iter().map(|&n| (n.to_owned(), false)).collect()
 }
 
 fn add(name: &str, box_name: &str) -> Step {
@@ -65,6 +69,25 @@ fn a_machine_for_a_box_no_longer_up_is_removed() {
     let machines = [ours("moor.a", "moor/a"), ours("moor.b", "moor/b")];
     let steps = plan(EXE, &server(), &boxes(&["moor/b"]), &machines);
     assert_eq!(steps, [remove("moor.a")]);
+}
+
+#[test]
+fn an_asleep_box_keeps_its_machine_and_gets_none_until_it_is_up() {
+    let machines = [ours("moor.a", "moor/a")];
+    let open = asleep(&["moor/a", "moor/b"]);
+    assert_eq!(plan(EXE, &server(), &open, &machines), []);
+}
+
+#[test]
+fn an_asleep_box_on_an_old_binary_keeps_its_machine() {
+    let old = Machine {
+        via: Some(Via {
+            exe: "/old/moor-hc".to_owned(),
+            ..via("moor/a")
+        }),
+        ..theirs("moor.a")
+    };
+    assert_eq!(plan(EXE, &server(), &asleep(&["moor/a"]), &[old]), []);
 }
 
 #[test]
