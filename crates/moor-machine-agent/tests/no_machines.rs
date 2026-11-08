@@ -79,3 +79,57 @@ async fn a_server_that_drops_the_link_is_dialed_again() {
     assert!(!agent.is_finished(), "run gave up on a dropped link");
     agent.abort();
 }
+
+#[tokio::test]
+async fn a_404_after_a_link_was_made_is_dialed_again() {
+    use moor_client::link::{self, Frame};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    let dials = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&dials);
+    tokio::spawn(async move {
+        let mut first = true;
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            if first {
+                first = false;
+                let mut ws = link::accept(stream).await.unwrap();
+                let wait = Duration::from_secs(5);
+                link::recv(&mut ws, wait).await.unwrap();
+                let nonce = "n".to_owned();
+                link::send(&mut ws, &Frame::Challenge { nonce })
+                    .await
+                    .unwrap();
+                link::recv(&mut ws, wait).await.unwrap();
+                let version = "test".to_owned();
+                link::send(&mut ws, &Frame::Welcome { version })
+                    .await
+                    .unwrap();
+                drop(ws);
+            } else {
+                seen.fetch_add(1, Ordering::SeqCst);
+                let mut head = [0u8; 1024];
+                let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut head).await;
+                let reply =
+                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, reply.as_bytes()).await;
+            }
+        }
+    });
+    let dir = agent_dir(&server);
+    let agent = spawn_agent(dir.path());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while dials.load(Ordering::SeqCst) < 2 {
+        assert!(
+            !agent.is_finished(),
+            "run exited after a link: {:?}",
+            agent.await
+        );
+        assert!(tokio::time::Instant::now() < deadline, "never dialed again");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    agent.abort();
+}
