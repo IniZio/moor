@@ -95,7 +95,8 @@ pub struct Shown {
 }
 
 impl Shown {
-    /// The workspace label: `◈ repo/name`, the repo without its owner.
+    /// The workspace label: `◈ repo/name`, the repo without its owner and shown once when the
+    /// name already starts with it.
     #[must_use]
     pub fn label(&self) -> String {
         label(self.repo.as_deref(), &self.name)
@@ -105,10 +106,11 @@ impl Shown {
 /// The workspace label for Box `name` on `repo`.
 #[must_use]
 pub fn label(repo: Option<&str>, name: &str) -> String {
-    repo.map(|r| r.rsplit('/').next().unwrap_or(r)).map_or_else(
-        || format!("{BOX_MARK} {name}"),
-        |short| format!("{BOX_MARK} {short}/{name}"),
-    )
+    let short = repo.map(|r| r.rsplit('/').next().unwrap_or(r));
+    match short {
+        Some(s) if !name.starts_with(&format!("{s}/")) => format!("{BOX_MARK} {s}/{name}"),
+        _ => format!("{BOX_MARK} {name}"),
+    }
 }
 
 /// The fields of a `show` Box view this front reads.
