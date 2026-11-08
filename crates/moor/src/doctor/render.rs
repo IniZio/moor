@@ -31,7 +31,7 @@ fn text(checks: &[Check]) -> String {
 }
 
 /// `status  check  detail; fix: ...` and a line break.
-fn line(c: &Check) -> String {
+pub(crate) fn line(c: &Check) -> String {
     let status = match c.status {
         Status::Ok => "ok",
         Status::Warn => "warn",

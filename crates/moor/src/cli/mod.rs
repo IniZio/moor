@@ -102,6 +102,18 @@ pub enum Parsed {
         /// Public URL of the gate, to check it answers.
         public_url: Option<String>,
     },
+    /// Set this host up.
+    Up {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The local node's cap on live Boxes.
+        max_boxes: Option<std::num::NonZeroU32>,
+    },
+    /// Stop and remove the controller service.
+    Down {
+        /// Global options.
+        opts: GlobalOpts,
+    },
     /// Print the event stream as JSON lines.
     Events {
         /// Global options.
@@ -164,6 +176,8 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
             slug,
         },
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
+        Ok((opts, Action::Up { max_boxes })) => Parsed::Up { opts, max_boxes },
+        Ok((opts, Action::Down)) => Parsed::Down { opts },
         Ok((
             opts,
             Action::Events {

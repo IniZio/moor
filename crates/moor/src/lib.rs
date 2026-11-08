@@ -29,6 +29,7 @@ mod stamp;
 mod store;
 #[cfg(test)]
 mod testing;
+pub mod up;
 mod vault;
 mod wire;
 

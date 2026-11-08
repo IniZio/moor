@@ -51,6 +51,7 @@ rustix = { version = "1", features = [
   "net",
   "process",
   "stdio",
+  "termios",
   "thread",
 ] }
 zeroize = "1"
