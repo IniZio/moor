@@ -1,110 +1,98 @@
-# Run moor for a team
+# Self-host on one machine
 
-This page is for an operator. It takes one Linux host from nothing to an MCP
-URL that teammates connect to. You need an OIDC sign-in provider, such as
-Authgear, and a DNS name for the host, written here as `<host>`, with TLS in
-front of it.
+In this tutorial, you set moor up on one Linux host and start a Box there. It
+takes three commands. No sign-in provider, DNS name, or TLS is needed for local
+use. You add those later, when teammates join.
 
-## 1. Install and set the host up
+You need:
+
+- a Linux host where your user can open `/dev/kvm`
+- a `-moor` build of crabbox on `PATH`, as
+  [Set up the Box provider](providers.md#install-crabbox) shows
+- `claude` and `gh` on your own computer, signed in
+
+## 1. Install moor
 
 ```sh
 curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh
+```
+
+The script puts `moor`, `moor-gate`, and `moor-egress-forward` in
+`~/.local/bin`. Make sure that directory is on your `PATH`.
+
+## 2. Set the host up
+
+```sh
 moor up
 ```
 
-Boxes get their machines from crabbox, so the host also needs a `-moor`
-build of crabbox on `PATH`, as [Box providers](providers.md#use-a--moor-build-of-crabbox)
-says. `moor up` prints one line per step, with a fix for any that fails, and a
-rerun changes nothing:
+`moor up` prints one line per step, each `ok`, `warn`, or `fail`. A failed
+line carries its fix. Rerun `moor up` after a fix. A rerun changes nothing that
+is already in place.
 
-- It checks that crabbox selects a provider and that `crabbox doctor` passes
-  for it. When crabbox selects none, it prints the commands that install the
-  cloud-hypervisor provider.
-- It writes the controller config, `~/.config/moor/controller.yaml`, and a
-  `local` node on that provider in `~/.config/moor/config.yaml`. A
-  `--max-boxes N` flag caps the node. [Nodes](nodes.md) covers labels and
-  memory admission.
-- It runs the controller as the systemd user units `moor.socket` and
-  `moor.service`, which [Deploy the controller with systemd](deploy.md)
-  describes. Run `loginctl enable-linger` once so they keep running after you
-  log out.
-- It creates your moor user and asks for the token that `claude setup-token`
-  prints and the one that `gh auth token` prints. To skip the prompts, set
-  `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`.
-- It ends with `moor doctor`.
+1. It checks that crabbox selects a provider and that `crabbox doctor` passes
+   for it. When crabbox selects none, it prints the commands that install the
+   cloud-hypervisor provider.
+2. It writes the controller config, `~/.config/moor/controller.yaml`.
+3. It adds a node named `local` to `~/.config/moor/config.yaml`.
+4. It installs and starts the controller as the systemd user units
+   `moor.socket` and `moor.service`.
+5. It creates your moor user and asks for your `claude` and `github` secrets.
+   Paste what `claude setup-token` and `gh auth token` print.
+6. It runs `moor doctor` and prints the next command to run.
 
-Back up `vault.key` from `~/.config/moor`. Without it, no stored secret can be
-read. `moor down` stops and removes the units, and keeps the config, state and
-secrets.
+If a line warns that the controller stops when you log out, run
+`loginctl enable-linger` once.
 
-## 2. Start a Box
+To skip the prompts in step 5, set `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`
+before you run `moor up`.
+
+## 3. Check the node
+
+```sh
+moor node ls
+```
+
+You see the `local` node, its runtime, and whether warm starts are on.
+`moor up` sizes it at one Box per 4 GiB of memory beyond the first 4 GiB. Pass
+`moor up --max-boxes N` to set another cap.
+
+If `moor doctor` says `no node configured`, the user config has no `nodes`
+section. Add one, with the provider that `crabbox doctor` reports:
+
+```yaml
+nodes:
+  local:
+    runtime: cloudhypervisor
+```
+
+## 4. Start a Box
 
 ```sh
 moor start hello --repo OWNER/NAME --prompt "Say hello and stop"
 ```
 
-`moor start` refuses with every missing secret named, if one is missing.
-Close the Box with `moor close hello` once it is ready.
+Use a repo that your `gh auth token` can push to. The command prints the Box,
+and its branch `moor/ID-hello`. The first Box of a repo takes a few
+minutes, because it clones and installs from scratch.
 
-## 3. Add the gate's front
+Watch the agent with `moor inspect hello`. It shows the agent's state, its
+latest messages, and the end of its terminal.
 
-The gate talks to the controller through the `authgear` front. Add it to
-`~/.config/moor/controller.yaml`, add its socket unit as
-[Deploy the controller with systemd](deploy.md#install-the-units) shows, and
-restart the controller:
-
-```yaml
-fronts:
-  authgear: {}
-```
+## 5. Close the Box
 
 ```sh
-systemctl --user enable --now moor-front@authgear.socket
-systemctl --user restart moor.service
+moor close hello
 ```
 
-## 4. Start the gate
+`moor close` refuses while the Box holds work that is not pushed, and says how
+to push it. `moor close hello --force` discards that work.
 
-The gate checks each person's sign-in and serves the MCP endpoint. Register
-`https://<host>/auth/callback` as a redirect URI on the gate's client at your
-provider, and have the provider issue access tokens for `https://<host>/mcp`
-with the `moor:read` and `moor:write` scopes. Then:
+## Next
 
-```sh
-moor-gate \
-  --front-socket ~/.local/state/moor/fronts/authgear/front \
-  --issuer https://<your provider> \
-  --client-id <client id> \
-  --mcp-resource-url https://<host>/mcp \
-  --public-url https://<host>
-```
-
-The gate listens on `0.0.0.0:8443` without TLS. Put your TLS ingress in
-front of it, and let it hold a response stream open. The details are in
-[Operator setup](mcp.md#operator-setup) and
-[Browser sign-in](mcp.md#browser-sign-in).
-
-## 5. Hand out the URL
-
-Give teammates `https://<host>/mcp` and [Use moor on your team](use.md).
-Each one signs in as themselves and links their own tokens. To give them a
-place to link tokens, run the [Slack front](slack.md) or point them at the
-[herdr plugin](herdr.md#a-remote-moor).
-
-## On Kubernetes
-
-The release image, `ghcr.io/inizio/moor`, holds the controller, the gate,
-the Slack front and crabbox. The Helm chart runs the
-controller and the gate from it; [Run moor on Kubernetes](kubernetes.md)
-installs it. The controller config, the node, and the
-gate's flags are the same as above. Read [Deploy the controller with systemd](deploy.md) for how the
-controller drains on a restart, which the chart's stop timeout must allow
-for.
-
-## Reference
-
-- [Configuration reference](config.md): every key of the user config,
-  `.moor.yaml`, and the controller config.
-- [Nodes](nodes.md), [providers and the Proxy](providers.md), and
-  [machines](machines.md): where Boxes run.
-- [Slack](slack.md) and [webhooks](notify.md): more fronts.
+- To let teammates in, add the gate. Follow [Run on one host](deploy.md) and
+  [Sign-in with OIDC](oidc.md).
+- To stop the controller, run `moor down`. It keeps the config, the state, and
+  the secrets.
+- Back up `~/.config/moor/vault.key`. Without it, no stored secret can be read.
+  [Upgrade and back up](upgrade.md) has the rest.
