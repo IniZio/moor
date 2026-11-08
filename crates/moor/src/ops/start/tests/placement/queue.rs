@@ -117,6 +117,20 @@ fn only_asleep_boxes_and_too_little_memory_leave_the_head_waiting_with_its_reaso
 }
 
 #[test]
+fn a_resumed_box_drops_its_capacity_wait_reason_and_keeps_it_gone_after_sleeping_again() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", CEILING);
+    tick(&w, hv, 8192, 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    assert!(reason(&w, big).starts_with("waiting for capacity"));
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(lifecycle(&w, big), Ready);
+    assert_eq!(reason(&w, big), "");
+    put_to_sleep(&w, big);
+    assert_eq!(reason(&w, big), "");
+}
+
+#[test]
 fn a_small_box_behind_a_big_one_waits_its_turn_even_when_it_would_fit() {
     let (w, hv) = live_world(32_768);
     let big = asleep(&w, "big", CEILING);

@@ -211,12 +211,15 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
     if box_asleep {
         d = d.box_input(BoxInput::Wake);
     }
-    if let Some(workdir) = workdir {
-        d = d.set(Fields {
-            box_workdir: Field::Set(workdir.as_str().to_owned()),
-            ..Fields::default()
-        });
-    }
+    d = d.set(Fields {
+        box_workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
+        state_reason: if row.lifecycle == BoxLifecycle::Pending {
+            Field::Clear
+        } else {
+            Field::Keep
+        },
+        ..Fields::default()
+    });
     store.apply(d)?;
     Ok(Woke {
         any: true,
