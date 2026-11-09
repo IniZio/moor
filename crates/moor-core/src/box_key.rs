@@ -64,6 +64,8 @@ pub struct PoolSeat {
     pub machine: i64,
     /// The controller whose lease slugs the host keeps apart from other controllers'.
     pub controller: ControllerId,
+    /// Which of the Box's hands is placed here; the first is 1.
+    pub inc: i64,
 }
 
 impl PoolSeat {
@@ -82,13 +84,26 @@ pub fn checkpoint_home_machine(home: &ProviderId) -> Option<i64> {
     machine.parse().ok()
 }
 
-/// The controller and Box a pool lease slug `moor-{controller}-{id}` names; `None` for any other
-/// text, so a host's agent keeps arbitrary crabbox names out.
+/// The controller, Box and incarnation a pool lease slug names; `None` for any other text, so a
+/// host's agent keeps arbitrary crabbox names out.
+///
+/// The slug is `moor-{controller}-{id}` for the first incarnation and
+/// `moor-{controller}-{id}-h{inc}` for a later one.
 #[must_use]
-pub fn parse_pool_slug(slug: &str) -> Option<(ControllerId, BoxId)> {
-    let (controller, digits) = slug.strip_prefix("moor-")?.split_once('-')?;
-    let id: i64 = digits.parse().ok().filter(|id| *id > 0)?;
-    (id.to_string() == digits).then_some((ControllerId::parse(controller)?, BoxId::new(id)))
+pub fn parse_pool_slug(slug: &str) -> Option<(ControllerId, BoxId, i64)> {
+    let (controller, rest) = slug.strip_prefix("moor-")?.split_once('-')?;
+    let (digits, inc) = match rest.split_once("-h") {
+        Some((digits, inc)) => (digits, canonical(inc).filter(|inc| *inc > 1)?),
+        None => (rest, 1),
+    };
+    let id = canonical(digits)?;
+    Some((ControllerId::parse(controller)?, BoxId::new(id), inc))
+}
+
+/// The positive decimal number `text` spells with no sign, padding or suffix.
+fn canonical(text: &str) -> Option<i64> {
+    let n: i64 = text.parse().ok().filter(|n| *n > 0)?;
+    (n.to_string() == text).then_some(n)
 }
 
 /// Derives a Box's internal identifiers from its id.
@@ -128,11 +143,19 @@ impl BoxKey {
         format!("moor-{}", self.0.get())
     }
 
-    /// The lease slug of a Box on a user's pool host, `moor-{controller}-{id}`. Box ids repeat
-    /// across controllers that share a host, so the controller id keeps their leases apart.
+    /// The lease slug of hands `inc` of a Box on a user's pool host.
+    ///
+    /// It is `moor-{controller}-{id}` for the first and `moor-{controller}-{id}-h{inc}` for a
+    /// later one. Box ids repeat across controllers that share a host, so the controller id keeps
+    /// their leases apart; the incarnation keeps a lost VM's report apart from its replacement's.
     #[must_use]
-    pub fn pool_slug(self, controller: &ControllerId) -> String {
-        format!("moor-{}-{}", controller.as_str(), self.0.get())
+    pub fn pool_slug(self, controller: &ControllerId, inc: i64) -> String {
+        let (controller, id) = (controller.as_str(), self.0.get());
+        if inc > 1 {
+            format!("moor-{controller}-{id}-h{inc}")
+        } else {
+            format!("moor-{controller}-{id}")
+        }
     }
 
     /// The credential directory under the Box home, `.moor-cred-{id}-{nonce}`.

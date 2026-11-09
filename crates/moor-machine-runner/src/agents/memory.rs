@@ -33,7 +33,7 @@ pub(super) fn box_memory(machine_id: i64, report: &Report) -> Vec<BoxHostMemory>
         .boxes
         .iter()
         .filter_map(|b| {
-            let (controller, box_id) = parse_pool_slug(&b.slug)?;
+            let (controller, box_id, _) = parse_pool_slug(&b.slug)?;
             Some(BoxHostMemory {
                 machine_id,
                 controller,

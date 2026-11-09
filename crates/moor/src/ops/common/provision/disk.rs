@@ -98,6 +98,7 @@ pub(crate) fn relieve_disk(cx: &Cx, store: &Store, node: &Node, link: &MachineLi
         let seat = PoolSeat {
             machine: machine_id,
             controller: store.controller_id()?,
+            inc: 1,
         };
         make_room(cx, store, id, &seat.checkpoint_home(&runtime_id(node)))
     })();

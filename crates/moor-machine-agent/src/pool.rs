@@ -316,11 +316,11 @@ async fn warmup(lease: &Crabbox<'_>, slug: &str, boot: &Boot) -> Result<String, 
     .map(|()| String::new())
 }
 
-/// `slug` itself, when it is a well-formed `moor-<controller>-<id>` slug.
+/// `slug` itself, when it is a well-formed pool lease slug.
 fn checked(slug: &str) -> Result<&str, String> {
     parse_pool_slug(slug)
         .map(|_| slug)
-        .ok_or_else(|| format!("{slug:?} is not a moor-<controller>-<id> slug"))
+        .ok_or_else(|| format!("{slug:?} is not a pool lease slug"))
 }
 
 /// `class` itself, when it is a token crabbox can take as a machine class: lowercase letters,

@@ -38,7 +38,7 @@ pub(crate) async fn sweep(
     let since =
         crate::unix_now().saturating_sub(i64::try_from(grace.as_secs()).unwrap_or(i64::MAX));
     for found in leases {
-        let Some((owner, id)) = parse_pool_slug(&found.slug) else {
+        let Some((owner, id, _)) = parse_pool_slug(&found.slug) else {
             continue;
         };
         if owner != *controller {

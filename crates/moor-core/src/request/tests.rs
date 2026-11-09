@@ -1,6 +1,8 @@
 //! Tests for the request model.
 
 use super::*;
+use crate::name::BoxId;
+use serde::Deserialize;
 use serde_json::json;
 
 /// Valid Box name.
@@ -524,4 +526,54 @@ fn box_memory_and_memory_reports_still_refuse_unknown_fields() {
     assert!(serde_json::from_value::<BoxHostMemory>(box_memory).is_err());
     let report = json!({"at": 1, "available_mib": 1, "total_mib": 2, "extra": 1});
     assert!(serde_json::from_value::<MemoryReport>(report).is_err());
+}
+
+fn machine_box_json(inc: Option<i64>) -> serde_json::Value {
+    let mut row = json!({
+        "box_id": 7, "machine_id": 3, "slot": 1, "reach": "{}", "facts": "{}",
+        "stage": "prepared"});
+    if let (Some(inc), Some(fields)) = (inc, row.as_object_mut()) {
+        fields.insert("inc".to_owned(), json!(inc));
+    }
+    row
+}
+
+#[test]
+fn a_machine_box_without_an_incarnation_reads_as_unknown_and_writes_back_without_one() {
+    let sent = machine_box_json(None);
+    let row: MachineBox = serde_json::from_value(sent.clone()).unwrap();
+    assert_eq!(row.inc, None);
+    assert_eq!(serde_json::to_value(&row).unwrap(), sent);
+}
+
+#[test]
+fn a_machine_box_incarnation_round_trips() {
+    let sent = machine_box_json(Some(2));
+    let row: MachineBox = serde_json::from_value(sent.clone()).unwrap();
+    assert_eq!(row.inc, Some(2));
+    assert_eq!(serde_json::to_value(&row).unwrap(), sent);
+}
+
+/// The record as a controller before the incarnation existed read it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code, reason = "only parsing is observed")]
+struct OldMachineBox {
+    box_id: BoxId,
+    machine_id: i64,
+    slot: u16,
+    reach: String,
+    facts: String,
+    stage: BoxStage,
+    #[serde(default)]
+    evicted: bool,
+}
+
+#[test]
+fn an_old_controller_still_reads_a_record_from_a_runner_that_sends_no_incarnation() {
+    let row: MachineBox = serde_json::from_value(machine_box_json(None)).unwrap();
+    let wire = serde_json::to_value(&row).unwrap();
+    let old: OldMachineBox = serde_json::from_value(wire).unwrap();
+    assert_eq!(old.box_id, BoxId::new(7));
+    assert!(serde_json::from_value::<OldMachineBox>(machine_box_json(Some(2))).is_err());
 }
