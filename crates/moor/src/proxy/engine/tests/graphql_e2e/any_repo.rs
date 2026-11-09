@@ -121,7 +121,7 @@ fn other_endpoints_and_confusing_paths_get_no_credential() {
         "/repos/a/b/../../x",
         "/repos/cli/cli/releases/../pulls",
         "/repos/cli/cli/releases/1/../../actions/secrets",
-        "/repos/cli/cli/releases/../../../../user",
+        "/repos/cli/cli/releases/../../../../user/emails",
         "/repos/cli%2Fcli",
         "/repos/cli/cli%2Fpulls",
         "/repos/cli/cli/releases%2F..%2Fpulls",
@@ -130,9 +130,23 @@ fn other_endpoints_and_confusing_paths_get_no_credential() {
         "/repos/cli/cli/releases;/1",
         "/repos/cli/cli/pulls?x=/releases/1",
         "/repos/cli/cli/pulls?/../releases/1",
-        "/user",
+        "/user/emails",
+        "/user/repos",
+        "/user/../repos/cli/cli/pulls",
     ] {
         assert_uncredentialed(&rig, "GET", path);
+    }
+    rig.stop();
+}
+
+#[test]
+fn a_get_on_user_gets_the_credential_and_nothing_under_it_does() {
+    let rig = default_rule_rig();
+    let seen = send(&rig, "GET", "/user", Some("token gho_moor-proxy"));
+    let want = format!("token {SECRET}");
+    assert_eq!(seen.authorization.as_deref(), Some(want.as_str()));
+    for method in ["PATCH", "DELETE"] {
+        assert_uncredentialed(&rig, method, "/user");
     }
     rig.stop();
 }
