@@ -22,6 +22,12 @@ for a in "$@"; do
 done
 case "$1" in
   ssh) [ -e "$HOME/slow-ssh" ] && exec sleep 300
+    races=$(cat "$HOME/claim-races" 2>/dev/null || echo 0)
+    if [ "$races" -gt 0 ]; then
+      echo $((races - 1)) > "$HOME/claim-races"
+      echo "lease cbx_1 claim changed; retry" >&2; exit 2
+    fi
+    [ -e "$HOME/ssh-fail" ] && { echo "provider exploded" >&2; exit 2; }
     strict=yes; [ -e "$HOME/loose" ] && strict=no
     echo "ssh '-F' '/dev/null' '-o' 'StrictHostKeyChecking=$strict' '-o' 'UserKnownHostsFile=$HOME/kh' '-o' 'ProxyCommand=cat' 'vm@vm7'" ;;
   providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;

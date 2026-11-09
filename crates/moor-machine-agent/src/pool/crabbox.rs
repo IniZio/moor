@@ -11,6 +11,19 @@ use super::{box_dir, flight, Pool, CACHE_CAP, POOL_DIR, TAIL};
 /// How long crabbox gets to end a boot it was asked to stop; a forced close waits on this.
 const STOP_GRACE: Duration = Duration::from_secs(20);
 
+/// How long a call waits before its one retry when another call on the lease rewrote its claim.
+const CLAIM_RACE_WAIT: Duration = Duration::from_secs(1);
+
+/// Whether `err` is crabbox refusing a call because another call on the lease rewrote its claim
+/// meanwhile, which it checks before doing anything, so the call can run again.
+fn claim_raced(err: &str) -> bool {
+    let last = err.lines().last().unwrap_or_default();
+    err.starts_with("crabbox ")
+        && err.contains(" failed (Some(2)): ")
+        && last.contains(" claim changed")
+        && last.ends_with("; retry")
+}
+
 /// crabbox on this host, for one lease or, with no slug, for the pool.
 pub(super) struct Crabbox<'a> {
     /// The account's home.
@@ -69,8 +82,17 @@ impl Crabbox<'_> {
         let mut args = vec![verb, "--provider", &self.pool.provider];
         args.extend(flags);
         args.extend(self.slug);
-        self.spawn_both(&args, (&dir, &ceiling), within, ok, env)
+        match self
+            .spawn_both(&args, (&dir, &ceiling), within, ok, env)
             .await
+        {
+            Err(e) if claim_raced(&e) => {
+                tokio::time::sleep(CLAIM_RACE_WAIT).await;
+                self.spawn_both(&args, (&dir, &ceiling), within, ok, env)
+                    .await
+            }
+            done => done,
+        }
     }
 
     /// Runs `crabbox ARGS` in `dir`, with git looking no further up than `ceiling`, within

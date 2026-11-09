@@ -190,6 +190,41 @@ fn info_gives_the_login_user_and_host_key_only() {
     );
 }
 
+/// `info` on a warmed lease whose fake crabbox ssh says the claim changed `races` times, or fails
+/// otherwise when `fail`; whether it succeeded, the reason it refused with, and the ssh calls.
+fn info_after(races: u32, fail: bool) -> (bool, String, usize) {
+    let home = warmed();
+    std::fs::write(home.path().join("claim-races"), races.to_string()).unwrap();
+    if fail {
+        std::fs::write(home.path().join("ssh-fail"), "").unwrap();
+    }
+    let (ok, answer) = lease(home.path(), &["info", "moor-1a2b3c4d-7"]);
+    let reason = answer["reason"].as_str().unwrap_or_default().to_owned();
+    let calls = fake_crabbox::calls(home.path());
+    (ok, reason, calls.matches(" ssh --provider fake ").count())
+}
+
+#[test]
+fn a_call_whose_lease_claim_changed_meanwhile_runs_once_more() {
+    assert_eq!(info_after(1, false), (true, String::new(), 2));
+}
+
+#[test]
+fn a_second_claim_change_fails_the_call_with_crabboxs_reason() {
+    let (ok, reason, calls) = info_after(2, false);
+    assert!(!ok);
+    assert!(reason.ends_with("claim changed; retry"), "{reason}");
+    assert_eq!(calls, 2);
+}
+
+#[test]
+fn another_crabbox_failure_is_not_retried() {
+    let (ok, reason, calls) = info_after(0, true);
+    assert!(!ok);
+    assert!(reason.contains("provider exploded"), "{reason}");
+    assert_eq!(calls, 1);
+}
+
 #[test]
 fn info_refuses_words_that_turn_host_key_checking_off() {
     let home = warmed();
