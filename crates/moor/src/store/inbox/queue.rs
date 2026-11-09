@@ -4,12 +4,13 @@ use moor_core::domain::event::{Event, SteerSent};
 use moor_core::domain::inbox::{Delivery, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
-use moor_schema::tables::BoxInbox;
+use moor_schema::tables::{BoxInbox, BoxState};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{one, rows, select, write_delivery};
 use crate::store::apply::insert_event;
 use crate::store::db::{DbExt as _, Tx};
+use crate::store::reads::SHUT;
 use crate::store::{InboxRow, Store, StoreError};
 
 impl Store {
@@ -24,7 +25,7 @@ impl Store {
         rows(&self.reader()?, q)
     }
 
-    /// Every Box with a row not yet sent, by id.
+    /// Every open Box with a row not yet sent, by id.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
@@ -34,6 +35,15 @@ impl Store {
             .column(BoxInbox::Box)
             .from(BoxInbox::Table)
             .and_where(Expr::col(BoxInbox::SentAt).is_null())
+            .and_where(
+                Expr::col(BoxInbox::Box).in_subquery(
+                    Query::select()
+                        .column(BoxState::Box)
+                        .from(BoxState::Table)
+                        .and_where(Expr::col(BoxState::State).is_not_in(SHUT))
+                        .take(),
+                ),
+            )
             .order_by(BoxInbox::Box, Order::Asc)
             .take();
         self.reader()?

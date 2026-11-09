@@ -37,7 +37,7 @@ const fn b(c: Boxes) -> (Boxes, Boxes) {
 }
 
 /// Lifecycles of a Box that is not open.
-const SHUT: [&str; 2] = ["closed", "rejected"];
+pub(in crate::store) const SHUT: [&str; 2] = ["closed", "rejected"];
 
 /// Box states that count toward capacity, as SQL parameters.
 const LIVE_STATES: [&str; 3] = [
