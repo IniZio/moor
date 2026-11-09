@@ -185,23 +185,31 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
     }
 }
 
-/// Whether an acquire of this start already failed, as only a cut one can and still be claimed.
+/// Whether this start already asked for a machine twice, as a cut acquire that goes again does.
 fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let newest = |kind| -> Result<i64, CommandError> {
-        let found = store.newest_events_of(row.id, kind, 1)?;
-        Ok(found.first().map_or(0, |e| e.id))
-    };
-    Ok(newest("box_failed")? > newest("setting_up")?)
+    let began = store
+        .newest_events_of(row.id, "setting_up", 1)?
+        .first()
+        .map_or(0, |e| e.id);
+    let asked = store.newest_events_of(row.id, "box_requested", 2)?;
+    Ok(asked.len() == 2 && asked.iter().all(|e| e.id > began))
 }
 
 /// Records the cut-off acquire as failed; returns that the machine it may have made is released
 /// once serving, then acquired again when `again` asks. Not acquiring again settles the Box now.
 fn fail_acquire(store: &Store, row: &BoxRow, again: bool) -> Result<Then, CommandError> {
     let planned = planned_root(store, row.id)?;
-    let lost = Decision::new(row.id).hands_input(HandsInput::AcquireFailed {
-        cause: CAUSE.to_owned(),
-        attempted: planned.clone(),
-    });
+    let input = if again {
+        HandsInput::AcquireCut {
+            attempted: planned.clone(),
+        }
+    } else {
+        HandsInput::AcquireFailed {
+            cause: CAUSE.to_owned(),
+            attempted: planned.clone(),
+        }
+    };
+    let lost = Decision::new(row.id).hands_input(input);
     store.apply(lost.intent(IntentChange::Set(Intent::Provisioning)))?;
     if !again {
         store.apply(gave_up(row))?;

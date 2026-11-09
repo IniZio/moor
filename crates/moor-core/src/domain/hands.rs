@@ -83,7 +83,7 @@ impl HandsState {
         use HandsInput as I;
         let to = match (self, input) {
             (Self::Starting, I::Acquired { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
-            (Self::Starting, I::AcquireFailed { .. }) => Self::Failed,
+            (Self::Starting, I::AcquireFailed { .. } | I::AcquireCut { .. }) => Self::Failed,
             (Self::Failed | Self::Gone, I::Requested) => Self::Starting,
             (Self::Ready, I::Sleep) => Self::Asleep,
             (Self::Ready | Self::Asleep | Self::Failed, I::DriverMissing) => Self::Gone,
@@ -127,6 +127,12 @@ pub enum HandsInput {
         /// A handle that may have been created before the failure.
         attempted: Option<BoxHandle>,
     },
+    /// A controller restart cut the acquire off and the start acquires again, so the Box has not
+    /// failed.
+    AcquireCut {
+        /// A handle that may have been created before the cut.
+        attempted: Option<BoxHandle>,
+    },
     /// Put the Box to sleep.
     Sleep,
     /// Wake a sleeping Box.
@@ -150,6 +156,7 @@ impl HandsInput {
             Self::Requested => "requested",
             Self::Acquired { .. } => "acquired",
             Self::AcquireFailed { .. } => "acquire_failed",
+            Self::AcquireCut { .. } => "acquire_cut",
             Self::Sleep => "sleep",
             Self::Wake => "wake",
             Self::DriverMissing => "driver_missing",

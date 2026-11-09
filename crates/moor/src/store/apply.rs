@@ -323,7 +323,7 @@ fn write_box(
 fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHands> {
     let (col, handle) = match input {
         HandsInput::Acquired { handle } => (BoxHands::Handle, Some(handle)),
-        HandsInput::AcquireFailed { attempted, .. } => {
+        HandsInput::AcquireFailed { attempted, .. } | HandsInput::AcquireCut { attempted } => {
             (BoxHands::AttemptedHandle, attempted.as_ref())
         }
         _ => return Vec::new(),

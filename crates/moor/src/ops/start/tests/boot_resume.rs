@@ -15,6 +15,8 @@ use crate::adapters::clock::SystemClock;
 use crate::cx::owners::Owners;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::resume_setup;
 use crate::ops::steer;
 use crate::testing::driver::FakeDriver;
 use crate::Moor;
@@ -138,4 +140,51 @@ fn a_release_the_provider_holds_up_does_not_hold_up_serving() {
     assert!(resumed.join().unwrap().is_empty());
     assert_eq!(w.driver.acquired_nonces().len(), before + 1);
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Ready);
+}
+
+/// The kinds of the events Box 1 has, oldest first.
+fn event_kinds(w: &World) -> Vec<String> {
+    let store = w.cx.store().unwrap();
+    let events = store.events(BoxId::new(1), usize::MAX).unwrap();
+    events.into_iter().map(|e| e.kind).collect()
+}
+
+#[test]
+fn a_restart_mid_setup_that_resumes_emits_no_box_failed() {
+    let (w, _) = restarted_mid_setup("setup: [a, b]\n");
+    let (steered, _) = resume_and_steer(&w);
+    refused_for_setup(steered);
+    let kinds = event_kinds(&w);
+    assert!(!kinds.iter().any(|k| k == "box_failed"), "{kinds:?}");
+    assert!(!kinds.iter().any(|k| k == "setup_failed"), "{kinds:?}");
+}
+
+#[test]
+fn a_restart_mid_acquire_that_acquires_again_emits_no_box_failed() {
+    let w = cut_off(FakeDriver::new());
+    let (steered, _) = resume_and_steer(&w);
+    refused_for_setup(steered);
+    let kinds = event_kinds(&w);
+    assert!(!kinds.iter().any(|k| k == "box_failed"), "{kinds:?}");
+    assert!(!kinds.iter().any(|k| k == "setup_failed"), "{kinds:?}");
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Ready);
+}
+
+#[test]
+fn a_second_restart_mid_acquire_cannot_resume_so_the_box_fails() {
+    let w = cut_off(FakeDriver::new());
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.driver.notes_while_acquiring(&[], || {
+        std::panic::resume_unwind(Box::new("process died mid-acquire"))
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(resume_setup(&w.cx, store, BoxId::new(1)));
+    }));
+    assert!(crashed.is_err());
+    w.driver.notes_while_acquiring(&[], || {});
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    let kinds = event_kinds(&w);
+    assert!(kinds.iter().any(|k| k == "box_failed"), "{kinds:?}");
+    assert!(kinds.iter().any(|k| k == "setup_failed"), "{kinds:?}");
 }
