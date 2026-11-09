@@ -100,3 +100,42 @@ fn a_restart_mid_acquire_acquires_exactly_once_more_and_refuses_a_steer_meanwhil
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.intent, None);
 }
+
+#[test]
+fn a_release_the_provider_holds_up_does_not_hold_up_serving() {
+    let w = cut_off(FakeDriver::new());
+    let before = w.driver.acquired_nonces().len();
+    let (entered, in_release) = mpsc::channel();
+    let (unblock, blocked) = mpsc::channel::<()>();
+    let gate = std::sync::Mutex::new(Some((entered, blocked)));
+    w.driver.on_release(move || {
+        let first = gate.lock().unwrap().take();
+        if let Some((entered, blocked)) = first {
+            entered.send(()).unwrap();
+            blocked.recv().ok();
+        }
+    });
+    let owners = Arc::new(Owners::new(Arc::new(SystemClock::real())));
+    let (boot, request) = (restarted(&w, &owners), restarted(&w, &owners));
+    let (serving, served) = mpsc::channel();
+    let resumed = thread::spawn(move || {
+        Moor::from_cx(boot).resume(BoxId::new(1), move |_| serving.send(()).unwrap())
+    });
+    served
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the controller serves before the release ends");
+    in_release
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the release began");
+    let req = SteerReq {
+        target: BoxName::parse_allow_bare("demo").unwrap().into(),
+        text: Some("hi".to_owned()),
+        menu: None,
+        interrupt: false,
+    };
+    refused_for_setup(steer::run(&request, &req).map(drop));
+    unblock.send(()).unwrap();
+    assert!(resumed.join().unwrap().is_empty());
+    assert_eq!(w.driver.acquired_nonces().len(), before + 1);
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Ready);
+}

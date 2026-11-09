@@ -67,6 +67,7 @@ struct State {
     after_exec: Option<Arc<ExecHook>>,
     on_wake: Option<Arc<ExecHook>>,
     on_sleep: Option<Arc<ExecHook>>,
+    on_release: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
@@ -140,6 +141,10 @@ impl Driver for FakeDriver {
     }
 
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
+        let hook = self.st().on_release.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         let mut s = self.st();
         s.note(format!("release {}", handle.as_str()));
         if let Some(e) = s
