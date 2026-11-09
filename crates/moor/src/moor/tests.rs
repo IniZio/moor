@@ -77,3 +77,24 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
     assert_eq!(got(Caller::Operator(1000)), with(None));
     assert_eq!(got(Caller::Local(1000)), with(None));
 }
+
+#[test]
+#[should_panic(expected = "holds neither its turn")]
+fn a_local_mode_op_writing_a_box_row_without_its_turn_panics() {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
+
+    let (_dir, moor) = moor();
+    let store = moor.cx.store().expect("store");
+    let id = store
+        .apply(Decision::insert(NewBox {
+            name: moor_core::name::BoxName::parse_allow_bare("t").unwrap(),
+            repo: None,
+            spec: SpecFields::default(),
+        }))
+        .expect("insert")
+        .box_id;
+    Moor::checked(|| {
+        drop(store.apply(Decision::new(id).lifecycle(BoxLifecycleInput::Close { reason: None })));
+    });
+}

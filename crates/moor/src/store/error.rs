@@ -51,6 +51,12 @@ pub(crate) enum StoreError {
         /// The running controller's socket, as its lock file records it.
         socket: String,
     },
+    /// A controller runs on the state dir this moor would mutate directly.
+    #[error("a controller serves this state dir; set controller.socket")]
+    Served,
+    /// Another moor command is mutating the state dir this moor would mutate directly.
+    #[error("another moor command is using this state dir; wait for it or set controller.socket")]
+    InUse,
     /// A controller holds the lock on the shared database, and this moor is not it.
     #[error(
         "the controller {holder} is running on the state database {db}; set MOOR_CONTROLLER to \

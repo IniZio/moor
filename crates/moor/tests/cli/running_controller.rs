@@ -12,7 +12,8 @@ use super::{fresh_dir, Run};
 /// The store's file name inside the state dir.
 const DB: &str = "moor.db";
 
-/// A separate process holding an exclusive flock on a file; killed and reaped on drop.
+/// A separate process holding an exclusive flock on a file and recording itself as a controller
+/// does; killed and reaped on drop.
 struct Holder(ChildGuard);
 
 impl Holder {
@@ -21,7 +22,8 @@ impl Holder {
             .args([
                 "-e",
                 "use Fcntl ':flock'; open(my $f, '>>', $ARGV[0]) or die $!; \
-                 flock($f, LOCK_EX) or die $!; $| = 1; print \"locked\\n\"; sleep 300;",
+                 flock($f, LOCK_EX) or die $!; truncate($f, 0); \
+                 print $f \"4242\\n/run/moor.sock\\n\"; $f->flush; $| = 1; print \"locked\\n\"; sleep 300;",
             ])
             .arg(path)
             .stdout(Stdio::piped())
@@ -93,7 +95,7 @@ fn a_command_does_not_migrate_a_store_a_running_controller_owns() {
 
     assert_ne!(r.code, 0, "stdout={:?} stderr={:?}", r.stdout, r.stderr);
     let said = format!("{}{}", r.stdout, r.stderr);
-    assert!(said.contains("MOOR_CONTROLLER"), "{said}");
+    assert!(said.contains("set controller.socket"), "{said}");
     assert_eq!(applied(&state), None, "left unmigrated");
 }
 

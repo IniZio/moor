@@ -133,7 +133,7 @@ fn env_socket_routes_show_to_the_daemon() {
     ];
     let remote = moor(&home, &envs, &["--json", "show"]);
     assert_eq!(remote.code, 0, "{}", remote.stdout);
-    let state = daemon.root.join("state");
+    let state = daemon.root.join("empty-state");
     let direct = moor(
         &home,
         &[("MOOR_STATE_DIR", state.as_path())],
@@ -190,7 +190,7 @@ fn unreachable_controller_fails_without_local_fallback() {
 fn exit_codes_match_local_mode() {
     let daemon = Daemon::start();
     let home = daemon.root.join("client-home");
-    let state = daemon.root.join("state");
+    let state = daemon.root.join("empty-state");
     let cases: [&[&str]; 2] = [
         &["--json", "run", "foo", "--", "true"],
         &["--json", "start", "BAD_Name"],
