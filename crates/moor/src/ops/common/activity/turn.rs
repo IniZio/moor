@@ -6,27 +6,36 @@ use moor_core::domain::event::TurnOutcome;
 use moor_core::seam::clock::Ts;
 
 use super::{PaneLiveness, Reading};
+use crate::cx::owners::Cmd;
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// Append one `turn_done` event when the newest unanswered steer's turn is over.
+/// Append one `turn_done` event, and make the Box's archive due, when the newest unanswered
+/// steer's turn is over.
 ///
-/// A steer that already has a `turn_done` is not answered again. It is written before any
-/// state step or session end so neither can lose it.
+/// A steer that already has a `turn_done` is not answered again. It is written under the Box's
+/// turn, before any state step or session end so neither can lose it. While another operation
+/// holds the turn nothing is written and the next pass reads the ended turn again; true then,
+/// so the caller leaves the session alone until the turn end is on record.
 pub(super) fn note_turn_done(
+    cx: &Cx,
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
     now: Ts,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     let Some(steer) = store.unanswered_steer(row.id)? else {
-        return Ok(());
+        return Ok(false);
     };
     let Some((steer, outcome)) = answer(store, row, reading, steer, now)? else {
-        return Ok(());
+        return Ok(false);
+    };
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
+        return Ok(true);
     };
     store.record_turn_done(row.id, steer, outcome)?;
-    Ok(())
+    Ok(false)
 }
 
 /// Whether a steer's turn is still open by `reading`: unanswered, and not over yet.
