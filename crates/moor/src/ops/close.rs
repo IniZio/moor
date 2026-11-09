@@ -48,13 +48,40 @@ pub(crate) fn run_with_reason(
     req: &CloseReq,
     reason: Option<String>,
 ) -> Result<CloseView, CommandError> {
+    close_with(cx, req, reason, None)
+}
+
+/// Why a Box someone may still be using must stay open; `None` when it may close.
+pub(crate) type Keep<'a> = &'a dyn Fn(&Store, &BoxRow) -> Option<String>;
+
+/// [`run`] for a close nobody asked for, which never wakes the Box. `keep` judges the Box as read
+/// under its lock, before anything else; a reason refuses the close.
+pub(crate) fn run_unless_kept(
+    cx: &Cx,
+    req: &CloseReq,
+    keep: Keep<'_>,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, None, Some(keep))
+}
+
+/// The close of `req`; see [`run_unless_kept`] for `keep`.
+fn close_with(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: Option<String>,
+    keep: Option<Keep<'_>>,
+) -> Result<CloseView, CommandError> {
+    let wake = keep.map_or(check::Wake::IfRoom, |_| check::Wake::Never);
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
     let lock = lock(cx, &first, req.force)?;
     let mut row = store.box_row(first.id)?.unwrap_or(first);
+    if let Some(why) = keep.and_then(|keep| keep(store, &row)) {
+        return Err(CommandError::new(ErrorKind::Refused, why));
+    }
     with_planned(store, &mut row)?;
-    let box_check = check::box_check(cx, store, &mut row, req.force)?;
+    let box_check = check::box_check(cx, store, &mut row, (req.force, wake))?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate_with_reason(&facts(&row, box_check), req.force, reason)
         .map_err(|r| refused(&row, r))?;

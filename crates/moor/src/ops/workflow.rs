@@ -19,6 +19,7 @@ use moor_core::{BoxId, BoxName, StartReq};
 use crate::cx::Cx;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
+use previous::close_previous;
 use settle::{
     box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs, finish_runs,
 };
@@ -274,6 +275,12 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
             .map_err(|e| e.to_string())
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
+    if let (Ok(true), WorkflowOutcome::Started { box_id }) = (&settled, &outcome) {
+        if let Ok(store) = cx.store() {
+            out.extend(close_previous(cx, store, job, *box_id));
+            out.extend(cx.take_warnings().into_iter().map(|w| w.message));
+        }
+    }
     if matches!(settled, Ok(false)) {
         let late = cx.store().map_err(|e| e.error.to_string());
         if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.name)) {
@@ -361,6 +368,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
     out
 }
 
+mod previous;
 mod settle;
 #[cfg(test)]
 mod tests;

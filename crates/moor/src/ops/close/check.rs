@@ -11,6 +11,15 @@ use crate::ops::common::boxwork::{probe, BoxWork};
 use crate::ops::common::wake::wake_to_close;
 use crate::store::{BoxRow, Store};
 
+/// Whether a check may wake an asleep Box to read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Wake {
+    /// When the Box fits now.
+    IfRoom,
+    /// Never: an asleep Box is answered from the check stored when it went to sleep.
+    Never,
+}
+
 /// Looks for work that exists only in the Box, waking a sleeping Box to read it when it fits.
 ///
 /// `row` is reloaded when the wake changed it, so teardown sees a Ready Box. An asleep Box whose
@@ -21,7 +30,7 @@ pub(super) fn box_check(
     cx: &Cx,
     store: &Store,
     row: &mut BoxRow,
-    force: bool,
+    (force, wake): (bool, Wake),
 ) -> Result<BoxCheck, CommandError> {
     // --force discards Box work, so the Box is neither woken nor probed.
     if force || !needs_box_check(row.lifecycle, row.session) {
@@ -49,6 +58,12 @@ pub(super) fn box_check(
             ahead: c.ahead,
             dirty: c.dirty,
         });
+    }
+    if asleep && wake == Wake::Never {
+        return Ok(stored.map_or_else(
+            || BoxCheck::Unknown("its work was not checked when it went to sleep".to_owned()),
+            |_| BoxCheck::Clean,
+        ));
     }
     // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
     match wake_to_close(cx, store, row) {

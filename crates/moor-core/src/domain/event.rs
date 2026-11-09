@@ -376,13 +376,16 @@ pub enum Event {
     /// The disk of the node the Box is on ran low, or came back.
     #[serde(untagged)]
     NodeDisk(NodeDiskEvent),
+    /// A workflow's earlier Box stayed open when its next run started.
+    #[serde(untagged)]
+    Workflow(WorkflowEvent),
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),
 }
 pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred};
 pub use self::{machine::MachineEvent, profile::*, steps::*};
-pub use kind::{NodeDiskEvent, StallEvent, ASSERTED_KINDS, EVENT_KINDS};
+pub use kind::{NodeDiskEvent, StallEvent, WorkflowEvent, ASSERTED_KINDS, EVENT_KINDS};
 pub use post_clone::{PostCloneStep, ProviderStep, StepName, TimingEvent, MAX_STEPS};
 mod access;
 mod boxes;

@@ -319,6 +319,13 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
+    /// A workflow's earlier Box was kept open when the next run started.
+    PreviousBoxKept {
+        /// The kept Box.
+        name: String,
+        /// Why it was not closed.
+        reason: String,
+    },
     /// Reading the agent's screen for first-run prompts failed.
     AgentPromptCheckFailed {
         /// What went wrong.
