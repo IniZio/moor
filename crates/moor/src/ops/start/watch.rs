@@ -10,6 +10,7 @@ use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, Warning};
 
 use super::launch::{record, to_json, TAIL_LINES};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
@@ -58,6 +59,9 @@ fn tell_of_lost_disk(cx: &Cx, store: &Store, id: BoxId) {
 
 /// Watches the fresh agent pane and reports a launch whose agent died at once as failed.
 ///
+/// A start reads the pane with the Box's turn free, so a steer or close is not held up, and each
+/// record takes the turn for its own writes. A caller that holds the turn keeps it throughout.
+///
 /// An exit marker in the pane ends the live session and records the failure like any other
 /// launch failure; the returned view is the failed launch. Otherwise `agent` comes back as is.
 pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> AgentLaunchView {
@@ -65,6 +69,13 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
         return agent;
     }
     let Some((session, code, tail)) = poll(cx, store, id) else {
+        let _turn = match cx.turn_unless_held(id, Cmd::Watch) {
+            Ok(turn) => turn,
+            Err(e) => {
+                warn_record(cx, &e.error);
+                return agent;
+            }
+        };
         report_installs(cx, store, id);
         tell_of_lost_disk(cx, store, id);
         if let Err(e) = tell_relaunched(cx, store, id) {
@@ -76,10 +87,12 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
         return agent;
     };
     let failure = exited(cx, code, &tail);
-    let recorded = store
-        .end_session(session, code, None)
-        .map_err(CommandError::from)
-        .and_then(|()| record(store, id, Field::Set(to_json(&failure)?), Some(&failure)));
+    let recorded = cx.turn_unless_held(id, Cmd::Watch).and_then(|_turn| {
+        store
+            .end_session(session, code, None)
+            .map_err(CommandError::from)
+            .and_then(|()| record(store, id, Field::Set(to_json(&failure)?), Some(&failure)))
+    });
     if let Err(e) = recorded {
         warn_record(cx, &e.error);
     }
@@ -189,8 +202,14 @@ fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, Option<i32>, String)>
             }),
         };
         if let Some(event) = event {
-            if let Err(e) = store.apply(Decision::new(id).event(event)) {
-                warn_record(cx, &e);
+            let recorded = cx.turn_unless_held(id, Cmd::Watch).and_then(|_turn| {
+                store
+                    .apply(Decision::new(id).event(event))
+                    .map(drop)
+                    .map_err(CommandError::from)
+            });
+            if let Err(e) = recorded {
+                warn_record(cx, &e.error);
             }
             return None;
         }

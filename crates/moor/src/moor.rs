@@ -152,6 +152,11 @@ impl Moor {
         wire::leave_signals_to_controller()
     }
 
+    /// Runs `f`, a thread's entry, with its Box writes checked against their owners in test builds.
+    pub(crate) fn checked<T>(f: impl FnOnce() -> T) -> T {
+        checked(f)
+    }
+
     /// The `version` envelope; independent of config and state.
     #[must_use]
     pub fn version() -> Response {

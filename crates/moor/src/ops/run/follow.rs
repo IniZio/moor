@@ -30,7 +30,7 @@ pub(crate) fn during<T>(
     };
     let done = AtomicBool::new(false);
     thread::scope(|scope| {
-        scope.spawn(|| follow(path, &done, sink));
+        scope.spawn(|| crate::cx::owners::checked(|| follow(path, &done, sink)));
         let _done = SetOnDrop(&done);
         work()
     })

@@ -133,7 +133,7 @@ fn run(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits, shared: &Ar
     let env = env.clone();
     let poller = Arc::clone(shared);
     let since = ask.since;
-    thread::spawn(move || poll(&env, &ask, limits, &tx, &poller));
+    thread::spawn(move || crate::Moor::checked(|| poll(&env, &ask, limits, &tx, &poller)));
     let mut last = since;
     for frame in rx {
         if let ServerFrame::Event { cursor, .. } = &frame {

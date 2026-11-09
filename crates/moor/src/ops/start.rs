@@ -202,8 +202,9 @@ fn attach(
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
+    let turn = cx.turn(row.id, Cmd::Start)?;
     let row = &reread(store, row.id)?;
-    let reprovisioned = reprovision(cx, store, row, Cmd::Start)?;
+    let reprovisioned = reprovision(cx, store, row, &turn)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {
@@ -227,7 +228,9 @@ fn attach(
     }
     asleep::wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
+    drop(turn);
     let agent = watch::run(cx, store, row.id, agent);
+    let _turn = cx.turn(row.id, Cmd::Steer)?;
     let row = &reread(store, row.id)?;
     if req.prompt.is_some() {
         store.set_held_prompt(row.id, None)?;

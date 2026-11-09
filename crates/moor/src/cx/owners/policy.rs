@@ -25,11 +25,20 @@ pub(crate) enum Cmd {
     /// Send the agent a prompt.
     Steer,
     /// Launch the agent again.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a relaunch runs under its start's or steer's turn"
+        )
+    )]
     Relaunch,
     /// Run a command in the Box.
     Run,
     /// Run a command in the Box with its stdio streamed, keeping no run record.
     Exec,
+    /// Record what a fresh agent's first moments showed.
+    Watch,
     /// Bring the row in line with the machine.
     Reconcile,
     /// Promote the Box's work to its links.
@@ -56,6 +65,7 @@ impl Cmd {
             Self::Relaunch => "relaunch",
             Self::Run => "run",
             Self::Exec => "exec",
+            Self::Watch => "watch",
             Self::Reconcile => "reconcile",
             Self::Promote => "promote",
             Self::Copy => "copy",

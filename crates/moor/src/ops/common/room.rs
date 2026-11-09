@@ -172,7 +172,7 @@ pub(crate) fn on_report(
     let (reading, change) = judge_disk(&memory, p.readings.last(), reading, now);
     p.readings.push(reading);
     if let Some(change) = change {
-        tell_disk(store, &node.name, change)?;
+        tell_disk(cx, store, &node.name, change)?;
         // Saved now, so a suspension failing below does not repeat the alert on every report.
         store.set_pressure(&node.name, &p)?;
     }
@@ -249,8 +249,9 @@ fn judge_disk(
 }
 
 /// Records `change` of `node`'s disk once for each owner with a Box there, so each hears through
-/// the webhooks and streams that already carry Box events. Nothing else happens to the Boxes.
-fn tell_disk(store: &Store, node: &NodeName, change: Change) -> Result<(), CommandError> {
+/// the webhooks and streams that already carry Box events. Nothing else happens to the Boxes; a
+/// Box with an op in flight is skipped.
+fn tell_disk(cx: &Cx, store: &Store, node: &NodeName, change: Change) -> Result<(), CommandError> {
     let ids = store.one_live_per_owner_on(node)?;
     let node = node.to_string();
     for id in ids {
@@ -272,7 +273,9 @@ fn tell_disk(store: &Store, node: &NodeName, change: Change) -> Result<(), Comma
                 total_mib,
             },
         };
-        store.apply(Decision::new(id).event(event))?;
+        if let Some(_turn) = cx.try_turn(id, Cmd::Settle) {
+            store.apply(Decision::new(id).event(event))?;
+        }
     }
     Ok(())
 }

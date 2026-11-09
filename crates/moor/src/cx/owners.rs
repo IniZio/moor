@@ -25,7 +25,7 @@ pub(crate) use self::check::{boot, checked};
 use self::state::{Grant, Holder, State};
 #[cfg(test)]
 pub(crate) use self::turn::RunHold;
-pub(crate) use self::turn::Turn;
+pub(crate) use self::turn::{Turn, TurnShare};
 
 /// What ends on a Box: the turn granted to a ticket, or the run a thread began.
 #[derive(Clone, Copy)]
@@ -167,6 +167,32 @@ impl Owners {
         st.boxes.entry(box_id).or_default().holder = Some(Holder::new(seq, cmd, cancel));
         drop(st);
         Some(Turn::new(self, box_id, seq))
+    }
+
+    /// Whether this thread holds `box_id`'s turn.
+    pub(crate) fn holds(&self, box_id: BoxId) -> bool {
+        let me = std::thread::current().id();
+        let st = self.lock();
+        let held = (st.boxes.get(&box_id))
+            .and_then(|o| o.holder.as_ref())
+            .is_some_and(|h| h.thread == me);
+        drop(st);
+        held
+    }
+
+    /// A share of the turn this thread holds, for a helper thread to act under; `None` when it
+    /// holds none.
+    pub(crate) fn held_share(&self) -> Option<TurnShare<'_>> {
+        let st = self.lock();
+        let me = std::thread::current().id();
+        let held = st.boxes.iter().find_map(|(id, o)| {
+            o.holder
+                .as_ref()
+                .filter(|h| h.thread == me)
+                .map(|h| (*id, h.seq))
+        });
+        drop(st);
+        held.map(|(id, seq)| TurnShare::new(self, id, seq))
     }
 
     /// Wakes every waiter with a restarting error and refuses every later call; holders finish.
