@@ -546,17 +546,7 @@ fn waiting_for_the_run_ignores_open_limits() {
 
 /// Records a steer to `demo` sent once its agent had ended `turn_before` turns.
 fn steered(cx: &Cx, id: BoxId, turn_before: u64) {
-    let event = moor_core::domain::decision::ExtraEvent::Steered {
-        session: SESSION.to_owned(),
-        message: "go".to_owned(),
-        submit_retried: false,
-        turn_before: Some(turn_before),
-        status_before: None,
-    };
-    cx.store()
-        .unwrap()
-        .apply(Decision::new(id).event(event))
-        .unwrap();
+    crate::testing::inbox::sent(cx.store().unwrap(), id, Some(turn_before), None);
 }
 
 #[test]

@@ -1,6 +1,5 @@
 //! Tests for name lookups and live-box scans.
 
-use moor_core::decide::turn::SteerMark;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -9,10 +8,7 @@ use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId};
-use moor_schema::tables::Events;
-use sea_query::Query;
 
-use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
 use super::Store;
@@ -92,78 +88,6 @@ fn box_rows_live_skips_deleted_boxes() {
     let rows = store.box_rows_live().unwrap();
     let got: Vec<_> = rows.iter().map(|(id, b)| (*id, b.state)).collect();
     assert_eq!(got, [(live, HandsState::Starting)]);
-}
-
-fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
-    let conn = store.writer();
-    conn.row(
-        Query::insert()
-            .into_table(Events::Table)
-            .columns([Events::Box, Events::Kind, Events::Payload, Events::Ts])
-            .values_panic([id.get().into(), kind.into(), payload.into(), ts.into()])
-            .returning_col(Events::Id),
-        |r| r.get(0),
-    )
-    .unwrap()
-}
-
-#[test]
-fn unanswered_steer_is_the_newest_steer_without_turn_done() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let id = add(&store, "a");
-    event(&store, id, "steered", "{}", 10);
-    let newest = event(&store, id, "steered", "{}", 20);
-    assert_eq!(
-        store.unanswered_steer(id).unwrap(),
-        Some(SteerMark {
-            id: newest,
-            turn_before: None,
-            status_before: None,
-        })
-    );
-}
-
-#[test]
-fn unanswered_steer_reads_the_turn_count_before_the_send() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let id = add(&store, "a");
-    let steer = event(&store, id, "steered", r#"{"turn_before":7}"#, 10);
-    assert_eq!(
-        store.unanswered_steer(id).unwrap(),
-        Some(SteerMark {
-            id: steer,
-            turn_before: Some(7),
-            status_before: None,
-        })
-    );
-}
-
-#[test]
-fn answered_newest_steer_yields_none_even_with_older_unanswered() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let id = add(&store, "a");
-    event(&store, id, "steered", "{}", 10);
-    let newest = event(&store, id, "steered", "{}", 20);
-    event(
-        &store,
-        id,
-        "turn_done",
-        &format!("{{\"steer\":{newest}}}"),
-        30,
-    );
-    assert_eq!(store.unanswered_steer(id).unwrap(), None);
-}
-
-#[test]
-fn no_steer_yields_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let id = add(&store, "a");
-    event(&store, id, "turn_done", "{\"steer\":1}", 30);
-    assert_eq!(store.unanswered_steer(id).unwrap(), None);
 }
 
 #[test]

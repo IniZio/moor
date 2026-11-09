@@ -38,6 +38,7 @@ struct State {
     later_texts: VecDeque<String>,
     fail_transcript: Option<EngineError>,
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
+    on_steer: Option<Arc<dyn Fn() + Send + Sync>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
     profile_install: Option<String>,
@@ -284,16 +285,25 @@ impl Engine for FakeEngine {
         steer: &Steer,
         _deadline: Deadline,
     ) -> Result<SteerOutcome, EngineError> {
-        let mut st = self.st();
-        st.steers.push((s.id.clone(), steer.clone()));
-        if let Some(i) = st.after_steer.iter().position(|(id, _)| *id == s.id) {
-            let (id, p) = st.after_steer.remove(i);
-            st.probes.insert(id, p);
+        let hook = {
+            let mut st = self.st();
+            st.steers.push((s.id.clone(), steer.clone()));
+            if let Some(i) = st.after_steer.iter().position(|(id, _)| *id == s.id) {
+                let (id, p) = st.after_steer.remove(i);
+                st.probes.insert(id, p);
+            }
+            st.on_steer.clone()
+        };
+        if let Some(f) = hook {
+            f();
         }
-        st.steer_results.pop_front().unwrap_or(Ok(SteerOutcome {
-            submit_retried: false,
-            submit_checked: true,
-        }))
+        self.st()
+            .steer_results
+            .pop_front()
+            .unwrap_or(Ok(SteerOutcome {
+                submit_retried: false,
+                submit_checked: true,
+            }))
     }
 
     fn transcript(&self, s: &SessionRef, dest: &Path, d: Deadline) -> Result<(), EngineError> {

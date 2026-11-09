@@ -37,7 +37,7 @@ pub(super) fn step(
     reading: &Reading,
 ) -> Result<(), CommandError> {
     // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
-    let turn_open = store.unanswered_steer(row.id)?.is_some();
+    let turn_open = !store.sent(row.id)?.is_empty();
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
         (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
             SessionInput::AgentQuiet

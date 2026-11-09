@@ -13,7 +13,6 @@ use moor_core::activity::Probe;
 use moor_core::controller::WatchFilter;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -345,17 +344,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
         (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(stored(&cx, id), 0);
-    let steered = ExtraEvent::Steered {
-        session: "s-a".to_owned(),
-        message: "go".to_owned(),
-        submit_retried: false,
-        turn_before: None,
-        status_before: None,
-    };
-    cx.store()
-        .unwrap()
-        .apply(Decision::new(id).event(steered))
-        .unwrap();
+    crate::testing::inbox::sent(cx.store().unwrap(), id, None, None);
     driver.push_artifact_index(listing());
     let messages = moor.settle_open(&|| false);
     assert!(messages.is_empty(), "{messages:?}");

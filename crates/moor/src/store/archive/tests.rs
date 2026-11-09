@@ -64,10 +64,9 @@ fn at(key: &str, inc: i64, ms: i64) -> ArchivePointer {
 }
 
 /// Ends a steered turn, which makes the Box's archive due now.
-fn end_turn(store: &Store, id: BoxId, steer: i64) {
-    assert!(store
-        .record_turn_done(id, steer, TurnOutcome::Idle)
-        .unwrap());
+fn end_turn(store: &Store, id: BoxId) {
+    let row = crate::testing::inbox::sent(store, id, None, None);
+    assert!(store.answer(id, row, TurnOutcome::Idle).unwrap());
 }
 
 #[test]
@@ -114,7 +113,7 @@ fn a_moved_pointer_pays_the_archive_due_by_then_and_a_refused_one_does_not() {
     store
         .advance_archive(id, session, &at("new", 2, 0))
         .unwrap();
-    end_turn(&store, id, 1);
+    end_turn(&store, id);
     let due = clock.now();
     assert_eq!(store.archive_due(id).unwrap(), Some(due));
     store
@@ -142,7 +141,7 @@ fn a_reschedule_keeps_a_due_marked_after_the_save_began() {
     let (store, clock, id, _session) = fx(dir.path());
     let seen = clock.now();
     clock.sleep(Duration::from_secs(1));
-    end_turn(&store, id, 1);
+    end_turn(&store, id);
     let later = clock.now();
     store.reschedule_archive(id, seen, None).unwrap();
     assert_eq!(store.archive_due(id).unwrap(), Some(later));

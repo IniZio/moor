@@ -13,11 +13,11 @@ pub enum TurnSignal {
     Other,
 }
 
-/// A steer waiting for its turn to end, counted in the terminal's ended turns so no controller
+/// A sent inbox row waiting for its turn to end, counted in the terminal's ended turns so no controller
 /// time is compared with a Box time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SteerMark {
-    /// The steer's event id.
+    /// The inbox row's id.
     pub id: i64,
     /// The ended-turn count the steer's turn must pass; none when the send could not tell.
     pub turn_before: Option<u64>,
@@ -39,7 +39,7 @@ pub struct TermTurn {
 /// What the turn decider can observe.
 #[derive(Debug, Clone, Copy)]
 pub struct TurnFacts {
-    /// The newest unanswered steer.
+    /// The open turn's row.
     pub steer: Option<SteerMark>,
     /// The agent's terminal, when read.
     pub term: Option<TermTurn>,
@@ -47,7 +47,7 @@ pub struct TurnFacts {
     pub exited: bool,
 }
 
-/// The steer's event id and outcome once the turn it belongs to is done.
+/// The row's id and outcome once the turn it belongs to is done.
 ///
 /// An exit wins. Otherwise an idle or blocked terminal counts once its ended turns are past the
 /// steer's mark, and an idle one also once its status was set after the one the steer saw.

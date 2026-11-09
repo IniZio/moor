@@ -250,7 +250,11 @@ fn turn_done_kind_and_payload() {
         (TurnOutcome::NeedsInput, "needs_input"),
         (TurnOutcome::Exited, "exited"),
     ] {
-        let e = Event::TurnDone { steer: 7, outcome };
+        let e = Event::TurnDone {
+            steer: 7,
+            outcome,
+            inbox: None,
+        };
         assert_eq!(e.kind(), "turn_done");
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }

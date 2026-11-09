@@ -177,7 +177,7 @@ impl Event {
             Self::TranscriptSaved { .. } => "transcript_saved",
             Self::TranscriptFailed { .. } => "transcript_failed",
             Self::TranscriptSkipped { .. } => "transcript_skipped",
-            Self::Steered { .. } => "steered",
+            Self::Steered(_) => "steered",
             Self::ProxyStarted { .. } => "proxy_started",
             Self::TunnelRestarted { .. } => "tunnel_restarted",
             Self::EgressRefused { .. } => "egress_refused",
