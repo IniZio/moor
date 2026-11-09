@@ -56,16 +56,7 @@ impl Store {
     pub(crate) fn live_launch(&self, box_id: BoxId) -> Result<Option<Launch>, StoreError> {
         let conn = self.reader()?;
         Ok(conn
-            .row(
-                Query::select()
-                    .columns(LAUNCH_COLUMNS)
-                    .from(Launches::Table)
-                    .and_where(Expr::col(Launches::Box).eq(box_id.get()))
-                    .and_where(Expr::col(Launches::EndedAt).is_null())
-                    .order_by(Launches::Id, Order::Desc)
-                    .limit(1),
-                launch_from_row,
-            )
+            .row(end::live(box_id).columns(LAUNCH_COLUMNS), launch_from_row)
             .optional()?)
     }
 
@@ -217,29 +208,6 @@ impl Store {
         Ok(id)
     }
 
-    /// Record the end of launch `id`; one that already ended is left untouched.
-    pub(crate) fn end_launch(
-        &self,
-        id: LaunchId,
-        exit: Option<i32>,
-        transcript_digest: Option<&str>,
-    ) -> Result<(), StoreError> {
-        let now = self.now();
-        let conn = self.writer();
-        let mut q = Query::update();
-        q.table(Launches::Table)
-            .value(Launches::EndedAt, now.as_millis())
-            .value(Launches::Exit, exit)
-            .and_where(Expr::col(Launches::Id).eq(id.get()))
-            .and_where(Expr::col(Launches::EndedAt).is_null());
-        if let Some(digest) = transcript_digest {
-            q.value(Launches::TranscriptDigest, digest);
-        }
-        conn.run(&mut q)?;
-        drop(conn);
-        Ok(())
-    }
-
     /// Keep the agent session id registered for resume against launch `id`.
     pub(crate) fn set_registered_session(
         &self,
@@ -363,6 +331,11 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
         session: r.get(8)?,
     })
 }
+
+mod end;
+
+pub(crate) use end::LaunchEnd;
+pub(super) use end::{end_live_launches, fence_launch};
 
 #[cfg(test)]
 mod tests;

@@ -203,7 +203,7 @@ fn restarting_an_idle_box_with_a_prompt_and_no_session_wakes_and_launches_once()
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_launch(id).unwrap() {
-        store.end_launch(live.id, Some(0), None).unwrap();
+        store.end_launch_with(live.id, Some(0), None).unwrap();
     }
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))

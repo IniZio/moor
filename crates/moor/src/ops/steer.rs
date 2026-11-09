@@ -23,7 +23,7 @@ use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{BoxRow, Launch, Store, StoreError};
+use crate::store::{BoxRow, Launch, LaunchEnd, Store, StoreError};
 
 /// Longest the send may take, pane reads included.
 const STEER_DEADLINE: Duration = Duration::from_secs(30);
@@ -174,11 +174,12 @@ impl Gone {
             .filter(|l| live.is_some_and(|v| v.id == l.id));
         if let (Some(launch), Some(row)) = (launch, store.box_row(id)?) {
             let saved = transcript::save(cx, store, &row, launch, Trigger::Exit);
-            store.end_launch(
-                launch.id,
-                self.code,
-                saved.as_ref().map(|t| t.digest.as_str()),
-            )?;
+            let end = LaunchEnd {
+                exit: self.code,
+                digest: saved.as_ref().map(|t| t.digest.as_str()),
+                session: None,
+            };
+            store.end_launch(id, launch.id, &end)?;
         }
         store.end_current_session(id, "exited", self.code)?;
         Ok(())

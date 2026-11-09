@@ -18,7 +18,7 @@ use crate::ops::common::profile_fetch;
 use crate::ops::common::provision::reread;
 use crate::ops::common::view::rfc3339;
 use crate::ops::common::wake::tell_relaunched;
-use crate::store::Store;
+use crate::store::{LaunchEnd, Store};
 
 /// Time between two reads of the pane while watching.
 const PROMPT_POLL: Duration = Duration::from_millis(500);
@@ -89,7 +89,14 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     let failure = exited(cx, code, &tail);
     let recorded = cx.turn_unless_held(id, Cmd::Watch).and_then(|_turn| {
         store
-            .end_launch(session, code, None)
+            .end_launch(
+                id,
+                session,
+                &LaunchEnd {
+                    exit: code,
+                    ..LaunchEnd::default()
+                },
+            )
             .map_err(CommandError::from)
             .and_then(|()| record(store, id, Field::Set(to_json(&failure)?), Some(&failure)))
     });

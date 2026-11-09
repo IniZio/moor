@@ -144,7 +144,7 @@ fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
     let (w, id) = started(false, |w| agent::read(None, just_before(w), 0));
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_launch(id).unwrap() {
-        store.end_launch(live.id, Some(0), None).unwrap();
+        store.end_launch_with(live.id, Some(0), None).unwrap();
     }
     let ended = newest_session(&w, id);
 

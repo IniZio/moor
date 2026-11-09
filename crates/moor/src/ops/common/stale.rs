@@ -1,4 +1,4 @@
-//! Writes about hands a Box has since replaced.
+//! Writes about hands or a launch a Box has since replaced.
 
 use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -26,20 +26,20 @@ impl ControllerLog {
     }
 }
 
-/// What `written` wrote; none when it was about hands the Box has since replaced. Nothing is left
-/// to do for the VM it was about, so this warns once and the caller moves on, never retrying.
+/// What `written` wrote; none when it was about hands or a launch the Box has since replaced.
+/// Nothing is left to do for what it was about, so this warns once and the caller moves on, never retrying.
 pub(crate) fn unless_stale<T>(
     cx: &Cx,
     written: Result<T, StoreError>,
 ) -> Result<Option<T>, StoreError> {
     match written {
         Ok(v) => Ok(Some(v)),
-        Err(e @ StoreError::Stale { .. }) => {
+        Err(e @ StoreError::Stale { read, .. }) => {
             if let Some(log) = cx.env().shared::<ControllerLog>() {
-                log.line(&format!("stale_hands_write: {e}"));
+                log.line(&format!("{}: {e}", read.code()));
             }
             cx.warn(Warning {
-                code: "stale_hands_write".to_owned(),
+                code: read.code().to_owned(),
                 message: e.to_string(),
             });
             Ok(None)
