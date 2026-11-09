@@ -32,7 +32,7 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
         if !setup_dead(intent, cx.proc().alive(intent.pid())) {
             return Ok(());
         }
-        record_interrupted(cx, store, row)?;
+        record_interrupted(cx, store, row, OWNER_DIED.to_owned())?;
     }
     if row.steps_pending_at.is_some() {
         return finish_steps(cx, store, row, false).map(drop);
@@ -104,10 +104,19 @@ pub(super) fn finish_steps(
     })
 }
 
-/// Records a dead setup as failed, as a failed setup run would, without running anything, so the
-/// Box waits for a retry; once every line had passed, the Box is ready and only the later steps
-/// stay pending.
-pub(super) fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+/// Why a setup whose controller process died is recorded as failed.
+pub(super) const OWNER_DIED: &str =
+    "a controller restart or crash stopped this setup before it finished";
+
+/// Records a dead setup as failed for `why`, as a failed setup run would, without running
+/// anything, so the Box waits for a retry; once every line had passed, the Box is ready and only
+/// the later steps stay pending.
+pub(super) fn record_interrupted(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    why: String,
+) -> Result<(), CommandError> {
     if row.steps_pending_at.is_some() {
         let mut done = Decision::new(row.id).intent(IntentChange::Clear);
         if row.lifecycle == BoxLifecycle::SettingUp {
@@ -123,10 +132,12 @@ pub(super) fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.lifecycle == BoxLifecycle::SettingUp {
-        done = done.lifecycle(BoxLifecycleInput::SetupFailed {
-            cause: line,
-            which: None,
-        });
+        done = done
+            .lifecycle(BoxLifecycleInput::SetupFailed {
+                cause: line,
+                which: None,
+            })
+            .setup_why(Some(why));
     } else {
         done = done.event(ExtraEvent::SetupFailed { line });
     }

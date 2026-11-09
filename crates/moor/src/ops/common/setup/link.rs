@@ -84,6 +84,7 @@ pub(super) fn link_lost(cx: &Cx, reason: &str, ms: u64) -> SetupRun {
         message: line.clone(),
     });
     SetupRun::Failed {
+        reason: line.clone(),
         line,
         exit: None,
         ms,

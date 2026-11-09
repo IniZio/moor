@@ -166,7 +166,11 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
         // The intent stays, so the next process claims this setup again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
         Err(e) => {
-            record_interrupted(cx, store, &reread(store, row.id)?)?;
+            let why = format!(
+                "a restarted controller could not follow the setup: {}",
+                e.error
+            );
+            record_interrupted(cx, store, &reread(store, row.id)?, why)?;
             Err(e)
         }
     }

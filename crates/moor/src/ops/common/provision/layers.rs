@@ -348,12 +348,14 @@ pub(super) fn run(
             SetupRun::Failed {
                 line,
                 exit,
+                reason,
                 ms: took,
                 tail,
             } => {
                 return Ok(SetupRun::Failed {
                     line,
                     exit,
+                    reason,
                     ms: ms + took,
                     tail,
                 })

@@ -60,6 +60,8 @@ pub(crate) enum SetupRun {
         line: String,
         /// The script's exit code, when it exited.
         exit: Option<i32>,
+        /// Why the run stopped, such as `exit 100` or the exec error; never empty.
+        reason: String,
         /// Time the script took, in milliseconds.
         ms: u64,
         /// The last lines of the script's log, tidied; empty when the log was unreadable.
@@ -161,16 +163,7 @@ pub(crate) fn run_setup(
         Err(Left::LinkLost(reason)) => return Ok(link_lost(cx, &reason, ms)),
     };
     if let Some(stop) = read_stop(&output) {
-        cx.warn(Warning {
-            code: "setup_failed".to_owned(),
-            message: format!("setup did not run: {stop}"),
-        });
-        return Ok(SetupRun::Failed {
-            line: stop,
-            exit: exit_code(&result),
-            ms,
-            tail: String::new(),
-        });
+        return Ok(did_not_run(cx, stop, exit_code(&result), ms));
     }
     let mut log = fetch_log(cx, handle, workdir, log_dir);
     if log.is_empty() {
@@ -180,9 +173,12 @@ pub(crate) fn run_setup(
     let (reason, exit) = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(SetupRun::Ok { ms, tail }),
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
-        Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
+        Ok(ExecOutcome::Interrupted) => (
+            "the exec was interrupted before the script exited".to_owned(),
+            None,
+        ),
         Err(Failure::Prepare(e)) => (e, None),
-        Err(Failure::Exec(e)) => (e.to_string(), None),
+        Err(Failure::Exec(e)) => (format!("exec failed: {e}"), None),
     };
     let line = if cx.env().cancel().is_cancelled() {
         FORCED_CLOSE.to_owned()
@@ -199,9 +195,26 @@ pub(crate) fn run_setup(
     Ok(SetupRun::Failed {
         line,
         exit,
+        reason,
         ms,
         tail,
     })
+}
+
+/// A setup the prelude stopped at `stop` before any line ran.
+fn did_not_run(cx: &Cx, stop: String, exit: Option<i32>, ms: u64) -> SetupRun {
+    let reason = format!("setup did not run: {stop}");
+    cx.warn(Warning {
+        code: "setup_failed".to_owned(),
+        message: reason.clone(),
+    });
+    SetupRun::Failed {
+        line: stop,
+        exit,
+        reason,
+        ms,
+        tail: String::new(),
+    }
 }
 
 /// The exit code `result` carries, when the script exited.
@@ -232,6 +245,7 @@ pub(crate) fn proxy_failed(cx: &Cx, name: &str, reason: &str) -> SetupRun {
     SetupRun::Failed {
         line: "the Proxy could not start".to_owned(),
         exit: None,
+        reason: format!("the Proxy could not start: {reason}"),
         ms: 0,
         tail: String::new(),
     }
