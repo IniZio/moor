@@ -27,9 +27,10 @@ fn egress_events_serialize_with_kind_tag() {
                 rule: s("r"),
                 method: s("GET"),
                 shape: Some(s("GET /repos/{repo}/pulls/*")),
+                reason: Some(s("no allow entry matches the request")),
             },
             "credential_withheld",
-            serde_json::json!({"host": "h", "rule": "r", "method": "GET", "shape": "GET /repos/{repo}/pulls/*"}),
+            serde_json::json!({"host": "h", "rule": "r", "method": "GET", "shape": "GET /repos/{repo}/pulls/*", "reason": "no allow entry matches the request"}),
         ),
         (
             Event::ProxyCredentialFailed { rule: s("r") },

@@ -267,7 +267,7 @@ impl EgressSink for Recorder {
         self.push(format!("credential_failed({rule})"));
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, _: Option<&str>) {
+    fn withheld(&self, host: &str, rule: &str, method: &str, _: Option<&str>, _: &str) {
         self.push(format!("withheld({host}, {rule}, {method})"));
     }
 

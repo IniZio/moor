@@ -51,7 +51,7 @@ impl EgressSink for Recorder {
         self.0.lock().unwrap().push(format!("failed {rule}"));
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, _: &str) {
         self.0
             .lock()
             .unwrap()
@@ -456,6 +456,7 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
             "rule": "gh",
             "method": "GET",
             "shape": "GET /repos/other/thing/issues/*",
+            "reason": "no allow entry matches the request",
         })]
     );
     let stored =

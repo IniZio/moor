@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use self::limits::Limits;
 use super::rule_of_route;
+use crate::proxy::graphql::WithheldRequest;
 use crate::proxy::ledger::BoxLedger;
 use crate::proxy::ProxyLog;
 
@@ -30,8 +31,8 @@ pub(crate) trait EgressSink {
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
-    /// the credential, with its templated shape when one is sound.
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>);
+    /// the credential, with its templated shape when one is sound, and why.
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str);
     /// Records, once, that further distinct withheld requests are not reported.
     fn withheld_overflow(&self);
     /// The status of the open limit on `rule` recorded earlier, if any.
@@ -57,14 +58,17 @@ pub(crate) struct Refusal<'a> {
     pub(crate) reason: Option<&'a str>,
 }
 
+/// Why nono forwarded a request to a credential host without the credential.
+const NO_MATCH: &str = "no allow entry matches the request";
+
 /// Distinct withheld requests reported per Box before reporting stops.
 const MAX_WITHHELD: usize = 256;
 
 /// What has been reported for one Box.
 #[derive(Default)]
 struct Reported {
-    /// `(rule, method, shape)` already reported.
-    keys: BTreeSet<(String, String, Option<String>)>,
+    /// `(rule, method, shape, reason)` already reported.
+    keys: BTreeSet<(String, String, Option<String>, String)>,
     /// Whether the overflow line has been written.
     overflowed: bool,
 }
@@ -101,7 +105,7 @@ impl Withheld {
         }
     }
 
-    /// Reports `event` to `sink` once per `(rule, method, shape)` when it is a
+    /// Reports `event` to `sink` once per `(rule, method, shape, reason)` when it is a
     /// credential-less passthrough to a credential host that the host refused. A public
     /// download that succeeds without the credential lacked nothing.
     fn report(&self, event: &NetworkAuditEvent, sink: &dyn EgressSink) {
@@ -119,20 +123,19 @@ impl Withheld {
         let Some(method) = event.method.as_deref() else {
             return;
         };
-        self.record(
-            host,
-            rule,
-            method,
-            event.path.as_deref().unwrap_or("/"),
-            sink,
-        );
+        let request = WithheldRequest {
+            method: method.to_owned(),
+            path: event.path.clone().unwrap_or_else(|| "/".to_owned()),
+            reason: NO_MATCH.to_owned(),
+        };
+        self.record(host, rule, &request, sink);
     }
 
-    /// Reports a request to credential `host` that was forwarded without the
-    /// credential, as the GraphQL filter saw it.
-    pub(crate) fn note(&self, host: &str, method: &str, path: &str, sink: &dyn EgressSink) {
+    /// Reports a request to credential `host` that the GraphQL filter forwarded without the
+    /// credential.
+    pub(crate) fn note(&self, host: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
         if let Some(rule) = self.hosts.get(&bare_host(host).to_ascii_lowercase()) {
-            self.record(host, rule, method, path, sink);
+            self.record(host, rule, request, sink);
         }
     }
 
@@ -142,8 +145,13 @@ impl Withheld {
         self.limits.excuse(host, status);
     }
 
-    /// Reports one withheld request once per `(rule, method, shape)`.
-    fn record(&self, host: &str, rule: &str, method: &str, path: &str, sink: &dyn EgressSink) {
+    /// Reports one withheld request once per `(rule, method, shape, reason)`.
+    fn record(&self, host: &str, rule: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
+        let WithheldRequest {
+            method,
+            path,
+            reason,
+        } = request;
         if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
             return;
         }
@@ -151,7 +159,12 @@ impl Withheld {
             .repo
             .as_ref()
             .and_then(|repo| request_shape(method, path, (&repo.owner, &repo.name)));
-        let key = (rule.to_owned(), method.to_owned(), shape.clone());
+        let key = (
+            rule.to_owned(),
+            method.to_owned(),
+            shape.clone(),
+            reason.to_owned(),
+        );
         let mut seen = self
             .seen
             .lock()
@@ -168,7 +181,7 @@ impl Withheld {
         }
         seen.keys.insert(key);
         drop(seen);
-        sink.withheld(host, rule, method, shape.as_deref());
+        sink.withheld(host, rule, method, shape.as_deref(), reason);
     }
 }
 
@@ -221,12 +234,13 @@ impl EgressSink for BoxSink<'_> {
         self.ledger.record_event(&event);
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str) {
         let event = Event::CredentialWithheld {
             host: host.to_owned(),
             rule: rule.to_owned(),
             method: method.to_owned(),
             shape: shape.map(str::to_owned),
+            reason: Some(reason.to_owned()),
         };
         self.ledger.record_event(&event);
     }

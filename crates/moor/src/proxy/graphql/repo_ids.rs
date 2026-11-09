@@ -23,8 +23,8 @@ pub(super) enum IdGate {
     Unchanged,
     /// Send it with its credential.
     Forward,
-    /// Send it without its credential.
-    Anonymous,
+    /// Send it without its credential, for the reason given.
+    Anonymous(&'static str),
 }
 
 /// Decides whether the credential nono added to a `/repositories/...` request may stay.
@@ -37,20 +37,29 @@ pub(super) fn gate_id(shared: &Shared, head: &Head, canonical: &str) -> IdGate {
     };
     let path = head.target.split(['?', '#']).next().unwrap_or_default();
     let Some((id, tail)) = split_id(path).filter(|_| path == canonical) else {
-        return IdGate::Anonymous;
+        return IdGate::Anonymous("repository id path is not canonical");
     };
-    let allowed = shared
-        .repo_ids
-        .box_repo(shared, auth, id)
-        .is_some_and(|repo| {
-            let repos_form = format!("/repos/{}/{}{tail}", repo.owner, repo.name);
-            shared.rest.is_allowed(&head.method, &repos_form)
-        });
-    if allowed {
+    let repo = match shared.repo_ids.box_repo(shared, auth, id) {
+        Found::Repo(repo) => repo,
+        Found::Other => return IdGate::Anonymous("repository id is not a Box repo"),
+        Found::Unknown => return IdGate::Anonymous("repository id lookup failed"),
+    };
+    let repos_form = format!("/repos/{}/{}{tail}", repo.owner, repo.name);
+    if shared.rest.is_allowed(&head.method, &repos_form) {
         IdGate::Forward
     } else {
-        IdGate::Anonymous
+        IdGate::Anonymous("no allow entry matches the request for the Box repo")
     }
+}
+
+/// Which repo a numeric id names.
+enum Found<'a> {
+    /// This Box repo.
+    Repo(&'a RepoRef),
+    /// No Box repo: every Box repo's id is known and none matches.
+    Other,
+    /// No Box repo whose id is known; a lookup failed.
+    Unknown,
 }
 
 /// Whether `auth` is the Box's own placeholder, which nono leaves when it adds nothing.
@@ -82,16 +91,22 @@ pub(crate) struct RepoIds(Mutex<HashMap<usize, u64>>);
 impl RepoIds {
     /// The Box repo whose id is `id`, asking upstream with `auth` for ids not yet learned.
     /// A failed lookup is not remembered, so the next request asks again.
-    fn box_repo<'a>(&self, shared: &'a Shared, auth: &str, id: u64) -> Option<&'a RepoRef> {
-        shared.repos.iter().enumerate().find_map(|(i, repo)| {
+    fn box_repo<'a>(&self, shared: &'a Shared, auth: &str, id: u64) -> Found<'a> {
+        let mut found = Found::Other;
+        for (i, repo) in shared.repos.iter().enumerate() {
             let known = self.lock().get(&i).copied();
             let learned = known.or_else(|| {
                 let fetched = fetch_id(shared, auth, repo)?;
                 self.lock().insert(i, fetched);
                 Some(fetched)
             });
-            (learned == Some(id)).then_some(repo)
-        })
+            match learned {
+                Some(learned) if learned == id => return Found::Repo(repo),
+                Some(_) => {}
+                None => found = Found::Unknown,
+            }
+        }
+        found
     }
 
     /// Locks the map, recovering from poisoning.

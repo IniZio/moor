@@ -16,6 +16,7 @@ fn withhold(store: &crate::store::Store) {
                 rule: "github-git".to_owned(),
                 method: "GET".to_owned(),
                 shape: None,
+                reason: None,
             },
         )
         .unwrap();
