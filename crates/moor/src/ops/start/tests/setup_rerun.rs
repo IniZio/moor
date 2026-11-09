@@ -132,7 +132,7 @@ fn start_is_refused_while_a_setup_is_in_flight_and_leaves_it_alone() {
     let id = BoxId::new(v.boxed.id);
     let _setup = w.cx.owners_arc().hold(id, Cmd::Start);
     let e = run(&w.cx, &start_req()).unwrap_err();
-    assert_eq!(e.error.to_string(), "box busy: setup in progress");
+    assert_eq!(e.error.to_string(), "box busy: start in progress");
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.intent, Some(Intent::Setup));

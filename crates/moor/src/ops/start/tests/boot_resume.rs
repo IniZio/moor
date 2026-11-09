@@ -32,12 +32,15 @@ fn restarted(w: &World, owners: &Arc<Owners>) -> Cx {
 }
 
 /// Resumes Box 1 in a new controller over `w`'s store. A steer is fired at the Box from another
-/// request once the resume has settled it; returns how the steer ended.
-fn resume_and_steer(w: &World) -> Result<(), CommandError> {
+/// request once the resume has settled it, which is when the controller starts serving; returns
+/// how the steer ended, and the setup attaches and acquires made by then.
+fn resume_and_steer(w: &World) -> (Result<(), CommandError>, (usize, usize)) {
     let owners = Arc::new(Owners::new(Arc::new(SystemClock::real())));
     let (steered, steer_ended) = mpsc::channel();
     let got = std::cell::Cell::new(None);
+    let at_settle = std::cell::Cell::new((0, 0));
     let lines = Moor::from_cx(restarted(w, &owners)).resume(BoxId::new(1), |_| {
+        at_settle.set((setup_attaches(w).len(), w.driver.acquired_nonces().len()));
         let request = restarted(w, &owners);
         thread::spawn(move || {
             let req = SteerReq {
@@ -55,20 +58,26 @@ fn resume_and_steer(w: &World) -> Result<(), CommandError> {
         )));
     });
     assert!(lines.is_empty(), "{lines:?}");
-    got.into_inner().expect("the resume settled the Box")
+    let got = got.into_inner().expect("the resume settled the Box");
+    (got, at_settle.into_inner())
 }
 
-/// Asserts `got` is the refusal a steer gets while a start sets the Box up.
+/// Asserts `got` is the refusal a steer gets while the resume holds the Box.
 fn refused_for_setup(got: Result<(), CommandError>) {
     let e = got.expect_err("the steer was refused");
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(e.error.to_string(), "box busy: setup in progress");
+    assert_eq!(e.error.to_string(), "box busy: resume in progress");
 }
 
 #[test]
 fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_refuses_a_steer_meanwhile() {
     let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
-    refused_for_setup(resume_and_steer(&w));
+    let (steered, (followed_at_settle, _)) = resume_and_steer(&w);
+    refused_for_setup(steered);
+    assert_eq!(
+        followed_at_settle, 1,
+        "serving starts before the setup is followed again"
+    );
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.intent, None);
@@ -79,7 +88,12 @@ fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_refuses_a_
 fn a_restart_mid_acquire_acquires_exactly_once_more_and_refuses_a_steer_meanwhile() {
     let w = cut_off(FakeDriver::new());
     let before = w.driver.acquired_nonces().len();
-    refused_for_setup(resume_and_steer(&w));
+    let (steered, (_, acquires)) = resume_and_steer(&w);
+    refused_for_setup(steered);
+    assert_eq!(
+        acquires, before,
+        "serving starts before the acquire runs again"
+    );
     assert_eq!(w.driver.acquired_nonces().len(), before + 1);
     assert_eq!(releases(&w), ["release box-1"]);
     let row = box_row(&w);

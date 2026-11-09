@@ -171,7 +171,7 @@ fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machi
         .expect("close ran during the acquire");
     assert_eq!(
         seen,
-        (ErrorKind::Refused, "box busy: setup in progress".to_owned())
+        (ErrorKind::Refused, "box busy: start in progress".to_owned())
     );
     assert_eq!(releases(&w), 0);
     let row = row(&w);

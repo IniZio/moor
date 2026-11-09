@@ -207,13 +207,6 @@ impl Owners {
     }
 
     /// Wakes every waiter with a restarting error and refuses every later call; holders finish.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the controller drains its owners once boot resumes through them"
-        )
-    )]
     pub(crate) fn drain(&self) {
         self.lock().draining = true;
         self.changed.notify_all();

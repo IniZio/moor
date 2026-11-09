@@ -102,7 +102,7 @@ impl Cx {
         config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
-        Self::new(CxParts {
+        let mut cx = Self::new(CxParts {
             state_dir: Some(state_dir.to_path_buf()),
             clock,
             rng: Arc::new(FakeRng::default()),
@@ -115,7 +115,9 @@ impl Cx {
             config,
             env: Env::default(),
             prompt_window: Duration::from_secs(8),
-        })
+        });
+        cx.claimed = true;
+        cx
     }
 }
 

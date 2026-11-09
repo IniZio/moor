@@ -37,6 +37,17 @@ pub(crate) struct Drain {
     keepers: AtomicBool,
     /// Tells the requests in flight that the drain began.
     draining: OnceLock<Cancel>,
+    /// Refuses the ops waiting for a Box's turn when the drain begins.
+    owners: OnceLock<OnBegin>,
+}
+
+/// Work that runs the moment the drain begins.
+struct OnBegin(Box<dyn Fn() + Send + Sync>);
+
+impl std::fmt::Debug for OnBegin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OnBegin")
+    }
 }
 
 /// The work the drain waits for: each connection with a handle that ends its reads while it
@@ -83,6 +94,11 @@ impl Drain {
         let _ = self.draining.set(flag);
     }
 
+    /// Has `drain_owners`, from [`Moor::owners_drain`], run the moment the drain begins.
+    pub(crate) fn drain_owners_with_drain(&self, drain_owners: impl Fn() + Send + Sync + 'static) {
+        let _ = self.owners.set(OnBegin(Box::new(drain_owners)));
+    }
+
     /// Admits `stream` for serving, or `None` once the drain has begun.
     fn admit(self: &Arc<Self>, stream: &UnixStream) -> io::Result<Option<Admitted>> {
         Ok(self.enter(Some(stream.try_clone()?)))
@@ -117,6 +133,9 @@ impl Drain {
         self.begun.store(true, Ordering::Release);
         if let Some(flag) = self.draining.get() {
             flag.cancel();
+        }
+        if let Some(OnBegin(drain_owners)) = self.owners.get() {
+            drain_owners();
         }
         for stream in live.streams.iter().filter_map(|(_, s)| s.as_ref()) {
             stream.shutdown(Shutdown::Read).ok();

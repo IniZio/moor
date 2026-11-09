@@ -415,7 +415,8 @@ fn a_list_shows_only_the_callers_boxes_and_the_operator_sees_all() {
 
 /// The Box names of the events a watch as `viewer` delivers.
 fn watched(world: &World, viewer: Viewer) -> Vec<String> {
-    let env = super::env(world.served.dir.path());
+    // The controller's own env shares its store, as a watch it serves reads that one.
+    let env = super::env(world.served.dir.path()).sharing(world.store.clone());
     let ask = Ask {
         since: 0,
         filter: WatchFilter::default(),

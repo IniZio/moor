@@ -49,6 +49,7 @@ pub(super) fn serve_started(
     let drain = Arc::new(Drain::default());
     drain.end_fronts_with_drain(fronts.terminator(running.drain_timeout));
     drain.set_with_drain(running.env.draining().clone());
+    drain.drain_owners_with_drain(Moor::owners_drain(&running.env));
     if !Moor::keepers_tunnel(&running.env) {
         // The next controller runs beside this one, so the machine forwards go now.
         drain.end_keepers_with_drain();

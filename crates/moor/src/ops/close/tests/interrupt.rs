@@ -45,7 +45,7 @@ fn a_plain_close_during_setup_is_refused_and_names_force() {
     let (f, _held) = in_setup(&cancel);
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(e.error.to_string(), "box busy: setup in progress");
+    assert_eq!(e.error.to_string(), "box busy: start in progress");
     assert!(
         e.hints
             .iter()

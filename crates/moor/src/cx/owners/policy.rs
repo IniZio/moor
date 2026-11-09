@@ -74,7 +74,7 @@ impl Cmd {
     }
 
     /// Whether the op acquires a machine or runs setup, which can take minutes.
-    pub(super) const fn is_long(self) -> bool {
+    const fn is_long(self) -> bool {
         matches!(self, Self::Start | Self::Retry | Self::Resume)
     }
 }

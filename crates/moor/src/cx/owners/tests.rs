@@ -144,7 +144,7 @@ fn setup_refuses_user_ops_and_a_forced_close_preempts_it() {
             let err = owners
                 .call(B, cmd, &Cancel::default(), soon(), |_| Ok(()))
                 .unwrap_err();
-            assert_eq!(refused(&err), "box busy: setup in progress");
+            assert_eq!(refused(&err), "box busy: start in progress");
         }
         owners
             .call(

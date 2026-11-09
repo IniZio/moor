@@ -79,6 +79,9 @@ pub(crate) struct Cx {
     viewer: Viewer,
     /// The Box each name meant when the controller let this request name it.
     pins: Pins,
+    /// Whether its store opens as the controller's, as a test context's does.
+    #[cfg(test)]
+    pub(crate) claimed: bool,
 }
 
 /// Everything a context is built from.
@@ -133,6 +136,8 @@ impl Cx {
             requester: None,
             viewer: Viewer::Operator,
             pins: Pins::new(),
+            #[cfg(test)]
+            claimed: false,
         }
     }
 
@@ -151,13 +156,12 @@ impl Cx {
         if let Some(s) = self.store.get() {
             return Ok(s);
         }
+        let (dir, db, clock) = (self.state_dir(), Database::from_env(&self.env), &self.clock);
         let store = match self.env.shared::<Store>() {
             Some(shared) => shared.clone(),
-            None => Store::open_in(
-                self.state_dir()?,
-                Database::from_env(&self.env)?.as_ref(),
-                Arc::clone(&self.clock),
-            )?,
+            #[cfg(test)]
+            None if self.claimed => Store::open_claimed(dir?, db?.as_ref(), Arc::clone(clock))?,
+            None => Store::open_in(dir?, db?.as_ref(), Arc::clone(clock))?,
         };
         #[cfg(test)]
         {
