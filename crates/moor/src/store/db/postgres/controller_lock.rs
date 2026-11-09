@@ -137,6 +137,20 @@ impl ControllerLock {
             .unwrap();
     }
 
+    /// When the session on `target` named `me` last finished a statement, in seconds.
+    pub(crate) fn last_active(target: &Target, me: &str) -> f64 {
+        let row = target
+            .connect()
+            .unwrap()
+            .query_one(
+                "SELECT extract(epoch FROM state_change)::float8 FROM pg_stat_activity \
+                 WHERE application_name = $1",
+                &[&me],
+            )
+            .unwrap();
+        row.get(0)
+    }
+
     /// Has the server end this session once it sits idle for a second.
     pub(crate) fn idle_out(&mut self) {
         self.client
