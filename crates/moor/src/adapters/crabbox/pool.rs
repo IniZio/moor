@@ -20,7 +20,7 @@ mod lost;
 mod power;
 pub(super) use power::{sleep, wake};
 mod list;
-pub(in crate::adapters::crabbox) use list::{list, list_handles};
+pub(in crate::adapters::crabbox) use list::{list, list_handles, LIST_WITHIN};
 
 /// How the controller reaches pool hosts: by enrolled machine id, through the runner's links
 /// broker.

@@ -40,8 +40,8 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
-    DriverError, ExecOutcome, ExecSpec, Followed, Forked, Launched, LocalTunnel, PausePublish,
-    Released, RunEnd, SleepOutcome, StepDone, TunnelHandle,
+    DriverError, ExecOutcome, ExecSpec, Followed, Forked, HandlesListing, Launched, LocalTunnel,
+    PausePublish, Released, RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -224,11 +224,11 @@ impl Driver for Crabbox {
         self.inventory(provider)
     }
 
-    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
         if !handles.iter().any(pool::is_pool) {
             return Err(DriverError::Unsupported("only a pool host lists by handle"));
         }
-        Ok(pool::list_handles(self, handles))
+        Ok(pool::list_handles(self, handles, pool::LIST_WITHIN))
     }
 
     /// Refused: only crabbox's warmup reports where a Box's workdir is, and moor never

@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, CheckpointDisk, Driver,
-    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, Forked, PausePublish, Released,
-    RunEnd, SleepKind, SleepOutcome, StepDone,
+    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, Forked, HandlesListing, PausePublish,
+    Released, RunEnd, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -27,6 +27,7 @@ struct State {
     next: u32,
     live: Vec<String>,
     stopped: Vec<String>,
+    away: Vec<String>,
     by_handle: bool,
     providers: Vec<(String, ProviderId)>,
     calls: Vec<String>,
@@ -167,7 +168,7 @@ impl Driver for FakeDriver {
         self.listed(provider)
     }
 
-    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
         self.listed_handles(handles)
     }
 

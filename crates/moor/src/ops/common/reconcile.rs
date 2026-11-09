@@ -1,6 +1,6 @@
 //! Reconcile stored Boxes against what the Driver still lists.
 
-use moor_core::decide::reconcile::{reconcile, stopped, BoxFact, STOPPED_REASON};
+use moor_core::decide::reconcile::{reconcile, reconcile_answered, BoxFact, STOPPED_REASON};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::hands::{HandsInput, HandsState};
@@ -37,8 +37,9 @@ fn by_provider(
 /// Mark Boxes the Driver no longer lists as Gone, and Ready Boxes it lists stopped as Asleep;
 /// never provisions.
 ///
-/// A provider that cannot be inventoried is asked about its rows' handles instead, which only
-/// sleeps stopped Boxes; one that cannot answer that either is skipped silently. A provider
+/// A provider that cannot be inventoried is asked about its rows' handles instead: each holder
+/// that answers decides its own handles, and one that does not leaves them as they are with a
+/// warning; a provider that cannot answer that either is skipped silently. A provider
 /// whose listing fails is skipped with a warning; an apply that
 /// loses a race with another command is ignored.
 pub(crate) fn run(cx: &Cx) {
@@ -51,7 +52,6 @@ pub(crate) fn run(cx: &Cx) {
 
 /// [`run`] for the controller's timer: each verdict is applied only under its Box's turn, so a Box
 /// an op is working on is left for the next pass, and the sweep stops once `draining` is true.
-/// A provider that can only be asked about handles is left alone, as that call has no deadline.
 pub(crate) fn periodic(cx: &Cx, draining: &dyn Fn() -> bool) {
     let Ok(store) = cx.store() else { return };
     let Ok(rows) = store.box_rows_live() else {
@@ -127,13 +127,19 @@ fn reconcile_provider(
                 apply(cx, store, d, who);
             }
         }
-        Err(DriverError::Unsupported(_)) if who == Verdicts::IdleBoxes => {}
         Err(DriverError::Unsupported(_)) => {
             let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
-            if let Ok(listing) = cx.driver().list_handles(&handles) {
-                for d in stopped(facts, &listing) {
-                    apply(cx, store, d, who);
-                }
+            let Ok(asked) = cx.driver().list_handles(&handles) else {
+                return;
+            };
+            for why in &asked.unanswered {
+                cx.warn(Warning {
+                    code: "reconcile_skipped".to_owned(),
+                    message: format!("{why}; its boxes' states left as they were"),
+                });
+            }
+            for d in reconcile_answered(facts, &asked) {
+                apply(cx, store, d, who);
             }
         }
         Err(e) => {

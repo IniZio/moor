@@ -5,7 +5,9 @@ use std::sync::Arc;
 use moor_core::box_key::PoolSeat;
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::cache::CachePlan;
-use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec, PausePublish};
+use moor_core::seam::driver::{
+    BoxListing, DriverError, ExecOutcome, ExecSpec, HandlesListing, PausePublish,
+};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxHandle;
 
@@ -89,17 +91,27 @@ impl FakeDriver {
         self.st().calls.clone()
     }
 
-    /// What `list_handles` answers: the live handles among `handles`, asleep when stopped.
+    /// Has the host holding `handle` not answer a listing, as when it is away.
+    pub(crate) fn host_away(&self, handle: &BoxHandle) {
+        self.st().away.push(handle.as_str().to_owned());
+    }
+
+    /// What `list_handles` answers: each of `handles` whose host is not away, listed when live
+    /// and asleep when stopped.
     pub(super) fn listed_handles(
         &self,
         handles: &[BoxHandle],
-    ) -> Result<Vec<BoxListing>, DriverError> {
+    ) -> Result<HandlesListing, DriverError> {
         let mut s = self.st();
         s.note("list_handles".to_owned());
         if !s.by_handle {
             return Err(DriverError::Unsupported("listed by provider"));
         }
-        Ok(handles
+        let (away, answered): (Vec<BoxHandle>, Vec<BoxHandle>) = handles
+            .iter()
+            .cloned()
+            .partition(|h| s.away.iter().any(|a| a == h.as_str()));
+        let listed = answered
             .iter()
             .filter(|h| s.live.iter().any(|l| l == h.as_str()))
             .map(|h| BoxListing {
@@ -107,7 +119,15 @@ impl FakeDriver {
                 provider: None,
                 asleep: s.stopped.iter().any(|l| l == h.as_str()),
             })
-            .collect())
+            .collect();
+        Ok(HandlesListing {
+            answered,
+            listed,
+            unanswered: away
+                .iter()
+                .map(|h| format!("the host of {} did not answer", h.as_str()))
+                .collect(),
+        })
     }
 
     /// Fails the next `times` takeovers with `e`.

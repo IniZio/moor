@@ -6,7 +6,7 @@ use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::decision::Decision;
 use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
-use crate::seam::driver::BoxListing;
+use crate::seam::driver::{BoxListing, HandlesListing};
 
 /// One stored Box row, as the op read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +41,19 @@ pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
         .map(|r| Decision::new(r.box_id).hands_input(r.inc, HandsInput::DriverMissing))
         .chain(stopped(rows, listing))
         .collect()
+}
+
+/// [`reconcile`] of the rows whose holder answered `asked`, each holder speaking only for its own
+/// handles; a row whose holder said nothing is left as it is.
+#[must_use]
+pub fn reconcile_answered(rows: &[BoxFact], asked: &HandlesListing) -> Vec<Decision> {
+    let answered: HashSet<&BoxHandle> = asked.answered.iter().collect();
+    let judged: Vec<BoxFact> = rows
+        .iter()
+        .filter(|r| r.handle.as_ref().is_some_and(|h| answered.contains(h)))
+        .cloned()
+        .collect();
+    reconcile(&judged, &asked.listed)
 }
 
 /// Sleeps each Ready row whose handle the listing shows asleep, so a wake boots it again with
