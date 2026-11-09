@@ -21,8 +21,8 @@ pub(super) enum Gate {
     Forward(Vec<u8>),
     /// Forward the request with the placeholder in place of its credential,
     /// with these exact body bytes. The request is outside the Box repos or
-    /// could not be judged.
-    Anonymous(Vec<u8>),
+    /// could not be judged, for the reason given.
+    Anonymous(Vec<u8>, String),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),
     /// Close without a reply.
@@ -49,15 +49,27 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         Err(_) => return Gate::Abort,
     };
     let in_scope = |repo: &RepoRef| match judge(&body.decoded, repo) {
-        Verdict::Allow => true,
-        Verdict::Deny(_) => false,
-        Verdict::NeedsNodeCheck(ids) => nodes_listed(shared, head, &ids) == Some(true),
+        Verdict::Allow => Ok(()),
+        Verdict::Deny(reason) => Err(reason.redacted()),
+        Verdict::NeedsNodeCheck(ids) => match nodes_listed(shared, head, &ids) {
+            Some(true) => Ok(()),
+            Some(false) => Err("a node id is outside the Box repos".to_owned()),
+            None => Err("node id lookup failed".to_owned()),
+        },
     };
-    if shared.repos.iter().any(in_scope) {
-        Gate::Forward(body.raw)
-    } else {
-        Gate::Anonymous(body.raw)
+    let mut why = None;
+    for repo in &shared.repos {
+        match in_scope(repo) {
+            Ok(()) => return Gate::Forward(body.raw),
+            Err(reason) => {
+                why.get_or_insert(reason);
+            }
+        }
     }
+    Gate::Anonymous(
+        body.raw,
+        why.unwrap_or_else(|| "the Box has no repo".to_owned()),
+    )
 }
 
 /// `head` without `Authorization` or any of the `injected` header names, in

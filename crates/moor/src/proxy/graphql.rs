@@ -85,11 +85,13 @@ pub(crate) struct Refusal {
 
 /// One request forwarded without its credential. The path only templates the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Withheld {
+pub(crate) struct WithheldRequest {
     /// The request method.
     pub(crate) method: String,
     /// The request path.
     pub(crate) path: String,
+    /// Why the credential stayed behind; never a body or token.
+    pub(crate) reason: String,
 }
 
 /// Why the filter could not start.
@@ -121,7 +123,7 @@ pub(super) struct Shared {
     /// `Authorization` token of requests forwarded without credential.
     pub(super) placeholder: Option<String>,
     /// Methods of requests forwarded without credential, not yet drained.
-    withheld: Mutex<VecDeque<Withheld>>,
+    withheld: Mutex<VecDeque<WithheldRequest>>,
     /// 401 and 403 statuses that say nothing about the credential, not yet
     /// drained: upstream answers to requests forwarded without it, and refusals.
     excused: Mutex<VecDeque<u16>>,
@@ -164,14 +166,15 @@ impl Shared {
     }
 
     /// Notes a request forwarded without its credential.
-    pub(super) fn withhold(&self, method: &str, path: &str) {
+    pub(super) fn withhold(&self, method: &str, path: &str, reason: &str) {
         let mut q = self.lock_withheld();
         if q.len() >= MAX_REFUSALS {
             q.pop_front();
         }
-        q.push_back(Withheld {
+        q.push_back(WithheldRequest {
             method: method.to_owned(),
             path: path.to_owned(),
+            reason: reason.to_owned(),
         });
     }
 
@@ -190,7 +193,7 @@ impl Shared {
     }
 
     /// Locks the withheld buffer, recovering from poisoning.
-    fn lock_withheld(&self) -> MutexGuard<'_, VecDeque<Withheld>> {
+    fn lock_withheld(&self) -> MutexGuard<'_, VecDeque<WithheldRequest>> {
         self.withheld.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -275,7 +278,7 @@ impl GraphqlFilter {
     }
 
     /// Takes the requests forwarded without credential since the last call.
-    pub(crate) fn drain_withheld(&self) -> Vec<Withheld> {
+    pub(crate) fn drain_withheld(&self) -> Vec<WithheldRequest> {
         self.shared.lock_withheld().drain(..).collect()
     }
 

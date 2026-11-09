@@ -10,6 +10,7 @@ mod box_files;
 mod extra;
 mod gh_pr_edit_attach;
 mod gh_repo;
+mod redact;
 
 fn repo() -> RepoRef {
     RepoRef::new("IniZio", "moor")

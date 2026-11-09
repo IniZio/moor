@@ -55,8 +55,8 @@ real header. [Configuration](config.md#proxy) lists the rule keys.
 ## When the Proxy refuses
 
 A request the rules do not allow leaves without the credential, or is refused.
-moor records the refusal as an event on the Box. The event names the host and
-the rule, never the token or the body. `box_status` then shows `stuck` with a kind such
+moor records the refusal as an event on the Box. The event names the host, the
+rule and the reason, never the token or the body. `box_status` then shows `stuck` with a kind such
 as `egress_refused` or `credential_withheld`, so you can tell a blocked agent
 from a slow one.
 

@@ -290,6 +290,9 @@ pub enum Event {
         method: String,
         /// A templated allow entry such as `GET /repos/{repo}/pulls/*` that would let the request through; never a raw path, query, header, body or token.
         shape: Option<String>,
+        /// Why the credential stayed behind, such as `no allow entry matches the request`; never a body or token.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// The Proxy could not obtain the credential of a tool rule.
     ProxyCredentialFailed {

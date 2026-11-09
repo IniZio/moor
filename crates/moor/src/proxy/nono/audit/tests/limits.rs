@@ -18,7 +18,7 @@ impl EgressSink for LimitSink {
     fn refused(&self, _: &Refusal<'_>) {}
     fn aborted(&self, _: &str, _: Option<&str>) {}
     fn credential_failed(&self, _: &str) {}
-    fn withheld(&self, _: &str, _: &str, _: &str, _: Option<&str>) {}
+    fn withheld(&self, _: &str, _: &str, _: &str, _: Option<&str>, _: &str) {}
     fn withheld_overflow(&self) {}
 
     fn open_limit(&self, _: &str) -> Option<u16> {

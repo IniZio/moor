@@ -72,6 +72,44 @@ impl Reason {
     pub(crate) fn new(text: impl Into<String>) -> Self {
         Self(text.into())
     }
+
+    /// The reason safe to record: a backticked span stays only when it is a GraphQL name
+    /// (a field or variable, never a value such as a repo name or search term), and the
+    /// text is cut to 160 characters.
+    #[must_use]
+    pub fn redacted(&self) -> String {
+        let mut out = String::new();
+        for (i, part) in self.0.split('`').enumerate() {
+            if i % 2 == 0 {
+                out.push_str(part);
+            } else if is_name_path(part) {
+                out.push('`');
+                out.push_str(part);
+                out.push('`');
+            } else {
+                out.push_str("`…`");
+            }
+        }
+        out.chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_REDACTED)
+            .collect()
+    }
+}
+
+/// Longest redacted reason, in characters.
+const MAX_REDACTED: usize = 160;
+/// Longest backticked name kept in a redacted reason.
+const MAX_NAME: usize = 64;
+
+/// A field, variable or dotted field path of at most [`MAX_NAME`] characters, or one
+/// punctuation character.
+fn is_name_path(s: &str) -> bool {
+    let name = s.len() <= MAX_NAME
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'$'));
+    let punct = s.len() == 1 && s.bytes().all(|b| b.is_ascii_punctuation());
+    !s.is_empty() && (name || punct)
 }
 
 /// Outcome of judging a GraphQL request.

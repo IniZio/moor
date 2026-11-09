@@ -130,8 +130,7 @@ impl Engine {
         apply(&audit, &self.withheld, &sink);
         let sink: &dyn EgressSink = &sink;
         for w in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
-            self.withheld
-                .note(GITHUB_API_HOST, &w.method, &w.path, sink);
+            self.withheld.note(GITHUB_API_HOST, &w, sink);
         }
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
             sink.refused(&Refusal {
