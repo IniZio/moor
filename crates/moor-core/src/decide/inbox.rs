@@ -47,6 +47,8 @@ pub enum Next {
 #[must_use]
 pub const fn next(f: &Facts) -> Next {
     match (f.hands, f.lifecycle) {
+        // A failed setup waits for a person to retry or close it, its rows kept for that retry.
+        (_, BoxLifecycle::SetupFailed) => Next::Hold,
         (Some(HandsState::Gone), _) => Next::BringBack,
         (_, BoxLifecycle::Asleep) => Next::Wake,
         (Some(HandsState::Ready), BoxLifecycle::Ready) => match f.agent {
