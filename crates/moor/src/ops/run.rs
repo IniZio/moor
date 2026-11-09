@@ -58,13 +58,16 @@ pub(crate) fn streamed(
     if req.argv.is_empty() {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
     }
+    eprintln!("PROBE {:?} streamed", std::time::SystemTime::now());
     let store = cx.store()?;
     let name = req.box_name.as_str();
     let found = store
         .latest_box_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     dead_provisioning(cx, &found)?;
+    eprintln!("PROBE {:?} found", std::time::SystemTime::now());
     let turn = cx.turn(found.id, Cmd::Run)?;
+    eprintln!("PROBE {:?} turn", std::time::SystemTime::now());
     let row = store
         .box_row(found.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
@@ -93,7 +96,9 @@ fn in_turn(
     } else {
         row
     };
+    eprintln!("PROBE {:?} woken", std::time::SystemTime::now());
     let target = ready::target(store, row)?;
+    eprintln!("PROBE {:?} target", std::time::SystemTime::now());
     launch(cx, store, req, (row, turn), &target, sink)
 }
 
@@ -108,7 +113,9 @@ fn launch(
     sink: Option<Sink<'_>>,
 ) -> Result<RunValue, CommandError> {
     let cfg = settings_of(cx, row, &Flags::default())?;
+    eprintln!("PROBE {:?} settings", std::time::SystemTime::now());
     let (sha, argv) = plan(cx, req, target, &cfg.setup)?;
+    eprintln!("PROBE {:?} plan", std::time::SystemTime::now());
     let (id, _claim) = store.begin_run(NewRun {
         box_id: row.id,
         argv: req.argv.clone(),
@@ -116,12 +123,16 @@ fn launch(
         sha: sha.clone(),
         pid: std::process::id(),
     })?;
+    eprintln!("PROBE {:?} begin_run", std::time::SystemTime::now());
     mark_working(store, row).inspect_err(|_| finish(store, id, None))?;
     let _running = turn.begin_run();
     drop(turn);
+    eprintln!("PROBE {:?} marked", std::time::SystemTime::now());
     let (output, log) = output(cx, req, id).inspect_err(|_| finish(store, id, None))?;
+    eprintln!("PROBE {:?} output", std::time::SystemTime::now());
     let exec = box_env(cx, row, target, &cfg)
         .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    eprintln!("PROBE {:?} box_env", std::time::SystemTime::now());
     let spec = ExecSpec {
         argv: exec.argv(argv),
         env: exec.vars(),
@@ -137,10 +148,12 @@ fn launch(
         exec.deadline(),
     )
     .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    eprintln!("PROBE {:?} launched", std::time::SystemTime::now());
     let followed = follow::during(Some(&output), sink, || {
         follow_into(cx, target, workdir.as_ref(), id, until, &output)
     })
     .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    eprintln!("PROBE {:?} followed", std::time::SystemTime::now());
     let (exit, interrupted) = followed.exit();
     if let Some(error) = followed.error() {
         let out = RunOutcome {
@@ -150,6 +163,7 @@ fn launch(
         store.finish_run(id, out)?;
         return Err(CommandError::new(ErrorKind::Failed, error));
     }
+    eprintln!("PROBE {:?} pre_finish", std::time::SystemTime::now());
     let moved = sha.is_some() && exit.is_some_and(|c| c != 0) && followed.moved();
     store.finish_run(id, ended(exit, interrupted, moved))?;
     Ok(RunValue {

@@ -214,7 +214,9 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
         ],
     );
     let cfg = super::config(dir.path(), "drain_timeout_secs: 10\n");
+    eprintln!("PROBE {:?} t start", std::time::SystemTime::now());
     let running = crate::controller::start(&env, &cfg).unwrap();
+    eprintln!("PROBE {:?} t started", std::time::SystemTime::now());
     let socket = running.socket.clone();
     let log = super::Buf::default();
     let (mut signal, serving) = running.serve_until_signalled(Arc::new(Mutex::new(log.clone())));
@@ -238,8 +240,10 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
         id: "r".to_owned(),
         request: Box::new(Request::Run(run)),
     };
+    eprintln!("PROBE {:?} t ask run", std::time::SystemTime::now());
     busy.write_all(ask_run.to_line().as_bytes()).unwrap();
     assert!(run_leader(dir.path()).is_some(), "the command started");
+    eprintln!("PROBE {:?} t signal", std::time::SystemTime::now());
     signal.write_all(b"x").unwrap();
     let ended = frame(&mut idle_read);
     assert_eq!(ended["kind"], "restarting", "{ended}");
@@ -247,6 +251,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     idle_read.read_line(&mut rest).unwrap();
     assert_eq!(rest, "", "the idle connection was closed by the drain");
     let reply = reply(&mut busy_read);
+    eprintln!("PROBE {:?} t reply", std::time::SystemTime::now());
     assert_eq!(reply["frame"], "response", "{reply}");
     let last = store.last_run(id).unwrap().unwrap();
     assert_eq!(
@@ -257,6 +262,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (tx, exited) = std::sync::mpsc::channel();
     thread::spawn(move || tx.send(serving.join().is_ok()).ok());
     let exited = exited.recv_timeout(Duration::from_secs(10));
+    eprintln!("PROBE {:?} t exited {}", std::time::SystemTime::now(), log.text());
     assert_eq!(exited, Ok(true), "the controller exited after its drain");
     assert!(log.text().contains("drained; exiting"), "{}", log.text());
 }

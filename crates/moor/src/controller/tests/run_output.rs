@@ -37,7 +37,9 @@ fn expect_output(got: &Receiver<Vec<u8>>, want: &str) {
 
 #[test]
 fn run_output_reaches_the_client_while_the_command_runs() {
+    eprintln!("PROBE {:?} t begin", std::time::SystemTime::now());
     let f = ready_with(FakeDriver::new());
+    eprintln!("PROBE {:?} t fixture", std::time::SystemTime::now());
     let log = f.dir.path().join("runs").join("1.log");
     let release = f.box_dir.path().join("home/release");
     let sock = f.dir.path().join("c.sock");
@@ -74,8 +76,10 @@ fn run_output_reaches_the_client_while_the_command_runs() {
         )
     });
     expect_output(&got, "first\n");
+    eprintln!("PROBE {:?} t first", std::time::SystemTime::now());
     std::fs::write(&release, "").unwrap();
     expect_output(&got, "second\n");
+    eprintln!("PROBE {:?} t second", std::time::SystemTime::now());
     let response = client.join().unwrap().unwrap();
     assert_eq!(render(&response, &GlobalOpts::default()).code, 3);
     assert_eq!(
