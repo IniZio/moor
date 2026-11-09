@@ -239,6 +239,28 @@ impl SessionId {
     }
 }
 
+/// A store-assigned launch id: the row id of one start of a Box's agent. A later launch of the
+/// same Box has a higher one.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct LaunchId(i64);
+
+impl LaunchId {
+    /// Wraps a raw id.
+    #[must_use]
+    pub const fn new(v: i64) -> Self {
+        Self(v)
+    }
+
+    /// Returns the raw id.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
 /// An opaque Box handle; only the Driver adapter interprets it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]

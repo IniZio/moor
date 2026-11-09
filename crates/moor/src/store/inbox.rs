@@ -12,7 +12,7 @@
 use moor_core::domain::event::TurnOutcome;
 use moor_core::domain::inbox::{Delivery, DeliveryColumns, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxId, SessionId};
+use moor_core::{BoxId, LaunchId};
 use moor_schema::tables::BoxInbox;
 use sea_query::{Cond, Expr, ExprTrait as _, Order, Query, SelectStatement};
 
@@ -83,7 +83,7 @@ impl Store {
             .next())
     }
 
-    /// Records that a send of row `id` to launch `session` begins, before it is sent.
+    /// Records that a send of row `id` to `launch` begins, before it is sent.
     ///
     /// # Errors
     /// Returns [`StoreError::Illegal`] when the row cannot be sent now, as
@@ -92,9 +92,9 @@ impl Store {
         &self,
         box_id: BoxId,
         id: InboxId,
-        session: SessionId,
+        launch: LaunchId,
     ) -> Result<Delivery, StoreError> {
-        self.move_delivery(box_id, id, |d| d.mark(session))
+        self.move_delivery(box_id, id, |d| d.mark(launch))
     }
 
     /// Records that the send of row `id` reached the agent now, with its terminal at `mark`.
@@ -153,15 +153,15 @@ impl Store {
         Ok(true)
     }
 
-    /// Box `box_id`'s rows sent, or in doubt, to a launch other than `live`, oldest first: the
+    /// Box `box_id`'s rows sent, or in doubt, to a launch older than `live`, oldest first: the
     /// turns a lost VM or a dead agent cut.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
-    pub(crate) fn cut(&self, box_id: BoxId, live: SessionId) -> Result<Vec<InboxRow>, StoreError> {
+    pub(crate) fn cut(&self, box_id: BoxId, live: LaunchId) -> Result<Vec<InboxRow>, StoreError> {
         let q = select(box_id)
-            .and_where(Expr::col(BoxInbox::Session).is_not_null())
-            .and_where(Expr::col(BoxInbox::Session).ne(live.get()))
+            .and_where(Expr::col(BoxInbox::Launch).is_not_null())
+            .and_where(Expr::col(BoxInbox::Launch).lt(live.get()))
             .take();
         rows(&self.reader()?, q)
     }
@@ -215,7 +215,7 @@ impl Store {
             Query::update()
                 .table(BoxInbox::Table)
                 .value(BoxInbox::Attempts, c.attempts)
-                .value(BoxInbox::Session, c.session)
+                .value(BoxInbox::Launch, c.launch)
                 .value(BoxInbox::SentAt, c.sent_at)
                 .value(BoxInbox::TurnBefore, c.turn_before)
                 .value(BoxInbox::StatusBefore, c.status_before)
@@ -244,7 +244,7 @@ fn select(box_id: BoxId) -> SelectStatement {
             BoxInbox::Sender,
             BoxInbox::CreatedAt,
             BoxInbox::Attempts,
-            BoxInbox::Session,
+            BoxInbox::Launch,
             BoxInbox::SentAt,
             BoxInbox::TurnBefore,
             BoxInbox::StatusBefore,
@@ -266,7 +266,7 @@ fn inbox_row(r: &Row<'_>) -> Result<InboxRow, StoreError> {
     let kind: String = r.get(1)?;
     let cols = DeliveryColumns {
         attempts: r.get(5)?,
-        session: r.get(6)?,
+        launch: r.get(6)?,
         sent_at: r.get(7)?,
         turn_before: r.get(8)?,
         status_before: r.get(9)?,
