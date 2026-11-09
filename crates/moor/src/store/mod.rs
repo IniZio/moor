@@ -51,6 +51,7 @@ mod hands;
 #[cfg(test)]
 pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
+mod inbox;
 mod init;
 pub(crate) mod lease;
 mod open;
