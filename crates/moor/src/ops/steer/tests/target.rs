@@ -1,7 +1,7 @@
 //! `steer` by Box id next to `steer` by name.
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::Steer;
 use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, SteerReq};
@@ -28,6 +28,7 @@ fn close_and_reuse_the_name(f: &Fx) -> BoxId {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id

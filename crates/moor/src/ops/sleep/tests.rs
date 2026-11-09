@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
@@ -38,18 +38,19 @@ fn fx_with(driver: FakeDriver) -> Fx {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(provider.clone()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -67,7 +68,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -231,9 +232,9 @@ fn unknown_provider_refuses_naming_the_provider() {
 #[test]
 fn a_later_successful_sleep_clears_the_reason() {
     let f = idle();
-    let d = Decision::new(f.id).set(Fields {
-        box_sleep_reason: Field::Set("old".to_owned()),
-        ..Fields::default()
+    let d = Decision::new(f.id).hands(HandsFields {
+        sleep_reason: Field::Set("old".to_owned()),
+        ..HandsFields::default()
     });
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(reason(&f).as_deref(), Some("old"));
@@ -293,15 +294,16 @@ fn starting() -> Fx {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     Fx {
@@ -313,10 +315,10 @@ fn starting() -> Fx {
 }
 
 /// Fields that give the Box a handle, so only its state can make `sleep` refuse.
-fn with_handle() -> Fields {
-    Fields {
-        box_handle: Field::Set(moor_core::name::BoxHandle::new("box-1")),
-        ..Fields::default()
+fn with_handle() -> HandsFields {
+    HandsFields {
+        handle: Field::Set(moor_core::name::BoxHandle::new("box-1")),
+        ..HandsFields::default()
     }
 }
 
@@ -332,7 +334,7 @@ fn assert_refused_untouched(f: &Fx) {
 #[test]
 fn refuses_a_box_that_is_still_setting_up() {
     let f = starting();
-    let d = Decision::new(f.id).box_input(HandsInput::Acquired {
+    let d = Decision::new(f.id).hands_input(HandsInput::Acquired {
         handle: moor_core::name::BoxHandle::new("box-1"),
     });
     f.cx.store().unwrap().apply(d).unwrap();
@@ -348,7 +350,7 @@ fn refuses_a_working_box_whose_box_is_starting() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .set(with_handle());
+        .hands(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Starting));
     assert_eq!(session(&f), SessionState::Working);
@@ -363,11 +365,11 @@ fn refuses_a_working_box_whose_box_failed() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::AcquireFailed {
+        .hands_input(HandsInput::AcquireFailed {
             cause: "no capacity".to_owned(),
             attempted: None,
         })
-        .set(with_handle());
+        .hands(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Failed));
     assert_eq!(session(&f), SessionState::Working);
@@ -377,9 +379,9 @@ fn refuses_a_working_box_whose_box_failed() {
 #[test]
 fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
     let f = idle();
-    let d = Decision::new(f.id).set(Fields {
-        box_handle: Field::Clear,
-        ..Fields::default()
+    let d = Decision::new(f.id).hands(HandsFields {
+        handle: Field::Clear,
+        ..HandsFields::default()
     });
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));

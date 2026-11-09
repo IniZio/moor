@@ -125,7 +125,7 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, Co
             if goes_on {
                 // Stopping it can wait for it, and the controller is not serving yet.
                 let lost = Decision::new(row.id)
-                    .box_input(HandsInput::AcquireFailed {
+                    .hands_input(HandsInput::AcquireFailed {
                         cause: CAUSE.to_owned(),
                         attempted: planned,
                     })
@@ -170,7 +170,7 @@ fn fail_acquire(
     again: bool,
 ) -> Result<bool, CommandError> {
     let planned = planned_root(store, row.id)?;
-    let lost = Decision::new(row.id).box_input(HandsInput::AcquireFailed {
+    let lost = Decision::new(row.id).hands_input(HandsInput::AcquireFailed {
         cause: CAUSE.to_owned(),
         attempted: planned.clone(),
     });
@@ -198,7 +198,7 @@ pub(super) fn release_warned(cx: &Cx, store: &Store, row: &BoxRow, handle: &BoxH
     match cx.driver().release(handle) {
         Ok(Released::Deleted) => true,
         Ok(Released::AlreadyGone) => {
-            let gone = Decision::new(row.id).box_input(HandsInput::DriverMissing);
+            let gone = Decision::new(row.id).hands_input(HandsInput::DriverMissing);
             store.apply(gone).is_ok()
         }
         Err(e) => {

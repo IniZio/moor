@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
@@ -62,9 +62,9 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let parked = sleep_parked(cx, store, row, &handle, settled(cx, store, row)?)?;
     match parked.outcome {
         SleepOutcome::Slept | SleepOutcome::Native => {
-            let fields = Fields {
-                box_sleep_reason: Field::Clear,
-                ..Fields::default()
+            let fields = HandsFields {
+                sleep_reason: Field::Clear,
+                ..HandsFields::default()
             };
             store.apply(
                 Decision::new(row.id)
@@ -73,17 +73,17 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                         reason: None,
                     })
                     .cache_save(parked.cache_save)
-                    .box_input(HandsInput::Sleep)
-                    .set(fields),
+                    .hands_input(HandsInput::Sleep)
+                    .hands(fields),
             )?;
             Ok(())
         }
         SleepOutcome::CannotSleep(reason) => {
-            let fields = Fields {
-                box_sleep_reason: Field::Set(reason.clone()),
-                ..Fields::default()
+            let fields = HandsFields {
+                sleep_reason: Field::Set(reason.clone()),
+                ..HandsFields::default()
             };
-            store.apply(Decision::new(row.id).set(fields))?;
+            store.apply(Decision::new(row.id).hands(fields))?;
             Err(refuse(format!("the Box cannot sleep: {reason}")))
         }
     }

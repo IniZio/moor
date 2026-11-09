@@ -335,7 +335,7 @@ fn a_working_box_that_loses_its_machine_relaunches_on_its_deepest_checkpoint_wit
     let first = row(&w, id).hands.unwrap().handle;
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     gone(&engine);
     let v = run(&w.cx, &start_req).unwrap();

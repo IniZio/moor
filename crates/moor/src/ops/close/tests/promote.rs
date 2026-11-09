@@ -10,7 +10,7 @@ use super::is_working;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
@@ -115,25 +115,26 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("holder").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new(PROVIDER)),
-        box_workdir: Field::Set(HOLDER_WORKDIR.into()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new(PROVIDER)),
+        workdir: Field::Set(HOLDER_WORKDIR.into()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle });
+        .hands_input(HandsInput::Acquired { handle });
     store.apply(d).unwrap();
     on_provider_node(cx, id, PROVIDER);
     id
@@ -141,11 +142,10 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
 
 /// Records `id` on the node a config without `nodes:` builds from `provider`.
 fn on_provider_node(cx: &Cx, id: BoxId, provider: &str) {
-    let spec = moor_core::decide::schedule::BoxSpec {
-        labels: Vec::new(),
-        node: moor_core::name::NodeName::parse(provider).ok(),
-    };
-    cx.store().unwrap().set_box_spec(id, &spec).unwrap();
+    cx.store()
+        .unwrap()
+        .set_box_node(id, moor_core::name::NodeName::parse(provider).ok().as_ref())
+        .unwrap();
 }
 
 fn start_req(name: &str) -> StartReq {
@@ -185,6 +185,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
@@ -311,7 +312,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
     let id = queue(&w, "first");
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(w.holder).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(w.holder).hands_input(HandsInput::DriverMissing))
         .unwrap();
     let req = ShowReq {
         target: None,
@@ -330,13 +331,13 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
 fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
     let w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
-    let set = Fields {
-        box_provider: Field::Set(ProviderId::new("other-provider")),
-        ..Fields::default()
+    let set = HandsFields {
+        provider: Field::Set(ProviderId::new("other-provider")),
+        ..HandsFields::default()
     };
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(w.holder).set(set))
+        .apply(Decision::new(w.holder).hands(set))
         .unwrap();
     on_provider_node(&w.cx, w.holder, "other-provider");
     let v = close_holder(&w);

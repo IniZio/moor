@@ -525,7 +525,7 @@ fn sigterm_lets_a_streamed_run_finish_and_exits_zero() {
 fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
     use crate::proxy::keeper::{Deps, KEEPERS};
     use crate::testing::rng::FakeRng;
-    use moor_core::domain::decision::{Decision, NewBox};
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(
@@ -538,6 +538,7 @@ fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
     let nt = NewBox {
         name: moor_core::BoxName::parse_allow_bare("a").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     drop(store.reserve(id, &FakeRng::default()));

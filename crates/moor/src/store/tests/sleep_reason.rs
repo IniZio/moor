@@ -1,5 +1,5 @@
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxHandle, BoxId};
@@ -14,8 +14,8 @@ fn ready_box(store: &Store) -> BoxId {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(HandsInput::Requested)
-                .set(provider()),
+                .hands_input(HandsInput::Requested)
+                .hands(provider()),
         )
         .unwrap();
     store
@@ -25,7 +25,7 @@ fn ready_box(store: &Store) -> BoxId {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .box_input(HandsInput::Acquired {
+                .hands_input(HandsInput::Acquired {
                     handle: BoxHandle::new("h1"),
                 }),
         )
@@ -57,9 +57,9 @@ fn sleep_reason_is_set_without_changing_states() {
     let id = ready_box(&store);
     let before = store.box_row(id).unwrap().unwrap();
     store
-        .apply(Decision::new(id).set(Fields {
-            box_sleep_reason: Field::Set("no wake".into()),
-            ..Fields::default()
+        .apply(Decision::new(id).hands(HandsFields {
+            sleep_reason: Field::Set("no wake".into()),
+            ..HandsFields::default()
         }))
         .unwrap();
     let after = store.box_row(id).unwrap().unwrap();
@@ -77,14 +77,14 @@ fn sleep_reason_clears_in_the_same_apply_as_a_box_input() {
     let (store, _) = open(dir.path());
     let id = ready_box(&store);
     let reason = |f| {
-        Decision::new(id).set(Fields {
-            box_sleep_reason: f,
-            ..Fields::default()
+        Decision::new(id).hands(HandsFields {
+            sleep_reason: f,
+            ..HandsFields::default()
         })
     };
     store.apply(reason(Field::Set("no wake".into()))).unwrap();
     store
-        .apply(reason(Field::Clear).box_input(HandsInput::Sleep))
+        .apply(reason(Field::Clear).hands_input(HandsInput::Sleep))
         .unwrap();
     let b = store.box_row(id).unwrap().unwrap().hands.unwrap();
     assert_eq!((b.state, b.sleep_reason), (HandsState::Asleep, None));

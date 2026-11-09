@@ -295,7 +295,7 @@ fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     assert!(failed_at_set(&w, &v));
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let gone = Decision::new(id).box_input(HandsInput::DriverMissing);
+    let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
     store.apply(gone).unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert_eq!(again.boxed.id, v.boxed.id);
@@ -354,7 +354,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert_eq!(again.boxed.lifecycle, BoxLifecycle::SetupFailed);

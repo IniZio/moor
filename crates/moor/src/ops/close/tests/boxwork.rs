@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -38,9 +38,9 @@ pub(super) fn fx_woken_with(text: &str, yaml: Option<&str>) -> Fx {
     let id = admit(&cx, &driver, yaml);
     cx.store()
         .unwrap()
-        .apply(Decision::new(id).set(Fields {
-            box_workdir: Field::Set("/work/cbx_1/repo".to_owned()),
-            ..Fields::default()
+        .apply(Decision::new(id).hands(HandsFields {
+            workdir: Field::Set("/work/cbx_1/repo".to_owned()),
+            ..HandsFields::default()
         }))
         .unwrap();
     Fx {
@@ -65,7 +65,7 @@ pub(super) fn put_to_sleep(f: &Fx) {
                     auto: false,
                     reason: None,
                 })
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     assert_eq!(box_state(f), HandsState::Asleep);
@@ -186,11 +186,11 @@ pub(super) fn fx_setup_failed() -> Fx {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(HandsInput::Requested)
-                .set(Fields {
-                    box_provider: Field::Set(provider.clone()),
-                    box_workdir: Field::Set("/work/box-1".into()),
-                    ..Fields::default()
+                .hands_input(HandsInput::Requested)
+                .hands(HandsFields {
+                    provider: Field::Set(provider.clone()),
+                    workdir: Field::Set("/work/box-1".into()),
+                    ..HandsFields::default()
                 }),
         )
         .unwrap();
@@ -208,7 +208,7 @@ pub(super) fn fx_setup_failed() -> Fx {
     store
         .apply(
             Decision::new(id)
-                .box_input(HandsInput::Acquired { handle: got.handle })
+                .hands_input(HandsInput::Acquired { handle: got.handle })
                 .lifecycle(BoxLifecycleInput::SetupFailed {
                     cause: "clone failed".to_owned(),
                     which: None,
@@ -314,7 +314,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
     let f = fx_probe(Some("ahead=1 dirty=1"));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     assert_eq!(box_state(&f), HandsState::Gone);
     let v = run(&f.cx, &req(false)).unwrap();
@@ -331,19 +331,20 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     store
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(HandsInput::Requested)
-                .set(fields),
+                .hands_input(HandsInput::Requested)
+                .hands(fields),
         )
         .unwrap();
     let cause = "no capacity".to_owned();
@@ -354,7 +355,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
                     cause: cause.clone(),
                     which: None,
                 })
-                .box_input(HandsInput::AcquireFailed {
+                .hands_input(HandsInput::AcquireFailed {
                     cause,
                     attempted: None,
                 }),

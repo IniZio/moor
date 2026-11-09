@@ -5,6 +5,7 @@ fn add_child(store: &Store, name: &str, parent: i64) -> BoxId {
     let new = NewBox {
         name: BoxName::parse_allow_bare(name).expect("name"),
         repo: None,
+        spec: SpecFields::default(),
     };
     let decision = Decision::insert(new).parent_session(Some(parent));
     store.apply(decision).expect("insert child").box_id
@@ -97,6 +98,7 @@ fn parent_filter_keeps_the_viewers_own_boxes_only() {
         let new = NewBox {
             name: BoxName::parse_allow_bare(name).expect("name"),
             repo: None,
+            spec: SpecFields::default(),
         };
         let decision = Decision::insert(new)
             .parent_session(Some(parent))

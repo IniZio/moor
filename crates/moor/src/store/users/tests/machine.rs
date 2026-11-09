@@ -3,7 +3,7 @@
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::user::{Identity, UserId};
 use moor_core::view::MachineHoldState;
@@ -41,6 +41,7 @@ impl Mini {
         let nt = NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         self.store.apply(Decision::insert(nt)).unwrap().box_id
     }

@@ -26,7 +26,7 @@ pub(super) fn forced_out(
         cause: FORCED_CLOSE.to_owned(),
         which: None,
     });
-    store.apply(lost.box_input(HandsInput::AcquireFailed {
+    store.apply(lost.hands_input(HandsInput::AcquireFailed {
         cause: FORCED_CLOSE.to_owned(),
         attempted: Some(planned.clone()),
     }))?;
@@ -50,7 +50,7 @@ pub(super) fn failed(
         which: None,
     });
     let lost = lost
-        .box_input(HandsInput::AcquireFailed {
+        .hands_input(HandsInput::AcquireFailed {
             cause,
             attempted: Some(attempted.clone()),
         })
@@ -60,7 +60,7 @@ pub(super) fn failed(
     }
     match cx.driver().release(&attempted) {
         Ok(Released::AlreadyGone) => {
-            let gone = Decision::new(id).box_input(HandsInput::DriverMissing);
+            let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
             if let Err(write) = store.apply(gone) {
                 return write.into();
             }

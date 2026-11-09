@@ -229,7 +229,7 @@ pub fn release_outcome_with_reason(
         .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
-            decision: Some(close.box_input(HandsInput::Released)),
+            decision: Some(close.hands_input(HandsInput::Released)),
             warning: None,
             closes: true,
         },
@@ -255,7 +255,7 @@ fn failed_close(close: Decision, from: HandsState) -> Decision {
     if from == HandsState::ReleaseFailed {
         return close;
     }
-    close.box_input(HandsInput::ReleaseErr {
+    close.hands_input(HandsInput::ReleaseErr {
         cause: "the Driver could not release the Box".to_owned(),
     })
 }

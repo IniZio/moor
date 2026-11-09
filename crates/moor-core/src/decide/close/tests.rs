@@ -262,7 +262,7 @@ fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: HandsState) -> (BoxLifecycle
         .lifecycle_input
         .as_ref()
         .map_or(Ok(life), |i| life.step(&[], i));
-    let bx = d.box_input.as_ref().map_or(Ok(b), |i| b.step(i));
+    let bx = d.hands_input.as_ref().map_or(Ok(b), |i| b.step(i));
     (l.expect("lifecycle step"), bx.expect("box step"))
 }
 

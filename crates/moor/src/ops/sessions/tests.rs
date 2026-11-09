@@ -7,7 +7,7 @@ use sea_query::{Expr, ExprTrait as _, Query};
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::request::SessionsReq;
 use moor_core::{BoxName, Request, SessionId};
 use serde_json::json;
@@ -145,6 +145,7 @@ fn box_child(cx: &Cx, dir: &Path, name: &str, parent: i64) -> i64 {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     cx.store().unwrap().apply(Decision::insert(nt)).unwrap();
     let id: i64 = db(dir)

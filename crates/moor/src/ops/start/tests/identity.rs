@@ -66,7 +66,7 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     run(&w.cx, &start_req()).unwrap();
     let with_identity = clones(&w)

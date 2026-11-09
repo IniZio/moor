@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, Secret};
 use tempfile::TempDir;
@@ -94,6 +94,7 @@ impl Rig {
             .apply(Decision::insert(NewBox {
                 name: BoxName::parse_allow_bare("t").unwrap(),
                 repo: None,
+                spec: SpecFields::default(),
             }))
             .unwrap()
             .box_id;

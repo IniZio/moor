@@ -190,7 +190,7 @@ fn gone_box_skips_teardown() {
     let f = fx_yaml(FakeDriver::new(), YAML);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(exec_calls(&f), 0);
@@ -241,7 +241,7 @@ fn asleep_box_is_woken_probed_and_released() {
     let f = fx_woken_with("ahead=0 dirty=0", Some(YAML));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::Sleep))
+        .apply(Decision::new(f.id).hands_input(HandsInput::Sleep))
         .unwrap();
     assert_eq!(box_state(&f), HandsState::Asleep);
     let v = run(&f.cx, &req(false)).unwrap();

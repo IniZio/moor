@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use moor_core::config::{EnrolledMachine, NodeConfig};
-use moor_core::decide::schedule::{BoxSpec, Node, Online, Scope};
+use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::name::NodeName;
 use moor_core::request::MachineLink;
@@ -21,11 +21,9 @@ const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
 
 fn on_node(store: &Store, id: BoxId, node: &str) {
-    let spec = BoxSpec {
-        labels: Vec::new(),
-        node: NodeName::parse(node).ok(),
-    };
-    store.set_box_spec(id, &spec).unwrap();
+    store
+        .set_box_node(id, NodeName::parse(node).ok().as_ref())
+        .unwrap();
 }
 
 fn wait(store: &Store, name: &str, node: &str) {
@@ -39,10 +37,10 @@ fn hold(store: &Store, name: &str, node: &str, provider: &str) {
     let id = new_box(store, name);
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new(provider)),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new(provider)),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     on_node(store, id, node);
@@ -142,6 +140,7 @@ fn ready_for(store: &Store, name: &str, node: &str, user: UserId) -> BoxId {
             Decision::insert(NewBox {
                 name: BoxName::parse_allow_bare(name).unwrap(),
                 repo: None,
+                spec: SpecFields::default(),
             })
             .requester(user),
         )
@@ -149,10 +148,10 @@ fn ready_for(store: &Store, name: &str, node: &str, user: UserId) -> BoxId {
         .box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admit).unwrap();
     let ready = Decision::new(id).lifecycle(BoxLifecycleInput::Ready {

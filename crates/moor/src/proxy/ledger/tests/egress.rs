@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
@@ -21,6 +21,7 @@ fn box_with_token(w: &World, name: &str, token: &[u8]) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = w.store.apply(Decision::insert(nt)).unwrap().box_id;
     drop(w.store.reserve(id, &FakeRng::default()));
@@ -70,18 +71,18 @@ fn the_awake_tokens_name_every_open_awake_box_and_skip_a_row_that_cannot_be_read
 /// Takes `id` up on a machine, then to sleep.
 fn asleep(w: &World, id: BoxId) {
     let up = Decision::new(id)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     w.store.apply(up).unwrap();
-    let acquired = Decision::new(id).box_input(HandsInput::Acquired {
+    let acquired = Decision::new(id).hands_input(HandsInput::Acquired {
         handle: BoxHandle::new("p/b"),
     });
     w.store.apply(acquired).unwrap();
     w.store
-        .apply(Decision::new(id).box_input(HandsInput::Sleep))
+        .apply(Decision::new(id).hands_input(HandsInput::Sleep))
         .unwrap();
 }
 
@@ -113,6 +114,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
     let nt = NewBox {
         name: BoxName::parse_allow_bare("a").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let a = w
         .store

@@ -63,7 +63,7 @@ fn polled_asleep(suspend: BoxLifecycleInput, quiet: bool) -> (Cx, Arc<FakeEngine
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     for _ in 0..2 {
@@ -115,7 +115,7 @@ fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
     let store = cx.store().unwrap();
     let wake = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Wake)
-        .box_input(HandsInput::Wake);
+        .hands_input(HandsInput::Wake);
     store.apply(wake).unwrap();
     engine.set_probes(SESSION, crate::testing::agent::working(super::seen()));
     let reading = run_once(&cx, id);

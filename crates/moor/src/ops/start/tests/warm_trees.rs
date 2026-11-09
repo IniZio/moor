@@ -153,7 +153,7 @@ impl Scratch {
 
     /// Takes Box `id`'s machine away and starts it again.
     pub(super) fn lose_machine_of(&self, id: BoxId, name: &str, yaml: &str) -> StartView {
-        let gone = Decision::new(id).box_input(HandsInput::DriverMissing);
+        let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
         self.w.cx.store().unwrap().apply(gone).unwrap();
         self.start(name, yaml).1
     }

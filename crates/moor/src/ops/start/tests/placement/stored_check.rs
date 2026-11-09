@@ -2,7 +2,7 @@
 //! fit to wake.
 
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Closed, Pending, Ready};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsState;
 use moor_core::{BoxPath, ErrorKind};
 
@@ -39,10 +39,10 @@ fn stored(w: &World, id: BoxId) -> Option<(u32, u32)> {
 fn guest_memory(w: &World, id: BoxId, mib: u64) {
     apply(
         w,
-        Decision::new(id).set(Fields {
-            box_cpus: Field::Set(4),
-            box_mem_mib: Field::Set(i64::try_from(mib).unwrap()),
-            ..Fields::default()
+        Decision::new(id).hands(HandsFields {
+            cpus: Field::Set(4),
+            mem_mib: Field::Set(i64::try_from(mib).unwrap()),
+            ..HandsFields::default()
         }),
     );
 }

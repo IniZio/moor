@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::{NodeConfig, UserConfig};
-use moor_core::domain::decision::{BoxRepo, Decision, NewBox};
+use moor_core::domain::decision::{BoxRepo, Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
@@ -124,7 +124,12 @@ pub(crate) const REQUESTER_USER: UserId = UserId::new(1);
 
 /// Inserts Box `name` with no repo, acting for [`REQUESTER_USER`].
 pub(crate) fn new_box(name: BoxName) -> Decision {
-    Decision::insert(NewBox { name, repo: None }).requester(REQUESTER_USER)
+    Decision::insert(NewBox {
+        name,
+        repo: None,
+        spec: SpecFields::default(),
+    })
+    .requester(REQUESTER_USER)
 }
 
 /// Inserts Box `name` of `repo`, acting for [`REQUESTER_USER`].
@@ -132,6 +137,7 @@ pub(crate) fn new_box_of(name: BoxName, repo: BoxRepo) -> Decision {
     Decision::insert(NewBox {
         name,
         repo: Some(repo),
+        spec: SpecFields::default(),
     })
     .requester(REQUESTER_USER)
 }

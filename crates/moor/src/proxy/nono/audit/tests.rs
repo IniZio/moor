@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxId, BoxName};
@@ -223,6 +223,7 @@ fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let new = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let box_id = store.apply(Decision::insert(new)).unwrap().box_id;
     let log = ProxyLog::open(dir, box_id, clock).unwrap();

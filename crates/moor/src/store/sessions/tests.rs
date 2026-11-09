@@ -3,7 +3,7 @@
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::{BoxId, ProviderId};
@@ -173,10 +173,10 @@ fn closing_a_box_ends_every_session() {
     let id = new_box(&store, "acme/1");
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admit).unwrap();
     let up = Decision::new(id)
@@ -213,10 +213,10 @@ fn ready_box(store: &crate::store::Store) -> BoxId {
     let id = new_box(store, "acme/1");
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admit).unwrap();
     let up = Decision::new(id)

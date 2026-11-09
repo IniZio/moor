@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::request::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Caller, Identity, UserId};
@@ -64,7 +64,14 @@ fn world_with(header: Option<(&str, &str)>) -> World {
         .unwrap());
     let name = BoxName::parse_allow_bare("a").unwrap();
     store
-        .apply(Decision::insert(NewBox { name, repo: None }).requester(alice))
+        .apply(
+            Decision::insert(NewBox {
+                name,
+                repo: None,
+                spec: SpecFields::default(),
+            })
+            .requester(alice),
+        )
         .unwrap();
     World {
         _dir: dir,

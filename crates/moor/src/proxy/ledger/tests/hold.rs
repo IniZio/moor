@@ -169,11 +169,11 @@ fn an_asleep_claim_is_released_while_parked_and_waits_once_asked_up() {
             auto: false,
             reason: None,
         })
-        .box_input(HandsInput::Sleep);
+        .hands_input(HandsInput::Sleep);
     r.store.apply(sleep).unwrap();
     assert_eq!(r.missing(), RELEASED, "asleep");
     r.store
-        .apply(Decision::new(r.id).box_input(HandsInput::Wake))
+        .apply(Decision::new(r.id).hands_input(HandsInput::Wake))
         .unwrap();
     kept.restore().unwrap();
     assert_eq!(r.missing(), NO_SLOT, "awake, before the keeper's next tick");

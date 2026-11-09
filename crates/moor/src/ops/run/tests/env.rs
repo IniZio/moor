@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::boxscript::shell_argv;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::ErrorKind;
 
@@ -30,9 +30,9 @@ fn run_gets_the_repo_env_and_proxy_variables() {
 #[test]
 fn box_without_a_recorded_workdir_runs_in_the_default_directory() {
     let f = ready();
-    let unrecorded = Decision::new(f.id).set(Fields {
-        box_workdir: Field::Set(String::new()),
-        ..Fields::default()
+    let unrecorded = Decision::new(f.id).hands(HandsFields {
+        workdir: Field::Set(String::new()),
+        ..HandsFields::default()
     });
     f.cx.store().unwrap().apply(unrecorded).unwrap();
     let v = run(&f.cx, &req(&["true"])).unwrap();

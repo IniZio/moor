@@ -117,7 +117,7 @@ fn a_box_suspended_mid_turn_is_not_a_stall() {
         .apply(
             Decision::new(rig.id)
                 .lifecycle(suspend)
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     rig.pass(working(None), 11 * MINUTE, false);

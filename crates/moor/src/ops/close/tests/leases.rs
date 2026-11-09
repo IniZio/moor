@@ -47,7 +47,7 @@ fn a_release_failed_box_keeps_its_leases_for_the_manual_release() {
     plan_leases(&f);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::ReleaseErr { cause: "x".into() }))
+        .apply(Decision::new(f.id).hands_input(HandsInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(lease_count(&f), 2);

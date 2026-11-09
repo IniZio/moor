@@ -8,7 +8,7 @@ use std::net::TcpListener;
 use std::sync::Arc;
 
 use moor_core::config::{BlobsConfig, S3Blobs};
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::request::ArtifactReadReq;
 use moor_core::{BoxId, BoxName};
 use sha2::{Digest, Sha256};
@@ -73,6 +73,7 @@ pub(crate) fn cx_on(dir: &std::path::Path, blobs: Arc<dyn Blobs>) -> (Cx, BoxId)
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;

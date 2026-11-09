@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::controller::{WatchFilter, PROTOCOL};
-use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
+use moor_core::domain::decision::{Decision, ExtraEvent, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Email, Identity, UserId, Viewer};
 use moor_core::{BoxId, BoxName, Request};
@@ -91,6 +91,7 @@ fn insert(store: &Store, name: &str, user: Option<UserId>) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).expect("name"),
         repo: None,
+        spec: SpecFields::default(),
     });
     let new = match user {
         Some(user) => new.requester(user),

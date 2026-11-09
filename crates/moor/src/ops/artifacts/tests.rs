@@ -5,7 +5,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::request::{ArtifactReadReq, ArtifactsReq};
 use moor_core::view::ArtifactReadView;
 use moor_core::{BoxId, BoxName, ErrorKind, Request};
@@ -35,6 +35,7 @@ fn new_box(cx: &Cx, n: &str) -> BoxId {
     let nt = NewBox {
         name: name(n),
         repo: None,
+        spec: SpecFields::default(),
     };
     cx.store()
         .unwrap()

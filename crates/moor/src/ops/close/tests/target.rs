@@ -1,7 +1,7 @@
 //! `close` by Box id next to `close` by name.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind};
 
 use super::{fx, row, Fx};
@@ -25,6 +25,7 @@ fn newer_t(f: &Fx) -> BoxId {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id

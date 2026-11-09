@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, HandsFields, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxName};
@@ -29,6 +29,7 @@ fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     store.apply(Decision::insert(nt)).unwrap().box_id
 }
@@ -212,7 +213,7 @@ fn a_reserve_again_needs_the_token_delivered_again() {
 /// A Box acquired as `p/first`, with a reserved proxy row whose egress token was delivered.
 fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     use moor_core::domain::box_state::BoxLifecycleInput;
-    use moor_core::domain::decision::{Field, Fields};
+    use moor_core::domain::decision::Field;
     use moor_core::domain::hands::HandsInput;
     use moor_core::ProviderId;
     let (store, clock, id) = reserved(dir);
@@ -220,10 +221,10 @@ fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(HandsInput::Requested)
-                .set(Fields {
-                    box_provider: Field::Set(ProviderId::new("p")),
-                    ..Fields::default()
+                .hands_input(HandsInput::Requested)
+                .hands(HandsFields {
+                    provider: Field::Set(ProviderId::new("p")),
+                    ..HandsFields::default()
                 }),
         )
         .unwrap();
@@ -237,7 +238,7 @@ fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
 fn acquire(store: &Store, id: BoxId, handle: &str) {
     use moor_core::domain::hands::HandsInput;
     store
-        .apply(Decision::new(id).box_input(HandsInput::Acquired {
+        .apply(Decision::new(id).hands_input(HandsInput::Acquired {
             handle: moor_core::BoxHandle::new(handle),
         }))
         .unwrap();
@@ -249,7 +250,7 @@ fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
     for input in [HandsInput::DriverMissing, HandsInput::Requested] {
-        store.apply(Decision::new(id).box_input(input)).unwrap();
+        store.apply(Decision::new(id).hands_input(input)).unwrap();
     }
     acquire(&store, id, "p/second");
     assert!(!store.egress_token_delivered(id, 1).unwrap());
@@ -257,13 +258,13 @@ fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
 
 #[test]
 fn a_box_moved_onto_a_fork_needs_the_token_delivered_again() {
-    use moor_core::domain::decision::{Field, Fields};
+    use moor_core::domain::decision::Field;
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
     store
-        .apply(Decision::new(id).set(Fields {
-            box_handle: Field::Set(moor_core::BoxHandle::new("p/fork")),
-            ..Fields::default()
+        .apply(Decision::new(id).hands(HandsFields {
+            handle: Field::Set(moor_core::BoxHandle::new("p/fork")),
+            ..HandsFields::default()
         }))
         .unwrap();
     assert!(!store.egress_token_delivered(id, 1).unwrap());
@@ -271,13 +272,13 @@ fn a_box_moved_onto_a_fork_needs_the_token_delivered_again() {
 
 #[test]
 fn a_change_that_keeps_the_machine_keeps_the_delivery() {
-    use moor_core::domain::decision::{Field, Fields};
+    use moor_core::domain::decision::Field;
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
     store
-        .apply(Decision::new(id).set(Fields {
-            box_workdir: Field::Set("/work".to_owned()),
-            ..Fields::default()
+        .apply(Decision::new(id).hands(HandsFields {
+            workdir: Field::Set("/work".to_owned()),
+            ..HandsFields::default()
         }))
         .unwrap();
     assert!(store.egress_token_delivered(id, 1).unwrap());

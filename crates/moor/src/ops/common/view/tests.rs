@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::config::{parse_user, UserConfig};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
@@ -36,6 +36,7 @@ fn box_view_maps_row_without_box() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: Some(crate::testing::cx::box_repo(None)),
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
@@ -69,21 +70,22 @@ fn box_view_maps_box() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     store
         .apply(
             Decision::new(id)
-                .set(fields)
-                .box_input(HandsInput::Requested),
+                .hands(fields)
+                .hands_input(HandsInput::Requested),
         )
         .unwrap();
     store
-        .apply(Decision::new(id).box_input(HandsInput::Acquired {
+        .apply(Decision::new(id).hands_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         }))
         .unwrap();
@@ -105,17 +107,18 @@ fn box_view_maps_sleep_reason() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     store
         .apply(
             Decision::new(id)
-                .set(fields)
-                .box_input(HandsInput::Requested),
+                .hands(fields)
+                .hands_input(HandsInput::Requested),
         )
         .unwrap();
     let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
@@ -125,11 +128,11 @@ fn box_view_maps_sleep_reason() {
         (b.sleep.after.as_deref(), b.sleep.reason),
         (Some("5m"), None)
     );
-    let fields = Fields {
-        box_sleep_reason: Field::Set("provider cannot wake".into()),
-        ..Fields::default()
+    let fields = HandsFields {
+        sleep_reason: Field::Set("provider cannot wake".into()),
+        ..HandsFields::default()
     };
-    store.apply(Decision::new(id).set(fields)).unwrap();
+    store.apply(Decision::new(id).hands(fields)).unwrap();
     let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
@@ -145,17 +148,18 @@ fn box_view_shows_configured_sleep_after() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     store
         .apply(
             Decision::new(id)
-                .set(fields)
-                .box_input(HandsInput::Requested),
+                .hands(fields)
+                .hands_input(HandsInput::Requested),
         )
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
@@ -173,6 +177,7 @@ fn box_view_with_run_fills_run() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let row = store.box_row(id).unwrap().unwrap();
@@ -291,6 +296,7 @@ fn box_view_lists_the_other_repos_in_order_and_omits_none() {
         let nt = NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: Some(repo),
+            spec: SpecFields::default(),
         };
         let id = store.apply(Decision::insert(nt)).unwrap().box_id;
         views.push(box_view(
@@ -318,6 +324,7 @@ fn box_view_flags_an_asleep_box_whose_session_is_busy() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: Some(crate::testing::cx::box_repo(None)),
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let mut row = store.box_row(id).unwrap().unwrap();

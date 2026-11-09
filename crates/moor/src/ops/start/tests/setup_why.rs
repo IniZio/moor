@@ -155,9 +155,9 @@ fn a_setup_cut_by_a_restart_says_so() {
     }));
     assert!(crashed.is_err());
     store
-        .apply(moor_core::domain::decision::Decision::new(id).set(
-            moor_core::domain::decision::Fields {
-                box_workdir: moor_core::domain::decision::Field::Clear,
+        .apply(moor_core::domain::decision::Decision::new(id).hands(
+            moor_core::domain::decision::HandsFields {
+                workdir: moor_core::domain::decision::Field::Clear,
                 ..Default::default()
             },
         ))

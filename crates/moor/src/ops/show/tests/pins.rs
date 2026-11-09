@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::BoxReq;
 use moor_core::user::{Caller, Identity};
@@ -27,6 +27,7 @@ fn add_for(cx: &Cx, n: &str, who: &Identity) -> BoxId {
     let new = NewBox {
         name: name(n),
         repo: None,
+        spec: SpecFields::default(),
     };
     store
         .apply(Decision::insert(new).requester(user))

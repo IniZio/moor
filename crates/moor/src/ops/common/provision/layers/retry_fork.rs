@@ -1,7 +1,7 @@
 //! A retry moved onto a fork of its nearest kept layer, taken over when it was cut off.
 
 use moor_core::config::BoxSettings;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields};
 use moor_core::seam::driver::{AcquireReq, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
@@ -68,9 +68,9 @@ pub(in super::super) fn resume(
     };
     hold_new(store, row.id, (root, &planned), &new)?;
     // One write, so a restart never reads this machine with the fork of the one before it.
-    let moved = Decision::new(row.id).event(told).set(Fields {
-        box_handle: Field::Set(new.clone()),
-        ..Fields::default()
+    let moved = Decision::new(row.id).event(told).hands(HandsFields {
+        handle: Field::Set(new.clone()),
+        ..HandsFields::default()
     });
     store.apply(moved)?;
     layered.stand_on(layer, saved.place.as_ref());
@@ -166,9 +166,9 @@ fn took_over(
         return Err(CommandError::new(ErrorKind::Failed, FORCED_CLOSE));
     }
     store.hold_lease(root)?;
-    let moved = Decision::new(row.id).set(Fields {
-        box_handle: Field::Set(new.clone()),
-        ..Fields::default()
+    let moved = Decision::new(row.id).hands(HandsFields {
+        handle: Field::Set(new.clone()),
+        ..HandsFields::default()
     });
     store.apply(moved)?;
     release_old(cx, store, row.id, old)?;

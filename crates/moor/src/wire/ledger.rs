@@ -48,7 +48,7 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::sync::Arc;
 
-    use moor_core::domain::decision::{Decision, NewBox};
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
     use moor_core::seam::clock::Ts;
     use moor_core::BoxName;
 
@@ -69,6 +69,7 @@ mod tests {
         let nt = NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         let id = store.apply(Decision::insert(nt)).unwrap().box_id;
         drop(store.reserve(id, &FakeRng::default()));

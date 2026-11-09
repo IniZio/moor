@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::exec_env::Purpose;
 use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -207,6 +207,7 @@ fn ensure_plans_the_proxy_for_the_user_of_the_box() {
     let new = NewBox {
         name: BoxName::parse_allow_bare("second-users-box").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store
         .apply(Decision::insert(new).requester(second))
@@ -234,6 +235,7 @@ fn egress_hosts(config: UserConfig) -> Vec<String> {
     let new = NewBox {
         name: BoxName::parse_allow_bare("machine-box").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store
         .apply(Decision::insert(new).requester(user))

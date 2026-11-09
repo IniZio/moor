@@ -22,7 +22,7 @@ use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use moor_core::controller::WatchFilter;
-use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
+use moor_core::domain::decision::{Decision, ExtraEvent, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, SessionId};
 
@@ -63,6 +63,7 @@ fn add(store: &Store, name: &str) -> BoxId {
     let new = NewBox {
         name: BoxName::parse_allow_bare(name).expect("name"),
         repo: None,
+        spec: SpecFields::default(),
     };
     store.apply(Decision::insert(new)).expect("insert").box_id
 }

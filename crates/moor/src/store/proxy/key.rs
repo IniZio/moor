@@ -114,7 +114,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use moor_core::domain::decision::{Decision, NewBox};
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
     use moor_core::BoxName;
 
     use crate::store::tests::open;
@@ -128,6 +128,7 @@ mod tests {
         let nt = NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         let a = store.apply(Decision::insert(nt)).unwrap().box_id;
         assert!(!store.set_egress_token(a, b"t1").unwrap(), "no row yet");

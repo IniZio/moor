@@ -255,7 +255,7 @@ fn gone_box_collects_nothing() {
     let f = fx(driver_with(&[("result.md", "R")]));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(collect_execs(&f), 0);
@@ -277,7 +277,7 @@ fn asleep_box_under_force_is_not_woken_to_collect() {
                     auto: false,
                     reason: None,
                 })
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     assert_eq!(box_state(&f), HandsState::Asleep);

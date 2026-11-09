@@ -1,7 +1,7 @@
 //! The one queue on a node: what lets a Box resume, and in what order Boxes leave it.
 
 use moor_core::domain::box_state::BoxLifecycle::{self, Asleep, Pending, Ready};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::request::BoxHostMemory;
 use moor_core::seam::driver::DriverError;
 
@@ -19,10 +19,10 @@ const fn with_free(free: u64) -> u64 {
 fn guest_memory(w: &World, id: BoxId, mib: u64) {
     apply(
         w,
-        Decision::new(id).set(Fields {
-            box_cpus: Field::Set(4),
-            box_mem_mib: Field::Set(i64::try_from(mib).unwrap()),
-            ..Fields::default()
+        Decision::new(id).hands(HandsFields {
+            cpus: Field::Set(4),
+            mem_mib: Field::Set(i64::try_from(mib).unwrap()),
+            ..HandsFields::default()
         }),
     );
 }
@@ -177,11 +177,7 @@ fn a_resume_goes_ahead_of_an_older_start_in_the_queue() {
     put_to_sleep(&w, resume);
     let store = w.cx.store().unwrap();
     let hv_name = moor_core::name::NodeName::parse("hv").unwrap();
-    let spec = moor_core::decide::schedule::BoxSpec {
-        labels: Vec::new(),
-        node: Some(hv_name.clone()),
-    };
-    store.set_box_spec(resume, &spec).unwrap();
+    store.set_box_node(resume, Some(&hv_name)).unwrap();
     report(&w, hv, SHORT, None);
     assert!(wake_up(&w, resume).is_err());
     assert_eq!(store.pending_on(&hv_name).unwrap(), [resume, older]);

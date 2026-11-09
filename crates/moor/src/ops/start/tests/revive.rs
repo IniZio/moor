@@ -278,7 +278,7 @@ pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     let at = w.cx.clock().now().as_millis() / 1000;
