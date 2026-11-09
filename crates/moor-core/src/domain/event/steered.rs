@@ -16,7 +16,8 @@ pub struct SteerSent {
     /// milliseconds; none when a turn was running then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_before: Option<i64>,
-    /// The inbox row sent, for a text that waits in the inbox until its turn ends.
+    /// The inbox row it was sent from, which waits until its turn ends; none on a steer sent
+    /// before steers had rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inbox: Option<i64>,
 }
