@@ -565,3 +565,19 @@ fn a_failed_install_after_a_restart_holds_the_box_in_setup_failed() {
     let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
     assert!(line.starts_with("agent install: exit 1"), "{line}");
 }
+
+#[test]
+fn a_failed_install_after_a_restart_says_why() {
+    let (w, _) = install_cut_off();
+    w.driver.push_exec_result(Ok(exit(1)));
+    crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
+        .unwrap();
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    let why = failed
+        .payload
+        .get("why")
+        .and_then(|l| l.as_str())
+        .unwrap_or_default();
+    assert!(why.contains("agent install"), "{:?}", failed.payload);
+}

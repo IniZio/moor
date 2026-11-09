@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
@@ -42,7 +42,7 @@ fn cut_off(driver: FakeDriver) -> World {
     w
 }
 
-fn box_row(w: &World) -> BoxRow {
+pub(super) fn box_row(w: &World) -> BoxRow {
     w.cx.store()
         .unwrap()
         .box_row(BoxId::new(1))
@@ -406,7 +406,7 @@ fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
 }
 
 /// The argv of every exec that attaches to a detached setup run.
-fn setup_attaches(w: &World) -> Vec<Vec<String>> {
+pub(super) fn setup_attaches(w: &World) -> Vec<Vec<String>> {
     w.driver
         .execs()
         .into_iter()
@@ -417,7 +417,7 @@ fn setup_attaches(w: &World) -> Vec<Vec<String>> {
 
 /// A world whose first start died while it followed its setup run, as a controller restart
 /// leaves it; gives back the argv of that attach.
-fn restarted_mid_setup(yaml: &str) -> (World, Vec<String>) {
+pub(super) fn restarted_mid_setup(yaml: &str) -> (World, Vec<String>) {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, Some(yaml));
     let dying = Arc::new(AtomicBool::new(true));
@@ -510,45 +510,4 @@ fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     assert!(setup_attaches(&w).iter().all(|a| *a == attached));
-}
-
-#[test]
-fn a_restart_once_the_setup_lines_passed_finishes_the_later_steps_and_launches_the_agent() {
-    let (w, attached) = restarted_mid_setup("setup: [a]\n");
-    let store = w.cx.store().unwrap();
-    store
-        .apply(Decision::new(BoxId::new(1)).set(Fields {
-            steps_pending_at: Field::Set(1),
-            ..Fields::default()
-        }))
-        .unwrap();
-    let cut = store.events(BoxId::new(1), 200).unwrap().last().unwrap().id;
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
-    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
-    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
-    let row = box_row(&w);
-    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
-    assert_eq!(row.steps_pending_at, None);
-    let after: Vec<(String, String)> = store
-        .events(row.id, 200)
-        .unwrap()
-        .into_iter()
-        .filter(|e| e.id > cut)
-        .map(|e| {
-            let step = e.payload.get("step").and_then(|s| s.as_str()).unwrap_or("");
-            (e.kind, step.to_owned())
-        })
-        .collect();
-    let at = |kind: &str, step: &str| after.iter().position(|(k, s)| k == kind && s == step);
-    let working = at("working", "").expect("working");
-    let launched = at("step_started", "launch").expect("launch began");
-    let session = at("session_started", "").expect("a session started");
-    assert!(working < launched && launched < session, "{after:?}");
-    assert!(after.iter().all(|(k, _)| k != "idled"), "{after:?}");
-    assert_eq!(
-        setup_attaches(&w),
-        [attached],
-        "the passed lines are not followed again"
-    );
 }

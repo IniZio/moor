@@ -99,7 +99,7 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         let entry = if goes_on { Entry::Adopt } else { Entry::Again };
         super::provision(cx, store, id, entry, &cfg)?
     } else if row.intent == Some(Intent::Setup { pid: me }) && row.steps_pending_at.is_some() {
-        finish_steps(cx, store, &row, true)?
+        finish_cut_steps(cx, store, &row)?
     } else if row.intent == Some(Intent::Setup { pid: me }) {
         follow_setup(cx, store, &row)?
     } else {
@@ -168,6 +168,24 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
         Err(e) => {
             let why = format!(
                 "a restarted controller could not follow the setup: {}",
+                e.error
+            );
+            record_interrupted(cx, store, &reread(store, row.id)?, why)?;
+            Err(e)
+        }
+    }
+}
+
+/// Finishes the steps after the setup lines that `row`'s earlier process left. A failure that is
+/// not a drain's records the setup as failed with its error.
+fn finish_cut_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, CommandError> {
+    match finish_steps(cx, store, row, true) {
+        Ok(done) => Ok(done),
+        // The intent stays, so the next process claims these steps again.
+        Err(e) if cx.env().draining().is_cancelled() => Err(e),
+        Err(e) => {
+            let why = format!(
+                "a restarted controller could not finish the setup steps: {}",
                 e.error
             );
             record_interrupted(cx, store, &reread(store, row.id)?, why)?;

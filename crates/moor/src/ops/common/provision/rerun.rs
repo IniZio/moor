@@ -6,8 +6,8 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::Warning;
+
+use moor_core::{ErrorKind, Warning};
 
 use moor_core::config::Flags;
 
@@ -34,7 +34,7 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
         }
         record_interrupted(cx, store, row, OWNER_DIED.to_owned())?;
     }
-    if row.steps_pending_at.is_some() {
+    if row.steps_pending_at.is_some() && row.lifecycle != BoxLifecycle::SettingUp {
         return finish_steps(cx, store, row, false).map(drop);
     }
     let name = row.name.as_str();
@@ -68,7 +68,10 @@ pub(super) fn finish_steps(
         .as_ref()
         .and_then(|b| Some((b, b.handle.as_ref()?)))
     else {
-        return Ok(Provisioned::skipped());
+        return Err(CommandError::new(
+            ErrorKind::Failed,
+            "the Box holds no machine to finish its setup steps in",
+        ));
     };
     let cfg = settings_of(cx, row, &Flags::default())?;
     let repo = row.repo.as_ref().map(|r| &r.repo);
@@ -83,6 +86,7 @@ pub(super) fn finish_steps(
         ..Fields::default()
     };
     let install_failed = after.installed.is_err();
+    let why = after.installed.as_ref().err().cloned();
     let outcome = match after.installed {
         Ok(()) => SetupOutcome::Ok,
         Err(line) => {
@@ -90,7 +94,9 @@ pub(super) fn finish_steps(
             SetupOutcome::Failed { line }
         }
     };
-    let mut done = setup_ended(dotfiles_noted(row.id, &after.dotfiles), advance, outcome).set(set);
+    let mut done = setup_ended(dotfiles_noted(row.id, &after.dotfiles), advance, outcome)
+        .setup_why(why)
+        .set(set);
     if advance {
         done = done.intent(IntentChange::Clear);
     }
@@ -108,25 +114,21 @@ pub(super) fn finish_steps(
 pub(super) const OWNER_DIED: &str =
     "a controller restart or crash stopped this setup before it finished";
 
+/// Why a setup a restart cut is recorded as failed when its machine cannot go on with it.
+pub(super) const NOT_READY: &str =
+    "the machine was not ready to go on with the setup after a controller restart";
+
 /// Records a dead setup as failed for `why`, as a failed setup run would, without running
-/// anything, so the Box waits for a retry; once every line had passed, the Box is ready and only
-/// the later steps stay pending.
+/// anything, so the Box waits for a retry; a Box already working only drops the intent, and its
+/// later steps stay pending.
 pub(super) fn record_interrupted(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     why: String,
 ) -> Result<(), CommandError> {
-    if row.steps_pending_at.is_some() {
-        let mut done = Decision::new(row.id).intent(IntentChange::Clear);
-        if row.lifecycle == BoxLifecycle::SettingUp {
-            done = done
-                .lifecycle(BoxLifecycleInput::Ready {
-                    setup: SetupOutcome::Ok,
-                })
-                .session(SessionInput::Started);
-        }
-        store.apply(done)?;
+    if row.steps_pending_at.is_some() && row.lifecycle != BoxLifecycle::SettingUp {
+        store.apply(Decision::new(row.id).intent(IntentChange::Clear))?;
         return Ok(());
     }
     let line = "setup was interrupted".to_owned();
@@ -144,6 +146,7 @@ pub(super) fn record_interrupted(
     let done = done
         .set(Fields {
             setup_failed_at: Field::Set(cx.clock().now().as_millis()),
+            steps_pending_at: Field::Clear,
             ..Fields::default()
         })
         .intent(IntentChange::Clear);
