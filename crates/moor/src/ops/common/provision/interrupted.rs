@@ -10,10 +10,31 @@ use super::lease::planned_root;
 use super::rerun::{record_interrupted, NOT_READY};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{BoxRow, Store};
+use crate::store::{BoxRow, Database, Store};
 
 /// Why a Box whose acquire was cut off failed.
 const CAUSE: &str = "setup interrupted by a controller restart";
+
+/// Who else may hold a start on the store while this controller boots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Others {
+    /// The store is a shared database, and the controller lock keeps every other moor out. Each
+    /// start found is an exited process's, even when a process of this pod now has its pid.
+    LockedOut,
+    /// The store is a local file, so a `moor` command on this host may run a start beside the
+    /// controller, in the same pid namespace.
+    MayRun,
+}
+
+impl Others {
+    /// Who else may hold a start on a store in `database`, or in a local file when `None`.
+    pub(crate) const fn of(database: Option<&Database>) -> Self {
+        match database {
+            Some(_) => Self::LockedOut,
+            None => Self::MayRun,
+        }
+    }
+}
 
 /// Settles each open Box whose start no live process still runs, and claims for this process each
 /// Box that can go on: its setup can be followed again or finished in its machine, or its acquire
@@ -21,7 +42,11 @@ const CAUSE: &str = "setup interrupted by a controller restart";
 ///
 /// Called before the controller serves, so no start of this process is under way yet: an intent
 /// naming this pid is an earlier process's, as a restarted container reuses its pid.
-pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, CommandError> {
+pub(crate) fn fail_interrupted(
+    cx: &Cx,
+    store: &Store,
+    others: Others,
+) -> Result<Vec<BoxId>, CommandError> {
     let me = std::process::id();
     let mut claimed = Vec::new();
     for row in store.open_boxes()? {
@@ -31,7 +56,8 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
             }
             continue;
         };
-        if intent.pid() != me && cx.proc().alive(intent.pid()) {
+        let pid = intent.pid();
+        if others == Others::MayRun && pid != me && cx.proc().alive(pid) {
             continue;
         }
         match intent {

@@ -13,7 +13,7 @@ use moor_core::{BoxHandle, BoxId, BoxTarget, CloseReq};
 use super::{box_roots, req, row, run, saved_layer, started, world, World, TWO_LINES};
 use crate::cx::Cx;
 use crate::ops::close;
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::resume_setup;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
@@ -70,7 +70,10 @@ fn a_retry_fork_cut_by_a_restart_is_taken_over_by_the_next_process() {
     }));
     assert!(crashed.is_err());
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [id]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [id]
+    );
     resume_setup(&w.cx, store, id).unwrap();
     let after = row(&w, id);
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);

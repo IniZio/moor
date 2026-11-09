@@ -23,7 +23,7 @@ use super::warm::{events, row};
 use super::warm_commits::setup_calls_on;
 use super::{agentless_req, repo, world, World};
 use crate::cx::Cx;
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::{resume_setup, warm_disk_note};
 use crate::ops::start::run;
 use crate::testing::clock::FakeClock;
@@ -543,7 +543,7 @@ fn a_restart_after_a_failed_fetch_s_fresh_clone_still_runs_the_lines_it_lost() {
     let name = crate::testing::box_name("next");
     let next = store.open_box_by_name(&name).unwrap().unwrap().id;
     assert_eq!(s.warm(next), 1);
-    fail_interrupted(&s.w.cx, store).unwrap();
+    fail_interrupted(&s.w.cx, store, Others::MayRun).unwrap();
     resume_setup(&s.w.cx, store, next).unwrap();
     assert_eq!(row(&s.w, next).lifecycle, BoxLifecycle::Ready);
     assert_eq!(s.file(next, "dist/out"), "one\n", "the output is back");

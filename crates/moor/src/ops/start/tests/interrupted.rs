@@ -13,11 +13,12 @@ use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 use super::setup::start_req;
 use super::{script_base_yaml, world, World};
 use crate::cx::Cx;
+use crate::env::Env;
 use crate::ops::close;
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::run;
-use crate::store::BoxRow;
+use crate::store::{BoxRow, Database};
 use crate::testing::driver::FakeDriver;
 
 /// A world whose first start died inside the acquire, leaving Box 1 starting with no handle.
@@ -74,7 +75,10 @@ fn close_demo_in(cx: &Cx) -> Result<moor_core::view::CloseView, crate::error::Co
 fn a_start_cut_off_by_a_restart_acquires_once_more() {
     let w = cut_off(FakeDriver::new());
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     assert_eq!(releases(&w), ["release box-1"]);
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
@@ -89,7 +93,10 @@ fn a_start_cut_off_by_a_restart_acquires_once_more() {
 fn a_start_cut_while_the_host_still_warms_its_vm_survives_the_restart() {
     let w = cut_off(FakeDriver::new().cut_acquires_go_on());
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     assert!(releases(&w).is_empty(), "the warmup goes on, so it is kept");
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
@@ -105,7 +112,7 @@ fn a_start_cut_while_the_host_still_warms_its_vm_survives_the_restart() {
 fn a_takeover_that_fails_stops_the_lease_and_fails_the_setup() {
     let w = cut_off(FakeDriver::new().cut_acquires_go_on());
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     w.driver.fail_next_acquire(DriverError::Failed {
         summary: "no room".into(),
     });
@@ -120,7 +127,9 @@ fn a_cut_acquire_that_cannot_be_released_is_not_tried_again() {
         summary: "provider down".into(),
     }));
     let store = w.cx.store().unwrap();
-    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert!(fail_interrupted(&w.cx, store, Others::MayRun)
+        .unwrap()
+        .is_empty());
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(w.driver.acquired_nonces().len(), 0);
 }
@@ -140,7 +149,10 @@ fn a_takeover_cut_when_its_runner_exits_is_asked_again_of_the_next_runner() {
             .adopt_fails(1, &runner_gone()),
     );
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
@@ -184,7 +196,7 @@ fn a_forced_close_interrupts_a_setup_a_restarted_controller_follows() {
         }
     });
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     drop(resume_setup(&w.cx, store, BoxId::new(1)));
     let closing = closer.lock().unwrap().take();
     let outcome = closing.expect("close ran during the setup").join().unwrap();
@@ -244,7 +256,10 @@ fn a_drain_leaves_an_acquire_cut_by_a_lost_link_to_the_next_process() {
         .unwrap()
         .iter()
         .any(|e| e.kind == "setup_failed"));
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Ready);
 }
@@ -253,7 +268,7 @@ fn a_drain_leaves_an_acquire_cut_by_a_lost_link_to_the_next_process() {
 fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
     let w = cut_off(FakeDriver::new());
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     w.driver.notes_while_acquiring(&[], || {
         std::panic::resume_unwind(Box::new("process died mid-acquire"))
     });
@@ -262,7 +277,9 @@ fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
     }));
     assert!(crashed.is_err());
     w.driver.notes_while_acquiring(&[], || {});
-    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert!(fail_interrupted(&w.cx, store, Others::MayRun)
+        .unwrap()
+        .is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(row.intent, None);
@@ -289,9 +306,64 @@ fn a_start_another_live_process_runs_is_left_alone() {
                 .intent(IntentChange::Set(Intent::Provisioning { pid: 4242 })),
         )
         .unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
     assert!(releases(&w).is_empty());
+}
+
+#[test]
+fn only_a_controller_on_a_shared_database_locks_others_out() {
+    let others = |pairs: &[(&str, &str)]| {
+        let env = Env::from_pairs(pairs.iter().map(|(k, v)| (*k, *v)));
+        Others::of(Database::from_env(&env).unwrap().as_ref())
+    };
+    let shared = [("MOOR_DATABASE_URL", "postgres://u@h/db")];
+    assert_eq!(others(&shared), Others::LockedOut);
+    assert_eq!(others(&[]), Others::MayRun);
+}
+
+/// Sets the start of Box 1 as run by `intent`, a pid a live process here now has.
+fn owned_by_a_live_pid(w: &World, intent: Intent) {
+    assert!(
+        w.cx.proc().alive(intent.pid()),
+        "the old pid names a live process"
+    );
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(BoxId::new(1)).intent(IntentChange::Set(intent)))
+        .unwrap();
+}
+
+#[test]
+fn a_cut_acquire_whose_pid_a_live_process_reuses_is_taken_over_when_others_are_locked_out() {
+    let w = cut_off(FakeDriver::new());
+    owned_by_a_live_pid(&w, Intent::Provisioning { pid: 4242 });
+    let store = w.cx.store().unwrap();
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::LockedOut).unwrap(),
+        [BoxId::new(1)]
+    );
+    assert_eq!(releases(&w), ["release box-1"]);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+}
+
+#[test]
+fn a_cut_setup_whose_pid_a_live_process_reuses_is_followed_again_when_others_are_locked_out() {
+    let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
+    owned_by_a_live_pid(&w, Intent::Setup { pid: 4242 });
+    let store = w.cx.store().unwrap();
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::LockedOut).unwrap(),
+        [BoxId::new(1)]
+    );
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+    assert_eq!(setup_attaches(&w), [attached.clone(), attached]);
 }
 
 #[test]
@@ -308,7 +380,7 @@ fn a_failed_release_of_an_unfinished_box_refuses_the_close() {
     let w = cut_off(FakeDriver::new().fail_release_always(DriverError::Failed {
         summary: "provider down".into(),
     }));
-    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
+    fail_interrupted(&w.cx, w.cx.store().unwrap(), Others::MayRun).unwrap();
     let e = close_demo(&w).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("provider down"), "{}", e.error);
@@ -444,7 +516,10 @@ pub(super) fn restarted_mid_setup(yaml: &str) -> (World, Vec<String>) {
 fn a_restart_mid_setup_follows_the_same_run_again_and_the_box_comes_up() {
     let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
@@ -457,7 +532,7 @@ fn a_restart_mid_setup_follows_the_same_run_again_and_the_box_comes_up() {
 fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
     let (w, _) = restarted_mid_setup("setup: [a, b, c]\n");
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     w.driver.set_copy_text("moor setup: $ a\nmoor setup: $ b\n");
     w.driver
         .push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
@@ -481,7 +556,7 @@ fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
 fn a_setup_followed_again_waits_for_the_machine_to_relink() {
     let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     for _ in 0..30 {
         w.driver.push_exec_result(Err(DriverError::Transport {
             stderr_tail: "machine 1 is not linked".to_owned(),
@@ -497,7 +572,7 @@ fn a_setup_followed_again_waits_for_the_machine_to_relink() {
 fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
     let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     w.cx.env().draining().cancel();
     w.driver.push_exec_result(Err(DriverError::Transport {
         stderr_tail: "machine 1 is not linked".to_owned(),
@@ -508,6 +583,9 @@ fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
     assert!(matches!(row.intent, Some(Intent::Setup { .. })));
     let events = store.events(row.id, 50).unwrap();
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     assert!(setup_attaches(&w).iter().all(|a| *a == attached));
 }

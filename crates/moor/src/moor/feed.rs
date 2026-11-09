@@ -9,7 +9,9 @@ use moor_core::{BoxId, SessionId};
 
 use super::Moor;
 use crate::ops;
+use crate::ops::common::provision::interrupted::{self, Others};
 use crate::store::reads::NamedEvent;
+use crate::store::Database;
 
 impl Moor {
     /// Stored events with cursor above `after`, oldest first, at most `limit`, as wire frames.
@@ -142,7 +144,8 @@ impl Moor {
         let mut out = Vec::new();
         let mut claimed = Vec::new();
         let failed = self.cx.store().and_then(|store| {
-            claimed = ops::common::provision::interrupted::fail_interrupted(&self.cx, store)?;
+            let others = Others::of(Database::from_env(self.cx.env())?.as_ref());
+            claimed = interrupted::fail_interrupted(&self.cx, store, others)?;
             ops::common::node::backfill(&self.cx, store)
         });
         if let Err(e) = failed {

@@ -16,7 +16,7 @@ use moor_core::{BoxId, StartReq};
 use super::setup::{argvs, script_argv, unwrapped};
 use super::state::WORKING;
 use super::{repo_req, script_base_yaml, world_with, World};
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -406,7 +406,7 @@ fn install_cut_off() -> (World, Arc<FakeEngine>) {
     assert!(crashed.is_err());
     w.driver.on_exec(|| {});
     assert_eq!(w.driver.execs().len(), 2, "clone, setup");
-    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
+    fail_interrupted(&w.cx, w.cx.store().unwrap(), Others::MayRun).unwrap();
     (w, engine)
 }
 
@@ -431,7 +431,10 @@ fn start_died_on_exec(nth: usize) -> (World, Arc<FakeEngine>) {
 fn a_setup_followed_after_a_restart_launches_the_agent_with_its_prompt() {
     let (w, engine) = start_died_on_exec(1);
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 1);
 }
@@ -455,11 +458,16 @@ fn launch_cut(req: &StartReq) -> (World, Arc<FakeEngine>) {
 fn a_launch_already_in_flight_is_adopted_and_never_launched_twice() {
     let (w, engine) = launch_cut(&prompt_req());
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 1, "no second agent");
     assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
-    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert!(fail_interrupted(&w.cx, store, Others::MayRun)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -467,7 +475,10 @@ fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
     let (w, engine) = launch_cut(&prompt_req());
     engine.set_probes("moor-1", agent::gone());
     let store = w.cx.store().unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 2);
     assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
@@ -478,10 +489,13 @@ fn a_box_that_cannot_say_whether_its_agent_runs_launches_nothing() {
     let (w, engine) = launch_cut(&prompt_req());
     engine.set_probes("moor-1", Probe::TimedOut);
     let store = w.cx.store().unwrap();
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     assert!(crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).is_err());
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
 }
 
 #[test]
@@ -492,9 +506,11 @@ fn a_box_started_with_no_agent_gets_none_after_a_restart() {
         ..prompt_req()
     };
     run(&w.cx, &req).unwrap();
-    assert!(fail_interrupted(&w.cx, w.cx.store().unwrap())
-        .unwrap()
-        .is_empty());
+    assert!(
+        fail_interrupted(&w.cx, w.cx.store().unwrap(), Others::MayRun)
+            .unwrap()
+            .is_empty()
+    );
     assert!(engine.launches().is_empty());
 }
 

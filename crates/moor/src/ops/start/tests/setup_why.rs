@@ -5,6 +5,7 @@ use moor_core::view::progress::{failure, Happened};
 use moor_core::BoxId;
 
 use super::setup::{exit, start_with};
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::testing::driver::FakeDriver;
 
 fn withhold(store: &crate::store::Store) {
@@ -161,7 +162,7 @@ fn a_setup_cut_by_a_restart_says_so() {
             },
         ))
         .unwrap();
-    crate::ops::common::provision::interrupted::fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     let (_, why) = failed_with(&happened(&w, id));
     assert!(why.contains("controller restart"), "{why}");
 }
