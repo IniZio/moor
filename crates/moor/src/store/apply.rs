@@ -257,12 +257,14 @@ fn is_quiet((lifecycle, session): Parts) -> bool {
     lifecycle == BoxLifecycle::Ready && session.is_quiet()
 }
 
-/// `idle_since` follows quietness: stamped on becoming quiet, cleared on leaving it.
+/// `idle_since` follows quietness: stamped on becoming quiet, cleared on leaving it. Becoming
+/// quiet ends a turn, so the Box's archive falls due.
 fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<BoxState> {
     match (step.from, step.to) {
-        (from, true) if from != Some(true) => {
-            vec![(BoxState::IdleSince, now.as_millis().into())]
-        }
+        (from, true) if from != Some(true) => vec![
+            (BoxState::IdleSince, now.as_millis().into()),
+            (BoxState::ArchiveDue, now.as_millis().into()),
+        ],
         (Some(true), false) => vec![(BoxState::IdleSince, Value::BigInt(None))],
         _ => Vec::new(),
     }

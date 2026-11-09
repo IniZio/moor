@@ -99,9 +99,14 @@ fn no_session_means_no_save() {
     assert!(kinds(&f).is_empty());
 }
 
+/// The archives held for the Box, across its Sessions.
 fn files(f: &Fx) -> usize {
     let dir = f.dir.path().join(format!("transcripts/{}", f.id.get()));
-    fs::read_dir(dir).map_or(0, Iterator::count)
+    fs::read_dir(dir).map_or(0, |sessions| {
+        sessions
+            .map(|s| fs::read_dir(s.unwrap().path()).unwrap().count())
+            .sum()
+    })
 }
 
 fn exit_saved_engine() -> Arc<FakeEngine> {
@@ -123,7 +128,7 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
     assert_eq!((first, files(&f)), (1, 1));
     assert_eq!(kinds(&f), ["transcript_saved"]);
     assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABC));
-    assert!(v.transcript.unwrap().ends_with("-1.tgz"));
+    assert!(v.transcript.unwrap().ends_with(&format!("/{SHA_ABC}.tgz")));
 }
 
 #[test]

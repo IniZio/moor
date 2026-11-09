@@ -1,13 +1,16 @@
 //! Tests for the `turn_done` event written when a steered turn ends.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
 use super::{cx, row, run_once, seen, settle, working_box, SESSION};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::store::EventRow;
 use crate::testing::agent::{at_turn, idle, permission, said};
@@ -190,4 +193,61 @@ fn an_idle_status_after_the_steer_tells_what_the_agent_said() {
     let done = events(&cx, id, "turn_done");
     assert!(first(&done).id < first(&said).id);
     assert_eq!(events(&cx, id, "idled").len(), 1);
+}
+
+/// A Box gone Idle with its first turn's transcript saved, and a registered agent session.
+fn saved_once(engine: &Arc<FakeEngine>) -> (tempfile::TempDir, Cx, BoxId) {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path(), engine);
+    let id = working_box(&cx, true);
+    let store = cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.set_registered_session(live.id, "agent-1").unwrap();
+    settle_once(&cx, id);
+    assert_eq!(engine.transcripts().len(), 1, "the first turn saves");
+    (dir, cx, id)
+}
+
+#[test]
+fn a_turn_save_skipped_while_the_box_is_busy_runs_on_the_next_pass() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, idle(seen()))
+            .transcript_text("abc"),
+    );
+    let (_dir, cx, id) = saved_once(&engine);
+    steer(&cx, id);
+    let held = cx.owners_arc().hold(id, Cmd::Close { force: false });
+    settle_once(&cx, id);
+    assert_eq!(events(&cx, id, "turn_done").len(), 1);
+    assert_eq!(engine.transcripts().len(), 1, "busy: nothing saved");
+    drop(held);
+    settle_once(&cx, id);
+    assert_eq!(engine.transcripts().len(), 2, "the next pass saves");
+    settle_once(&cx, id);
+    assert_eq!(engine.transcripts().len(), 2, "a paid due saves no more");
+}
+
+#[test]
+fn a_failed_turn_save_is_recorded_and_tried_again_a_minute_later_until_it_lands() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, idle(seen()))
+            .fail_transcript(EngineError::Transcript("archive: exit 3".into()))
+            .transcript_text("abc"),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let store = cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.set_registered_session(live.id, "agent-1").unwrap();
+    settle_once(&cx, id);
+    assert_eq!(events(&cx, id, "transcript_failed").len(), 1);
+    settle_once(&cx, id);
+    assert_eq!(engine.transcripts().len(), 1, "not again at once");
+    cx.clock().sleep(Duration::from_mins(1));
+    settle_once(&cx, id);
+    assert_eq!(engine.transcripts().len(), 2, "again a minute later");
+    assert_eq!(events(&cx, id, "transcript_saved").len(), 1);
 }

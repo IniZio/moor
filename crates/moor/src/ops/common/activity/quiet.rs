@@ -29,13 +29,13 @@ impl Reading {
     }
 }
 
-/// Steps the Box between Working and Idle to match `reading`; true when it went Idle.
+/// Steps the Box between Working and Idle to match `reading`.
 pub(super) fn step(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
-) -> Result<bool, CommandError> {
+) -> Result<(), CommandError> {
     // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
     let turn_open = store.unanswered_steer(row.id)?.is_some();
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
@@ -43,18 +43,18 @@ pub(super) fn step(
             SessionInput::AgentQuiet
         }
         (true, true) if reading.shows_work() => SessionInput::AgentBusy,
-        _ => return Ok(false),
+        _ => return Ok(()),
     };
     // An op that owns the Box decides where the Box goes; hold its turn across the write.
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
-        return Ok(false);
+        return Ok(());
     };
     if row.intent.is_some() {
-        return Ok(false);
+        return Ok(());
     }
     let quiet = input == SessionInput::AgentQuiet;
     if !said::record(store, row, quiet, reading)? {
-        return Ok(false);
+        return Ok(());
     }
     let mut decision = Decision::new(row.id).session(input.clone());
     let timed_out = reading
@@ -68,9 +68,9 @@ pub(super) fn step(
             if let Some(after_secs) = timed_out {
                 warn_launch_timed_out(cx, row, after_secs);
             }
-            Ok(input == SessionInput::AgentQuiet)
+            Ok(())
         }
-        Err(StoreError::Illegal(_)) => Ok(false),
+        Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }

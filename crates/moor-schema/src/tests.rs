@@ -13,6 +13,7 @@ mod box_hands;
 mod box_state;
 mod insertion_order;
 mod postgres;
+mod session_archive;
 mod sqlite;
 
 /// The steps before the one `name`s, and that step, rendered for `backend`.

@@ -36,20 +36,12 @@ impl Trigger {
     }
 }
 
-/// The number for the next save: one more than the kinds that say a transcript was saved.
+/// The archive's blob key: `transcripts/<box>/<session>/<digest>.tgz`.
+///
+/// The key names the content, so saving an unchanged archive again puts the same blob.
 #[must_use]
-pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
-    kinds
-        .into_iter()
-        .filter(|k| *k == "transcript_saved")
-        .count()
-        + 1
-}
-
-/// The archive's blob key: `transcripts/<box>/<session>-<n>.tgz`.
-#[must_use]
-pub fn relative_path(box_id: BoxId, session: i64, n: usize) -> String {
-    format!("transcripts/{}/{session}-{n}.tgz", box_id.get())
+pub fn relative_path(box_id: BoxId, session: i64, digest: &str) -> String {
+    format!("transcripts/{}/{session}/{digest}.tgz", box_id.get())
 }
 
 /// Whether an archive with `digest` repeats the one already stored for the session.

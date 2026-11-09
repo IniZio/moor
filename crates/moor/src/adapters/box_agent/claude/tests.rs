@@ -330,3 +330,25 @@ fn transcript_script_finds_the_sessions_of_a_workdir_reached_through_a_symlink()
     );
     assert!(real.join(".moor/t.tgz").exists());
 }
+
+#[test]
+fn transcript_script_archives_the_whole_project_dir_with_subagent_files() {
+    let (out, root) = run_script(|home, work| {
+        let d = project_dir(home, work);
+        std::fs::create_dir_all(d.join("s-1/subagents")).unwrap();
+        std::fs::write(d.join("s-1.jsonl"), "{}").unwrap();
+        std::fs::write(d.join("s-1/subagents/agent-a.jsonl"), "{}").unwrap();
+    });
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let list = std::process::Command::new("tar")
+        .arg("tzf")
+        .arg(root.path().join("work/.moor/t.tgz"))
+        .output()
+        .unwrap();
+    let names = String::from_utf8_lossy(&list.stdout);
+    assert!(names.lines().any(|l| l == "./s-1.jsonl"), "{names}");
+    assert!(
+        names.lines().any(|l| l == "./s-1/subagents/agent-a.jsonl"),
+        "{names}"
+    );
+}

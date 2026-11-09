@@ -22,6 +22,9 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
 use std::sync::Arc;
 
+/// The sha256 of `abc`.
+const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
 fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     let dir = tempfile::tempdir().unwrap();
     let cx = Cx::fake(
@@ -82,14 +85,13 @@ fn saves_mode_0600_and_records_the_path_and_digest() {
     let (dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
     let (row, session) = ready(&cx);
     let saved = save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).unwrap();
-    let want = dir
-        .path()
-        .join(format!("transcripts/{}/{}-1.tgz", row.id.get(), session.id));
+    let want = dir.path().join(format!(
+        "transcripts/{}/{}/{ABC}.tgz",
+        row.id.get(),
+        session.session.unwrap()
+    ));
     assert_eq!(saved.path, want.display().to_string());
-    assert_eq!(
-        saved.digest,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
+    assert_eq!(saved.digest, ABC);
     assert_eq!(
         fs::metadata(&want).unwrap().permissions().mode() & 0o777,
         0o600
@@ -109,13 +111,35 @@ fn saves_mode_0600_and_records_the_path_and_digest() {
 }
 
 #[test]
-fn a_second_save_takes_the_next_number() {
+fn a_repeated_identical_save_is_one_blob() {
+    let (dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    let first = save(&cx, store, &row, &session, Trigger::Relaunch).unwrap();
+    let again = save(&cx, store, &row, &session, Trigger::Close).unwrap();
+    assert_eq!(again.path, first.path);
+    let held = dir.path().join(format!(
+        "transcripts/{}/{}",
+        row.id.get(),
+        session.session.unwrap()
+    ));
+    assert_eq!(fs::read_dir(held).unwrap().count(), 1);
+}
+
+#[test]
+fn a_save_points_the_session_at_its_archive_and_the_hands_that_took_it() {
     let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
     let (row, session) = ready(&cx);
     let store = cx.store().unwrap();
-    save(&cx, store, &row, &session, Trigger::Relaunch).unwrap();
-    let again = save(&cx, store, &row, &session, Trigger::Close).unwrap();
-    assert!(again.path.ends_with(&format!("{}-2.tgz", session.id)));
+    let taken = cx.clock().now();
+    let saved = save(&cx, store, &row, &session, Trigger::Close).unwrap();
+    let pointer = store
+        .archive_pointer(session.session.unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(pointer.key, saved.key.as_str());
+    assert_eq!(pointer.inc, row.hands.as_ref().unwrap().inc);
+    assert_eq!(pointer.at, taken);
 }
 
 #[test]
@@ -296,7 +320,7 @@ fn round_trip(blobs: Arc<dyn Blobs>) {
     let (row, session) = ready(&cx);
     let store = cx.store().unwrap();
     let saved = save(&cx, store, &row, &session, Trigger::Close).unwrap();
-    let key = BlobKey::transcript(row.id, session.id, 1);
+    let key = BlobKey::transcript(row.id, session.session.unwrap(), ABC);
     assert_eq!(cx.blobs().unwrap().get(&key).unwrap(), b"abc");
     assert_eq!(saved.path, cx.blobs().unwrap().locate(&key));
     let staged = cx.state_dir().unwrap().join("transcripts/.staging");

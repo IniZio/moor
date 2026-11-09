@@ -1,22 +1,11 @@
 use super::*;
 
 #[test]
-fn numbers_count_earlier_saves_only() {
-    assert_eq!(next_number([]), 1);
+fn path_names_box_session_and_digest() {
     assert_eq!(
-        next_number([
-            "started",
-            "transcript_saved",
-            "transcript_failed",
-            "transcript_saved"
-        ]),
-        3
+        relative_path(BoxId::new(4), 9, "ab12"),
+        "transcripts/4/9/ab12.tgz"
     );
-}
-
-#[test]
-fn path_names_box_session_and_number() {
-    assert_eq!(relative_path(BoxId::new(4), 9, 2), "transcripts/4/9-2.tgz");
 }
 
 #[test]
