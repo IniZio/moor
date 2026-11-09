@@ -18,7 +18,7 @@ INSERT INTO box_state (box, state, open_name, updated_at) VALUES (2, 'ready', 'b
 const INBOX: &str =
     "SELECT CAST(box AS TEXT) || '|' || kind || '|' || text || '|' || sender || '|' \
     || CAST(created_at AS TEXT) || '|' || CAST(attempts AS TEXT) || '|' \
-    || COALESCE(CAST(session AS TEXT), '-') || '|' || COALESCE(CAST(sent_at AS TEXT), '-') \
+    || COALESCE(CAST(launch AS TEXT), '-') || '|' || COALESCE(CAST(sent_at AS TEXT), '-') \
     FROM box_inbox ORDER BY id";
 
 /// Each Box's held prompt, `-` for none.

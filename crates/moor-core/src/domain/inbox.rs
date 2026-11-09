@@ -4,7 +4,7 @@
 //! in doubt rather than lost, and a row in doubt is sent at most once more.
 
 use super::Illegal;
-use crate::name::SessionId;
+use crate::name::LaunchId;
 
 /// A store-assigned inbox row id, in arrival order across every kind; never reused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -70,17 +70,17 @@ pub struct SendMark {
 pub enum Delivery {
     /// Not sent: waiting for a ready agent.
     Queued,
-    /// A send to launch `session` began and was never confirmed: the agent may have it.
+    /// A send to `launch` began and was never confirmed: the agent may have it.
     InDoubt {
         /// The launch the send went to.
-        session: SessionId,
+        launch: LaunchId,
         /// Sends begun, 1 or 2.
         attempts: u8,
     },
-    /// The agent of launch `session` has it, and its turn has not ended.
+    /// The agent of `launch` has it, and its turn has not ended.
     Sent {
         /// The launch that has it.
-        session: SessionId,
+        launch: LaunchId,
         /// When the send was confirmed, in milliseconds since the epoch.
         at: i64,
         /// The terminal at the send.
@@ -97,7 +97,7 @@ pub struct DeliveryColumns {
     /// Sends begun.
     pub attempts: i64,
     /// The launch last sent to.
-    pub session: Option<i64>,
+    pub launch: Option<i64>,
     /// When the send was confirmed.
     pub sent_at: Option<i64>,
     /// The mark's ended-turn count.
@@ -111,19 +111,19 @@ impl Delivery {
     #[must_use]
     pub fn parse(c: DeliveryColumns) -> Option<Self> {
         let attempts = u8::try_from(c.attempts).ok().filter(|n| *n <= MAX_SENDS)?;
-        match (c.session.map(SessionId::new), c.sent_at) {
+        match (c.launch.map(LaunchId::new), c.sent_at) {
             (None, None)
                 if attempts == 0 && c.turn_before.is_none() && c.status_before.is_none() =>
             {
                 Some(Self::Queued)
             }
-            (Some(session), None)
+            (Some(launch), None)
                 if attempts > 0 && c.turn_before.is_none() && c.status_before.is_none() =>
             {
-                Some(Self::InDoubt { session, attempts })
+                Some(Self::InDoubt { launch, attempts })
             }
-            (Some(session), Some(at)) if attempts > 0 => Some(Self::Sent {
-                session,
+            (Some(launch), Some(at)) if attempts > 0 => Some(Self::Sent {
+                launch,
                 at,
                 mark: SendMark {
                     turn_before: c.turn_before.and_then(|t| u64::try_from(t).ok()),
@@ -139,14 +139,14 @@ impl Delivery {
     pub fn columns(self, sends: u8) -> DeliveryColumns {
         match self {
             Self::Queued => DeliveryColumns::default(),
-            Self::InDoubt { session, attempts } => DeliveryColumns {
+            Self::InDoubt { launch, attempts } => DeliveryColumns {
                 attempts: attempts.into(),
-                session: Some(session.get()),
+                launch: Some(launch.get()),
                 ..DeliveryColumns::default()
             },
-            Self::Sent { session, at, mark } => DeliveryColumns {
+            Self::Sent { launch, at, mark } => DeliveryColumns {
                 attempts: sends.into(),
-                session: Some(session.get()),
+                launch: Some(launch.get()),
                 sent_at: Some(at),
                 turn_before: mark.turn_before.and_then(|t| i64::try_from(t).ok()),
                 status_before: mark.status_before,
@@ -154,22 +154,22 @@ impl Delivery {
         }
     }
 
-    /// A send to launch `session` begins: a queued row's first, or one more to the launch a row
+    /// A send to `launch` begins: a queued row's first, or one more to the launch a row
     /// in doubt went to, while it has sends left.
     ///
     /// # Errors
     /// [`Illegal`] for a sent row, a row in doubt on another launch, or one out of sends.
-    pub fn mark(self, session: SessionId) -> Result<Self, Illegal> {
+    pub fn mark(self, launch: LaunchId) -> Result<Self, Illegal> {
         match self {
             Self::Queued => Ok(Self::InDoubt {
-                session,
+                launch,
                 attempts: 1,
             }),
             Self::InDoubt {
-                session: s,
+                launch: s,
                 attempts,
-            } if s == session && attempts < MAX_SENDS => Ok(Self::InDoubt {
-                session,
+            } if s == launch && attempts < MAX_SENDS => Ok(Self::InDoubt {
+                launch,
                 attempts: attempts + 1,
             }),
             _ => Err(self.illegal("mark")),
@@ -182,7 +182,7 @@ impl Delivery {
     /// [`Illegal`] unless the row is in doubt.
     pub fn confirm(self, at: i64, mark: SendMark) -> Result<Self, Illegal> {
         match self {
-            Self::InDoubt { session, .. } => Ok(Self::Sent { session, at, mark }),
+            Self::InDoubt { launch, .. } => Ok(Self::Sent { launch, at, mark }),
             Self::Queued | Self::Sent { .. } => Err(self.illegal("confirm")),
         }
     }
@@ -194,8 +194,8 @@ impl Delivery {
     pub fn rollback(self) -> Result<Self, Illegal> {
         match self {
             Self::InDoubt { attempts: 1, .. } => Ok(Self::Queued),
-            Self::InDoubt { session, attempts } => Ok(Self::InDoubt {
-                session,
+            Self::InDoubt { launch, attempts } => Ok(Self::InDoubt {
+                launch,
                 attempts: attempts - 1,
             }),
             Self::Queued | Self::Sent { .. } => Err(self.illegal("rollback")),

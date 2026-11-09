@@ -56,10 +56,10 @@ tables! {
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey, ArchiveKey, ArchiveInc,
         ArchiveAt }
-    BoxInbox { Id, Box, Kind, Text, Sender, CreatedAt, Attempts, Session, SentAt, TurnBefore,
-        StatusBefore }
     Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
         RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt, SaidAt }
+    BoxInbox { Id, Box, Kind, Text, Sender, CreatedAt, Attempts, Launch, SentAt, TurnBefore,
+        StatusBefore }
     BoxRefs { Id, Box, Kind, Value }
     Events { Id, Box, Session, Kind, Payload, Ts }
     Runs { Id, Box, Argv, Record, Sha, Pid, StartedAt, FinishedAt, Exit, Interrupted }

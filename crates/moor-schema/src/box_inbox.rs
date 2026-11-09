@@ -19,12 +19,12 @@ pub(super) fn write(s: &mut Script) {
             .col(text("sender").not_null())
             .col(int("created_at").not_null())
             .col(int("attempts").not_null().default(0))
-            .col(int("session"))
+            .col(int("launch"))
             .col(int("sent_at"))
             .col(int("turn_before"))
             .col(int("status_before"))
             .foreign_key(&mut fk("box", "boxes", "id"))
-            .foreign_key(&mut fk("session", "sessions", "id")),
+            .foreign_key(&mut fk("launch", "launches", "id")),
     );
     s.schema(&index("box_inbox_box", "box_inbox", &["box", "id"]));
     s.raw(

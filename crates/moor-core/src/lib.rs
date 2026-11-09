@@ -28,7 +28,9 @@ pub mod user;
 pub mod view;
 pub mod workflow;
 
-pub use name::{BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha};
+pub use name::{
+    BoxHandle, BoxId, BoxName, BoxPath, LaunchId, NameError, ProviderId, RunId, SessionId, Sha,
+};
 pub use request::{
     ArtifactReadReq, ArtifactsReq, AttachReq, BoxReq, BoxRsyncReq, BoxTarget, CloseReq, CpReq,
     EnvReq, ExecReq, GateReq, HoldOp, HoldValue, InspectReq, MachineHoldReq, Request, RunReq,

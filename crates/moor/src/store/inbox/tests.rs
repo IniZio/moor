@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::domain::event::TurnOutcome;
 use moor_core::domain::inbox::{Delivery, InboxKind, SendMark};
 use moor_core::seam::clock::Clock as _;
-use moor_core::{BoxId, SessionId};
+use moor_core::{BoxId, LaunchId};
 
 use crate::store::tests::{new_box, open};
 use crate::store::{Store, StoreError};
@@ -27,9 +27,9 @@ fn refuse_writes(store: &Store) {
     }));
 }
 
-/// The id of Box `id`'s live launch.
-fn live(store: &Store, id: BoxId) -> SessionId {
-    SessionId::new(store.box_sessions(id).unwrap().last().unwrap().id)
+/// A new launch of Box `id`'s agent.
+fn launch(store: &Store, id: BoxId) -> LaunchId {
+    LaunchId::new(store.begin_session(id, "agent").unwrap())
 }
 
 /// Each row as `<text>:<delivery>`.
@@ -67,18 +67,18 @@ fn a_marked_row_is_in_doubt_until_confirmed_and_answering_it_ends_its_turn() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let s = live(&store, id);
+    let s = launch(&store, id);
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     let after = store.enqueue(id, InboxKind::Steer, "then", "u").unwrap();
     let doubt = Delivery::InDoubt {
-        session: s,
+        launch: s,
         attempts: 1,
     };
     assert_eq!(store.mark_sending(id, row, s).unwrap(), doubt);
     assert_eq!(store.next_for(id).unwrap().unwrap().delivery, doubt);
     clock.sleep(Duration::from_millis(5));
     let sent = Delivery::Sent {
-        session: s,
+        launch: s,
         at: clock.now().as_millis(),
         mark: MARK,
     };
@@ -103,7 +103,7 @@ fn a_row_not_sent_is_not_answered() {
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
-    store.mark_sending(id, row, live(&store, id)).unwrap();
+    store.mark_sending(id, row, launch(&store, id)).unwrap();
     assert!(!store.answer(id, row, 7, TurnOutcome::Idle).unwrap());
     assert_eq!(store.next_for(id).unwrap().unwrap().id, row);
     assert!(store
@@ -118,7 +118,7 @@ fn a_send_to_a_gone_agent_rolls_back_without_using_up_a_send() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let s = live(&store, id);
+    let s = launch(&store, id);
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     for _ in 0..3 {
         store.mark_sending(id, row, s).unwrap();
@@ -139,10 +139,10 @@ fn a_row_in_doubt_is_sent_once_more_to_its_launch_and_never_a_third_time() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let s = live(&store, id);
+    let s = launch(&store, id);
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     store.mark_sending(id, row, s).unwrap();
-    let other = SessionId::new(s.get() + 1);
+    let other = LaunchId::new(s.get() + 1);
     assert!(matches!(
         store.mark_sending(id, row, other),
         Err(StoreError::Illegal(_))
@@ -150,7 +150,7 @@ fn a_row_in_doubt_is_sent_once_more_to_its_launch_and_never_a_third_time() {
     assert_eq!(
         store.mark_sending(id, row, s).unwrap(),
         Delivery::InDoubt {
-            session: s,
+            launch: s,
             attempts: 2
         }
     );
@@ -170,7 +170,7 @@ fn cut_returns_exactly_the_rows_sent_or_in_doubt_on_an_older_launch() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let old = live(&store, id);
+    let old = launch(&store, id);
     let sent = store.enqueue(id, InboxKind::Steer, "sent", "u").unwrap();
     let doubt = store.enqueue(id, InboxKind::Steer, "doubt", "u").unwrap();
     store.enqueue(id, InboxKind::Steer, "queued", "u").unwrap();
@@ -178,22 +178,21 @@ fn cut_returns_exactly_the_rows_sent_or_in_doubt_on_an_older_launch() {
     store.mark_sending(id, sent, old).unwrap();
     store.confirm_sent(id, sent, MARK).unwrap();
     store.mark_sending(id, doubt, old).unwrap();
-    store.end_current_session(id, "lost", None).unwrap();
-    let new = SessionId::new(store.open_session(id).unwrap().id);
-    store.mark_sending(id, fresh, new).unwrap();
     let other = new_box(&store, "b");
     let elsewhere = store.enqueue(other, InboxKind::Steer, "b", "u").unwrap();
     store
-        .mark_sending(other, elsewhere, live(&store, other))
+        .mark_sending(other, elsewhere, launch(&store, other))
         .unwrap();
+    let new = launch(&store, id);
+    store.mark_sending(id, fresh, new).unwrap();
     assert_eq!(
         texts(&store.cut(id, new).unwrap()),
         ["sent:sent", "doubt:in_doubt"]
     );
     assert_eq!(
-        store.cut(id, old).unwrap().len(),
-        1,
-        "only fresh is on the other launch"
+        store.cut(id, old).unwrap(),
+        [],
+        "nothing is older than the first launch"
     );
 }
 
@@ -206,7 +205,7 @@ fn drop_all_deletes_and_returns_every_row_of_the_box_only() {
     let row = store.enqueue(id, InboxKind::Steer, "one", "u").unwrap();
     store.enqueue(id, InboxKind::Note, "two", "moor").unwrap();
     store.enqueue(other, InboxKind::Steer, "kept", "u").unwrap();
-    store.mark_sending(id, row, live(&store, id)).unwrap();
+    store.mark_sending(id, row, launch(&store, id)).unwrap();
     assert_eq!(
         texts(&store.drop_all(id).unwrap()),
         ["one:in_doubt", "two:queued"]
@@ -221,7 +220,7 @@ fn an_update_without_a_turn_panics() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let s = live(&store, id);
+    let s = launch(&store, id);
     refuse_writes(&store);
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     drop(store.mark_sending(id, row, s));
