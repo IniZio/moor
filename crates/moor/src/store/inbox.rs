@@ -1,7 +1,7 @@
 //! Each Box's inbox, `box_inbox`: texts for its agent, kept until the turn each started ends.
 //!
-//! Anyone may append a row without the Box's turn; that insert is the one write to a Box's rows
-//! the write check exempts, by table. Only the Box's owner, holding its turn, updates or deletes
+//! Anyone may append a row without the Box's turn: the write check exempts inserts into this
+//! table, and only them. Only the Box's owner, holding its turn, updates or deletes
 //! rows, so senders never wait on a Box that is busy or asleep.
 
 #![cfg_attr(
@@ -50,6 +50,7 @@ impl Store {
         text: &str,
         sender: &str,
     ) -> Result<InboxId, StoreError> {
+        self.check_insert(&BoxInbox::Table, box_id);
         let id: i64 = self.writer().row(
             Query::insert()
                 .into_table(BoxInbox::Table)
@@ -154,7 +155,7 @@ impl Store {
     }
 
     /// Box `box_id`'s rows sent, or in doubt, to a launch older than `live`, oldest first: the
-    /// turns a lost VM or a dead agent cut.
+    /// turns a lost VM or a dead agent cut. `live` is the Box's newest launch that has not ended.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
@@ -207,7 +208,7 @@ impl Store {
         })?;
         let sends = match row.delivery {
             Delivery::InDoubt { attempts, .. } => attempts,
-            Delivery::Queued | Delivery::Sent { .. } => 0,
+            Delivery::Queued { .. } | Delivery::Sent { .. } => 0,
         };
         let next = step(row.delivery)?;
         let c = next.columns(sends);

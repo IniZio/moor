@@ -69,7 +69,11 @@ pub struct SendMark {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delivery {
     /// Not sent: waiting for a ready agent.
-    Queued,
+    Queued {
+        /// Sends begun to agents that were gone; they count against [`MAX_SENDS`], since a gone
+        /// agent's terminal may still have taken the keys.
+        attempts: u8,
+    },
     /// A send to `launch` began and was never confirmed: the agent may have it.
     InDoubt {
         /// The launch the send went to.
@@ -112,10 +116,8 @@ impl Delivery {
     pub fn parse(c: DeliveryColumns) -> Option<Self> {
         let attempts = u8::try_from(c.attempts).ok().filter(|n| *n <= MAX_SENDS)?;
         match (c.launch.map(LaunchId::new), c.sent_at) {
-            (None, None)
-                if attempts == 0 && c.turn_before.is_none() && c.status_before.is_none() =>
-            {
-                Some(Self::Queued)
+            (None, None) if c.turn_before.is_none() && c.status_before.is_none() => {
+                Some(Self::Queued { attempts })
             }
             (Some(launch), None)
                 if attempts > 0 && c.turn_before.is_none() && c.status_before.is_none() =>
@@ -138,7 +140,10 @@ impl Delivery {
     #[must_use]
     pub fn columns(self, sends: u8) -> DeliveryColumns {
         match self {
-            Self::Queued => DeliveryColumns::default(),
+            Self::Queued { attempts } => DeliveryColumns {
+                attempts: attempts.into(),
+                ..DeliveryColumns::default()
+            },
             Self::InDoubt { launch, attempts } => DeliveryColumns {
                 attempts: attempts.into(),
                 launch: Some(launch.get()),
@@ -154,16 +159,16 @@ impl Delivery {
         }
     }
 
-    /// A send to `launch` begins: a queued row's first, or one more to the launch a row
-    /// in doubt went to, while it has sends left.
+    /// A send to `launch` begins: a queued row's, or one more to the launch a row in doubt went
+    /// to, while the row has sends left.
     ///
     /// # Errors
     /// [`Illegal`] for a sent row, a row in doubt on another launch, or one out of sends.
     pub fn mark(self, launch: LaunchId) -> Result<Self, Illegal> {
         match self {
-            Self::Queued => Ok(Self::InDoubt {
+            Self::Queued { attempts } if attempts < MAX_SENDS => Ok(Self::InDoubt {
                 launch,
-                attempts: 1,
+                attempts: attempts + 1,
             }),
             Self::InDoubt {
                 launch: s,
@@ -183,22 +188,19 @@ impl Delivery {
     pub fn confirm(self, at: i64, mark: SendMark) -> Result<Self, Illegal> {
         match self {
             Self::InDoubt { launch, .. } => Ok(Self::Sent { launch, at, mark }),
-            Self::Queued | Self::Sent { .. } => Err(self.illegal("confirm")),
+            Self::Queued { .. } | Self::Sent { .. } => Err(self.illegal("confirm")),
         }
     }
 
-    /// The send that began never reached the agent, which was gone: undo its mark.
+    /// The agent the send began to was gone: the row waits for another launch, and the send
+    /// still counts, so no row is ever sent more than [`MAX_SENDS`] times.
     ///
     /// # Errors
     /// [`Illegal`] unless the row is in doubt.
     pub fn rollback(self) -> Result<Self, Illegal> {
         match self {
-            Self::InDoubt { attempts: 1, .. } => Ok(Self::Queued),
-            Self::InDoubt { launch, attempts } => Ok(Self::InDoubt {
-                launch,
-                attempts: attempts - 1,
-            }),
-            Self::Queued | Self::Sent { .. } => Err(self.illegal("rollback")),
+            Self::InDoubt { attempts, .. } => Ok(Self::Queued { attempts }),
+            Self::Queued { .. } | Self::Sent { .. } => Err(self.illegal("rollback")),
         }
     }
 
@@ -206,7 +208,7 @@ impl Delivery {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Queued => "queued",
+            Self::Queued { .. } => "queued",
             Self::InDoubt { .. } => "in_doubt",
             Self::Sent { .. } => "sent",
         }
