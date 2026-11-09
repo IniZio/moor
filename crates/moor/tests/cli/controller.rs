@@ -177,18 +177,20 @@ impl Client {
 #[test]
 fn socket_envelope_equals_call_envelope() {
     let sandbox = Sandbox::new();
-    let _controller = Controller::start(&sandbox);
-    let mut client = Client::connect(&sandbox.socket);
-    client.hello();
     let inputs = [
         r#"{"cmd":"version"}"#,
         r#"{"cmd":"show"}"#,
         r#"{"cmd":"show","box":"nope"}"#,
         r#"{"cmd":"run","box":"foo","argv":["true"]}"#,
     ];
-    for (n, input) in inputs.iter().enumerate() {
+    // In-process calls come first: a controller serving the state dir refuses them.
+    let in_process: Vec<_> = inputs.iter().map(|input| sandbox.call(input)).collect();
+    let _controller = Controller::start(&sandbox);
+    let mut client = Client::connect(&sandbox.socket);
+    client.hello();
+    for (n, (input, expected)) in inputs.iter().zip(&in_process).enumerate() {
         let over_socket = client.request(&n.to_string(), input);
-        assert_eq!(over_socket, sandbox.call(input), "input {input}");
+        assert_eq!(&over_socket, expected, "input {input}");
     }
 }
 

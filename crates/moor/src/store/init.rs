@@ -1,7 +1,10 @@
 //! The store's once-made `meta` values, its controller lock, and stored-value parsing helpers.
 
 use std::fs::{self, File, TryLockError};
+use std::io::Write as _;
+use std::os::unix::fs::DirBuilderExt as _;
 use std::path::Path;
+use std::time::Duration;
 
 use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
@@ -66,6 +69,57 @@ fn meta_once(
             .and_where(Expr::col(Meta::K).eq(k)),
         |r| r.get(0),
     )?)
+}
+
+/// How long a local-mode call waits for another's hold on the state dir.
+pub(super) const LOCK_WAIT: Duration = Duration::from_secs(5);
+
+/// How often a held lock is tried again within the wait.
+const LOCK_POLL: Duration = Duration::from_millis(20);
+
+/// The right to mutate the `SQLite` state dir in `state_dir` for as long as the file lives: the
+/// controller lock a controller holds until it exits, taken by a moor that is not the controller.
+/// None when this process is the controller. A controller holding it is a refusal; another
+/// local call holding it past `wait` is one too.
+pub(super) fn exclude(state_dir: &Path, wait: Duration) -> Result<Option<File>, StoreError> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(state_dir)?;
+    let path = state_dir.join(CONTROLLER_LOCK);
+    let mut file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .read(true)
+        .open(&path)?;
+    let mut retries = wait.as_millis() / LOCK_POLL.as_millis();
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(TryLockError::WouldBlock) => {
+                let held = fs::read_to_string(&path).unwrap_or_default();
+                let mut lines = held.lines();
+                let pid = lines.next();
+                if pid == Some(std::process::id().to_string().as_str()) {
+                    return Ok(None);
+                }
+                let serves = lines.next().is_some_and(|socket| !socket.is_empty());
+                if serves {
+                    return Err(StoreError::Served);
+                }
+                if retries == 0 {
+                    return Err(StoreError::InUse);
+                }
+                retries -= 1;
+                std::thread::sleep(LOCK_POLL);
+            }
+            Err(TryLockError::Error(e)) => return Err(e.into()),
+        }
+    }
+    file.set_len(0)?;
+    writeln!(file, "{}", std::process::id())?;
+    Ok(Some(file))
 }
 
 /// The controller lock beside `db`, held until dropped; none when this process is the

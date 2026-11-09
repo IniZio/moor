@@ -202,6 +202,9 @@ pub(crate) struct Store {
     /// For a moor that is not the controller on a shared database, the controller lock it holds
     /// so none starts beside it; released when the last clone drops.
     _excludes: Option<Arc<Mutex<db::ControllerLock>>>,
+    /// For a moor that is not the controller on a state dir in a file, the controller lock it
+    /// holds so no controller or other moor mutates beside it; released when the last clone drops.
+    _state_lock: Option<Arc<std::fs::File>>,
     /// In test builds, what a write to an existing Box's rows must pass; shared by every clone.
     #[cfg(test)]
     write_check: Arc<std::sync::OnceLock<write_check::WriteCheck>>,

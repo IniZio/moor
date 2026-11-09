@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use moor_core::request::Pins;
 use moor_core::seam::clock::Clock;
@@ -53,23 +54,38 @@ impl Store {
     }
 
     /// Open the store in the Postgres database `url` names, else in `moor.db` in `state_dir`,
-    /// for a moor that is not the controller. On a shared database it takes the controller lock
-    /// for as long as the store lives, and is refused if a controller holds it, as a Box lock or
-    /// run claim here would not reach that controller's.
+    /// for a moor that is not the controller. It takes the controller lock for as long as the
+    /// store lives, and is refused if a controller holds it, as a Box lock or run claim here
+    /// would not reach that controller's. Another such moor holding it past [`init::LOCK_WAIT`]
+    /// is a refusal too.
     pub(crate) fn open_in(
         state_dir: &Path,
         database: Option<&Database>,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, StoreError> {
-        let excludes = database
-            .map(|database| {
+        Self::open_in_within(state_dir, database, clock, init::LOCK_WAIT)
+    }
+
+    /// As [`Store::open_in`], waiting up to `wait` for a state dir in a file.
+    pub(crate) fn open_in_within(
+        state_dir: &Path,
+        database: Option<&Database>,
+        clock: Arc<dyn Clock>,
+        wait: Duration,
+    ) -> Result<Self, StoreError> {
+        let mut excludes = None;
+        let mut state_lock = None;
+        match database {
+            Some(database) => {
                 let target = Target::parse(&database.url).map_err(StoreError::Url)?;
-                db::ControllerLock::exclude(&target, "moor command")
-            })
-            .transpose()?
-            .map(|lock| Arc::new(Mutex::new(lock)));
+                let lock = db::ControllerLock::exclude(&target, "moor command")?;
+                excludes = Some(Arc::new(Mutex::new(lock)));
+            }
+            None => state_lock = init::exclude(state_dir, wait)?.map(Arc::new),
+        }
         Ok(Self {
             _excludes: excludes,
+            _state_lock: state_lock,
             ..Self::open_claimed(state_dir, database, clock)?
         })
     }
@@ -117,6 +133,7 @@ impl Store {
             pins: Pins::new(),
             schema,
             _excludes: None,
+            _state_lock: None,
             #[cfg(test)]
             write_check: Arc::default(),
         }
