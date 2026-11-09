@@ -18,6 +18,8 @@ pub(crate) mod host_path;
 pub(crate) mod identity;
 pub(crate) mod link;
 pub(crate) mod node;
+#[cfg_attr(not(test), expect(dead_code, reason = "no op admits through it yet"))]
+pub(crate) mod owners;
 pub(crate) mod park;
 pub(crate) mod profile_fetch;
 pub(crate) mod promote;
