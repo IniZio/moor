@@ -37,9 +37,9 @@ impl BlobKey {
         Self(format!("reports/{}/{kind}.v{version}.md", box_id.get()))
     }
 
-    /// Save `n` of the session's transcript.
-    pub(crate) fn transcript(box_id: BoxId, session: i64, n: usize) -> Self {
-        Self(relative_path(box_id, session, n))
+    /// The Session's archive whose sha256 is `digest`.
+    pub(crate) fn transcript(box_id: BoxId, session: i64, digest: &str) -> Self {
+        Self(relative_path(box_id, session, digest))
     }
 
     /// A key spelled out, for a test that lays out its own files.

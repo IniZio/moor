@@ -127,7 +127,7 @@ if ! ls "$d"/*.jsonl >/dev/null 2>&1; then
   echo '{NOTHING_TO_ARCHIVE}'
   exit 0
 fi
-(cd "$d" && tar czf "$OLDPWD/{archive}" *.jsonl)
+(cd "$d" && tar czf "$OLDPWD/{archive}" .)
 test -s "{archive}"
 "#
         )

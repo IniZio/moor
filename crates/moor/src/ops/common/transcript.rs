@@ -1,4 +1,5 @@
-//! Saves the agent's transcript to the blob store before its session ends.
+//! Saves an archive of the agent's project directory to the blob store, after each turn and
+//! before its session ends, and points the Box's Session at it.
 
 use std::fs::{self, DirBuilder, Permissions};
 use std::io::BufReader;
@@ -6,26 +7,44 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use moor_core::decide::transcript::{digest, is_duplicate, next_number, Trigger};
+use moor_core::decide::transcript::{digest, is_duplicate, Trigger};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::hands::HandsState;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
+use moor_core::{BoxId, Warning};
 
 use crate::blobs::BlobKey;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
-use crate::store::{BoxRow, EventRow, SessionRow, Store};
+use crate::store::archive::ArchivePointer;
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// A transcript saved in the blob store.
 pub(crate) struct Saved {
+    /// The archive's blob key.
+    pub(crate) key: BlobKey,
     /// Where a person finds the archive.
     pub(crate) path: String,
     /// The digest of the archive.
     pub(crate) digest: String,
+}
+
+/// How long a failed save waits before the next settle pass tries it again.
+const RETRY_AFTER: Duration = Duration::from_mins(1);
+
+/// How a save ended.
+enum Outcome {
+    /// The archive is in the blob store and the Session points at it.
+    Saved(Saved),
+    /// There was nothing to save.
+    Skipped,
+    /// The save did not happen and may work later.
+    Failed,
 }
 
 /// Saves the transcript of `session` while its Box is Ready, and records the outcome.
@@ -40,33 +59,74 @@ pub(crate) fn save(
     session: &SessionRow,
     trigger: Trigger,
 ) -> Option<Saved> {
-    if row.hands.as_ref()?.state != HandsState::Ready {
-        return None;
+    match archive(cx, store, row, session, trigger) {
+        Outcome::Saved(saved) => Some(saved),
+        Outcome::Skipped | Outcome::Failed => None,
     }
+}
+
+/// [`save`], telling a save with nothing to save from one that may work later.
+fn archive(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    session: &SessionRow,
+    trigger: Trigger,
+) -> Outcome {
+    let Some(hands) = row.hands.as_ref().filter(|h| h.state == HandsState::Ready) else {
+        return Outcome::Failed;
+    };
     let known = |id: &Option<String>| id.as_deref().is_some_and(|id| !id.is_empty());
     if !known(&session.registered_agent_session) && !known(&row.agent_session_id) {
         record(store, row, skipped(trigger, "no agent session registered"));
-        return None;
+        return Outcome::Skipped;
     }
-    let s = session_ref(row, session)?;
-    let event = match try_save(cx, store, row, session, &s, archive_deadline(trigger)) {
-        Ok(None) => return None,
-        Ok(Some((saved, false))) => return Some(saved),
-        Ok(Some((saved, true))) => {
+    let Some(box_session) = session.session else {
+        record(store, row, skipped(trigger, "no Session"));
+        return Outcome::Skipped;
+    };
+    let Some(s) = session_ref(row, session) else {
+        return Outcome::Failed;
+    };
+    let taken = cx.clock().now();
+    let deadline = archive_deadline(trigger);
+    let (event, outcome) = match try_save(cx, row, box_session, session, &s, deadline) {
+        Ok((saved, fresh)) => {
+            point(cx, store, row.id, box_session, &saved, (hands.inc, taken));
+            if !fresh {
+                return Outcome::Saved(saved);
+            }
             let event = ExtraEvent::TranscriptSaved {
                 trigger: trigger.name().to_owned(),
                 path: saved.path.clone(),
                 digest: saved.digest.clone(),
             };
-            record(store, row, event);
-            return Some(saved);
+            (event, Outcome::Saved(saved))
         }
-        Err(TryError::NothingToArchive) => skipped(trigger, "nothing to archive"),
-        Err(TryError::Failed(error)) => failed(trigger, error, false),
-        Err(TryError::Unlinked(error)) => failed(trigger, error, true),
+        Err(TryError::NothingToArchive) => {
+            (skipped(trigger, "nothing to archive"), Outcome::Skipped)
+        }
+        Err(TryError::Failed(error)) => (failed(trigger, error, false), Outcome::Failed),
+        Err(TryError::Unlinked(error)) => (failed(trigger, error, true), Outcome::Failed),
     };
     record(store, row, event);
-    None
+    outcome
+}
+
+/// Points Session `session` at `saved`, taken at `at` by hands `inc`; a store failure is a
+/// warning, and the archive due stays for a later pass.
+fn point(cx: &Cx, store: &Store, id: BoxId, session: i64, saved: &Saved, (inc, at): (i64, Ts)) {
+    let to = ArchivePointer {
+        key: saved.key.as_str().to_owned(),
+        inc,
+        at,
+    };
+    if let Err(e) = store.advance_archive(id, session, &to) {
+        cx.warn(Warning {
+            code: "archive_pointer_failed".to_owned(),
+            message: format!("Box {}: {e}", id.get()),
+        });
+    }
 }
 
 /// Records that no save was made for `trigger`, with the reason.
@@ -154,21 +214,34 @@ fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
         }))
 }
 
-/// Copies the live session's transcript to the host at the end of a turn, so losing the Box
-/// later keeps everything up to that turn. Nothing is copied while another operation holds the
-/// Box's turn; a failed copy is recorded and the next turn tries again.
-pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
+/// Saves Box `id`'s archive when one is due, so losing the Box later keeps everything up to the
+/// last turn.
+///
+/// A turn that ended made the archive due. While another operation holds the Box's turn nothing
+/// is saved and the next settle pass tries again; a failed save is recorded and tried again a
+/// minute later. The due is paid when the Session's pointer moves, or when there is nothing to
+/// save.
+pub(crate) fn save_due(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+    let now = cx.clock().now();
+    if store.archive_due(id)?.is_none_or(|due| due > now) {
+        return Ok(());
+    }
+    let Some(_turn) = cx.try_turn(id, Cmd::Settle) else {
         return Ok(());
     };
-    let Some(row) = store.box_row(row.id)? else {
+    let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    let Some(session) = store.live_session(row.id)? else {
+    let Some(session) = store.live_session(id)? else {
+        store.reschedule_archive(id, now, None)?;
         return Ok(());
     };
-    if let Some(saved) = save(cx, store, &row, &session, Trigger::Turn) {
-        store.set_transcript_digest(session.id, &saved.digest)?;
+    match archive(cx, store, &row, &session, Trigger::Turn) {
+        Outcome::Saved(saved) => store.set_transcript_digest(session.id, &saved.digest)?,
+        Outcome::Skipped => store.reschedule_archive(id, now, None)?,
+        Outcome::Failed => {
+            store.reschedule_archive(id, now, Some(now.saturating_add(RETRY_AFTER)))?;
+        }
     }
     Ok(())
 }
@@ -192,32 +265,27 @@ fn record(store: &Store, row: &BoxRow, event: ExtraEvent) {
     let _ = store.apply(Decision::new(row.id).event(event));
 }
 
-/// Archives the transcript to a staged file, reads back its digest and stores it as a blob.
+/// Archives the transcript to a staged file, reads back its digest and stores it as a blob
+/// named by that digest under Session `box_session`.
 ///
-/// None when the archive repeats the stored digest but the earlier save is not on record.
 /// The flag tells a new archive from a repeat of the one already stored, which is dropped.
 fn try_save(
     cx: &Cx,
-    store: &Store,
     row: &BoxRow,
+    box_session: i64,
     session: &SessionRow,
     s: &SessionRef,
     deadline: Deadline,
-) -> Result<Option<(Saved, bool)>, TryError> {
-    let events = store
-        .events(row.id, usize::MAX)
-        .map_err(|e| e.to_string())?;
-    let n = next_number(events.iter().map(|e| e.kind.as_str()));
-    let key = BlobKey::transcript(row.id, session.id, n);
-    let staged = staged(cx, row, session, n)?;
-    let result = archive(cx, s, &staged, deadline)
-        .and_then(|()| store_archive(cx, session, &events, &key, &staged));
+) -> Result<(Saved, bool), TryError> {
+    let staged = staged(cx, row, session)?;
+    let result = archive_to(cx, s, &staged, deadline)
+        .and_then(|()| store_archive(cx, row.id, box_session, session, &staged));
     let _ = fs::remove_file(&staged);
     result
 }
 
 /// Brings the archive to `staged`.
-fn archive(cx: &Cx, s: &SessionRef, staged: &Path, deadline: Deadline) -> Result<(), TryError> {
+fn archive_to(cx: &Cx, s: &SessionRef, staged: &Path, deadline: Deadline) -> Result<(), TryError> {
     cx.engine()
         .transcript(s, staged, deadline)
         .map_err(|e| match e {
@@ -230,42 +298,29 @@ fn archive(cx: &Cx, s: &SessionRef, staged: &Path, deadline: Deadline) -> Result
 /// [`try_save`] once the archive is staged.
 fn store_archive(
     cx: &Cx,
+    id: BoxId,
+    box_session: i64,
     session: &SessionRow,
-    events: &[EventRow],
-    key: &BlobKey,
     staged: &Path,
-) -> Result<Option<(Saved, bool)>, TryError> {
+) -> Result<(Saved, bool), TryError> {
     fs::set_permissions(staged, Permissions::from_mode(0o600))
         .map_err(|e| format!("chmod {}: {e}", staged.display()))?;
     let file = fs::File::open(staged).map_err(|e| format!("read {}: {e}", staged.display()))?;
     let digest =
         digest(BufReader::new(file)).map_err(|e| format!("read {}: {e}", staged.display()))?;
-    if is_duplicate(session.transcript_digest.as_deref(), &digest) {
-        let saved = events
-            .iter()
-            .rev()
-            .filter(|e| e.kind == "transcript_saved")
-            .find(|e| e.payload.get("digest").and_then(|d| d.as_str()) == Some(&digest))
-            .and_then(|e| e.payload.get("path")?.as_str())
-            .map(|path| {
-                (
-                    Saved {
-                        path: path.to_owned(),
-                        digest,
-                    },
-                    false,
-                )
-            });
-        return Ok(saved);
-    }
+    let key = BlobKey::transcript(id, box_session, &digest);
     let blobs = cx.blobs().map_err(|e| e.error.to_string())?;
-    blobs.put_file(key, staged).map_err(|e| e.to_string())?;
-    let path = blobs.locate(key);
-    Ok(Some((Saved { path, digest }, true)))
+    let fresh = !is_duplicate(session.transcript_digest.as_deref(), &digest);
+    if fresh {
+        blobs.put_file(&key, staged).map_err(|e| e.to_string())?;
+    }
+    let path = blobs.locate(&key);
+    Ok((Saved { key, path, digest }, fresh))
 }
 
-/// A local path to archive save `n` to, with its directory made (0700).
-fn staged(cx: &Cx, row: &BoxRow, session: &SessionRow, n: usize) -> Result<PathBuf, String> {
+/// A local path to stage launch `session`'s archive at, with its directory made (0700) and any
+/// file a crashed save left there removed.
+fn staged(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Result<PathBuf, String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;
     let dir = state.join("transcripts").join(".staging");
     DirBuilder::new()
@@ -273,7 +328,9 @@ fn staged(cx: &Cx, row: &BoxRow, session: &SessionRow, n: usize) -> Result<PathB
         .mode(0o700)
         .create(&dir)
         .map_err(|e| format!("create {}: {e}", dir.display()))?;
-    Ok(dir.join(format!("{}-{}-{n}.tgz", row.id.get(), session.id)))
+    let path = dir.join(format!("{}-{}.tgz", row.id.get(), session.id));
+    let _ = fs::remove_file(&path);
+    Ok(path)
 }
 
 #[cfg(test)]

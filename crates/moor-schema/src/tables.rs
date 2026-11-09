@@ -49,12 +49,13 @@ tables! {
         CreatedAt, NodeLabels, OtherRepos }
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
-        ResumeFirstAt, UpdatedAt }
+        ResumeFirstAt, UpdatedAt, ArchiveDue }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
         CreatedAt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
-        EndedAt, ParentSession, Workdir, User, HostKey }
+        EndedAt, ParentSession, Workdir, User, HostKey, ArchiveKey, ArchiveInc,
+        ArchiveAt }
     Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
         RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt, SaidAt }
     BoxRefs { Id, Box, Kind, Value }

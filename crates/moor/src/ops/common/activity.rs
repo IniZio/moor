@@ -234,7 +234,7 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
     Ok(())
 }
 
-/// Move the Box's state to match `reading`, copy the transcript at each turn end, save the
+/// Move the Box's state to match `reading`, save the archive a turn end made due, save the
 /// transcript of an agent seen exited and end its session, and return the fate it answered.
 ///
 /// An asleep Box is not moved: nothing was read from it, and a wake asks after its agent. A Box
@@ -253,7 +253,7 @@ pub(crate) fn settle(
     if row.asleep() {
         return Ok(None);
     }
-    let turn_done = turn::note_turn_done(store, row, reading, cx.clock().now())?;
+    turn::note_turn_done(store, row, reading, cx.clock().now())?;
     let fate = if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         let exit = match reading.activity.as_ref().map(|a| &a.state) {
             Some(AgentState::Exited { code }) => *code,
@@ -267,9 +267,9 @@ pub(crate) fn settle(
     };
     needs_input::note_needs_input(store, row, reading)?;
     stall::note_stall(store, row, reading, cx.clock().now())?;
-    let went_quiet = quiet::step(cx, store, row, reading)?;
-    if (turn_done || went_quiet) && reading.pane != PaneLiveness::Exited {
-        transcript::save_on_turn(cx, store, row)?;
+    quiet::step(cx, store, row, reading)?;
+    if reading.pane != PaneLiveness::Exited {
+        transcript::save_due(cx, store, row.id)?;
     }
     Ok(fate)
 }

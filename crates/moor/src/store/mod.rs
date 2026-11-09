@@ -34,6 +34,7 @@ pub(crate) const STORE_FILE: &str = "moor.db";
 #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
 mod agent;
 mod apply;
+pub(crate) mod archive;
 pub(crate) mod artifacts;
 mod bindings;
 mod box_node;

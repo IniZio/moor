@@ -25,6 +25,7 @@ mod proxy_key;
 mod proxy_state;
 mod resume_memory;
 mod said_at;
+mod session_archive;
 mod suspend_check;
 pub mod tables;
 mod warm_starts;
@@ -126,6 +127,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V68__box_state",
         write: box_state::write,
+    },
+    Step {
+        name: "V69__session_archive",
+        write: session_archive::write,
     },
 ];
 
