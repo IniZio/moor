@@ -18,6 +18,7 @@ mod probe;
 )]
 mod profile_writer;
 mod proxy_env;
+mod restore;
 mod steer;
 mod transcript;
 
@@ -115,6 +116,25 @@ impl Engine for BoxAgent {
             s,
             dest,
             deadline,
+        )
+    }
+
+    fn holds_session(&self, req: &LaunchReq, session_id: &str) -> Result<bool, EngineError> {
+        restore::holds(self.driver.as_ref(), self.profile.as_ref(), req, session_id)
+    }
+
+    fn restore_session(
+        &self,
+        req: &LaunchReq,
+        session_id: &str,
+        archive: &[u8],
+    ) -> Result<(), EngineError> {
+        restore::restore(
+            self.driver.as_ref(),
+            self.profile.as_ref(),
+            req,
+            session_id,
+            archive,
         )
     }
 

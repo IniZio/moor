@@ -105,6 +105,10 @@ pub(crate) enum BoxEvent {
     RelaunchCapped,
     /// The Box's machine was lost and replaced, along with its disk.
     DiskLost,
+    /// New hands got back the agent's conversation up to its last saved turn.
+    SessionRestored,
+    /// New hands could not get back the agent's conversation, so the agent started without it.
+    SessionLost,
     /// The controller refused a close because the Box holds work that is not pushed.
     Unsaved {
         /// Unpushed commits.
@@ -168,6 +172,8 @@ impl BoxEvent {
             Self::Relaunched => "relaunched",
             Self::RelaunchCapped => "relaunch_capped",
             Self::DiskLost => "disk_lost",
+            Self::SessionRestored => "session_restored",
+            Self::SessionLost => "session_lost",
             Self::Unsaved { .. } => "unsaved",
             Self::CloseRefused => "close_refused",
             Self::Stopped(_) => "stopped",
@@ -199,6 +205,14 @@ impl BoxEvent {
             Self::Relaunched => "had its agent started again",
             Self::RelaunchCapped => "was not relaunched, the automatic relaunch cap was reached",
             Self::DiskLost => "lost its machine and its disk",
+            Self::SessionRestored => {
+                "got its conversation back on a new machine; a message sent after its last \
+                 finished turn was not sent again"
+            }
+            Self::SessionLost => {
+                "could not get its conversation back on a new machine, so its agent started \
+                 without it; a message it was working on was not sent again"
+            }
         };
         format!("[moor] Box `{name}` {what}.")
     }

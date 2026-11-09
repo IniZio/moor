@@ -1,5 +1,4 @@
 //! Typed box events. State events are derived from steps, so a row and its event cannot disagree.
-
 pub use crate::domain::turn::TurnOutcome;
 use crate::{domain::box_state::BoxLifecycle, name::RunId};
 /// One recorded fact about a box, serialized with its `kind` tag.
@@ -379,14 +378,15 @@ pub enum Event {
     /// A workflow's earlier Box stayed open when its next run started.
     #[serde(untagged)]
     Workflow(WorkflowEvent),
+    /// What new hands got back of the agent's conversation.
+    #[serde(untagged)]
+    Restore(RestoreEvent),
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),
 }
-pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred};
-pub use self::{machine::MachineEvent, profile::*, steps::*};
-pub use kind::{NodeDiskEvent, StallEvent, WorkflowEvent, ASSERTED_KINDS, EVENT_KINDS};
-pub use post_clone::{PostCloneStep, ProviderStep, StepName, TimingEvent, MAX_STEPS};
+pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, kind::*};
+pub use self::{machine::MachineEvent, post_clone::*, profile::*, steps::*};
 mod access;
 mod boxes;
 mod checked;

@@ -43,6 +43,7 @@ mod relaunch;
 mod reopen;
 pub(crate) mod repo;
 mod response;
+mod restore;
 mod revive;
 mod watch;
 

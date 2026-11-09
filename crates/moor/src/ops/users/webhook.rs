@@ -20,7 +20,7 @@ use crate::vault::Vault;
 
 /// The event kinds a webhook gets when it names none: a turn ended, a Box or its agent stopped in
 /// a way someone must look at, or the disk under its Boxes ran low or came back.
-const DEFAULT_EVENTS: [&str; 12] = [
+const DEFAULT_EVENTS: [&str; 13] = [
     "idled",
     "needs_input",
     "closed",
@@ -29,6 +29,7 @@ const DEFAULT_EVENTS: [&str; 12] = [
     "launch_timed_out",
     "relaunch_capped",
     "disk_lost",
+    "session_lost",
     "box_failed",
     "agent_stalled",
     "node_disk_low",

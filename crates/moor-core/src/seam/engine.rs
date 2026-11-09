@@ -272,6 +272,26 @@ pub trait Engine: Send + Sync {
         deadline: Deadline,
     ) -> Result<(), EngineError>;
 
+    /// Whether the Box that `req` launches on holds the agent's stored session `session_id`.
+    ///
+    /// # Errors
+    /// [`EngineError::Transcript`] when the Box could not be asked.
+    fn holds_session(&self, req: &LaunchReq, session_id: &str) -> Result<bool, EngineError>;
+
+    /// Puts the agent's project directory back from `archive`, an archive [`Self::transcript`]
+    /// made, on the Box that `req` launches on, so a resume of `session_id` finds it. Files the
+    /// Box already holds stay; a Box that holds `session_id` is left as it is.
+    ///
+    /// # Errors
+    /// [`EngineError::Transcript`] names the step that failed, including an archive that does
+    /// not hold `session_id`.
+    fn restore_session(
+        &self,
+        req: &LaunchReq,
+        session_id: &str,
+        archive: &[u8],
+    ) -> Result<(), EngineError>;
+
     /// Ends the agent of session `s` where it runs.
     ///
     /// # Errors

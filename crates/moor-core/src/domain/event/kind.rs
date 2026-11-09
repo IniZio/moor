@@ -3,9 +3,11 @@
 use super::Event;
 
 mod node_disk;
+mod restore;
 mod stall;
 mod workflow;
 pub use node_disk::NodeDiskEvent;
+pub use restore::RestoreEvent;
 pub use stall::StallEvent;
 pub use workflow::WorkflowEvent;
 
@@ -34,7 +36,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 88] = [
+pub const EVENT_KINDS: [&str; 90] = [
     "caches_not_saved",
     "disk_lost",
     "started",
@@ -81,6 +83,8 @@ pub const EVENT_KINDS: [&str; 88] = [
     "transcript_saved",
     "transcript_failed",
     "transcript_skipped",
+    "session_restored",
+    "session_lost",
     "steered",
     "proxy_started",
     "tunnel_restarted",
@@ -194,6 +198,7 @@ impl Event {
             Self::Stall(s) => s.kind(),
             Self::NodeDisk(d) => d.kind(),
             Self::Workflow(w) => w.kind(),
+            Self::Restore(r) => r.kind(),
             Self::Timing(t) => t.kind(),
         }
     }

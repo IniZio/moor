@@ -350,6 +350,12 @@ fn all_events() -> Vec<Event> {
             name: s("o/n-old"),
             reason: s("its agent is working"),
         }),
+        Event::Restore(RestoreEvent::SessionRestored {
+            archive_at: s("2026-11-09T10:00:00Z"),
+        }),
+        Event::Restore(RestoreEvent::SessionLost {
+            reason: s("no archive was saved"),
+        }),
     ]
 }
 
@@ -459,6 +465,8 @@ const fn event_index(e: &Event) -> usize {
         Event::Stall(StallEvent::PromptNotGiven { .. }) => 85,
         Event::Access(AccessEvent::ExecRan { .. }) => 86,
         Event::Workflow(WorkflowEvent::PreviousBoxKept { .. }) => 87,
+        Event::Restore(RestoreEvent::SessionRestored { .. }) => 88,
+        Event::Restore(RestoreEvent::SessionLost { .. }) => 89,
     }
 }
 
@@ -466,7 +474,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 88);
+    assert_eq!(all.len(), 90);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

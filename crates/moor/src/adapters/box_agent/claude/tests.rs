@@ -352,3 +352,6 @@ fn transcript_script_archives_the_whole_project_dir_with_subagent_files() {
         "{names}"
     );
 }
+
+#[path = "tests/restore.rs"]
+mod restore;

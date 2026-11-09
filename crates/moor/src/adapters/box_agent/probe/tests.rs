@@ -75,6 +75,14 @@ impl AgentAdapter for Stub {
     fn transcript_script(&self, _: &str) -> String {
         String::new()
     }
+
+    fn session_check_script(&self, _: &str) -> String {
+        String::new()
+    }
+
+    fn restore_script(&self, _: &str, _: &str) -> String {
+        String::new()
+    }
 }
 
 const DEADLINE: Deadline = Deadline(Duration::from_secs(3));

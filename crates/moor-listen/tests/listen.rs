@@ -313,6 +313,30 @@ fn a_lost_disk_prints_what_is_gone() {
 }
 
 #[test]
+fn new_hands_print_whether_the_conversation_came_back() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    world.happen_with("repo/a", 1, "session_restored", json!({"archive_at": "t"}));
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a session_restored: its conversation up to its last saved turn is back; \
+         a prompt sent after that was not sent again"
+    );
+    world.happen_with(
+        "repo/a",
+        2,
+        "session_lost",
+        json!({"reason": "no archive was saved"}),
+    );
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a session_lost: its conversation could not be brought back, so its \
+         agent started without it; a prompt it was working on was not sent again"
+    );
+}
+
+#[test]
 fn a_resume_prints_how_long_the_stall_lasted() {
     let world = world(&["repo/a"]);
     let listen = world.listen();

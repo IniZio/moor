@@ -14,7 +14,7 @@ use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, StartReq};
 
-use super::profile_env;
+use super::{profile_env, restore};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
@@ -142,7 +142,8 @@ pub(super) fn with_profile(
     Ok(())
 }
 
-/// Launches `launch` and records the session, or the failure, on the Box `row`.
+/// Launches `launch` and records the session, or the failure, on the Box `row`. A resume first
+/// brings its session back to the Box when the Box lacks it.
 ///
 /// `cfg` supplies the egress the proxy plan allows.
 pub(super) fn begin(
@@ -152,9 +153,11 @@ pub(super) fn begin(
     launch: &LaunchReq,
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
+    let mut launch = launch.clone();
+    restore::before_resume(cx, store, row.id, &mut launch)?;
     // The step starts first, so a process cut off from here on is not read as `--no-agent`.
     timed(cx, store, row.id, PostCloneStep::Launch, || {
-        let out = launch_agent(cx, store, row, launch, cfg);
+        let out = launch_agent(cx, store, row, &launch, cfg);
         let ok = out.as_ref().is_ok_and(|view| view.launched);
         (out, ok)
     })

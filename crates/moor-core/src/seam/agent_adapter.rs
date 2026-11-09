@@ -230,6 +230,16 @@ pub trait AgentAdapter: Send + Sync {
     /// It runs in the Box workdir. When there is nothing to archive it prints
     /// [`NOTHING_TO_ARCHIVE`] and exits 0; any other non-zero exit is a failure.
     fn transcript_script(&self, archive: &str) -> String;
+
+    /// POSIX sh text, run in the Box workdir, that exits 0 when the Box holds the agent's
+    /// session `session_id` and 1 when it does not.
+    fn session_check_script(&self, session_id: &str) -> String;
+
+    /// POSIX sh text, run in the Box workdir, that puts back the project directory from
+    /// `archive`, a [`Self::transcript_script`] archive, and removes `archive`. It keeps files
+    /// already there, and exits 0 at once when the Box holds `session_id`. It fails, changing
+    /// nothing, when the archive does not hold `session_id`.
+    fn restore_script(&self, session_id: &str, archive: &str) -> String;
 }
 
 #[cfg(test)]
