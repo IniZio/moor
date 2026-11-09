@@ -8,7 +8,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::LaunchFailure;
-use moor_core::{BoxHandle, BoxPath, LaunchId, Warning};
+use moor_core::{BoxHandle, BoxId, BoxPath, LaunchId, Warning};
 
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
@@ -16,8 +16,9 @@ use crate::error::CommandError;
 use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::reconcile;
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, Launch, Store};
+use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
 use launch::launch_overdue;
 pub(crate) use turn::turn_open;
@@ -78,6 +79,15 @@ pub(crate) struct Reading {
 }
 
 impl Reading {
+    /// A decision for Box `id` that lands only while the launch this reading probed is live.
+    pub(crate) fn decision(&self, id: BoxId) -> Decision {
+        let d = Decision::new(id);
+        match self.launch {
+            Some(launch) => d.launch(launch),
+            None => d,
+        }
+    }
+
     /// Whether the Box counts as busy: a run is in flight or the agent is busy.
     pub(crate) fn busy(&self) -> bool {
         self.run_in_flight || self.activity.as_ref().is_some_and(|a| a.state.busy())
@@ -261,14 +271,14 @@ pub(crate) fn settle(
         };
         if !turn_end_pending {
             transcript::save_on_exit(cx, store, row, probed)?;
-            end_exited_session(cx, store, row, exit, probed)?;
+            end_exited_launch(cx, store, row, exit, probed)?;
         }
         Some(Fate::Ended(exit))
     } else {
         None
     };
-    needs_input::note_needs_input(store, row, reading)?;
-    stall::note_stall(store, row, reading, cx.clock().now())?;
+    needs_input::note_needs_input(cx, store, row, reading)?;
+    stall::note_stall(cx, store, row, reading, cx.clock().now())?;
     quiet::step(cx, store, row, reading)?;
     if reading.pane != PaneLiveness::Exited {
         transcript::save_due(cx, store, row.id)?;
@@ -276,23 +286,32 @@ pub(crate) fn settle(
     Ok(fate)
 }
 
-/// Ends the current session of an agent that ended with `exit`, once its transcript is saved.
-///
-/// Nothing is ended when the live session is not the probed one, or while another operation holds the Box's turn, so the save is retried first.
-fn end_exited_session(
+/// Ends launch `probed` of an agent that ended with `exit`, and its Session, once its transcript
+/// is saved. A launch another op replaced since the read is left alone, and while another
+/// operation holds the Box's turn nothing is ended, so the save is retried first.
+fn end_exited_launch(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     exit: Option<i32>,
     probed: LaunchId,
 ) -> Result<(), CommandError> {
-    if store.live_launch(row.id)?.is_none_or(|s| s.id != probed) {
-        return Ok(());
-    }
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
-    store.end_current_session(row.id, "exited", exit)?;
+    let end = LaunchEnd {
+        exit,
+        session: Some("exited"),
+        ..LaunchEnd::default()
+    };
+    unless_stale(cx, store.end_launch(row.id, probed, &end))?;
+    Ok(())
+}
+
+/// Applies `d`, made from a reading; a write for a launch replaced since is dropped with a
+/// warning.
+fn apply_read(cx: &Cx, store: &Store, d: Decision) -> Result<(), CommandError> {
+    unless_stale(cx, store.apply(d))?;
     Ok(())
 }
 

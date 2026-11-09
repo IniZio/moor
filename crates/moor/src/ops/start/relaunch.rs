@@ -15,6 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::provision::reread;
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
@@ -87,7 +88,7 @@ fn launch_asked(
     let Some(end) = ended(cx, &row, &old) else {
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
+    Ok(relaunch(cx, store, req, (&old, &end), (recreated, None), settings)?.unwrap_or_default())
 }
 
 /// Whether a start of an open Box asks for its agent: any start without `--no-agent`.
@@ -128,7 +129,8 @@ pub(super) fn store_prompt(store: &Store, req: &StartReq, id: BoxId) -> Result<(
     Ok(())
 }
 
-/// Replaces the ended session `old` with a new one.
+/// Replaces the ended launch `old` with a new one in a new Session; none, launching nothing, when
+/// `old` is no longer the Box's live launch, as another op replaced it.
 ///
 /// A given prompt replaces the Box's prompt and starts a fresh agent on it. Without one the agent
 /// resumes its stored session, else starts fresh waiting for a prompt. The old tab stays.
@@ -139,7 +141,7 @@ pub(super) fn relaunch(
     (old, end): (&Launch, &Ended),
     (recreated, cause): (bool, Option<&str>),
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
-) -> Result<AgentLaunchView, CommandError> {
+) -> Result<Option<AgentLaunchView>, CommandError> {
     let id = old.box_id;
     let row = reread(store, id)?;
     let resume = match &req.prompt {
@@ -147,7 +149,7 @@ pub(super) fn relaunch(
         None => row.agent_session_id.clone().filter(|s| !s.is_empty()),
     };
     let Some(mut launch) = launch::launch_req(cx, &row, None) else {
-        return Ok(AgentLaunchView::default());
+        return Ok(Some(AgentLaunchView::default()));
     };
     let cfg = settings()?;
     let asked = req
@@ -185,17 +187,18 @@ pub(super) fn relaunch(
     let end = LaunchEnd {
         exit,
         digest,
-        session: None,
+        session: Some("relaunch"),
     };
-    store.end_launch(id, old.id, &end)?;
-    store.end_current_session(id, "relaunch", exit)?;
+    if unless_stale(cx, store.end_launch(id, old.id, &end))?.is_none() {
+        return Ok(None);
+    }
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
         record_relaunch(store, id, req.prompt.clone(), cause)?;
     }
-    Ok(view)
+    Ok(Some(view))
 }
 
 /// Appends the `relaunched` event of the agent now live in Box `id`.

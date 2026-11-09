@@ -39,4 +39,9 @@ impl FakeEngine {
     pub(crate) fn on_steer(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_steer = Some(Arc::new(f));
     }
+
+    /// Runs `f` once, right after the next probe reads.
+    pub(crate) fn on_probe(&self, f: impl FnOnce() + Send + 'static) {
+        self.st().on_probe = Some(Box::new(f));
+    }
 }

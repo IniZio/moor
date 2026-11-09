@@ -8,14 +8,12 @@ use moor_core::domain::event::{Event, TurnOutcome};
 use moor_core::domain::inbox::{Delivery, DeliveryColumns, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
-use moor_schema::tables::{BoxInbox, BoxState, Events};
+use moor_schema::tables::{BoxInbox, BoxState};
 use sea_query::{Cond, Expr, ExprTrait as _, Order, Query, SelectStatement};
-use serde_json::Value;
 
+use super::agent::fence_launch;
 use super::apply::insert_event;
-use super::event_from_row;
 use super::init::parsed_opt;
-use super::select::events_of;
 use super::{Store, StoreError};
 use crate::store::db::{Db, DbExt as _, Row, Tx};
 
@@ -287,6 +285,9 @@ impl Store {
             Delivery::Queued { .. } | Delivery::Sent { .. } => 0,
         };
         let next = step(row.delivery)?;
+        if let Delivery::InDoubt { launch, .. } = next {
+            fence_launch(&tx, box_id, launch)?;
+        }
         write_delivery(&tx, box_id, id, next.columns(sends))?;
         let event = event
             .map(|e| insert_event(&tx, box_id, e, self.now()))
@@ -315,23 +316,6 @@ fn write_delivery(
             .cond_where(one(box_id, id)),
     )?;
     Ok(())
-}
-
-/// The newest `steered` event of Box `box_id` that sent row `id`.
-///
-/// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
-fn steered_by(tx: &Tx<'_>, box_id: BoxId, id: InboxId) -> Result<Option<i64>, StoreError> {
-    let q = events_of(box_id)
-        .and_where(Expr::col(Events::Kind).eq("steered"))
-        .order_by(Events::Id, Order::Desc)
-        .take();
-    for event in tx.rows(q, event_from_row)? {
-        let event = event?;
-        if event.payload.get("inbox").and_then(Value::as_i64) == Some(id.get()) {
-            return Ok(Some(event.id));
-        }
-    }
-    Ok(None)
 }
 
 /// Row `id` of Box `box_id`.
@@ -393,6 +377,7 @@ fn inbox_row(r: &Row<'_>) -> Result<InboxRow, StoreError> {
 mod queue;
 
 pub(super) use queue::send_with_launch;
+use queue::steered_by;
 
 #[cfg(test)]
 mod tests;
