@@ -52,6 +52,18 @@ pub struct BoxListing {
     pub asleep: bool,
 }
 
+/// What [`super::Driver::list_handles`] learned: the handles whose holder answered, and which of
+/// them it still holds. A handle whose holder said nothing is in neither, so it is never missing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HandlesListing {
+    /// The asked handles whose holder answered; one of these left out of `listed` is gone.
+    pub answered: Vec<BoxHandle>,
+    /// Those of `answered` their holder still holds.
+    pub listed: Vec<BoxListing>,
+    /// Why each holder that said nothing did not answer, one line per holder.
+    pub unanswered: Vec<String>,
+}
+
 /// Whether a sleep may save the Box's caches; a Box suspended at work could hold torn files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PausePublish {

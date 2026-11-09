@@ -90,7 +90,7 @@ fn reconcile_leaves_a_running_box_its_host_lists() {
 }
 
 #[test]
-fn reconcile_keeps_a_box_its_host_no_longer_lists() {
+fn reconcile_marks_gone_a_box_whose_host_answers_without_its_lease() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
@@ -106,7 +106,7 @@ fn reconcile_keeps_a_box_its_host_no_longer_lists() {
         .handle
         .unwrap();
     driver.forget(&handle);
-    assert_eq!(box_state(&cx), HandsState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Gone);
 }
 
 #[test]

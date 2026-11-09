@@ -1,11 +1,11 @@
 //! Tests for the reconcile decider.
 
-use super::{reconcile, stopped, BoxFact};
+use super::{reconcile, reconcile_answered, stopped, BoxFact};
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::decision::BoxTarget;
 use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
-use crate::seam::driver::BoxListing;
+use crate::seam::driver::{BoxListing, HandlesListing};
 
 fn fact(n: i64, state: HandsState, h: Option<&str>) -> BoxFact {
     BoxFact {
@@ -134,4 +134,53 @@ fn digit_bare_name_slug_does_not_keep_a_row_live() {
     let out = reconcile(&rows, &[l]);
     let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
     assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(42))]);
+}
+
+#[test]
+fn only_a_holder_that_answered_can_find_its_handle_missing() {
+    let rows = [
+        fact(1, HandsState::Ready, Some("h1/a")),
+        fact(2, HandsState::Ready, Some("h1/b")),
+        fact(3, HandsState::Ready, Some("h2/c")),
+    ];
+    let asked = HandlesListing {
+        answered: vec![BoxHandle::new("h1/a"), BoxHandle::new("h1/b")],
+        listed: vec![listed("h1/a", false)],
+        unanswered: vec!["h2 did not answer".to_owned()],
+    };
+    let out = reconcile_answered(&rows, &asked);
+    let gone: Vec<_> = out
+        .iter()
+        .map(|d| {
+            (
+                d.target.clone(),
+                d.input_to_hands().cloned(),
+                d.hands.as_ref().map(|w| w.inc),
+            )
+        })
+        .collect();
+    assert_eq!(
+        gone,
+        [(
+            BoxTarget::Existing(BoxId::new(2)),
+            Some(HandsInput::DriverMissing),
+            Some(HandsInc::new(3))
+        )]
+    );
+}
+
+#[test]
+fn an_answered_handle_listed_asleep_sleeps_and_is_not_gone() {
+    let rows = [
+        fact(1, HandsState::Ready, Some("h1/a")),
+        fact(2, HandsState::Asleep, Some("h1/b")),
+    ];
+    let asked = HandlesListing {
+        answered: vec![BoxHandle::new("h1/a"), BoxHandle::new("h1/b")],
+        listed: vec![listed("h1/a", true), listed("h1/b", true)],
+        unanswered: Vec::new(),
+    };
+    let out = reconcile_answered(&rows, &asked);
+    let inputs: Vec<_> = out.iter().map(|d| d.input_to_hands().cloned()).collect();
+    assert_eq!(inputs, [Some(HandsInput::Sleep)]);
 }

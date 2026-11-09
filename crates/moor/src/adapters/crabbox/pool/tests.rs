@@ -260,7 +260,7 @@ fn a_handle_without_a_well_formed_machine_and_slug_is_refused_unasked() {
 }
 
 #[test]
-fn a_host_lists_its_stopped_leases_asleep_and_leaves_unknown_ones_out() {
+fn a_host_lists_its_stopped_leases_asleep_and_answers_for_the_ones_it_lacks() {
     let (host, cb) = rig();
     let lease = |slug: &str, state: &str| Lease {
         slug: slug.to_owned(),
@@ -277,10 +277,12 @@ fn a_host_lists_its_stopped_leases_asleep_and_leaves_unknown_ones_out() {
     );
     let running = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9102");
     let unknown = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9103");
-    let listed = cb
-        .list_handles(&[handle(), running.clone(), unknown])
+    let asked = cb
+        .list_handles(&[handle(), running.clone(), unknown.clone()])
         .unwrap();
-    let got: Vec<_> = listed
+    assert_eq!(asked.answered, [handle(), running.clone(), unknown]);
+    let got: Vec<_> = asked
+        .listed
         .iter()
         .map(|l| (l.handle.clone(), l.asleep))
         .collect();
@@ -289,10 +291,15 @@ fn a_host_lists_its_stopped_leases_asleep_and_leaves_unknown_ones_out() {
 }
 
 #[test]
-fn an_unreachable_host_lists_none_of_its_leases() {
+fn an_unreachable_host_answers_for_none_of_its_leases() {
     let (host, cb) = rig();
     host.answer(Verb::List, Err("not linked".to_owned()));
-    assert!(cb.list_handles(&[handle()]).unwrap().is_empty());
+    let asked = cb.list_handles(&[handle()]).unwrap();
+    assert!(asked.answered.is_empty() && asked.listed.is_empty());
+    assert_eq!(
+        asked.unanswered,
+        ["pool host 42 did not list its leases: not linked"]
+    );
 }
 
 #[test]
@@ -428,6 +435,7 @@ fn a_class_the_host_refuses_fails_the_acquire_with_its_reason() {
 }
 
 mod fresh_login;
+mod listing;
 mod tunnel;
 
 #[test]

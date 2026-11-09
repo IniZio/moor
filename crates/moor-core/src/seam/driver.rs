@@ -25,7 +25,9 @@ pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
-pub use types::{AcquireReq, Acquired, BoxListing, PausePublish, Released, SleepOutcome};
+pub use types::{
+    AcquireReq, Acquired, BoxListing, HandlesListing, PausePublish, Released, SleepOutcome,
+};
 
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync {
@@ -109,12 +111,13 @@ pub trait Driver: Send + Sync {
     /// Returns a [`DriverError`] when the provider cannot be queried.
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError>;
 
-    /// Lists those of `handles` the Driver still knows, for a provider [`Driver::list`] cannot
-    /// inventory. A handle left out may simply be unknown, so it never counts as missing.
+    /// Asks the holder of each of `handles` which it still holds, for a provider [`Driver::list`]
+    /// cannot inventory. A holder that answers speaks only for its own handles; one that does not
+    /// answer in time leaves its handles unknown.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the Boxes cannot be queried.
-    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
         let _ = handles;
         Err(DriverError::Unsupported("the provider lists no handles"))
     }
