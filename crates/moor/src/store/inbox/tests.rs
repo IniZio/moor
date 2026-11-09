@@ -183,6 +183,9 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
     let live = launch(&store, id);
+    store.enqueue(id, InboxKind::Steer, "waiting", "u").unwrap();
+    let doubt = store.enqueue(id, InboxKind::Steer, "doubt", "u").unwrap();
+    store.mark_sending(id, doubt, live).unwrap();
     let mut sent = Vec::new();
     for text in ["one", "two"] {
         let row = store.enqueue(id, InboxKind::Steer, text, "u").unwrap();
@@ -190,13 +193,12 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
         store.confirm_sent(id, row, MARK, &steered(row)).unwrap();
         sent.push(row);
     }
-    let queued = store.enqueue(id, InboxKind::Steer, "three", "u").unwrap();
+    store.enqueue(id, InboxKind::Steer, "three", "u").unwrap();
     assert!(store
         .answer(id, *sent.last().unwrap(), TurnOutcome::Idle)
         .unwrap());
     let left: Vec<_> = store.sent(id).unwrap();
     assert!(left.is_empty(), "{left:?}");
-    assert_eq!(store.next_for(id).unwrap().unwrap().id, queued);
     let done = store
         .events(id, 100)
         .unwrap()
@@ -204,6 +206,11 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
         .filter(|e| e.kind == "turn_done")
         .count();
     assert_eq!(done, 1);
+    assert_eq!(
+        texts(&store.drop_all(id).unwrap()),
+        ["waiting:queued", "doubt:in_doubt", "three:queued"],
+        "rows not sent, older or newer, wait for their own send"
+    );
 }
 
 #[test]

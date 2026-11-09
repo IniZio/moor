@@ -24,7 +24,7 @@ impl InboxId {
     }
 }
 
-/// Who an inbox row is from.
+/// Who an inbox row is from, and whether it is a text or a key sent to answer the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InboxKind {
     /// A person steering the Box.
@@ -33,6 +33,10 @@ pub enum InboxKind {
     Prompt,
     /// moor telling the agent something.
     Note,
+    /// A menu entry picked, its number the row's text; it answers only the screen it was sent to.
+    Choice,
+    /// The agent's interrupt key; like a choice, it means something only when it is sent.
+    Interrupt,
 }
 
 impl InboxKind {
@@ -43,15 +47,23 @@ impl InboxKind {
             Self::Steer => "steer",
             Self::Prompt => "prompt",
             Self::Note => "note",
+            Self::Choice => "choice",
+            Self::Interrupt => "interrupt",
         }
     }
 
     /// The kind stored as `s`.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
-        [Self::Steer, Self::Prompt, Self::Note]
-            .into_iter()
-            .find(|k| k.as_str() == s)
+        [
+            Self::Steer,
+            Self::Prompt,
+            Self::Note,
+            Self::Choice,
+            Self::Interrupt,
+        ]
+        .into_iter()
+        .find(|k| k.as_str() == s)
     }
 }
 

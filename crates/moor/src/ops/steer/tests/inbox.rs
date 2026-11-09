@@ -4,13 +4,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use moor_core::activity::Probe;
-use moor_core::domain::inbox::Delivery;
+use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 
 use super::{blocked, fx_with, steered, text, Fx};
 use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
-use crate::ops::steer::run;
+use crate::ops::steer::{run, tell};
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
@@ -125,22 +125,50 @@ fn sends_a_gone_agent_refused_leave_no_row_and_a_later_steer_is_delivered() {
 }
 
 #[test]
-fn a_steer_refused_before_its_send_leaves_no_row() {
-    let f = fx_with(FakeEngine::new().probes("agent-1", blocked("Allow?")), true);
+fn a_steer_refused_after_a_refused_send_leaves_no_row() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", idle_after(0))
+        .steer_result(Err(EngineError::AgentGone))
+        .probes_after_steer("agent-1", blocked("Allow?"));
+    let f = fx_with(engine, true);
     run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(f.engine.steers().len(), 1, "the refused send made a row");
     assert_eq!(f.cx.store().unwrap().next_for(f.id).unwrap(), None);
 }
 
 #[test]
-fn a_text_sent_as_a_menu_choice_leaves_no_row() {
+fn a_text_that_becomes_a_menu_choice_leaves_only_the_choice() {
+    let asking = agent::asking("Which color?", &["red", "blue"], Ts::from_millis(0));
     let engine = FakeEngine::new()
-        .probes("agent-1", super::working())
-        .then_probes(
-            "agent-1",
-            agent::asking("Which color?", &["red", "blue"], Ts::from_millis(0)),
-        );
+        .probes("agent-1", idle_after(0))
+        .steer_result(Err(EngineError::AgentGone))
+        .probes_after_steer("agent-1", asking);
     let f = fx_with(engine, true);
     run(&f.cx, &text("blue")).unwrap();
-    assert_eq!(f.engine.steers(), [("agent-1".to_owned(), Steer::Menu(2))]);
-    assert_eq!(f.cx.store().unwrap().next_for(f.id).unwrap(), None);
+    let sends: Vec<_> = f.engine.steers().into_iter().map(|s| s.1).collect();
+    assert_eq!(sends, [Steer::Text("blue".to_owned()), Steer::Menu(2)]);
+    let rows = f.cx.store().unwrap().sent(f.id).unwrap();
+    let rows: Vec<_> = rows.into_iter().map(|r| (r.kind, r.text)).collect();
+    assert_eq!(rows, [(InboxKind::Choice, "2".to_owned())]);
+    assert_eq!(
+        f.cx.store()
+            .unwrap()
+            .next_for(f.id)
+            .unwrap()
+            .map(|r| r.text),
+        Some("2".to_owned())
+    );
+}
+
+#[test]
+fn a_note_the_agent_refused_leaves_no_row() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", idle_after(0))
+        .steer_result(Err(EngineError::AgentGone));
+    let f = fx_with(engine, true);
+    let store = f.cx.store().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
+    tell(&f.cx, store, &row, "note".to_owned()).unwrap_err();
+    assert_eq!(f.engine.steers().len(), 1, "the refused send made a row");
+    assert_eq!(store.next_for(f.id).unwrap(), None);
 }

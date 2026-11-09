@@ -1,16 +1,15 @@
 //! `steer`: send a message or a menu choice to the Box's agent.
 //!
 //! The steer holds its Box's turn, which a run in flight leaves free, so a Box can be steered
-//! during a run. A text waits in the Box's inbox from just before its send until the turn it
-//! starts ends; a menu choice, an interrupt and `/exit` are sent without it, since they mean
-//! something only against the screen they answer.
+//! during a run. Each steer waits in the Box's inbox from just before its send until the turn
+//! it starts ends.
 
 use std::time::Duration;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::inbox::InboxKind;
+use moor_core::domain::inbox::{InboxId, InboxKind};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
@@ -228,7 +227,7 @@ fn attempt(
         Steer::Menu(n) => n.to_string(),
         Steer::Interrupt => "(interrupt)".to_owned(),
     };
-    let (outcome, inbox) = slot.send(cx, store, (id, name), (&sref, &session), &steer)?;
+    let (outcome, inbox) = slot.send(cx, store, (id, name), (&sref, &session), (&steer, &sent))?;
     let Some(outcome) = outcome else {
         let code = match before {
             Some(AgentState::Exited { code }) => code,
@@ -239,7 +238,7 @@ fn attempt(
             return Ok(Attempt::Gone(gone));
         }
         gone.finish(cx, store, id)?;
-        return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
+        return exited(cx, store, (id, name), &session, (sent, inbox)).map(Attempt::Sent);
     };
     let starts_turn = !(matches!(steer, Steer::Interrupt) && idle(reading.term.as_ref()));
     let mark = Mark {
@@ -266,9 +265,9 @@ fn exited(
     store: &Store,
     (id, name): (BoxId, &str),
     session: &SessionRow,
-    sent: String,
+    (sent, inbox): (String, InboxId),
 ) -> Result<SteerValue, CommandError> {
-    let steer = record(store, id, session, &sent, Mark::default(), None)?;
+    let steer = record(store, id, session, &sent, Mark::default(), inbox)?;
     cx.warn(Warning {
         code: "agent_exited".to_owned(),
         message: "the agent exited and its session ended".to_owned(),

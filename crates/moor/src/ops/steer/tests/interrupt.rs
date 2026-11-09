@@ -6,6 +6,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::ErrorKind;
 
+use super::turns::{answered, turns_done};
 use super::{blocked, fx_with, interrupt, live, steered, working};
 use crate::ops::steer::run;
 use crate::testing::agent;
@@ -76,14 +77,15 @@ fn an_interrupt_to_an_idle_agent_leaves_its_session_idle() {
     store
         .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
-    run(&f.cx, &interrupt()).unwrap();
+    let v = run(&f.cx, &interrupt()).unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
     let reading = read(&f.cx, store, &row, f.cx.clock().now(), PROBE_DEADLINE).unwrap();
     settle(&f.cx, store, &row, &reading).unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
     assert!(row.session.is_quiet(), "no turn ran, so none is left open");
-    assert!(
-        store.sent(f.id).unwrap().is_empty(),
+    assert_eq!(
+        turns_done(&f),
+        [answered(&f, v.steer, "idle")],
         "the interrupt is answered at the next read"
     );
 }
@@ -94,15 +96,16 @@ fn an_interrupt_that_leaves_a_blocked_agent_idle_ends_its_turn() {
 
     let asking = agent::at_turn(agent::permission("Allow?", Ts::from_millis(1_000)), 5);
     let f = fx_with(FakeEngine::new().probes("agent-1", asking), true);
-    run(&f.cx, &interrupt()).unwrap();
+    let v = run(&f.cx, &interrupt()).unwrap();
     let after = agent::at_turn(agent::idle(Ts::from_millis(2_000)), 5);
     f.engine.set_probes("agent-1", after);
     let store = f.cx.store().unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
     let reading = read(&f.cx, store, &row, f.cx.clock().now(), PROBE_DEADLINE).unwrap();
     settle(&f.cx, store, &row, &reading).unwrap();
-    assert!(
-        store.sent(f.id).unwrap().is_empty(),
+    assert_eq!(
+        turns_done(&f),
+        [answered(&f, v.steer, "idle")],
         "the idle status hc set after the interrupt ends the turn"
     );
     let row = store.box_row(f.id).unwrap().unwrap();
