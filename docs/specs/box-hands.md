@@ -11,8 +11,8 @@ separates them in the data model first, then builds on that.
 
 ```
 Box   key = (user, repo, n) or (front, conversation, n)
- ├─ spec          set once: repo, base, brief, user
- ├─ state         phase, wanted action, in-flight effects
+ ├─ spec          set once: repo, base, user, base config text
+ ├─ state         phase, prompt, wanted action, in-flight effects
  ├─ inbox         steers, delivered at least once
  ├─ hands[inc]    provider, node, handle, observed state, workdir, config text
  └─ sessions[n]   agent_session_id, run, status
@@ -25,8 +25,10 @@ Node      capacity
   for an old incarnation cannot touch the new one.
 - **Observed state.** A hands row holds the VM state moor last saw, with its
   time. While a node is away, sleep and pressure are decided from that record.
-- **Config text.** A hands row holds the `.moor.yaml` it was built from. The
-  Box's spec never changes, so a rebuilt Box is new hands under the same spec.
+- **Config text.** The spec holds the `.moor.yaml` the Box started from, since
+  preflight and admission read it before any hands exist. From step 8 a hands
+  row also holds the text it was built from, so a rebuild is new hands under
+  the same spec.
 - **Run.** Each agent launch bumps the session's run. A stale wake, relaunch,
   settle or delivery carries an old run and is dropped.
 - **Wanted action.** Close, suspend and sleep are recorded as data with a fixed
@@ -69,7 +71,7 @@ Node      capacity
 | Split `boxes` into spec, state and hands | A VM's lifecycle stops being the Box's lifecycle. One state machine per concern. |
 | Hands rows carry an incarnation | A late write for a dead VM cannot land on its replacement. |
 | A hands row records observed VM state with its time | moor decides while a node is away. A live read of the provider answers nothing then. |
-| A hands row holds its config text, the spec does not | A rebuild from a changed `.moor.yaml` is new hands, not a new Box. |
+| From step 8 a hands row holds its config text | A rebuild from a changed `.moor.yaml` is new hands, not a new Box. |
 | Sessions carry a run number | Stale agent work is dropped by number. Re-check guards can go. |
 | Wanted action is a field with precedence | Racing close, suspend and sleep resolve the same way every time. |
 | In-flight effects live in state, events are audit only | A decision never depends on scanning history. |
@@ -87,12 +89,16 @@ Each step ends in a run on a real Box.
 0. **Split the row.** New spec, state and hands tables. `driver_state` moves to
    hands as observed state, and `boxes::BoxState` goes. Proof. A Box starts,
    sleeps, wakes and closes on a real node with each concern in its own row.
+   The prompt moves to state, because later starts replace it.
 1. **Box owner.** One owner per Box in the controller holds its rows. Start,
    settle, wake, sleep, pressure, proxy and steer send it commands and await
    the result. The host flock and `intent_pid` go. Proof. Close, steer and
    suspend fired at one Box at once all apply in order, and a controller restart
    resumes the owner from the rows.
-2. **Incarnation and portable session.** A new VM is a new hands row. The
+2. **Incarnation and portable session.** A new VM is a new hands row, and
+   re-acquire inserts one instead of stepping the old row. The tables that hold
+   VM facts per Box (`proxy`, `machine_boxes`, `machine_box_memory`,
+   `box_machines`, `setup_checkpoint_pins`) key by incarnation too. The
    session's `~/.claude/projects` is archived with each transcript save and
    restored into new hands before `--resume`. The save runs after each turn, so
    a VM lost mid-turn loses at most that turn. Proof. Kill a Box's VM
