@@ -1,7 +1,7 @@
 //! A Box's hands, the VM it runs on: its `box_hands` row with the highest `inc`.
 
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::{HandsInc, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::shape::Shape;
 use moor_core::{BoxHandle, BoxId, ProviderId};
@@ -10,8 +10,15 @@ use sea_query::{Expr, ExprTrait as _, InsertStatement, Query, SelectStatement, U
 
 use super::init::parsed_opt;
 use super::select::hands_at;
-use super::{to_u32, HandsRow, StoreError};
+use super::{to_u32, BoxRow, HandsRow, StoreError};
 use crate::store::db::{self, Row};
+
+impl BoxRow {
+    /// The hands an acquire for this Box writes: new ones after hands that failed or were lost.
+    pub(crate) fn acquire_inc(&self) -> HandsInc {
+        HandsInc::acquiring(self.hands.as_ref().map(|h| (h.inc, h.state)))
+    }
+}
 
 /// The highest `inc` among the hands of the Box `of` names.
 fn current_inc(of: Expr) -> SelectStatement {
@@ -46,14 +53,22 @@ pub(super) fn update_hands(id: BoxId, inc: HandsInc) -> UpdateStatement {
         .take()
 }
 
-/// Refuses `d` when it writes hands other than the current ones of Box `id`: they were replaced
-/// after the op read them, so its write is about a machine the Box no longer has.
-pub(super) fn fence(id: BoxId, current: Option<&HandsRow>, d: &Decision) -> Result<(), StoreError> {
+/// The hands of Box `id` that `d` writes. Those are its `current` ones, or new ones a `Requested`
+/// after current hands that ended creates. Any other write is refused: the hands it names were
+/// replaced after the op read them, so it is about a machine the Box no longer has.
+pub(super) fn fence(
+    id: BoxId,
+    current: Option<&HandsRow>,
+    d: &Decision,
+) -> Result<HandsInc, StoreError> {
+    let held = current.map(|h| (h.inc, h.state));
+    let now = held.map_or(HandsInc::FIRST, |(inc, _)| inc);
     let Some(w) = &d.hands else {
-        return Ok(());
+        return Ok(now);
     };
-    if current.map_or(HandsInc::FIRST, |h| h.inc) == w.inc {
-        return Ok(());
+    let acquires = matches!(w.input, Some(HandsInput::Requested));
+    if w.inc == now || (acquires && w.inc == HandsInc::acquiring(held)) {
+        return Ok(w.inc);
     }
     Err(StoreError::Stale {
         box_id: id,
@@ -73,9 +88,9 @@ pub(super) const fn fenced(id: BoxId, inc: HandsInc, rows: usize) -> Result<(), 
     Ok(())
 }
 
-/// An INSERT of Box `id`'s first hands, in `state` on `provider`.
-pub(super) fn first_hands(
-    id: BoxId,
+/// An INSERT of Box `id`'s hands `inc`, in `state` on `provider`.
+pub(super) fn new_hands(
+    (id, inc): (BoxId, HandsInc),
     provider: &ProviderId,
     state: HandsState,
     now: Ts,
@@ -92,7 +107,7 @@ pub(super) fn first_hands(
         ])
         .values_panic([
             id.get().into(),
-            HandsInc::FIRST.get().into(),
+            inc.get().into(),
             provider.as_str().into(),
             state.as_str().into(),
             now.as_millis().into(),

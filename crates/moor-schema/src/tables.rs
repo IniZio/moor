@@ -52,7 +52,7 @@ tables! {
         ResumeFirstAt, UpdatedAt, ArchiveDue }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
-        CreatedAt }
+        CreatedAt, EndedAt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey, ArchiveKey, ArchiveInc,
         ArchiveAt }

@@ -2,7 +2,7 @@
 //! that disk, and the one start from scratch it gets when a line fails there.
 
 use moor_core::config::BoxSettings;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::layers::WarmDisk;
 use moor_core::{BoxId, Warning};
@@ -130,23 +130,17 @@ pub(super) fn cold_again(
     run: &SetupRun,
 ) -> Result<Provisioned, CommandError> {
     give_up_fork(cx, store, id, target, run)?;
+    let old = reread(store, id)?.hands_inc();
+    store.apply(Decision::new(id).hands_input(old, HandsInput::DriverMissing))?;
+    let inc = reread(store, id)?.acquire_inc();
+    let begin = Decision::new(id)
+        .hands_input(inc, HandsInput::Requested)
+        .intent(IntentChange::Set(Intent::Provisioning));
+    store.apply(begin)?;
     let row = reread(store, id)?;
     let req = layered.machine_req(cx, store, &row, cfg)?;
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
-    let inc = row.hands_inc();
-    store.apply(Decision::new(id).hands_input(inc, HandsInput::DriverMissing))?;
-    let begin = Decision::new(id)
-        .hands_input(inc, HandsInput::Requested)
-        .hands(
-            inc,
-            HandsFields {
-                handle: Field::Clear,
-                ..HandsFields::default()
-            },
-        )
-        .intent(IntentChange::Set(Intent::Provisioning));
-    store.apply(begin)?;
     let got = match acquire_timed(cx, store, id, &req) {
         Ok(got) => got,
         Err(e) => {

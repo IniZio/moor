@@ -138,7 +138,7 @@ fn a_relaunch_with_a_new_prompt_still_saves_though_a_session_is_stored() {
 }
 
 #[test]
-fn a_resuming_relaunch_on_a_recreated_box_still_saves() {
+fn a_relaunch_on_new_hands_saves_nothing_over_the_session() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
     let lost = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
@@ -146,6 +146,7 @@ fn a_resuming_relaunch_on_a_recreated_box_still_saves() {
     gone(&engine);
     let v = run(&w.cx, &asked(true)).unwrap();
     assert!(v.agent.launched);
-    assert_eq!(engine.transcripts().len(), 1);
-    assert_eq!(kinds(&w, id), ["transcript_saved"]);
+    assert!(engine.transcripts().is_empty());
+    assert_eq!(kinds(&w, id), ["transcript_skipped"]);
+    assert_eq!(first_digest(&w, id), None);
 }

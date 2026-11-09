@@ -31,6 +31,7 @@ impl FakeDriver {
         s.providers.push((id.clone(), req.provider.clone()));
         s.cache.plans.push(req.cache.clone());
         s.cache.nonces.push(req.nonce.clone());
+        s.cache.seats.push(req.pool_machine.clone());
         s.cache.classes.push(req.class.clone());
         if let Some(trees) = &s.trees {
             trees.acquired(&id)?;

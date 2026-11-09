@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use moor_core::box_key::PoolSeat;
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec, PausePublish};
@@ -60,6 +61,8 @@ pub(super) struct CacheState {
     pub(super) forks: Vec<CachePlan>,
     /// The nonce of every `acquire`, in call order.
     pub(super) nonces: Vec<String>,
+    /// The pool seat of every `acquire`, in call order.
+    pub(super) seats: Vec<Option<PoolSeat>>,
     /// The class of every `acquire` and `fork`, in call order.
     pub(super) classes: Vec<Option<String>>,
 }
@@ -198,6 +201,11 @@ impl FakeDriver {
     /// The nonce of every `acquire` so far, in call order.
     pub(crate) fn acquired_nonces(&self) -> Vec<String> {
         self.st().cache.nonces.clone()
+    }
+
+    /// The pool seat of every `acquire` so far, in call order.
+    pub(crate) fn acquired_seats(&self) -> Vec<Option<PoolSeat>> {
+        self.st().cache.seats.clone()
     }
 
     /// The class asked for by every `acquire` and `fork` so far, in call order.

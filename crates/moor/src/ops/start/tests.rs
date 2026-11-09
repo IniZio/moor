@@ -45,6 +45,7 @@ mod lease_handle;
 mod lost_machine;
 mod machine;
 mod named_node;
+mod new_hands;
 mod node_warm;
 mod others;
 mod parent;

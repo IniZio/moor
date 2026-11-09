@@ -91,17 +91,16 @@ impl World {
 
     /// Gives the Box a fresh machine, as a retry that moves it does.
     fn move_box(&self) -> BoxHandle {
-        for input in [HandsInput::DriverMissing, HandsInput::Requested] {
-            self.store
-                .apply(Decision::new(self.id).hands_input(HandsInc::FIRST, input))
-                .unwrap();
-        }
+        let lost = Decision::new(self.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
+        self.store.apply(lost).unwrap();
+        let again = Decision::new(self.id).hands_input(HandsInc::new(2), HandsInput::Requested);
+        self.store.apply(again).unwrap();
         let handle = acquire(&self.driver, self.id, "moved");
         let acquired = HandsInput::Acquired {
             handle: handle.clone(),
         };
         self.store
-            .apply(Decision::new(self.id).hands_input(HandsInc::FIRST, acquired))
+            .apply(Decision::new(self.id).hands_input(HandsInc::new(2), acquired))
             .unwrap();
         handle
     }
@@ -110,8 +109,14 @@ impl World {
         let d = Decision::new(self.id)
             .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End)
-            .hands_input(HandsInc::FIRST, HandsInput::Released);
+            .hands_input(self.inc(), HandsInput::Released);
         self.store.apply(d).unwrap();
+    }
+
+    /// The Box's current hands.
+    fn inc(&self) -> HandsInc {
+        let row = self.store.box_row(self.id).unwrap().unwrap();
+        row.hands_inc()
     }
 
     fn kinds(&self) -> Vec<String> {

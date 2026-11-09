@@ -112,7 +112,7 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     );
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
-        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands_input(HandsInc::new(2), HandsInput::Requested)
         .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(again).expect("again");
 }

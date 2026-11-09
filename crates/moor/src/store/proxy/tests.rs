@@ -241,9 +241,10 @@ fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
 /// Records Box `id` acquired as `handle`, as a start or a retry onto a fresh machine does.
 fn acquire(store: &Store, id: BoxId, handle: &str) {
     use moor_core::domain::hands::HandsInput;
+    let inc = store.box_row(id).unwrap().unwrap().hands_inc();
     store
         .apply(Decision::new(id).hands_input(
-            HandsInc::FIRST,
+            inc,
             HandsInput::Acquired {
                 handle: moor_core::BoxHandle::new(handle),
             },
@@ -256,11 +257,12 @@ fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
     use moor_core::domain::hands::HandsInput;
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
-    for input in [HandsInput::DriverMissing, HandsInput::Requested] {
-        store
-            .apply(Decision::new(id).hands_input(HandsInc::FIRST, input))
-            .unwrap();
-    }
+    store
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
+        .unwrap();
+    store
+        .apply(Decision::new(id).hands_input(HandsInc::new(2), HandsInput::Requested))
+        .unwrap();
     acquire(&store, id, "p/second");
     assert!(!store.egress_token_delivered(id, 1).unwrap());
 }

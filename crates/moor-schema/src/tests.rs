@@ -11,6 +11,7 @@ use crate::STEPS;
 
 mod box_hands;
 mod box_state;
+mod hands_ended;
 mod insertion_order;
 mod postgres;
 mod session_archive;
