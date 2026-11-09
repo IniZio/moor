@@ -1,5 +1,6 @@
 //! Whether a sleep lets the provider save the Box's caches, and what a close then says of them.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::driver::PausePublish;
 
 use super::*;
@@ -139,7 +140,9 @@ fn the_awake_cap_saves_nothing_and_keeps_no_clean_answer() {
     let (w, _) = agents_report(w, &[], &[b]);
     holds(&w, b, CLEAN);
     let store = w.cx.store().unwrap();
-    store.set_suspend_check(b, Some(OLD_CLEAN)).unwrap();
+    store
+        .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
+        .unwrap();
     w.cx.clock().sleep(std::time::Duration::from_mins(120));
     autosleep::run(&w.cx, store, b, autosleep::AgentRead::Plain);
     assert_eq!(lifecycle(&w, b), Asleep);
@@ -190,7 +193,9 @@ fn a_box_found_stopped_saved_nothing() {
     let b = started(&w, "b");
     idle(&w, b);
     let store = w.cx.store().unwrap();
-    store.set_pause_publish(b, PausePublish::Allowed).unwrap();
+    store
+        .set_pause_publish((b, HandsInc::FIRST), PausePublish::Allowed)
+        .unwrap();
     let row = store.box_row(b).unwrap().unwrap();
     w.driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
@@ -220,7 +225,9 @@ fn a_forced_close_of_a_box_the_provider_saved_reports_no_loss() {
 fn an_unwoken_close_of_a_box_denied_the_save_reports_the_loss() {
     let (w, _, b) = suspended_for_room();
     let store = w.cx.store().unwrap();
-    store.set_pause_publish(b, PausePublish::Denied).unwrap();
+    store
+        .set_pause_publish((b, HandsInc::FIRST), PausePublish::Denied)
+        .unwrap();
     close_box(&w, b, false).unwrap();
     assert_eq!(state(&w, b), Some(HandsState::Deleted));
     assert!(lost(&w, b));

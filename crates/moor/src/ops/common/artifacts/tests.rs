@@ -7,7 +7,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
@@ -66,8 +66,8 @@ fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -85,7 +85,7 @@ fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     id
 }

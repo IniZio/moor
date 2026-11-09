@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
@@ -66,7 +66,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
 
 fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
     let boxed = HandsRow {
-        inc: 1,
+        inc: HandsInc::FIRST,
         provider: ProviderId::new("p"),
         handle: Some(handle),
         state: HandsState::Ready,

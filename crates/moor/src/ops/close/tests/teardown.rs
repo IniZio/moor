@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::ErrorKind;
@@ -191,7 +191,7 @@ fn gone_box_skips_teardown() {
     let f = fx_yaml(FakeDriver::new(), YAML);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(exec_calls(&f), 0);
@@ -235,7 +235,7 @@ fn asleep_box_is_woken_probed_and_released() {
     let f = fx_woken_with("ahead=0 dirty=0", Some(YAML));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands_input(HandsInput::Sleep))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::Sleep))
         .unwrap();
     assert_eq!(box_state(&f), HandsState::Asleep);
     let v = run(&f.cx, &req(false)).unwrap();

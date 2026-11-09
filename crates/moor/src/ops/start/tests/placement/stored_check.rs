@@ -3,7 +3,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Closed, Pending, Ready};
 use moor_core::domain::decision::{Decision, Field, HandsFields};
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::{BoxPath, ErrorKind};
 
 use crate::ops::common::autosleep;
@@ -39,11 +39,14 @@ fn stored(w: &World, id: BoxId) -> Option<(u32, u32)> {
 fn guest_memory(w: &World, id: BoxId, mib: u64) {
     apply(
         w,
-        Decision::new(id).hands(HandsFields {
-            cpus: Field::Set(4),
-            mem_mib: Field::Set(i64::try_from(mib).unwrap()),
-            ..HandsFields::default()
-        }),
+        Decision::new(id).hands(
+            HandsInc::FIRST,
+            HandsFields {
+                cpus: Field::Set(4),
+                mem_mib: Field::Set(i64::try_from(mib).unwrap()),
+                ..HandsFields::default()
+            },
+        ),
     );
 }
 
@@ -96,7 +99,7 @@ fn a_working_box_is_not_asked_and_keeps_no_answer() {
     holds(&w, b, CLEAN);
     w.cx.store()
         .unwrap()
-        .set_suspend_check(b, Some(OLD_CLEAN))
+        .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
         .unwrap();
     let before = calls(&w, "exec");
     tick(&w, hv, BELOW_RESERVE, 0, 0);
@@ -140,7 +143,7 @@ fn an_idle_box_with_a_run_in_flight_is_not_asked_either() {
     let before = calls(&w, "exec");
     let store = w.cx.store().unwrap();
     let settled = autosleep::settled(&w.cx, store, &store.box_row(b).unwrap().unwrap()).unwrap();
-    crate::ops::common::suspend_check::record(&w.cx, store, b, settled.is_ok());
+    crate::ops::common::suspend_check::record(&w.cx, store, (b, HandsInc::FIRST), settled.is_ok());
     assert_eq!(stored(&w, b), None);
     assert_eq!(calls(&w, "exec"), before);
 }
@@ -164,7 +167,9 @@ fn a_check_that_cannot_answer_drops_any_older_answer_and_does_not_stop_the_suspe
     idle(&w, b);
     let (w, _) = agents_report(w, &[b], &[a]);
     let store = w.cx.store().unwrap();
-    store.set_suspend_check(b, Some(OLD_CLEAN)).unwrap();
+    store
+        .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
+        .unwrap();
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(lifecycle(&w, b), Asleep);
     assert_eq!(stored(&w, b), None);
@@ -179,7 +184,7 @@ fn critical_memory_suspends_without_asking_what_the_box_holds() {
     holds(&w, b, CLEAN);
     w.cx.store()
         .unwrap()
-        .set_suspend_check(b, Some(OLD_CLEAN))
+        .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
         .unwrap();
     let before = calls(&w, "exec");
     tick(&w, hv, 512, 0, 0);
@@ -208,7 +213,9 @@ fn a_box_found_stopped_keeps_no_answer_from_before_it_last_ran() {
     let (w, _hv) = live_world(32_768);
     let a = started(&w, "a");
     let store = w.cx.store().unwrap();
-    store.set_suspend_check(a, Some(OLD_CLEAN)).unwrap();
+    store
+        .set_suspend_check((a, HandsInc::FIRST), Some(OLD_CLEAN))
+        .unwrap();
     let row = store.box_row(a).unwrap().unwrap();
     w.driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
@@ -240,7 +247,7 @@ fn asleep_clean(w: &World) -> BoxId {
     put_to_sleep(w, a);
     w.cx.store()
         .unwrap()
-        .set_suspend_check(a, Some(OLD_CLEAN))
+        .set_suspend_check((a, HandsInc::FIRST), Some(OLD_CLEAN))
         .unwrap();
     a
 }

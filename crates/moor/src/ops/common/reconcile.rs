@@ -21,6 +21,7 @@ fn by_provider(
     for (box_id, b) in rows {
         let fact = BoxFact {
             box_id,
+            inc: b.inc,
             state: b.state,
             handle: b.handle,
         };
@@ -60,6 +61,7 @@ pub(crate) fn one(cx: &Cx, store: &Store, row: &BoxRow) {
     };
     let fact = BoxFact {
         box_id: row.id,
+        inc: b.inc,
         state: b.state,
         handle: b.handle.clone(),
     };
@@ -103,10 +105,12 @@ fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[Bo
 /// recorded. A Box that was quiet just sleeps; one mid-turn has work to carry on, so it queues to
 /// resume first, its Session as it was.
 fn apply(cx: &Cx, store: &Store, d: Decision) {
-    let (Some(HandsInput::Sleep), BoxTarget::Existing(id)) = (&d.hands_input, &d.target) else {
-        let _ = store.apply(d);
+    let sleep = d.input_to_hands() == Some(&HandsInput::Sleep);
+    let (Some(w), BoxTarget::Existing(id), true) = (&d.hands, &d.target, sleep) else {
+        noted(cx, store.apply(d));
         return;
     };
+    let at = (*id, w.inc);
     let id = *id;
     let Some(_turn) = cx.try_turn(id, Cmd::Reconcile) else {
         return;
@@ -117,23 +121,39 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
     if row.lifecycle != BoxLifecycle::Ready {
         return;
     }
-    let _ = store.set_suspend_check(id, None);
-    let _ = store.set_pause_publish(id, PausePublish::Denied);
+    let _ = store.set_suspend_check(at, None);
+    let _ = store.set_pause_publish(at, PausePublish::Denied);
     if row.session.is_quiet() {
-        let _ = store.apply(d);
+        noted(cx, store.apply(d));
         return;
     }
     let suspend = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Suspend {
             reason: STOPPED_REASON.to_owned(),
         })
-        .hands_input(HandsInput::Sleep)
+        .hands_input(at.1, HandsInput::Sleep)
         .set(Fields {
             state_reason: Field::Set(STOPPED_REASON.to_owned()),
             ..Fields::default()
         });
-    if store.apply(suspend).is_ok() {
+    if noted(cx, store.apply(suspend)) {
         let _ = store.set_resume_first(id, Some(now(cx)));
+    }
+}
+
+/// Whether a verdict was written. One about hands the Box has since replaced is dropped with a
+/// warning, never retried; any other failure lost a race with another command.
+fn noted<T>(cx: &Cx, applied: Result<T, StoreError>) -> bool {
+    match applied {
+        Ok(_) => true,
+        Err(e @ StoreError::Stale { .. }) => {
+            cx.warn(Warning {
+                code: "stale_hands_write".to_owned(),
+                message: e.to_string(),
+            });
+            false
+        }
+        Err(_) => false,
     }
 }
 

@@ -1,6 +1,7 @@
 //! A Box's hands, the VM it runs on: its `box_hands` row with the highest `inc`.
 
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::shape::Shape;
 use moor_core::{BoxHandle, BoxId, ProviderId};
@@ -34,13 +35,42 @@ pub(super) fn join_current(q: &mut SelectStatement) -> &mut SelectStatement {
     )
 }
 
-/// An UPDATE of the current hands of Box `id`; it changes nothing for a Box without hands.
-pub(super) fn update_current(id: BoxId) -> UpdateStatement {
+/// An UPDATE of the hands `inc` of Box `id`, while they are its current ones; it changes nothing
+/// once the Box has newer hands.
+pub(super) fn update_hands(id: BoxId, inc: HandsInc) -> UpdateStatement {
     Query::update()
         .table(BoxHands::Table)
         .and_where(Expr::col(BoxHands::Box).eq(id.get()))
+        .and_where(Expr::col(BoxHands::Inc).eq(inc.get()))
         .and_where(Expr::col(BoxHands::Inc).eq(db::sub(current_inc(Expr::val(id.get())))))
         .take()
+}
+
+/// Refuses `d` when it writes hands other than the current ones of Box `id`: they were replaced
+/// after the op read them, so its write is about a machine the Box no longer has.
+pub(super) fn fence(id: BoxId, current: Option<&HandsRow>, d: &Decision) -> Result<(), StoreError> {
+    let Some(w) = &d.hands else {
+        return Ok(());
+    };
+    if current.map_or(HandsInc::FIRST, |h| h.inc) == w.inc {
+        return Ok(());
+    }
+    Err(StoreError::Stale {
+        box_id: id,
+        read: w.inc,
+    })
+}
+
+/// What an [`update_hands`] that changed `rows` rows comes to: none changed means the hands `inc`
+/// are no longer the Box's current ones.
+pub(super) const fn fenced(id: BoxId, inc: HandsInc, rows: usize) -> Result<(), StoreError> {
+    if rows == 0 {
+        return Err(StoreError::Stale {
+            box_id: id,
+            read: inc,
+        });
+    }
+    Ok(())
 }
 
 /// An INSERT of Box `id`'s first hands, in `state` on `provider`.
@@ -62,7 +92,7 @@ pub(super) fn first_hands(
         ])
         .values_panic([
             id.get().into(),
-            1_i64.into(),
+            HandsInc::FIRST.get().into(),
             provider.as_str().into(),
             state.as_str().into(),
             now.as_millis().into(),
@@ -100,6 +130,7 @@ pub(super) fn hands_from_row(row: &Row<'_>) -> Result<Option<HandsRow>, StoreErr
     let Some(inc) = row.get::<_, Option<i64>>(const { hands_at(BoxHands::Inc) })? else {
         return Ok(None);
     };
+    let inc = HandsInc::new(inc);
     let provider: String = row.get(const { hands_at(BoxHands::Provider) })?;
     let state: String = row.get(const { hands_at(BoxHands::State) })?;
     let handle = |at| Ok::<_, StoreError>(row.get::<_, Option<String>>(at)?.map(BoxHandle::new));

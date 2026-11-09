@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::event::EVENT_KINDS;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::user::{Identity, UserId};
 use moor_core::{BoxHandle, BoxName, ProviderId, Secret};
@@ -136,13 +136,19 @@ fn a_box_without_matching_webhooks_queues_nothing_and_a_failed_apply_leaves_noth
     w.webhook(alice, &EVENT_KINDS);
     let illegal = insert("b")
         .requester(alice)
-        .hands_input(HandsInput::Acquired {
-            handle: BoxHandle::new("h"),
-        })
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: BoxHandle::new("h"),
+            },
+        )
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     assert!(w.store.apply(illegal).is_err());
     assert_eq!(w.store.webhook_deliveries().unwrap(), vec![]);
 }

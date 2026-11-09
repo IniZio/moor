@@ -14,7 +14,7 @@ use crate::name::{BoxId, BoxName, RunId};
 fn new_is_empty() {
     let d = Decision::new(BoxId::new(3));
     assert_eq!(d.target, BoxTarget::Existing(BoxId::new(3)));
-    assert!(d.lifecycle_input.is_none() && d.session_input.is_none() && d.hands_input.is_none());
+    assert!(d.lifecycle_input.is_none() && d.session_input.is_none() && d.hands.is_none());
     assert_eq!(d.set, Fields::default());
     assert_eq!(d.intent, IntentChange::Keep);
     assert!(d.events.is_empty());

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::request::EndSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -73,8 +73,8 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -92,14 +92,20 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: got.handle.clone(),
-        })
-        .hands(HandsFields {
-            handle: Field::Set(got.handle),
-            workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..HandsFields::default()
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: got.handle.clone(),
+            },
+        )
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                handle: Field::Set(got.handle),
+                workdir: Field::Set(got.workdir.as_str().to_owned()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     id
 }
@@ -230,7 +236,7 @@ fn an_asleep_box_wakes_before_the_session_ends() {
             auto: false,
             reason: None,
         })
-        .hands_input(HandsInput::Sleep);
+        .hands_input(HandsInc::FIRST, HandsInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &req()).unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();

@@ -2,7 +2,7 @@
 
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use crate::domain::decision::Decision;
-use crate::domain::hands::{HandsInput, HandsState};
+use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 use crate::response::Warning;
@@ -212,15 +212,19 @@ const fn releasable(s: HandsState) -> bool {
 /// A Box whose machine may still run keeps the Box open when it cannot be released;
 /// only a `ReleaseFailed` Box, already marked for manual release, does not hold the close back.
 #[must_use]
-pub fn release_outcome(box_id: BoxId, box_state: HandsState, r: ReleaseResult) -> ReleaseVerdict {
-    release_outcome_with_reason(box_id, box_state, r, None)
+pub fn release_outcome(
+    box_id: BoxId,
+    (inc, box_state): (HandsInc, HandsState),
+    r: ReleaseResult,
+) -> ReleaseVerdict {
+    release_outcome_with_reason(box_id, (inc, box_state), r, None)
 }
 
 /// [`release_outcome`] for a close that moor starts for `reason`.
 #[must_use]
 pub fn release_outcome_with_reason(
     box_id: BoxId,
-    box_state: HandsState,
+    (inc, box_state): (HandsInc, HandsState),
     r: ReleaseResult,
     reason: Option<String>,
 ) -> ReleaseVerdict {
@@ -229,7 +233,7 @@ pub fn release_outcome_with_reason(
         .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
-            decision: Some(close.hands_input(HandsInput::Released)),
+            decision: Some(close.hands_input(inc, HandsInput::Released)),
             warning: None,
             closes: true,
         },
@@ -242,7 +246,7 @@ pub fn release_outcome_with_reason(
                 }
             }
             _ => ReleaseVerdict {
-                decision: Some(failed_close(close, box_state)),
+                decision: Some(failed_close(close, inc, box_state)),
                 warning: Some(release_warning()),
                 closes: true,
             },
@@ -251,13 +255,16 @@ pub fn release_outcome_with_reason(
 }
 
 /// Records `ReleaseFailed` unless the Box is already there.
-fn failed_close(close: Decision, from: HandsState) -> Decision {
+fn failed_close(close: Decision, inc: HandsInc, from: HandsState) -> Decision {
     if from == HandsState::ReleaseFailed {
         return close;
     }
-    close.hands_input(HandsInput::ReleaseErr {
-        cause: "the Driver could not release the Box".to_owned(),
-    })
+    close.hands_input(
+        inc,
+        HandsInput::ReleaseErr {
+            cause: "the Driver could not release the Box".to_owned(),
+        },
+    )
 }
 
 /// The caller-facing notice for an unreleased Box.

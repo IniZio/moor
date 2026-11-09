@@ -3,6 +3,30 @@
 use super::Illegal;
 use crate::name::BoxHandle;
 
+/// Which acquire of a Box's hands a row records; a later acquire has a higher one.
+///
+/// A write names the incarnation it was decided against, and the store refuses it once the Box's
+/// current hands are another, so a late write about a lost VM never lands on its replacement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HandsInc(i64);
+
+impl HandsInc {
+    /// A Box's first hands.
+    pub const FIRST: Self = Self(1);
+
+    /// The incarnation stored as `inc`.
+    #[must_use]
+    pub const fn new(inc: i64) -> Self {
+        Self(inc)
+    }
+
+    /// The stored `inc`.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
 /// Lifecycle state of a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -222,7 +222,7 @@ fn woken(
         }
     }
     if box_asleep {
-        d = d.hands_input(HandsInput::Wake);
+        d = d.hands_input(row.hands_inc(), HandsInput::Wake);
     }
     d.set(Fields {
         state_reason: if row.lifecycle == BoxLifecycle::Pending {
@@ -232,10 +232,13 @@ fn woken(
         },
         ..Fields::default()
     })
-    .hands(HandsFields {
-        workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
-        ..HandsFields::default()
-    })
+    .hands(
+        row.hands_inc(),
+        HandsFields {
+            workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
+            ..HandsFields::default()
+        },
+    )
 }
 
 /// Waits for the guest of `row`'s resumed machine; see [`guest::await_guest`].

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, HandsFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, StartReq};
@@ -110,7 +110,7 @@ fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
 fn free_box(w: &World, id: BoxId) {
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
 }
 
@@ -122,7 +122,7 @@ fn move_box_to(w: &World, id: BoxId, provider: &str) {
     };
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands(set))
+        .apply(Decision::new(id).hands(HandsInc::FIRST, set))
         .unwrap();
     w.cx.store()
         .unwrap()
@@ -252,7 +252,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
             Decision::new(holder)
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .hands_input(HandsInput::Released),
+                .hands_input(HandsInc::FIRST, HandsInput::Released),
         )
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
@@ -305,7 +305,7 @@ fn asleep_box_still_counts_toward_the_limit() {
     let (w, holder) = with_live_box(box_limit(1));
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(holder).hands_input(HandsInput::Sleep))
+        .apply(Decision::new(holder).hands_input(HandsInc::FIRST, HandsInput::Sleep))
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);

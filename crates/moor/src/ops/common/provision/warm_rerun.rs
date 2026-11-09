@@ -134,24 +134,28 @@ pub(super) fn cold_again(
     let req = layered.machine_req(cx, store, &row, cfg)?;
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
-    store.apply(Decision::new(id).hands_input(HandsInput::DriverMissing))?;
+    let inc = row.hands_inc();
+    store.apply(Decision::new(id).hands_input(inc, HandsInput::DriverMissing))?;
     let begin = Decision::new(id)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            handle: Field::Clear,
-            ..HandsFields::default()
-        })
+        .hands_input(inc, HandsInput::Requested)
+        .hands(
+            inc,
+            HandsFields {
+                handle: Field::Clear,
+                ..HandsFields::default()
+            },
+        )
         .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(begin)?;
     let got = match acquire_timed(cx, store, id, &req) {
         Ok(got) => got,
         Err(e) => {
             let entry = if advance { Entry::Retry } else { Entry::Stay };
-            return Err(failed(cx, store, id, entry, &req, e));
+            return Err(failed(cx, store, (id, inc), entry, &req, e));
         }
     };
     hold_root(store, id, root, &planned, &got)?;
-    record_acquired(store, id, &got, None)?;
+    record_acquired(store, (id, inc), &got, None)?;
     hold_workdir(store, id, &got)?;
     let mut fresh = layers::plan(cx, store, &row, target.provider, cfg, layered.cache());
     if let Some(fresh) = fresh.as_mut() {
@@ -164,7 +168,7 @@ pub(super) fn cold_again(
         target.log_dir,
         fresh.as_ref(),
     );
-    let done = run_and_record(cx, store, id, advance, &next, cfg)?;
+    let done = run_and_record(cx, store, (id, inc), advance, &next, cfg)?;
     // Only a pass here shows the old disk was the cause; a line that fails here too is the commit's
     // fault, and the chain serves the commit that fixes it.
     if done.failed_step().is_none() {

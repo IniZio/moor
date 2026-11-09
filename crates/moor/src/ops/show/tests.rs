@@ -10,7 +10,7 @@ use std::time::Duration;
 use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
@@ -95,14 +95,14 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let acquired = HandsInput::Acquired {
         handle: got.handle.clone(),
     };
     store
-        .apply(Decision::new(id).hands_input(acquired))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, acquired))
         .unwrap();
     got.handle
 }
@@ -266,22 +266,28 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle })
-        .hands(HandsFields {
-            workdir: Field::Set("/work".into()),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle })
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Set("/work".into()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     if let Some(s) = session {
         store.begin_session(id, s).unwrap();

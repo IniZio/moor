@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::decision::Decision;
-use crate::domain::hands::{HandsInput, HandsState};
+use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::BoxListing;
 
@@ -13,6 +13,8 @@ use crate::seam::driver::BoxListing;
 pub struct BoxFact {
     /// The owning box.
     pub box_id: BoxId,
+    /// Which hands the row was; a verdict on them is refused once the Box has newer ones.
+    pub inc: HandsInc,
     /// The Box state.
     pub state: HandsState,
     /// The stored Driver handle, if any.
@@ -36,7 +38,7 @@ pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
     rows.iter()
         .filter(|r| matches!(r.state, HandsState::Ready | HandsState::Asleep))
         .filter(|r| r.handle.as_ref().is_some_and(|h| !listed.contains(h)))
-        .map(|r| Decision::new(r.box_id).hands_input(HandsInput::DriverMissing))
+        .map(|r| Decision::new(r.box_id).hands_input(r.inc, HandsInput::DriverMissing))
         .chain(stopped(rows, listing))
         .collect()
 }
@@ -59,7 +61,7 @@ pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
                     auto: true,
                     reason: Some(STOPPED_REASON.to_owned()),
                 })
-                .hands_input(HandsInput::Sleep)
+                .hands_input(r.inc, HandsInput::Sleep)
         })
         .collect()
 }

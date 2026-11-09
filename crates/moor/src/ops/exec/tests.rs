@@ -9,7 +9,7 @@ use serde_json::json;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 
 use crate::cx::owners::Cmd;
 use crate::ops::run_fixture::{ready_with, Fx};
@@ -174,7 +174,7 @@ fn asleep_with_check(f: &Fx) {
         .apply(
             Decision::new(f.id)
                 .lifecycle(BoxLifecycleInput::sleep(false))
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
     let check = SuspendCheck {
@@ -182,7 +182,9 @@ fn asleep_with_check(f: &Fx) {
         dirty: 0,
         at: 1,
     };
-    store.set_suspend_check(f.id, Some(check)).unwrap();
+    store
+        .set_suspend_check((f.id, HandsInc::FIRST), Some(check))
+        .unwrap();
 }
 
 #[test]

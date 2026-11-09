@@ -1,5 +1,6 @@
 //! Tests for the environment and working directory `run` gives the command.
 
+use moor_core::domain::hands::HandsInc;
 use std::sync::Arc;
 
 use moor_core::boxscript::shell_argv;
@@ -30,10 +31,13 @@ fn run_gets_the_repo_env_and_proxy_variables() {
 #[test]
 fn box_without_a_recorded_workdir_runs_in_the_default_directory() {
     let f = ready();
-    let unrecorded = Decision::new(f.id).hands(HandsFields {
-        workdir: Field::Set(String::new()),
-        ..HandsFields::default()
-    });
+    let unrecorded = Decision::new(f.id).hands(
+        HandsInc::FIRST,
+        HandsFields {
+            workdir: Field::Set(String::new()),
+            ..HandsFields::default()
+        },
+    );
     f.cx.store().unwrap().apply(unrecorded).unwrap();
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert!(v.ran);

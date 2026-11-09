@@ -8,7 +8,7 @@ use std::time::Duration;
 use db::{Conn, DbExt as _, Reader, Readers, Row};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{BoxRepo, Intent};
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::{Clock, Ts};
@@ -90,7 +90,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HandsRow {
     /// Which of the Box's hands this is; a later one has a higher `inc`.
-    pub(crate) inc: i64,
+    pub(crate) inc: HandsInc,
     /// Driver provider id.
     pub(crate) provider: ProviderId,
     /// Driver handle once acquired.
@@ -159,6 +159,12 @@ pub(crate) struct BoxRow {
 }
 
 impl BoxRow {
+    /// The hands this row read, which a write decided from it names; a Box without hands gets
+    /// its first.
+    pub(crate) fn hands_inc(&self) -> HandsInc {
+        self.hands.as_ref().map_or(HandsInc::FIRST, |h| h.inc)
+    }
+
     /// Whether the Box or its machine is asleep.
     pub(crate) fn asleep(&self) -> bool {
         self.lifecycle == BoxLifecycle::Asleep

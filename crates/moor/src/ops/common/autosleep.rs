@@ -125,28 +125,32 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
         }
     }
     let parked = sleep_parked(cx, store, &row, &handle, settled)?;
-    let decision = match parked.outcome {
-        SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
+    let decision = recorded(&row, parked);
+    match store.apply(decision) {
+        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// What records the sleep of `row` that `parked` came to.
+fn recorded(row: &BoxRow, parked: Parked) -> Decision {
+    let inc = row.hands_inc();
+    let refusal = |sleep_reason| HandsFields {
+        sleep_reason,
+        ..HandsFields::default()
+    };
+    match parked.outcome {
+        SleepOutcome::Slept | SleepOutcome::Native => Decision::new(row.id)
             .cache_save(parked.cache_save)
             .lifecycle(BoxLifecycleInput::Sleep {
                 auto: true,
                 reason: None,
             })
-            .hands_input(HandsInput::Sleep)
-            .hands(HandsFields {
-                sleep_reason: Field::Clear,
-                ..HandsFields::default()
-            }),
-        SleepOutcome::CannotSleep(reason) => Decision::new(id)
-            .hands(HandsFields {
-                sleep_reason: Field::Set(reason.clone()),
-                ..HandsFields::default()
-            })
+            .hands_input(inc, HandsInput::Sleep)
+            .hands(inc, refusal(Field::Clear)),
+        SleepOutcome::CannotSleep(reason) => Decision::new(row.id)
+            .hands(inc, refusal(Field::Set(reason.clone())))
             .event(ExtraEvent::StaysUp { reason }),
-    };
-    match store.apply(decision) {
-        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
-        Err(e) => Err(e.into()),
     }
 }
 
@@ -180,9 +184,9 @@ pub(crate) fn sleep_parked(
     } else {
         PausePublish::Denied
     };
-    store.set_pause_publish(id, publish)?;
+    store.set_pause_publish((id, row.hands_inc()), publish)?;
     // Parking takes the Proxy away, and the check runs in the Box.
-    suspend_check::record(cx, store, id, settled.is_ok());
+    suspend_check::record(cx, store, (id, row.hands_inc()), settled.is_ok());
     park_tunnel(cx, id)?;
     let slept = cx.driver().sleep(handle, publish);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
+use moor_core::domain::hands::HandsInc;
 use moor_core::name::{BoxId, NodeName};
 use moor_core::seam::driver::PausePublish;
 
@@ -10,7 +11,7 @@ use moor_schema::tables::{BoxHands, BoxState, NodePressure};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
-use crate::store::hands::{select_current, update_current};
+use crate::store::hands::{fenced, select_current, update_hands};
 use crate::store::select::state_update;
 use crate::store::{Store, StoreError};
 
@@ -148,19 +149,20 @@ impl Store {
         Ok(held.flatten())
     }
 
-    /// Stores what Box `id` holds, or that nothing is known of it.
+    /// Stores what Box `id` holds on its hands `inc`, or that nothing is known of it; refused once
+    /// those hands are replaced.
     pub(crate) fn set_suspend_check(
         &self,
-        id: BoxId,
+        (id, inc): (BoxId, HandsInc),
         check: Option<SuspendCheck>,
     ) -> Result<(), StoreError> {
-        self.writer().run(
-            update_current(id)
+        let written = self.writer().run(
+            update_hands(id, inc)
                 .value(BoxHands::SuspendAhead, check.map(|c| i64::from(c.ahead)))
                 .value(BoxHands::SuspendDirty, check.map(|c| i64::from(c.dirty)))
                 .value(BoxHands::SuspendCheckedAt, check.map(|c| c.at)),
         )?;
-        Ok(())
+        fenced(id, inc, written)
     }
 
     /// What was stored of Box `id` before it was suspended; none when no answer stands.
@@ -189,16 +191,18 @@ impl Store {
         })
     }
 
-    /// Stores whether the suspend of Box `id` may save its caches.
+    /// Stores whether the suspend of Box `id` on its hands `inc` may save its caches; refused once
+    /// those hands are replaced.
     pub(crate) fn set_pause_publish(
         &self,
-        id: BoxId,
+        (id, inc): (BoxId, HandsInc),
         publish: PausePublish,
     ) -> Result<(), StoreError> {
         let allowed = (publish == PausePublish::Allowed).then_some(1_i64);
-        self.writer()
-            .run(update_current(id).value(BoxHands::SuspendPublish, allowed))?;
-        Ok(())
+        let written = self
+            .writer()
+            .run(update_hands(id, inc).value(BoxHands::SuspendPublish, allowed))?;
+        fenced(id, inc, written)
     }
 
     /// Whether the last suspend of Box `id` may have saved its caches; found stopped, it did not.

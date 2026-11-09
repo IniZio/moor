@@ -7,7 +7,7 @@ use moor_core::config::{EnrolledMachine, NodeConfig};
 use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::name::NodeName;
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
@@ -37,11 +37,14 @@ fn hold(store: &Store, name: &str, node: &str, provider: &str) {
     let id = new_box(store, name);
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new(provider)),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new(provider)),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     on_node(store, id, node);
 }
@@ -148,11 +151,14 @@ fn ready_for(store: &Store, name: &str, node: &str, user: UserId) -> BoxId {
         .box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(admit).unwrap();
     let ready = Decision::new(id).lifecycle(BoxLifecycleInput::Ready {
         setup: SetupOutcome::Ok,

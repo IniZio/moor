@@ -4,7 +4,7 @@ mod extra;
 
 use super::box_state::BoxLifecycleInput;
 use super::cache_save::CacheSave;
-use super::hands::HandsInput;
+use super::hands::{HandsInc, HandsInput};
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use crate::name::{ForgeRepo, GitAuthor};
@@ -58,6 +58,18 @@ pub struct HandsFields {
     pub egress: Field<String>,
     /// Why the machine cannot sleep, as last reported by the driver.
     pub sleep_reason: Field<String>,
+}
+
+/// A write to one incarnation of a Box's hands: the store applies it only while those hands are
+/// still the Box's current ones.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandsWrite {
+    /// The hands the deciding op read.
+    pub inc: HandsInc,
+    /// The state machine input.
+    pub input: Option<HandsInput>,
+    /// Column changes.
+    pub fields: HandsFields,
 }
 
 /// What a Box is started with. Only a [`NewBox`] carries these, so no later write changes them:
@@ -187,12 +199,10 @@ pub struct Decision {
     pub lifecycle_input: Option<BoxLifecycleInput>,
     /// Primary Session input.
     pub session_input: Option<SessionInput>,
-    /// Machine state input.
-    pub hands_input: Option<HandsInput>,
     /// State column changes.
     pub set: Fields,
-    /// Machine column changes.
-    pub hands: HandsFields,
+    /// What this decision writes to the Box's hands, and which hands it read.
+    pub hands: Option<HandsWrite>,
     /// Intent change.
     pub intent: IntentChange,
     /// Caller-supplied events appended after the derived ones. Derived state
@@ -229,9 +239,8 @@ impl Decision {
             target,
             lifecycle_input: None,
             session_input: None,
-            hands_input: None,
             set: Fields::default(),
-            hands: HandsFields::default(),
+            hands: None,
             intent: IntentChange::Keep,
             events: Vec::new(),
             parent_session: None,
@@ -270,10 +279,10 @@ impl Decision {
         self
     }
 
-    /// Sets the machine input.
+    /// Sets the input to the hands `inc`, the ones this decision was made from.
     #[must_use]
-    pub fn hands_input(mut self, i: HandsInput) -> Self {
-        self.hands_input = Some(i);
+    pub fn hands_input(mut self, inc: HandsInc, i: HandsInput) -> Self {
+        self.hands_at(inc).input = Some(i);
         self
     }
 
@@ -284,11 +293,28 @@ impl Decision {
         self
     }
 
-    /// Sets the machine column changes.
+    /// Sets the column changes to the hands `inc`, the ones this decision was made from.
     #[must_use]
-    pub fn hands(mut self, f: HandsFields) -> Self {
-        self.hands = f;
+    pub fn hands(mut self, inc: HandsInc, f: HandsFields) -> Self {
+        self.hands_at(inc).fields = f;
         self
+    }
+
+    /// The write to the hands `inc`; a decision reads one Box's hands once, so it names one.
+    fn hands_at(&mut self, inc: HandsInc) -> &mut HandsWrite {
+        let w = self.hands.get_or_insert_with(|| HandsWrite {
+            inc,
+            input: None,
+            fields: HandsFields::default(),
+        });
+        debug_assert_eq!(w.inc, inc, "one decision names two hands");
+        w
+    }
+
+    /// The input to the Box's hands, if any.
+    #[must_use]
+    pub fn input_to_hands(&self) -> Option<&HandsInput> {
+        self.hands.as_ref().and_then(|w| w.input.as_ref())
     }
 
     /// Sets the intent change.

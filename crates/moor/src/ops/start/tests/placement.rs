@@ -6,6 +6,7 @@ use crate::ops::{close, nodes, start};
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use moor_core::config::{parse_user, EnrolledMachine};
+use moor_core::domain::hands::HandsInc;
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
 use moor_core::view::StartView;
@@ -153,8 +154,10 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
     let store = w.cx.store().unwrap();
     store
         .apply(
-            moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id))
-                .hands_input(moor_core::domain::hands::HandsInput::DriverMissing),
+            moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id)).hands_input(
+                HandsInc::FIRST,
+                moor_core::domain::hands::HandsInput::DriverMissing,
+            ),
         )
         .unwrap();
     assert!(store
@@ -378,7 +381,7 @@ fn put_to_sleep(w: &World, id: BoxId) {
                 auto: false,
                 reason: None,
             })
-            .hands_input(moor_core::domain::hands::HandsInput::Sleep),
+            .hands_input(HandsInc::FIRST, moor_core::domain::hands::HandsInput::Sleep),
     );
 }
 

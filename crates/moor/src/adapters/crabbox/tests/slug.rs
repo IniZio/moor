@@ -2,7 +2,7 @@
 
 use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::domain::decision::BoxTarget;
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::name::{BoxHandle, BoxId, BoxName, ProviderId};
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Tool;
@@ -59,11 +59,13 @@ fn slash_named_box_stays_live_through_list_and_reconcile() {
     let rows = [
         BoxFact {
             box_id: BoxId::new(7),
+            inc: HandsInc::FIRST,
             state: HandsState::Ready,
             handle: Some(handle),
         },
         BoxFact {
             box_id: BoxId::new(8),
+            inc: HandsInc::FIRST,
             state: HandsState::Ready,
             handle: Some(BoxHandle::new("sprites/moor-8-ab12cd")),
         },

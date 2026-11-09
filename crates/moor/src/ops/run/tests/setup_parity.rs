@@ -4,6 +4,7 @@ use moor_core::boxscript::record::HEAD_FILE;
 use moor_core::boxscript::shell_argv;
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, HandsFields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::{BoxHandle, BoxPath};
 
@@ -86,10 +87,13 @@ fn box_without_a_recorded_workdir_keeps_the_driver_default_cwd() {
     let f = ready();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands(HandsFields {
-            workdir: Field::Clear,
-            ..HandsFields::default()
-        }))
+        .apply(Decision::new(f.id).hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Clear,
+                ..HandsFields::default()
+            },
+        ))
         .unwrap();
     run(&f.cx, &req(&["true"])).unwrap();
     let (_, spec) = f.driver.launches().remove(0);

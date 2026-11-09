@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::event::TurnOutcome;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
@@ -29,20 +29,26 @@ fn fx(dir: &std::path::Path) -> (Store, Arc<FakeClock>, BoxId, i64) {
         .box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: BoxHandle::new("h"),
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: BoxHandle::new("h"),
+            },
+        );
     store.apply(d).unwrap();
     store.begin_session(id, "s-1").unwrap();
     let session = store.live_session(id).unwrap().unwrap().session.unwrap();

@@ -8,7 +8,7 @@ use moor_core::boxscript::clone::AT_BASE;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::user::Identity;
@@ -335,7 +335,7 @@ fn a_working_box_that_loses_its_machine_relaunches_on_its_deepest_checkpoint_wit
     let first = row(&w, id).hands.unwrap().handle;
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     gone(&engine);
     let v = run(&w.cx, &start_req).unwrap();

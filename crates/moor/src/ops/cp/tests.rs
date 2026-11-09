@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
@@ -50,8 +50,8 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
         };
         Decision::new(id)
             .lifecycle(BoxLifecycleInput::Admitted)
-            .hands_input(HandsInput::Requested)
-            .hands(fields)
+            .hands_input(HandsInc::FIRST, HandsInput::Requested)
+            .hands(HandsInc::FIRST, fields)
     } else {
         Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 })
     };
@@ -73,7 +73,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
                 setup: SetupOutcome::Ok,
             })
             .session(SessionInput::Started)
-            .hands_input(HandsInput::Acquired { handle: got.handle });
+            .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
         store.apply(d).unwrap();
     }
     Fx {
@@ -134,7 +134,7 @@ fn relative_source_resolves_against_the_recorded_workdir_without_asking_the_driv
     };
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands(fields))
+        .apply(Decision::new(f.id).hands(HandsInc::FIRST, fields))
         .unwrap();
     run(&f.cx, &req("out/a.txt", "a.txt")).unwrap();
     assert_eq!(first_copy(&f).1.as_str(), "/w/cbx_9/moor-1-n/out/a.txt");
@@ -220,7 +220,7 @@ fn blank_source_is_usage_without_a_copy() {
 #[test]
 fn gone_box_is_refused_without_a_copy() {
     let f = fx();
-    let d = Decision::new(f.id).hands_input(HandsInput::DriverMissing);
+    let d = Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
     f.cx.store().unwrap().apply(d).unwrap();
     let err = run(&f.cx, &req("a", "a")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -278,7 +278,10 @@ fn copy_never_syncs() {
 fn closed_box_with_a_release_failed_box_is_refused_without_a_copy() {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let d = Decision::new(f.id).hands_input(HandsInput::ReleaseErr { cause: "x".into() });
+    let d = Decision::new(f.id).hands_input(
+        HandsInc::FIRST,
+        HandsInput::ReleaseErr { cause: "x".into() },
+    );
     store.apply(d).unwrap();
     store
         .apply(
@@ -295,7 +298,10 @@ fn closed_box_with_a_release_failed_box_is_refused_without_a_copy() {
 #[test]
 fn box_that_is_not_ready_is_refused_without_a_copy() {
     let f = fx();
-    let d = Decision::new(f.id).hands_input(HandsInput::ReleaseErr { cause: "x".into() });
+    let d = Decision::new(f.id).hands_input(
+        HandsInc::FIRST,
+        HandsInput::ReleaseErr { cause: "x".into() },
+    );
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(
         run(&f.cx, &req("a", "a")).unwrap_err().kind,
@@ -316,7 +322,7 @@ fn sleep(f: &Fx) {
                     auto: false,
                     reason: None,
                 })
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -368,7 +374,7 @@ fn failed_wake_leaves_the_box_asleep_and_makes_no_copy() {
 fn gone_asleep_box_is_refused_without_a_wake_or_copy() {
     let f = fx();
     sleep(&f);
-    let d = Decision::new(f.id).hands_input(HandsInput::DriverMissing);
+    let d = Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
     f.cx.store().unwrap().apply(d).unwrap();
     let err = run(&f.cx, &req("a", "a")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

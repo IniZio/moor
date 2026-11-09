@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::{AttachReq, BoxId, BoxName, ProviderId};
@@ -39,8 +39,8 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .hands_input(HandsInput::Requested)
-                .hands(fields),
+                .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                .hands(HandsInc::FIRST, fields),
         )
         .unwrap();
     let got = driver
@@ -63,7 +63,7 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .hands_input(HandsInput::Acquired { handle: got.handle }),
+                .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle }),
         )
         .unwrap();
     (cx, connect, workdir)

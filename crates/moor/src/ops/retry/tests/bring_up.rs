@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::BoxId;
@@ -46,7 +46,7 @@ fn relaunched(w: &World, id: BoxId) {
     assert_eq!(row(w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let _ = crate::ops::start::run(&w.cx, &start_req());
 }

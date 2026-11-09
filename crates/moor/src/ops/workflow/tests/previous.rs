@@ -1,6 +1,7 @@
 //! A run's new Box closes the earlier Boxes of the same workflow and repo, and only those.
 #![allow(clippy::panic, reason = "a test names what it found when it fails")]
 
+use moor_core::domain::hands::HandsInc;
 use std::sync::Arc;
 
 use moor_core::config::{BoxConfig, UserConfig};
@@ -306,7 +307,7 @@ fn an_asleep_previous_box_with_no_record_is_kept_without_waking_it() {
     put_to_sleep(&r, first);
     r.cx.store()
         .unwrap()
-        .set_suspend_check(first, None)
+        .set_suspend_check((first, HandsInc::FIRST), None)
         .unwrap();
     next_day(&r);
     assert_ne!(lifecycle(&r, first), BoxLifecycle::Closed);

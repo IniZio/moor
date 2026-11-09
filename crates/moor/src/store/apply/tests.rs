@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
 use moor_schema::tables::{BoxRefs, BoxState, Boxes, Sessions};
@@ -76,11 +77,17 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(moor_core::domain::hands::HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(moor_core::ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            moor_core::domain::hands::HandsInput::Requested,
+        )
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(moor_core::ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(admit).unwrap();
     store
         .apply(
@@ -106,7 +113,10 @@ fn insert_records_the_branch_ref() {
 fn failed_insert_leaves_no_box_and_no_branch_ref() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let d = on_branch("b", "feat/x").hands_input(moor_core::domain::hands::HandsInput::Requested);
+    let d = on_branch("b", "feat/x").hands_input(
+        HandsInc::FIRST,
+        moor_core::domain::hands::HandsInput::Requested,
+    );
     let err = store.apply(d).unwrap_err();
     assert!(
         matches!(&err, StoreError::Invalid(m) if m == "new box needs box_provider"),
@@ -389,11 +399,17 @@ fn setting_up_after_admission_records_checking_as_from() {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(moor_core::domain::hands::HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(moor_core::ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            moor_core::domain::hands::HandsInput::Requested,
+        )
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(moor_core::ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(admit).unwrap();
     let trail = event_trail(&store, id);
     let setting_up = trail.iter().find(|(k, _)| k == "setting_up");

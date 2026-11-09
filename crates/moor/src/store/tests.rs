@@ -9,7 +9,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, HandsFields, Intent, IntentChange, NewBox, SpecFields,
 };
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
@@ -23,6 +23,7 @@ mod connections;
 mod controller_id;
 mod events_after;
 mod events_of;
+mod hands_fence;
 mod node_count;
 mod open_boxes;
 mod poison;
@@ -115,8 +116,8 @@ fn full_lifecycle_rows_and_events() {
 
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(provider());
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, provider());
     let a = store.apply(d).unwrap();
     assert_eq!(
         (a.lifecycle, a.box_state),
@@ -129,9 +130,12 @@ fn full_lifecycle_rows_and_events() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: handle.clone(),
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: handle.clone(),
+            },
+        );
     store.apply(d).unwrap();
     let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
@@ -142,7 +146,7 @@ fn full_lifecycle_rows_and_events() {
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End)
-        .hands_input(HandsInput::Released)
+        .hands_input(HandsInc::FIRST, HandsInput::Released)
         .event(ExtraEvent::Copied {
             from: "a".into(),
             to: "b".into(),
@@ -172,10 +176,13 @@ fn new_box_with_illegal_box_input_leaves_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let d = insert("t")
-        .hands_input(HandsInput::Acquired {
-            handle: BoxHandle::new("h"),
-        })
-        .hands(provider());
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: BoxHandle::new("h"),
+            },
+        )
+        .hands(HandsInc::FIRST, provider());
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Illegal(_)), "{err:?}");
     assert_eq!(
@@ -197,9 +204,9 @@ fn illegal_box_step_changes_nothing() {
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Wake)
         .session(SessionInput::AgentBusy)
-        .hands_input(HandsInput::Requested)
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
         .set(set)
-        .hands(provider());
+        .hands(HandsInc::FIRST, provider());
     assert!(matches!(
         store.apply(d).unwrap_err(),
         StoreError::Illegal(_)
@@ -241,10 +248,13 @@ fn box_fields_without_a_box_roll_back_the_box_step() {
     // write_box fails, so the box UPDATE must be rolled back.
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands(HandsFields {
-            workdir: Field::Set("/w".into()),
-            ..HandsFields::default()
-        });
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Set("/w".into()),
+                ..HandsFields::default()
+            },
+        );
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     let after = store.box_row(id).unwrap().unwrap();
@@ -370,8 +380,8 @@ fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
             let d = Decision::new(id);
             Some(if used == 0 {
                 d.lifecycle(BoxLifecycleInput::Admitted)
-                    .hands_input(HandsInput::Requested)
-                    .hands(self::provider())
+                    .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                    .hands(HandsInc::FIRST, self::provider())
             } else {
                 d.lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 })
             })
@@ -406,8 +416,8 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
                 Some(
                     Decision::new(a)
                         .lifecycle(BoxLifecycleInput::Admitted)
-                        .hands_input(HandsInput::Requested)
-                        .hands(self::provider()),
+                        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                        .hands(HandsInc::FIRST, self::provider()),
                 )
             })
             .unwrap();

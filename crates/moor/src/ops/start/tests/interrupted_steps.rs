@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, Intent};
+use moor_core::domain::hands::HandsInc;
 use moor_core::BoxId;
 
 use super::agent_install::{install_cut_off, installs};
@@ -65,10 +66,13 @@ fn claimed_then_machine_lost() -> World {
         .unwrap();
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     store
-        .apply(Decision::new(BoxId::new(1)).hands(HandsFields {
-            handle: Field::Clear,
-            ..HandsFields::default()
-        }))
+        .apply(Decision::new(BoxId::new(1)).hands(
+            HandsInc::FIRST,
+            HandsFields {
+                handle: Field::Clear,
+                ..HandsFields::default()
+            },
+        ))
         .unwrap();
     w
 }
@@ -116,10 +120,13 @@ fn later_steps_cut_on_a_machine_that_is_not_ready_fail_the_setup_with_why() {
                     steps_pending_at: Field::Set(1),
                     ..Fields::default()
                 })
-                .hands(HandsFields {
-                    workdir: Field::Clear,
-                    ..HandsFields::default()
-                }),
+                .hands(
+                    HandsInc::FIRST,
+                    HandsFields {
+                        workdir: Field::Clear,
+                        ..HandsFields::default()
+                    },
+                ),
         )
         .unwrap();
     assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());

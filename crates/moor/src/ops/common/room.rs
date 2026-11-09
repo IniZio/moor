@@ -139,15 +139,18 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
                 reason: Some(reason.to_owned()),
             })
             .cache_save(cache_save)
-            .hands_input(HandsInput::Sleep)
+            .hands_input(row.hands_inc(), HandsInput::Sleep)
             .set(Fields {
                 state_reason: Field::Set(reason.to_owned()),
                 ..Fields::default()
             })
-            .hands(HandsFields {
-                sleep_reason: Field::Clear,
-                ..HandsFields::default()
-            }),
+            .hands(
+                row.hands_inc(),
+                HandsFields {
+                    sleep_reason: Field::Clear,
+                    ..HandsFields::default()
+                },
+            ),
     )?;
     Ok(true)
 }
@@ -314,15 +317,18 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
                 &row,
                 Err(CacheSaveDenied::LastResort),
             ))
-            .hands_input(HandsInput::Sleep)
+            .hands_input(row.hands_inc(), HandsInput::Sleep)
             .set(Fields {
                 state_reason: Field::Set(reason.to_owned()),
                 ..Fields::default()
             })
-            .hands(HandsFields {
-                sleep_reason: Field::Clear,
-                ..HandsFields::default()
-            }),
+            .hands(
+                row.hands_inc(),
+                HandsFields {
+                    sleep_reason: Field::Clear,
+                    ..HandsFields::default()
+                },
+            ),
     )?;
     Ok(true)
 }
@@ -334,9 +340,10 @@ fn park_and_suspend(
     row: &BoxRow,
     handle: &BoxHandle,
 ) -> Result<Result<SleepOutcome, String>, CommandError> {
-    store.set_pause_publish(row.id, PausePublish::Denied)?;
+    let at = (row.id, row.hands_inc());
+    store.set_pause_publish(at, PausePublish::Denied)?;
     // Parking takes the Proxy away, and the check runs in the Box.
-    suspend_check::record(cx, store, row.id, settled(cx, store, row)?.is_ok());
+    suspend_check::record(cx, store, at, settled(cx, store, row)?.is_ok());
     park_tunnel(cx, row.id)?;
     let slept = cx.driver().sleep(handle, PausePublish::Denied);
     Ok(slept.map_err(|e| e.to_string()))

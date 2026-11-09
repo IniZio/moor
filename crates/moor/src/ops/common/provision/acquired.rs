@@ -1,7 +1,7 @@
 //! Recording a freshly acquired Box.
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Intent, IntentChange};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::Acquired;
 use moor_core::BoxId;
 
@@ -22,11 +22,11 @@ fn record_disk_lost(store: &Store, before: &BoxRow) -> Result<(), CommandError> 
     Ok(())
 }
 
-/// Records an acquired Box under the setup intent; `replacing` is what it held before, when a
+/// Records the machine acquired for hands `inc` under the setup intent; `replacing` is what it held before, when a
 /// working Box lost its machine.
 pub(super) fn record_acquired(
     store: &Store,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     got: &Acquired,
     replacing: Option<&BoxRow>,
 ) -> Result<(), CommandError> {
@@ -34,14 +34,20 @@ pub(super) fn record_acquired(
         record_disk_lost(store, before)?;
     }
     let acquired = Decision::new(id)
-        .hands_input(HandsInput::Acquired {
-            handle: got.handle.clone(),
-        })
-        .hands(HandsFields {
-            handle: Field::Set(got.handle.clone()),
-            workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..HandsFields::default()
-        })
+        .hands_input(
+            inc,
+            HandsInput::Acquired {
+                handle: got.handle.clone(),
+            },
+        )
+        .hands(
+            inc,
+            HandsFields {
+                handle: Field::Set(got.handle.clone()),
+                workdir: Field::Set(got.workdir.as_str().to_owned()),
+                ..HandsFields::default()
+            },
+        )
         .intent(IntentChange::Set(Intent::Setup));
     store.apply(acquired)?;
     Ok(())

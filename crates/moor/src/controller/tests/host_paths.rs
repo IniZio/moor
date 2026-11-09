@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
@@ -89,17 +89,20 @@ pub(super) fn ready_box(store: &Store, user: UserId) -> BoxId {
     };
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(admitted).expect("admit");
     let ready = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: BoxHandle::new("p/ann"),
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: BoxHandle::new("p/ann"),
+            },
+        );
     store.apply(ready).expect("ready");
     id
 }

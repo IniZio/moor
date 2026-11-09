@@ -13,7 +13,7 @@ use std::time::Duration;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::view::StartView;
@@ -153,7 +153,7 @@ impl Scratch {
 
     /// Takes Box `id`'s machine away and starts it again.
     pub(super) fn lose_machine_of(&self, id: BoxId, name: &str, yaml: &str) -> StartView {
-        let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
+        let gone = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
         self.w.cx.store().unwrap().apply(gone).unwrap();
         self.start(name, yaml).1
     }

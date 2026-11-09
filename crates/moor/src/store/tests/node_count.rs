@@ -2,7 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::name::NodeName;
 use moor_core::BoxHandle;
 
@@ -20,15 +20,19 @@ fn a_node_counts_its_starting_and_ready_boxes_only() {
     for id in [starting, ready, failed, released, other] {
         let d = Decision::new(id)
             .lifecycle(BoxLifecycleInput::Admitted)
-            .hands_input(HandsInput::Requested)
-            .hands(provider());
+            .hands_input(HandsInc::FIRST, HandsInput::Requested)
+            .hands(HandsInc::FIRST, provider());
         store.apply(d).unwrap();
         let node = if id == other { "q" } else { "p" };
         store
             .set_box_node(id, NodeName::parse(node).ok().as_ref())
             .unwrap();
     }
-    let input = |id, input| store.apply(Decision::new(id).hands_input(input)).unwrap();
+    let input = |id, input| {
+        store
+            .apply(Decision::new(id).hands_input(HandsInc::FIRST, input))
+            .unwrap()
+    };
     let acquired = || HandsInput::Acquired {
         handle: BoxHandle::new("h"),
     };
