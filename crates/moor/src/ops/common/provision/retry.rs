@@ -15,7 +15,7 @@ use moor_core::BoxId;
 
 use super::interrupted::{launch_was_cut, release_warned};
 use super::lease::planned_root;
-use super::rerun::record_interrupted;
+use super::rerun::{finish_steps, record_interrupted};
 use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -98,6 +98,8 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         let goes_on = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Starting);
         let entry = if goes_on { Entry::Adopt } else { Entry::Again };
         super::provision(cx, store, id, entry, &cfg)?
+    } else if row.intent == Some(Intent::Setup { pid: me }) && row.steps_pending_at.is_some() {
+        finish_steps(cx, store, &row, true)?
     } else if row.intent == Some(Intent::Setup { pid: me }) {
         follow_setup(cx, store, &row)?
     } else {

@@ -16,8 +16,8 @@ use crate::store::{BoxRow, Store};
 const CAUSE: &str = "setup interrupted by a controller restart";
 
 /// Settles each open Box whose start no live process still runs, and claims for this process each
-/// Box that can go on: its setup lines can be followed again in its machine, or its acquire was cut
-/// for the first time in this start. Returns the claimed Boxes, for [`super::resume_setup`].
+/// Box that can go on: its setup can be followed again or finished in its machine, or its acquire
+/// was cut for the first time in this start. Returns the claimed Boxes, for [`super::resume_setup`].
 ///
 /// Called before the controller serves, so no start of this process is under way yet: an intent
 /// naming this pid is an earlier process's, as a restarted container reuses its pid.
@@ -73,10 +73,10 @@ pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, Comman
     Ok(began > session.map_or(0, |e| e.id))
 }
 
-/// Whether the cut-off start of `row` was running its setup lines in a machine it still holds.
+/// Whether the cut-off start of `row` was setting up in a machine it still holds: running its
+/// setup lines, or the steps after them once every line passed.
 fn followable(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::SettingUp
-        && row.steps_pending_at.is_none()
         && row.boxed.as_ref().is_some_and(|b| {
             b.state == BoxState::Ready && b.handle.is_some() && b.workdir.is_some()
         })

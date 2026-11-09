@@ -513,8 +513,8 @@ fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
 }
 
 #[test]
-fn a_restart_once_the_setup_lines_passed_leaves_only_the_later_steps_pending() {
-    let (w, _) = restarted_mid_setup("setup: [a]\n");
+fn a_restart_once_the_setup_lines_passed_finishes_the_later_steps_and_launches_the_agent() {
+    let (w, attached) = restarted_mid_setup("setup: [a]\n");
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(BoxId::new(1)).set(Fields {
@@ -522,8 +522,33 @@ fn a_restart_once_the_setup_lines_passed_leaves_only_the_later_steps_pending() {
             ..Fields::default()
         }))
         .unwrap();
-    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    let cut = store.events(BoxId::new(1), 200).unwrap().last().unwrap().id;
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert!(row.steps_pending_at.is_some());
+    assert_eq!(row.intent, None);
+    assert_eq!(row.steps_pending_at, None);
+    let after: Vec<(String, String)> = store
+        .events(row.id, 200)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.id > cut)
+        .map(|e| {
+            let step = e.payload.get("step").and_then(|s| s.as_str()).unwrap_or("");
+            (e.kind, step.to_owned())
+        })
+        .collect();
+    let at = |kind: &str, step: &str| after.iter().position(|(k, s)| k == kind && s == step);
+    let working = at("working", "").expect("working");
+    let launched = at("step_started", "launch").expect("launch began");
+    let session = at("session_started", "").expect("a session started");
+    assert!(working < launched && launched < session, "{after:?}");
+    assert!(after.iter().all(|(k, _)| k != "idled"), "{after:?}");
+    assert_eq!(
+        setup_attaches(&w),
+        [attached],
+        "the passed lines are not followed again"
+    );
 }
