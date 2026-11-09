@@ -73,6 +73,7 @@ pub(super) fn retry_in_box(
 /// recorded is honoured. All of it runs under the Box's Resume turn, the caller's when it holds one.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let _turn = cx.turn_unless_held(id, Cmd::Resume)?;
+    layers::release_left(cx, store, id)?;
     let row = super::reread(store, id)?;
     if row.intent == Some(Intent::Closing) {
         let req = CloseReq {
@@ -242,7 +243,7 @@ fn set_up_in_machine(
         Some(layered) if fork != Fork::No => {
             layers::stand_on_rerun(store, row.id, layered)?;
             let adopt = fork == Fork::Adopt;
-            layers::resume(cx, store, row, handle, cfg, (layered, adopt))?
+            layers::resume(cx, store, row, cfg, (layered, adopt))?
         }
         Some(layered) => {
             layers::stand_on_warm_start(store, row.id, layered)?;

@@ -89,7 +89,7 @@ impl Store {
 }
 
 /// The body of `apply`, inside its transaction; a branch an open Box works on is refused.
-fn apply_in(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
+pub(super) fn apply_in(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
     let branch = match &d.target {
         BoxTarget::New(new) => new.spec.branch.clone(),
         BoxTarget::Existing(_) => None,

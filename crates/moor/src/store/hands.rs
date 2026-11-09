@@ -5,13 +5,87 @@ use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::shape::Shape;
 use moor_core::{BoxHandle, BoxId, ProviderId};
-use moor_schema::tables::{BoxHands, Boxes};
-use sea_query::{Expr, ExprTrait as _, InsertStatement, Query, SelectStatement, UpdateStatement};
+use moor_schema::tables::{BoxHands, BoxLease, Boxes};
+use sea_query::{
+    Cond, Condition, Expr, ExprTrait as _, InsertStatement, Order, Query, SelectStatement,
+    UpdateStatement,
+};
 
+use super::apply::apply_in;
 use super::init::parsed_opt;
+use super::lease::{LeaseId, LeaseState};
 use super::select::hands_at;
-use super::{to_u32, BoxRow, HandsRow, StoreError};
-use crate::store::db::{self, Row};
+use super::{to_u32, BoxRow, HandsRow, Store, StoreError};
+use crate::store::db::{self, DbExt as _, Row};
+
+impl Store {
+    /// Applies `moves`, each to Box `id`, and holds lease `hold`, in one transaction: a Box moving
+    /// to new hands ends the old ones, gets the new ones and holds their machine, or none of it.
+    pub(crate) fn move_hands(
+        &self,
+        id: BoxId,
+        moves: Vec<Decision>,
+        hold: LeaseId,
+    ) -> Result<(), StoreError> {
+        self.check_write(id);
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        for d in moves {
+            apply_in(&tx, now, d)?;
+        }
+        tx.run(
+            Query::update()
+                .table(BoxLease::Table)
+                .value(BoxLease::State, LeaseState::Held.as_str())
+                .value(BoxLease::UpdatedAt, now.as_millis())
+                .and_where(Expr::col(BoxLease::Id).eq(hold.0)),
+        )?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// The hands Box `id` left whose machine no release has ended yet: replaced hands that ended
+    /// Gone with a handle, oldest first.
+    pub(crate) fn hands_left(&self, id: BoxId) -> Result<Vec<(HandsInc, BoxHandle)>, StoreError> {
+        let rows = self.reader()?.rows(
+            Query::select()
+                .columns([BoxHands::Inc, BoxHands::Handle])
+                .from(BoxHands::Table)
+                .cond_where(left(id))
+                .order_by(BoxHands::Inc, Order::Asc),
+            |r| {
+                let handle: String = r.get(1)?;
+                Ok::<_, db::Error>((HandsInc::new(r.get(0)?), BoxHandle::new(handle)))
+            },
+        )?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Records that the machine of hands `inc`, which Box `id` left, is released.
+    pub(crate) fn left_hands_released(&self, id: BoxId, inc: HandsInc) -> Result<(), StoreError> {
+        let now = self.now().as_millis();
+        let mut done = Query::update();
+        done.table(BoxHands::Table)
+            .value(BoxHands::State, HandsState::Deleted.as_str())
+            .value(BoxHands::StateAt, now)
+            .cond_where(left(id))
+            .and_where(Expr::col(BoxHands::Inc).eq(inc.get()));
+        self.writer().run(done)?;
+        Ok(())
+    }
+}
+
+/// The hands Box `id` left whose machine no release has ended: not its current ones, Gone, with a
+/// handle.
+fn left(id: BoxId) -> Condition {
+    Cond::all()
+        .add(Expr::col(BoxHands::Box).eq(id.get()))
+        .add(Expr::col(BoxHands::State).eq(HandsState::Gone.as_str()))
+        .add(Expr::col(BoxHands::Handle).is_not_null())
+        .add(Expr::col(BoxHands::Inc).lt(db::sub(current_inc(Expr::val(id.get())))))
+}
 
 impl BoxRow {
     /// The hands an acquire for this Box writes: new ones after hands that failed or were lost.

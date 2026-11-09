@@ -6,7 +6,7 @@ use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::{AcquireReq, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
-use super::fork::{failed_at, nearest_of_own_base, release_old};
+use super::fork::{failed_at, nearest_of_own_base, release_left};
 use super::Layered;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -17,9 +17,10 @@ use crate::store::checkpoints::CheckpointRow;
 use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{BoxRow, Store};
 
-/// Moves Box `row` from the machine `old` onto a new one forked from the nearest checkpoint of its
-/// own base at or below its failed layer, and releases `old`. Returns the new handle; none when
-/// no such checkpoint is kept or the fork fails, and the setup runs in `old` from its start.
+/// Moves Box `row` from the machine it holds onto a new one forked from the nearest checkpoint of
+/// its own base at or below its failed layer, and releases the machine it left. Returns the new
+/// handle; none when no such checkpoint is kept or the fork fails, and the setup runs in the
+/// machine it holds from its start.
 ///
 /// With `adopt` the fork an earlier process left going is taken over instead. So is a fork cut off
 /// by a lost link. A machine taken over may not be the fork, so its setup runs from the start.
@@ -27,7 +28,6 @@ pub(in super::super) fn resume(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    old: &BoxHandle,
     cfg: &BoxSettings,
     (layered, adopt): (&mut Layered, bool),
 ) -> Result<Option<BoxHandle>, CommandError> {
@@ -42,7 +42,7 @@ pub(in super::super) fn resume(
     let began = cx.clock().now().as_millis();
     let (new, told) = match fork_unless_forced(cx, &saved.checkpoint, &req, adopt)? {
         Err(e) if goes_on_after(cx, &req, &e) => {
-            return took_over(cx, store, (row, old), &req, (root, &planned));
+            return took_over(cx, store, row, &req, (root, &planned));
         }
         Ok(forked) => {
             let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
@@ -67,10 +67,10 @@ pub(in super::super) fn resume(
             return Ok(None);
         }
     };
-    hold_new(store, row.id, (root, &planned), &new)?;
-    move_hands(store, row, &new, Some(told))?;
+    let hold = lease_of(store, row.id, (root, &planned), &new)?;
+    move_hands(store, row, (&new, hold), Some(told))?;
     layered.stand_on(layer, saved.place.as_ref());
-    release_old(cx, store, row.id, old)?;
+    release_left(cx, store, row.id)?;
     Ok(Some(new))
 }
 
@@ -122,19 +122,17 @@ fn fork_unless_forced(
     Ok(forked)
 }
 
-/// Puts Box `row` on new hands, the fork `new` of its machine, with `told`. The hands it leaves end
-/// as Gone first, so nothing the old machine still reports lands on the fork. The handle and `told`
-/// go in one write, so a restart never reads the fork without the layer it stands on.
+/// Puts Box `row` on new hands, the fork `new` of its machine, with `told`, and holds lease `hold`
+/// of `new`, all in one transaction. The hands it leaves end as Gone, so nothing the old machine
+/// still reports lands on the fork, and [`release_left`] releases that machine.
 fn move_hands(
     store: &Store,
     row: &BoxRow,
-    new: &BoxHandle,
+    (new, hold): (&BoxHandle, LeaseId),
     told: Option<ExtraEvent>,
 ) -> Result<(), CommandError> {
     let (id, old) = (row.id, row.hands_inc());
-    store.apply(Decision::new(id).hands_input(old, HandsInput::DriverMissing))?;
     let inc = old.next();
-    store.apply(Decision::new(id).hands_input(inc, HandsInput::Requested))?;
     let workdir = row.hands.as_ref().and_then(|h| h.workdir.clone());
     let acquired = HandsInput::Acquired {
         handle: new.clone(),
@@ -143,38 +141,40 @@ fn move_hands(
         workdir: workdir.map_or(Field::Keep, Field::Set),
         ..HandsFields::default()
     };
-    let mut moved = Decision::new(id)
+    let mut onto_fork = Decision::new(id)
         .hands_input(inc, acquired)
         .hands(inc, fields);
     if let Some(told) = told {
-        moved = moved.event(told);
+        onto_fork = onto_fork.event(told);
     }
-    store.apply(moved)?;
+    let moves = vec![
+        Decision::new(id).hands_input(old, HandsInput::DriverMissing),
+        Decision::new(id).hands_input(inc, HandsInput::Requested),
+        onto_fork,
+    ];
+    store.move_hands(id, moves, hold)?;
     Ok(())
 }
 
-/// Holds the lease of `new`, the machine a fork planned as `planned` came to.
-fn hold_new(
+/// The lease of `new`, the machine a fork planned as `planned` came to.
+fn lease_of(
     store: &Store,
     id: BoxId,
     (root, planned): (LeaseId, &BoxHandle),
     new: &BoxHandle,
-) -> Result<(), CommandError> {
+) -> Result<LeaseId, CommandError> {
     if new == planned {
-        store.hold_lease(root)?;
-    } else {
-        let actual = store.plan_lease(id, LeaseKind::BoxRoot, new.as_str())?;
-        store.hold_lease(actual)?;
+        return Ok(root);
     }
-    Ok(())
+    Ok(store.plan_lease(id, LeaseKind::BoxRoot, new.as_str())?)
 }
 
-/// Moves Box `row` from `old` onto the machine its fork's host was still making, once that is done;
-/// one that cannot be had is released, and the setup runs in `old` from its start.
+/// Moves Box `row` onto the machine its fork's host was still making, once that is done; one that
+/// cannot be had is released, and the setup runs in the machine it holds from its start.
 fn took_over(
     cx: &Cx,
     store: &Store,
-    (row, old): (&BoxRow, &BoxHandle),
+    row: &BoxRow,
     req: &AcquireReq,
     (root, planned): (LeaseId, &BoxHandle),
 ) -> Result<Option<BoxHandle>, CommandError> {
@@ -192,8 +192,7 @@ fn took_over(
     if cx.env().cancel().is_cancelled() {
         return Err(CommandError::new(ErrorKind::Failed, FORCED_CLOSE));
     }
-    store.hold_lease(root)?;
-    move_hands(store, row, &new, None)?;
-    release_old(cx, store, row.id, old)?;
+    move_hands(store, row, (&new, root), None)?;
+    release_left(cx, store, row.id)?;
     Ok(Some(new))
 }
