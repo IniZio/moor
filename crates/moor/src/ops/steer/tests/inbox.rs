@@ -84,12 +84,9 @@ fn a_crash_after_the_mark_leaves_the_row_in_doubt() {
 }
 
 #[test]
-fn two_steers_are_delivered_and_answered_in_order() {
-    let engine = FakeEngine::new()
-        .probes("agent-1", idle_after(0))
-        .probes_after_steer("agent-1", agent::at_turn(super::working(), 0));
-    let f = fx_with(engine, true);
-    let one = run(&f.cx, &text("one")).unwrap();
+fn a_turn_that_answers_the_newest_steer_absorbs_the_older_one() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", idle_after(0)), true);
+    run(&f.cx, &text("one")).unwrap();
     let two = run(&f.cx, &text("two")).unwrap();
     let texts: Vec<_> = f.engine.steers().into_iter().map(|s| s.1).collect();
     assert_eq!(
@@ -99,20 +96,17 @@ fn two_steers_are_delivered_and_answered_in_order() {
     assert_eq!(sent(&f), ["one", "two"]);
     f.engine.set_probes("agent-1", idle_after(1));
     settle_once(&f);
-    assert_eq!(
-        sent(&f),
-        ["two"],
-        "the first turn ended, the queued one has not begun"
-    );
-    f.engine.set_probes("agent-1", idle_after(2));
-    settle_once(&f);
-    assert!(sent(&f).is_empty());
     let answered: Vec<_> = turns_done(&f).iter().map(|d| d["steer"].clone()).collect();
-    assert_eq!(answered, [one.steer, two.steer]);
+    assert_eq!(
+        answered,
+        [two.steer],
+        "one turn answered both, as one prompt"
+    );
+    assert!(sent(&f).is_empty(), "the older row went with it");
 }
 
 #[test]
-fn a_steer_refused_after_the_agent_went_away_leaves_no_row() {
+fn sends_a_gone_agent_refused_leave_no_row_and_a_later_steer_is_delivered() {
     let engine = FakeEngine::new()
         .probes("agent-1", idle_after(0))
         .steer_result(Err(EngineError::AgentGone))
@@ -120,8 +114,14 @@ fn a_steer_refused_after_the_agent_went_away_leaves_no_row() {
         .steer_result(Err(EngineError::AgentGone));
     let f = fx_with(engine, true);
     run(&f.cx, &text("hi")).unwrap_err();
-    assert!(!f.engine.steers().is_empty(), "the text reached a send");
+    assert_eq!(f.engine.steers().len(), 3, "each refused send is retried");
     assert_eq!(f.cx.store().unwrap().next_for(f.id).unwrap(), None);
+    run(&f.cx, &text("later")).unwrap();
+    assert_eq!(
+        f.engine.steers().last().map(|s| s.1.clone()),
+        Some(Steer::Text("later".to_owned()))
+    );
+    assert_eq!(sent(&f), ["later"]);
 }
 
 #[test]

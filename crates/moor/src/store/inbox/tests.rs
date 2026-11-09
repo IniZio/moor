@@ -161,6 +161,52 @@ fn a_send_to_a_gone_agent_returns_the_row_to_the_queue_and_still_counts() {
 }
 
 #[test]
+fn a_send_the_agent_refused_before_typing_does_not_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let live = launch(&store, id);
+    let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
+    for _ in 0..3 {
+        store.mark_sending(id, row, live).unwrap();
+        assert_eq!(
+            store.refuse(id, row).unwrap(),
+            Delivery::Queued { attempts: 0 }
+        );
+    }
+    assert!(matches!(store.refuse(id, row), Err(StoreError::Illegal(_))));
+}
+
+#[test]
+fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let live = launch(&store, id);
+    let mut sent = Vec::new();
+    for text in ["one", "two"] {
+        let row = store.enqueue(id, InboxKind::Steer, text, "u").unwrap();
+        store.mark_sending(id, row, live).unwrap();
+        store.confirm_sent(id, row, MARK, &steered(row)).unwrap();
+        sent.push(row);
+    }
+    let queued = store.enqueue(id, InboxKind::Steer, "three", "u").unwrap();
+    assert!(store
+        .answer(id, *sent.last().unwrap(), TurnOutcome::Idle)
+        .unwrap());
+    let left: Vec<_> = store.sent(id).unwrap();
+    assert!(left.is_empty(), "{left:?}");
+    assert_eq!(store.next_for(id).unwrap().unwrap().id, queued);
+    let done = store
+        .events(id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "turn_done")
+        .count();
+    assert_eq!(done, 1);
+}
+
+#[test]
 fn a_crash_then_a_gone_agent_never_gets_a_row_sent_three_times() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());

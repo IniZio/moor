@@ -3,7 +3,7 @@
 use moor_core::activity::{stalled_for, Activity, AgentState, Source, Status};
 use moor_core::decide::turn::{turn_done, SteerMark, TermTurn, TurnFacts, TurnSignal};
 use moor_core::domain::event::TurnOutcome;
-use moor_core::domain::inbox::{Delivery, InboxId};
+use moor_core::domain::inbox::Delivery;
 use moor_core::seam::clock::Ts;
 
 use super::{PaneLiveness, Reading};
@@ -12,8 +12,8 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, InboxRow, Store};
 
-/// Answer each sent inbox row whose turn is over, oldest first: delete it and append its
-/// `turn_done` event, and make the Box's archive due.
+/// Answer the newest sent inbox row once its turn is over: delete it, and every older sent row
+/// that went into the same prompt, append its `turn_done` event, and make the Box's archive due.
 ///
 /// A row is answered once, since answering deletes it. It is answered under the Box's turn,
 /// before any state step or session end so neither can lose it. While another operation holds
@@ -26,46 +26,34 @@ pub(super) fn note_turn_done(
     reading: &Reading,
     now: Ts,
 ) -> Result<bool, CommandError> {
-    let mut held = None;
-    let open = store.sent(row.id)?;
-    let newest = open.last().map(|r| r.id);
-    for open in open {
-        let Some(outcome) = answer(reading, &open, newest, now) else {
-            return Ok(false);
-        };
-        if held.is_none() {
-            held = cx.try_turn(row.id, Cmd::Settle);
-        }
-        if held.is_none() {
-            return Ok(true);
-        }
-        store.answer(row.id, open.id, outcome)?;
-    }
+    let Some(open) = store.sent(row.id)?.pop() else {
+        return Ok(false);
+    };
+    let Some(outcome) = answer(reading, &open, now) else {
+        return Ok(false);
+    };
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
+        return Ok(true);
+    };
+    store.answer(row.id, open.id, outcome)?;
     Ok(false)
 }
 
-/// Whether a sent row's turn is still open by `reading`.
+/// Whether the newest sent row's turn is still open by `reading`.
 pub(crate) fn turn_open(
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
     now: Ts,
 ) -> Result<bool, CommandError> {
-    let open = store.sent(row.id)?;
-    let newest = open.last().map(|r| r.id);
-    Ok(open
-        .iter()
-        .any(|open| answer(reading, open, newest, now).is_none()))
+    Ok(store
+        .sent(row.id)?
+        .last()
+        .is_some_and(|open| answer(reading, open, now).is_none()))
 }
 
-/// The answer `reading` gives to sent row `open`, when its turn is over. Only the `newest` row
-/// can end without its turn showing: a later text may carry an earlier one into its turn.
-fn answer(
-    reading: &Reading,
-    open: &InboxRow,
-    newest: Option<InboxId>,
-    now: Ts,
-) -> Option<TurnOutcome> {
+/// The answer `reading` gives to sent row `open`, when its turn is over.
+fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
     let Delivery::Sent { at, mark, .. } = open.delivery else {
         return None;
     };
@@ -86,11 +74,9 @@ fn answer(
         }),
         exited: reading.pane == PaneLiveness::Exited,
     };
-    turn_done(&facts).map(|(_, outcome)| outcome).or_else(|| {
-        (newest == Some(open.id))
-            .then(|| never_began(reading, Ts::from_millis(at), now))
-            .flatten()
-    })
+    turn_done(&facts)
+        .map(|(_, outcome)| outcome)
+        .or_else(|| never_began(reading, Ts::from_millis(at), now))
 }
 
 /// Ends a row whose turn never showed: its text never reached the agent as a prompt. An agent
