@@ -157,7 +157,7 @@ fn queued_start_records_no_session() {
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Pending);
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     assert!(!store.has_session(id).unwrap());
 }
 

@@ -44,7 +44,7 @@ fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
     let id = BoxId::new(first.boxed.id);
     settle_all(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
     let store = w.cx.store().unwrap();
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     (w, engine, id)
 }
 
@@ -132,7 +132,7 @@ fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_once_settled() {
     let all = engine.launches();
     assert_eq!(all.len(), 2);
     assert_eq!(all.get(1).unwrap().prompt, LaunchPrompt::None);
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_some());
 }
 
 #[test]

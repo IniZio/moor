@@ -19,7 +19,7 @@ use crate::testing::engine::FakeEngine;
 fn attached_box(cx: &Cx) -> BoxId {
     let id = working_box(cx, false);
     let store = cx.store().unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_launch(id, SESSION).unwrap();
     id
 }
 
@@ -80,7 +80,7 @@ fn a_box_suspended_mid_turn_keeps_its_session_while_its_status_is_polled() {
     };
     let (cx, engine, id) = polled_asleep(suspend, false);
     let store = cx.store().unwrap();
-    assert!(store.live_session(id).unwrap().is_some());
+    assert!(store.live_launch(id).unwrap().is_some());
     assert_eq!(kinds(&cx, id, WATCHED), []);
     assert_eq!(kinds(&cx, id, &["idled", "turn_done"]), []);
     assert_eq!(engine.probe_count(SESSION), 0, "an asleep Box is not asked");
@@ -94,7 +94,7 @@ fn a_quiet_box_asleep_keeps_its_session_too() {
         reason: None,
     };
     let (cx, engine, id) = polled_asleep(sleep, true);
-    assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(cx.store().unwrap().live_launch(id).unwrap().is_some());
     assert_eq!(kinds(&cx, id, WATCHED), []);
     assert_eq!(engine.probe_count(SESSION), 0);
 }
@@ -121,7 +121,7 @@ fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
     let reading = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &reading).unwrap();
     assert_eq!(engine.probe_count(SESSION), 1, "polling resumes on wake");
-    assert!(store.live_session(id).unwrap().is_some());
+    assert!(store.live_launch(id).unwrap().is_some());
 }
 
 #[test]

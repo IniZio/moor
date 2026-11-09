@@ -44,7 +44,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
-    store.begin_session(id, "s-1").unwrap();
+    store.begin_launch(id, "s-1").unwrap();
     if !live {
         assert!(store.end_current_session(id, "requested", None).unwrap());
     }
@@ -141,7 +141,7 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
         launches.first().unwrap().prompt,
         LaunchPrompt::Text("pick up here".into())
     );
-    assert!(store.live_session(f.id).unwrap().is_some());
+    assert!(store.live_launch(f.id).unwrap().is_some());
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn an_agent_stopped_by_an_unwritable_proxy_ca_fails_the_open_with_the_ca_message
     assert_eq!(err.kind, ErrorKind::Failed);
     assert_eq!(err.error.to_string(), format!("launch: {ca}"));
     let store = f.cx.store().unwrap();
-    assert!(store.live_session(f.id).unwrap().is_none());
+    assert!(store.live_launch(f.id).unwrap().is_none());
     let row = store.box_row(f.id).unwrap().unwrap();
     assert_eq!(row.launch_failure.map(|l| l.message).as_deref(), Some(ca));
 }

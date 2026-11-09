@@ -40,7 +40,7 @@ impl Reading {
             pane,
             may_quiet,
             run_in_flight,
-            session: None,
+            launch: None,
             launch_failure: None,
             launch_overdue: None,
             agent_session: None,
@@ -98,7 +98,7 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
         );
     store.apply(d).unwrap();
     if session {
-        store.begin_session(id, SESSION).unwrap();
+        store.begin_launch(id, SESSION).unwrap();
     }
     id
 }
@@ -235,7 +235,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
             },
         );
     store.apply(d).unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_launch(id, SESSION).unwrap();
     let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);

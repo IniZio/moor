@@ -209,7 +209,7 @@ fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_messag
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_none());
 }
 
 /// As [`started`], with the Box's first session reading as `reading` when asked after its agent.
@@ -248,7 +248,7 @@ fn a_live_agent_after_wake_is_left_running_without_a_launch() {
         "a launch kills the holder's terminal"
     );
     assert!(relaunched(&w, id).is_empty());
-    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    let live = w.cx.store().unwrap().live_launch(id).unwrap().unwrap();
     assert_eq!(live.session_ref, "p-1");
 }
 
@@ -265,7 +265,7 @@ fn a_box_that_does_not_answer_after_wake_launches_nothing_yet() {
     let (w, engine, id) = answering(Probe::TimedOut);
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_some());
 }
 
 /// Suspends `id` mid-turn for `reason`, ten seconds ago, then wakes it.

@@ -23,7 +23,7 @@ use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{BoxRow, SessionRow, Store, StoreError};
+use crate::store::{BoxRow, Launch, Store, StoreError};
 
 /// Longest the send may take, pane reads included.
 const STEER_DEADLINE: Duration = Duration::from_secs(30);
@@ -66,7 +66,7 @@ fn steer_awake(
     slot: &mut Slot,
 ) -> Result<SteerValue, CommandError> {
     let row = reload(store, target)?;
-    if store.live_session(target.0)?.is_none() && row.asleep() {
+    if store.live_launch(target.0)?.is_none() && row.asleep() {
         return Err(no_agent(target.1));
     }
     if row.asleep() {
@@ -143,7 +143,7 @@ enum Attempt {
 /// An agent found gone, with the refusal a steer gives when it is not relaunched.
 pub(super) struct Gone {
     /// The launch the agent ran in, when it has not ended yet.
-    pub(super) launch: Option<SessionRow>,
+    pub(super) launch: Option<Launch>,
     /// The exit code the agent left, when known.
     pub(super) code: Option<i32>,
     /// Why the steer was not sent.
@@ -152,7 +152,7 @@ pub(super) struct Gone {
 
 impl Gone {
     /// The agent of `name` gone from `launch`, having left `code`.
-    fn new(name: &str, launch: Option<SessionRow>, code: Option<i32>) -> Self {
+    fn new(name: &str, launch: Option<Launch>, code: Option<i32>) -> Self {
         let error = match (&launch, code) {
             (None, _) => no_agent(name),
             (Some(_), None) => gone_refusal(name, "the agent's pane is gone"),
@@ -167,14 +167,14 @@ impl Gone {
 
     /// Saves the transcript of the gone agent, ends its launch and ends the Session.
     pub(super) fn finish(&self, cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-        let live = store.live_session(id)?;
+        let live = store.live_launch(id)?;
         let launch = self
             .launch
             .as_ref()
             .filter(|l| live.is_some_and(|v| v.id == l.id));
         if let (Some(launch), Some(row)) = (launch, store.box_row(id)?) {
             let saved = transcript::save(cx, store, &row, launch, Trigger::Exit);
-            store.end_session(
+            store.end_launch(
                 launch.id,
                 self.code,
                 saved.as_ref().map(|t| t.digest.as_str()),
@@ -203,7 +203,7 @@ fn attempt(
     slot: &mut Slot,
 ) -> Result<Attempt, CommandError> {
     let row = reload(store, (id, name))?;
-    let Some(session) = store.live_session(id)? else {
+    let Some(session) = store.live_launch(id)? else {
         return Ok(Attempt::Gone(Gone::new(name, None, None)));
     };
     let sref = session_ref(&row, &session).ok_or_else(|| no_agent(name))?;
@@ -268,7 +268,7 @@ fn exited(
     cx: &Cx,
     store: &Store,
     (id, name): (BoxId, &str),
-    session: &SessionRow,
+    session: &Launch,
     (sent, inbox): (String, InboxId),
 ) -> Result<SteerValue, CommandError> {
     let steer = record(store, id, session, &sent, Mark::default(), inbox)?;

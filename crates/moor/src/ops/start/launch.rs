@@ -52,7 +52,7 @@ pub(super) fn run(
         .agent_session_id
         .clone()
         .filter(|s| req.prompt.is_none() && !s.is_empty());
-    if req.no_agent || store.live_session(id)?.is_some() {
+    if req.no_agent || store.live_launch(id)?.is_some() {
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {
@@ -246,7 +246,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_session_with(id, &sref, launch.prompt.text())?;
+    store.begin_launch_with(id, &sref, launch.prompt.text())?;
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }

@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::link::{self, Fate};
 use crate::ops::common::provision::reread;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// Longest a wake waits for the tunnel before relaunching anyway.
 const TUNNEL_WAIT: Duration = Duration::from_secs(60);
@@ -67,7 +67,7 @@ pub(crate) fn revive_after_wake(
     if row.lifecycle != BoxLifecycle::Ready {
         return Ok(AfterWake::Unknown);
     }
-    let ended = match store.live_session(id)? {
+    let ended = match store.live_launch(id)? {
         Some(s) if launch::working(&row) => match link::recover(cx, store, &row, &s, None)? {
             Fate::Running => return Ok(AfterWake::Intact),
             Fate::Unreachable => return Ok(AfterWake::Unknown),
@@ -100,7 +100,7 @@ pub(crate) fn revive_for_steer(
     if row.lifecycle != BoxLifecycle::Ready {
         return Ok(AgentLaunchView::default());
     }
-    let ended = store.live_session(id)?.map(|s| {
+    let ended = store.live_launch(id)?.map(|s| {
         let end = ended(cx, &row, &s).unwrap_or(Ended::Gone);
         (s, end)
     });
@@ -113,7 +113,7 @@ fn revive(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    ended: Option<&(SessionRow, Ended)>,
+    ended: Option<&(Launch, Ended)>,
     cause: &str,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;

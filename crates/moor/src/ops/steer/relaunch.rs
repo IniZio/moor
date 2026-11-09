@@ -75,7 +75,7 @@ pub(super) fn recover(
     (id, name): (BoxId, &str),
     gone: &mut Gone,
 ) -> Result<Option<Revived>, CommandError> {
-    let live = store.live_session(id)?;
+    let live = store.live_launch(id)?;
     let live_id = live.as_ref().map(|l| l.id);
     if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
         return Ok(Some(Revived::Relaunched));

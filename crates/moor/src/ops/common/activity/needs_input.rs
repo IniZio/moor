@@ -35,7 +35,7 @@ pub(super) fn note_needs_input(
         options: options.clone(),
     };
     let since = reading.term.as_ref().and_then(|t| t.status_at);
-    if let (Some(launch), Some(at)) = (reading.session, since) {
+    if let (Some(launch), Some(at)) = (reading.launch, since) {
         if store.note_asked(launch, at)? {
             return Ok(());
         }

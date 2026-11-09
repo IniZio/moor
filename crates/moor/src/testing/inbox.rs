@@ -2,7 +2,7 @@
 
 use moor_core::domain::event::{Event, SteerSent};
 use moor_core::domain::inbox::{InboxId, InboxKind, SendMark};
-use moor_core::{BoxId, LaunchId};
+use moor_core::BoxId;
 
 use crate::store::Store;
 
@@ -14,11 +14,9 @@ pub(crate) fn sent(
     turn_before: Option<u64>,
     status_before: Option<i64>,
 ) -> InboxId {
-    let launch = store.live_session(id).unwrap().unwrap();
+    let launch = store.live_launch(id).unwrap().unwrap();
     let row = store.enqueue(id, InboxKind::Steer, "go", "test").unwrap();
-    store
-        .mark_sending(id, row, LaunchId::new(launch.id))
-        .unwrap();
+    store.mark_sending(id, row, launch.id).unwrap();
     let steered = Event::Steered(SteerSent {
         session: launch.session_ref,
         message: "go".to_owned(),

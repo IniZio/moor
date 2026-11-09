@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field};
 use moor_core::exec_env::prelude_stop;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{BoxId, Warning};
+use moor_core::{BoxId, LaunchId, Warning};
 
 use super::launch::{record, to_json, TAIL_LINES};
 use crate::cx::owners::Cmd;
@@ -89,7 +89,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     let failure = exited(cx, code, &tail);
     let recorded = cx.turn_unless_held(id, Cmd::Watch).and_then(|_turn| {
         store
-            .end_session(session, code, None)
+            .end_launch(session, code, None)
             .map_err(CommandError::from)
             .and_then(|()| record(store, id, Field::Set(to_json(&failure)?), Some(&failure)))
     });
@@ -166,8 +166,8 @@ fn blocked(cx: &Cx, id: BoxId, screen: Option<&str>) -> Option<ExtraEvent> {
 
 /// Watches the agent just launched until it reports a status, a first-run screen holds it, or
 /// the prompt window closes; the session, exit code and screen of an agent that ended meanwhile.
-fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, Option<i32>, String)> {
-    let live = match store.live_session(id) {
+fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(LaunchId, Option<i32>, String)> {
+    let live = match store.live_launch(id) {
         Ok(Some(row)) => row,
         Ok(None) => return None,
         Err(e) => {

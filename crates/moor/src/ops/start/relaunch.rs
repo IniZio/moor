@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::provision::reread;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
@@ -74,12 +74,12 @@ fn launch_asked(
         return launch::run(cx, store, req, id, setup_exit, settings);
     }
     if store
-        .live_session(id)?
+        .live_launch(id)?
         .is_some_and(|s| ended(cx, &row, &s).is_none())
     {
         return Ok(AgentLaunchView::default());
     }
-    let Some(old) = store.live_session(id)? else {
+    let Some(old) = store.live_launch(id)? else {
         let cfg = settings()?;
         store_prompt(store, req, id)?;
         return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
@@ -136,7 +136,7 @@ pub(super) fn relaunch(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    (old, end): (&SessionRow, &Ended),
+    (old, end): (&Launch, &Ended),
     (recreated, cause): (bool, Option<&str>),
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -182,7 +182,7 @@ pub(super) fn relaunch(
         transcript::save(cx, store, &row, old, Trigger::Relaunch)
     };
     let digest = saved.as_ref().map(|t| t.digest.as_str());
-    store.end_session(old.id, exit, digest)?;
+    store.end_launch(old.id, exit, digest)?;
     store.end_current_session(id, "relaunch", exit)?;
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
@@ -208,7 +208,7 @@ pub(super) fn record_relaunch(
 
 /// How the agent of `session` ended: its exit, or gone with its terminal; none while it runs,
 /// or when it cannot be read.
-pub(super) fn ended(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Option<Ended> {
+pub(super) fn ended(cx: &Cx, row: &BoxRow, session: &Launch) -> Option<Ended> {
     let sref = session_ref(row, session)?;
     match cx.engine().probe(&sref, Deadline(PANE_DEADLINE)) {
         Probe::Read { term: None, .. } => Some(Ended::Gone),

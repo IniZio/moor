@@ -108,7 +108,7 @@ fn a_launch_records_a_session() {
     let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     assert!(v.agent.launched);
-    let s = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    let s = w.cx.store().unwrap().live_launch(id).unwrap().unwrap();
     assert_eq!(v.agent.session.as_deref(), Some(s.session_ref.as_str()));
     let launches = engine.launches();
     let l = launches.first().unwrap();
@@ -190,7 +190,7 @@ fn starting_again_launches_once_and_clears_the_failure() {
     assert!(again.agent.reason.is_none());
     let store = w.cx.store().unwrap();
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_none());
-    assert!(store.live_session(id).unwrap().is_some());
+    assert!(store.live_launch(id).unwrap().is_some());
     run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
 }
@@ -202,8 +202,8 @@ fn restarting_an_idle_box_with_a_prompt_and_no_session_wakes_and_launches_once()
     let first = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
-    while let Some(live) = store.live_session(id).unwrap() {
-        store.end_session(live.id, Some(0), None).unwrap();
+    while let Some(live) = store.live_launch(id).unwrap() {
+        store.end_launch(live.id, Some(0), None).unwrap();
     }
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))

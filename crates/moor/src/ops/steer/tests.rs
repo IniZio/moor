@@ -49,7 +49,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     if session {
-        cx.store().unwrap().begin_session(id, "agent-1").unwrap();
+        cx.store().unwrap().begin_launch(id, "agent-1").unwrap();
     }
     Fx {
         dir,
@@ -155,7 +155,7 @@ fn interrupt() -> SteerReq {
 }
 
 fn live(f: &Fx) -> bool {
-    f.cx.store().unwrap().live_session(f.id).unwrap().is_some()
+    f.cx.store().unwrap().live_launch(f.id).unwrap().is_some()
 }
 
 fn steered(f: &Fx) -> Vec<serde_json::Value> {
@@ -528,7 +528,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
         .transcript_text("abc");
     let f = fx_with(engine, true);
     let store = f.cx.store().unwrap();
-    let current = store.live_session(f.id).unwrap().unwrap();
+    let current = store.live_launch(f.id).unwrap().unwrap();
     store.set_registered_session(current.id, "agent-1").unwrap();
     run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(f.engine.transcripts(), ["agent-1"]);

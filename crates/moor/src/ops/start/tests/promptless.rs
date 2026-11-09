@@ -70,7 +70,7 @@ fn a_promptless_start_of_a_live_agent_changes_nothing() {
     let (w, engine, id) = started();
     assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    let live = w.cx.store().unwrap().live_launch(id).unwrap().unwrap();
     assert_eq!(live.session_ref, "p-1");
 }
 
@@ -99,8 +99,8 @@ fn a_promptless_start_after_the_terminal_ended_with_no_stored_session_launches_w
 fn a_promptless_start_after_the_session_ended_resumes_the_stored_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
-    store.end_session(live.id, None, None).unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
+    store.end_launch(live.id, None, None).unwrap();
     set_agent_session(&w, id, "agent-1");
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
     let next = second(&engine);

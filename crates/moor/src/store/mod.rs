@@ -71,7 +71,7 @@ mod sessions;
 mod tests;
 mod users;
 
-pub(crate) use agent::SessionRow;
+pub(crate) use agent::Launch;
 pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::ProxyRow;
 #[cfg(test)]

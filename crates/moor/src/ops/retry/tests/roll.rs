@@ -148,5 +148,5 @@ fn a_forced_close_wins_over_a_retry_fork_and_leaves_no_machine() {
     );
     assert!(w.driver.list_is_empty(), "{calls:?}");
     let store = w.cx.store().unwrap();
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
 }

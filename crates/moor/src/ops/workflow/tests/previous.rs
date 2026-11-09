@@ -89,7 +89,7 @@ fn finished_first_day(r: &Rig, id: WorkflowId) -> BoxId {
 fn put_to_sleep(r: &Rig, id: BoxId) {
     let store = r.cx.store().unwrap();
     let name = store.box_row(id).unwrap().unwrap().name;
-    if let Some(live) = store.live_session(id).unwrap() {
+    if let Some(live) = store.live_launch(id).unwrap() {
         store.note_agent_read(live.id, r.cx.clock().now()).unwrap();
     }
     crate::ops::sleep::run(&r.cx, &moor_core::BoxReq { box_name: name }).unwrap();

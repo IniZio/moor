@@ -122,7 +122,7 @@ pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, Comman
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Ready);
     let waits = row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet();
-    if !ready || !waits || row.launch_failure.is_some() || store.live_session(row.id)?.is_some() {
+    if !ready || !waits || row.launch_failure.is_some() || store.live_launch(row.id)?.is_some() {
         return Ok(false);
     }
     let events = store.events(row.id, usize::MAX)?;

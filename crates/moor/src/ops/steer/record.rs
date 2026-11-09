@@ -9,7 +9,7 @@ use moor_core::view::steer::{Delivery, SteerValue};
 use moor_core::BoxId;
 
 use crate::error::CommandError;
-use crate::store::{SessionRow, Store};
+use crate::store::{Launch, Store};
 
 /// What the `steered` event says about the send beyond the message.
 #[derive(Debug, Default, Clone, Copy)]
@@ -27,7 +27,7 @@ pub(super) struct Mark {
 pub(super) fn record(
     store: &Store,
     id: BoxId,
-    session: &SessionRow,
+    session: &Launch,
     message: &str,
     mark: Mark,
     inbox: InboxId,

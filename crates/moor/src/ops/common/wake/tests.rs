@@ -349,7 +349,7 @@ fn waking_only_the_box_does_not_look_the_workdir_up() {
 /// Gives the Box a live agent session that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
-    store.begin_session(f.id, "agent-1").unwrap();
+    store.begin_launch(f.id, "agent-1").unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),
         ..Fields::default()
@@ -475,7 +475,7 @@ fn a_wake_relaunch_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.engine.launches().len(), 1);
     assert_eq!(recorded_failure(&f).as_deref(), Some(CA));
-    assert!(store.live_session(f.id).unwrap().is_none());
+    assert!(store.live_launch(f.id).unwrap().is_none());
 }
 
 #[test]

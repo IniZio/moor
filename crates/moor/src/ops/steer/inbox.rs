@@ -2,12 +2,12 @@
 
 use moor_core::domain::inbox::{InboxId, InboxKind};
 use moor_core::seam::engine::{SessionRef, Steer, SteerOutcome};
-use moor_core::{BoxId, LaunchId};
+use moor_core::BoxId;
 
 use super::{is_exit, send};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{SessionRow, Store};
+use crate::store::{Launch, Store};
 
 /// The inbox row a steer is sent from, made at its first send.
 pub(super) struct Slot {
@@ -38,7 +38,7 @@ impl Slot {
         store: &Store,
         id: BoxId,
         (kind, text): (InboxKind, &str),
-        launch: &SessionRow,
+        launch: &Launch,
     ) -> Result<InboxId, CommandError> {
         let row = match &self.row {
             Some((row, k, t)) if *k == kind && t == text => *row,
@@ -49,7 +49,7 @@ impl Slot {
                 row
             }
         };
-        store.mark_sending(id, row, LaunchId::new(launch.id))?;
+        store.mark_sending(id, row, launch.id)?;
         Ok(row)
     }
 
@@ -62,7 +62,7 @@ impl Slot {
         cx: &Cx,
         store: &Store,
         target: (BoxId, &str),
-        (sref, launch): (&SessionRef, &SessionRow),
+        (sref, launch): (&SessionRef, &Launch),
         (steer, sent): (&Steer, &str),
     ) -> Result<(Option<SteerOutcome>, InboxId), CommandError> {
         let kind = match steer {

@@ -45,7 +45,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probe) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     let id = BoxId::new(run(&w.cx, &super::agentless_req("demo")).unwrap().boxed.id);
     let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_launch(id, SESSION).unwrap();
     if idle {
         store
             .apply(Decision::new(id).session(SessionInput::AgentQuiet))
@@ -143,15 +143,15 @@ fn newest_session(w: &World, id: BoxId) -> i64 {
 fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
     let (w, id) = started(false, |w| agent::read(None, just_before(w), 0));
     let store = w.cx.store().unwrap();
-    while let Some(live) = store.live_session(id).unwrap() {
-        store.end_session(live.id, Some(0), None).unwrap();
+    while let Some(live) = store.live_launch(id).unwrap() {
+        store.end_launch(live.id, Some(0), None).unwrap();
     }
     let ended = newest_session(&w, id);
 
     let v = run(&w.cx, &super::agentless_req("demo")).unwrap();
     assert!(v.attached);
 
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     assert_eq!(newest_session(&w, id), ended);
 
     let list = ShowReq {
@@ -220,7 +220,7 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let mut w = world(FakeDriver::new());
     let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().boxed.id);
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
-    w.cx.store().unwrap().begin_session(id, SESSION).unwrap();
+    w.cx.store().unwrap().begin_launch(id, SESSION).unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, idle_now(&w)));
     w.cx = w.cx.with_engine(engine);
     let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();

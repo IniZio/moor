@@ -53,7 +53,7 @@ fn the_launch_waits_for_a_guest_that_answers_late() {
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(failure_step(&f), None);
-    assert!(store.live_session(f.id).unwrap().is_some());
+    assert!(store.live_launch(f.id).unwrap().is_some());
     assert!(!kinds(&f).contains(&"agent_unreachable".to_owned()));
 }
 
@@ -78,7 +78,7 @@ fn a_guest_that_never_answers_is_reported_within_the_deadline() {
         .and_then(|e| e.as_str())
         .unwrap();
     assert!(error.contains("timed out after 5s"), "{error}");
-    assert!(store.live_session(f.id).unwrap().is_none());
+    assert!(store.live_launch(f.id).unwrap().is_none());
     assert!(failure_step(&f).is_some_and(|s| s.starts_with("home: ")));
 }
 

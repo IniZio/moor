@@ -306,7 +306,7 @@ fn a_run_past_its_timeout_ends_its_session_and_keeps_its_box() {
     r.pass();
     let box_id = r.latest_box(id);
     let store = r.cx.store().unwrap();
-    assert!(store.live_session(box_id).unwrap().is_some());
+    assert!(store.live_launch(box_id).unwrap().is_some());
 
     r.advance_to(FIRST_DUE + 1_000 + 29 * 60_000);
     r.pass();
@@ -322,7 +322,7 @@ fn a_run_past_its_timeout_ends_its_session_and_keeps_its_box() {
         r.latest(id).outcome,
         WorkflowOutcome::TimedOut { box_id, ended_at }
     );
-    assert!(store.live_session(box_id).unwrap().is_none());
+    assert!(store.live_launch(box_id).unwrap().is_none());
     assert_eq!(r.open_boxes(), 1, "the Box stays for inspection");
 
     r.advance_to(FIRST_DUE + DAY + 1_000);
