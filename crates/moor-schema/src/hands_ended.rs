@@ -6,12 +6,17 @@ use moor_migrate::Script;
 
 use crate::int;
 
-/// Add the nullable `box_hands.ended_at`.
+/// Add the nullable `box_hands.ended_at`, set to the last state change of hands that already
+/// ended.
 pub(super) fn write(s: &mut Script) {
     s.schema(
         &Table::alter()
             .table("box_hands")
             .add_column(int("ended_at"))
             .take(),
+    );
+    s.raw(
+        "UPDATE \"box_hands\" SET \"ended_at\" = \"state_at\" \
+         WHERE \"state\" IN ('failed', 'gone', 'deleted')",
     );
 }
