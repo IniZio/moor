@@ -204,6 +204,20 @@ impl Delivery {
         }
     }
 
+    /// The agent's terminal was gone or had ended before any key was typed: undo the mark, so
+    /// the refused send counts against no limit.
+    ///
+    /// # Errors
+    /// [`Illegal`] unless the row is in doubt.
+    pub fn refused(self) -> Result<Self, Illegal> {
+        match self {
+            Self::InDoubt { attempts, .. } => Ok(Self::Queued {
+                attempts: attempts.saturating_sub(1),
+            }),
+            Self::Queued { .. } | Self::Sent { .. } => Err(self.illegal("refused")),
+        }
+    }
+
     /// The name of this delivery's state.
     #[must_use]
     pub const fn as_str(self) -> &'static str {

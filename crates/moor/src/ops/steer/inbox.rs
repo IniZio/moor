@@ -42,8 +42,8 @@ impl Slot {
     }
 
     /// Sends `steer` to the agent of `launch`, a text from the inbox; what [`send`] says, and the
-    /// row it went from. A text a gone agent took no send for is dropped, and the next try makes
-    /// a fresh row, so a steer is sent as often as before it waited in the inbox.
+    /// row it went from. A gone agent's terminal was missing or had ended, so it typed no key,
+    /// and the refused send is undone without counting.
     pub(super) fn send(
         &mut self,
         cx: &Cx,
@@ -58,8 +58,7 @@ impl Slot {
         };
         let outcome = send(cx, sref, steer)?;
         if let (None, Some(row)) = (&outcome, inbox) {
-            store.withdraw(target.0, row)?;
-            self.row = None;
+            store.refuse(target.0, row)?;
         }
         Ok((outcome, inbox))
     }

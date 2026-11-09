@@ -118,8 +118,7 @@ impl Store {
         Ok((next, event))
     }
 
-    /// Undoes the mark of a send that never reached the agent because it was gone, so the send
-    /// counts against no limit.
+    /// Records that the agent the send began to was gone, keeping the send's count.
     ///
     /// # Errors
     /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
@@ -127,6 +126,15 @@ impl Store {
     #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn rollback(&self, box_id: BoxId, id: InboxId) -> Result<Delivery, StoreError> {
         self.move_delivery(box_id, id, Delivery::rollback)
+    }
+
+    /// Undoes the mark of a send the agent refused before any key was typed.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
+    /// gone or the database fails.
+    pub(crate) fn refuse(&self, box_id: BoxId, id: InboxId) -> Result<Delivery, StoreError> {
+        self.move_delivery(box_id, id, Delivery::refused)
     }
 
     /// Deletes row `id` unless it was sent: the send it was queued for was refused or failed.
@@ -156,8 +164,9 @@ impl Store {
     }
 
     /// Ends the turn sent row `id` started: deletes the row and records `turn_done` for its
-    /// `steered` event in one transaction, and makes the Box's archive due. Returns whether it
-    /// did; a row already answered, or not sent, is left.
+    /// `steered` event in one transaction, and makes the Box's archive due. Older sent rows went
+    /// into the same prompt, so they are deleted too, with no `turn_done` of their own. Returns
+    /// whether it did; a row already answered, or not sent, is left.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails, or [`StoreError::Corrupt`] when the row
@@ -181,6 +190,13 @@ impl Store {
         if deleted == 0 {
             return Ok(false);
         }
+        tx.run(
+            Query::delete()
+                .from_table(BoxInbox::Table)
+                .and_where(Expr::col(BoxInbox::Box).eq(box_id.get()))
+                .and_where(Expr::col(BoxInbox::Id).lt(id.get()))
+                .and_where(Expr::col(BoxInbox::SentAt).is_not_null()),
+        )?;
         let steer = steered_by(&tx, box_id, id)?.ok_or_else(|| {
             StoreError::Corrupt(format!("inbox row {} has no steered event", id.get()))
         })?;
