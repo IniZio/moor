@@ -6,10 +6,10 @@ use moor_core::request::EndSessionReq;
 use moor_core::view::session::EndSessionValue;
 use moor_core::{BoxName, ErrorKind};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop::stop_agent;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, Store};
@@ -35,13 +35,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
             .box_row(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
-    let _held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        id,
-        "end-session",
-        boxlock::WAIT,
-    )?;
+    let _turn = cx.turn(id, Cmd::Session)?;
     if reload()?.asleep() {
         wake_and_revive(cx, store, &reload()?)?;
     }

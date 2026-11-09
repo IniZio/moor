@@ -7,7 +7,6 @@ use moor_core::{BoxId, ErrorDetail, ErrorKind};
 use super::Gone;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::link::{self, Fate};
 use crate::ops::start::revive_for_steer;
 use crate::store::Store;
@@ -30,7 +29,7 @@ pub(super) enum Revived {
 /// Relaunches the gone agent of `target`, resuming its stored agent session, unless the agent
 /// still runs on the Box.
 ///
-/// An agent that another op relaunched while this one waited for the Box lock is left to run.
+/// An agent that another op relaunched since this one read it is left to run.
 ///
 /// # Errors
 /// The gone agent's refusal when there is nothing to resume, a failure naming why the
@@ -42,7 +41,6 @@ pub(super) fn once(
     (id, name): (BoxId, &str),
     mut gone: Gone,
 ) -> Result<Revived, CommandError> {
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
     let live = store.live_session(id)?;
     let live_id = live.as_ref().map(|l| l.id);
     if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {

@@ -3,8 +3,6 @@
 //! Runs only where activity already settles Working and Idle. It never waits for the Box
 //! lock and never fails the caller.
 
-use std::time::Duration;
-
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
@@ -15,10 +13,10 @@ use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
 use moor_core::{ErrorKind, Warning};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::Reading;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::cache::save_decision;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::suspend_check;
@@ -53,7 +51,7 @@ impl AgentRead {
 /// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`.
 /// While its agent is unread, only the awake cap sleeps it.
 ///
-/// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
+/// An op in flight, a Box that cannot be slept right now and a step the store refuses leave
 /// everything as it was. A Box with a recorded refusal is not asked again until it has left Idle. Any other failure becomes a warning.
 pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) {
     report(cx, try_sleep(cx, store, id, agent));
@@ -91,7 +89,7 @@ fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, C
     Ok(sleep_due(&facts) == SleepVerdict::Due)
 }
 
-/// Sleep the machine once the Box lock is free and the Box is still due.
+/// Sleep the machine once the Box's turn is free and the Box is still due.
 fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(());
@@ -99,7 +97,9 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
     if !due(cx, store, &row, agent)? {
         return Ok(());
     }
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)?;
+    let Some(_turn) = cx.try_turn(id, Cmd::Sleep) else {
+        return Ok(());
+    };
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };

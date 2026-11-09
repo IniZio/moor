@@ -412,7 +412,7 @@ fn replaced_machine(w: &World, id: BoxId) {
     w.driver.forget(&handle);
     crate::ops::common::reconcile::run(&w.cx);
     let node = store.box_spec(id).unwrap().node.unwrap();
-    crate::ops::common::promote::promote_waiting(&w.cx, store, &node, "test");
+    crate::ops::common::promote::promote_waiting(&w.cx, store, &node);
 }
 
 const LOST_NOTE: &str = "This Box's machine was lost and a new one replaced it, so its disk is \

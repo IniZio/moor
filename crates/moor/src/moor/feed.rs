@@ -72,6 +72,15 @@ impl Moor {
         draining: &dyn Fn() -> bool,
         close_after: Option<Duration>,
     ) -> Vec<String> {
+        crate::cx::owners::checked(|| self.settle_checked(draining, close_after))
+    }
+
+    /// The body of [`Moor::settle_open_closing`].
+    fn settle_checked(
+        &self,
+        draining: &dyn Fn() -> bool,
+        close_after: Option<Duration>,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         match self.cx.store() {
             Ok(store) => {

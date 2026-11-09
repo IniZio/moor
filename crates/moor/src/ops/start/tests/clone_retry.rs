@@ -173,7 +173,7 @@ fn a_retry_in_the_kept_box_is_refused_while_another_op_holds_the_lock() {
     let (w, _) = world_with_setup([Ok(exit(1))]);
     start(&w).unwrap_err();
     let execs = w.driver.execs().len();
-    let _held = hold(&w, "close");
+    let _held = hold(&w, crate::cx::owners::Cmd::Close { force: false });
     let err = start(&w).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");

@@ -15,7 +15,7 @@ use moor_core::seam::clock::Ts;
 
 use super::{Cmd, Owners, INTERRUPT_WAIT};
 use crate::adapters::clock::SystemClock;
-use crate::cx::Cancel;
+use crate::env::Cancel;
 use crate::error::CommandError;
 use crate::testing::clock::FakeClock;
 
@@ -144,7 +144,7 @@ fn setup_refuses_user_ops_and_a_forced_close_preempts_it() {
             let err = owners
                 .call(B, cmd, &Cancel::default(), soon(), |_| Ok(()))
                 .unwrap_err();
-            assert_eq!(refused(&err), "box busy: setup in progress");
+            assert_eq!(refused(&err), "box busy: start in progress");
         }
         owners
             .call(
@@ -283,7 +283,7 @@ fn calling_the_held_box_again_errors_instead_of_deadlocking() {
 }
 
 #[test]
-fn a_run_in_flight_admits_steer_and_refuses_sleep_and_close() {
+fn a_run_in_flight_admits_steer_and_refuses_sleep_close_and_another_run() {
     let owners = owners();
     let run = owners
         .call(B, Cmd::Run, &Cancel::default(), soon(), |turn| {
@@ -293,7 +293,7 @@ fn a_run_in_flight_admits_steer_and_refuses_sleep_and_close() {
     owners
         .call(B, Cmd::Steer, &Cancel::default(), soon(), |_| Ok(()))
         .unwrap();
-    for cmd in [Cmd::Sleep, Cmd::Close { force: false }] {
+    for cmd in [Cmd::Sleep, Cmd::Close { force: false }, Cmd::Run] {
         let err = owners
             .call(B, cmd, &Cancel::default(), soon(), |_| Ok(()))
             .unwrap_err();
@@ -493,4 +493,40 @@ fn a_run_hold_is_released_when_its_thread_panics() {
     owners
         .call(B, Cmd::Sleep, &Cancel::default(), soon(), |_| Ok(()))
         .unwrap();
+}
+
+#[test]
+fn two_boxes_crossing_to_each_other_from_inside_their_turns_cannot_deadlock() {
+    let owners = owners();
+    let other = BoxId::new(8);
+    let crossed = Mutex::new(Vec::new());
+    let both_tried = std::sync::Barrier::new(2);
+    thread::scope(|s| {
+        let (owners, crossed, both_tried) = (&owners, &crossed, &both_tried);
+        let (a_in, a_held) = mpsc::channel();
+        let (b_in, b_held) = mpsc::channel();
+        let cross = move |mine: BoxId,
+                          theirs: BoxId,
+                          held: mpsc::Sender<()>,
+                          peer: Receiver<()>| {
+            owners
+                .call(mine, Cmd::Start, &Cancel::default(), soon(), |_| {
+                    held.send(()).unwrap();
+                    peer.recv().unwrap();
+                    let waited =
+                        owners.call(theirs, Cmd::Suspend, &Cancel::default(), soon(), |_| Ok(()));
+                    assert_eq!(waited.unwrap_err().kind, ErrorKind::Internal);
+                    let tried = owners.try_call(theirs, Cmd::Suspend, &Cancel::default(), |_| ());
+                    crossed.lock().unwrap().push(tried);
+                    both_tried.wait();
+                    Ok(())
+                })
+                .unwrap();
+        };
+        let a = s.spawn(move || cross(B, other, a_in, b_held));
+        let b = s.spawn(move || cross(other, B, b_in, a_held));
+        a.join().unwrap();
+        b.join().unwrap();
+    });
+    assert_eq!(crossed.into_inner().unwrap(), [None, None]);
 }

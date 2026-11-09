@@ -1,6 +1,7 @@
 //! `steer`: send a message or a menu choice to the Box's agent.
 //!
-//! The Box lock is taken only to wake an asleep Box, so a Box can be steered during a run.
+//! The steer holds its Box's turn, which a run in flight leaves free, so a Box can be steered
+//! during a run.
 
 use std::time::Duration;
 
@@ -14,10 +15,10 @@ use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
 use moor_core::{BoxId, ErrorDetail, ErrorKind, SteerReq, Warning};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
@@ -40,19 +41,13 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
     let target = (found.id, found.name.as_str());
+    let _turn = cx.turn(target.0, Cmd::Steer)?;
     let row = reload(store, target)?;
     if store.live_session(target.0)?.is_none() && row.asleep() {
         return Err(no_agent(target.1));
     }
     if row.asleep() {
-        let _held = BoxLock::acquire(
-            cx.clock(),
-            cx.state_dir()?,
-            target.0,
-            "steer",
-            boxlock::WAIT,
-        )?;
-        wake_and_revive(cx, store, &reload(store, target)?)?;
+        wake_and_revive(cx, store, &row)?;
     }
     let gone = match attempt(cx, store, req, target)? {
         Attempt::Sent(v) => return Ok(v),

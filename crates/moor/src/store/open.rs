@@ -117,6 +117,8 @@ impl Store {
             pins: Pins::new(),
             schema,
             _excludes: None,
+            #[cfg(test)]
+            write_check: Arc::default(),
         }
     }
 

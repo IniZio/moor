@@ -9,9 +9,9 @@ use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::{BoxId, BoxName, ErrorKind, Warning};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
 use crate::ops::common::resume_gate::{beyond_reach, room_to_wake, Turn};
@@ -19,7 +19,7 @@ use crate::ops::common::wake::{wait_for_room, wake_in_turn};
 use crate::ops::start::{launch_after_retry, revive_after_wake};
 use crate::store::{BoxRow, Store};
 
-/// How long `close` waits for a waiter's Box lock before skipping that waiter.
+/// How long `close` waits for a waiter's turn before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
 /// Starts or wakes the Boxes pending on `node`, in queue order, while it has room for them. On a
@@ -28,9 +28,9 @@ pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 ///
 /// Returns the names of the Boxes that left Pending, in order. Best effort: a Box that cannot
 /// be started, or an error that stops the pass, becomes a warning and the pass ends with what it did.
-pub(crate) fn promote_waiting(cx: &Cx, store: &Store, node: &NodeName, op: &str) -> Vec<BoxName> {
+pub(crate) fn promote_waiting(cx: &Cx, store: &Store, node: &NodeName) -> Vec<BoxName> {
     let mut promoted = Vec::new();
-    if let Err(e) = promote_into(cx, store, node, op, &mut promoted) {
+    if let Err(e) = promote_into(cx, store, node, &mut promoted) {
         cx.warn(Warning {
             code: "promote_failed".to_owned(),
             message: format!("cannot promote waiting Boxes: {}", e.error),
@@ -44,7 +44,6 @@ fn promote_into(
     cx: &Cx,
     store: &Store,
     node: &NodeName,
-    op: &str,
     promoted: &mut Vec<BoxName>,
 ) -> Result<(), CommandError> {
     let (all, _) = crate::ops::common::node::nodes(cx)?;
@@ -69,7 +68,7 @@ fn promote_into(
                 continue;
             }
         };
-        match cx.for_box(row.user, || promote_one(cx, store, id, &row.name, op, &cfg))? {
+        match cx.for_box(row.user, || promote_one(cx, store, id, &row.name, &cfg))? {
             Promotion::Left(name) => {
                 promoted.push(name);
                 // A Box that came up since the node's last report is not in it yet; the next report counts it.
@@ -119,17 +118,20 @@ enum Promotion {
     Skipped,
 }
 
-/// Promotes one waiting Box under its Box lock.
+/// Promotes one waiting Box under its turn.
 fn promote_one(
     cx: &Cx,
     store: &Store,
     id: BoxId,
     name: &BoxName,
-    op: &str,
     cfg: &BoxSettings,
 ) -> Result<Promotion, CommandError> {
-    let _lock = match BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, PROMOTE_WAIT) {
-        Ok(lock) => lock,
+    let deadline = cx.clock().instant() + PROMOTE_WAIT;
+    let _turn = match cx
+        .owners()
+        .turn(id, Cmd::Promote, cx.env().cancel(), deadline)
+    {
+        Ok(turn) => turn,
         Err(e) => {
             cx.warn(Warning {
                 code: "promote_skipped".to_owned(),

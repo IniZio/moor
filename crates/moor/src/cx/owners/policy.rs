@@ -2,7 +2,6 @@
 
 /// What an op asks its Box's owner to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(test, expect(dead_code, reason = "the tests use a few ops"))]
 pub(crate) enum Cmd {
     /// Start a Box: acquire its machine and run setup.
     Start,
@@ -29,6 +28,8 @@ pub(crate) enum Cmd {
     Relaunch,
     /// Run a command in the Box.
     Run,
+    /// Run a command in the Box with its stdio streamed, keeping no run record.
+    Exec,
     /// Bring the row in line with the machine.
     Reconcile,
     /// Promote the Box's work to its links.
@@ -54,6 +55,7 @@ impl Cmd {
             Self::Steer => "steer",
             Self::Relaunch => "relaunch",
             Self::Run => "run",
+            Self::Exec => "exec",
             Self::Reconcile => "reconcile",
             Self::Promote => "promote",
             Self::Copy => "copy",
@@ -76,19 +78,21 @@ pub(super) enum Admit {
     Queue,
     /// Refuse with this message.
     Refuse(&'static str),
+    /// Refuse as busy with the holder's op.
+    Busy,
     /// Stop the holder and take the turn next.
     Preempt,
 }
 
 /// The admission policy: `cmd` arriving while `holder` has the turn and a run may be in flight.
 ///
-/// [`super::Owners::try_call`] skips any Box with something in flight, so this table is for user ops.
+/// [`super::Owners::try_turn`] skips any Box with something in flight, so this table is for user ops.
 pub(super) const fn admit(cmd: Cmd, holder: Option<Cmd>, run: bool) -> Admit {
     match (holder, cmd) {
         (Some(h), Cmd::Close { force: true }) if h.is_long() => Admit::Preempt,
-        (Some(h), _) if h.is_long() => Admit::Refuse("box busy: setup in progress"),
+        (Some(h), _) if h.is_long() => Admit::Busy,
         (Some(_), _) => Admit::Queue,
-        (None, Cmd::Sleep | Cmd::Close { force: false }) if run => {
+        (None, Cmd::Sleep | Cmd::Close { force: false } | Cmd::Run) if run => {
             Admit::Refuse("box busy: run in progress")
         }
         (None, Cmd::Close { force: true }) if run => Admit::Queue,

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use moor_client::link::status::Status;
 use moor_core::config::UserConfig;
+use moor_core::name::BoxId;
 use moor_core::request::Pins;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
@@ -19,10 +20,13 @@ use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
 use crate::blobs::{fs::FsBlobs, Blobs};
-pub(crate) use crate::env::Cancel;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Database, Store};
+use owners::{Cmd, Owners, Turn};
+
+/// How long a user op waits behind the ops queued on its Box before it is refused as busy.
+pub(crate) const QUEUE_WAIT: Duration = Duration::from_secs(120);
 
 /// The agents linked to the controller's machine runner.
 pub(crate) trait MachineLinks: Send + Sync {
@@ -63,6 +67,8 @@ pub(crate) struct Cx {
     prompt_window: Duration,
     /// State store, opened on first use.
     store: OnceCell<Store>,
+    /// The owners of every Box: the env's, else this context's own.
+    owners: OnceCell<Arc<Owners>>,
     /// Blob store, opened on first use.
     blobs: OnceCell<Arc<dyn Blobs>>,
     /// The controller's vault key file; `None` outside a controller.
@@ -121,6 +127,7 @@ impl Cx {
             env: p.env,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
+            owners: OnceCell::new(),
             blobs: OnceCell::new(),
             vault_key: None,
             requester: None,
@@ -152,7 +159,51 @@ impl Cx {
                 Arc::clone(&self.clock),
             )?,
         };
+        #[cfg(test)]
+        {
+            let owners = Arc::clone(self.owners_arc());
+            store.check_writes(Arc::new(move |id| owners.check_write(id)));
+        }
         Ok(self.store.get_or_init(|| store.pinned(self.pins.clone())))
+    }
+
+    /// The owners that admit every op on a Box: one per controller, shared through the env, else
+    /// this context's own.
+    pub(crate) fn owners(&self) -> &Owners {
+        self.owners_arc()
+    }
+
+    /// Box `id`'s turn for `cmd`, waiting up to [`QUEUE_WAIT`] behind the ops before it.
+    ///
+    /// # Errors
+    /// As [`Owners::turn`].
+    pub(crate) fn turn(&self, id: BoxId, cmd: Cmd) -> Result<Turn<'_>, CommandError> {
+        let deadline = self.clock.instant() + QUEUE_WAIT;
+        self.owners().turn(id, cmd, self.env.cancel(), deadline)
+    }
+
+    /// Box `id`'s turn for `cmd` when nothing is in flight on it; `None` skips a busy Box.
+    pub(crate) fn try_turn(&self, id: BoxId, cmd: Cmd) -> Option<Turn<'_>> {
+        self.owners().try_turn(id, cmd, self.env.cancel())
+    }
+
+    /// [`Cx::owners`], to share.
+    pub(crate) fn owners_arc(&self) -> &Arc<Owners> {
+        self.owners.get_or_init(|| {
+            self.env.shared::<Arc<Owners>>().map_or_else(
+                || Arc::new(Owners::new(Arc::clone(&self.clock))),
+                Arc::clone,
+            )
+        })
+    }
+
+    /// This context sharing `owners` with the others that use it.
+    #[cfg(test)]
+    pub(crate) fn with_owners(self, owners: Arc<Owners>) -> Self {
+        Self {
+            owners: OnceCell::from(owners),
+            ..self
+        }
     }
 
     /// The blob store the env shares, else the files under the state directory.
@@ -323,6 +374,7 @@ impl Cx {
     }
 }
 
+pub(crate) mod owners;
 mod requester;
 #[cfg(test)]
 mod tests;

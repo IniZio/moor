@@ -13,9 +13,8 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunId, RunReq};
 
-use super::{locked, run};
-use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
+use super::{in_turn, run};
+use crate::cx::{owners::Cmd, Cx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::FakeProxyHost;
@@ -477,7 +476,8 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
     f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
     let row = store.box_row(f.id).unwrap().unwrap();
-    let e = locked(&f.cx, store, &req(&["true"]), &row, None).unwrap_err();
+    let turn = f.cx.turn(f.id, Cmd::Run).unwrap();
+    let e = in_turn(&f.cx, store, &req(&["true"]), (&row, turn), None).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
     assert!(f.driver.calls().iter().all(|c| !c.starts_with("exec")));
@@ -486,8 +486,7 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
 #[test]
 fn busy_box_is_refused() {
     let f = ready();
-    let _held =
-        BoxLock::acquire(f.cx.clock(), f.dir.path(), f.id, "start", Duration::ZERO).unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Start);
     let msg = refused(&f, &req(&["true"]), ErrorKind::Refused);
     assert!(msg.starts_with("box busy"), "{msg}");
 }
@@ -590,7 +589,8 @@ fn run_started_losing_a_race_is_ignored() {
     store
         .apply(Decision::new(f.id).session(SessionInput::AgentBusy))
         .unwrap();
-    let v = locked(&f.cx, store, &req(&["true"]), &stale, None).unwrap();
+    let turn = f.cx.turn(f.id, Cmd::Run).unwrap();
+    let v = in_turn(&f.cx, store, &req(&["true"]), (&stale, turn), None).unwrap();
     assert!(v.ran);
     assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
 }

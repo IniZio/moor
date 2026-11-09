@@ -1,7 +1,8 @@
 //! `run`: execute a command on the Box's machine, keep a run record, report how it ended.
 //!
-//! The Box lock is held from the run row's creation to its completion. So is the run's follow
-//! claim, which is what marks the row in flight to every other reader.
+//! The Box's turn is held to wake the Box and create the run row; the run then counts on its Box
+//! until it completes, which leaves the turn to a steer. The run's follow claim, held to the end,
+//! is what marks the row in flight to every other reader.
 
 use std::path::PathBuf;
 
@@ -20,10 +21,10 @@ use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
 use moor_core::{BoxPath, ErrorKind, RunId, RunReq, Sha};
 
+use crate::cx::owners::{Cmd, Turn};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxExec, Site};
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
@@ -63,19 +64,19 @@ pub(crate) fn streamed(
         .latest_box_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     dead_provisioning(cx, &found)?;
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;
+    let turn = cx.turn(found.id, Cmd::Run)?;
     let row = store
         .box_row(found.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
-    locked(cx, store, req, &row, sink)
+    in_turn(cx, store, req, (&row, turn), sink)
 }
 
-/// The part of `run` that needs the Box lock, on the row read after taking it.
-fn locked(
+/// The part of `run` that starts under the Box's turn, on the row read after taking it.
+fn in_turn(
     cx: &Cx,
     store: &Store,
     req: &RunReq,
-    row: &BoxRow,
+    (row, turn): (&BoxRow, Turn<'_>),
     sink: Option<Sink<'_>>,
 ) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
@@ -93,15 +94,16 @@ fn locked(
         row
     };
     let target = ready::target(store, row)?;
-    launch(cx, store, req, row, &target, sink)
+    launch(cx, store, req, (row, turn), &target, sink)
 }
 
-/// Records the run, executes the command in the Box and records how it ended.
+/// Records the run, ends `turn` once the Box is marked working, executes the command in the Box
+/// and records how it ended.
 fn launch(
     cx: &Cx,
     store: &Store,
     req: &RunReq,
-    row: &BoxRow,
+    (row, turn): (&BoxRow, Turn<'_>),
     target: &ready::Target,
     sink: Option<Sink<'_>>,
 ) -> Result<RunValue, CommandError> {
@@ -115,6 +117,8 @@ fn launch(
         pid: std::process::id(),
     })?;
     mark_working(store, row).inspect_err(|_| finish(store, id, None))?;
+    let _running = turn.begin_run();
+    drop(turn);
     let (output, log) = output(cx, req, id).inspect_err(|_| finish(store, id, None))?;
     let exec = box_env(cx, row, target, &cfg)
         .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;

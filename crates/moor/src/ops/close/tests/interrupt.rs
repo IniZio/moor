@@ -10,15 +10,15 @@ use moor_core::seam::clock::Ts;
 use moor_core::ErrorKind;
 
 use super::{fx_with, req, run, Fx};
-use crate::cx::Cancel;
+use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
-use crate::ops::common::boxlock::{BoxLock, WAIT};
+use crate::env::Cancel;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 
-/// A Ready Box whose setup a start is running: the setup intent is recorded and the start's
-/// interruptible hold is the returned lock, whose stop flag is `cancel`.
-fn in_setup(cancel: &Cancel) -> (Fx, BoxLock) {
+/// A Ready Box whose setup a start is running: the setup intent is recorded and the start holds
+/// the Box's turn until the returned hold drops, with `cancel` as its stop flag.
+fn in_setup(cancel: &Cancel) -> (Fx, Held) {
     let f = fx_with(FakeDriver::new());
     f.cx.store()
         .unwrap()
@@ -26,10 +26,9 @@ fn in_setup(cancel: &Cancel) -> (Fx, BoxLock) {
             pid: std::process::id(),
         })))
         .unwrap();
-    let clock = FakeClock::new(Ts::from_millis(0));
-    let held = BoxLock::acquire(&clock, f.dir.path(), f.id, "start", WAIT)
-        .unwrap()
-        .interruptible(cancel);
+    let held =
+        f.cx.owners_arc()
+            .hold_with(f.id, Cmd::Start, cancel.clone());
     (f, held)
 }
 
@@ -71,8 +70,10 @@ fn a_forced_close_whose_start_does_not_stop_leaves_the_box_alone() {
         f.proc.clone(),
         clock.clone(),
     );
+    let owners = Arc::clone(f.cx.owners_arc());
     let closer = std::thread::spawn(move || {
-        let cx = Cx::fake_with_clock(&dir, driver, proc, UserConfig::default(), at);
+        let cx =
+            Cx::fake_with_clock(&dir, driver, proc, UserConfig::default(), at).with_owners(owners);
         run(&cx, &req(true))
             .map(|_| ())
             .map_err(|e| (e.kind, e.error.to_string()))

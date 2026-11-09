@@ -12,9 +12,9 @@ use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
 use crate::ops::common::guest;
@@ -51,7 +51,7 @@ pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
 
 /// Gives a Box with no machine, a failed setup in a lost machine or a lost machine a machine again.
 ///
-/// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
+/// Returns what ran, or `None` when nothing was provisioned. The Box's turn is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 ///
@@ -61,14 +61,13 @@ pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    op: &str,
+    cmd: Cmd,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Ready);
     if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
         return Ok(None);
     }
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?
-        .interruptible(cx.env().cancel());
+    let _turn = cx.turn(row.id, cmd)?;
     let row = reread(store, row.id)?;
     let entry = entry_for(&row);
     if kept_box_retry(&row) {
@@ -131,7 +130,7 @@ fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
 /// Admits the Box, acquires its machine and records the outcome.
 ///
 /// A new or waiting Box at the machine limit is queued (or left waiting) and the
-/// driver is not called. The caller holds the Box lock.
+/// driver is not called. The caller holds the Box's turn.
 pub(crate) fn provision(
     cx: &Cx,
     store: &Store,

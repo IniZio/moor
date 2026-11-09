@@ -8,7 +8,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::authz;
 
-/// Run `show-session`. Read-only: no reconcile and no Box lock, so it works for host and Box Sessions.
+/// Run `show-session`. Read-only: no reconcile and no Box turn, so it works for host and Box Sessions.
 ///
 /// # Errors
 /// [`CommandError`] when the Session is unknown or a store read fails.

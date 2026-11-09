@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::cx::owners::checked;
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -196,7 +197,7 @@ impl Moor {
         req: &moor_core::ExecReq,
         pipes: moor_core::seam::proc::Pipes<'_>,
     ) -> Result<moor_core::view::ExecView, CommandError> {
-        ops::exec::run(&self.cx, req, pipes)
+        checked(|| ops::exec::run(&self.cx, req, pipes))
     }
 
     /// Runs the machine runner's rsync `req` in its Box with rsync's stdio on `pipes`.
@@ -208,7 +209,7 @@ impl Moor {
         req: &moor_core::BoxRsyncReq,
         pipes: moor_core::seam::proc::Pipes<'_>,
     ) -> Result<moor_core::view::ExecView, CommandError> {
-        ops::box_rsync::run(&self.cx, req, pipes, ops::box_rsync::DEADLINE)
+        checked(|| ops::box_rsync::run(&self.cx, req, pipes, ops::box_rsync::DEADLINE))
     }
 
     /// This engine doing only what `grant` lets its request do.
@@ -255,7 +256,7 @@ impl Moor {
     /// Run one request to an envelope; never panics, never prints.
     pub fn call(&self, req: Request) -> Response {
         let cmd = req.cmd();
-        match ops::dispatch(&self.cx, req) {
+        match checked(|| ops::dispatch(&self.cx, req)) {
             Ok(value) => Response::ok(cmd, Some(value)).with_warnings(self.cx.take_warnings()),
             Err(e) => e.into_response(cmd, self.cx.take_warnings()),
         }
@@ -342,7 +343,7 @@ impl Moor {
         out: &mut (dyn FnMut(&[u8]) -> std::io::Result<()> + Send),
     ) -> Response {
         let cmd = "run";
-        match ops::run_streamed(&self.cx, req, out) {
+        match checked(|| ops::run_streamed(&self.cx, req, out)) {
             Ok(value) => Response::ok(cmd, Some(value)).with_warnings(self.cx.take_warnings()),
             Err(e) => e.into_response(cmd, self.cx.take_warnings()),
         }

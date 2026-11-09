@@ -1,6 +1,6 @@
 //! `wait-events`: poll the event log until any or all of several Boxes emit matching events.
 //!
-//! Never takes a Box lock: it settles each Box through the store, which writes the
+//! Never takes a Box's turn: it settles each Box through the store, which writes the
 //! `turn_done` and `session_ended` events it waits for.
 
 use std::collections::BTreeSet;

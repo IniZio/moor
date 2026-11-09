@@ -7,7 +7,8 @@ use std::time::Duration;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::{BoxId, BoxName, CloseReq};
+use moor_core::domain::hands::HandsState;
+use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
 use super::setup::start_req;
 use super::{script_base_yaml, world, World};
@@ -62,7 +63,8 @@ fn forced_mid_acquire(driver: FakeDriver) -> (World, Closed) {
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
     let closer: Arc<Mutex<Option<JoinHandle<Closed>>>> = Arc::default();
-    let (slot, other) = (closer.clone(), other_cx(&w));
+    let closing = other_cx(&w).with_owners(Arc::clone(w.cx.owners_arc()));
+    let (slot, other) = (closer.clone(), closing);
     let other = Mutex::new(Some(other));
     w.driver.notes_while_acquiring(&[], move || {
         let Some(other) = other.lock().unwrap().take() else {
@@ -141,4 +143,43 @@ fn the_next_process_honours_a_forced_close_a_restart_cut_off() {
     let calls = w.driver.calls();
     assert!(!calls.iter().any(|c| c == "adopt"), "{calls:?}");
     assert_eq!(releases(&w), 1, "{calls:?}");
+}
+
+#[test]
+fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machine() {
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    let seen = Arc::new(Mutex::new(None));
+    let owners = Arc::clone(w.cx.owners_arc());
+    let (dir, driver, proc, got) = (
+        w.dir.path().to_owned(),
+        w.driver.clone(),
+        w.proc.clone(),
+        seen.clone(),
+    );
+    w.driver.notes_while_acquiring(&[], move || {
+        let other = Cx::fake_with(&dir, driver.clone(), proc.clone(), UserConfig::default())
+            .with_owners(Arc::clone(&owners));
+        let req = CloseReq {
+            target: BoxName::parse_allow_bare("demo").unwrap().into(),
+            force: false,
+        };
+        let closing = std::thread::spawn(move || close::run(&other, &req).map(drop));
+        let e = closing.join().unwrap().unwrap_err();
+        *got.lock().unwrap() = Some((e.kind, e.error.to_string()));
+    });
+    run(&w.cx, &start_req()).unwrap();
+    let seen = seen
+        .lock()
+        .unwrap()
+        .take()
+        .expect("close ran during the acquire");
+    assert_eq!(
+        seen,
+        (ErrorKind::Refused, "box busy: start in progress".to_owned())
+    );
+    assert_eq!(releases(&w), 0);
+    let row = row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
 }

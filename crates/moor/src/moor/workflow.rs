@@ -17,7 +17,9 @@ impl Moor {
         move |draining| match Self::from_env(&env) {
             Ok(moor) => {
                 let env = env.clone();
-                workflow::tick(&moor.cx, &|job| spawn_start(&env, job), draining)
+                crate::cx::owners::checked(|| {
+                    workflow::tick(&moor.cx, &|job| spawn_start(&env, job), draining)
+                })
             }
             Err(e) => vec![e.error.to_string()],
         }
@@ -42,7 +44,7 @@ fn spawn_start(env: &Env, job: StartJob) {
             let moor = moor
                 .acting_as(job.identity.clone())
                 .viewing_as(Viewer::User(job.owner));
-            workflow::run_start(&moor.cx, &job);
+            crate::cx::owners::checked(|| workflow::run_start(&moor.cx, &job));
         }
     });
 }

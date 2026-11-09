@@ -1,6 +1,6 @@
 //! Wake an Asleep Box and machine before an op acts on them.
 //!
-//! The caller holds the Box lock and passes a row read after taking it.
+//! The caller holds the Box's turn and passes a row read after taking it.
 
 use std::collections::HashMap;
 
@@ -12,9 +12,9 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{BoxId, BoxPath, BoxReq, ErrorKind, Warning};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::guest;
 use crate::ops::common::held_prompt;
 use crate::ops::common::node::now;
@@ -264,13 +264,12 @@ pub(crate) fn wait_for_room(
         .with_hint("it wakes on its own once its node has room"))
 }
 
-/// Wake the open Box named by `req` under its Box lock and build the value.
+/// Wake the open Box named by `req` under its turn and build the value.
 ///
-/// `held` runs on the woken row while the lock is still held.
+/// `held` runs on the woken row while the turn is still held.
 pub(crate) fn wake_box(
     cx: &Cx,
     req: &BoxReq,
-    op: &str,
     held: impl FnOnce(&BoxRow) -> Result<(), CommandError>,
 ) -> Result<SleepValue, CommandError> {
     let store = cx.store()?;
@@ -283,7 +282,7 @@ pub(crate) fn wake_box(
             )
         })?
         .id;
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, boxlock::WAIT)?;
+    let _turn = cx.turn(id, Cmd::Wake)?;
     let reload = || {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(

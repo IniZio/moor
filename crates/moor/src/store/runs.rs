@@ -252,7 +252,7 @@ impl Store {
     ///
     /// Open runs of the box whose claim is free are finished as interrupted, so callers never
     /// see them. Older open runs are finished the same way even when claimed: only one run can be
-    /// live under the per-Box lock.
+    /// live at once, as a Box's owner admits one run at a time.
     pub(crate) fn in_flight_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let open = {
             let conn = self.reader()?;

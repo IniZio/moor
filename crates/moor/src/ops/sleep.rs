@@ -1,6 +1,6 @@
 //! `sleep`: park a Box's machine.
 //!
-//! Holds the Box lock for the call. Works from Idle, or from Working when no run is in flight.
+//! Holds the Box's turn for the call. Works from Idle, or from Working when no run is in flight.
 
 use std::collections::HashMap;
 
@@ -11,10 +11,10 @@ use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{BoxReq, ErrorKind};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{refuse, settled, sleep_handle, sleep_parked};
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::store::BoxRow;
 
@@ -30,7 +30,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
             )
         })?
         .id;
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", boxlock::WAIT)?;
+    let _turn = cx.turn(id, Cmd::Sleep)?;
     let reload = || {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(

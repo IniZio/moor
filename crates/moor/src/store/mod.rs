@@ -80,6 +80,7 @@ pub(crate) use users::machine::{HeldMachine, MachineWake};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
 mod webhook_outbox;
+mod write_check;
 pub(crate) use webhook_outbox::ClaimedDelivery;
 
 /// How long a `SQLite` connection waits on a lock before `SQLITE_BUSY`.
@@ -201,6 +202,9 @@ pub(crate) struct Store {
     /// For a moor that is not the controller on a shared database, the controller lock it holds
     /// so none starts beside it; released when the last clone drops.
     _excludes: Option<Arc<Mutex<db::ControllerLock>>>,
+    /// In test builds, what a write to an existing Box's rows must pass; shared by every clone.
+    #[cfg(test)]
+    write_check: Arc<std::sync::OnceLock<write_check::WriteCheck>>,
 }
 
 impl Store {

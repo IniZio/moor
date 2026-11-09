@@ -112,7 +112,8 @@ fn a_forced_close_wins_over_a_retry_fork_and_leaves_no_machine() {
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
     let closer: Arc<Mutex<Option<JoinHandle<Closed>>>> = Arc::default();
-    let (slot, other) = (closer.clone(), Mutex::new(Some(other_cx(&w))));
+    let closing = other_cx(&w).with_owners(Arc::clone(w.cx.owners_arc()));
+    let (slot, other) = (closer.clone(), Mutex::new(Some(closing)));
     w.driver.during_next_fork(move || {
         let Some(other) = other.lock().unwrap().take() else {
             return;

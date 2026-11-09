@@ -15,7 +15,8 @@ use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 use super::state::idle;
 use super::state::WORKING;
 use super::{repo, req, script_base_yaml, world, World};
-use crate::ops::common::boxlock::BoxLock;
+use crate::cx::owners::Cmd;
+use crate::env::Cancel;
 use crate::ops::start::run;
 use crate::store::db::DbExt as _;
 use crate::testing::agent;
@@ -509,15 +510,14 @@ fn the_box_lock_is_free_while_the_agent_is_watched() {
     let (mut w, _engine) = prompting(screen_tail("working"));
     let free = Arc::new(AtomicBool::new(true));
     let seen = Arc::new(AtomicBool::new(false));
-    let state = w.dir.path().to_path_buf();
+    let owners = Arc::clone(w.cx.owners_arc());
     let (f, s) = (free.clone(), seen.clone());
     let clock = Arc::new(SleepHook {
         inner: FakeClock::new(Ts::from_millis(1_000_000)),
         on_sleep: Box::new(move || {
-            let clock = FakeClock::new(Ts::from_millis(0));
-            let got = BoxLock::acquire(&clock, &state, BoxId::new(1), "probe", Duration::ZERO);
+            let got = owners.try_turn(BoxId::new(1), Cmd::Settle, &Cancel::default());
             s.store(true, Ordering::SeqCst);
-            if got.is_err() {
+            if got.is_none() {
                 f.store(false, Ordering::SeqCst);
             }
         }),

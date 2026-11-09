@@ -10,9 +10,9 @@ use moor_core::seam::proc::Deadline;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::transcript;
@@ -275,7 +275,7 @@ pub(crate) fn settle(
 
 /// Ends the current session of an agent that ended with `exit`, once its transcript is saved.
 ///
-/// Nothing is ended when the live session is not the probed one, or while another operation holds the Box lock, so the save is retried first.
+/// Nothing is ended when the live session is not the probed one, or while another operation holds the Box's turn, so the save is retried first.
 fn end_exited_session(
     cx: &Cx,
     store: &Store,
@@ -286,13 +286,7 @@ fn end_exited_session(
     if store.live_session(row.id)?.is_none_or(|s| s.id != probed) {
         return Ok(());
     }
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "session end",
-        Duration::ZERO,
-    ) else {
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
     store.end_current_session(row.id, "exited", exit)?;

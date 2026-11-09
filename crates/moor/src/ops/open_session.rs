@@ -6,9 +6,9 @@ use moor_core::request::OpenSessionReq;
 use moor_core::view::session::OpenSessionValue;
 use moor_core::{BoxName, ErrorKind, SessionId};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::host_session::refuse_invalid;
 use crate::ops::start::{begin_seeded, watch_launch};
 use crate::store::{BoxRow, Store};
@@ -37,13 +37,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
     };
     check(store, &reload()?, name)?;
     let (next, view) = {
-        let _held = BoxLock::acquire(
-            cx.clock(),
-            cx.state_dir()?,
-            id,
-            "open-session",
-            boxlock::WAIT,
-        )?;
+        let _turn = cx.turn(id, Cmd::Session)?;
         let row = reload()?;
         check(store, &row, name)?;
         let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
@@ -54,7 +48,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         }
         (next, view)
     };
-    // As in `start`, the new agent is watched with the Box lock free.
+    // As in `start`, the new agent is watched with the Box's turn free.
     let view = watch_launch(cx, store, id, view);
     if !view.launched {
         let message = view.reason.map_or_else(

@@ -1,6 +1,7 @@
 //! Reconcile corrects a Box its host lists as stopped.
 
 use super::*;
+use crate::cx::owners::Cmd;
 
 #[test]
 fn reconcile_queues_a_working_box_its_host_stopped_to_resume_first() {
@@ -60,14 +61,7 @@ fn reconcile_leaves_a_box_alone_while_an_op_holds_its_lock() {
     let id = working(&cx, &driver, "a", None);
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     driver.stop_behind(&row.hands.unwrap().handle.unwrap());
-    let held = crate::ops::common::boxlock::BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir().unwrap(),
-        id,
-        "sleep",
-        std::time::Duration::ZERO,
-    )
-    .unwrap();
+    let held = cx.owners_arc().hold(id, Cmd::Sleep);
     assert_eq!(
         box_state(&cx),
         HandsState::Ready,

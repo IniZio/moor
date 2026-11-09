@@ -118,7 +118,7 @@ impl Store {
     /// `place` to store the contents under the version's key.
     ///
     /// `place` runs outside any transaction, as the blob store may be slow or gone and every
-    /// store write waits on the one write lock. The Box lock keeps out a second collect, and a
+    /// store write waits on the one write lock. The Box's turn keeps out a second collect, and a
     /// blob whose row never committed is replaced when that version is tried again.
     fn add_version(
         &self,

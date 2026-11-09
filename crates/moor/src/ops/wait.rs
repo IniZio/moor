@@ -1,6 +1,6 @@
 //! `wait`: poll a Box until it is idle or its run ends, or the timeout elapses.
 //!
-//! Never waits for the Box lock. Each poll settles the Box the way the controller's own reads
+//! Never waits for the Box's turn. Each poll settles the Box the way the controller's own reads
 //! do, so `wait` reports idle only once the `idled` event is recorded.
 
 use std::time::Duration;

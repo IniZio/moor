@@ -169,6 +169,7 @@ fn a_forced_close_interrupts_a_setup_a_restarted_controller_follows() {
     let fresh = Cx::fake(w.dir.path(), w.driver.clone(), w.proc.clone());
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
+    let owners = Arc::clone(w.cx.owners_arc());
     let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
     let (dir, driver, proc, slot) = (
         w.dir.path().to_owned(),
@@ -180,8 +181,10 @@ fn a_forced_close_interrupts_a_setup_a_restarted_controller_follows() {
         let mut slot = slot.lock().unwrap();
         if slot.is_none() {
             let (dir, driver, proc) = (dir.clone(), driver.clone(), proc.clone());
+            let owners = Arc::clone(&owners);
             *slot = Some(std::thread::spawn(move || {
-                let other = Cx::fake_with(&dir, driver, proc, UserConfig::default());
+                let other =
+                    Cx::fake_with(&dir, driver, proc, UserConfig::default()).with_owners(owners);
                 close_demo_in(&other)
                     .map(|v| v.boxed.lifecycle)
                     .map_err(|e| e.error.to_string())
@@ -395,42 +398,6 @@ fn a_failed_release_of_an_unfinished_box_refuses_the_close() {
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SetupFailed);
 }
 
-#[test]
-fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machine() {
-    let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
-    let seen = Arc::new(Mutex::new(None));
-    let (dir, driver, proc, got) = (
-        w.dir.path().to_owned(),
-        w.driver.clone(),
-        w.proc.clone(),
-        seen.clone(),
-    );
-    w.driver.notes_while_acquiring(&[], move || {
-        let other = Cx::fake_with(&dir, driver.clone(), proc.clone(), UserConfig::default());
-        let req = CloseReq {
-            target: BoxName::parse_allow_bare("demo").unwrap().into(),
-            force: false,
-        };
-        let e = close::run(&other, &req).unwrap_err();
-        *got.lock().unwrap() = Some((e.kind, e.error.to_string()));
-    });
-    run(&w.cx, &start_req()).unwrap();
-    let seen = seen
-        .lock()
-        .unwrap()
-        .take()
-        .expect("close ran during the acquire");
-    assert_eq!(
-        seen,
-        (ErrorKind::Refused, "box busy: start in progress".to_owned())
-    );
-    assert!(releases(&w).is_empty());
-    let row = box_row(&w);
-    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
-}
-
 type Closed = Result<BoxLifecycle, String>;
 
 #[test]
@@ -441,6 +408,7 @@ fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
     let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
+    let owners = Arc::clone(w.cx.owners_arc());
     let (dir, driver, proc, slot, stop) = (
         w.dir.path().to_owned(),
         w.driver.clone(),
@@ -452,8 +420,10 @@ fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
         let mut slot = slot.lock().unwrap();
         if slot.is_none() {
             let (dir, driver, proc) = (dir.clone(), driver.clone(), proc.clone());
+            let owners = Arc::clone(&owners);
             *slot = Some(std::thread::spawn(move || {
-                let other = Cx::fake_with(&dir, driver, proc, UserConfig::default());
+                let other =
+                    Cx::fake_with(&dir, driver, proc, UserConfig::default()).with_owners(owners);
                 close_demo_in(&other)
                     .map(|v| v.boxed.lifecycle)
                     .map_err(|e| e.error.to_string())

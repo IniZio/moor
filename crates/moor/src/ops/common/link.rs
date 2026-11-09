@@ -36,7 +36,7 @@ pub(crate) enum Fate {
 /// Each round of tries the Box does not answer gets an
 /// `agent_unreachable` event; the agent counts as ended once the Box has not answered for
 /// `UNREACHABLE_FOR`. A suspended VM keeps its agent and cannot be asked, so an asleep Box decides
-/// nothing until a wake asks it. The caller holds the Box lock.
+/// nothing until a wake asks it. The caller holds the Box's turn.
 ///
 /// # Errors
 /// A store failure.

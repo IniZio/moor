@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
@@ -14,8 +13,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};
 
 use super::run;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 
@@ -262,14 +261,7 @@ fn failed_copy_still_records_one_copied_event() {
 #[test]
 fn copy_refuses_while_another_op_holds_the_box_lock() {
     let f = fx();
-    let _held = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Close { force: false });
     let err = run(&f.cx, &req("a", "a")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(f.driver.copies().is_empty());

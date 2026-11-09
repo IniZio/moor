@@ -1,15 +1,13 @@
 //! What a wake still owes the agent of a Box that stopped mid-turn, given from a status sweep.
 
-use std::time::Duration;
-
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::BoxId;
 
 use super::tell_after_suspend;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{PaneLiveness, Reading};
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::link::Fate;
 use crate::ops::start::{revive_after_wake, AfterWake};
 use crate::store::{BoxRow, Store};
@@ -54,8 +52,7 @@ pub(crate) fn resume_owed(
     if store.resume_first(id)?.is_none() {
         return Ok(());
     }
-    let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "resume", Duration::ZERO)
-    else {
+    let Some(_turn) = cx.try_turn(id, Cmd::Wake) else {
         return Ok(());
     };
     match store.box_row(id)? {

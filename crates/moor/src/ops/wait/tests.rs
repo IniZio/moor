@@ -17,8 +17,8 @@ use moor_core::view::LaunchFailure;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq};
 
 use super::{run, run_polling};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::store::{FollowClaim, NewRun};
 use crate::testing::agent;
 use crate::testing::clock::FakeClock;
@@ -186,14 +186,7 @@ fn never_takes_the_box_lock() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    let _held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir().unwrap(),
-        id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held = cx.owners_arc().hold(id, Cmd::Close { force: false });
     let show = ShowReq {
         target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
         events: None,

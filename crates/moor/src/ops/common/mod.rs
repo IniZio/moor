@@ -6,7 +6,6 @@ pub(crate) mod agent_stop;
 pub(crate) mod artifacts;
 pub(crate) mod autosleep;
 pub(crate) mod box_exec;
-pub(crate) mod boxlock;
 pub(crate) mod boxwork;
 pub(crate) mod cache;
 pub(crate) mod creds;
@@ -18,8 +17,6 @@ pub(crate) mod host_path;
 pub(crate) mod identity;
 pub(crate) mod link;
 pub(crate) mod node;
-#[cfg_attr(not(test), expect(dead_code, reason = "no op admits through it yet"))]
-pub(crate) mod owners;
 pub(crate) mod park;
 pub(crate) mod profile_fetch;
 pub(crate) mod promote;

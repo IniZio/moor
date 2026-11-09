@@ -1,6 +1,6 @@
 //! `wake`: resume an asleep Box.
 //!
-//! Holds the Box lock while the Box resumes.
+//! Holds the Box's turn while the Box resumes.
 
 use moor_core::view::sleep::SleepValue;
 use moor_core::BoxReq;
@@ -11,7 +11,7 @@ use crate::ops::common::wake::wake_box;
 
 /// Run `wake`.
 pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
-    wake_box(cx, req, "wake", |_| Ok(()))
+    wake_box(cx, req, |_| Ok(()))
 }
 
 #[cfg(test)]

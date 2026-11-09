@@ -6,8 +6,8 @@ use moor_core::{BoxId, BoxName, ShowReq, StartReq};
 
 use super::state::{idle, working};
 use super::{repo_req, req, script_base_yaml, world, World};
+use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::{run, settle_all};
 use crate::ops::{show, wait_events};
 use crate::store::BoxRow;
@@ -34,14 +34,7 @@ fn row(w: &World, id: BoxId) -> BoxRow {
 fn settle_leaves_a_box_while_an_op_holds_its_box() {
     let (w, id) = working_without_session();
     w.cx.clock().sleep(Duration::from_secs(60));
-    let held = BoxLock::acquire(
-        w.cx.clock(),
-        w.cx.state_dir().unwrap(),
-        id,
-        "start",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let held = w.cx.owners_arc().hold(id, Cmd::Start);
     settle_all(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
     assert!(working(&row(&w, id)));
     drop(held);
@@ -50,16 +43,9 @@ fn settle_leaves_a_box_while_an_op_holds_its_box() {
 }
 
 /// Holds the machine of `id` as a start would, with the Box old enough to be read as quiet.
-fn busy(w: &World, id: BoxId) -> BoxLock {
+fn busy(w: &World, id: BoxId) -> Held {
     w.cx.clock().sleep(Duration::from_secs(60));
-    BoxLock::acquire(
-        w.cx.clock(),
-        w.cx.state_dir().unwrap(),
-        id,
-        "start",
-        Duration::ZERO,
-    )
-    .unwrap()
+    w.cx.owners_arc().hold(id, Cmd::Start)
 }
 
 #[test]

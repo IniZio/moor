@@ -266,7 +266,7 @@ fn a_gone_terminal_with_no_prompt_and_no_agent_session_launches_with_no_prompt()
 fn a_gone_terminal_start_is_refused_while_another_op_holds_the_lock() {
     let (w, engine, _id) = started();
     gone(&engine);
-    let held = super::hold(&w, "close");
+    let held = super::hold(&w, crate::cx::owners::Cmd::Close { force: false });
     let err = run(&w.cx, &prompt_req("ship it")).unwrap_err();
     assert_eq!(err.error.to_string(), "box busy: close in progress");
     assert_eq!(engine.launches().len(), 1);

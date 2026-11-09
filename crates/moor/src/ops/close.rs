@@ -1,7 +1,5 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box.
 
-use std::time::Duration;
-
 use moor_core::decide::close::{
     close_gate, close_gate_with_reason, BoxCheck, CloseFacts, ClosePlan, Refusal,
 };
@@ -14,11 +12,11 @@ use moor_core::seam::proc::Deadline;
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, Warning};
 
-use crate::cx::Cx;
+use crate::cx::owners::{Cmd, Turn, INTERRUPT_WAIT};
+use crate::cx::{Cx, QUEUE_WAIT};
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::provision::planned_root;
@@ -28,15 +26,12 @@ use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::box_view;
 use crate::store::{BoxRow, HandsRow, Store};
 
-/// How long a forced close waits for the start it interrupted to stop.
-const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
-
 /// Closes a Box: gate, transcript save, agent stop, machine teardown and release.
 ///
-/// The Box lock is held from the gate to the release and dropped before promotion, which takes
-/// the locks of the waiting Boxes.
+/// The Box's turn is held from the gate to the release and ended before promotion, which takes
+/// the turns of the waiting Boxes.
 /// The agent stops first, so the session stays ended when the release fails and the
-/// Box stays open. The Box's keeper stops after the lock is dropped: the wait can take
+/// Box stays open. The Box's keeper stops after the turn ends: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     run_with_reason(cx, req, None)
@@ -55,7 +50,7 @@ pub(crate) fn run_with_reason(
 pub(crate) type Keep<'a> = &'a dyn Fn(&Store, &BoxRow) -> Option<String>;
 
 /// [`run`] for a close nobody asked for, which never wakes the Box. `keep` judges the Box as read
-/// under its lock, before anything else; a reason refuses the close.
+/// under its turn, before anything else; a reason refuses the close.
 pub(crate) fn run_unless_kept(
     cx: &Cx,
     req: &CloseReq,
@@ -75,7 +70,7 @@ fn close_with(
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
-    let lock = lock(cx, &first, req.force)?;
+    let turn = turn(cx, &first, req.force)?;
     let mut row = store.box_row(first.id)?.unwrap_or(first);
     if let Some(why) = keep.and_then(|keep| keep(store, &row)) {
         return Err(CommandError::new(ErrorKind::Refused, why));
@@ -103,7 +98,7 @@ fn close_with(
     if req.force {
         release_stray(cx, store, &row)?;
     }
-    drop(lock);
+    drop(turn);
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
             code: "proxy_stop_failed".to_owned(),
@@ -119,7 +114,7 @@ fn close_with(
         store.drop_box_leases(closed.id)?;
     }
     let mut promoted = Vec::new();
-    for name in node.map_or_else(Vec::new, |n| promote_waiting(cx, store, &n, "close")) {
+    for name in node.map_or_else(Vec::new, |n| promote_waiting(cx, store, &n)) {
         if let Some(row) = store.open_box_by_name(&name)? {
             if cx.viewer().may_act_on(row.user) {
                 promoted.push(name.as_str().to_owned());
@@ -135,55 +130,53 @@ fn close_with(
     })
 }
 
-/// Takes the Box lock; under `force`, a start running the Box's setup is interrupted first.
+/// Takes the Box's turn; under `force`, a start in flight is stopped and the close goes first.
 ///
-/// The interrupted start records its setup as failed before it lets go. One that has not
-/// stopped after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still
-/// acquiring its machine has that boot cancelled, and the close is recorded first so a restart
-/// honours it.
-fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
-    let (clock, state) = (cx.clock(), cx.state_dir()?);
+/// The stopped start records its setup as failed before it lets go. One that has not stopped
+/// after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still acquiring its
+/// machine has that boot cancelled, and the close is recorded first so a restart honours it.
+fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Turn<'a>, CommandError> {
     let name = row.name.as_str();
-    let in_setup = matches!(row.intent, Some(Intent::Setup { .. }));
+    let starting = matches!(
+        row.intent,
+        Some(Intent::Setup { .. } | Intent::Provisioning { .. })
+    );
     let acquiring = matches!(row.intent, Some(Intent::Provisioning { .. }));
     let store = cx.store()?;
-    if force && acquiring {
-        let closing = Intent::Closing {
-            pid: std::process::id(),
-        };
-        store.apply(Decision::new(row.id).intent(IntentChange::Set(closing)))?;
-    }
-    let interrupted = (force && (in_setup || acquiring))
-        .then(|| boxlock::interrupt(state, row.id))
-        .flatten();
-    if force && (acquiring || in_setup) {
-        cancel_boot(cx, store, row)?;
-    }
-    if let Some(ended) = interrupted {
-        if !boxlock::wait_ended(clock, &ended, INTERRUPT_WAIT) {
+    let deadline = cx.clock().instant() + QUEUE_WAIT;
+    let cmd = Cmd::Close { force };
+    let stop = || {
+        if acquiring {
+            let closing = Intent::Closing {
+                pid: std::process::id(),
+            };
+            store.apply(Decision::new(row.id).intent(IntentChange::Set(closing)))?;
+        }
+        cancel_boot(cx, store, row)
+    };
+    match cx
+        .owners()
+        .preempting(row.id, cmd, cx.env().cancel(), deadline, stop)
+    {
+        Ok((turn, _)) => Ok(turn),
+        Err(e) if e.kind == ErrorKind::Refused && starting && !force => Err(e.with_hint(format!(
+            "`moor close {name} --force` interrupts the start and closes the Box"
+        ))),
+        Err(e) if e.kind == ErrorKind::Refused && force && starting => {
             if let (true, Some(start)) = (acquiring, row.intent) {
-                let back = IntentChange::Set(start);
-                store.apply(Decision::new(row.id).intent(back))?;
+                store.apply(Decision::new(row.id).intent(IntentChange::Set(start)))?;
             }
-            return Err(CommandError::new(
+            Err(CommandError::new(
                 ErrorKind::Refused,
                 format!(
                     "box busy: the start of {name} did not stop within {}s of the forced close; \
                      the Box was left as it is",
                     INTERRUPT_WAIT.as_secs()
                 ),
-            ));
-        }
-    }
-    BoxLock::acquire(clock, state, row.id, "close", boxlock::WAIT).map_err(|e| {
-        if (in_setup || acquiring) && boxlock::is_interruptible(state, row.id) {
-            e.with_hint(format!(
-                "`moor close {name} --force` interrupts the start and closes the Box"
             ))
-        } else {
-            e
         }
-    })
+        Err(e) => Err(e),
+    }
 }
 
 /// Releases the machine a retry's fork made for `row` and never moved it to; the Box's own machine

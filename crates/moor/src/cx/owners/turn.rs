@@ -22,8 +22,24 @@ pub(crate) struct Turn<'a> {
     _thread: PhantomData<*const ()>,
 }
 
+// A `Turn` that could cross threads would defeat re-entry detection, so this fails to compile
+// once `Turn` is `Send`: both impls below would then apply and the call is ambiguous.
+const _: () = {
+    trait AmbiguousIfSend<A> {
+        fn some_item() {}
+    }
+    impl<T: ?Sized> AmbiguousIfSend<()> for T {}
+    struct IsSend;
+    impl<T: ?Sized + Send> AmbiguousIfSend<IsSend> for T {}
+    let _ = <Turn<'static> as AmbiguousIfSend<_>>::some_item;
+};
+
 /// A helper thread's claim to act under another thread's turn; valid only while that turn lasts.
 #[derive(Clone)]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "no helper thread acts under a shared turn yet")
+)]
 pub(crate) struct TurnShare<'a> {
     /// Where the turn is looked up.
     owners: &'a Owners,
@@ -53,6 +69,10 @@ impl<'a> Turn<'a> {
     }
 
     /// A claim on this turn for helper threads; it lapses when the turn ends.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "no helper thread acts under a shared turn yet")
+    )]
     pub(crate) const fn share(&self) -> TurnShare<'a> {
         TurnShare {
             owners: self.owners,
@@ -78,6 +98,10 @@ impl TurnShare<'_> {
     ///
     /// # Errors
     /// `Internal` once the turn has ended.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "no helper thread acts under a shared turn yet")
+    )]
     pub(crate) fn check(&self) -> Result<BoxId, CommandError> {
         let held = (self.owners.lock().boxes.get(&self.box_id))
             .and_then(|o| o.holder.as_ref())

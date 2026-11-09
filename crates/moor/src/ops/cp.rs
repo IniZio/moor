@@ -1,6 +1,6 @@
 //! `cp`: copy a file or directory out of a Box's machine to the host.
 //!
-//! Holds the Box lock for the copy and never syncs a checkout.
+//! Holds the Box's turn for the copy and never syncs a checkout.
 
 use std::fs;
 use std::path::Path;
@@ -12,9 +12,9 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::view::run::CpValue;
 use moor_core::{CpReq, ErrorKind};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::host_path::absolute;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::wake::wake_and_revive;
@@ -39,7 +39,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
             )
         })?
         .id;
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "cp", boxlock::WAIT)?;
+    let _turn = cx.turn(id, Cmd::Copy)?;
     let reload = || {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(

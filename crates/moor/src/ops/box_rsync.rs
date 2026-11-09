@@ -2,7 +2,7 @@
 //! streamed over the connection. The runner mirrors a Box and puts files into it this way, so
 //! it shares no disk with the controller.
 //!
-//! Holds the Box lock for the transfer, as `cp` does for its copy.
+//! Holds the Box's turn for the transfer, as `cp` does for its copy.
 
 use std::path::{Component, Path};
 use std::time::Duration;
@@ -14,9 +14,9 @@ use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
 use moor_core::{BoxId, BoxRsyncReq, ErrorKind};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::wake::wake_and_revive;
 use crate::ops::cp::usable_handle;
@@ -45,13 +45,7 @@ pub(crate) fn run(
 ) -> Result<ExecView, CommandError> {
     let refused = |why: String| CommandError::new(ErrorKind::Refused, why);
     let (head, path) = server_argv(&req.argv).map_err(refused)?;
-    let _held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        req.id,
-        "box-rsync",
-        boxlock::WAIT,
-    )?;
+    let _turn = cx.turn(req.id, Cmd::Copy)?;
     let (handle, workdir) = woken(cx, req.id)?;
     let mut argv = head;
     argv.push(beneath(&path, &workdir).map_err(refused)?);

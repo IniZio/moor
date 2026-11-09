@@ -12,8 +12,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, PausePublish, Sle
 use moor_core::{BoxId, BoxName, ProviderId};
 
 use super::{run, AgentRead};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::box_view;
 use crate::store::NewRun;
 use crate::testing::driver::FakeDriver;
@@ -184,14 +184,7 @@ fn a_working_box_never_sleeps() {
 fn a_held_box_lock_skips_the_sleep_silently() {
     let f = idle();
     pass(&f, LONG);
-    let _held = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Close { force: false });
     auto_sleep(&f);
     assert_eq!(
         states(&f),

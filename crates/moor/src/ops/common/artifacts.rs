@@ -14,9 +14,9 @@ use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
 use self::fetch::Fetch;
-use super::boxlock::BoxLock;
 use super::provision::recorded_workdir;
 use super::reports::{self, target};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::store::{BoxRow, Store};
 
@@ -43,12 +43,9 @@ done
 
 /// Collects the artifacts and Reports of each Box whose newest idle or finished turn is past its cursor.
 ///
-/// A Box whose lock an operation holds is skipped and stays due for the next pass. The cursor
+/// A Box with an op in flight is skipped and stays due for the next pass. The cursor
 /// moves only after a collect. Never errors; a failure warns.
 pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
-    let Ok(state_dir) = cx.state_dir() else {
-        return;
-    };
     let due = match store.artifacts_due() {
         Ok(due) => due,
         Err(e) => return failed(cx, &e.to_string()),
@@ -57,8 +54,7 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
         if draining() {
             break;
         }
-        let Ok(_lock) = BoxLock::acquire(cx.clock(), state_dir, id, "artifacts", Duration::ZERO)
-        else {
+        let Some(_turn) = cx.try_turn(id, Cmd::Settle) else {
             continue;
         };
         let Ok(Some(row)) = store.box_row(id) else {
@@ -94,7 +90,7 @@ fn failed(cx: &Cx, reason: &str) {
 /// Copies new or changed artifacts from a Ready Box into the store; returns how many were stored.
 ///
 /// A failure only warns, so the caller's outcome never changes. File contents never appear in
-/// a warning. The caller holds the Box lock.
+/// a warning. The caller holds the Box's turn.
 pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
     collect_in(cx, store, row, None)
 }

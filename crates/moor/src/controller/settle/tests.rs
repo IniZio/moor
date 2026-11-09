@@ -27,9 +27,9 @@ use super::passes;
 use crate::controller::drain::{serve_until, Drain, Handler};
 use crate::controller::watch::{stream, Ask, Limits};
 use crate::controller::Sink;
+use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
 use crate::env::Env;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::show;
 use crate::store::{Store, STORE_FILE};
 use crate::testing::agent::idle;
@@ -234,15 +234,8 @@ fn an_agent_that_idles_has_its_artifacts_collected() {
     assert_eq!(stored(&cx, id), 1);
 }
 
-fn held_lock(cx: &Cx, id: BoxId) -> BoxLock {
-    BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir().unwrap(),
-        id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap()
+fn held_lock(cx: &Cx, id: BoxId) -> Held {
+    cx.owners_arc().hold(id, Cmd::Close { force: false })
 }
 
 #[test]
@@ -269,8 +262,8 @@ fn a_held_box_lock_skips_the_collection() {
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
     );
+    let held = held_lock(&cx, id);
     let moor = Moor::from_cx(cx);
-    let held = held_lock(&reader, id);
     assert!(moor.settle_open(&|| false).is_empty());
     assert_eq!(artifact_execs(&driver), 0);
     assert_eq!(stored(&reader, id), 0);
