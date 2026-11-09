@@ -204,12 +204,12 @@ fn a_second_interrupt_exits_130_before_the_controller_answers() {
     assert_eq!(status.and_then(|s| s.code()), Some(130), "{status:?}");
 }
 
-/// Output large enough that a client holding it would show in its peak memory.
+/// Output large enough that a client holding it would show in its memory.
 const BIG: usize = 64 * 1024 * 1024;
 
-/// How far a client's peak memory may grow past its peak after the first chunk while it streams
-/// the rest of [`BIG`]: a quarter of `BIG`, so a client holding the output fails and the size of
-/// the moor binary does not matter.
+/// How far a client's anonymous memory may grow past what it held after the first chunk while it
+/// streams the rest of [`BIG`]: a quarter of `BIG`, so a client holding the output fails and the
+/// size of the moor binary does not matter.
 const GROWTH_KB: u64 = 16 * 1024;
 
 /// Byte `i` of the big output.
@@ -217,19 +217,20 @@ fn pattern(i: usize) -> u8 {
     u8::try_from(i % 251).unwrap()
 }
 
-/// Peak resident memory of process `pid`, in kB.
-fn peak_kb(pid: u32) -> u64 {
+/// Resident anonymous memory of process `pid`, in kB. Not `VmHWM`, which falls when the kernel
+/// reclaims the binary's file pages.
+fn anon_kb(pid: u32) -> u64 {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
-    let line = status.lines().find(|l| l.starts_with("VmHWM:")).unwrap();
+    let line = status.lines().find(|l| l.starts_with("RssAnon:")).unwrap();
     line.split_whitespace().nth(1).unwrap().parse().unwrap()
 }
 
 /// What the controller saw before it answered: whether the client had printed every byte,
-/// and the client's peak memory after the first chunk and after the last.
+/// and the client's anonymous memory after the first chunk and after the last.
 struct BeforeAnswer {
     printed_all: bool,
     first_kb: u64,
-    peak_kb: u64,
+    last_kb: u64,
 }
 
 /// Reads the big output from `stdout` on a thread of its own, signalling `first` once the first
@@ -278,7 +279,7 @@ fn large_run_output_streams_with_bounded_client_memory() {
         let pid = pid_rx.recv().unwrap();
         write_bytes(stream, id, &piece).unwrap();
         first_rx.recv_timeout(Duration::from_secs(20)).unwrap();
-        let first_kb = peak_kb(pid);
+        let first_kb = anon_kb(pid);
         for _ in 1..BIG / BYTES_MAX {
             write_bytes(stream, id, &piece).unwrap();
         }
@@ -287,7 +288,7 @@ fn large_run_output_streams_with_bounded_client_memory() {
             .send(BeforeAnswer {
                 printed_all,
                 first_kb,
-                peak_kb: peak_kb(pid),
+                last_kb: anon_kb(pid),
             })
             .unwrap();
     });
@@ -305,10 +306,10 @@ fn large_run_output_streams_with_bounded_client_memory() {
         "the client printed the output only at the end"
     );
     assert!(
-        seen.peak_kb - seen.first_kb < GROWTH_KB,
-        "client peak memory grew from {} kB to {} kB while streaming {BIG} bytes",
+        seen.last_kb.saturating_sub(seen.first_kb) < GROWTH_KB,
+        "client memory grew from {} kB to {} kB while streaming {BIG} bytes",
         seen.first_kb,
-        seen.peak_kb
+        seen.last_kb
     );
     assert_eq!(child.wait().unwrap().code(), Some(EXIT));
     server.join().unwrap();
