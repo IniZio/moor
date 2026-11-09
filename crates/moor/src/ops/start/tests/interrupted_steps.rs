@@ -6,7 +6,7 @@ use moor_core::BoxId;
 
 use super::interrupted::{box_row, restarted_mid_setup, setup_attaches};
 use super::World;
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::resume_setup;
 
 #[test]
@@ -20,7 +20,10 @@ fn a_restart_once_the_setup_lines_passed_finishes_the_later_steps_and_launches_t
         }))
         .unwrap();
     let cut = store.events(BoxId::new(1), 200).unwrap().last().unwrap().id;
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
@@ -61,7 +64,10 @@ fn claimed_then_machine_lost() -> World {
             ..Fields::default()
         }))
         .unwrap();
-    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(
+        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
+        [BoxId::new(1)]
+    );
     store
         .apply(Decision::new(BoxId::new(1)).set(Fields {
             box_handle: Field::Clear,
@@ -114,7 +120,9 @@ fn later_steps_cut_on_a_machine_that_is_not_ready_fail_the_setup_with_why() {
             ..Fields::default()
         }))
         .unwrap();
-    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert!(fail_interrupted(&w.cx, store, Others::MayRun)
+        .unwrap()
+        .is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(row.intent, None);

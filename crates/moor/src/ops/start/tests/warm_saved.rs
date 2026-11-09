@@ -13,7 +13,7 @@ use moor_core::StartReq;
 use super::warm::{events, start, LINES};
 use super::{agentless_req, repo, world, World};
 use crate::cx::Cx;
-use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::run;
 use crate::testing::clock::FakeClock;
@@ -88,7 +88,7 @@ fn a_restart_keeps_the_cold_time_of_the_layer_it_stands_on() {
     let store = w.cx.store().unwrap();
     let name = crate::testing::box_name("up");
     let up = store.open_box_by_name(&name).unwrap().unwrap().id;
-    fail_interrupted(&w.cx, store).unwrap();
+    fail_interrupted(&w.cx, store, Others::MayRun).unwrap();
     resume_setup(&w.cx, store, up).unwrap();
     let again = start(&w, "again", "abc123", yaml);
     let warm = events(&w, again, "warm_started");
