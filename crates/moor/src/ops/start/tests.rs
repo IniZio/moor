@@ -10,8 +10,8 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxId, BoxPath, ErrorDetail, ErrorKind, StartReq};
 
 use super::run;
+use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::{box_name, driver::FakeDriver};
@@ -403,36 +403,24 @@ fn unresolved_credential_rejects_before_any_side_effect() {
 #[test]
 fn start_refuses_while_another_op_holds_the_box_lock() {
     let w = world(FakeDriver::new());
-    let _held = BoxLock::acquire(
-        w.cx.clock(),
-        w.cx.state_dir().unwrap(),
-        BoxId::new(1),
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held =
+        w.cx.owners_arc()
+            .hold(BoxId::new(1), Cmd::Close { force: false });
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
     assert!(w.driver.calls().is_empty());
 }
 
-/// Holds the lock of Box 1 as `op`.
-fn hold(w: &World, op: &str) -> BoxLock {
-    BoxLock::acquire(
-        w.cx.clock(),
-        w.cx.state_dir().unwrap(),
-        BoxId::new(1),
-        op,
-        Duration::ZERO,
-    )
-    .unwrap()
+/// Holds the turn of Box 1 for `cmd`.
+fn hold(w: &World, cmd: Cmd) -> Held {
+    w.cx.owners_arc().hold(BoxId::new(1), cmd)
 }
 
 #[test]
 fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     let w = world(FakeDriver::new());
-    let held = hold(&w, "close");
+    let held = hold(&w, Cmd::Close { force: false });
     run(&w.cx, &req("demo")).unwrap_err();
     drop(held);
     let again = run(&w.cx, &req("demo")).unwrap();
@@ -458,7 +446,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
         .unwrap()
         .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
-    let _held = hold(&w, "close");
+    let _held = hold(&w, Cmd::Close { force: false });
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
@@ -480,7 +468,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         w.driver.calls(),
         ["acquire", "peek_file box-1", "acquire", "peek_file box-2"]
     );
-    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
+    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, Cmd::Start).unwrap();
     assert!(run.is_none());
     assert_eq!(
         w.driver.calls(),

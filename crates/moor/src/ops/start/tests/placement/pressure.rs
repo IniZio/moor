@@ -1,4 +1,5 @@
 use super::*;
+use crate::cx::owners::Cmd;
 
 /// The next report from `hv`, ten seconds after the last, with PSI `some` and `full`.
 pub(super) fn tick(w: &World, hv: i64, available_mib: u64, some: u32, full: u32) {
@@ -255,17 +256,7 @@ fn a_refused_pick_falls_through_to_the_next_box_on_the_same_report() {
     let (idle_box, b, c) = (started(&w, "idle"), started(&w, "b"), started(&w, "c"));
     idle(&w, idle_box);
     let (w, _) = agents_report(w, &[idle_box], &[b, c]);
-    let state = w.cx.state_dir().unwrap();
-    let locks = [idle_box, c].map(|id| {
-        crate::ops::common::boxlock::BoxLock::acquire(
-            w.cx.clock(),
-            state,
-            id,
-            "held",
-            std::time::Duration::ZERO,
-        )
-        .unwrap()
-    });
+    let locks = [idle_box, c].map(|id| w.cx.owners_arc().hold(id, Cmd::Settle));
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Pending);
     assert_eq!(lifecycle(&w, idle_box), BoxLifecycle::Ready);

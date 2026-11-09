@@ -7,9 +7,9 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
 
 use super::relaunch;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::reread;
 use crate::ops::common::wake::{await_guest, wake_box_if_asleep};
@@ -32,7 +32,7 @@ pub(super) fn wake(
     req: &StartReq,
     id: BoxId,
 ) -> Result<Woken, CommandError> {
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+    let _turn = cx.turn(id, Cmd::Wake)?;
     let row = reread(store, id)?;
     let machine_asleep = row
         .hands

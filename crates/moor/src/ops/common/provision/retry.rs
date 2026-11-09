@@ -17,10 +17,10 @@ use super::interrupted::{launch_was_cut, release_warned};
 use super::lease::planned_root;
 use super::rerun::{finish_steps, record_interrupted};
 use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::close;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
 use crate::ops::start::launch_after_retry;
@@ -51,7 +51,7 @@ pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
 
 /// Runs the clone, setup and dotfiles in the kept Box under the setup intent, then marks it ready.
 ///
-/// The caller holds the Box lock and passes the row read under it. No Box is acquired. The
+/// The caller holds the Box's turn and passes the row read under it. No Box is acquired. The
 /// intent is cleared on success and by the failure record, so a crash mid-run leaves it for
 /// dead-owner recovery.
 pub(super) fn retry_in_box(
@@ -71,7 +71,7 @@ pub(super) fn retry_in_box(
 
 /// Picks up the start a controller restart cut off in Box `id`, which this process claimed, and
 /// launches its agent as the start would have. An acquire runs again. Each setup script that ran
-/// or is running is attached to rather than run again. The Box lock is held meanwhile; a Box that
+/// or is running is attached to rather than run again. The Box's turn is held meanwhile; a Box that
 /// is no longer claimed is left alone.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let first = super::reread(store, id)?;
@@ -82,8 +82,7 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         };
         return close::run(cx, &req).map(drop);
     }
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
-        .interruptible(cx.env().cancel());
+    let _turn = cx.turn(id, Cmd::Resume)?;
     let row = super::reread(store, id)?;
     let me = std::process::id();
     if row.intent.is_none() && launch_was_cut(store, &row)? {

@@ -18,9 +18,9 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::ops::close::run as close;
-use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::ops::common::promote::PROMOTE_WAIT;
 use crate::ops::show;
 use crate::ops::start;
@@ -371,8 +371,7 @@ fn close_with_no_waiting_boxes_promotes_nothing() {
 fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
     let w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
-    let _held =
-        BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
+    let _held = w.cx.owners_arc().hold(id, Cmd::Wake);
     let from = w.cx.clock().instant();
     let v = close_holder(&w);
     let waited = w.cx.clock().instant() - from;
@@ -476,8 +475,7 @@ fn a_close_names_only_the_promoted_boxes_its_caller_may_see() {
 fn a_close_hides_the_promote_warning_of_a_box_its_caller_may_not_see() {
     let mut w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
-    let _held =
-        BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
+    let _held = w.cx.owners_arc().hold(id, Cmd::Start);
     let user = bystander(&w);
     w.cx = w.cx.with_viewer(Viewer::User(user));
     close_holder(&w);
@@ -563,8 +561,7 @@ fn the_owner_of_a_waiter_sees_its_promote_warning() {
             .value(Boxes::User, owner.get())
             .and_where(Expr::col(Boxes::Id).eq(id.get())),
     );
-    let _held =
-        BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
+    let _held = w.cx.owners_arc().hold(id, Cmd::Start);
     w.cx = w.cx.with_viewer(Viewer::User(owner));
     close_holder(&w);
     let skipped = skipped_first(&w);

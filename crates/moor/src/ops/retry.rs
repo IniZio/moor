@@ -1,15 +1,15 @@
 //! `retry`: re-run setup on a Box whose setup failed.
 //!
-//! The Box lock is taken by the provisioning step, which reads the row again under it.
+//! The Box's turn is taken by the provisioning step, which reads the row again under it.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::WarmDisk;
 use moor_core::view::{AgentLaunchView, StartView};
 use moor_core::{BoxReq, BoxTarget, ErrorKind};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::{reprovision, Provisioned};
 use crate::ops::common::target::{resolve, Rule};
 use crate::ops::common::view::{box_view, hide_unsupported_sleep};
@@ -32,7 +32,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
         ));
     }
     store.forget_egress_delivery(row.id)?;
-    let Some(provisioned) = reprovision(cx, store, &row, "retry")? else {
+    let Some(provisioned) = reprovision(cx, store, &row, Cmd::Retry)? else {
         return Err(CommandError::new(
             ErrorKind::Failed,
             format!("Box {name} has no machine that can run setup again"),
@@ -42,7 +42,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
     let agent = if provisioned.failed_step().is_some() {
         AgentLaunchView::default()
     } else {
-        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, "retry", boxlock::WAIT)?;
+        let _turn = cx.turn(row.id, Cmd::Retry)?;
         launch_after_retry(cx, store, row.id)?
     };
     let row = store

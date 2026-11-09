@@ -71,7 +71,7 @@ pub(crate) fn set_links(
             }
             relieve_disk(cx, store, &node, link);
         }
-        promote_waiting(cx, store, &node.name, "link");
+        promote_waiting(cx, store, &node.name);
     }
     Ok(MachineLinksValue { links })
 }

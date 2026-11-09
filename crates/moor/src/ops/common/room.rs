@@ -1,8 +1,6 @@
 //! Making room on a full node, by suspending its longest-idle Boxes, and relieving a node under
 //! memory pressure.
 
-use std::time::Duration;
-
 use moor_core::decide::disk::{judge, Change, Report, State};
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
 use moor_core::decide::pressure::{
@@ -17,10 +15,10 @@ use moor_core::domain::session_state::SessionState;
 use moor_core::name::{BoxHandle, BoxId, NodeName};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{ready_handle, settled, sleep_handle, sleep_parked};
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::cache::save_decision;
 use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
@@ -109,11 +107,10 @@ fn resident(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Resident, CommandErr
     })
 }
 
-/// Suspends Box `id` for `reason` if it is still idle and its lock is free; false otherwise. A
+/// Suspends Box `id` for `reason` if it is still idle and its turn is free; false otherwise. A
 /// failure to suspend it is recorded on the Box.
 fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
-    let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)
-    else {
+    let Some(_turn) = cx.try_turn(id, Cmd::Suspend) else {
         return Ok(false);
     };
     let Some(row) = store.box_row(id)? else {
@@ -280,12 +277,11 @@ fn tell_disk(store: &Store, node: &NodeName, change: Change) -> Result<(), Comma
 }
 
 /// Suspends running Box `id` for `reason` and leaves it waiting for room, if nothing changed and
-/// its lock is free; false otherwise. Its agent pane stays open, since the suspension keeps the
+/// its turn is free; false otherwise. Its agent pane stays open, since the suspension keeps the
 /// agent's process, while a run in flight loses its connection. A failure to suspend it is
 /// recorded on the Box.
 fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
-    let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)
-    else {
+    let Some(_turn) = cx.try_turn(id, Cmd::Suspend) else {
         return Ok(false);
     };
     let Some(row) = store.box_row(id)? else {

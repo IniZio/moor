@@ -1,7 +1,6 @@
 //! Tests for the transcript saved when the agent is first seen exited.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -9,9 +8,9 @@ use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
 use super::{cx, row, run_once, working_box, SESSION};
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::ops::common::activity::{settle, PaneLiveness, Reading};
-use crate::ops::common::boxlock::BoxLock;
 use crate::testing::agent::exited;
 use crate::testing::engine::FakeEngine;
 
@@ -102,14 +101,7 @@ fn a_failed_exit_save_is_not_retried() {
 #[test]
 fn a_busy_box_lock_skips_the_exit_save() {
     let (_dir, engine, cx, id) = exited_fx(FakeEngine::new().transcript_text("abc"));
-    let held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir().unwrap(),
-        id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let held = cx.owners_arc().hold(id, Cmd::Close { force: false });
     let r = run_once(&cx, id);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
     assert!(engine.transcripts().is_empty());

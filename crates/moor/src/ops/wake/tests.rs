@@ -1,7 +1,6 @@
 //! Tests for `wake`.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -12,8 +11,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 
@@ -188,14 +187,7 @@ fn unknown_box_is_failed() {
 fn wake_refuses_while_another_op_holds_the_box_lock() {
     let f = fx();
     asleep(&f);
-    let _held = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Close { force: false });
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("box busy"), "{}", err.error);

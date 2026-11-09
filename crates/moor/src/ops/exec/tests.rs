@@ -11,7 +11,7 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::HandsInput;
 
-use crate::ops::common::boxlock::BoxLock;
+use crate::cx::owners::Cmd;
 use crate::ops::run_fixture::{ready_with, Fx};
 use crate::store::SuspendCheck;
 use crate::testing::driver::FakeDriver;
@@ -189,14 +189,7 @@ fn asleep_with_check(f: &Fx) {
 fn exec_of_an_asleep_box_refuses_instead_of_waking_while_another_op_holds_the_box_lock() {
     let f = ready_with(FakeDriver::new());
     asleep_with_check(&f);
-    let _held = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Close { force: false });
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let pipes = Pipes {
         stdin: Box::new(std::io::empty()),
@@ -229,12 +222,6 @@ fn exec_of_an_asleep_box_clears_the_stored_check_before_it_lets_go_of_the_box_lo
     exec_quiet(&f, &req("t", &["true"]));
     let store = f.cx.store().unwrap();
     assert_eq!(store.suspend_check(f.id).unwrap(), None);
-    let held = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "close",
-        Duration::ZERO,
-    );
-    assert!(held.is_ok(), "exec left the Box lock held");
+    let held = f.cx.try_turn(f.id, Cmd::Close { force: false });
+    assert!(held.is_some(), "exec left the Box lock held");
 }

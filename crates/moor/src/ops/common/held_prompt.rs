@@ -8,10 +8,10 @@ use moor_core::activity::{AgentState, Source};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::Reading;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::AfterWake;
 use crate::store::{BoxRow, Store};
 
@@ -60,13 +60,7 @@ pub(crate) fn give_on_sweep(
     if !reported_idle || failed_tries(store, row)? >= MAX_TRIES {
         return Ok(());
     }
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "steer",
-        std::time::Duration::ZERO,
-    ) else {
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
     give(cx, store, row)

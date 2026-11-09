@@ -49,7 +49,7 @@ pub(crate) enum AfterWake {
 
 /// Starts the agent again after a Box wake only when the Box says it is gone.
 ///
-/// The caller holds the Box lock. A live agent keeps its terminal: a lost pane is attached anew,
+/// The caller holds the Box's turn. A live agent keeps its terminal: a lost pane is attached anew,
 /// since a launch kills what the terminal holds. A Box with no live session or not Working is left
 /// alone. The stored agent session is resumed, else the stored prompt starts a fresh agent; a Box
 /// with neither stays as is.
@@ -86,7 +86,7 @@ pub(crate) fn revive_after_wake(
 
 /// Starts the agent again, resuming its stored agent session, for a steer that found it exited.
 ///
-/// The caller holds the Box lock and saw the agent gone, so an unreadable pane counts as gone. A
+/// The caller holds the Box's turn and saw the agent gone, so an unreadable pane counts as gone. A
 /// Box that is not Ready, or has nothing to resume, launches nothing.
 ///
 /// # Errors
@@ -159,7 +159,7 @@ fn revive(
 /// Launches the agent of a Box whose retried setup just passed, as a fresh start does: the stored
 /// agent session is resumed, else the stored prompt is the first prompt. The new pane is watched.
 ///
-/// The caller holds the Box lock.
+/// The caller holds the Box's turn.
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.

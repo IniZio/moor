@@ -18,16 +18,16 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 
 use super::common::activity;
 use super::common::autosleep;
-use super::common::boxlock::{self, BoxLock};
 use super::common::facts::{repo_config_of, resolved, settings_of};
 use super::common::held_prompt;
 use super::common::node;
 use super::common::promote::promote_waiting;
-use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
+use super::common::provision::{provision, reprovision, reread, Entry};
 use super::common::provisioning::dead_provisioning;
 use super::common::reconcile;
 use super::common::wake::{resume_owed, Seen};
 use super::host_session::refuse_invalid;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
@@ -99,22 +99,15 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
+    let turn = cx.turn(id, Cmd::Start)?;
     store.set_box_node(id, spec.node.as_ref())?;
     cold::record(store, req, id)?;
     if let Some(gathered) = facts.profile.take() {
         profile::record(cx, store, id, gathered)?;
     }
-    let (done, agent) = {
-        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
-            .interruptible(cx.env().cancel());
-        let done = if reread(store, id)?.hands.is_none() {
-            provision(cx, store, id, Entry::Fresh, &cfg)?
-        } else {
-            Provisioned::skipped()
-        };
-        let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
-        (done, agent)
-    };
+    let done = provision(cx, store, id, Entry::Fresh, &cfg)?;
+    let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
+    drop(turn);
     let agent = watch::run(cx, store, id, agent);
     let mut v = settled(cx, store, id, note)?;
     set_provisioned(&mut v, &done);
@@ -131,7 +124,7 @@ fn settled(
     note: Option<String>,
 ) -> Result<StartView, CommandError> {
     if let Some(on) = store.box_spec(id)?.node {
-        promote_waiting(cx, store, &on, "start");
+        promote_waiting(cx, store, &on);
     }
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false);
@@ -210,7 +203,7 @@ fn attach(
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
     let row = &reread(store, row.id)?;
-    let reprovisioned = reprovision(cx, store, row, "start")?;
+    let reprovisioned = reprovision(cx, store, row, Cmd::Start)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {

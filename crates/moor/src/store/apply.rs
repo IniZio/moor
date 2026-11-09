@@ -50,6 +50,9 @@ struct Step<S> {
 impl Store {
     /// Apply a decision atomically: rows and events together, or neither.
     pub(crate) fn apply(&self, d: Decision) -> Result<Applied, StoreError> {
+        if let BoxTarget::Existing(id) = d.target {
+            self.check_write(id);
+        }
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
@@ -70,6 +73,7 @@ impl Store {
         node: &NodeName,
         decide: impl FnOnce((usize, usize)) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
+        self.check_write(id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;

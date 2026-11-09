@@ -11,10 +11,10 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use std::time::Duration;
 
 use super::launch;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
-use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::reread;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, SessionRow, Store};
@@ -52,7 +52,7 @@ pub(super) fn run(
 
 /// Launches the agent of an attached Box, or relaunches it once its pane has ended.
 ///
-/// The Box lock is held from the live-session check through the launch, so two starts cannot both
+/// The Box's turn is held from the live-session check through the launch, so two starts cannot both
 /// launch; it is released on return, before anything waits on the agent.
 ///
 /// # Errors
@@ -81,7 +81,7 @@ fn launch_asked(
         on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     }
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+    let _turn = cx.turn(id, Cmd::Relaunch)?;
     let Some(old) = store.live_session(id)? else {
         let cfg = settings()?;
         store_prompt(store, req, id)?;

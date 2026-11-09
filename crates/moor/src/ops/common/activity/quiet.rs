@@ -1,7 +1,5 @@
 //! Moving a Box between Working and Idle.
 
-use std::time::Duration;
-
 use moor_core::activity::AgentState;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
@@ -9,9 +7,9 @@ use moor_core::domain::session_state::SessionInput;
 
 use super::launch::warn_launch_timed_out;
 use super::said;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxlock::BoxLock;
 use crate::store::{BoxRow, Store, StoreError};
 
 use super::Reading;
@@ -47,14 +45,8 @@ pub(super) fn step(
         (true, true) if reading.shows_work() => SessionInput::AgentBusy,
         _ => return Ok(false),
     };
-    // An op that owns the Box decides where the Box goes; hold the lock across the write.
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "settle",
-        Duration::ZERO,
-    ) else {
+    // An op that owns the Box decides where the Box goes; hold its turn across the write.
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(false);
     };
     if row.intent.is_some() {

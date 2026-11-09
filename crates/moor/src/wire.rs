@@ -26,6 +26,7 @@ use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
+use crate::cx::owners::Owners;
 use crate::cx::{Cx, CxParts, MachineLinks};
 use crate::env::{Env, CONTROLLER_ALIVE};
 use crate::error::CommandError;
@@ -69,19 +70,20 @@ pub(crate) fn host_checkout(env: &Env) -> impl Checkout {
     Git::new(Arc::new(SystemProc::new(env, &ToolPaths::default())))
 }
 
-/// Opens the state store and returns `env` sharing it, so a store that every command would
-/// refuse fails here.
+/// Opens the state store and returns `env` sharing it and the one set of Box owners, so a store
+/// that every command would refuse fails here.
 pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
     let Some(state_dir) = env.state_dir() else {
         return Ok(env);
     };
-    let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    let clock: Arc<dyn Clock> =
+        Arc::new(SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?);
     let store = Store::open_claimed(
         &state_dir,
         Database::from_env(&env)?.as_ref(),
-        Arc::new(clock),
+        Arc::clone(&clock),
     )?;
-    Ok(env.sharing(store))
+    Ok(env.sharing(store).sharing(Arc::new(Owners::new(clock))))
 }
 
 /// Waits until this controller may run on `env`'s store, which it then may until the process

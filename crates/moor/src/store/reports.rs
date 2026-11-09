@@ -35,7 +35,7 @@ impl Store {
     /// Returns None and writes nothing when the latest stored version holds the same content.
     ///
     /// The blob store is used outside any transaction, as it may be slow or gone and every store
-    /// write waits on the one write lock. The Box lock keeps out a second collect.
+    /// write waits on the one write lock. The Box's turn keeps out a second collect.
     pub(crate) fn add_report(
         &self,
         box_id: BoxId,

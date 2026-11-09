@@ -9,7 +9,8 @@ use moor_core::ErrorKind;
 
 use super::boxwork::fx_woken_with;
 use super::{box_state, fx_repo, req, row, run, Fx};
-use crate::ops::common::boxlock::{BoxLock, WAIT};
+use crate::cx::owners::Cmd;
+use crate::cx::QUEUE_WAIT as WAIT;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::FakeProxyHost;
 
@@ -210,8 +211,7 @@ fn refused_close_runs_no_teardown() {
 #[test]
 fn close_waits_for_the_box_lock_then_refuses_when_busy() {
     let f = fx_yaml(FakeDriver::new(), YAML);
-    let _held =
-        BoxLock::acquire(f.cx.clock(), f.cx.state_dir().unwrap(), f.id, "run", WAIT).unwrap();
+    let _held = f.cx.owners_arc().hold(f.id, Cmd::Run);
     let from = f.cx.clock().instant();
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
@@ -226,14 +226,8 @@ fn close_waits_for_the_box_lock_then_refuses_when_busy() {
 fn close_leaves_the_box_lock_free() {
     let f = fx_yaml(FakeDriver::new(), YAML);
     run(&f.cx, &req(false)).unwrap();
-    let again = BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "start",
-        std::time::Duration::ZERO,
-    );
-    assert!(again.is_ok());
+    let again = f.cx.try_turn(f.id, Cmd::Start);
+    assert!(again.is_some());
 }
 
 #[test]

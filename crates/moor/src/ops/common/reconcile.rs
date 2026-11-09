@@ -1,7 +1,5 @@
 //! Reconcile stored Boxes against what the Driver still lists.
 
-use std::time::Duration;
-
 use moor_core::decide::reconcile::{reconcile, stopped, BoxFact, STOPPED_REASON};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
@@ -10,8 +8,8 @@ use moor_core::seam::driver::{DriverError, PausePublish};
 use moor_core::{ProviderId, Warning};
 
 use crate::adapters::proc::plain::last_sentence;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::now;
 use crate::store::{BoxRow, Store};
 
@@ -110,8 +108,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
         return;
     };
     let id = *id;
-    let Ok(dir) = cx.state_dir() else { return };
-    let Ok(_held) = BoxLock::acquire(cx.clock(), dir, id, "reconcile", Duration::ZERO) else {
+    let Some(_turn) = cx.try_turn(id, Cmd::Reconcile) else {
         return;
     };
     let Ok(Some(row)) = store.box_row(id) else {

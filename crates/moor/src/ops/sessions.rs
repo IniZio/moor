@@ -8,7 +8,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::authz;
 
-/// Run `sessions`. Pure store reads: no reconcile, no Box lock, no driver or surface call.
+/// Run `sessions`. Pure store reads: no reconcile, no Box turn, no driver or surface call.
 ///
 /// # Errors
 /// [`CommandError`] when `parent` is unknown or a store read fails.

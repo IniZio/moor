@@ -14,10 +14,10 @@ use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 
 use crate::blobs::BlobKey;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
-use crate::ops::common::boxlock::BoxLock;
 use crate::store::{BoxRow, EventRow, SessionRow, Store};
 
 /// A transcript saved in the blob store.
@@ -110,7 +110,7 @@ impl From<String> for TryError {
 /// Saves the live session's transcript the first time its agent is seen exited.
 ///
 /// `probed` is the session the exit was read from. Nothing is saved while another operation
-/// holds the Box lock, when the Box is no longer Ready, when the live session is another one,
+/// holds the Box's turn, when the Box is no longer Ready, when the live session is another one,
 /// or when its exit save already ran, failed or was skipped: none is retried.
 pub(crate) fn save_on_exit(
     cx: &Cx,
@@ -118,13 +118,7 @@ pub(crate) fn save_on_exit(
     row: &BoxRow,
     probed: i64,
 ) -> Result<(), CommandError> {
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "transcript",
-        Duration::ZERO,
-    ) else {
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
     let Some(row) = store.box_row(row.id)? else {
@@ -162,15 +156,9 @@ fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
 
 /// Copies the live session's transcript to the host at the end of a turn, so losing the Box
 /// later keeps everything up to that turn. Nothing is copied while another operation holds the
-/// Box lock; a failed copy is recorded and the next turn tries again.
+/// Box's turn; a failed copy is recorded and the next turn tries again.
 pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "transcript",
-        Duration::ZERO,
-    ) else {
+    let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
     let Some(row) = store.box_row(row.id)? else {
@@ -187,7 +175,7 @@ pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), C
 
 /// How long the Box may take to build and stream the archive for `trigger`.
 ///
-/// A turn save holds the Box lock that a steer or close waits on, and the next turn saves again,
+/// A turn save holds the Box's turn that a steer or close waits on, and the next turn saves again,
 /// so it gives up early. Every other save is the last chance to keep the session's transcript, and
 /// a busy Box can take longer than a turn save allows.
 const fn archive_deadline(trigger: Trigger) -> Deadline {

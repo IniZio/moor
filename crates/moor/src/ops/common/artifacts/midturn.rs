@@ -11,8 +11,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
 use super::collect_in;
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::store::Store;
 
 /// Least time between two mid-turn collects of one Box; also the gap a file must hold still across.
@@ -58,8 +58,7 @@ pub(crate) fn collect_working(cx: &Cx, store: &Store, draining: &dyn Fn() -> boo
         let Some(mut held) = due_again(&key, now) else {
             continue;
         };
-        let Ok(_lock) = BoxLock::acquire(cx.clock(), state_dir, id, "artifacts", Duration::ZERO)
-        else {
+        let Some(_turn) = cx.try_turn(id, Cmd::Settle) else {
             continue;
         };
         collect_in(cx, store, &row, Some(&mut held));

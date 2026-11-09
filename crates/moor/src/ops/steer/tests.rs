@@ -17,11 +17,9 @@ use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ErrorDetail, ErrorKind, ProviderId, SteerReq};
 
-use std::time::Duration;
-
 use super::run;
+use crate::cx::owners::{Cmd, Held, RunHold};
 use crate::cx::Cx;
-use crate::ops::common::boxlock::BoxLock;
 use crate::store::db::DbExt as _;
 use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
@@ -29,7 +27,7 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 
 struct Fx {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     cx: Cx,
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
@@ -53,7 +51,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         cx.store().unwrap().begin_session(id, "agent-1").unwrap();
     }
     Fx {
-        _dir: dir,
+        dir,
         cx,
         engine,
         driver,
@@ -444,15 +442,13 @@ fn a_digit_to_an_agent_that_is_not_blocked_is_text() {
     );
 }
 
-fn hold_lock(f: &Fx) -> BoxLock {
-    BoxLock::acquire(
-        f.cx.clock(),
-        f.cx.state_dir().unwrap(),
-        f.id,
-        "run",
-        Duration::ZERO,
-    )
-    .unwrap()
+fn hold_lock(f: &Fx) -> Held {
+    f.cx.owners_arc().hold(f.id, Cmd::Run)
+}
+
+/// A run in flight on the Box, past the turn that started it.
+fn run_in_flight(f: &Fx) -> RunHold<'_> {
+    f.cx.turn(f.id, Cmd::Run).unwrap().begin_run()
 }
 
 fn put_to_sleep(f: &Fx) {
@@ -468,7 +464,7 @@ fn put_to_sleep(f: &Fx) {
 #[test]
 fn steering_during_a_run_is_sent_while_the_box_lock_is_held() {
     let f = fx();
-    let _held = hold_lock(&f);
+    let _running = run_in_flight(&f);
     run(&f.cx, &text("hi")).unwrap();
     assert_eq!(f.engine.steers().len(), 1);
 }
@@ -552,6 +548,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
     );
 }
 
+mod arrival;
 mod cold_boot;
 mod interrupt;
 mod relaunch;

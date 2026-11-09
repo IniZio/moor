@@ -18,7 +18,7 @@ use crate::ops::common::view::rfc3339;
 use crate::store::{artifacts::ArtifactRow, BoxRow, Store};
 
 /// List a Box's Artifacts: the newest version of each name, or every version with `all`.
-/// Read-only: no reconcile and no Box lock.
+/// Read-only: no reconcile and no Box turn.
 ///
 /// # Errors
 /// [`CommandError`] when the Box is unknown or a store read fails.
