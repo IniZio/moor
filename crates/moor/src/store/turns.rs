@@ -1,6 +1,7 @@
 //! Turn and link bookkeeping that must be decided and written in one transaction.
 
 use moor_core::domain::event::{Event, TurnOutcome};
+use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::BoxState;
 use sea_query::{Expr, ExprTrait as _, Query};
@@ -8,7 +9,7 @@ use sea_query::{Expr, ExprTrait as _, Query};
 use super::apply::insert_event;
 use super::reads::steer_answered;
 use super::{Store, StoreError};
-use crate::store::db::DbExt as _;
+use crate::store::db::{DbExt as _, Tx};
 
 impl Store {
     /// Write a `turn_done` for `steer` unless the Box already has one for it, and make the Box's
@@ -29,18 +30,31 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
-        if steer_answered(&tx, box_id, steer)? {
-            return Ok(false);
-        }
-        insert_event(&tx, box_id, &Event::TurnDone { steer, outcome }, now)?;
-        tx.run(
-            Query::update()
-                .table(BoxState::Table)
-                .value(BoxState::ArchiveDue, now.as_millis())
-                .and_where(Expr::col(BoxState::Box).eq(box_id.get())),
-        )?;
+        let wrote = turn_done_in(&tx, box_id, steer, outcome, now)?;
         tx.commit()?;
         drop(conn);
-        Ok(true)
+        Ok(wrote)
     }
+}
+
+/// Writes a `turn_done` for `steer` through `db` unless the Box already has one for it, and makes
+/// the Box's archive due; whether it wrote.
+pub(super) fn turn_done_in(
+    db: &Tx<'_>,
+    box_id: BoxId,
+    steer: i64,
+    outcome: TurnOutcome,
+    now: Ts,
+) -> Result<bool, StoreError> {
+    if steer_answered(db, box_id, steer)? {
+        return Ok(false);
+    }
+    insert_event(db, box_id, &Event::TurnDone { steer, outcome }, now)?;
+    db.run(
+        Query::update()
+            .table(BoxState::Table)
+            .value(BoxState::ArchiveDue, now.as_millis())
+            .and_where(Expr::col(BoxState::Box).eq(box_id.get())),
+    )?;
+    Ok(true)
 }
