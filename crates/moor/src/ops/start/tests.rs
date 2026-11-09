@@ -35,6 +35,7 @@ mod forced_close;
 mod fresh_guest;
 mod identity;
 mod interrupted;
+mod interrupted_steps;
 mod launch_deadline;
 mod launch_skipped;
 mod lease;
