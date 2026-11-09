@@ -93,14 +93,23 @@ fn tls_config() -> (Arc<ServerConfig>, String) {
     (Arc::new(config), ca_cert.pem())
 }
 
-/// What the fake upstream answers.
-fn reply_for(authorized: bool, request_line: &str) -> &'static str {
+/// The numeric id the fake upstream gives each repo.
+pub(super) const REPO_IDS: &[(&str, u64)] = &[("o/r", 101), ("o/lib", 102), ("cli/cli", 900)];
+
+/// What the fake upstream answers; `GET /repos/{owner}/{name}` gets the repo's id.
+fn reply_for(authorized: bool, request_line: &str) -> String {
+    let repo = request_line
+        .strip_prefix("GET /repos/")
+        .and_then(|rest| rest.split([' ', '?']).next())
+        .and_then(|full| REPO_IDS.iter().find(|(name, _)| *name == full));
     if !authorized {
-        UNAUTHORIZED_REPLY
+        UNAUTHORIZED_REPLY.to_owned()
+    } else if let Some((full, id)) = repo {
+        format!(r#"{{"id":{id},"full_name":"{full}","private":true}}"#)
     } else if request_line.starts_with("POST ") {
-        GRAPHQL_REPLY
+        GRAPHQL_REPLY.to_owned()
     } else {
-        PULLS_REPLY
+        PULLS_REPLY.to_owned()
     }
 }
 
@@ -439,3 +448,4 @@ fn stop_closes_every_listener() {
 mod any_repo;
 mod placeholder;
 mod rejected;
+mod repo_ids;

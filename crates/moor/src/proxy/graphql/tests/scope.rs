@@ -242,7 +242,7 @@ fn with_no_placeholder_the_request_leaves_with_no_authorization() {
     assert!(authorizations(w).is_empty(), "{}", w.head);
     assert!(w.header("x-gh-auth").is_none(), "{}", w.head);
     assert!(!w.head.contains("SECRET_"), "{}", w.head);
-    assert_eq!(rig.filter.drain_withheld(), ["POST"]);
+    assert_eq!(withheld_methods(&rig), ["POST"]);
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn only_requests_forwarded_without_credential_are_reported_as_withheld() {
     assert!(rig.filter.drain_withheld().is_empty());
     let foreign = post("/graphql", &repo_query("victim", "secrets", "Q"));
     assert_eq!(rig.client().call(&foreign).status(), 200);
-    assert_eq!(rig.filter.drain_withheld(), ["POST"]);
+    assert_eq!(withheld_methods(&rig), ["POST"]);
     assert!(rig.filter.drain_withheld().is_empty());
 }
 
@@ -326,4 +326,13 @@ fn node_ids_split_across_a_listed_and_an_unlisted_repo_stay_anonymous() {
     let seen = rig.requests();
     assert_eq!(seen.len(), 2);
     assert_anonymous(seen.get(1).unwrap());
+}
+
+/// The methods of the requests the filter forwarded without credential since the last call.
+fn withheld_methods(rig: &Rig) -> Vec<String> {
+    rig.filter
+        .drain_withheld()
+        .into_iter()
+        .map(|w| w.method)
+        .collect()
 }
