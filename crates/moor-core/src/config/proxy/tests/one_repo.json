@@ -148,6 +148,10 @@
       },
       {
         "method": "GET",
+        "path": "/user"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets/stacks"
       },
       {
