@@ -71,7 +71,8 @@ fn the_proxy_table_keeps_no_nonce_or_host_port() {
 fn a_box_may_have_several_live_sessions() {
     let conn = fresh_store();
     conn.execute_batch(
-        "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('b', 'r', 'ready', 1, 1);
+        "INSERT INTO boxes (name, repo, created_at) VALUES ('b', 'r', 1);
+         INSERT INTO box_state (box, state, open_name, updated_at) VALUES (1, 'ready', 'b', 1);
          INSERT INTO sessions (box, ordinal, state, started_at, ended_at) VALUES (1, 1, 'running', 1, NULL);
          INSERT INTO sessions (box, ordinal, state, started_at, ended_at) VALUES (1, 2, 'running', 2, NULL);",
     )
@@ -203,7 +204,10 @@ fn a_file_at_the_last_sql_migration_is_adopted_with_its_rows() {
     init_schema(&mut conn, &path).unwrap();
     assert_eq!(
         history(&conn),
-        [45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67],
+        [
+            45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68
+        ],
         "recorded at the baseline, then migrated on"
     );
     let name: String = conn

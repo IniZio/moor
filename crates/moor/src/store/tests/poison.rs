@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_schema::tables::Boxes;
+use moor_schema::tables::{BoxState, Boxes};
 use sea_query::Query;
 
 use super::{new_box, open};
@@ -21,23 +21,26 @@ fn a_panic_holding_the_writer_does_not_break_later_writes() {
     let joined = std::thread::spawn(move || {
         let mut conn = held.writer();
         let tx = conn.transaction().unwrap();
+        let id: i64 = tx
+            .row(
+                Query::insert()
+                    .into_table(Boxes::Table)
+                    .columns([Boxes::Name, Boxes::Repo, Boxes::CreatedAt])
+                    .values_panic(["ghost".into(), "o/r".into(), 0_i64.into()])
+                    .returning_col(Boxes::Id),
+                |r| r.get(0),
+            )
+            .unwrap();
         tx.run(
             Query::insert()
-                .into_table(Boxes::Table)
+                .into_table(BoxState::Table)
                 .columns([
-                    Boxes::Name,
-                    Boxes::Repo,
-                    Boxes::State,
-                    Boxes::CreatedAt,
-                    Boxes::UpdatedAt,
+                    BoxState::Box,
+                    BoxState::State,
+                    BoxState::OpenName,
+                    BoxState::UpdatedAt,
                 ])
-                .values_panic([
-                    "ghost".into(),
-                    "o/r".into(),
-                    "checking".into(),
-                    0_i64.into(),
-                    0_i64.into(),
-                ]),
+                .values_panic([id.into(), "checking".into(), "ghost".into(), 0_i64.into()]),
         )
         .unwrap();
         std::panic::resume_unwind(Box::new("panic inside the writer's transaction"));

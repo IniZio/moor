@@ -1,6 +1,6 @@
 //! Tests for the single agent read.
 
-use moor_schema::tables::Boxes;
+use moor_schema::tables::BoxState;
 
 use crate::testing::db::column_where;
 use std::path::Path;
@@ -289,7 +289,12 @@ fn idle_since(cx: &Cx, id: BoxId) -> Option<i64> {
         .reader()
         .unwrap()
         .row(
-            column_where(Boxes::Table, Boxes::IdleSince, Boxes::Id, id.get()),
+            column_where(
+                BoxState::Table,
+                BoxState::IdleSince,
+                BoxState::Box,
+                id.get(),
+            ),
             |r| r.get(0),
         )
         .unwrap()

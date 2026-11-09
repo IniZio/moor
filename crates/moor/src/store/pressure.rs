@@ -6,11 +6,12 @@ use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
 use moor_core::name::{BoxId, NodeName};
 use moor_core::seam::driver::PausePublish;
 
-use moor_schema::tables::{BoxHands, Boxes, NodePressure};
+use moor_schema::tables::{BoxHands, BoxState, NodePressure};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::hands::{select_current, update_current};
+use crate::store::select::state_update;
 use crate::store::{Store, StoreError};
 
 /// A node's pressure state: its recent reports, oldest first, since when pressure has been
@@ -116,12 +117,8 @@ impl Store {
 
     /// Marks Box `id` to resume first, as suspended at `at`, unix seconds; `None` clears it.
     pub(crate) fn set_resume_first(&self, id: BoxId, at: Option<i64>) -> Result<(), StoreError> {
-        self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::ResumeFirstAt, at)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
-        )?;
+        self.writer()
+            .run(state_update(id).value(BoxState::ResumeFirstAt, at))?;
         Ok(())
     }
 
@@ -131,12 +128,8 @@ impl Store {
         id: BoxId,
         prompt: Option<&str>,
     ) -> Result<(), StoreError> {
-        self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::HeldPrompt, prompt)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
-        )?;
+        self.writer()
+            .run(state_update(id).value(BoxState::HeldPrompt, prompt))?;
         Ok(())
     }
 
@@ -146,9 +139,9 @@ impl Store {
         let held = conn
             .row(
                 Query::select()
-                    .column(Boxes::HeldPrompt)
-                    .from(Boxes::Table)
-                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                    .column(BoxState::HeldPrompt)
+                    .from(BoxState::Table)
+                    .and_where(Expr::col(BoxState::Box).eq(id.get())),
                 |r| r.get(0),
             )
             .optional()?;
@@ -227,9 +220,9 @@ impl Store {
         let at = conn
             .row(
                 Query::select()
-                    .column(Boxes::ResumeFirstAt)
-                    .from(Boxes::Table)
-                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                    .column(BoxState::ResumeFirstAt)
+                    .from(BoxState::Table)
+                    .and_where(Expr::col(BoxState::Box).eq(id.get())),
                 |r| r.get(0),
             )
             .optional()?;

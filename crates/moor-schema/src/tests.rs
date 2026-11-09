@@ -10,9 +10,18 @@ use moor_migrate::{render, Backend};
 use crate::STEPS;
 
 mod box_hands;
+mod box_state;
 mod insertion_order;
 mod postgres;
 mod sqlite;
+
+/// The steps before the one `name`s, and that step, rendered for `backend`.
+fn before_and_step(name: &str, backend: Backend) -> (String, String) {
+    let at = STEPS.iter().position(|s| s.name == name).unwrap();
+    let (before, rest) = STEPS.split_at(at);
+    let before = before.iter().map(|s| render(s, backend)).collect();
+    (before, render(rest.first().unwrap(), backend))
+}
 
 /// A column type as the store reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -101,7 +110,7 @@ fn plain_default(raw: &str) -> String {
 #[test]
 fn sqlite_reads_back_every_table_with_its_keys() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
-    assert_eq!(schema.tables.len(), 36, "{:?}", schema.tables.keys());
+    assert_eq!(schema.tables.len(), 37, "{:?}", schema.tables.keys());
     let sessions = schema.tables.get("sessions").unwrap();
     assert_eq!(sessions.primary_key, ["id"]);
     assert!(sessions.indexes.contains(&Index {

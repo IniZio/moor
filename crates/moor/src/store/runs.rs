@@ -4,7 +4,7 @@ use moor_core::domain::decision::{Intent, IntentChange};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, RunId, Sha};
-use moor_schema::tables::{Boxes, Runs};
+use moor_schema::tables::{BoxState, Runs};
 use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use super::apply::{insert_event, intent_sets, update};
@@ -160,12 +160,12 @@ impl Store {
         )?;
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
-        sets.push((Boxes::UpdatedAt, now.as_millis().into()));
+        sets.push((BoxState::UpdatedAt, now.as_millis().into()));
         update(
             &tx,
             Query::update()
-                .table(Boxes::Table)
-                .and_where(Expr::col(Boxes::Id).eq(box_id.get())),
+                .table(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(box_id.get())),
             &sets,
         )?;
         insert_event(&tx, box_id, &Event::RunStarted { run }, now)?;
@@ -207,14 +207,14 @@ impl Store {
             return Ok(());
         }
         let mut clear = intent_sets(IntentChange::Clear, now);
-        clear.push((Boxes::UpdatedAt, now.as_millis().into()));
+        clear.push((BoxState::UpdatedAt, now.as_millis().into()));
         update(
             &tx,
             Query::update()
-                .table(Boxes::Table)
-                .and_where(Expr::col(Boxes::Id).eq(box_id.get()))
-                .and_where(Expr::col(Boxes::IntentKind).eq("running"))
-                .and_where(Expr::col(Boxes::IntentRun).eq(id.get())),
+                .table(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(box_id.get()))
+                .and_where(Expr::col(BoxState::IntentKind).eq("running"))
+                .and_where(Expr::col(BoxState::IntentRun).eq(id.get())),
             &clear,
         )?;
         let ran = Event::Ran {
@@ -295,10 +295,10 @@ impl Store {
         )?;
         tx.run(
             Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::IntentPid, pid)
-                .and_where(Expr::col(Boxes::IntentKind).eq("running"))
-                .and_where(Expr::col(Boxes::IntentRun).eq(id.get())),
+                .table(BoxState::Table)
+                .value(BoxState::IntentPid, pid)
+                .and_where(Expr::col(BoxState::IntentKind).eq("running"))
+                .and_where(Expr::col(BoxState::IntentRun).eq(id.get())),
         )?;
         tx.commit()?;
         drop(conn);

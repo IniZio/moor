@@ -2,7 +2,7 @@
 
 use crate::testing::agent;
 use crate::testing::db::column_where;
-use moor_schema::tables::Boxes;
+use moor_schema::tables::BoxState;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -371,7 +371,12 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
         .reader()
         .unwrap()
         .row(
-            column_where(Boxes::Table, Boxes::IdleSince, Boxes::Id, id.get()),
+            column_where(
+                BoxState::Table,
+                BoxState::IdleSince,
+                BoxState::Box,
+                id.get(),
+            ),
             |r| r.get(0),
         )
         .unwrap()

@@ -156,9 +156,9 @@ fn a_watch_resumes_across_a_real_drain_and_restart_with_no_gap_or_duplicate() {
     client.request(Request::Version {}, |_| {}).unwrap();
     wait_for(&held.state.join("moor.db"));
     held.db()
-        .execute(
-            "INSERT INTO boxes (name, state, created_at, updated_at) VALUES ('a', 'working', 0, 0)",
-            [],
+        .execute_batch(
+            "INSERT INTO boxes (name, created_at) VALUES ('a', 0);
+             INSERT INTO box_state (box, state, open_name, updated_at) VALUES (1, 'working', 'a', 0);",
         )
         .unwrap();
     add_events(&held, 1, 3);

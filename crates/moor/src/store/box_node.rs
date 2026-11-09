@@ -8,16 +8,22 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxHands, Boxes};
+use moor_schema::tables::{BoxHands, BoxState, Boxes};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
 use super::hands::join_current;
+use super::select::{join_state, state_update};
 use super::{Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
-/// A column of `boxes`, where a read joins `box_hands`.
+/// A column of `boxes`, where a read joins `box_state` or `box_hands`.
 const fn b(c: Boxes) -> (Boxes, Boxes) {
     (Boxes::Table, c)
+}
+
+/// A column of `box_state`.
+const fn st(c: BoxState) -> (BoxState, BoxState) {
+    (BoxState::Table, c)
 }
 
 /// A column of `box_hands`.
@@ -32,16 +38,16 @@ pub(super) fn live_on_node_in(
     node: &NodeName,
 ) -> Result<(usize, usize), StoreError> {
     let rows = conn.rows(
-        join_current(
+        join_current(join_state(
             Query::select()
                 .column(h(BoxHands::State))
-                .column(b(Boxes::State))
+                .column(st(BoxState::State))
                 .expr(Expr::col(Asterisk).count())
                 .from(Boxes::Table),
-        )
-        .and_where(Expr::col(b(Boxes::Node)).eq(node.as_str()))
+        ))
+        .and_where(Expr::col(st(BoxState::Node)).eq(node.as_str()))
         .group_by_col(h(BoxHands::State))
-        .group_by_col(b(Boxes::State)),
+        .group_by_col(st(BoxState::State)),
         |r| {
             Ok::<_, StoreError>((
                 r.get::<_, Option<String>>(0)?,
@@ -73,10 +79,10 @@ impl Store {
         let conn = self.reader()?;
         let rows = conn.rows(
             Query::select()
-                .column(Boxes::Id)
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
-                .and_where(Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str())),
+                .column(BoxState::Box)
+                .from(BoxState::Table)
+                .and_where(Expr::col(BoxState::Node).eq(node.as_str()))
+                .and_where(Expr::col(BoxState::State).eq(BoxLifecycle::Ready.as_str())),
             |r| Ok(BoxId::new(r.get(0)?)),
         )?;
         Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
@@ -87,19 +93,21 @@ impl Store {
     pub(crate) fn one_live_per_owner_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
         let rows = conn.rows(
-            Query::select()
-                .columns([Boxes::Id, Boxes::User])
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
-                .and_where(
-                    Expr::col(Boxes::State)
-                        .is_in([BoxLifecycle::Ready.as_str(), BoxLifecycle::Asleep.as_str()]),
-                )
-                .order_by_expr(
-                    Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str()),
-                    Order::Desc,
-                )
-                .order_by(Boxes::Id, Order::Asc),
+            join_state(
+                Query::select()
+                    .columns([b(Boxes::Id), b(Boxes::User)])
+                    .from(Boxes::Table),
+            )
+            .and_where(Expr::col(st(BoxState::Node)).eq(node.as_str()))
+            .and_where(
+                Expr::col(st(BoxState::State))
+                    .is_in([BoxLifecycle::Ready.as_str(), BoxLifecycle::Asleep.as_str()]),
+            )
+            .order_by_expr(
+                Expr::col(st(BoxState::State)).eq(BoxLifecycle::Ready.as_str()),
+                Order::Desc,
+            )
+            .order_by(b(Boxes::Id), Order::Asc),
             |r| Ok::<_, StoreError>((BoxId::new(r.get(0)?), r.get::<_, Option<i64>>(1)?)),
         )?;
         let mut owners = HashSet::new();
@@ -118,10 +126,13 @@ impl Store {
         let conn = self.reader()?;
         let found: Option<(Option<String>, String)> = conn
             .row(
-                Query::select()
-                    .columns([Boxes::Node, Boxes::NodeLabels])
-                    .from(Boxes::Table)
-                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                join_state(
+                    Query::select()
+                        .column(st(BoxState::Node))
+                        .column(b(Boxes::NodeLabels))
+                        .from(Boxes::Table),
+                )
+                .and_where(Expr::col(b(Boxes::Id)).eq(id.get())),
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -140,23 +151,17 @@ impl Store {
         id: BoxId,
         node: Option<&NodeName>,
     ) -> Result<(), StoreError> {
-        self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::Node, node.map(NodeName::as_str))
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
-        )?;
+        self.writer()
+            .run(state_update(id).value(BoxState::Node, node.map(NodeName::as_str)))?;
         Ok(())
     }
 
     /// Puts Box `id` on `node` when it is on none; returns whether it was.
     pub(crate) fn place_unplaced(&self, id: BoxId, node: &NodeName) -> Result<bool, StoreError> {
         let n = self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::Node, node.as_str())
-                .and_where(Expr::col(Boxes::Id).eq(id.get()))
-                .and_where(Expr::col(Boxes::Node).is_null()),
+            state_update(id)
+                .value(BoxState::Node, node.as_str())
+                .and_where(Expr::col(BoxState::Node).is_null()),
         )?;
         Ok(n > 0)
     }
@@ -166,20 +171,22 @@ impl Store {
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
         let rows = conn.rows(
-            join_current(Query::select().column(b(Boxes::Id)).from(Boxes::Table))
-                .and_where(Expr::col(b(Boxes::Node)).eq(node.as_str()))
-                .and_where(Expr::col(b(Boxes::State)).eq(BoxLifecycle::Pending.as_str()))
-                .order_by_expr(Expr::col(b(Boxes::ResumeFirstAt)).is_null(), Order::Asc)
-                .order_by_expr(
-                    Expr::case(
-                        Expr::col(h(BoxHands::State)).eq(HandsState::Asleep.as_str()),
-                        0,
-                    )
-                    .finally(1)
-                    .into(),
-                    Order::Asc,
+            join_current(join_state(
+                Query::select().column(b(Boxes::Id)).from(Boxes::Table),
+            ))
+            .and_where(Expr::col(st(BoxState::Node)).eq(node.as_str()))
+            .and_where(Expr::col(st(BoxState::State)).eq(BoxLifecycle::Pending.as_str()))
+            .order_by_expr(Expr::col(st(BoxState::ResumeFirstAt)).is_null(), Order::Asc)
+            .order_by_expr(
+                Expr::case(
+                    Expr::col(h(BoxHands::State)).eq(HandsState::Asleep.as_str()),
+                    0,
                 )
-                .order_by(b(Boxes::Id), Order::Asc),
+                .finally(1)
+                .into(),
+                Order::Asc,
+            )
+            .order_by(b(Boxes::Id), Order::Asc),
             |r| r.get::<_, i64>(0),
         )?;
         rows.map(|r| Ok(BoxId::new(r?))).collect()

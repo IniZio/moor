@@ -10,7 +10,8 @@ fn queries_run_against_the_real_schema() {
         conn.execute_batch(&sql).unwrap();
     }
     conn.execute_batch(
-        "INSERT INTO boxes (id, name, repo, state, created_at, updated_at) VALUES (1, 'b', 'r', 'open', 0, 0);
+        "INSERT INTO boxes (id, name, repo, created_at) VALUES (1, 'b', 'r', 0);
+         INSERT INTO box_state (box, state, open_name, updated_at) VALUES (1, 'open', 'b', 0);
          INSERT INTO events (id, box, kind, payload, ts) VALUES (7, 1, 'box_ready', '{}', 1000);
          INSERT INTO sessions (id, box, ordinal, state, started_at, agent_session_id) VALUES (1, 1, 1, 'live', 0, 'abc');
          INSERT INTO launches (box, session_ref, started_at, registered_agent_session) VALUES (1, 'x', 0, NULL);",

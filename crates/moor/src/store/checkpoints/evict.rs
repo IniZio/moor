@@ -3,7 +3,7 @@
 
 use moor_core::domain::layers::LayerKey;
 use moor_core::{BoxId, ProviderId};
-use moor_schema::tables::{Boxes, SetupCheckpointPins as Pins, SetupCheckpoints as Checkpoints};
+use moor_schema::tables::{BoxState, SetupCheckpointPins as Pins, SetupCheckpoints as Checkpoints};
 use sea_query::{DynIden, Expr, ExprTrait as _, IntoIden, OnConflict, Order, Query};
 
 use crate::store::db::{self, DbExt as _, OptionalExtension};
@@ -53,13 +53,13 @@ fn held(c: &DynIden, exact: bool) -> Expr {
         .and_where(Expr::col(("q", Pins::BoxId)).equals(("p", Pins::BoxId)))
         .and_where(Expr::col(("q", Pins::Provider)).equals(("p", Pins::Provider)))
         .take();
-    let state = Expr::col((Boxes::Table, Boxes::State));
+    let state = Expr::col((BoxState::Table, BoxState::State));
     let q = Query::select()
         .expr(Expr::val(1))
         .from_as(Pins::Table, "p")
         .inner_join(
-            Boxes::Table,
-            Expr::col((Boxes::Table, Boxes::Id)).equals(("p", Pins::BoxId)),
+            BoxState::Table,
+            Expr::col((BoxState::Table, BoxState::Box)).equals(("p", Pins::BoxId)),
         )
         .and_where(Expr::col(("p", Pins::Provider)).equals((c.clone(), Checkpoints::Provider)))
         .and_where(Expr::col(("p", Pins::LayerKey)).equals((c.clone(), Checkpoints::LayerKey)))

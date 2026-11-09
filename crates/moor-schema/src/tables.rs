@@ -45,10 +45,11 @@ tables! {
     UserProfiles { User, Repo, GitRef, UpdatedAt }
     UserWebhooks { Id, User, Url, Events, Key, CreatedAt, LastOkAt, FailingSince, LastError, State,
         Header, HeaderValue }
-    Boxes { Id, Name, Repo, RepoConfig, AuthorName, AuthorEmail, User, Issue, Prompt, Base, Branch,
-        State, StateReason, IntentKind, IntentPid, IntentRun, IntentAt, SetupFailedAt, IdleSince,
-        LaunchFailure, CreatedAt, UpdatedAt, Node, NodeLabels, ResumeFirstAt, OtherRepos,
-        StepsPendingAt, HeldPrompt }
+    Boxes { Id, Name, Repo, RepoConfig, AuthorName, AuthorEmail, User, Issue, Base, Branch,
+        CreatedAt, NodeLabels, OtherRepos }
+    BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
+        IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
+        ResumeFirstAt, UpdatedAt }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
         CreatedAt }
