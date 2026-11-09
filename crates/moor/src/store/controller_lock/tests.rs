@@ -166,6 +166,23 @@ fn a_holder_outlasts_an_idle_session_timeout() {
 }
 
 #[test]
+fn an_idle_holder_asks_its_session_on_schedule() {
+    let Some(fixture) = Fixture::new() else {
+        return;
+    };
+    let me = "lock_on_schedule";
+    let mut lock = fixture.session(me);
+    assert!(lock.try_take().unwrap());
+    let losses = watch(lock, Duration::from_millis(300));
+    std::thread::sleep(Duration::from_millis(400));
+    let before = ControllerLock::last_active(&fixture.target, me);
+    std::thread::sleep(Duration::from_millis(1_000));
+    let after = ControllerLock::last_active(&fixture.target, me);
+    assert!(after - before >= 0.5, "{before} then {after}");
+    assert!(losses.try_recv().is_err());
+}
+
+#[test]
 fn a_holder_hears_it_no_longer_holds_on_an_open_session() {
     let Some(fixture) = Fixture::new() else {
         return;
