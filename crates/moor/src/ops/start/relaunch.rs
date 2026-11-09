@@ -11,7 +11,6 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use std::time::Duration;
 
 use super::launch;
-use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
@@ -52,8 +51,8 @@ pub(super) fn run(
 
 /// Launches the agent of an attached Box, or relaunches it once its pane has ended.
 ///
-/// The Box's turn is held from the live-session check through the launch, so two starts cannot both
-/// launch; it is released on return, before anything waits on the agent.
+/// The caller holds the Box's turn from the live-session check through the launch, so two starts
+/// cannot both launch.
 ///
 /// # Errors
 /// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
@@ -81,7 +80,6 @@ fn launch_asked(
         on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     }
-    let _turn = cx.turn(id, Cmd::Relaunch)?;
     let Some(old) = store.live_session(id)? else {
         let cfg = settings()?;
         store_prompt(store, req, id)?;

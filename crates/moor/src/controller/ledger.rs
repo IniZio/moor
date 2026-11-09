@@ -51,7 +51,9 @@ pub(super) fn serve_until_exit(
                     let (env, vault, key) =
                         (Arc::clone(&env), Arc::clone(&vault), fronts_key.clone());
                     std::thread::spawn(move || {
-                        Moor::serve_ledger((&env, &vault), key.as_deref(), stream);
+                        Moor::checked(|| {
+                            Moor::serve_ledger((&env, &vault), key.as_deref(), stream);
+                        });
                     });
                 }
                 Err(e) => log(&sink, &format!("ledger accept failed: {e}")),
@@ -154,7 +156,7 @@ impl TlsLedger {
                         let (env, vault) = (Arc::clone(&env), Arc::clone(&vault));
                         let (keys, loops) = (Arc::clone(&keys), Arc::clone(&loops));
                         std::thread::spawn(move || {
-                            serve_one(stream, (&env, &vault), &keys, &loops);
+                            Moor::checked(|| serve_one(stream, (&env, &vault), &keys, &loops));
                         });
                     }
                     Err(e) => log(&sink, &format!("ledger TLS accept failed: {e}")),

@@ -1,6 +1,7 @@
 //! `retry`: re-run setup on a Box whose setup failed.
 //!
-//! The Box's turn is taken by the provisioning step, which reads the row again under it.
+//! The Box's turn is held from the provisioning step, which reads the row again under it,
+//! through the agent's launch.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::WarmDisk;
@@ -32,7 +33,8 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
         ));
     }
     store.forget_egress_delivery(row.id)?;
-    let Some(provisioned) = reprovision(cx, store, &row, Cmd::Retry)? else {
+    let turn = cx.turn(row.id, Cmd::Retry)?;
+    let Some(provisioned) = reprovision(cx, store, &row, &turn)? else {
         return Err(CommandError::new(
             ErrorKind::Failed,
             format!("Box {name} has no machine that can run setup again"),
@@ -42,9 +44,9 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
     let agent = if provisioned.failed_step().is_some() {
         AgentLaunchView::default()
     } else {
-        let _turn = cx.turn(row.id, Cmd::Retry)?;
         launch_after_retry(cx, store, row.id)?
     };
+    drop(turn);
     let row = store
         .box_row(row.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "retried Box vanished"))?;

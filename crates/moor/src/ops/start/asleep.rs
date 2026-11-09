@@ -7,7 +7,6 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
 
 use super::relaunch;
-use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::park::restore_tunnel;
@@ -26,13 +25,13 @@ pub(super) enum Woken {
 
 /// Wakes an asleep Box being started and brings its tunnel back, since the agent launch that
 /// follows needs both. A node without room leaves it queued, holding any given prompt for later.
+/// The caller holds the Box's turn.
 pub(super) fn wake(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     id: BoxId,
 ) -> Result<Woken, CommandError> {
-    let _turn = cx.turn(id, Cmd::Wake)?;
     let row = reread(store, id)?;
     let machine_asleep = row
         .hands

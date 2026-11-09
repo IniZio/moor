@@ -37,10 +37,6 @@ const _: () = {
 
 /// A helper thread's claim to act under another thread's turn; valid only while that turn lasts.
 #[derive(Clone)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no helper thread acts under a shared turn yet")
-)]
 pub(crate) struct TurnShare<'a> {
     /// Where the turn is looked up.
     owners: &'a Owners,
@@ -74,7 +70,7 @@ impl<'a> Turn<'a> {
     /// A claim on this turn for helper threads; it lapses when the turn ends.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "no helper thread acts under a shared turn yet")
+        expect(dead_code, reason = "production helpers take Owners::held_share")
     )]
     pub(crate) const fn share(&self) -> TurnShare<'a> {
         TurnShare {
@@ -98,15 +94,20 @@ impl<'a> Turn<'a> {
     }
 }
 
-impl TurnShare<'_> {
+impl<'a> TurnShare<'a> {
+    /// Ticket `seq`'s turn on `box_id`, shared.
+    pub(super) const fn new(owners: &'a Owners, box_id: BoxId, seq: u64) -> Self {
+        Self {
+            owners,
+            box_id,
+            seq,
+        }
+    }
+
     /// Checks that the shared turn on this Box is still held.
     ///
     /// # Errors
     /// `Internal` once the turn has ended.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "no helper thread acts under a shared turn yet")
-    )]
     pub(crate) fn check(&self) -> Result<BoxId, CommandError> {
         let held = (self.owners.lock().boxes.get(&self.box_id))
             .and_then(|o| o.holder.as_ref())

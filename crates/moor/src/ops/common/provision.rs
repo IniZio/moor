@@ -12,7 +12,7 @@ use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
 
-use crate::cx::owners::Cmd;
+use crate::cx::owners::Turn;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::cache;
@@ -51,9 +51,8 @@ pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
 
 /// Gives a Box with no machine, a failed setup in a lost machine or a lost machine a machine again.
 ///
-/// Returns what ran, or `None` when nothing was provisioned. The Box's turn is held while
-/// provisioning and the row is read again under it; another op holding it is
-/// refused as busy.
+/// Returns what ran, or `None` when nothing was provisioned. The caller holds the Box's `turn`,
+/// and the row is read again under it.
 ///
 /// Settings come from the `.moor.yaml` stored when the Box started. Nothing is copied into a
 /// ready Box, and its setup never runs again; a failed or interrupted setup is only warned about.
@@ -61,14 +60,13 @@ pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    cmd: Cmd,
+    _turn: &Turn<'_>,
 ) -> Result<Option<Provisioned>, CommandError> {
+    let row = reread(store, row.id)?;
     let ready = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Ready);
-    if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
+    if entry_for(&row).is_none() && !kept_box_retry(&row) && !ready {
         return Ok(None);
     }
-    let _turn = cx.turn(row.id, cmd)?;
-    let row = reread(store, row.id)?;
     let entry = entry_for(&row);
     if kept_box_retry(&row) {
         let cfg = settings_of(cx, &row, &Flags::default())?;

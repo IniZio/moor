@@ -115,7 +115,7 @@ pub(super) fn wait_unless_draining(
         return None;
     }
     let (done, answered) = mpsc::channel();
-    let worker = thread::spawn(move || done.send(work()).ok());
+    let worker = thread::spawn(move || crate::Moor::checked(|| done.send(work()).ok()));
     let Cadence { interval, reminder } = cadence;
     let every = (interval.as_millis() / TICK.as_millis()).max(1);
     let repeat = (reminder.as_millis() / interval.as_millis().max(1)).max(1);
@@ -169,10 +169,12 @@ where
         let (pieces, taken) = mpsc::sync_channel::<Vec<u8>>(PENDING);
         // The sender drops when `work` returns, which ends the loop below.
         let worker = scope.spawn(move || {
-            work(&mut |data: &[u8]| {
-                pieces
-                    .send(data.to_vec())
-                    .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))
+            crate::Moor::checked(|| {
+                work(&mut |data: &[u8]| {
+                    pieces
+                        .send(data.to_vec())
+                        .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))
+                })
             })
         });
         let mut listening = true;

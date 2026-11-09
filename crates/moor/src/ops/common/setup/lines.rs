@@ -113,6 +113,8 @@ fn label(step: &str) -> String {
 }
 
 /// Runs `exec`, telling `on_line` when each setup line starts and ends as the script announces them.
+///
+/// The caller holds the Box's turn until `exec` ends, so the lines are recorded as they run.
 pub(super) fn follow_lines(
     cx: &Cx,
     cfg: &BoxSettings,
@@ -122,9 +124,14 @@ pub(super) fn follow_lines(
 ) -> Result<ExecOutcome, Failure> {
     let mut lines = Lines::new(&cfg.setup);
     let clock = cx.clock();
+    // The follower records on its own thread, under the share of the setup's turn.
+    let share = cx.owners().held_share();
     let result = follow::during(
         Some(&Output::Log(output.to_path_buf())),
         Some(&mut |bytes: &[u8]| {
+            if share.as_ref().is_some_and(|s| s.check().is_err()) {
+                return Ok(());
+            }
             lines
                 .feed(bytes, clock.instant())
                 .into_iter()

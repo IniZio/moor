@@ -45,7 +45,9 @@ fn reprovisioned(
     let store = w.cx.store().unwrap();
     store.list_others(BoxId::new(1), others).unwrap();
     let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
-    let done = reprovision(&w.cx, store, &row, crate::cx::owners::Cmd::Start).map(Option::unwrap);
+    let turn = w.cx.turn(row.id, crate::cx::owners::Cmd::Start).unwrap();
+    let done = reprovision(&w.cx, store, &row, &turn).map(Option::unwrap);
+    drop(turn);
     (w, done.map_err(|e| format!("{e:?}")))
 }
 

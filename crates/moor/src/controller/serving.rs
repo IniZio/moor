@@ -69,10 +69,12 @@ pub(super) fn serve_started(
 fn log_nodes_in_background(env: &Arc<Env>, sink: &Sink) {
     let (env, sink) = (Arc::clone(env), Arc::clone(sink));
     std::thread::spawn(move || {
-        let lines = Moor::from_env(&env).map_or_else(
-            |e| vec![e.error.to_string()],
-            |moor| moor.node_startup_lines(),
-        );
+        let lines = Moor::checked(|| {
+            Moor::from_env(&env).map_or_else(
+                |e| vec![e.error.to_string()],
+                |moor| moor.node_startup_lines(),
+            )
+        });
         for line in lines {
             log(&sink, &line);
         }
@@ -87,10 +89,12 @@ fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink)
         let env = Env::clone(env).with_cancel(Cancel::default());
         let sink = Arc::clone(sink);
         std::thread::spawn(move || {
-            let lines = Moor::from_env(&env).map_or_else(
-                |e| vec![e.error.to_string()],
-                |moor| moor.resume_setups(&[id]),
-            );
+            let lines = Moor::checked(|| {
+                Moor::from_env(&env).map_or_else(
+                    |e| vec![e.error.to_string()],
+                    |moor| moor.resume_setups(&[id]),
+                )
+            });
             for line in lines {
                 log(&sink, &format!("setup: {line}"));
             }
@@ -110,7 +114,7 @@ fn reconcile_in_background(
     std::thread::spawn(move || {
         std::thread::sleep(after);
         let Some(_held) = drain.hold() else { return };
-        for line in reconcile(&env) {
+        for line in Moor::checked(|| reconcile(&env)) {
             log(&sink, &format!("proxy: {line}"));
         }
     });

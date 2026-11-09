@@ -330,7 +330,7 @@ pub(super) fn serve_one(
         }
     };
     let handler = Arc::clone(handler);
-    thread::spawn(move || handler(stream, admitted));
+    thread::spawn(move || crate::Moor::checked(|| handler(stream, admitted)));
     true
 }
 

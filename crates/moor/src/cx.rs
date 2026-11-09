@@ -182,6 +182,22 @@ impl Cx {
         self.owners().turn(id, cmd, self.env.cancel(), deadline)
     }
 
+    /// Box `id`'s turn for `cmd`, unless this thread already holds it; `None` then, as the
+    /// caller's turn covers the work.
+    ///
+    /// # Errors
+    /// As [`Owners::turn`].
+    pub(crate) fn turn_unless_held(
+        &self,
+        id: BoxId,
+        cmd: Cmd,
+    ) -> Result<Option<Turn<'_>>, CommandError> {
+        if self.owners().holds(id) {
+            return Ok(None);
+        }
+        self.turn(id, cmd).map(Some)
+    }
+
     /// Box `id`'s turn for `cmd` when nothing is in flight on it; `None` skips a busy Box.
     pub(crate) fn try_turn(&self, id: BoxId, cmd: Cmd) -> Option<Turn<'_>> {
         self.owners().try_turn(id, cmd, self.env.cancel())

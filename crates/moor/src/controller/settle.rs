@@ -70,7 +70,7 @@ fn passes(
     thread::spawn(move || loop {
         thread::sleep(every);
         let Some(_held) = drain.hold() else { return };
-        for msg in pass(&|| drain.begun()) {
+        for msg in Moor::checked(|| pass(&|| drain.begun())) {
             log(&sink, &format!("settle: {msg}"));
         }
     });

@@ -40,11 +40,16 @@ impl Moor {
 fn spawn_start(env: &Env, job: StartJob) {
     let env = env.clone();
     std::thread::spawn(move || {
-        if let Ok(moor) = Moor::from_env(&env) {
-            let moor = moor
-                .acting_as(job.identity.clone())
-                .viewing_as(Viewer::User(job.owner));
-            crate::cx::owners::checked(|| workflow::run_start(&moor.cx, &job));
-        }
+        crate::cx::owners::checked(|| start_job(&env, &job));
     });
+}
+
+/// Starts `job` as the user it acts for.
+fn start_job(env: &Env, job: &StartJob) {
+    if let Ok(moor) = Moor::from_env(env) {
+        let moor = moor
+            .acting_as(job.identity.clone())
+            .viewing_as(Viewer::User(job.owner));
+        workflow::run_start(&moor.cx, job);
+    }
 }
