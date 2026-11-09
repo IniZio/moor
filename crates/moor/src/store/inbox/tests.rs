@@ -58,7 +58,7 @@ fn a_sender_appends_without_a_turn_and_the_oldest_row_is_next() {
         (next.id, next.kind, next.text.as_str(), next.sender.as_str()),
         (first, InboxKind::Prompt, "fix it", "start")
     );
-    assert_eq!(next.delivery, Delivery::Queued);
+    assert_eq!(next.delivery, Delivery::Queued { attempts: 0 });
     assert_eq!(store.next_for(other).unwrap(), None);
 }
 
@@ -114,24 +114,53 @@ fn a_row_not_sent_is_not_answered() {
 }
 
 #[test]
-fn a_send_to_a_gone_agent_rolls_back_without_using_up_a_send() {
+fn a_send_to_a_gone_agent_returns_the_row_to_the_queue_and_still_counts() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let s = launch(&store, id);
+    let first = launch(&store, id);
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
-    for _ in 0..3 {
-        store.mark_sending(id, row, s).unwrap();
-        assert_eq!(store.rollback(id, row).unwrap(), Delivery::Queued);
-    }
+    store.mark_sending(id, row, first).unwrap();
+    assert_eq!(
+        store.rollback(id, row).unwrap(),
+        Delivery::Queued { attempts: 1 }
+    );
+    let second = launch(&store, id);
+    assert_eq!(
+        store.mark_sending(id, row, second).unwrap(),
+        Delivery::InDoubt {
+            launch: second,
+            attempts: 2
+        }
+    );
+    store.rollback(id, row).unwrap();
     assert_eq!(
         store.next_for(id).unwrap().unwrap().delivery,
-        Delivery::Queued
+        Delivery::Queued { attempts: 2 }
     );
     assert!(matches!(
         store.rollback(id, row),
         Err(StoreError::Illegal(_))
     ));
+}
+
+#[test]
+fn a_crash_then_a_gone_agent_never_gets_a_row_sent_three_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let first = launch(&store, id);
+    let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
+    store.mark_sending(id, row, first).unwrap();
+    store.mark_sending(id, row, first).unwrap();
+    store.rollback(id, row).unwrap();
+    let second = launch(&store, id);
+    for at in [first, second] {
+        assert!(matches!(
+            store.mark_sending(id, row, at),
+            Err(StoreError::Illegal(_))
+        ));
+    }
 }
 
 #[test]
