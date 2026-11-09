@@ -50,6 +50,21 @@ fn a_start_after_lost_hands_acquires_new_hands_under_their_own_slug() {
     run(&w.cx, &repo_req("demo")).unwrap();
 
     assert_eq!(history(&w, id), lost_and_replaced());
+    let hands =
+        w.cx.store()
+            .unwrap()
+            .box_row(id)
+            .unwrap()
+            .unwrap()
+            .hands
+            .unwrap();
+    assert_eq!(hands.inc, HandsInc::new(2));
+    assert_eq!(
+        hands.handle,
+        Some(BoxHandle::new("box-2")),
+        "the acquire wrote inc 2"
+    );
+    assert!(hands.workdir.is_some(), "the setup wrote inc 2");
     let seats = w.driver.acquired_seats();
     let slugs: Vec<String> = seats
         .iter()
