@@ -50,8 +50,8 @@ fn fx(dir: &std::path::Path) -> (Store, Arc<FakeClock>, BoxId, i64) {
             },
         );
     store.apply(d).unwrap();
-    store.begin_session(id, "s-1").unwrap();
-    let session = store.live_session(id).unwrap().unwrap().session.unwrap();
+    store.begin_launch(id, "s-1").unwrap();
+    let session = store.live_launch(id).unwrap().unwrap().session.unwrap();
     (store, clock, id, session)
 }
 

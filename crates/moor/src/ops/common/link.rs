@@ -10,7 +10,7 @@ use moor_core::BoxId;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// Tries at reaching the Box before its agent counts as ended; the waits double from 1 s.
 const TRIES: u32 = 4;
@@ -44,7 +44,7 @@ pub(crate) fn recover(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    launch: &SessionRow,
+    launch: &Launch,
     pane_exit: Option<i32>,
 ) -> Result<Fate, CommandError> {
     if row.asleep() {
@@ -99,7 +99,7 @@ pub(crate) fn recover(
 fn unreachable_since(
     store: &Store,
     id: BoxId,
-    launch: &SessionRow,
+    launch: &Launch,
 ) -> Result<Option<i64>, CommandError> {
     let started = launch.started_at.as_millis();
     Ok(store

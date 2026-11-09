@@ -47,7 +47,7 @@ fn started_on(engine: FakeEngine) -> (World, Arc<FakeEngine>, BoxId) {
 /// Saves `bytes` as the Box's archive and points its Session at it.
 fn archived(w: &World, id: BoxId, bytes: &[u8]) {
     let store = w.cx.store().unwrap();
-    let session = store.live_session(id).unwrap().unwrap().session.unwrap();
+    let session = store.live_launch(id).unwrap().unwrap().session.unwrap();
     let key = BlobKey::transcript(id, session, "d1");
     w.cx.blobs().unwrap().put(&key, bytes).unwrap();
     pointed(w, id, key.as_str());
@@ -55,7 +55,7 @@ fn archived(w: &World, id: BoxId, bytes: &[u8]) {
 
 fn pointed(w: &World, id: BoxId, key: &str) {
     let store = w.cx.store().unwrap();
-    let session = store.live_session(id).unwrap().unwrap().session.unwrap();
+    let session = store.live_launch(id).unwrap().unwrap().session.unwrap();
     let to = ArchivePointer {
         key: key.to_owned(),
         inc: 1,

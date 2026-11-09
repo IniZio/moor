@@ -14,7 +14,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::{BoxId, Warning};
+use moor_core::{BoxId, LaunchId, Warning};
 
 use crate::blobs::BlobKey;
 use crate::cx::owners::Cmd;
@@ -22,7 +22,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::store::archive::ArchivePointer;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// A transcript saved in the blob store.
 pub(crate) struct Saved {
@@ -56,7 +56,7 @@ pub(crate) fn save(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    session: &SessionRow,
+    session: &Launch,
     trigger: Trigger,
 ) -> Option<Saved> {
     match archive(cx, store, row, session, trigger) {
@@ -66,13 +66,7 @@ pub(crate) fn save(
 }
 
 /// [`save`], telling a save with nothing to save from one that may work later.
-fn archive(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    session: &SessionRow,
-    trigger: Trigger,
-) -> Outcome {
+fn archive(cx: &Cx, store: &Store, row: &BoxRow, session: &Launch, trigger: Trigger) -> Outcome {
     let Some(hands) = row.hands.as_ref().filter(|h| h.state == HandsState::Ready) else {
         return Outcome::Failed;
     };
@@ -183,7 +177,7 @@ pub(crate) fn save_on_exit(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    probed: i64,
+    probed: LaunchId,
 ) -> Result<(), CommandError> {
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
@@ -191,7 +185,7 @@ pub(crate) fn save_on_exit(
     let Some(row) = store.box_row(row.id)? else {
         return Ok(());
     };
-    let Some(session) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
+    let Some(session) = store.live_launch(row.id)?.filter(|s| s.id == probed) else {
         return Ok(());
     };
     if exit_save_ended(store, &row)? {
@@ -239,7 +233,7 @@ pub(crate) fn save_due(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandE
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    let Some(session) = store.live_session(id)? else {
+    let Some(session) = store.live_launch(id)? else {
         store.reschedule_archive(id, now, None)?;
         return Ok(());
     };
@@ -280,7 +274,7 @@ fn try_save(
     cx: &Cx,
     row: &BoxRow,
     box_session: i64,
-    session: &SessionRow,
+    session: &Launch,
     s: &SessionRef,
     deadline: Deadline,
 ) -> Result<(Saved, bool), TryError> {
@@ -307,7 +301,7 @@ fn store_archive(
     cx: &Cx,
     id: BoxId,
     box_session: i64,
-    session: &SessionRow,
+    session: &Launch,
     staged: &Path,
 ) -> Result<(Saved, bool), TryError> {
     fs::set_permissions(staged, Permissions::from_mode(0o600))
@@ -327,7 +321,7 @@ fn store_archive(
 
 /// A local path to stage launch `session`'s archive at, with its directory made (0700) and any
 /// file a crashed save left there removed.
-fn staged(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Result<PathBuf, String> {
+fn staged(cx: &Cx, row: &BoxRow, session: &Launch) -> Result<PathBuf, String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;
     let dir = state.join("transcripts").join(".staging");
     DirBuilder::new()
@@ -335,7 +329,7 @@ fn staged(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Result<PathBuf, String
         .mode(0o700)
         .create(&dir)
         .map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let path = dir.join(format!("{}-{}.tgz", row.id.get(), session.id));
+    let path = dir.join(format!("{}-{}.tgz", row.id.get(), session.id.get()));
     let _ = fs::remove_file(&path);
     Ok(path)
 }

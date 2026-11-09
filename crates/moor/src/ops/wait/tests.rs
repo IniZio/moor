@@ -214,7 +214,7 @@ fn agent_cx(dir: &Path, probes: Probe) -> (Cx, Arc<FakeEngine>) {
 /// Insert Box `demo` with a machine the driver lists as live and a live agent session.
 fn add_live(cx: &Cx) -> BoxId {
     let id = add_boxed(cx);
-    cx.store().unwrap().begin_session(id, SESSION).unwrap();
+    cx.store().unwrap().begin_launch(id, SESSION).unwrap();
     id
 }
 

@@ -58,7 +58,7 @@ fn close_saves_before_stopping_the_agent_and_records_it() {
     }
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(engine.transcripts(), ["s-1"]);
@@ -80,7 +80,7 @@ fn a_failed_save_records_the_failure_and_close_still_succeeds() {
     );
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped && v.box_deleted);
@@ -118,10 +118,10 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
     let engine = exit_saved_engine();
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
-    let live = store.live_session(f.id).unwrap().unwrap();
+    let live = store.live_launch(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     let first = files(&f);
     let v = run(&f.cx, &req(false)).unwrap();
@@ -140,10 +140,10 @@ fn a_close_after_the_transcript_changed_saves_again() {
     );
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
-    let live = store.live_session(f.id).unwrap().unwrap();
+    let live = store.live_launch(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(files(&f), 2);
@@ -165,10 +165,10 @@ fn a_failed_close_save_keeps_the_exit_digest() {
     let engine = exit_saved_engine();
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
-    let live = store.live_session(f.id).unwrap().unwrap();
+    let live = store.live_launch(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     engine.fail_next_transcript(EngineError::Transcript("archive: exit 3".into()));
     run(&f.cx, &req(false)).unwrap();
@@ -185,7 +185,7 @@ fn close_tries_a_pending_save_once_and_drops_it() {
     )));
     let f = with_engine(&engine);
     let store = f.cx.store().unwrap();
-    let sid = store.begin_session(f.id, "s-1").unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);

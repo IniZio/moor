@@ -210,7 +210,7 @@ fn cancel_boot(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError>
 
 /// Saves the live agent's transcript while the Box is still Ready; a failure only records an event.
 fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>, CommandError> {
-    let Some(session) = store.live_session(row.id)? else {
+    let Some(session) = store.live_launch(row.id)? else {
         return Ok(None);
     };
     Ok(transcript::save(cx, store, row, &session, Trigger::Close))

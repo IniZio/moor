@@ -52,7 +52,7 @@ pub(super) fn steer(
     };
     let row = reload(store, (id, name))?;
     if !awake(&row) {
-        if store.live_session(id)?.is_none() && (row.asleep() || !revivable(&row)) {
+        if store.live_launch(id)?.is_none() && (row.asleep() || !revivable(&row)) {
             store.withdraw(id, inbox)?;
             return Err(super::no_agent(name));
         }
@@ -125,8 +125,8 @@ pub(crate) fn deliver(
         let Some(row) = store.box_row(id)? else {
             break;
         };
-        let live = store.live_session(id)?;
-        if spent(&item, live.as_ref().map(|l| LaunchId::new(l.id))) {
+        let live = store.live_launch(id)?;
+        if spent(&item, live.as_ref().map(|l| l.id)) {
             store.unconfirmed(id, item.id)?;
             continue;
         }
@@ -135,7 +135,7 @@ pub(crate) fn deliver(
         let Some(sref) = session_ref(&row, &launch).filter(|_| ready(&reading)) else {
             break;
         };
-        store.mark_sending(id, item.id, LaunchId::new(launch.id))?;
+        store.mark_sending(id, item.id, launch.id)?;
         let steer = Steer::Text(item.text.clone());
         match cx.engine().steer(&sref, &steer, Deadline(STEER_DEADLINE)) {
             Ok(outcome) => {
@@ -269,7 +269,7 @@ fn move_on(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
                     }) => code,
                     _ => None,
                 });
-                let gone = Gone::new(row.name.as_str(), store.live_session(id)?, code);
+                let gone = Gone::new(row.name.as_str(), store.live_launch(id)?, code);
                 if let Err(e) = relaunch::once(cx, store, (id, row.name.as_str()), gone) {
                     if !revivable(&reload(store, (id, row.name.as_str()))?) {
                         for item in store.unsent(id)? {

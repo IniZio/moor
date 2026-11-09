@@ -97,7 +97,7 @@ fn a_forced_close_ends_an_acquire_on_a_provider_that_stops_with_its_caller() {
     assert!(w.driver.list_is_empty());
     let store = w.cx.store().unwrap();
     assert!(
-        store.live_session(BoxId::new(1)).unwrap().is_none(),
+        store.live_launch(BoxId::new(1)).unwrap().is_none(),
         "no agent"
     );
 }

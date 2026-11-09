@@ -16,7 +16,7 @@ use super::save;
 use crate::blobs::fs::FsBlobs;
 use crate::blobs::{BlobKey, Blobs};
 use crate::cx::Cx;
-use crate::store::{BoxRow, SessionRow};
+use crate::store::{BoxRow, Launch};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -36,15 +36,15 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     (dir, cx)
 }
 
-fn ready(cx: &Cx) -> (BoxRow, SessionRow) {
+fn ready(cx: &Cx) -> (BoxRow, Launch) {
     let (row, session) = unregistered(cx);
     let store = cx.store().unwrap();
     store.set_registered_session(session.id, "agent-1").unwrap();
-    let session = store.live_session(row.id).unwrap().unwrap();
+    let session = store.live_launch(row.id).unwrap().unwrap();
     (row, session)
 }
 
-fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
+fn unregistered(cx: &Cx) -> (BoxRow, Launch) {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
@@ -76,10 +76,10 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
             },
         );
     store.apply(d).unwrap();
-    store.begin_session(id, "s-1").unwrap();
+    store.begin_launch(id, "s-1").unwrap();
     (
         store.box_row(id).unwrap().unwrap(),
-        store.live_session(id).unwrap().unwrap(),
+        store.live_launch(id).unwrap().unwrap(),
     )
 }
 

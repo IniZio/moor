@@ -161,15 +161,13 @@ fn a_row_whose_two_sends_fail_is_reported_and_the_next_is_delivered() {
 fn a_row_in_doubt_on_an_agent_that_ended_is_reported_and_not_sent_again() {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let old = store.live_session(f.id).unwrap().unwrap();
+    let old = store.live_launch(f.id).unwrap().unwrap();
     let row = store
         .enqueue(f.id, InboxKind::Steer, "cut", "steer")
         .unwrap();
-    store
-        .mark_sending(f.id, row, moor_core::LaunchId::new(old.id))
-        .unwrap();
-    store.end_session(old.id, None, None).unwrap();
-    store.begin_session(f.id, "agent-2").unwrap();
+    store.mark_sending(f.id, row, old.id).unwrap();
+    store.end_launch(old.id, None, None).unwrap();
+    store.begin_launch(f.id, "agent-2").unwrap();
     queue(&f, "next");
     reports_idle(&f, "agent-2");
     pass(&f);

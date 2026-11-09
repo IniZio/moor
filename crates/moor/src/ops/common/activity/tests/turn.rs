@@ -125,7 +125,7 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     let store = cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
     settle_once(&cx, id);
     assert_eq!(events(&cx, id, "idled").len(), 1, "the first turn ended");
@@ -141,7 +141,7 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
             .and_then(|t| t.as_str()),
         Some("turn")
     );
-    assert!(store.live_session(id).unwrap().unwrap().ended_at.is_none());
+    assert!(store.live_launch(id).unwrap().unwrap().ended_at.is_none());
     steer(&cx, id);
     settle_once(&cx, id);
     assert_eq!(
@@ -195,7 +195,7 @@ fn saved_once(engine: &Arc<FakeEngine>) -> (tempfile::TempDir, Cx, BoxId) {
     let (cx, _) = cx(dir.path(), engine);
     let id = working_box(&cx, true);
     let store = cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
     settle_once(&cx, id);
     assert_eq!(engine.transcripts().len(), 1, "the first turn saves");
@@ -236,7 +236,7 @@ fn a_failed_turn_save_is_recorded_and_tried_again_a_minute_later_until_it_lands(
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
     let store = cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
     settle_once(&cx, id);
     assert_eq!(events(&cx, id, "transcript_failed").len(), 1);

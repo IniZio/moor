@@ -290,7 +290,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         );
     store.apply(d).unwrap();
     if let Some(s) = session {
-        store.begin_session(id, s).unwrap();
+        store.begin_launch(id, s).unwrap();
     }
     id
 }
@@ -498,7 +498,7 @@ fn a_box_freshly_started_is_not_idled_by_the_next_list() {
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert!(t.agent.is_some());
     let id = BoxId::new(started.boxed.id);
-    assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(cx.store().unwrap().live_launch(id).unwrap().is_some());
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
 }

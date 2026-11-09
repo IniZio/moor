@@ -64,7 +64,7 @@ pub(crate) fn resume_owed(
 /// Gives the agent of Ready `row`, whose lock the caller holds, what `seen` shows it is owed.
 fn give(cx: &Cx, store: &Store, row: &BoxRow, seen: Seen) -> Result<(), CommandError> {
     let id = row.id;
-    let after = match (seen, store.live_session(id)?.is_some()) {
+    let after = match (seen, store.live_launch(id)?.is_some()) {
         (Seen::Ended, false) => revive_after_wake(cx, store, id)?,
         (Seen::Running, true) => AfterWake::Intact,
         (_, true) => return Ok(()),

@@ -73,7 +73,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
             },
         );
     store.apply(d).unwrap();
-    store.begin_session(id, session).unwrap();
+    store.begin_launch(id, session).unwrap();
     id
 }
 

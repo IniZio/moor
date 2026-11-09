@@ -17,7 +17,7 @@ const UNREAD_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
 /// Moor read `id`'s agent just now.
 fn seen_idle(w: &World, id: BoxId) {
     let store = w.cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
     store.note_agent_read(live.id, w.cx.clock().now()).unwrap();
 }
 

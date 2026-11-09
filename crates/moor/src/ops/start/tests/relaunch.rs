@@ -68,7 +68,7 @@ pub(super) fn set_agent_session(w: &World, id: BoxId, agent: &str) {
 fn live_ref(w: &World, id: BoxId) -> String {
     w.cx.store()
         .unwrap()
-        .live_session(id)
+        .live_launch(id)
         .unwrap()
         .unwrap()
         .session_ref
@@ -309,8 +309,8 @@ fn promptless() -> (World, Arc<FakeEngine>, BoxId) {
     };
     let store = w.cx.store().unwrap();
     store.apply(Decision::new(id).set(clear)).unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
-    store.end_session(live.id, None, None).unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
+    store.end_launch(live.id, None, None).unwrap();
     (w, engine, id)
 }
 
@@ -374,8 +374,8 @@ fn a_prompt_on_a_promptless_box_with_a_live_agent_waits_until_it_can_take_it() {
 fn a_given_prompt_replaces_the_stored_prompt_when_there_is_no_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
-    store.end_session(live.id, None, None).unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
+    store.end_launch(live.id, None, None).unwrap();
     let v = run(&w.cx, &prompt_req("second prompt")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);

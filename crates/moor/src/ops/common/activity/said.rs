@@ -61,7 +61,7 @@ pub(super) fn record(
         return Ok(true);
     };
     let since = reading.term.as_ref().and_then(|t| t.status_at);
-    if let (Some(launch), Some(at)) = (reading.session, since) {
+    if let (Some(launch), Some(at)) = (reading.launch, since) {
         if store.note_said(launch, at)? {
             return Ok(true);
         }

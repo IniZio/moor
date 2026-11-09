@@ -169,7 +169,7 @@ fn a_steer_queued_before_another_relaunch_goes_to_the_new_agent_first() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
     let store = f.cx.store().unwrap();
-    let old = store.live_session(f.id).unwrap();
+    let old = store.live_launch(f.id).unwrap();
     queued(&f, "one", QueueCause::Relaunching);
     let gone = Gone::new("t", old, None);
     relaunch::once(&f.cx, store, (f.id, "t"), gone).unwrap();

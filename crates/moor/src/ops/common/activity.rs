@@ -8,7 +8,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::LaunchFailure;
-use moor_core::{BoxHandle, BoxPath, Warning};
+use moor_core::{BoxHandle, BoxPath, LaunchId, Warning};
 
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
@@ -17,7 +17,7 @@ use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::reconcile;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 use launch::launch_overdue;
 pub(crate) use turn::turn_open;
@@ -59,8 +59,8 @@ pub(crate) struct Reading {
     pub(crate) may_quiet: bool,
     /// Whether a run of the Box is in flight.
     run_in_flight: bool,
-    /// The live session this reading probed.
-    pub(crate) session: Option<i64>,
+    /// The live launch this reading probed.
+    pub(crate) launch: Option<LaunchId>,
     /// Why the agent never launched; the Box has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
     /// The `box.launch_timeout`, in seconds, that a failed launch has outlasted.
@@ -97,7 +97,7 @@ impl Reading {
             pane: PaneLiveness::Gone,
             may_quiet: !run_in_flight,
             run_in_flight,
-            session: None,
+            launch: None,
             launch_failure: None,
             launch_overdue: None,
             agent_session: None,
@@ -120,7 +120,7 @@ impl Reading {
             pane: PaneLiveness::Gone,
             may_quiet: overdue.is_some() && !run_in_flight,
             run_in_flight,
-            session: None,
+            launch: None,
             launch_failure: Some(failure),
             launch_overdue: overdue,
             agent_session: None,
@@ -147,7 +147,7 @@ pub(crate) fn read(
     deadline: Deadline,
 ) -> Result<Reading, CommandError> {
     let in_flight = reconcile::run_in_flight(cx, store, row.id)?.is_some();
-    let Some(session) = store.live_session(row.id)? else {
+    let Some(session) = store.live_launch(row.id)? else {
         return Ok(row.launch_failure.clone().map_or_else(
             || Reading::none(in_flight),
             |f| {
@@ -191,7 +191,7 @@ pub(crate) fn read(
         activity: Some(activity),
         may_quiet,
         run_in_flight: in_flight,
-        session: Some(session.id),
+        launch: Some(session.id),
         launch_failure: None,
         launch_overdue: None,
         agent_session,
@@ -254,7 +254,7 @@ pub(crate) fn settle(
         return Ok(None);
     }
     let turn_end_pending = turn::note_turn_done(cx, store, row, reading, cx.clock().now())?;
-    let fate = if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
+    let fate = if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.launch) {
         let exit = match reading.activity.as_ref().map(|a| &a.state) {
             Some(AgentState::Exited { code }) => *code,
             _ => None,
@@ -284,9 +284,9 @@ fn end_exited_session(
     store: &Store,
     row: &BoxRow,
     exit: Option<i32>,
-    probed: i64,
+    probed: LaunchId,
 ) -> Result<(), CommandError> {
-    if store.live_session(row.id)?.is_none_or(|s| s.id != probed) {
+    if store.live_launch(row.id)?.is_none_or(|s| s.id != probed) {
         return Ok(());
     }
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
@@ -297,7 +297,7 @@ fn end_exited_session(
 }
 
 /// The agent `launch` as the Engine needs it; none when the Box cannot be reached.
-pub(crate) fn session_ref(row: &BoxRow, launch: &SessionRow) -> Option<SessionRef> {
+pub(crate) fn session_ref(row: &BoxRow, launch: &Launch) -> Option<SessionRef> {
     let (handle, workdir) = box_place(row)?;
     Some(SessionRef {
         id: launch.session_ref.clone(),

@@ -16,7 +16,7 @@ pub(crate) fn stop_agent(
     row: &BoxRow,
     digest: Option<&str>,
 ) -> Result<bool, CommandError> {
-    let Some(session) = store.live_session(row.id)? else {
+    let Some(session) = store.live_launch(row.id)? else {
         return Ok(false);
     };
     let sref = session_ref(row, &session);
@@ -25,7 +25,7 @@ pub(crate) fn stop_agent(
     if let Some(s) = sref.filter(|_| !row.asleep()) {
         let _ = cx.engine().stop(&s);
     }
-    store.end_session(session.id, None, digest)?;
+    store.end_launch(session.id, None, digest)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {
         sessions: vec![session.session_ref],
     }))?;

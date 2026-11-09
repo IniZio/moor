@@ -145,7 +145,7 @@ fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
         .filter(|c| !c.starts_with("list"))
         .collect();
     assert_eq!(guest, Vec::<String>::new());
-    assert!(store.live_session(id).unwrap().is_some());
+    assert!(store.live_launch(id).unwrap().is_some());
     let agent = shown.boxed.unwrap().agent.unwrap();
     assert_eq!(agent.pane, "gone");
     assert_ne!(agent.state, "exited");

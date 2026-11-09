@@ -71,7 +71,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         )]
     );
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "session_failed").unwrap();
     assert_eq!(
@@ -113,7 +113,7 @@ fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, CA);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_none());
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, NOT_FOUND);
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "session_failed"));
 }

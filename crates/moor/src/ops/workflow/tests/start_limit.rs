@@ -118,13 +118,7 @@ fn a_setup_longer_than_the_timeout_keeps_its_agent_and_the_timeout_counts_from_t
         r.latest(id).outcome,
         WorkflowOutcome::Started { .. }
     ));
-    assert!(r
-        .cx
-        .store()
-        .unwrap()
-        .live_session(box_id)
-        .unwrap()
-        .is_some());
+    assert!(r.cx.store().unwrap().live_launch(box_id).unwrap().is_some());
     r.advance_to(agent + 10 * MIN - 1);
     r.pass();
     assert!(matches!(
@@ -137,13 +131,7 @@ fn a_setup_longer_than_the_timeout_keeps_its_agent_and_the_timeout_counts_from_t
         r.latest(id).outcome,
         WorkflowOutcome::TimedOut { .. }
     ));
-    assert!(r
-        .cx
-        .store()
-        .unwrap()
-        .live_session(box_id)
-        .unwrap()
-        .is_none());
+    assert!(r.cx.store().unwrap().live_launch(box_id).unwrap().is_none());
 }
 
 #[test]
@@ -321,7 +309,7 @@ fn a_box_still_setting_up_past_the_limit_is_closed_and_its_run_refused() {
         .cx
         .store()
         .unwrap()
-        .live_session(BoxId::new(made.boxed.id))
+        .live_launch(BoxId::new(made.boxed.id))
         .unwrap()
         .is_none());
 }

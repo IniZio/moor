@@ -41,7 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
     }
     let row = reload()?;
     let (session, ordinal) = live_session(store, &row)?.ok_or_else(no_session)?;
-    if let Some(launch) = store.live_session(id)? {
+    if let Some(launch) = store.live_launch(id)? {
         let saved = transcript::save(cx, store, &row, &launch, Trigger::End);
         stop_agent(cx, store, &row, saved.as_ref().map(|t| t.digest.as_str()))
             .map_err(|e| reword(e, name))?;

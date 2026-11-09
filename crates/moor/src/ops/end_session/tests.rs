@@ -42,7 +42,7 @@ fn fx_with(session: bool) -> Fx {
     let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
-        let launch = store.begin_session(id, "s-1").unwrap();
+        let launch = store.begin_launch(id, "s-1").unwrap();
         store.set_registered_session(launch, "agent-1").unwrap();
     }
     Fx {
@@ -152,7 +152,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
         Some("requested")
     );
     assert!(f.engine.asked().contains(&"stop"));
-    assert!(store.live_session(f.id).unwrap().is_none());
+    assert!(store.live_launch(f.id).unwrap().is_none());
     let row = store.open_box_by_name(&BoxName::parse_allow_bare("t").unwrap());
     let row = row.unwrap().unwrap();
     assert_eq!(row.hands.unwrap().state, HandsState::Ready);
@@ -174,8 +174,8 @@ fn ending_twice_refuses_the_second_time_without_a_new_event() {
 fn a_launch_that_already_stopped_still_ends_the_session() {
     let f = fx_with(true);
     let store = f.cx.store().unwrap();
-    let launch = store.live_session(f.id).unwrap().unwrap();
-    store.end_session(launch.id, None, None).unwrap();
+    let launch = store.live_launch(f.id).unwrap().unwrap();
+    store.end_launch(launch.id, None, None).unwrap();
     run(&f.cx, &req()).unwrap();
     let first = store.box_sessions(f.id).unwrap().pop().unwrap();
     assert_eq!(first.state, SessionState::Ended);

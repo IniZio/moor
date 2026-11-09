@@ -236,7 +236,7 @@ fn a_successful_retry_launches_the_agent_with_the_stored_prompt() {
     assert_eq!(launches.len(), 1);
     let prompts: Vec<_> = launches.iter().map(|l| l.prompt.clone()).collect();
     assert_eq!(prompts, [LaunchPrompt::Text("fix it".into())]);
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_some());
 }
 
 #[test]

@@ -458,7 +458,7 @@ fn a_launch_already_in_flight_is_adopted_and_never_launched_twice() {
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 1, "no second agent");
-    assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
+    assert!(store.live_launch(BoxId::new(1)).unwrap().is_some());
     assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
 }
 
@@ -470,7 +470,7 @@ fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(engine.launches().len(), 2);
-    assert!(store.live_session(BoxId::new(1)).unwrap().is_some());
+    assert!(store.live_launch(BoxId::new(1)).unwrap().is_some());
 }
 
 #[test]

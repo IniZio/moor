@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::engine::EngineError;
-use moor_core::BoxId;
+use moor_core::{BoxId, LaunchId};
 
 use super::{cx, row, run_once, working_box, SESSION};
 use crate::cx::owners::Cmd;
@@ -18,7 +18,7 @@ use crate::testing::engine::FakeEngine;
 fn registered_box(cx: &Cx) -> BoxId {
     let id = working_box(cx, true);
     let store = cx.store().unwrap();
-    let live = store.live_session(id).unwrap().unwrap();
+    let live = store.live_launch(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
     id
 }
@@ -114,7 +114,7 @@ fn a_busy_box_lock_skips_the_exit_save() {
 fn a_session_other_than_the_probed_one_is_not_archived() {
     let (_dir, engine, cx, id) = exited_fx(FakeEngine::new().transcript_text("abc"));
     let mut r = run_once(&cx, id);
-    r.session = r.session.map(|s| s + 1);
+    r.launch = r.launch.map(|s| LaunchId::new(s.get() + 1));
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
     assert!(engine.transcripts().is_empty());
 }
@@ -133,7 +133,7 @@ fn a_failed_exit_save_of_one_session_does_not_block_the_next() {
     settle(&cx, store, &row(&cx, id), &r).unwrap();
     let opened = store.open_session(id).unwrap();
     store.start_session(opened.id).unwrap();
-    let second = store.begin_session(id, "sess-2").unwrap();
+    let second = store.begin_launch(id, "sess-2").unwrap();
     store.set_registered_session(second, "agent-2").unwrap();
     let r = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &r).unwrap();
@@ -180,7 +180,7 @@ fn an_exited_agent_ends_its_session_after_the_save_and_the_box_reads_idle() {
     let ended = &kinds.last().unwrap().payload;
     assert_eq!(ended["cause"], "exited");
     assert_eq!(ended["exit"], 1);
-    assert!(store.live_session(id).unwrap().is_none());
+    assert!(store.live_launch(id).unwrap().is_none());
     let after = store.box_row(id).unwrap().unwrap();
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     assert!(after.session.is_quiet());

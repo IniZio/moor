@@ -41,7 +41,7 @@ fn steered(row: InboxId) -> Event {
 
 /// A new launch of Box `id`'s agent.
 fn launch(store: &Store, id: BoxId) -> LaunchId {
-    LaunchId::new(store.begin_session(id, "agent").unwrap())
+    store.begin_launch(id, "agent").unwrap()
 }
 
 /// Each row as `<text>:<delivery>`.
@@ -379,13 +379,13 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         .enqueue(id, InboxKind::Prompt, "later", "start")
         .unwrap();
     let s = store
-        .begin_session_with(id, "agent", Some("fix it"))
+        .begin_launch_with(id, "agent", Some("fix it"))
         .unwrap();
     let sent = store.sent(id).unwrap();
     assert_eq!(texts(&sent), ["fix it:sent"]);
     assert!(matches!(
         sent.first().map(|r| r.delivery),
-        Some(Delivery::Sent { launch, .. }) if launch == LaunchId::new(s)
+        Some(Delivery::Sent { launch, .. }) if launch == s
     ));
     assert_eq!(store.next_for(id).unwrap().unwrap().text, "ahead");
     let steered = store.events(id, 1).unwrap().pop().unwrap();
@@ -395,7 +395,7 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         Some(&serde_json::json!(prompt.get()))
     );
     store
-        .begin_session_with(id, "agent", Some("not queued"))
+        .begin_launch_with(id, "agent", Some("not queued"))
         .unwrap();
     assert_eq!(
         texts(&store.unsent(id).unwrap()),

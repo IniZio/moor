@@ -66,7 +66,7 @@ fn starting_an_asleep_box_whose_agent_failed_wakes_it_and_delivers_the_prompt() 
     let prompts: Vec<_> = engine.launches().into_iter().map(|l| l.prompt).collect();
     assert_eq!(prompts.last(), Some(&LaunchPrompt::Text("carry on".into())));
     assert_eq!(prompts.len(), 2);
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert!(w.cx.store().unwrap().live_launch(id).unwrap().is_some());
 }
 
 #[test]

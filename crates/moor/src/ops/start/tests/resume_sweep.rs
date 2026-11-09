@@ -21,7 +21,7 @@ use crate::testing::engine::FakeEngine;
 /// The agent session reference of `id`'s live session.
 fn live_ref(w: &World, id: BoxId) -> String {
     let store = w.cx.store().unwrap();
-    store.live_session(id).unwrap().unwrap().session_ref
+    store.live_launch(id).unwrap().unwrap().session_ref
 }
 
 /// From now on every probe of `id`'s live agent reads `p`.
