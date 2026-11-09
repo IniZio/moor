@@ -6,7 +6,8 @@ use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput};
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::domain::layers::LayerKey;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, BoxId};
 
 use super::{req, row, run, saved_layer, started, world, World, TWO_LINES};
@@ -17,7 +18,12 @@ use crate::testing::driver::FakeDriver;
 
 /// A Box whose setup failed its second line, with its first layer kept.
 fn failed_with_a_layer() -> (World, BoxId) {
-    let driver = FakeDriver::new()
+    failed_on(FakeDriver::new())
+}
+
+/// A Box on `driver` whose setup failed its second line, with its first layer kept.
+fn failed_on(driver: FakeDriver) -> (World, BoxId) {
+    let driver = driver
         .with_checkpoints()
         .exec_results([Ok(ExecOutcome::Exited { code: 1 })]);
     let w = world(TWO_LINES, driver);
@@ -74,6 +80,47 @@ fn a_retry_fork_gets_new_hands_and_a_late_write_for_the_old_ones_is_refused() {
     let late = store.apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::Sleep));
     assert!(matches!(late, Err(StoreError::Stale { .. })), "{late:?}");
     assert_eq!(row(&w, id).hands.unwrap().handle, hands.handle);
+}
+
+/// The layer saves the retry of `id` in `w` could not record, after a fork or a take-over.
+fn saves_refused(w: &World, id: BoxId) -> Vec<String> {
+    let failed = w.cx.take_warnings().into_iter();
+    let failed = failed.filter(|warn| warn.code == "checkpoint_failed");
+    let failed: Vec<String> = failed.map(|warn| warn.message).collect();
+    let store = w.cx.store().unwrap();
+    let home = row(w, id).hands.unwrap().provider;
+    let key = LayerKey::restore("f".repeat(64)).unwrap();
+    let late = store.pin_checkpoint((id, Some(HandsInc::FIRST)), &home, &key, 2);
+    assert!(matches!(late, Err(StoreError::Stale { .. })), "{late:?}");
+    store
+        .pin_checkpoint((id, Some(HandsInc::new(2))), &home, &key, 2)
+        .unwrap();
+    failed
+}
+
+#[test]
+fn the_fork_saves_its_layers_as_the_new_hands_and_one_saved_by_the_old_is_refused() {
+    let (w, id) = failed_with_a_layer();
+    drop(w.cx.take_warnings());
+
+    run(&w.cx, &req()).unwrap();
+
+    assert_eq!(saves_refused(&w, id), Vec::<String>::new());
+}
+
+#[test]
+fn a_fork_taken_over_saves_its_layers_as_the_new_hands() {
+    let (w, id) = failed_on(FakeDriver::new().cut_acquires_go_on());
+    drop(w.cx.take_warnings());
+    w.driver.during_next_fork(|| {});
+    w.driver.fork_fails_next(DriverError::Transport {
+        stderr_tail: "the stream ended: unexpected end of file".to_owned(),
+    });
+
+    run(&w.cx, &req()).unwrap();
+
+    assert!(w.driver.calls().iter().any(|c| c == "adopt"));
+    assert_eq!(saves_refused(&w, id), Vec::<String>::new());
 }
 
 #[test]

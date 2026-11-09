@@ -432,8 +432,7 @@ fn a_park_for_hands_the_box_replaced_keeps_the_slot_and_logs_the_stale_write() {
     kept.park();
     assert_eq!(w.kinds(), ["machine_attached"]);
     assert!(w.store.box_machine(w.id).unwrap().is_some(), "still held");
-    let log = String::from_utf8(w.log.lock().unwrap().clone()).unwrap();
-    assert!(log.contains("stale_hands_write"), "{log}");
+    assert!(String::from_utf8_lossy(&w.log.lock().unwrap()).contains("stale_hands_write"));
 }
 
 /// Holds each clear of the Box port until released; says when one began.

@@ -2,7 +2,7 @@
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::driver::{AcquireReq, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
@@ -42,7 +42,7 @@ pub(in super::super) fn resume(
     let began = cx.clock().now().as_millis();
     let (new, told) = match fork_unless_forced(cx, &saved.checkpoint, &req, adopt)? {
         Err(e) if goes_on_after(cx, &req, &e) => {
-            return took_over(cx, store, row, &req, (root, &planned));
+            return took_over(cx, store, (row, layered), &req, (root, &planned));
         }
         Ok(forked) => {
             let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
@@ -68,7 +68,7 @@ pub(in super::super) fn resume(
         }
     };
     let hold = lease_of(store, row.id, (root, &planned), &new)?;
-    move_hands(store, row, (&new, hold), Some(told))?;
+    layered.inc = Some(move_hands(store, row, (&new, hold), Some(told))?);
     layered.stand_on(layer, saved.place.as_ref());
     release_left(cx, store, row.id)?;
     Ok(Some(new))
@@ -124,13 +124,14 @@ fn fork_unless_forced(
 
 /// Puts Box `row` on new hands, the fork `new` of its machine, with `told`, and holds lease `hold`
 /// of `new`, all in one transaction. The hands it leaves end as Gone, so nothing the old machine
-/// still reports lands on the fork, and [`release_left`] releases that machine.
+/// still reports lands on the fork, and [`release_left`] releases that machine. Returns the new
+/// hands, which everything the fork saves names.
 fn move_hands(
     store: &Store,
     row: &BoxRow,
     (new, hold): (&BoxHandle, LeaseId),
     told: Option<ExtraEvent>,
-) -> Result<(), CommandError> {
+) -> Result<HandsInc, CommandError> {
     let (id, old) = (row.id, row.hands_inc());
     let inc = old.next();
     let workdir = row.hands.as_ref().and_then(|h| h.workdir.clone());
@@ -153,7 +154,7 @@ fn move_hands(
         onto_fork,
     ];
     store.move_hands(id, moves, hold)?;
-    Ok(())
+    Ok(inc)
 }
 
 /// The lease of `new`, the machine a fork planned as `planned` came to.
@@ -174,7 +175,7 @@ fn lease_of(
 fn took_over(
     cx: &Cx,
     store: &Store,
-    row: &BoxRow,
+    (row, layered): (&BoxRow, &mut Layered),
     req: &AcquireReq,
     (root, planned): (LeaseId, &BoxHandle),
 ) -> Result<Option<BoxHandle>, CommandError> {
@@ -192,7 +193,7 @@ fn took_over(
     if cx.env().cancel().is_cancelled() {
         return Err(CommandError::new(ErrorKind::Failed, FORCED_CLOSE));
     }
-    move_hands(store, row, (&new, root), None)?;
+    layered.inc = Some(move_hands(store, row, (&new, root), None)?);
     release_left(cx, store, row.id)?;
     Ok(Some(new))
 }
