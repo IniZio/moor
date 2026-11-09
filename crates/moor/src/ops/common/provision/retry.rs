@@ -62,33 +62,29 @@ pub(super) fn retry_in_box(
 ) -> Result<Provisioned, CommandError> {
     let begin = Decision::new(row.id)
         .lifecycle(BoxLifecycleInput::Retry)
-        .intent(IntentChange::Set(Intent::Setup {
-            pid: std::process::id(),
-        }));
+        .intent(IntentChange::Set(Intent::Setup));
     store.apply(begin)?;
     set_up_in_machine(cx, store, row, cfg, Fork::New)
 }
 
-/// Picks up the start a controller restart cut off in Box `id`, which this process claimed, and
-/// launches its agent as the start would have. An acquire runs again. Each setup script that ran
-/// or is running is attached to rather than run again. The Box's turn is held meanwhile; a Box that
-/// is no longer claimed is left alone.
+/// Picks up the start a controller restart cut off in Box `id`, which [`super::interrupted::settle`]
+/// let go on, and launches its agent as the start would have. An acquire runs again. Each setup
+/// script that ran or is running is attached to rather than run again. A close a forced close
+/// recorded is honoured. All of it runs under the Box's Resume turn, the caller's when it holds one.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-    let first = super::reread(store, id)?;
-    if matches!(first.intent, Some(Intent::Closing { .. })) {
+    let _turn = cx.turn_unless_held(id, Cmd::Resume)?;
+    let row = super::reread(store, id)?;
+    if row.intent == Some(Intent::Closing) {
         let req = CloseReq {
-            target: BoxTarget::Name(first.name),
+            target: BoxTarget::Name(row.name),
             force: true,
         };
         return close::run(cx, &req).map(drop);
     }
-    let _turn = cx.turn(id, Cmd::Resume)?;
-    let row = super::reread(store, id)?;
-    let me = std::process::id();
     if row.intent.is_none() && launch_was_cut(store, &row)? {
         return finish_launch(cx, store, &row);
     }
-    let acquiring = row.intent == Some(Intent::Provisioning { pid: me });
+    let acquiring = row.intent == Some(Intent::Provisioning);
     if acquiring && row.lifecycle != BoxLifecycle::SettingUp {
         return release_cut(cx, store, &row);
     }
@@ -100,9 +96,9 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         let goes_on = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Starting);
         let entry = if goes_on { Entry::Adopt } else { Entry::Again };
         super::provision(cx, store, id, entry, &cfg)?
-    } else if row.intent == Some(Intent::Setup { pid: me }) && row.steps_pending_at.is_some() {
+    } else if row.intent == Some(Intent::Setup) && row.steps_pending_at.is_some() {
         finish_cut_steps(cx, store, &row)?
-    } else if row.intent == Some(Intent::Setup { pid: me }) {
+    } else if row.intent == Some(Intent::Setup) {
         follow_setup(cx, store, &row)?
     } else {
         return Ok(());

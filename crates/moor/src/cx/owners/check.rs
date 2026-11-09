@@ -19,8 +19,6 @@ use crate::env::Cancel;
 thread_local! {
     /// Whether this thread runs an op whose Box writes are checked against their owners.
     static CHECKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Why this thread's Box writes are not checked, while an exempt scope runs.
-    static EXEMPT: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
     /// The shared turns this thread presented, as (owners, Box, ticket).
     static SHARES: std::cell::RefCell<Vec<(usize, BoxId, u64)>> = const {
         std::cell::RefCell::new(Vec::new())
@@ -36,24 +34,6 @@ pub(crate) fn checked<T>(f: impl FnOnce() -> T) -> T {
     let out = f();
     #[cfg(test)]
     CHECKED.set(was);
-    out
-}
-
-/// Runs `f`, the boot pass that fails the starts a restart cut short, with its Box writes
-/// unchecked: it runs before the controller serves, so no other op can reach those Boxes.
-pub(crate) fn boot<T>(f: impl FnOnce() -> T) -> T {
-    exempt("boot", f)
-}
-
-/// Runs `f` with this thread's Box writes unchecked for `why`.
-fn exempt<T>(why: &'static str, f: impl FnOnce() -> T) -> T {
-    #[cfg(test)]
-    let was = EXEMPT.replace(Some(why));
-    #[cfg(not(test))]
-    let _ = why;
-    let out = f();
-    #[cfg(test)]
-    EXEMPT.set(was);
     out
 }
 
@@ -73,12 +53,8 @@ impl Owners {
     /// Panics unless this thread may write `box_id`'s rows: it holds the Box's turn, began a run
     /// on it that is still in flight, or presented a share of its current turn.
     ///
-    /// Checked on every thread that runs an op or holds a turn, a run or a share; an exempt scope
-    /// skips it.
+    /// Checked on every thread that runs an op or holds a turn, a run or a share.
     pub(crate) fn check_write(&self, box_id: BoxId) {
-        if EXEMPT.get().is_some() {
-            return;
-        }
         let me = thread::current().id();
         let at = std::ptr::from_ref(self) as usize;
         let shares = SHARES.with_borrow(Clone::clone);

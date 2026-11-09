@@ -14,7 +14,7 @@ use super::setup::start_req;
 use super::{script_base_yaml, world, World};
 use crate::cx::Cx;
 use crate::ops::close;
-use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
+use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::run;
 use crate::store::BoxRow;
@@ -128,16 +128,11 @@ fn the_next_process_honours_a_forced_close_a_restart_cut_off() {
     assert!(crashed.is_err());
     w.driver.notes_while_acquiring(&[], || {});
     let store = w.cx.store().unwrap();
-    let closing = IntentChange::Set(Intent::Closing {
-        pid: std::process::id(),
-    });
+    let closing = IntentChange::Set(Intent::Closing);
     store
         .apply(Decision::new(BoxId::new(1)).intent(closing))
         .unwrap();
-    assert_eq!(
-        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
-        [BoxId::new(1)]
-    );
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     assert_eq!(row(&w).lifecycle, BoxLifecycle::Closed);
     let calls = w.driver.calls();
@@ -176,7 +171,7 @@ fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machi
         .expect("close ran during the acquire");
     assert_eq!(
         seen,
-        (ErrorKind::Refused, "box busy: start in progress".to_owned())
+        (ErrorKind::Refused, "box busy: setup in progress".to_owned())
     );
     assert_eq!(releases(&w), 0);
     let row = row(&w);

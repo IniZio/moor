@@ -20,6 +20,7 @@ mod activity;
 mod agent_install;
 mod also;
 mod asleep;
+mod boot_resume;
 mod branch_owner;
 mod cache;
 mod cache_node;
@@ -485,7 +486,7 @@ fn stuck_provisioning(w: &World) {
             handle: Field::Clear,
             ..HandsFields::default()
         })
-        .intent(IntentChange::Set(Intent::Provisioning { pid: 4242 }));
+        .intent(IntentChange::Set(Intent::Provisioning));
     w.cx.store().unwrap().apply(stuck).unwrap();
 }
 
@@ -493,7 +494,6 @@ fn stuck_provisioning(w: &World) {
 fn dead_provisioning_is_refused_with_a_close_hint() {
     let w = world(FakeDriver::new());
     stuck_provisioning(&w);
-    w.proc.dead(4242);
     w.cx.clock().sleep(Duration::from_secs(121));
     let before = w.driver.calls().len();
     let err = run(&w.cx, &req("demo")).unwrap_err();
@@ -508,11 +508,13 @@ fn dead_provisioning_is_refused_with_a_close_hint() {
 }
 
 #[test]
-fn live_provisioning_pid_attaches() {
+fn provisioning_in_flight_on_another_op_is_busy_not_dead() {
     let w = world(FakeDriver::new());
     stuck_provisioning(&w);
     w.cx.clock().sleep(Duration::from_secs(121));
-    assert!(run(&w.cx, &req("demo")).unwrap().attached);
+    let _start = w.cx.owners_arc().hold(BoxId::new(1), Cmd::Start);
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.error.to_string(), "box busy: setup in progress");
 }
 
 #[test]
@@ -520,7 +522,6 @@ fn dead_provisioning_within_the_grace_period_attaches() {
     for secs in [119, 120] {
         let w = world(FakeDriver::new());
         stuck_provisioning(&w);
-        w.proc.dead(4242);
         w.cx.clock().sleep(Duration::from_secs(secs));
         assert!(run(&w.cx, &req("demo")).unwrap().attached, "{secs}s");
     }

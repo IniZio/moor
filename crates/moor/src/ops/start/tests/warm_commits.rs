@@ -16,7 +16,7 @@ use moor_core::{BoxId, BoxName, BoxReq, CloseReq, StartReq};
 
 use super::warm::{after_a_partial_setup, events, lines_on, row, start, LINES};
 use super::{agentless_req, repo, repo_req, world, World};
-use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
+use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::{resume_setup, warm_disk_note};
 use crate::ops::start::launch::launch_req;
 use crate::ops::start::run;
@@ -167,10 +167,7 @@ fn a_restart_after_a_rerun_gave_up_but_before_its_machine_went_stays_a_rerun() {
         tail: String::new(),
     };
     store.apply(Decision::new(moved).event(gave_up)).unwrap();
-    assert_eq!(
-        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
-        [moved]
-    );
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [moved]);
     resume_setup(&w.cx, store, moved).unwrap();
     assert_eq!(w.driver.checkpoint_names(), saved);
 }
@@ -363,10 +360,7 @@ fn a_restart_during_a_rerun_runs_every_line_and_saves_nothing() {
     let store = w.cx.store().unwrap();
     let name = crate::testing::box_name("moved");
     let moved = store.open_box_by_name(&name).unwrap().unwrap().id;
-    assert_eq!(
-        fail_interrupted(&w.cx, store, Others::MayRun).unwrap(),
-        [moved]
-    );
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [moved]);
     resume_setup(&w.cx, store, moved).unwrap();
     assert_eq!(lines_on(&w, moved), ["one-a", "two-b", "three-c"]);
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::Ready);

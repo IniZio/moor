@@ -313,27 +313,18 @@ fn to_u32(what: &str, v: i64) -> Result<u32, StoreError> {
     u32::try_from(v).map_err(|_| StoreError::Corrupt(format!("{what} {v} out of range")))
 }
 
-/// Rebuild the intent from its three columns.
-fn intent_from(
-    kind: Option<String>,
-    pid: Option<i64>,
-    run: Option<i64>,
-) -> Result<Option<Intent>, StoreError> {
+/// Rebuild the intent from its kind and run columns.
+fn intent_from(kind: Option<String>, run: Option<i64>) -> Result<Option<Intent>, StoreError> {
     let Some(kind) = kind else { return Ok(None) };
-    let pid = to_u32(
-        "intent_pid",
-        pid.ok_or_else(|| StoreError::Corrupt("intent without pid".into()))?,
-    )?;
     match kind.as_str() {
-        "provisioning" => Ok(Some(Intent::Provisioning { pid })),
-        "setup" => Ok(Some(Intent::Setup { pid })),
-        "closing" => Ok(Some(Intent::Closing { pid })),
+        "provisioning" => Ok(Some(Intent::Provisioning)),
+        "setup" => Ok(Some(Intent::Setup)),
+        "closing" => Ok(Some(Intent::Closing)),
         "running" => {
             let run =
                 run.ok_or_else(|| StoreError::Corrupt("running intent without run".into()))?;
             Ok(Some(Intent::Running {
                 run: RunId::new(run),
-                pid,
             }))
         }
         other => Err(StoreError::Corrupt(format!("intent kind `{other}`"))),
@@ -369,7 +360,6 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         state_reason: row.get(const { state_at(BoxState::StateReason) })?,
         intent: intent_from(
             row.get(const { state_at(BoxState::IntentKind) })?,
-            row.get(const { state_at(BoxState::IntentPid) })?,
             row.get(const { state_at(BoxState::IntentRun) })?,
         )?,
         intent_at: ts(const { state_at(BoxState::IntentAt) })?,

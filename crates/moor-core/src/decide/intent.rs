@@ -6,7 +6,7 @@ use crate::domain::decision::Intent;
 use crate::name::BoxHandle;
 use crate::seam::clock::Ts;
 
-/// How long a Provisioning intent may sit without a Box handle before its owner counts as gone.
+/// How long a Provisioning intent may sit without a Box handle before its start counts as gone.
 pub const PROVISIONING_GRACE: Duration = Duration::from_secs(120);
 
 /// Time from `since` to `now`; zero if `now` is earlier.
@@ -16,25 +16,22 @@ pub fn age(since: Ts, now: Ts) -> Duration {
     Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
-/// True when a Provisioning intent's process is dead, no Box handle was recorded, and the
-/// intent is older than [`PROVISIONING_GRACE`].
+/// True when no op on the Box is in flight (`busy` is false), no Box handle was recorded, and a
+/// Provisioning intent is older than [`PROVISIONING_GRACE`].
 #[must_use]
 pub fn provisioning_dead(
     intent: &Intent,
-    alive: bool,
+    busy: bool,
     handle: Option<&BoxHandle>,
     age: Duration,
 ) -> bool {
-    matches!(intent, Intent::Provisioning { .. })
-        && !alive
-        && handle.is_none()
-        && age > PROVISIONING_GRACE
+    matches!(intent, Intent::Provisioning) && !busy && handle.is_none() && age > PROVISIONING_GRACE
 }
 
 /// True when a Setup intent's process is dead. A live pid is never dead, so there is no grace.
 #[must_use]
 pub const fn setup_dead(intent: &Intent, alive: bool) -> bool {
-    matches!(intent, Intent::Setup { .. }) && !alive
+    matches!(intent, Intent::Setup) && !alive
 }
 
 #[cfg(test)]

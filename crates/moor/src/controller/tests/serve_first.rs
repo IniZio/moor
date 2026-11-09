@@ -7,7 +7,6 @@
 use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -84,11 +83,8 @@ fn slow_after(after: Duration) -> Slow {
     }
 }
 
-/// Records Box 1 as provisioning a second time under a process that no longer exists.
+/// Records Box 1 as provisioning a second time, left so by an earlier controller.
 fn cut_off_start(dir: &tempfile::TempDir) {
-    let mut child = moor_testkit::ChildGuard::new(Command::new("true").spawn().expect("spawn"));
-    let dead = child.id();
-    child.wait().expect("wait");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let store = Store::open(&dir.path().join("state").join("moor.db"), clock).expect("store");
     let new = Decision::insert(NewBox {
@@ -105,7 +101,7 @@ fn cut_off_start(dir: &tempfile::TempDir) {
         .lifecycle(BoxLifecycleInput::Admitted)
         .hands_input(HandsInput::Requested)
         .hands(fields)
-        .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
+        .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(starting).expect("starting");
     let cut = Decision::new(id).hands_input(HandsInput::AcquireFailed {
         cause: "cut once already".to_owned(),
@@ -114,7 +110,7 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
         .hands_input(HandsInput::Requested)
-        .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
+        .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(again).expect("again");
 }
 

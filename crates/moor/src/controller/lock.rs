@@ -88,7 +88,7 @@ pub(super) fn take_lock(path: &Path, socket: &Path, wait: Duration) -> Result<Fi
                 retries -= 1;
                 std::thread::sleep(LOCK_POLL);
             }
-            Err(TryLockError::WouldBlock) => return Err(held_by(path, socket)),
+            Err(TryLockError::WouldBlock) => return Err(held_by(path)),
             Err(TryLockError::Error(e)) => return Err(failed(e)),
         }
     }
@@ -98,18 +98,18 @@ pub(super) fn take_lock(path: &Path, socket: &Path, wait: Duration) -> Result<Fi
     Ok(file)
 }
 
-/// The refusal for a controller lock at `path` that stayed held.
-fn held_by(path: &Path, socket: &Path) -> Stop {
+/// The refusal for a controller lock at `path` that stayed held. A holder that recorded no
+/// socket is a local moor command, not a controller.
+fn held_by(path: &Path) -> Stop {
     let held = fs::read_to_string(path).unwrap_or_default();
     let mut lines = held.lines();
-    let message = lines.next().map_or_else(
-        || format!("already running: {} is held", path.display()),
-        |pid| {
-            let on = lines
-                .next()
-                .map_or_else(|| socket.display().to_string(), str::to_owned);
-            format!("already running (pid {pid}) on {on}")
-        },
-    );
+    let message = match (lines.next(), lines.next().filter(|s| !s.is_empty())) {
+        (None, _) => format!("already running: {} is held", path.display()),
+        (Some(pid), Some(on)) => format!("already running (pid {pid}) on {on}"),
+        (Some(pid), None) => format!(
+            "a local moor command (pid {pid}) holds the state dir {}; wait for it to end",
+            path.parent().unwrap_or(path).display()
+        ),
+    };
     Stop { code: 1, message }
 }

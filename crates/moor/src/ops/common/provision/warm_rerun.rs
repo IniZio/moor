@@ -141,9 +141,7 @@ pub(super) fn cold_again(
             handle: Field::Clear,
             ..HandsFields::default()
         })
-        .intent(IntentChange::Set(Intent::Provisioning {
-            pid: std::process::id(),
-        }));
+        .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(begin)?;
     let got = match acquire_timed(cx, store, id, &req) {
         Ok(got) => got,

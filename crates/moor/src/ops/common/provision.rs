@@ -104,9 +104,7 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
 /// What marks Box `id` as wanting a machine from `provider`. A takeover only claims the acquire
 /// already under way.
 fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
-    let claim = IntentChange::Set(Intent::Provisioning {
-        pid: std::process::id(),
-    });
+    let claim = IntentChange::Set(Intent::Provisioning);
     if entry == Entry::Adopt {
         return Decision::new(id).intent(claim);
     }

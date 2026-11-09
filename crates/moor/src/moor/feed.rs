@@ -8,10 +8,11 @@ use moor_core::domain::event::close_reason::CLOSE_REASON_SETUP_FAILED_EXPIRED;
 use moor_core::{BoxId, SessionId};
 
 use super::Moor;
+use crate::cx::owners::Cmd;
+use crate::error::CommandError;
 use crate::ops;
-use crate::ops::common::provision::interrupted::{self, Others};
+use crate::ops::common::provision::interrupted;
 use crate::store::reads::NamedEvent;
-use crate::store::Database;
 
 impl Moor {
     /// Stored events with cursor above `after`, oldest first, at most `limit`, as wire frames.
@@ -147,40 +148,58 @@ impl Moor {
         out
     }
 
-    /// Fails each start an earlier process left unfinished, claiming those whose setup can be
-    /// followed again; returns what to log and the claimed Boxes.
-    pub(crate) fn fail_interrupted_starts(&self) -> (Vec<String>, Vec<BoxId>) {
-        let mut out = Vec::new();
-        let mut claimed = Vec::new();
-        let failed = self.cx.store().and_then(|store| {
-            let others = Others::of(Database::from_env(self.cx.env())?.as_ref());
-            claimed =
-                crate::cx::owners::boot(|| interrupted::fail_interrupted(&self.cx, store, others))?;
-            ops::common::node::backfill(&self.cx, store)
-        });
-        if let Err(e) = failed {
-            out.push(e.error.to_string());
+    /// The open Boxes whose start an earlier process left unfinished, each to resume as its
+    /// owner's first turn; returns what to log and those Boxes.
+    pub(crate) fn cut_short_starts(&self) -> (Vec<String>, Vec<BoxId>) {
+        match self.cx.store().and_then(interrupted::cut_short) {
+            Ok(cut) => (Vec::new(), cut),
+            Err(e) => (vec![e.error.to_string()], Vec::new()),
         }
-        out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
-        (out, claimed)
     }
 
-    /// Follows again the setup of each Box in `claimed` until it ends; returns what to log.
-    pub(crate) fn resume_setups(&self, claimed: &[BoxId]) -> Vec<String> {
-        let mut out = Vec::new();
-        for &id in claimed {
-            let resumed = self.cx.store().and_then(|store| {
-                let user = store.box_row(id)?.and_then(|r| r.user);
-                self.cx.for_box(user, || {
-                    ops::common::provision::resume_setup(&self.cx, store, id)
-                })
-            });
-            if let Err(e) = resumed {
-                out.push(format!("Box {}: {}", id.get(), e.error));
-            }
-            out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
+    /// Resumes Box `id` as its owner's first turn: settles the start an earlier process left
+    /// unfinished, hands `settled` what to log, then goes on with the start under the same turn
+    /// when it can. Returns what to log after `settled`.
+    pub(crate) fn resume(&self, id: BoxId, settled: impl FnOnce(Vec<String>)) -> Vec<String> {
+        let mut settled = Some(settled);
+        let resumed = self.cx.store().and_then(|store| {
+            let user = store.box_row(id)?.and_then(|r| r.user);
+            self.cx.for_box(user, || {
+                let _turn = self.cx.turn(id, Cmd::Resume)?;
+                let goes_on = interrupted::settle(&self.cx, store, id);
+                if let Some(settled) = settled.take() {
+                    settled(self.logged(id, goes_on.as_ref().err()));
+                }
+                if goes_on.unwrap_or(false) {
+                    ops::common::provision::resume_setup(&self.cx, store, id)?;
+                }
+                Ok(())
+            })
+        });
+        let out = self.logged(id, resumed.as_ref().err());
+        if let Some(settled) = settled {
+            settled(out);
+            return Vec::new();
         }
         out
+    }
+
+    /// Places each live Box that predates node placement; returns what to log.
+    pub(crate) fn backfill_nodes(&self) -> Vec<String> {
+        let placed =
+            (self.cx.store()).and_then(|store| ops::common::node::backfill(&self.cx, store));
+        self.logged_all(placed.err().map(|e| e.error.to_string()))
+    }
+
+    /// `failed` on Box `id`, then the warnings taken so far.
+    fn logged(&self, id: BoxId, failed: Option<&CommandError>) -> Vec<String> {
+        self.logged_all(failed.map(|e| format!("Box {}: {}", id.get(), e.error)))
+    }
+
+    /// `failed`, then the warnings taken so far.
+    fn logged_all(&self, failed: Option<String>) -> Vec<String> {
+        let warnings = self.cx.take_warnings().into_iter().map(|w| w.message);
+        failed.into_iter().chain(warnings).collect()
     }
 }
 

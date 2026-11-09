@@ -1,7 +1,5 @@
 //! How a store operation fails.
 
-use std::path::PathBuf;
-
 use moor_core::{BoxId, BoxName};
 
 /// Store failure.
@@ -35,21 +33,6 @@ pub(crate) enum StoreError {
         db: String,
         /// What the migration run refused.
         source: moor_migrate::Error,
-    },
-    /// The db needs migrating and a running controller owns its state dir.
-    #[error(
-        "the state database {} is older than this moor, and the controller running on its \
-         state dir (pid {pid}) owns it; set MOOR_CONTROLLER={socket} to talk to that \
-         controller, or stop it before running this moor on the state dir",
-        db.display()
-    )]
-    Owned {
-        /// The database file.
-        db: PathBuf,
-        /// The running controller's pid, as its lock file records it.
-        pid: String,
-        /// The running controller's socket, as its lock file records it.
-        socket: String,
     },
     /// A controller runs on the state dir this moor would mutate directly.
     #[error("a controller serves this state dir; set controller.socket")]

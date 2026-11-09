@@ -338,19 +338,17 @@ fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHand
 
 /// Column assignments for an intent change.
 pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<BoxState> {
-    let (kind, pid, run, at) = match change {
+    let (kind, run, at) = match change {
         IntentChange::Keep => return Vec::new(),
-        IntentChange::Clear => (None, None, None, None),
+        IntentChange::Clear => (None, None, None),
         IntentChange::Set(i) => (
             Some(i.kind().to_owned()),
-            Some(i64::from(i.pid())),
             i.run().map(moor_core::RunId::get),
             Some(now.as_millis()),
         ),
     };
     vec![
         (BoxState::IntentKind, kind.into()),
-        (BoxState::IntentPid, pid.into()),
         (BoxState::IntentRun, run.into()),
         (BoxState::IntentAt, at.into()),
     ]

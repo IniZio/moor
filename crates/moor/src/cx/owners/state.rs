@@ -175,10 +175,17 @@ impl State {
         }
     }
 
-    /// The refusal for a waiter that gave up on `box_id`.
+    /// The refusal for a waiter that gave up on `box_id`. A start, retry or resume all say
+    /// setup, as that is what the caller waits on.
     pub(super) fn busy(&self, box_id: BoxId) -> CommandError {
         let holder = self.boxes.get(&box_id).and_then(|o| o.holder.as_ref());
-        let busy = holder.map_or("a run", |h| h.cmd.name());
+        let busy = holder.map_or("a run", |h| {
+            if h.cmd.is_long() {
+                "setup"
+            } else {
+                h.cmd.name()
+            }
+        });
         CommandError::new(ErrorKind::Refused, format!("box busy: {busy} in progress"))
     }
 

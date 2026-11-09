@@ -228,7 +228,7 @@ fn healing_keeps_a_running_intent_of_another_run() {
     assert_eq!(ran_events(&store, box_id), 1);
     assert_eq!(
         store.box_row(box_id).unwrap().unwrap().intent,
-        Some(Intent::Running { run: new, pid: 2 })
+        Some(Intent::Running { run: new })
     );
     assert_ne!(old, new);
 }
@@ -312,7 +312,7 @@ fn refused_run_leaves_an_in_flight_run_alone() {
     assert_eq!(live.finished_at, None);
     assert_eq!(
         store.box_row(box_id).unwrap().unwrap().intent,
-        Some(Intent::Running { run, pid: 7 })
+        Some(Intent::Running { run })
     );
     assert_eq!(ran_events(&store, box_id), 1);
 }

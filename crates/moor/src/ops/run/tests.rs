@@ -36,7 +36,6 @@ pub(crate) struct Fx {
     pub(crate) egress: FakeEgress,
     pub(crate) cx: Cx,
     pub(crate) driver: Arc<FakeDriver>,
-    pub(in crate::ops::run) proc: Arc<ScriptedProc>,
     pub(crate) id: BoxId,
 }
 
@@ -75,15 +74,9 @@ pub(crate) fn req(argv: &[&str]) -> RunReq {
 }
 
 /// A context over `dir` whose host processes answer no tool and whose Proxy names `egress_port`.
-fn context(
-    dir: &std::path::Path,
-    driver: &Arc<FakeDriver>,
-    egress_port: u16,
-) -> (Cx, Arc<ScriptedProc>) {
-    let proc = Arc::new(ScriptedProc::new());
-    let cx = Cx::fake(dir, driver.clone(), proc.clone())
-        .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)));
-    (cx, proc)
+fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>, egress_port: u16) -> Cx {
+    Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new()))
+        .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)))
 }
 
 /// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`. Its runs play
@@ -97,7 +90,7 @@ fn bare_with(driver: FakeDriver, yaml: Option<&str>, base: Option<&str>) -> Fx {
     moor_testkit::write_host_guards(&bin).unwrap();
     let egress = FakeEgress::start(&home, &bin).unwrap();
     let driver = Arc::new(driver.local_runs(&home, &work));
-    let (cx, proc) = context(dir.path(), &driver, egress.port());
+    let cx = context(dir.path(), &driver, egress.port());
     let id = cx
         .store()
         .unwrap()
@@ -120,7 +113,6 @@ fn bare_with(driver: FakeDriver, yaml: Option<&str>, base: Option<&str>) -> Fx {
         egress,
         cx,
         driver,
-        proc,
         id,
     }
 }
@@ -455,9 +447,8 @@ fn dead_provisioning_is_refused_with_a_close_hint() {
     let f = bare();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning { pid: 4242 })))
+        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning)))
         .unwrap();
-    f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
     let e = run(&f.cx, &req(&["true"])).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
@@ -471,9 +462,8 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
     let f = bare();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning { pid: 4242 })))
+        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning)))
         .unwrap();
-    f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
     let row = store.box_row(f.id).unwrap().unwrap();
     let turn = f.cx.turn(f.id, Cmd::Run).unwrap();

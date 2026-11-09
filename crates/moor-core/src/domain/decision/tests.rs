@@ -73,20 +73,16 @@ fn builder_chains() {
     );
 }
 
-/// Intent accessors report kind, pid and run.
+/// Intent accessors report kind and run.
 #[test]
 fn intent_accessors() {
-    let p = Intent::Provisioning { pid: 1 };
-    let r = Intent::Running {
-        run: RunId::new(9),
-        pid: 2,
-    };
-    let s = Intent::Setup { pid: 3 };
+    let p = Intent::Provisioning;
+    let r = Intent::Running { run: RunId::new(9) };
+    let s = Intent::Setup;
     assert_eq!(
         (p.kind(), r.kind(), s.kind()),
         ("provisioning", "running", "setup")
     );
-    assert_eq!((p.pid(), r.pid(), s.pid()), (1, 2, 3));
     assert_eq!(
         (p.run(), r.run(), s.run()),
         (None, Some(RunId::new(9)), None)
@@ -190,23 +186,20 @@ fn a_cache_emptied_event_round_trips() {
 /// Position of an intent in `intent_samples()`; the exhaustive match fails to compile on a new variant.
 const fn intent_index(i: &Intent) -> usize {
     match i {
-        Intent::Provisioning { .. } => 0,
+        Intent::Provisioning => 0,
         Intent::Running { .. } => 1,
-        Intent::Setup { .. } => 2,
-        Intent::Closing { .. } => 3,
+        Intent::Setup => 2,
+        Intent::Closing => 3,
     }
 }
 
 /// One sample of every intent variant.
 fn intent_samples() -> [Intent; 4] {
     [
-        Intent::Provisioning { pid: 1 },
-        Intent::Running {
-            run: RunId::new(2),
-            pid: 2,
-        },
-        Intent::Setup { pid: 3 },
-        Intent::Closing { pid: 4 },
+        Intent::Provisioning,
+        Intent::Running { run: RunId::new(2) },
+        Intent::Setup,
+        Intent::Closing,
     ]
 }
 

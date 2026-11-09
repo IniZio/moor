@@ -160,11 +160,7 @@ fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
         sink.lock().unwrap().push(row.intent);
     });
     start(&w).unwrap();
-    let pid = std::process::id();
-    assert_eq!(
-        seen.lock().unwrap().first(),
-        Some(&Some(Intent::Setup { pid }))
-    );
+    assert_eq!(seen.lock().unwrap().first(), Some(&Some(Intent::Setup)));
     assert!(row(&w).intent.is_none());
 }
 
