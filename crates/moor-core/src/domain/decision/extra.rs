@@ -1,6 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
-use crate::domain::event::{CheckedCred, PostCloneStep, ProfileStep, TurnOutcome};
+use crate::domain::event::{CheckedCred, PostCloneStep, ProfileStep, SteerSent};
 use crate::name::RunId;
 
 /// An event a caller may pass; every other kind is derived from state steps.
@@ -357,26 +357,7 @@ pub enum ExtraEvent {
         reason: String,
     },
     /// A message or menu choice was sent to the agent.
-    Steered {
-        /// The agent session it went to.
-        session: String,
-        /// What was sent.
-        message: String,
-        /// Whether the submit key was pressed a second time.
-        submit_retried: bool,
-        /// The ended-turn count of the agent's terminal the steer's turn must pass.
-        turn_before: Option<u64>,
-        /// When the status the agent showed at the send was set, on the Box's clock; none when
-        /// a turn was running then.
-        status_before: Option<i64>,
-    },
-    /// The agent finished the turn a steer started.
-    TurnDone {
-        /// The steer's id.
-        steer: i64,
-        /// How the turn ended.
-        outcome: TurnOutcome,
-    },
+    Steered(SteerSent),
     /// The Proxy for the box is ready to accept connections.
     ProxyStarted {
         /// Port the Box side connects to.

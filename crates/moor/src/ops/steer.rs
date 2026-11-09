@@ -1,15 +1,17 @@
 //! `steer`: send a message or a menu choice to the Box's agent.
 //!
 //! The steer holds its Box's turn, which a run in flight leaves free, so a Box can be steered
-//! during a run.
+//! during a run. A text waits in the Box's inbox from just before its send until the turn it
+//! starts ends; a menu choice, an interrupt and `/exit` are sent without it, since they mean
+//! something only against the screen they answer.
 
 use std::time::Duration;
 
-use moor_core::activity::{Activity, AgentState, Source, Status, Term};
+use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::inbox::InboxKind;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
@@ -45,6 +47,21 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         bring_back(cx, &found)?;
     }
     let _turn = cx.turn(target.0, Cmd::Steer)?;
+    let mut slot = Slot::new(InboxKind::Steer);
+    let sent = steer_awake(cx, store, req, target, &mut slot);
+    slot.withdraw(store, target.0)?;
+    sent
+}
+
+/// Steers `target` under its turn, waking it first when asleep and relaunching an agent found
+/// gone once.
+fn steer_awake(
+    cx: &Cx,
+    store: &Store,
+    req: &SteerReq,
+    target: (BoxId, &str),
+    slot: &mut Slot,
+) -> Result<SteerValue, CommandError> {
     let row = reload(store, target)?;
     if store.live_session(target.0)?.is_none() && row.asleep() {
         return Err(no_agent(target.1));
@@ -52,7 +69,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     if row.asleep() {
         wake_and_revive(cx, store, &row)?;
     }
-    let gone = match attempt(cx, store, req, target)? {
+    let gone = match attempt(cx, store, req, target, slot)? {
         Attempt::Sent(v) => return Ok(v),
         Attempt::Gone(gone) => gone,
     };
@@ -62,7 +79,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let mut revived = relaunch::once(cx, store, target, gone)?;
     let mut seen_running = false;
     loop {
-        let again = match attempt(cx, store, req, target)? {
+        let again = match attempt(cx, store, req, target, slot)? {
             Attempt::Sent(v) => return Ok(v),
             Attempt::Gone(again) => again,
         };
@@ -85,7 +102,10 @@ pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result
         menu: None,
         interrupt: false,
     };
-    match attempt(cx, store, &req, (row.id, row.name.as_str()))? {
+    let mut slot = Slot::new(InboxKind::Note);
+    let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
+    slot.withdraw(store, row.id)?;
+    match sent? {
         Attempt::Sent(_) => Ok(()),
         Attempt::Gone(gone) => Err(gone.error),
     }
@@ -177,6 +197,7 @@ fn attempt(
     store: &Store,
     req: &SteerReq,
     (id, name): (BoxId, &str),
+    slot: &mut Slot,
 ) -> Result<Attempt, CommandError> {
     let row = reload(store, (id, name))?;
     let Some(session) = store.live_session(id)? else {
@@ -207,11 +228,11 @@ fn attempt(
         Steer::Menu(n) => n.to_string(),
         Steer::Interrupt => "(interrupt)".to_owned(),
     };
-    let Some(outcome) = send(cx, &sref, &steer)? else {
-        let code = if let Some(AgentState::Exited { code }) = before {
-            code
-        } else {
-            None
+    let (outcome, inbox) = slot.send(cx, store, (id, name), (&sref, &session), &steer)?;
+    let Some(outcome) = outcome else {
+        let code = match before {
+            Some(AgentState::Exited { code }) => code,
+            _ => None,
         };
         let gone = Gone::new(name, Some(session.clone()), code);
         if !is_exit(&steer) {
@@ -226,7 +247,7 @@ fn attempt(
         status_before: status_before(reading.term.as_ref()).filter(|_| starts_turn),
         submit_retried: outcome.submit_retried,
     };
-    let steer_id = record(store, id, &session, &sent, mark)?;
+    let steer_id = record(store, id, &session, &sent, mark, inbox)?;
     if starts_turn {
         open_turn(store, &row)?;
     }
@@ -247,7 +268,7 @@ fn exited(
     session: &SessionRow,
     sent: String,
 ) -> Result<SteerValue, CommandError> {
-    let steer = record(store, id, session, &sent, Mark::default())?;
+    let steer = record(store, id, session, &sent, Mark::default(), None)?;
     cx.warn(Warning {
         code: "agent_exited".to_owned(),
         message: "the agent exited and its session ended".to_owned(),
@@ -286,27 +307,6 @@ fn first_run_refusal(name: &str) -> CommandError {
         ),
     )
     .with_detail(ErrorDetail::FirstRunScreen)
-}
-
-/// The ended-turn count the turn of `steer` must pass: a prompt typed while the agent works waits
-/// for the turn already running to end first.
-fn turn_before(term: Option<&Term>, steer: &Steer) -> Option<u64> {
-    let term = term?;
-    let working = matches!(term.status, Some(Status::Working { .. }));
-    let queued = working && matches!(steer, Steer::Text(_));
-    Some(term.turn + u64::from(queued))
-}
-
-/// When the status of an agent not working was set: any later status that is not working ends
-/// the steer's turn, even one that ends no turn, such as an interrupted question.
-fn status_before(term: Option<&Term>) -> Option<i64> {
-    let term = term.filter(|t| !matches!(t.status, Some(Status::Working { .. })))?;
-    term.status_at.map(Ts::as_millis)
-}
-
-/// Whether the agent's terminal reports no turn running, so an interrupt has nothing to stop.
-fn idle(term: Option<&Term>) -> bool {
-    term.is_some_and(|t| matches!(t.status, Some(Status::Idle | Status::Error { .. })))
 }
 
 /// Whether `steer` asks the agent to exit.
@@ -379,13 +379,15 @@ fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
 }
 
 mod choose;
+mod inbox;
 mod lost;
 mod record;
 mod relaunch;
 
 use choose::choose;
+use inbox::Slot;
 use lost::{bring_back, lost};
-use record::{record, Mark};
+use record::{idle, record, status_before, turn_before, Mark};
 use relaunch::Revived;
 
 #[cfg(test)]

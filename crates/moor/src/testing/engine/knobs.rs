@@ -34,4 +34,9 @@ impl FakeEngine {
     pub(crate) fn on_transcript(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_transcript = Some(Arc::new(f));
     }
+
+    /// Runs `f` as each steer is sent, after it is recorded.
+    pub(crate) fn on_steer(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_steer = Some(Arc::new(f));
+    }
 }

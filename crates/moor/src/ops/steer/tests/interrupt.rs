@@ -83,7 +83,7 @@ fn an_interrupt_to_an_idle_agent_leaves_its_session_idle() {
     let row = store.box_row(f.id).unwrap().unwrap();
     assert!(row.session.is_quiet(), "no turn ran, so none is left open");
     assert!(
-        store.unanswered_steer(f.id).unwrap().is_none(),
+        store.sent(f.id).unwrap().is_empty(),
         "the interrupt is answered at the next read"
     );
 }
@@ -102,7 +102,7 @@ fn an_interrupt_that_leaves_a_blocked_agent_idle_ends_its_turn() {
     let reading = read(&f.cx, store, &row, f.cx.clock().now(), PROBE_DEADLINE).unwrap();
     settle(&f.cx, store, &row, &reading).unwrap();
     assert!(
-        store.unanswered_steer(f.id).unwrap().is_none(),
+        store.sent(f.id).unwrap().is_empty(),
         "the idle status hc set after the interrupt ends the turn"
     );
     let row = store.box_row(f.id).unwrap().unwrap();

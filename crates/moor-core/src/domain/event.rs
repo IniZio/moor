@@ -227,21 +227,7 @@ pub enum Event {
         reason: String,
     },
     /// A message or menu choice was sent to the agent.
-    Steered {
-        /// The agent session it went to.
-        session: String,
-        /// What was sent.
-        message: String,
-        /// Whether the submit key was pressed a second time.
-        submit_retried: bool,
-        /// The ended-turn count of the agent's terminal the steer's turn must pass.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        turn_before: Option<u64>,
-        /// When the status the agent showed at the send was set, on the Box's clock, in
-        /// milliseconds; none when a turn was running then.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        status_before: Option<i64>,
-    },
+    Steered(SteerSent),
     /// The Proxy for the box is ready to accept connections.
     ProxyStarted {
         /// Port the Box side connects to.
@@ -344,6 +330,9 @@ pub enum Event {
         steer: i64,
         /// How the turn ended.
         outcome: TurnOutcome,
+        /// The inbox row whose turn ended, deleted with this event.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inbox: Option<i64>,
     },
     /// A Box file was stored as a new artifact version.
     ArtifactPublished {
@@ -386,7 +375,7 @@ pub enum Event {
     Timing(TimingEvent),
 }
 pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, kind::*};
-pub use self::{machine::MachineEvent, post_clone::*, profile::*, steps::*};
+pub use self::{machine::MachineEvent, post_clone::*, profile::*, steered::SteerSent, steps::*};
 mod access;
 mod boxes;
 mod checked;
@@ -395,6 +384,7 @@ mod kind;
 mod machine;
 mod post_clone;
 mod profile;
+mod steered;
 mod steps;
 #[cfg(test)]
 mod tests;

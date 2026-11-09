@@ -42,9 +42,10 @@ fn a_turn_that_ends_before_the_steer_is_recorded_is_answered() {
     settle_once(&f);
     let done = turns_done(&f);
     assert_eq!(done.len(), 1, "the fast turn is answered exactly once");
+    let inbox = super::steered(&f).first().unwrap()["inbox"].clone();
     assert_eq!(
         done.first().unwrap().payload,
-        serde_json::json!({"steer": v.steer, "outcome": "idle"})
+        serde_json::json!({"steer": v.steer, "outcome": "idle", "inbox": inbox})
     );
 }
 

@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use moor_core::activity::STALL_AFTER;
 use moor_core::config::DEFAULT_SLEEP_AFTER;
-use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::clock::Clock;
 
 use super::super::*;
@@ -99,15 +98,7 @@ impl Rig {
 
     /// A typed steer sent now, whose turn has to end past `turn_before` ended turns.
     fn steered(&self, turn_before: Option<u64>) {
-        let event = ExtraEvent::Steered {
-            session: SESSION.to_owned(),
-            message: "go".to_owned(),
-            submit_retried: false,
-            turn_before,
-            status_before: None,
-        };
-        let store = self.cx.store().unwrap();
-        store.apply(Decision::new(self.id).event(event)).unwrap();
+        crate::testing::inbox::sent(self.cx.store().unwrap(), self.id, turn_before, None);
     }
 }
 

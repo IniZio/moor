@@ -1,7 +1,6 @@
 //! Read-only lookups by box name and live-box scans, built on the shared box row mapping.
 
 use moor_core::controller::ServerFrame;
-use moor_core::decide::turn::SteerMark;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::request::Pins;
@@ -9,7 +8,6 @@ use moor_core::{BoxId, BoxName, SessionId};
 
 use moor_schema::tables::{BoxHands, BoxState, Boxes, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
-use serde_json::Value;
 
 use super::{
     box_from_row, box_select, event_from_row, events_of, newest_event, BoxRow, EventRow, HandsRow,
@@ -178,27 +176,6 @@ impl Store {
             .collect())
     }
 
-    /// Newest `steered` event of a Box with no `turn_done` event answering it, as (event id, ts).
-    ///
-    /// # Errors
-    /// Returns [`StoreError`] when the database fails.
-    pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<SteerMark>, StoreError> {
-        let conn = self.reader()?;
-        let mut steered = events_of(box_id);
-        steered.and_where(Expr::col(Events::Kind).eq("steered"));
-        let Some(steer) = newest_event(&conn, &mut steered)? else {
-            return Ok(None);
-        };
-        if steer_answered(&conn, box_id, steer.id)? {
-            return Ok(None);
-        }
-        Ok(Some(SteerMark {
-            id: steer.id,
-            turn_before: steer.payload.get("turn_before").and_then(Value::as_u64),
-            status_before: steer.payload.get("status_before").and_then(Value::as_i64),
-        }))
-    }
-
     /// Boxes queued for a box, oldest id first.
     #[cfg(test)]
     pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
@@ -206,21 +183,6 @@ impl Store {
             Expr::col((BoxState::Table, BoxState::State)).eq(BoxLifecycle::Pending.as_str());
         query_boxes(&self.reader()?, pending, Order::Asc, None)
     }
-}
-
-/// Whether Box `box_id` has a `turn_done` event answering its `steered` event `steer`.
-///
-/// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
-pub(super) fn steer_answered(conn: &dyn Db, box_id: BoxId, steer: i64) -> Result<bool, StoreError> {
-    let done = events_of(box_id)
-        .and_where(Expr::col(Events::Kind).eq("turn_done"))
-        .take();
-    for row in conn.rows(done, event_from_row)? {
-        if row?.payload.get("steer").and_then(Value::as_i64) == Some(steer) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 mod refs;

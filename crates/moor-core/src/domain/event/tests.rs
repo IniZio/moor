@@ -131,13 +131,14 @@ fn all_events() -> Vec<Event> {
             trigger: s("close"),
             reason: s("r"),
         },
-        Event::Steered {
+        Event::Steered(SteerSent {
             session: s("x"),
             message: s("m"),
             submit_retried: true,
             turn_before: Some(4),
             status_before: None,
-        },
+            inbox: Some(9),
+        }),
         Event::ProxyStarted {
             box_port: 1,
             pid: 3,
@@ -180,6 +181,7 @@ fn all_events() -> Vec<Event> {
         Event::TurnDone {
             steer: 1,
             outcome: TurnOutcome::Idle,
+            inbox: Some(9),
         },
         Event::ArtifactPublished {
             name: s("shot.png"),
@@ -408,7 +410,7 @@ const fn event_index(e: &Event) -> usize {
         Event::TranscriptSaved { .. } => 32,
         Event::TranscriptFailed { .. } => 33,
         Event::TranscriptSkipped { .. } => 34,
-        Event::Steered { .. } => 35,
+        Event::Steered(_) => 35,
         Event::ProxyStarted { .. } => 36,
         Event::TunnelRestarted { .. } => 37,
         Event::Timing(TimingEvent::SetupFinished { .. }) => 38,

@@ -216,20 +216,7 @@ impl TryFrom<Event> for ExtraEvent {
                 Ok(Self::TranscriptSkipped { trigger, reason })
             }
             Event::Restore(r) => Ok(Self::Restore(r)),
-            Event::Steered {
-                session,
-                message,
-                submit_retried,
-                turn_before,
-                status_before,
-            } => Ok(Self::Steered {
-                session,
-                message,
-                submit_retried,
-                turn_before,
-                status_before,
-            }),
-            Event::TurnDone { steer, outcome } => Ok(Self::TurnDone { steer, outcome }),
+            Event::Steered(s) => Ok(Self::Steered(s)),
             Event::ProxyStarted {
                 box_port,
                 pid,
@@ -271,7 +258,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::SessionEnded { .. }
             | Event::AgentLinkLost { .. }
             | Event::AgentLinkRestored { .. }
-            | Event::Machine(_)) => Err(e),
+            | Event::Machine(_)
+            | Event::TurnDone { .. }) => Err(e),
         }
     }
 }

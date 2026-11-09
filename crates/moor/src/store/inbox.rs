@@ -4,22 +4,20 @@
 //! table, and only them. Only the Box's owner, holding its turn, updates or deletes
 //! rows, so senders never wait on a Box that is busy or asleep.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no op sends through the inbox yet")
-)]
-
-use moor_core::domain::event::TurnOutcome;
+use moor_core::domain::event::{Event, TurnOutcome};
 use moor_core::domain::inbox::{Delivery, DeliveryColumns, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
-use moor_schema::tables::BoxInbox;
+use moor_schema::tables::{BoxInbox, BoxState, Events};
 use sea_query::{Cond, Expr, ExprTrait as _, Order, Query, SelectStatement};
+use serde_json::Value;
 
+use super::apply::insert_event;
+use super::event_from_row;
 use super::init::parsed_opt;
-use super::turns::turn_done_in;
+use super::select::events_of;
 use super::{Store, StoreError};
-use crate::store::db::{Db, DbExt as _, Row};
+use crate::store::db::{Db, DbExt as _, Row, Tx};
 
 /// One inbox row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +76,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or the row is corrupt.
+    #[cfg_attr(not(test), expect(dead_code, reason = "the inbox pass reads it"))]
     pub(crate) fn next_for(&self, box_id: BoxId) -> Result<Option<InboxRow>, StoreError> {
         Ok(rows(&self.reader()?, select(box_id).limit(1).take())?
             .into_iter()
@@ -98,7 +97,8 @@ impl Store {
         self.move_delivery(box_id, id, |d| d.mark(launch))
     }
 
-    /// Records that the send of row `id` reached the agent now, with its terminal at `mark`.
+    /// Records that the send of row `id` reached the agent now, with its terminal at `mark`,
+    /// and appends `steered`, its audit event, in the same transaction; the event's id.
     ///
     /// # Errors
     /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
@@ -108,9 +108,14 @@ impl Store {
         box_id: BoxId,
         id: InboxId,
         mark: SendMark,
-    ) -> Result<Delivery, StoreError> {
-        let now = self.now().as_millis();
-        self.move_delivery(box_id, id, |d| d.confirm(now, mark))
+        steered: &Event,
+    ) -> Result<(Delivery, i64), StoreError> {
+        let now = self.now();
+        let (next, event) = self.move_delivery_with(box_id, id, Some(steered), |d| {
+            d.confirm(now.as_millis(), mark)
+        })?;
+        let event = event.ok_or_else(|| StoreError::Invalid("no steered event".to_owned()))?;
+        Ok((next, event))
     }
 
     /// Undoes the mark of a send that never reached the agent because it was gone, so the send
@@ -119,20 +124,48 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
     /// gone or the database fails.
+    #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn rollback(&self, box_id: BoxId, id: InboxId) -> Result<Delivery, StoreError> {
         self.move_delivery(box_id, id, Delivery::rollback)
     }
 
-    /// Ends the turn sent row `id` started: deletes the row and records `turn_done` for `steer`
-    /// in one transaction. Returns whether it did; a row already answered, or not sent, is left.
+    /// Deletes row `id` unless it was sent: the send it was queued for was refused or failed.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
+    pub(crate) fn withdraw(&self, box_id: BoxId, id: InboxId) -> Result<(), StoreError> {
+        self.check_write(box_id);
+        self.writer().run(
+            Query::delete()
+                .from_table(BoxInbox::Table)
+                .cond_where(one(box_id, id))
+                .and_where(Expr::col(BoxInbox::SentAt).is_null()),
+        )?;
+        Ok(())
+    }
+
+    /// Box `box_id`'s sent rows, oldest first: the turns its agent has not finished.
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails or a row is corrupt.
+    pub(crate) fn sent(&self, box_id: BoxId) -> Result<Vec<InboxRow>, StoreError> {
+        let q = select(box_id)
+            .and_where(Expr::col(BoxInbox::SentAt).is_not_null())
+            .take();
+        rows(&self.reader()?, q)
+    }
+
+    /// Ends the turn sent row `id` started: deletes the row and records `turn_done` for its
+    /// `steered` event in one transaction, and makes the Box's archive due. Returns whether it
+    /// did; a row already answered, or not sent, is left.
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails, or [`StoreError::Corrupt`] when the row
+    /// has no `steered` event.
     pub(crate) fn answer(
         &self,
         box_id: BoxId,
         id: InboxId,
-        steer: i64,
         outcome: TurnOutcome,
     ) -> Result<bool, StoreError> {
         self.check_write(box_id);
@@ -148,7 +181,21 @@ impl Store {
         if deleted == 0 {
             return Ok(false);
         }
-        turn_done_in(&tx, box_id, steer, outcome, now)?;
+        let steer = steered_by(&tx, box_id, id)?.ok_or_else(|| {
+            StoreError::Corrupt(format!("inbox row {} has no steered event", id.get()))
+        })?;
+        let done = Event::TurnDone {
+            steer,
+            outcome,
+            inbox: Some(id.get()),
+        };
+        insert_event(&tx, box_id, &done, now)?;
+        tx.run(
+            Query::update()
+                .table(BoxState::Table)
+                .value(BoxState::ArchiveDue, now.as_millis())
+                .and_where(Expr::col(BoxState::Box).eq(box_id.get())),
+        )?;
         tx.commit()?;
         drop(conn);
         Ok(true)
@@ -159,6 +206,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
+    #[cfg_attr(not(test), expect(dead_code, reason = "a new launch reads it"))]
     pub(crate) fn cut(&self, box_id: BoxId, live: LaunchId) -> Result<Vec<InboxRow>, StoreError> {
         let q = select(box_id)
             .and_where(Expr::col(BoxInbox::Launch).is_not_null())
@@ -171,6 +219,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
+    #[cfg_attr(not(test), expect(dead_code, reason = "close drops the inbox with it"))]
     pub(crate) fn drop_all(&self, box_id: BoxId) -> Result<Vec<InboxRow>, StoreError> {
         self.check_write(box_id);
         let mut conn = self.writer();
@@ -193,6 +242,18 @@ impl Store {
         id: InboxId,
         step: impl FnOnce(Delivery) -> Result<Delivery, moor_core::domain::Illegal>,
     ) -> Result<Delivery, StoreError> {
+        Ok(self.move_delivery_with(box_id, id, None, step)?.0)
+    }
+
+    /// Moves row `id`'s delivery by `step` and appends `event` in one transaction, under the
+    /// Box's turn; the event's id.
+    fn move_delivery_with(
+        &self,
+        box_id: BoxId,
+        id: InboxId,
+        event: Option<&Event>,
+        step: impl FnOnce(Delivery) -> Result<Delivery, moor_core::domain::Illegal>,
+    ) -> Result<(Delivery, Option<i64>), StoreError> {
         self.check_write(box_id);
         let mut conn = self.writer();
         let tx = conn.immediate()?;
@@ -222,10 +283,30 @@ impl Store {
                 .value(BoxInbox::StatusBefore, c.status_before)
                 .cond_where(one(box_id, id)),
         )?;
+        let event = event
+            .map(|e| insert_event(&tx, box_id, e, self.now()))
+            .transpose()?;
         tx.commit()?;
         drop(conn);
-        Ok(next)
+        Ok((next, event))
     }
+}
+
+/// The newest `steered` event of Box `box_id` that sent row `id`.
+///
+/// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
+fn steered_by(tx: &Tx<'_>, box_id: BoxId, id: InboxId) -> Result<Option<i64>, StoreError> {
+    let q = events_of(box_id)
+        .and_where(Expr::col(Events::Kind).eq("steered"))
+        .order_by(Events::Id, Order::Desc)
+        .take();
+    for event in tx.rows(q, event_from_row)? {
+        let event = event?;
+        if event.payload.get("inbox").and_then(Value::as_i64) == Some(id.get()) {
+            return Ok(Some(event.id));
+        }
+    }
+    Ok(None)
 }
 
 /// Row `id` of Box `box_id`.

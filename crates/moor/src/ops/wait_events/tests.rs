@@ -12,6 +12,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, HandsFields, NewBox, SpecFields,
 };
+use moor_core::domain::event::SteerSent;
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -65,13 +66,19 @@ fn attached(cx: &Cx, id: BoxId) {
 }
 
 fn steered(cx: &Cx, id: BoxId) {
-    let event = ExtraEvent::Steered {
+    crate::testing::inbox::sent(cx.store().unwrap(), id, None, None);
+}
+
+/// A `steered` event alone, as a menu choice leaves.
+fn chose(cx: &Cx, id: BoxId) {
+    let event = ExtraEvent::Steered(SteerSent {
         session: SESSION.to_owned(),
-        message: "go".to_owned(),
+        message: "1".to_owned(),
         submit_retried: false,
         turn_before: None,
         status_before: None,
-    };
+        inbox: None,
+    });
     cx.store()
         .unwrap()
         .apply(Decision::new(id).event(event))
@@ -216,7 +223,7 @@ fn the_kinds_filter_ignores_other_kinds() {
     r.kinds = Some(vec!["steered".to_owned()]);
     r.timeout_secs = Some(1);
     assert!(run(&cx, &r).unwrap().timed_out);
-    steered(&cx, id);
+    chose(&cx, id);
     let v = run(&cx, &r).unwrap();
     assert!(!v.timed_out);
     assert_eq!(v.events.len(), 1);

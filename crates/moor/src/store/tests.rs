@@ -30,7 +30,6 @@ mod poison;
 mod repos;
 mod rollback_pid;
 mod sleep_reason;
-mod turns;
 mod vm_fence;
 
 use super::apply::Applied;

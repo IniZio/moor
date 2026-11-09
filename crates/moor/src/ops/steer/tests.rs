@@ -210,6 +210,7 @@ fn text_goes_to_the_agent_and_is_recorded() {
         f.engine.steers(),
         vec![("agent-1".to_owned(), Steer::Text("do x".into()))]
     );
+    let row = f.cx.store().unwrap().sent(f.id).unwrap();
     assert_eq!(
         steered(&f),
         vec![serde_json::json!({
@@ -217,6 +218,7 @@ fn text_goes_to_the_agent_and_is_recorded() {
             "message": "do x",
             "submit_retried": false,
             "turn_before": 1,
+            "inbox": row.first().unwrap().id.get(),
         })]
     );
     assert!(f.cx.take_warnings().is_empty());
@@ -556,6 +558,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
 
 mod arrival;
 mod cold_boot;
+mod inbox;
 mod interrupt;
 mod relaunch;
 mod target;

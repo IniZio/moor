@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::Probe;
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::inbox::InboxId;
 use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
@@ -15,6 +15,7 @@ use crate::cx::Cx;
 use crate::store::EventRow;
 use crate::testing::agent::{at_turn, idle, permission, said};
 use crate::testing::engine::FakeEngine;
+use crate::testing::inbox::sent;
 
 fn fx(probes: Probe) -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
@@ -24,25 +25,13 @@ fn fx(probes: Probe) -> (tempfile::TempDir, Cx, BoxId) {
     (dir, cx, id)
 }
 
-pub(super) fn steer(cx: &Cx, id: BoxId) -> i64 {
+pub(super) fn steer(cx: &Cx, id: BoxId) -> InboxId {
     steer_after(cx, id, None)
 }
 
 /// A steer sent once the agent's terminal had ended `turn_before` turns.
-pub(super) fn steer_after(cx: &Cx, id: BoxId, turn_before: Option<u64>) -> i64 {
-    let event = ExtraEvent::Steered {
-        session: SESSION.to_owned(),
-        message: "go".to_owned(),
-        submit_retried: false,
-        turn_before,
-        status_before: None,
-    };
-    let applied = cx
-        .store()
-        .unwrap()
-        .apply(Decision::new(id).event(event))
-        .unwrap();
-    applied.events.first().copied().unwrap()
+pub(super) fn steer_after(cx: &Cx, id: BoxId, turn_before: Option<u64>) -> InboxId {
+    sent(cx.store().unwrap(), id, turn_before, None)
 }
 
 fn settle_once(cx: &Cx, id: BoxId) {
@@ -62,14 +51,19 @@ fn first(v: &[EventRow]) -> &EventRow {
 #[test]
 fn an_idle_status_after_a_steer_ends_its_turn_once() {
     let (_dir, cx, id) = fx(idle(seen()));
-    let steered = steer(&cx, id);
+    let row = steer(&cx, id);
     settle_once(&cx, id);
     settle_once(&cx, id);
     let done = events(&cx, id, "turn_done");
     assert_eq!(done.len(), 1);
+    let steered = first(&events(&cx, id, "steered")).id;
     assert_eq!(
         first(&done).payload,
-        serde_json::json!({"steer": steered, "outcome": "idle"})
+        serde_json::json!({"steer": steered, "outcome": "idle", "inbox": row.get()})
+    );
+    assert!(
+        cx.store().unwrap().sent(id).unwrap().is_empty(),
+        "the row goes with its turn"
     );
 }
 

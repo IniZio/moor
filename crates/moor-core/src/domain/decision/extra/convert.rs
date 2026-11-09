@@ -213,20 +213,7 @@ impl From<ExtraEvent> for Event {
                 Self::TranscriptSkipped { trigger, reason }
             }
             ExtraEvent::Restore(r) => Self::Restore(r),
-            ExtraEvent::Steered {
-                session,
-                message,
-                submit_retried,
-                turn_before,
-                status_before,
-            } => Self::Steered {
-                session,
-                message,
-                submit_retried,
-                turn_before,
-                status_before,
-            },
-            ExtraEvent::TurnDone { steer, outcome } => Self::TurnDone { steer, outcome },
+            ExtraEvent::Steered(s) => Self::Steered(s),
             ExtraEvent::ProxyStarted {
                 box_port,
                 pid,

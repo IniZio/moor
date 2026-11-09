@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::event::TurnOutcome;
-use moor_core::domain::inbox::{Delivery, InboxKind, SendMark};
+use moor_core::domain::event::{Event, SteerSent, TurnOutcome};
+use moor_core::domain::inbox::{Delivery, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Clock as _;
 use moor_core::{BoxId, LaunchId};
 
@@ -27,13 +27,25 @@ fn refuse_writes(store: &Store) {
     }));
 }
 
+/// The `steered` event of a send of row `row`.
+fn steered(row: InboxId) -> Event {
+    Event::Steered(SteerSent {
+        session: "agent-1".to_owned(),
+        message: "go".to_owned(),
+        submit_retried: false,
+        turn_before: MARK.turn_before,
+        status_before: MARK.status_before,
+        inbox: Some(row.get()),
+    })
+}
+
 /// A new launch of Box `id`'s agent.
 fn launch(store: &Store, id: BoxId) -> LaunchId {
     LaunchId::new(store.begin_session(id, "agent").unwrap())
 }
 
 /// Each row as `<text>:<delivery>`.
-fn texts(rows: &[crate::store::inbox::InboxRow]) -> Vec<String> {
+fn texts(rows: &[crate::store::InboxRow]) -> Vec<String> {
     rows.iter()
         .map(|r| format!("{}:{}", r.text, r.delivery.as_str()))
         .collect()
@@ -82,11 +94,12 @@ fn a_marked_row_is_in_doubt_until_confirmed_and_answering_it_ends_its_turn() {
         at: clock.now().as_millis(),
         mark: MARK,
     };
-    assert_eq!(store.confirm_sent(id, row, MARK).unwrap(), sent);
+    let (confirmed, steer) = store.confirm_sent(id, row, MARK, &steered(row)).unwrap();
+    assert_eq!(confirmed, sent);
     assert_eq!(store.next_for(id).unwrap().unwrap().delivery, sent);
-    assert!(store.answer(id, row, 7, TurnOutcome::Idle).unwrap());
+    assert!(store.answer(id, row, TurnOutcome::Idle).unwrap());
     assert_eq!(store.next_for(id).unwrap().unwrap().id, after);
-    assert!(!store.answer(id, row, 7, TurnOutcome::Idle).unwrap());
+    assert!(!store.answer(id, row, TurnOutcome::Idle).unwrap());
     let done: Vec<_> = store
         .events(id, 100)
         .unwrap()
@@ -94,7 +107,10 @@ fn a_marked_row_is_in_doubt_until_confirmed_and_answering_it_ends_its_turn() {
         .filter(|e| e.kind == "turn_done")
         .map(|e| e.payload)
         .collect();
-    assert_eq!(done, [serde_json::json!({"steer": 7, "outcome": "idle"})]);
+    assert_eq!(
+        done,
+        [serde_json::json!({"steer": steer, "outcome": "idle", "inbox": row.get()})]
+    );
 }
 
 #[test]
@@ -104,7 +120,7 @@ fn a_row_not_sent_is_not_answered() {
     let id = new_box(&store, "a");
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     store.mark_sending(id, row, launch(&store, id)).unwrap();
-    assert!(!store.answer(id, row, 7, TurnOutcome::Idle).unwrap());
+    assert!(!store.answer(id, row, TurnOutcome::Idle).unwrap());
     assert_eq!(store.next_for(id).unwrap().unwrap().id, row);
     assert!(store
         .events(id, 100)
@@ -187,7 +203,7 @@ fn a_row_in_doubt_is_sent_once_more_to_its_launch_and_never_a_third_time() {
         store.mark_sending(id, row, s),
         Err(StoreError::Illegal(_))
     ));
-    store.confirm_sent(id, row, MARK).unwrap();
+    store.confirm_sent(id, row, MARK, &steered(row)).unwrap();
     assert!(matches!(
         store.mark_sending(id, row, s),
         Err(StoreError::Illegal(_))
@@ -205,7 +221,7 @@ fn cut_returns_exactly_the_rows_sent_or_in_doubt_on_an_older_launch() {
     store.enqueue(id, InboxKind::Steer, "queued", "u").unwrap();
     let fresh = store.enqueue(id, InboxKind::Steer, "fresh", "u").unwrap();
     store.mark_sending(id, sent, old).unwrap();
-    store.confirm_sent(id, sent, MARK).unwrap();
+    store.confirm_sent(id, sent, MARK, &steered(sent)).unwrap();
     store.mark_sending(id, doubt, old).unwrap();
     let other = new_box(&store, "b");
     let elsewhere = store.enqueue(other, InboxKind::Steer, "b", "u").unwrap();
