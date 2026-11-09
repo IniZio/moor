@@ -329,7 +329,7 @@ fn a_retry_that_reruns_over_a_new_fork_says_so_in_its_reply() {
     let name = crate::testing::box_name("moved");
     let moved = store.open_box_by_name(&name).unwrap().unwrap().id;
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::SetupFailed);
-    let gone = Decision::new(moved).box_input(HandsInput::DriverMissing);
+    let gone = Decision::new(moved).hands_input(HandsInput::DriverMissing);
     w.cx.store().unwrap().apply(gone).unwrap();
     let retry = BoxReq {
         box_name: crate::testing::box_name("moved"),
@@ -394,7 +394,7 @@ fn the_agent_of_a_rerun_box_is_told_of_the_disk_and_a_later_cold_machine_is_not(
     assert_eq!(req.disk_note.as_deref(), Some(note.as_str()));
     let store = w.cx.store().unwrap();
     for input in [HandsInput::DriverMissing, HandsInput::Requested] {
-        store.apply(Decision::new(id).box_input(input)).unwrap();
+        store.apply(Decision::new(id).hands_input(input)).unwrap();
     }
     assert_eq!(warm_disk_note(store, id), None);
 }

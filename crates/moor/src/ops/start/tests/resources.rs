@@ -88,7 +88,7 @@ fn a_re_provisioned_box_records_the_new_machine() {
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     run(&w.cx, &start_req()).unwrap();
     let row = store.box_row(id).unwrap().unwrap();

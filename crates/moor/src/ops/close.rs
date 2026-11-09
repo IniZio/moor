@@ -338,7 +338,7 @@ fn wind_down(
         let gone = plan
             .decision_close
             .clone()
-            .box_input(HandsInput::DriverMissing);
+            .hands_input(HandsInput::DriverMissing);
         store.apply(gone)?;
         return Ok(true);
     }

@@ -14,7 +14,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewBox};
+use moor_core::domain::decision::{
+    Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+};
 use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxName, ProviderId};
@@ -92,25 +94,26 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare("cut").expect("name"),
         repo: None,
+        spec: SpecFields::default(),
     });
     let id = store.apply(new).expect("box").box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     let starting = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields)
+        .hands_input(HandsInput::Requested)
+        .hands(fields)
         .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
     store.apply(starting).expect("starting");
-    let cut = Decision::new(id).box_input(HandsInput::AcquireFailed {
+    let cut = Decision::new(id).hands_input(HandsInput::AcquireFailed {
         cause: "cut once already".to_owned(),
         attempted: None,
     });
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
-        .box_input(HandsInput::Requested)
+        .hands_input(HandsInput::Requested)
         .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
     store.apply(again).expect("again");
 }

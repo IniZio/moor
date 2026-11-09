@@ -8,7 +8,7 @@ use std::time::Duration;
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
@@ -131,15 +131,15 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
                 auto: true,
                 reason: None,
             })
-            .box_input(HandsInput::Sleep)
-            .set(Fields {
-                box_sleep_reason: Field::Clear,
-                ..Fields::default()
+            .hands_input(HandsInput::Sleep)
+            .hands(HandsFields {
+                sleep_reason: Field::Clear,
+                ..HandsFields::default()
             }),
         SleepOutcome::CannotSleep(reason) => Decision::new(id)
-            .set(Fields {
-                box_sleep_reason: Field::Set(reason.clone()),
-                ..Fields::default()
+            .hands(HandsFields {
+                sleep_reason: Field::Set(reason.clone()),
+                ..HandsFields::default()
             })
             .event(ExtraEvent::StaysUp { reason }),
     };

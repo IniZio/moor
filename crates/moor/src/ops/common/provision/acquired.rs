@@ -1,6 +1,6 @@
 //! Recording a freshly acquired Box.
 
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Intent, IntentChange};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::Acquired;
 use moor_core::BoxId;
@@ -34,13 +34,13 @@ pub(super) fn record_acquired(
         record_disk_lost(store, before)?;
     }
     let acquired = Decision::new(id)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: got.handle.clone(),
         })
-        .set(Fields {
-            box_handle: Field::Set(got.handle.clone()),
-            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..Fields::default()
+        .hands(HandsFields {
+            handle: Field::Set(got.handle.clone()),
+            workdir: Field::Set(got.workdir.as_str().to_owned()),
+            ..HandsFields::default()
         })
         .intent(IntentChange::Set(Intent::Setup {
             pid: std::process::id(),

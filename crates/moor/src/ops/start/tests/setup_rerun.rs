@@ -71,7 +71,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
     );
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();

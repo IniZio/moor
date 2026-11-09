@@ -1,6 +1,6 @@
 //! The repos a Box holds, as the store gives them back.
 
-use moor_core::domain::decision::{Decision, ListedRepo, NewBox};
+use moor_core::domain::decision::{Decision, ListedRepo, NewBox, SpecFields};
 use moor_core::name::ForgeRepo;
 
 use super::open;
@@ -25,6 +25,7 @@ fn a_box_reads_back_every_listed_repo_in_order_with_its_config() {
         .apply(Decision::insert(NewBox {
             name: crate::testing::box_name("multi"),
             repo: Some(repo.clone()),
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
@@ -41,6 +42,7 @@ fn a_box_of_one_repo_reads_back_as_that_repo_alone() {
         .apply(Decision::insert(NewBox {
             name: crate::testing::box_name("one"),
             repo: Some(repo.clone()),
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;

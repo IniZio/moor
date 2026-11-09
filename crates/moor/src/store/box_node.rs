@@ -119,15 +119,16 @@ impl Store {
         })
     }
 
-    /// Records what Box `id` asks of a node.
-    pub(crate) fn set_box_spec(&self, id: BoxId, spec: &BoxSpec) -> Result<(), StoreError> {
-        let labels = serde_json::to_string(&spec.labels)
-            .map_err(|e| StoreError::Corrupt(format!("node labels: {e}")))?;
+    /// Records the node Box `id` is placed on, or none.
+    pub(crate) fn set_box_node(
+        &self,
+        id: BoxId,
+        node: Option<&NodeName>,
+    ) -> Result<(), StoreError> {
         self.writer().run(
             Query::update()
                 .table(Boxes::Table)
-                .value(Boxes::Node, spec.node.as_ref().map(NodeName::as_str))
-                .value(Boxes::NodeLabels, labels)
+                .value(Boxes::Node, node.map(NodeName::as_str))
                 .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())

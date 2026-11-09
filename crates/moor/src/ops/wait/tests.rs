@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::activity::{Probe, STARTUP_GRACE};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
 use moor_core::domain::event::Event;
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
@@ -46,6 +46,7 @@ fn add(cx: &Cx) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     cx.store()
         .unwrap()
@@ -242,10 +243,10 @@ fn add_boxed(cx: &Cx) -> BoxId {
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -253,10 +254,10 @@ fn add_boxed(cx: &Cx) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle })
-        .set(Fields {
-            box_workdir: Field::Set("/work".into()),
-            ..Fields::default()
+        .hands_input(HandsInput::Acquired { handle: got.handle })
+        .hands(HandsFields {
+            workdir: Field::Set("/work".into()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     id

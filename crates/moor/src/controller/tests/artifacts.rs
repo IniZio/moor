@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use moor_core::controller::{BYTES_MAX, PROTOCOL};
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::name::BoxName;
 use moor_core::{ArtifactReadReq, ArtifactsReq, Request};
 use serde_json::{json, Value};
@@ -60,7 +60,11 @@ fn seed(dir: &Path) -> Vec<u8> {
     let store = Store::open(&dir.join("moor.db"), clock).expect("store");
     let name = BoxName::parse_allow_bare(BOX_NAME).expect("name");
     let id = store
-        .apply(Decision::insert(NewBox { name, repo: None }))
+        .apply(Decision::insert(NewBox {
+            name,
+            repo: None,
+            spec: SpecFields::default(),
+        }))
         .expect("box")
         .box_id;
     let root = crate::blobs::fs::FsBlobs::new(dir);

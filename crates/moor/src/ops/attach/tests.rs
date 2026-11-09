@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -26,20 +26,21 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(provider.clone()),
+        ..HandsFields::default()
     };
     store
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(HandsInput::Requested)
-                .set(fields),
+                .hands_input(HandsInput::Requested)
+                .hands(fields),
         )
         .unwrap();
     let got = driver
@@ -62,7 +63,7 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .box_input(HandsInput::Acquired { handle: got.handle }),
+                .hands_input(HandsInput::Acquired { handle: got.handle }),
         )
         .unwrap();
     (cx, connect, workdir)

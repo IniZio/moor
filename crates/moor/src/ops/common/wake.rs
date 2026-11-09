@@ -6,11 +6,11 @@ use std::collections::HashMap;
 
 use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, Fields, HandsFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{BoxId, BoxReq, ErrorKind, Warning};
+use moor_core::{BoxId, BoxPath, BoxReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -200,6 +200,19 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
             }
         }
     }
+    store.apply(woken(row, (row_asleep, box_asleep), workdir))?;
+    Ok(Woke {
+        any: true,
+        box_resumed: box_asleep,
+    })
+}
+
+/// The write that wakes `row`, the Box and its machine as asleep says, recording `workdir`.
+fn woken(
+    row: &BoxRow,
+    (row_asleep, box_asleep): (bool, bool),
+    workdir: Option<BoxPath>,
+) -> Decision {
     let mut d = Decision::new(row.id);
     if row_asleep {
         d = d.lifecycle(BoxLifecycleInput::Wake);
@@ -209,21 +222,19 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
         }
     }
     if box_asleep {
-        d = d.box_input(HandsInput::Wake);
+        d = d.hands_input(HandsInput::Wake);
     }
-    d = d.set(Fields {
-        box_workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
+    d.set(Fields {
         state_reason: if row.lifecycle == BoxLifecycle::Pending {
             Field::Clear
         } else {
             Field::Keep
         },
         ..Fields::default()
-    });
-    store.apply(d)?;
-    Ok(Woke {
-        any: true,
-        box_resumed: box_asleep,
+    })
+    .hands(HandsFields {
+        workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
+        ..HandsFields::default()
     })
 }
 

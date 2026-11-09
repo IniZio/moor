@@ -9,7 +9,7 @@ use std::sync::Arc;
 use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -64,14 +64,15 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -79,12 +80,12 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         })
-        .set(Fields {
-            box_workdir: Field::Set("/work".into()),
-            ..Fields::default()
+        .hands(HandsFields {
+            workdir: Field::Set("/work".into()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     if session {
@@ -211,14 +212,15 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     store.begin_session(id, SESSION).unwrap();

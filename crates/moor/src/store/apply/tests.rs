@@ -1,7 +1,7 @@
 //! Tests for the writer: name collisions on insert.
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
 use moor_schema::tables::{BoxRefs, Boxes, Sessions};
@@ -17,6 +17,7 @@ fn insert(name: &str) -> Decision {
     Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     })
 }
 
@@ -75,10 +76,10 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(moor_core::domain::hands::HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(moor_core::ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(moor_core::domain::hands::HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(moor_core::ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admit).unwrap();
     store
@@ -97,9 +98,7 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
 fn insert_records_the_branch_ref() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let mut d = insert("b");
-    d.set.branch = Field::Set("feat/x".into());
-    let id = store.apply(d).unwrap().box_id;
+    let id = store.apply(on_branch("b", "feat/x")).unwrap().box_id;
     assert_eq!(store.box_refs(id, "branch").unwrap(), ["feat/x"]);
 }
 
@@ -107,8 +106,7 @@ fn insert_records_the_branch_ref() {
 fn failed_insert_leaves_no_box_and_no_branch_ref() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let mut d = insert("b").box_input(moor_core::domain::hands::HandsInput::Requested);
-    d.set.branch = Field::Set("feat/x".into());
+    let d = on_branch("b", "feat/x").hands_input(moor_core::domain::hands::HandsInput::Requested);
     let err = store.apply(d).unwrap_err();
     assert!(
         matches!(&err, StoreError::Invalid(m) if m == "new box needs box_provider"),
@@ -391,10 +389,10 @@ fn setting_up_after_admission_records_checking_as_from() {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(moor_core::domain::hands::HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(moor_core::ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(moor_core::domain::hands::HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(moor_core::ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admit).unwrap();
     let trail = event_trail(&store, id);
@@ -406,11 +404,15 @@ fn setting_up_after_admission_records_checking_as_from() {
     );
 }
 
-/// Sets Box `id`'s branch to `branch`.
-fn on_branch(id: moor_core::BoxId, branch: &str) -> Decision {
-    Decision::new(id).set(Fields {
-        branch: Field::Set(branch.to_owned()),
-        ..Fields::default()
+/// Inserts Box `name` on `branch`.
+fn on_branch(name: &str, branch: &str) -> Decision {
+    Decision::insert(NewBox {
+        name: BoxName::parse_allow_bare(name).unwrap(),
+        repo: None,
+        spec: SpecFields {
+            branch: Some(branch.to_owned()),
+            ..SpecFields::default()
+        },
     })
 }
 
@@ -418,18 +420,13 @@ fn on_branch(id: moor_core::BoxId, branch: &str) -> Decision {
 fn two_open_boxes_cannot_share_a_branch() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let a = store.apply(insert("a")).unwrap().box_id;
-    store.apply(on_branch(a, "moor/x")).unwrap();
-    let b = store.apply(insert("b")).unwrap().box_id;
-    let err = store.apply(on_branch(b, "moor/x")).unwrap_err();
+    store.apply(on_branch("a", "moor/x")).unwrap();
+    let err = store.apply(on_branch("b", "moor/x")).unwrap_err();
     assert!(
         matches!(&err, StoreError::BranchTaken(x) if x == "moor/x"),
         "{err:?}"
     );
-    let raced = insert("c").set(Fields {
-        branch: Field::Set("moor/x".to_owned()),
-        ..Fields::default()
-    });
+    let raced = on_branch("c", "moor/x");
     let err = store.apply(raced).unwrap_err();
     assert!(matches!(err, StoreError::BranchTaken(_)), "{err:?}");
     assert!(store
@@ -442,8 +439,7 @@ fn two_open_boxes_cannot_share_a_branch() {
 fn the_branch_of_a_closed_box_can_be_taken_again() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let a = store.apply(insert("a")).unwrap().box_id;
-    store.apply(on_branch(a, "moor/x")).unwrap();
+    let a = store.apply(on_branch("a", "moor/x")).unwrap().box_id;
     store
         .apply(
             Decision::new(a)
@@ -451,6 +447,5 @@ fn the_branch_of_a_closed_box_can_be_taken_again() {
                 .session(SessionInput::End),
         )
         .unwrap();
-    let b = store.apply(insert("b")).unwrap().box_id;
-    store.apply(on_branch(b, "moor/x")).unwrap();
+    store.apply(on_branch("b", "moor/x")).unwrap();
 }

@@ -7,7 +7,7 @@
 use moor_core::config::{Flags, RepoConfig};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
+use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, NewBox, SpecFields};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
@@ -94,11 +94,12 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
-    let id = match insert(store, (req, user), &facts, preflight::checked(&cfg)) {
+    let new = new_box(req, &facts, spec.labels.clone());
+    let id = match insert(store, (req, user), new, preflight::checked(&cfg)) {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
-    store.set_box_spec(id, &spec)?;
+    store.set_box_node(id, spec.node.as_ref())?;
     cold::record(store, req, id)?;
     if let Some(gathered) = facts.profile.take() {
         profile::record(cx, store, id, gathered)?;
@@ -163,20 +164,9 @@ fn reject(
     facts: &Facts,
     reason: &str,
 ) -> Result<StartView, CommandError> {
-    let set = Fields {
-        issue: set_some(req.issue.clone()),
-        prompt: set_some(req.prompt.clone()),
-        base: set_some(facts.base.clone()),
-        ..Fields::default()
-    };
-    let new = NewBox {
-        name: req.name.clone(),
-        repo: facts.repo.clone(),
-    };
     let id = store
         .apply(
-            Decision::insert(new)
-                .set(set)
+            Decision::insert(new_box(req, facts, Vec::new()))
                 .parent_session(req.parent.map(SessionId::get))
                 .requester(user),
         )?
@@ -332,31 +322,30 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     })
 }
 
-/// `Set` for a present value, `Keep` otherwise.
-fn set_some<T>(v: Option<T>) -> Field<T> {
-    v.map_or(Field::Keep, Field::Set)
+/// The Box `req` starts, asking its node for `labels`.
+fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
+    NewBox {
+        name: req.name.clone(),
+        repo: facts.repo.clone(),
+        spec: SpecFields {
+            issue: req.issue.clone(),
+            prompt: req.prompt.clone(),
+            base: facts.base.clone(),
+            branch: None,
+            labels,
+        },
+    }
 }
 
 /// Inserts the Box row with everything known before the machine.
 fn insert(
     store: &Store,
     (req, user): (&StartReq, UserId),
-    facts: &Facts,
+    new: NewBox,
     checked: Vec<CheckedCred>,
 ) -> Result<BoxId, StoreError> {
-    let set = Fields {
-        issue: set_some(req.issue.clone()),
-        prompt: set_some(req.prompt.clone()),
-        base: set_some(facts.base.clone()),
-        ..Fields::default()
-    };
-    let new = NewBox {
-        name: req.name.clone(),
-        repo: facts.repo.clone(),
-    };
     let mut decision = Decision::insert(new)
         .branch_by_id()
-        .set(set)
         .parent_session(req.parent.map(SessionId::get))
         .requester(user);
     if !checked.is_empty() {

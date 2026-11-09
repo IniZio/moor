@@ -24,17 +24,11 @@ pub enum Field<T> {
     Clear,
 }
 
-/// Column changes for a Box row.
+/// Changes to a Box's state columns. The columns a Box is started with are in [`SpecFields`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Fields {
-    /// Issue reference.
-    pub issue: Field<String>,
-    /// Box prompt.
+    /// Box prompt; a relaunch replaces the one the Box was started with.
     pub prompt: Field<String>,
-    /// Base ref.
-    pub base: Field<String>,
-    /// Branch name.
-    pub branch: Field<String>,
     /// Agent session id.
     pub agent_session_id: Field<String>,
     /// Reason for the current state.
@@ -45,20 +39,47 @@ pub struct Fields {
     pub steps_pending_at: Field<i64>,
     /// The recorded launch failure, as JSON.
     pub launch_failure: Field<String>,
-    /// Box provider.
-    pub box_provider: Field<ProviderId>,
-    /// Box handle.
-    pub box_handle: Field<BoxHandle>,
-    /// Box workdir.
-    pub box_workdir: Field<String>,
-    /// CPUs the Box delivers.
-    pub box_cpus: Field<i64>,
-    /// Memory the Box delivers, in MiB.
-    pub box_mem_mib: Field<i64>,
-    /// Box egress: `none`, `enforced` or `not_enforced`.
+}
+
+/// Changes to the facts about a Box's machine.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HandsFields {
+    /// Machine provider.
+    pub provider: Field<ProviderId>,
+    /// Machine handle.
+    pub handle: Field<BoxHandle>,
+    /// Workdir in the machine.
+    pub workdir: Field<String>,
+    /// CPUs the machine delivers.
+    pub cpus: Field<i64>,
+    /// Memory the machine delivers, in MiB.
+    pub mem_mib: Field<i64>,
+    /// Egress: `none`, `enforced` or `not_enforced`.
     pub egress: Field<String>,
-    /// Why the box cannot sleep, as last reported by the driver.
-    pub box_sleep_reason: Field<String>,
+    /// Why the machine cannot sleep, as last reported by the driver.
+    pub sleep_reason: Field<String>,
+}
+
+/// What a Box is started with. Only a [`NewBox`] carries these, so no later write changes them:
+///
+/// ```compile_fail
+/// use moor_core::domain::decision::{Decision, Field, Fields};
+/// use moor_core::name::BoxId;
+///
+/// let _ = Decision::new(BoxId::new(1)).set(Fields { base: Field::Set("main".into()), ..Fields::default() });
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SpecFields {
+    /// Issue reference.
+    pub issue: Option<String>,
+    /// The prompt the Box starts with.
+    pub prompt: Option<String>,
+    /// Base ref.
+    pub base: Option<String>,
+    /// Branch name; a Decision that names the branch by id sets it instead.
+    pub branch: Option<String>,
+    /// Labels the Box's node must carry.
+    pub labels: Vec<String>,
 }
 
 /// A recorded in-flight operation, kept so a crash can be recovered.
@@ -140,6 +161,8 @@ pub struct NewBox {
     pub name: BoxName,
     /// The repo the Box clones; `None` for a Box with an empty workdir.
     pub repo: Option<BoxRepo>,
+    /// What the Box is started with.
+    pub spec: SpecFields,
 }
 
 /// A Box's repo with what the forge said about it at the base, before the machine existed.
@@ -172,7 +195,7 @@ pub struct ListedRepo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoxTarget {
     /// Insert this Box.
-    New(NewBox),
+    New(Box<NewBox>),
     /// Update this Box.
     Existing(BoxId),
 }
@@ -186,10 +209,12 @@ pub struct Decision {
     pub lifecycle_input: Option<BoxLifecycleInput>,
     /// Primary Session input.
     pub session_input: Option<SessionInput>,
-    /// Box state machine input.
-    pub box_input: Option<HandsInput>,
-    /// Column changes.
+    /// Machine state input.
+    pub hands_input: Option<HandsInput>,
+    /// State column changes.
     pub set: Fields,
+    /// Machine column changes.
+    pub hands: HandsFields,
     /// Intent change.
     pub intent: IntentChange,
     /// Caller-supplied events appended after the derived ones. Derived state
@@ -217,7 +242,7 @@ impl Decision {
     /// Starts a decision that inserts a box.
     #[must_use]
     pub fn insert(new: NewBox) -> Self {
-        Self::base(BoxTarget::New(new)).lifecycle(BoxLifecycleInput::Insert)
+        Self::base(BoxTarget::New(Box::new(new))).lifecycle(BoxLifecycleInput::Insert)
     }
 
     /// Builds a decision with no changes.
@@ -226,8 +251,9 @@ impl Decision {
             target,
             lifecycle_input: None,
             session_input: None,
-            box_input: None,
+            hands_input: None,
             set: Fields::default(),
+            hands: HandsFields::default(),
             intent: IntentChange::Keep,
             events: Vec::new(),
             parent_session: None,
@@ -266,17 +292,24 @@ impl Decision {
         self
     }
 
-    /// Sets the box input.
+    /// Sets the machine input.
     #[must_use]
-    pub fn box_input(mut self, i: HandsInput) -> Self {
-        self.box_input = Some(i);
+    pub fn hands_input(mut self, i: HandsInput) -> Self {
+        self.hands_input = Some(i);
         self
     }
 
-    /// Sets the column changes.
+    /// Sets the state column changes.
     #[must_use]
     pub fn set(mut self, f: Fields) -> Self {
         self.set = f;
+        self
+    }
+
+    /// Sets the machine column changes.
+    #[must_use]
+    pub fn hands(mut self, f: HandsFields) -> Self {
+        self.hands = f;
         self
     }
 

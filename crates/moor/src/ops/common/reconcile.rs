@@ -105,7 +105,7 @@ fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[Bo
 /// recorded. A Box that was quiet just sleeps; one mid-turn has work to carry on, so it queues to
 /// resume first, its Session as it was.
 fn apply(cx: &Cx, store: &Store, d: Decision) {
-    let (Some(HandsInput::Sleep), BoxTarget::Existing(id)) = (&d.box_input, &d.target) else {
+    let (Some(HandsInput::Sleep), BoxTarget::Existing(id)) = (&d.hands_input, &d.target) else {
         let _ = store.apply(d);
         return;
     };
@@ -130,7 +130,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
         .lifecycle(BoxLifecycleInput::Suspend {
             reason: STOPPED_REASON.to_owned(),
         })
-        .box_input(HandsInput::Sleep)
+        .hands_input(HandsInput::Sleep)
         .set(Fields {
             state_reason: Field::Set(STOPPED_REASON.to_owned()),
             ..Fields::default()

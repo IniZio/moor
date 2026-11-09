@@ -175,7 +175,7 @@ fn an_agent_whose_box_a_start_woke_after_a_mid_turn_suspend_is_told_once() {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     store.set_resume_first(id, Some(0)).unwrap();

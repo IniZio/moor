@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::user::{Identity, Viewer};
 use moor_core::{BoxId, BoxName, ErrorKind, GateReq, Sha};
 
@@ -31,6 +31,7 @@ fn new_box(cx: &Cx, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     cx.store()
         .unwrap()
@@ -190,6 +191,7 @@ fn a_gate_reads_only_the_runs_of_boxes_its_caller_may_see() {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("theirs").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store
         .apply(Decision::insert(nt).requester(theirs))

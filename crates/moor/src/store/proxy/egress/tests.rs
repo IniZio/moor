@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
@@ -18,6 +18,7 @@ fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     (store, id)

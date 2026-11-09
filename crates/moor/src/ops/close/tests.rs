@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
@@ -100,15 +100,15 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        box_workdir: Field::Set("/work/box-1".into()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(provider.clone()),
+        workdir: Field::Set("/work/box-1".into()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -126,7 +126,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     id
 }
@@ -225,7 +225,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
     }));
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(HandsInput::ReleaseErr { cause: "x".into() }))
+        .apply(Decision::new(f.id).hands_input(HandsInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);

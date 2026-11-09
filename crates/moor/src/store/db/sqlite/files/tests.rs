@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
@@ -173,6 +173,7 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
         Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         })
     };
     store.apply(insert("a")).unwrap();

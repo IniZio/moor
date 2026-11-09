@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::controller::FrameErrorKind;
-use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
+use moor_core::domain::decision::{Decision, ExtraEvent, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
@@ -17,6 +17,7 @@ fn prints_stored_events_then_caught_up_and_returns() {
     let new = NewBox {
         name: BoxName::parse_allow_bare("a").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(new)).unwrap().box_id;
     for i in 0..2 {

@@ -14,7 +14,7 @@ use moor_core::controller::WatchFilter;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock as _, Ts};
@@ -49,6 +49,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let store = cx.store().unwrap();
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
@@ -65,10 +66,10 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         .unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -76,10 +77,10 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle })
-        .set(Fields {
-            box_workdir: Field::Set("/work".into()),
-            ..Fields::default()
+        .hands_input(HandsInput::Acquired { handle: got.handle })
+        .hands(HandsFields {
+            workdir: Field::Set("/work".into()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     store.begin_session(id, session).unwrap();

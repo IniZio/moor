@@ -4,7 +4,9 @@ use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{
+    Decision, ExtraEvent, Field, Fields, HandsFields, Intent, IntentChange,
+};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
@@ -113,12 +115,15 @@ fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
     }
     let mut d = Decision::new(id);
     d.lifecycle_input = entry.begin();
-    d.box_input(HandsInput::Requested)
+    d.hands_input(HandsInput::Requested)
         .set(Fields {
-            box_provider: Field::Set(provider.clone()),
-            box_handle: Field::Clear,
             state_reason: entry.reason_once_admitted(),
             ..Fields::default()
+        })
+        .hands(HandsFields {
+            provider: Field::Set(provider.clone()),
+            handle: Field::Clear,
+            ..HandsFields::default()
         })
         .intent(claim)
 }

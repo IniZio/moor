@@ -323,6 +323,7 @@ fn audit_events_wait_out_a_controller_that_is_down() {
     let nt = moor_core::domain::decision::NewBox {
         name: moor_core::BoxName::parse_allow_bare("a").unwrap(),
         repo: None,
+        spec: moor_core::domain::decision::SpecFields::default(),
     };
     let id = w
         .store

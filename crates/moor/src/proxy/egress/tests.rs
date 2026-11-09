@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -150,7 +150,7 @@ impl World {
         let d = Decision::new(self.id)
             .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End)
-            .box_input(HandsInput::Released);
+            .hands_input(HandsInput::Released);
         self.store.apply(d).unwrap();
     }
 
@@ -183,6 +183,7 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
     let new = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     let id = store
         .apply(Decision::insert(new).requester(user))
@@ -190,10 +191,10 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
         .box_id;
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admitted).unwrap();
     let ready = Decision::new(id)
@@ -201,7 +202,7 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: BoxHandle::new("p/demo"),
         });
     store.apply(ready).unwrap();

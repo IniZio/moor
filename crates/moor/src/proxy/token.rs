@@ -103,7 +103,7 @@ pub(crate) fn base64url(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use moor_core::domain::decision::{Decision, NewBox};
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
     use moor_core::BoxName;
 
     use super::{mac, mint, verify};
@@ -136,6 +136,7 @@ mod tests {
         let nt = NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         let a = store.apply(Decision::insert(nt)).unwrap().box_id;
         assert!(mint(&store, b"k", a).unwrap().is_none(), "no proxy row");

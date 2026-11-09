@@ -8,8 +8,8 @@ use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxRefs, Boxes, Events, Sessions};
-use sea_query::{Expr, ExprTrait as _, OnConflict, Query, UpdateStatement, Value};
+use moor_schema::tables::{Boxes, Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement, Value};
 
 mod sql;
 mod steps;
@@ -85,34 +85,25 @@ impl Store {
 
 /// The body of `apply`, inside its transaction; a branch an open Box works on is refused.
 fn apply_in(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
-    let branch = d.set.branch.clone();
-    apply_steps(tx, now, d).map_err(|e| branch_taken(e, &branch))
+    let branch = match &d.target {
+        BoxTarget::New(new) => new.spec.branch.clone(),
+        BoxTarget::Existing(_) => None,
+    };
+    apply_steps(tx, now, d).map_err(|e| branch_taken(e, branch.as_ref()))
 }
 
 /// Every write of `d`, inside its transaction.
-fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreError> {
+fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
     let steps::Stepped {
         id,
         existing,
         parts,
         from,
     } = step_box(tx, now, &d)?;
-    if let (BoxTarget::New(new), true) = (&d.target, d.branch_by_id) {
-        d.set.branch = Field::Set(moor_core::box_key::branch(id, &new.name));
-    }
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),
     };
-    if let (BoxTarget::New(_), Field::Set(branch)) = (&d.target, &d.set.branch) {
-        tx.run(
-            Query::insert()
-                .into_table(BoxRefs::Table)
-                .columns([BoxRefs::Box, BoxRefs::Kind, BoxRefs::Value])
-                .values_panic([id.get().into(), "branch".into(), branch.into()])
-                .on_conflict(OnConflict::new().do_nothing().to_owned()),
-        )?;
-    }
     let box_step = step_driver(tx, now, id, existing.as_ref(), &d)?;
     write_box_row(tx, id, now, &d, &quiet, parts)?;
     write_box(tx, id, now, &d, box_step.as_ref(), &quiet)?;
@@ -130,7 +121,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreEr
         ids.push(insert_event(tx, id, e, now)?);
     }
     let mut events = Vec::new();
-    if let (Some(i), Some(s)) = (&d.box_input, &box_step) {
+    if let (Some(i), Some(s)) = (&d.hands_input, &box_step) {
         events.extend(box_events(
             s.from,
             s.to,
@@ -161,7 +152,7 @@ fn step_driver(
     existing: Option<&HandsRow>,
     d: &Decision,
 ) -> Result<Option<Step<HandsState>>, StoreError> {
-    let Some(input) = &d.box_input else {
+    let Some(input) = &d.hands_input else {
         return Ok(existing.map(|b| Step {
             from: Some(b.state),
             to: b.state,
@@ -175,7 +166,7 @@ fn step_driver(
         }));
     }
     let to = HandsState::initial(input)?;
-    let Field::Set(provider) = &d.set.box_provider else {
+    let Field::Set(provider) = &d.hands.provider else {
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
     tx.run(
@@ -285,7 +276,7 @@ fn write_box(
     step: Option<&Step<HandsState>>,
     quiet: &Step<bool>,
 ) -> Result<(), StoreError> {
-    let mut sets = driver_field_sets(&d.set);
+    let mut sets = driver_field_sets(&d.hands);
     if quiet.from == Some(true) && !quiet.to {
         if let Some(i) = sets.iter().position(|(c, _)| *c == Boxes::SleepReason) {
             sets.remove(i);
@@ -300,7 +291,7 @@ fn write_box(
             "Box fields set but the Box has no machine".into(),
         ));
     };
-    if let Some(input) = &d.box_input {
+    if let Some(input) = &d.hands_input {
         sets.push((Boxes::DriverState, step.to.as_str().into()));
         // A guest that may run again can change, so what was checked before no longer stands.
         if matches!(input, HandsInput::Wake | HandsInput::Acquired { .. }) {
@@ -315,7 +306,7 @@ fn write_box(
         }
         sets.extend(input_handle_sets(input, &sets));
     }
-    if d.box_input.is_some() {
+    if d.hands_input.is_some() {
         sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
     }
     if sets.iter().any(|(c, _)| *c == Boxes::Handle) {

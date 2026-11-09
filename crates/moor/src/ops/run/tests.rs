@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{
+    Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
@@ -90,7 +92,7 @@ fn context(
 
 /// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`. Its runs play
 /// out with the local sh under `box_dir`, with a fake egress proxy.
-fn bare_with(driver: FakeDriver, yaml: Option<&str>) -> Fx {
+fn bare_with(driver: FakeDriver, yaml: Option<&str>, base: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let box_dir = tempfile::tempdir().unwrap();
     let (home, work) = (box_dir.path().join("home"), box_dir.path().join("work"));
@@ -103,10 +105,17 @@ fn bare_with(driver: FakeDriver, yaml: Option<&str>) -> Fx {
     let id = cx
         .store()
         .unwrap()
-        .apply(crate::testing::cx::new_box_of(
-            BoxName::parse_allow_bare("t").unwrap(),
-            crate::testing::cx::box_repo(yaml),
-        ))
+        .apply(
+            Decision::insert(NewBox {
+                name: BoxName::parse_allow_bare("t").unwrap(),
+                repo: Some(crate::testing::cx::box_repo(yaml)),
+                spec: SpecFields {
+                    base: base.map(str::to_owned),
+                    ..SpecFields::default()
+                },
+            })
+            .requester(crate::testing::cx::REQUESTER_USER),
+        )
         .unwrap()
         .box_id;
     Fx {
@@ -138,7 +147,7 @@ impl Fx {
 }
 
 fn bare() -> Fx {
-    bare_with(FakeDriver::new(), None)
+    bare_with(FakeDriver::new(), None, None)
 }
 
 pub(in crate::ops::run) fn ready() -> Fx {
@@ -157,18 +166,16 @@ pub(in crate::ops::run) fn ready_yaml(yaml: &str) -> Fx {
 
 /// A Ready Box `t` with a machine from `driver`; `yaml` is its stored `.moor.yaml`.
 pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) -> Fx {
-    let f = bare_with(driver, yaml);
+    let f = bare_with(driver, yaml, Some(SHA));
     let store = f.cx.store().unwrap();
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        base: Field::Set(SHA.to_owned()),
-        ..Fields::default()
-    };
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(provider.clone()),
+            ..HandsFields::default()
+        });
     store.apply(d).unwrap();
     let got = f
         .driver
@@ -190,10 +197,10 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle })
-        .set(Fields {
-            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..Fields::default()
+        .hands_input(HandsInput::Acquired { handle: got.handle })
+        .hands(HandsFields {
+            workdir: Field::Set(got.workdir.as_str().to_owned()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     f
@@ -362,7 +369,7 @@ fn gone_box_is_refused_and_recorded() {
     let f = ready();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     let before = f.driver.calls().len();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
@@ -382,7 +389,7 @@ fn sleep(f: &Fx) {
         .apply(
             Decision::new(f.id)
                 .lifecycle(BoxLifecycleInput::sleep(false))
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -430,7 +437,7 @@ fn gone_asleep_box_is_refused_without_a_wake() {
     sleep(&f);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
     assert!(msg.contains("gone"), "{msg}");

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::UserId;
@@ -53,6 +53,7 @@ impl Host {
         let new = NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         let decision = user
             .iter()

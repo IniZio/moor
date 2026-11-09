@@ -7,7 +7,7 @@ use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::BoxName;
 
 use super::{addr, eventually, open, Server, Warm, World, PATH, TARGET};
@@ -71,6 +71,7 @@ fn a_replica_with_an_open_box_it_cannot_ready_is_not_synced() {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("bare").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;

@@ -101,7 +101,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use moor_core::domain::decision::{Decision, NewBox};
+    use moor_core::domain::decision::{Decision, NewBox, SpecFields};
     use moor_core::seam::proxy_host::ProxySpec;
     use moor_core::user::UserId;
     use moor_core::{BoxId, BoxName};
@@ -115,6 +115,7 @@ mod tests {
         let nt = NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         };
         let id = store.apply(Decision::insert(nt)).unwrap().box_id;
         drop(store.reserve(id, &FakeRng::default()));

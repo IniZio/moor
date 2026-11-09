@@ -32,7 +32,7 @@ fn missing_ready_and_asleep_become_gone() {
     let out = reconcile(&rows, &[]);
     assert_eq!(out.len(), 2);
     for (d, r) in out.iter().zip(&rows) {
-        assert_eq!(d.box_input, Some(HandsInput::DriverMissing));
+        assert_eq!(d.hands_input, Some(HandsInput::DriverMissing));
         assert_eq!(d.lifecycle_input, None);
         assert_eq!(d.session_input, None);
         assert_eq!(
@@ -62,7 +62,7 @@ fn a_ready_box_listed_stopped_sleeps_and_keeps_its_machine() {
     assert_eq!(out.len(), 1, "one decision, got {out:?}");
     let slept = out.first().expect("one decision");
     assert_eq!(slept.target, BoxTarget::Existing(BoxId::new(1)));
-    assert_eq!(slept.box_input, Some(HandsInput::Sleep));
+    assert_eq!(slept.hands_input, Some(HandsInput::Sleep));
     assert!(matches!(
         slept.lifecycle_input,
         Some(BoxLifecycleInput::Sleep { auto: true, .. })

@@ -5,7 +5,7 @@
     reason = "test assertions index decoded frames"
 )]
 
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::{BoxId, BoxName};
 use serde_json::{json, Value};
 
@@ -244,6 +244,7 @@ fn show_session_lists_only_the_children_the_caller_may_see() {
         let new = NewBox {
             name: BoxName::parse_allow_bare(name).expect("name"),
             repo: None,
+            spec: SpecFields::default(),
         };
         let child = Decision::insert(new)
             .parent_session(Some(parent))

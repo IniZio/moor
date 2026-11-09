@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::proc::Tool;
@@ -110,25 +110,24 @@ fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
 fn free_box(w: &World, id: BoxId) {
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
 }
 
 /// Moves the machine row of Box `id` to `provider`.
 fn move_box_to(w: &World, id: BoxId, provider: &str) {
-    let set = Fields {
-        box_provider: Field::Set(ProviderId::new(provider)),
-        ..Fields::default()
+    let set = HandsFields {
+        provider: Field::Set(ProviderId::new(provider)),
+        ..HandsFields::default()
     };
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).set(set))
+        .apply(Decision::new(id).hands(set))
         .unwrap();
-    let spec = moor_core::decide::schedule::BoxSpec {
-        labels: Vec::new(),
-        node: moor_core::name::NodeName::parse(provider).ok(),
-    };
-    w.cx.store().unwrap().set_box_spec(id, &spec).unwrap();
+    w.cx.store()
+        .unwrap()
+        .set_box_node(id, moor_core::name::NodeName::parse(provider).ok().as_ref())
+        .unwrap();
 }
 
 /// Starts `holder` under the limit, so one Box is live.
@@ -253,7 +252,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
             Decision::new(holder)
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .box_input(HandsInput::Released),
+                .hands_input(HandsInput::Released),
         )
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
@@ -306,7 +305,7 @@ fn asleep_box_still_counts_toward_the_limit() {
     let (w, holder) = with_live_box(box_limit(1));
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(holder).box_input(HandsInput::Sleep))
+        .apply(Decision::new(holder).hands_input(HandsInput::Sleep))
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);

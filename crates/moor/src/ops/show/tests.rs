@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
@@ -65,6 +65,7 @@ fn add(cx: &Cx, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     cx.store()
         .unwrap()
@@ -87,20 +88,22 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
             cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
-    let fields = Fields {
-        box_provider: Field::Set(p),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(p),
+        ..HandsFields::default()
     };
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let acquired = HandsInput::Acquired {
         handle: got.handle.clone(),
     };
-    store.apply(Decision::new(id).box_input(acquired)).unwrap();
+    store
+        .apply(Decision::new(id).hands_input(acquired))
+        .unwrap();
     got.handle
 }
 
@@ -263,10 +266,10 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -274,10 +277,10 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle })
-        .set(Fields {
-            box_workdir: Field::Set("/work".into()),
-            ..Fields::default()
+        .hands_input(HandsInput::Acquired { handle: got.handle })
+        .hands(HandsFields {
+            workdir: Field::Set("/work".into()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     if let Some(s) = session {

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, PausePublish, SleepOutcome};
@@ -41,18 +41,19 @@ fn working_with(driver: FakeDriver) -> Fx {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(provider.clone()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -70,7 +71,7 @@ fn working_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -372,10 +373,10 @@ fn a_wake_restarts_the_awake_clock() {
     pass(&f, Duration::from_mins(119));
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(HandsInput::Sleep))
+        .apply(Decision::new(f.id).hands_input(HandsInput::Sleep))
         .unwrap();
     store
-        .apply(Decision::new(f.id).box_input(HandsInput::Wake))
+        .apply(Decision::new(f.id).hands_input(HandsInput::Wake))
         .unwrap();
     pass(&f, Duration::from_mins(119));
     auto_sleep(&f);

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, Intent, NewBox};
+use moor_core::domain::decision::{Decision, Intent, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, RunId, Sha};
 
@@ -29,6 +29,7 @@ fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: None,
+        spec: SpecFields::default(),
     };
     store.apply(Decision::insert(nt)).unwrap().box_id
 }

@@ -36,7 +36,7 @@ pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
     rows.iter()
         .filter(|r| matches!(r.state, HandsState::Ready | HandsState::Asleep))
         .filter(|r| r.handle.as_ref().is_some_and(|h| !listed.contains(h)))
-        .map(|r| Decision::new(r.box_id).box_input(HandsInput::DriverMissing))
+        .map(|r| Decision::new(r.box_id).hands_input(HandsInput::DriverMissing))
         .chain(stopped(rows, listing))
         .collect()
 }
@@ -59,7 +59,7 @@ pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
                     auto: true,
                     reason: Some(STOPPED_REASON.to_owned()),
                 })
-                .box_input(HandsInput::Sleep)
+                .hands_input(HandsInput::Sleep)
         })
         .collect()
 }

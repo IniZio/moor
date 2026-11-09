@@ -120,7 +120,7 @@ fn close(w: &World, v: &StartView) {
             Decision::new(BoxId::new(v.boxed.id))
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .box_input(HandsInput::Released),
+                .hands_input(HandsInput::Released),
         )
         .unwrap();
 }

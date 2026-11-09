@@ -127,13 +127,7 @@ fn a_close_starts_the_oldest_pending_box_of_its_node_only() {
     let other = BoxId::new(start::run(&w.cx, &req("other")).unwrap().boxed.id);
     w.cx.store()
         .unwrap()
-        .set_box_spec(
-            other,
-            &moor_core::decide::schedule::BoxSpec {
-                labels: Vec::new(),
-                node: moor_core::name::NodeName::parse("big").ok(),
-            },
-        )
+        .set_box_node(other, moor_core::name::NodeName::parse("big").ok().as_ref())
         .unwrap();
     assert!(older.queued && younger.queued);
     let closed = close::run(
@@ -160,7 +154,7 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
     store
         .apply(
             moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id))
-                .box_input(moor_core::domain::hands::HandsInput::DriverMissing),
+                .hands_input(moor_core::domain::hands::HandsInput::DriverMissing),
         )
         .unwrap();
     assert!(store
@@ -384,7 +378,7 @@ fn put_to_sleep(w: &World, id: BoxId) {
                 auto: false,
                 reason: None,
             })
-            .box_input(moor_core::domain::hands::HandsInput::Sleep),
+            .hands_input(moor_core::domain::hands::HandsInput::Sleep),
     );
 }
 

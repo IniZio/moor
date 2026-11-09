@@ -46,7 +46,7 @@ fn relaunched(w: &World, id: BoxId) {
     assert_eq!(row(w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     let _ = crate::ops::start::run(&w.cx, &start_req());
 }

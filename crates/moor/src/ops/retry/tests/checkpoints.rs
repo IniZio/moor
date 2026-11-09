@@ -123,7 +123,7 @@ fn relaunched(clone_says: &str) -> Vec<String> {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
         .unwrap();
     w.driver.offer_checkpoints();
     w.driver.push_exec_stdout(clone_says);

@@ -1,6 +1,6 @@
 //! Generic column-assignment helpers for the store writer.
 
-use moor_core::domain::decision::{Field, Fields, NewBox};
+use moor_core::domain::decision::{Field, Fields, HandsFields, NewBox};
 use moor_schema::tables::{Boxes, Sessions};
 use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
@@ -27,13 +27,10 @@ fn text(f: &Field<String>) -> Option<Value> {
     field_value(f, Clone::clone)
 }
 
-/// Column assignments for the box fields.
+/// Column assignments for the Box state fields.
 pub(super) fn box_field_sets(s: &Fields) -> Sets<Boxes> {
     let all = [
-        (Boxes::Issue, text(&s.issue)),
         (Boxes::Prompt, text(&s.prompt)),
-        (Boxes::Base, text(&s.base)),
-        (Boxes::Branch, text(&s.branch)),
         (Boxes::StateReason, text(&s.state_reason)),
         (
             Boxes::SetupFailedAt,
@@ -54,22 +51,22 @@ pub(super) fn session_field_sets(s: &Fields) -> Sets<Sessions> {
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
 
-/// Column assignments for the box fields.
-pub(super) fn driver_field_sets(s: &Fields) -> Sets<Boxes> {
+/// Column assignments for the machine fields.
+pub(super) fn driver_field_sets(s: &HandsFields) -> Sets<Boxes> {
     let all = [
         (
             Boxes::Provider,
-            field_value(&s.box_provider, |p| p.as_str().to_owned()),
+            field_value(&s.provider, |p| p.as_str().to_owned()),
         ),
         (
             Boxes::Handle,
-            field_value(&s.box_handle, |h| h.as_str().to_owned()),
+            field_value(&s.handle, |h| h.as_str().to_owned()),
         ),
-        (Boxes::Workdir, text(&s.box_workdir)),
+        (Boxes::Workdir, text(&s.workdir)),
         (Boxes::Egress, text(&s.egress)),
-        (Boxes::SleepReason, text(&s.box_sleep_reason)),
-        (Boxes::Cpus, field_value(&s.box_cpus, |c| *c)),
-        (Boxes::MemMib, field_value(&s.box_mem_mib, |m| *m)),
+        (Boxes::SleepReason, text(&s.sleep_reason)),
+        (Boxes::Cpus, field_value(&s.cpus, |c| *c)),
+        (Boxes::MemMib, field_value(&s.mem_mib, |m| *m)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
@@ -88,9 +85,9 @@ pub(in crate::store) fn update<C: IntoIden + Copy>(
 }
 
 /// A UNIQUE failure on the open-branch index is a taken branch; other errors pass through.
-pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError {
+pub(super) fn branch_taken(e: StoreError, branch: Option<&String>) -> StoreError {
     match (&e, branch) {
-        (StoreError::Db(db), Field::Set(branch))
+        (StoreError::Db(db), Some(branch))
             if db
                 .unique_key()
                 .is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Branch])) =>

@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
@@ -47,25 +47,26 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        box_workdir: Field::Set("/work/box-1".into()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        workdir: Field::Set("/work/box-1".into()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: moor_core::BoxHandle::new("box-1"),
         });
     store.apply(d).unwrap();

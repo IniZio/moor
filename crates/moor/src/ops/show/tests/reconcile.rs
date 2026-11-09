@@ -129,7 +129,7 @@ fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     let before = driver.calls().len();

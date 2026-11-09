@@ -6,7 +6,7 @@ use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 use moor_core::Warning;
@@ -92,7 +92,11 @@ fn every_context_uses_the_store_its_env_shares() {
     let made = new_cx()
         .store()
         .unwrap()
-        .apply(Decision::insert(NewBox { name, repo: None }))
+        .apply(Decision::insert(NewBox {
+            name,
+            repo: None,
+            spec: SpecFields::default(),
+        }))
         .unwrap();
     assert!(new_cx()
         .store()

@@ -48,7 +48,7 @@ fn asleep_after_failed_launch() -> (World, Arc<FakeEngine>, BoxId) {
                     auto: true,
                     reason: None,
                 })
-                .box_input(HandsInput::Sleep),
+                .hands_input(HandsInput::Sleep),
         )
         .unwrap();
     (w, engine, id)

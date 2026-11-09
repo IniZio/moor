@@ -1,7 +1,7 @@
 //! Tests for a restart that cut a start after its setup lines passed, on the steps after them.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Field, Fields, Intent};
+use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, Intent};
 use moor_core::BoxId;
 
 use super::agent_install::{install_cut_off, installs};
@@ -71,9 +71,9 @@ fn claimed_then_machine_lost() -> World {
         [BoxId::new(1)]
     );
     store
-        .apply(Decision::new(BoxId::new(1)).set(Fields {
-            box_handle: Field::Clear,
-            ..Fields::default()
+        .apply(Decision::new(BoxId::new(1)).hands(HandsFields {
+            handle: Field::Clear,
+            ..HandsFields::default()
         }))
         .unwrap();
     w
@@ -116,11 +116,17 @@ fn later_steps_cut_on_a_machine_that_is_not_ready_fail_the_setup_with_why() {
     let (w, _) = restarted_mid_setup("setup: [a]\n");
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(BoxId::new(1)).set(Fields {
-            steps_pending_at: Field::Set(1),
-            box_workdir: Field::Clear,
-            ..Fields::default()
-        }))
+        .apply(
+            Decision::new(BoxId::new(1))
+                .set(Fields {
+                    steps_pending_at: Field::Set(1),
+                    ..Fields::default()
+                })
+                .hands(HandsFields {
+                    workdir: Field::Clear,
+                    ..HandsFields::default()
+                }),
+        )
         .unwrap();
     assert!(fail_interrupted(&w.cx, store, Others::MayRun)
         .unwrap()

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -42,6 +42,7 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
@@ -59,10 +60,10 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(ProviderId::new("p")),
-            ..Fields::default()
+        .hands_input(HandsInput::Requested)
+        .hands(HandsFields {
+            provider: Field::Set(ProviderId::new("p")),
+            ..HandsFields::default()
         });
     store.apply(admitted).unwrap();
     let ready = Decision::new(id)
@@ -70,10 +71,10 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired { handle: got.handle })
-        .set(Fields {
-            box_workdir: Field::Set("/work".into()),
-            ..Fields::default()
+        .hands_input(HandsInput::Acquired { handle: got.handle })
+        .hands(HandsFields {
+            workdir: Field::Set("/work".into()),
+            ..HandsFields::default()
         });
     store.apply(ready).unwrap();
     store.begin_session(id, "s-a").unwrap();
@@ -147,7 +148,11 @@ fn a_box_with_no_session_has_no_pane() {
     let name = BoxName::parse_allow_bare("a").unwrap();
     cx.store()
         .unwrap()
-        .apply(Decision::insert(NewBox { name, repo: None }))
+        .apply(Decision::insert(NewBox {
+            name,
+            repo: None,
+            spec: SpecFields::default(),
+        }))
         .unwrap();
     let view = run(&cx, &req("a", None, None)).unwrap();
     assert!(view.pane.is_none() && view.said.is_empty() && view.stuck.is_none());
@@ -233,7 +238,14 @@ fn another_users_box_is_refused() {
     let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
     let name = BoxName::parse_allow_bare("a").unwrap();
     store
-        .apply(Decision::insert(NewBox { name, repo: None }).requester(user))
+        .apply(
+            Decision::insert(NewBox {
+                name,
+                repo: None,
+                spec: SpecFields::default(),
+            })
+            .requester(user),
+        )
         .unwrap();
     let request = Request::Inspect(req("a", None, None));
     assert!(authorize(&cx, &Ok(Caller::Local(1000)), None, &request).is_err());

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::request::OpenSessionReq;
@@ -66,14 +66,14 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
-    let fields = Fields {
-        box_provider: Field::Set(provider.clone()),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(provider.clone()),
+        ..HandsFields::default()
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -91,13 +91,13 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: got.handle.clone(),
         })
-        .set(Fields {
-            box_handle: Field::Set(got.handle),
-            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..Fields::default()
+        .hands(HandsFields {
+            handle: Field::Set(got.handle),
+            workdir: Field::Set(got.workdir.as_str().to_owned()),
+            ..HandsFields::default()
         });
     store.apply(d).unwrap();
     id
@@ -184,7 +184,7 @@ fn an_asleep_box_is_refused_and_opens_nothing() {
             auto: false,
             reason: None,
         })
-        .box_input(HandsInput::Sleep);
+        .hands_input(HandsInput::Sleep);
     store.apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

@@ -7,8 +7,8 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use moor_schema::tables::{Boxes, Sessions};
-use sea_query::{Expr, ExprTrait as _, Query};
+use moor_schema::tables::{BoxRefs, Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query, Value};
 
 use super::sql::name_taken;
 use crate::store::db::{self, DbExt as _, Tx};
@@ -44,6 +44,14 @@ pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, St
                 SessionState::initial(&SessionInput::Open)?,
             );
             let id = insert_box(tx, new, parts.0, (d.parent_session, d.requester), now)?;
+            let branch = if d.branch_by_id {
+                Some(moor_core::box_key::branch(id, &new.name))
+            } else {
+                new.spec.branch.clone()
+            };
+            if let Some(branch) = branch {
+                write_branch(tx, id, &branch)?;
+            }
             Ok(Stepped {
                 id,
                 existing: None,
@@ -108,35 +116,13 @@ fn insert_box(
     if let Some(p) = parent_session {
         live_parent(tx, p)?;
     }
-    let repo = new.repo.as_ref();
+    let row = box_columns(new, lifecycle, requester, now)?;
     let id: i64 = tx
         .row(
             Query::insert()
                 .into_table(Boxes::Table)
-                .columns([
-                    Boxes::Name,
-                    Boxes::Repo,
-                    Boxes::RepoConfig,
-                    Boxes::AuthorName,
-                    Boxes::AuthorEmail,
-                    Boxes::OtherRepos,
-                    Boxes::User,
-                    Boxes::State,
-                    Boxes::CreatedAt,
-                    Boxes::UpdatedAt,
-                ])
-                .values_panic([
-                    new.name.as_str().into(),
-                    repo.map(|r| r.repo.to_string()).into(),
-                    repo.and_then(|r| r.moor_yaml.as_deref()).into(),
-                    repo.map(|r| r.author.name.as_str()).into(),
-                    repo.map(|r| r.author.email.as_str()).into(),
-                    repo.and_then(crate::store::repo::others_column).into(),
-                    requester.map(UserId::get).into(),
-                    lifecycle.as_str().into(),
-                    now.as_millis().into(),
-                    now.as_millis().into(),
-                ])
+                .columns(row.iter().map(|(c, _)| *c))
+                .values_panic(row.into_iter().map(|(_, v)| v.into()))
                 .returning_col(Boxes::Id),
             |r| r.get(0),
         )
@@ -165,4 +151,62 @@ fn insert_box(
             ]),
     )?;
     Ok(BoxId::new(id))
+}
+
+/// Name Box `id`'s branch, which the open-branch index refuses while another open Box has it.
+fn write_branch(tx: &Tx<'_>, id: BoxId, branch: &str) -> Result<(), StoreError> {
+    tx.run(
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::Branch, branch)
+            .and_where(Expr::col(Boxes::Id).eq(id.get())),
+    )?;
+    tx.run(
+        Query::insert()
+            .into_table(BoxRefs::Table)
+            .columns([BoxRefs::Box, BoxRefs::Kind, BoxRefs::Value])
+            .values_panic([id.get().into(), "branch".into(), branch.into()])
+            .on_conflict(OnConflict::new().do_nothing().to_owned()),
+    )?;
+    Ok(())
+}
+
+/// The columns of a fresh Box row, each with its value.
+fn box_columns(
+    new: &NewBox,
+    lifecycle: BoxLifecycle,
+    requester: Option<UserId>,
+    now: Ts,
+) -> Result<[(Boxes, Value); 14], StoreError> {
+    let repo = new.repo.as_ref();
+    let labels = serde_json::to_string(&new.spec.labels)
+        .map_err(|e| StoreError::Corrupt(format!("node labels: {e}")))?;
+    Ok([
+        (Boxes::Name, new.name.as_str().into()),
+        (Boxes::Repo, repo.map(|r| r.repo.to_string()).into()),
+        (
+            Boxes::RepoConfig,
+            repo.and_then(|r| r.moor_yaml.as_deref()).into(),
+        ),
+        (
+            Boxes::AuthorName,
+            repo.map(|r| r.author.name.as_str()).into(),
+        ),
+        (
+            Boxes::AuthorEmail,
+            repo.map(|r| r.author.email.as_str()).into(),
+        ),
+        (
+            Boxes::OtherRepos,
+            repo.and_then(crate::store::repo::others_column).into(),
+        ),
+        (Boxes::Issue, new.spec.issue.as_deref().into()),
+        (Boxes::Prompt, new.spec.prompt.as_deref().into()),
+        (Boxes::Base, new.spec.base.as_deref().into()),
+        (Boxes::NodeLabels, labels.into()),
+        (Boxes::User, requester.map(UserId::get).into()),
+        (Boxes::State, lifecycle.as_str().into()),
+        (Boxes::CreatedAt, now.as_millis().into()),
+        (Boxes::UpdatedAt, now.as_millis().into()),
+    ])
 }

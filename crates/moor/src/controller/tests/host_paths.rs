@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -79,24 +79,25 @@ pub(super) fn ready_box(store: &Store, user: UserId) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(BOX).expect("name"),
         repo: None,
+        spec: SpecFields::default(),
     })
     .requester(user);
     let id = store.apply(new).expect("box").box_id;
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new("p")),
-        ..Fields::default()
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new("p")),
+        ..HandsFields::default()
     };
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(HandsInput::Requested)
-        .set(fields);
+        .hands_input(HandsInput::Requested)
+        .hands(fields);
     store.apply(admitted).expect("admit");
     let ready = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(HandsInput::Acquired {
+        .hands_input(HandsInput::Acquired {
             handle: BoxHandle::new("p/ann"),
         });
     store.apply(ready).expect("ready");
