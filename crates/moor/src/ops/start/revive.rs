@@ -200,18 +200,7 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     if recent < RELAUNCH_CAP {
         return Ok(());
     }
-    let recorded = events
-        .iter()
-        .rev()
-        .find(|e| matches!(e.kind.as_str(), "relaunched" | "relaunch_capped"))
-        .is_some_and(|e| e.kind == "relaunch_capped");
-    if !recorded {
-        let event = ExtraEvent::RelaunchCapped {
-            count: recent,
-            window_secs: RELAUNCH_WINDOW.as_secs(),
-        };
-        store.apply(Decision::new(row.id).event(event))?;
-    }
+    note_capped(store, row.id, &events, recent)?;
     let name = row.name.as_str();
     Err(CommandError::new(
         ErrorKind::Refused,
@@ -223,12 +212,41 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     .with_detail(ErrorDetail::RelaunchCapped))
 }
 
-/// Whether moor relaunched the agent of Box `id` too often to do it again on its own now.
+/// Whether moor relaunched the agent of Box `id` too often to do it again on its own now; the
+/// first time it is since the last relaunch, `relaunch_capped` is recorded.
 ///
 /// # Errors
 /// A store failure.
 pub(crate) fn capped(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
-    Ok(recent_relaunches(cx, &store.events(id, CAP_EVENTS)?) >= RELAUNCH_CAP)
+    let events = store.events(id, CAP_EVENTS)?;
+    let recent = recent_relaunches(cx, &events);
+    if recent < RELAUNCH_CAP {
+        return Ok(false);
+    }
+    note_capped(store, id, &events, recent)?;
+    Ok(true)
+}
+
+/// Records `relaunch_capped` for `recent` relaunches unless it is on record since the last one.
+fn note_capped(
+    store: &Store,
+    id: BoxId,
+    events: &[crate::store::EventRow],
+    recent: usize,
+) -> Result<(), CommandError> {
+    let recorded = events
+        .iter()
+        .rev()
+        .find(|e| matches!(e.kind.as_str(), "relaunched" | "relaunch_capped"))
+        .is_some_and(|e| e.kind == "relaunch_capped");
+    if !recorded {
+        let event = ExtraEvent::RelaunchCapped {
+            count: recent,
+            window_secs: RELAUNCH_WINDOW.as_secs(),
+        };
+        store.apply(Decision::new(id).event(event))?;
+    }
+    Ok(())
 }
 
 /// The automatic relaunches among `events` within `RELAUNCH_WINDOW`.

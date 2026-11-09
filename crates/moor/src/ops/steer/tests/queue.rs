@@ -15,7 +15,7 @@ use crate::testing::engine::FakeEngine;
 
 /// Runs the inbox pass once.
 pub(super) fn pass(f: &Fx) {
-    crate::ops::inbox_pass(&f.cx, f.cx.store().unwrap(), &|| false).unwrap();
+    crate::ops::inbox_pass(&f.cx, f.cx.store().unwrap(), &|| false, &f.backoff).unwrap();
 }
 
 /// Makes the agent of `session` report Idle.
@@ -154,5 +154,34 @@ fn a_row_whose_two_sends_fail_is_reported_and_the_next_is_delivered() {
     assert_eq!(
         unconfirmed,
         [serde_json::json!({"inbox": one, "text": "one"})]
+    );
+}
+
+#[test]
+fn a_row_in_doubt_on_an_agent_that_ended_is_reported_and_not_sent_again() {
+    let f = fx();
+    let store = f.cx.store().unwrap();
+    let old = store.live_session(f.id).unwrap().unwrap();
+    let row = store
+        .enqueue(f.id, InboxKind::Steer, "cut", "steer")
+        .unwrap();
+    store
+        .mark_sending(f.id, row, moor_core::LaunchId::new(old.id))
+        .unwrap();
+    store.end_session(old.id, None, None).unwrap();
+    store.begin_session(f.id, "agent-2").unwrap();
+    queue(&f, "next");
+    reports_idle(&f, "agent-2");
+    pass(&f);
+    assert_eq!(texts(&f), ["next"]);
+    let events = store.events(f.id, 100).unwrap();
+    let unconfirmed: Vec<_> = events
+        .into_iter()
+        .filter(|e| e.kind == "steer_unconfirmed")
+        .map(|e| e.payload)
+        .collect();
+    assert_eq!(
+        unconfirmed,
+        [serde_json::json!({"inbox": row.get(), "text": "cut"})]
     );
 }

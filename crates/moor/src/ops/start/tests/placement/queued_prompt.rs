@@ -39,7 +39,13 @@ fn reports_idle(engine: FakeEngine) -> FakeEngine {
 }
 
 fn pass(w: &World) {
-    crate::ops::inbox_pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    crate::ops::inbox_pass(
+        &w.cx,
+        w.cx.store().unwrap(),
+        &|| false,
+        &crate::ops::InboxBackoff::default(),
+    )
+    .unwrap();
 }
 
 fn kinds(w: &World, id: BoxId) -> Vec<String> {

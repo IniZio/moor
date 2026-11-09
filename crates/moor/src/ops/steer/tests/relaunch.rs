@@ -125,6 +125,15 @@ fn an_agent_gone_again_soon_after_its_relaunch_is_not_relaunched_and_its_steer_w
     assert_eq!(session_state(&f), SessionState::Ended);
     assert!(steered(&f).is_empty());
     assert_eq!(f.cx.store().unwrap().unsent(f.id).unwrap().len(), 1);
+    pass(&f);
+    assert!(
+        f.cx.take_warnings().is_empty(),
+        "backs off within the guard"
+    );
+    resumes(&f);
+    f.cx.clock().sleep(Duration::from_secs(61));
+    pass(&f);
+    assert_eq!(f.engine.launches().len(), 2, "tried again after it");
 }
 
 #[test]
@@ -225,8 +234,19 @@ fn a_steer_after_three_automatic_relaunches_within_ten_minutes_waits_as_capped()
     record_relaunches(&f, 3);
     f.cx.clock().sleep(Duration::from_secs(90));
     queued(&f, "hi", QueueCause::RelaunchCapped);
+    f.cx.take_warnings();
     pass(&f);
+    pass(&f);
+    assert!(
+        f.cx.take_warnings().is_empty(),
+        "the pass holds a capped Box"
+    );
     assert!(f.engine.launches().is_empty(), "no agent was launched");
+    assert_eq!(
+        kinds(&f, "relaunch_capped"),
+        [serde_json::json!({"count": 3, "window_secs": 600})],
+        "recorded once, not on every pass"
+    );
     assert_eq!(f.cx.store().unwrap().unsent(f.id).unwrap().len(), 1);
 }
 

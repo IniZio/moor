@@ -383,7 +383,7 @@ mod queue;
 mod record;
 mod relaunch;
 
-pub(crate) use queue::{deliver, pass};
+pub(crate) use queue::{deliver, pass, Backoff};
 
 use choose::choose;
 use inbox::Slot;
