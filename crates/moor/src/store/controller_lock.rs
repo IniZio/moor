@@ -18,6 +18,9 @@ const ALIVE_EVERY: Duration = Duration::from_secs(5);
 /// How often a waiter looks up from the lock to see whether it was told to stop.
 const LOOK_UP: Duration = Duration::from_millis(200);
 
+/// How often a holder asks its session whether it still holds the lock.
+const CHECK_EVERY: Duration = Duration::from_secs(30);
+
 /// Called once if a holder loses the lock, with why.
 pub(crate) type Lost = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -83,12 +86,12 @@ impl Claimant<'_> {
     }
 }
 
-/// Takes the lock on `target`, reports each step, then blocks on its session until that ends.
+/// Takes the lock on `target`, reports each step, then watches its session until it loses the lock.
 fn hold(target: &Target, me: &str, steps: &Sender<Step>, lost: &Lost) {
     match take(target, me, steps) {
         Ok(lock) => {
             drop(steps.send(Step::Held));
-            lost(&lock.until_lost());
+            lost(&lock.until_lost(CHECK_EVERY));
         }
         Err(e) => drop(steps.send(Step::Failed(e))),
     }

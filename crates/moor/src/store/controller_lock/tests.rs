@@ -141,6 +141,43 @@ fn a_holder_hears_its_session_end_at_once() {
     assert!(why.contains("closed"), "{why}");
 }
 
+/// Watches the taken `lock` on its own thread, asking every `every`, and hands back why it was
+/// lost.
+fn watch(lock: ControllerLock, every: Duration) -> mpsc::Receiver<String> {
+    let (lost, losses) = mpsc::channel();
+    std::thread::spawn(move || drop(lost.send(lock.until_lost(every))));
+    losses
+}
+
+#[test]
+fn a_holder_outlasts_an_idle_session_timeout() {
+    let Some(fixture) = Fixture::new() else {
+        return;
+    };
+    let me = "lock_outlasts_idle";
+    let mut lock = fixture.session(me);
+    assert!(lock.try_take().unwrap());
+    lock.idle_out();
+    let losses = watch(lock, Duration::from_millis(300));
+    let lost = losses.recv_timeout(Duration::from_secs(3));
+    assert!(lost.is_err(), "{lost:?}");
+    let mut other = fixture.session("other");
+    assert_eq!(other.holder().unwrap().as_deref(), Some(me));
+}
+
+#[test]
+fn a_holder_hears_it_no_longer_holds_on_an_open_session() {
+    let Some(fixture) = Fixture::new() else {
+        return;
+    };
+    let mut lock = fixture.session("lock_unlocked");
+    assert!(lock.try_take().unwrap());
+    lock.let_go();
+    let losses = watch(lock, Duration::from_millis(300));
+    let why = losses.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert!(why.contains("no longer holds"), "{why}");
+}
+
 #[test]
 fn a_waiter_told_to_stop_gets_no_lock() {
     let Some(fixture) = Fixture::new() else {
