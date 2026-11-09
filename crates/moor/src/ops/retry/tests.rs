@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::layers::{chain, LayerIdentity, LayerKey};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
@@ -193,7 +193,7 @@ fn retry_where_the_machine_is_gone_acquires_a_new_one_and_runs_setup() {
     let id = started(&w);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ran && v.setup.ok);
@@ -283,7 +283,7 @@ fn keys_of(lines: &[String]) -> Vec<LayerKey> {
 /// earlier Box of the same repo, base and lines would have.
 fn saved_layer(w: &World, id: BoxId, layer: usize) {
     let r = row(w, id);
-    let boxed = r.boxed.clone().unwrap();
+    let boxed = r.hands.clone().unwrap();
     let lines: Vec<String> = ["prep-one", "run-two"].map(str::to_owned).to_vec();
     let keys = keys_of(&lines);
     let key = &keys[layer];
@@ -378,7 +378,7 @@ fn a_retry_moves_the_box_to_a_fork_of_the_nearest_layer_and_releases_the_old_mac
     let swapped = ["fork ckpt-1", "release box-1"].map(str::to_owned);
     assert!(swapped.iter().all(|c| calls.contains(c)), "{calls:?}");
     let after = row(&w, id);
-    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    let on = (after.lifecycle, after.hands.unwrap().handle);
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-2"))));
     assert_eq!(box_roots(&w, id), ["box-2"]);
     let replayed: Vec<_> = setup_execs(&w)
@@ -405,7 +405,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     let w = world(TWO_LINES, driver);
     let id = started(&w);
     let before = row(&w, id);
-    let provider = before.boxed.clone().unwrap().provider;
+    let provider = before.hands.clone().unwrap().provider;
     let clone = &keys_of(&[])[0];
     let gone = Checkpoint {
         id: "gone".to_owned(),
@@ -420,7 +420,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ok);
     assert_eq!(
-        row(&w, id).boxed.unwrap().handle,
+        row(&w, id).hands.unwrap().handle,
         Some(BoxHandle::new("box-1"))
     );
     assert!(!w.driver.calls().contains(&"release box-1".to_owned()));
@@ -467,7 +467,7 @@ fn a_retry_after_a_failed_line_forks_the_nearest_layer_replays_from_it_and_launc
     assert!(v.setup.ran && v.setup.ok);
     assert!(w.driver.calls().iter().any(|c| c.starts_with("fork ")));
     let after = row(&w, id);
-    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    let on = (after.lifecycle, after.hands.unwrap().handle);
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-2"))));
     let replayed: Vec<_> = setup_execs(&w)
         .into_iter()
@@ -490,7 +490,7 @@ fn a_retry_after_a_failed_line_without_checkpoints_reruns_in_the_kept_machine_an
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ok && v.agent.launched);
     let after = row(&w, id);
-    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    let on = (after.lifecycle, after.hands.unwrap().handle);
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-1"))));
     let hosts: Vec<_> = setup_execs(&w).into_iter().map(|(h, _)| h).collect();
     assert_eq!(
@@ -531,7 +531,7 @@ fn relaunch_failing_a_line() -> (World, Arc<FakeEngine>, BoxId) {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let _ = crate::ops::start::run(&w.cx, &start_req());
     (w, engine, id)
@@ -554,7 +554,7 @@ fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_resumes_from_the_deepest_
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ran && v.setup.ok);
     let ready = row(&w, id);
-    let on = (ready.lifecycle, ready.boxed.unwrap().handle);
+    let on = (ready.lifecycle, ready.hands.unwrap().handle);
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-3"))));
     assert_eq!(acquires(&w), 2, "the retry relaunches nothing");
     let forks = w

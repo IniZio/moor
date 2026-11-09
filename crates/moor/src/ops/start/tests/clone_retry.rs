@@ -2,8 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
+use moor_core::domain::hands::HandsState;
 use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::setup::{exit, kinds, setup_execs, start_req};
@@ -50,8 +50,8 @@ fn row(w: &World) -> crate::store::BoxRow {
         .unwrap()
 }
 
-fn box_state(w: &World) -> Option<BoxState> {
-    row(w).boxed.map(|b| b.state)
+fn box_state(w: &World) -> Option<HandsState> {
+    row(w).hands.map(|b| b.state)
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn a_failed_clone_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
     );
     assert!(engine.launches().is_empty());
     assert!(!w.driver.calls().iter().any(|c| c.starts_with("release")));
-    assert_eq!(box_state(&w), Some(BoxState::Ready));
+    assert_eq!(box_state(&w), Some(HandsState::Ready));
     assert_eq!(row(&w).lifecycle, BoxLifecycle::SetupFailed);
 }
 
@@ -142,7 +142,7 @@ fn a_retry_that_fails_to_clone_again_keeps_the_box_and_stays_setup_failed() {
     let row = row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert!(row.intent.is_none() && row.setup_failed_at.is_some());
-    assert_eq!(box_state(&w), Some(BoxState::Ready));
+    assert_eq!(box_state(&w), Some(HandsState::Ready));
     let calls = w.driver.calls();
     assert_eq!(calls.iter().filter(|c| *c == "acquire").count(), 1);
     assert!(!calls.iter().any(|c| c.starts_with("release")));

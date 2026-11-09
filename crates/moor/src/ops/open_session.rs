@@ -1,6 +1,6 @@
 //! `open-session`: start a fresh agent Session on a Ready Box, seeded with the caller's text.
 
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::OpenSessionReq;
 use moor_core::view::session::OpenSessionValue;
@@ -73,15 +73,15 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
 /// Refuses a Box that is not Ready or whose current Session has not ended.
 fn check(store: &Store, row: &BoxRow, name: &str) -> Result<(), CommandError> {
     if !row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Ready)
+        .is_some_and(|b| b.state == HandsState::Ready)
     {
         let err = CommandError::new(ErrorKind::Refused, format!("Box {name} is not Ready"));
         let asleep = row
-            .boxed
+            .hands
             .as_ref()
-            .is_some_and(|b| b.state == BoxState::Asleep);
+            .is_some_and(|b| b.state == HandsState::Asleep);
         return Err(if asleep {
             err.with_hint(format!("run `moor wake {name}` first"))
         } else {

@@ -28,8 +28,8 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::event::Event;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{Driver, TunnelHandle};
 use moor_core::{BoxHandle, BoxId};
@@ -366,11 +366,11 @@ impl Kept {
 fn view(store: &Store, box_id: BoxId) -> Result<Option<View>, StoreError> {
     Ok(store.box_row(box_id)?.map(|row| View {
         open: !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected),
-        handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
+        handle: row.hands.as_ref().and_then(|b| b.handle.clone()),
         asleep: row
-            .boxed
+            .hands
             .as_ref()
-            .is_some_and(|b| b.state == BoxState::Asleep),
+            .is_some_and(|b| b.state == HandsState::Asleep),
     }))
 }
 

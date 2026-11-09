@@ -20,7 +20,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel};
 use crate::ops::common::room;
-use crate::store::{BoxRow, DriverRow, Store};
+use crate::store::{BoxRow, HandsRow, Store};
 
 /// The shared nodes and the default one; with none configured, Boxes run only on personal nodes.
 pub(crate) fn configured(user: &UserConfig) -> (BTreeMap<String, NodeConfig>, Option<NodeName>) {
@@ -263,7 +263,7 @@ pub(crate) fn preflight(
 }
 
 /// The node a live Box started before nodes existed was on, by its provider and handle.
-fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &DriverRow) -> Option<NodeName> {
+fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &HandsRow) -> Option<NodeName> {
     let personal = |keep: &dyn Fn(&Node) -> bool| {
         all.iter()
             .find(|n| matches!(n.scope, Scope::Personal { .. }) && keep(n))

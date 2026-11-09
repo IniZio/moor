@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
@@ -14,7 +14,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{probe, BoxWork};
 use crate::cx::Cx;
-use crate::store::{BoxRow, DriverRow};
+use crate::store::{BoxRow, HandsRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 
@@ -28,7 +28,7 @@ struct Rig {
     driver: Arc<FakeDriver>,
     proc: Arc<ScriptedProc>,
     row: BoxRow,
-    boxed: DriverRow,
+    boxed: HandsRow,
 }
 
 fn result_path() -> BoxPath {
@@ -64,11 +64,11 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     }
 }
 
-fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
-    let boxed = DriverRow {
+fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
+    let boxed = HandsRow {
         provider: ProviderId::new("p"),
         handle: Some(handle),
-        state: BoxState::Ready,
+        state: HandsState::Ready,
         attempted_handle: None,
         workdir: Some(WORKDIR.to_owned()),
         egress: None,
@@ -97,7 +97,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
         launch_failure: None,
         created_at: Ts::from_millis(0),
         updated_at: Ts::from_millis(0),
-        boxed: Some(boxed.clone()),
+        hands: Some(boxed.clone()),
     };
     (row, boxed)
 }

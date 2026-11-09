@@ -59,7 +59,7 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
     })?;
     let site = Site {
         handle: &target.handle,
-        provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
+        provider: row.hands.as_ref().map_or("", |b| b.provider.as_str()),
         workdir: target.workdir.as_ref(),
     };
     let env = box_exec::prepare(cx, &site, Some(&proxy), &cfg, Purpose::Run).map_err(failed)?;

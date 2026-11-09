@@ -4,8 +4,8 @@ use std::os::unix::fs::PermissionsExt;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
@@ -57,7 +57,7 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -65,7 +65,7 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: moor_core::BoxHandle::new("box-1"),
         });
     store.apply(d).unwrap();
@@ -183,7 +183,7 @@ fn a_failure_records_the_error_and_saves_nothing() {
 fn a_box_that_is_not_ready_is_skipped() {
     let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
     let (mut row, session) = ready(&cx);
-    row.boxed.as_mut().unwrap().state = BoxState::Asleep;
+    row.hands.as_mut().unwrap().state = HandsState::Asleep;
     assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).is_none());
     assert!(cx
         .store()

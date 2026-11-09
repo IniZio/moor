@@ -14,16 +14,16 @@ fn reconcile_queues_a_working_box_its_host_stopped_to_resume_first() {
         .box_row(id)
         .unwrap()
         .unwrap()
-        .boxed
+        .hands
         .unwrap()
         .handle
         .unwrap();
     driver.stop_behind(&handle);
-    assert_eq!(box_state(&cx), BoxState::Asleep);
+    assert_eq!(box_state(&cx), HandsState::Asleep);
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Pending);
     assert_eq!(row.session, SessionState::Working);
-    assert_eq!(row.boxed.unwrap().handle, Some(handle));
+    assert_eq!(row.hands.unwrap().handle, Some(handle));
     let store = cx.store().unwrap();
     assert!(store.resume_first(id).unwrap().is_some());
     assert!(store.newest_event_of(id, "idled").unwrap().is_none());
@@ -45,8 +45,8 @@ fn reconcile_only_sleeps_a_quiet_box_its_host_stopped() {
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let row = store.box_row(id).unwrap().unwrap();
-    driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
-    assert_eq!(box_state(&cx), BoxState::Asleep);
+    driver.stop_behind(&row.hands.unwrap().handle.unwrap());
+    assert_eq!(box_state(&cx), HandsState::Asleep);
     let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert!(store.resume_first(id).unwrap().is_none());
@@ -59,7 +59,7 @@ fn reconcile_leaves_a_box_alone_while_an_op_holds_its_lock() {
     let cx = cx(dir.path(), &driver);
     let id = working(&cx, &driver, "a", None);
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     let held = crate::ops::common::boxlock::BoxLock::acquire(
         cx.clock(),
         cx.state_dir().unwrap(),
@@ -70,7 +70,7 @@ fn reconcile_leaves_a_box_alone_while_an_op_holds_its_lock() {
     .unwrap();
     assert_eq!(
         box_state(&cx),
-        BoxState::Ready,
+        HandsState::Ready,
         "a machine that shows paused mid-suspend is that op's to record"
     );
     assert!(cx
@@ -80,7 +80,7 @@ fn reconcile_leaves_a_box_alone_while_an_op_holds_its_lock() {
         .unwrap()
         .is_none());
     drop(held);
-    assert_eq!(box_state(&cx), BoxState::Asleep);
+    assert_eq!(box_state(&cx), HandsState::Asleep);
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn reconcile_leaves_a_running_box_its_host_lists() {
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
     let id = working(&cx, &driver, "a", None);
-    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Ready);
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
 }
@@ -106,12 +106,12 @@ fn reconcile_keeps_a_box_its_host_no_longer_lists() {
         .box_row(id)
         .unwrap()
         .unwrap()
-        .boxed
+        .hands
         .unwrap()
         .handle
         .unwrap();
     driver.forget(&handle);
-    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Ready);
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
     let before = driver.calls().len();

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
@@ -91,7 +91,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(BoxInput::Requested)
+                .box_input(HandsInput::Requested)
                 .set(fields),
         )
         .unwrap();
@@ -103,7 +103,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .box_input(BoxInput::Acquired { handle: got.handle })
+                .box_input(HandsInput::Acquired { handle: got.handle })
                 .set(Fields {
                     box_workdir: Field::Set(got.workdir.as_str().to_owned()),
                     ..Fields::default()
@@ -136,7 +136,7 @@ fn sleep(f: &Fx) {
                     auto: false,
                     reason: None,
                 })
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -164,7 +164,7 @@ fn workdir_calls(f: &Fx) -> usize {
 }
 
 fn stored_workdir(f: &Fx) -> Option<String> {
-    row(f).boxed.unwrap().workdir
+    row(f).hands.unwrap().workdir
 }
 
 fn wake_calls(f: &Fx) -> usize {
@@ -186,7 +186,7 @@ fn asleep_box_and_machine_are_woken() {
     let r = row(&f);
     assert_eq!(r.lifecycle, BoxLifecycle::Ready);
     assert!(!r.session.is_quiet());
-    assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(r.hands.unwrap().state, HandsState::Ready);
     assert!(kinds(&f).contains(&"woke".to_owned()));
 }
 
@@ -209,7 +209,7 @@ fn failed_resume_leaves_box_and_machine_asleep() {
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
     let r = row(&f);
     assert_eq!(r.lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
+    assert_eq!(r.hands.unwrap().state, HandsState::Asleep);
     assert!(!kinds(&f).contains(&"woke".to_owned()));
 }
 
@@ -219,7 +219,7 @@ fn gone_box_is_refused_without_a_driver_call() {
     sleep(&f);
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -246,7 +246,7 @@ fn asleep_box_with_ready_machine_wakes_only_the_box() {
     let r = row(&f);
     assert_eq!(r.lifecycle, BoxLifecycle::Ready);
     assert!(!r.session.is_quiet());
-    assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(r.hands.unwrap().state, HandsState::Ready);
     let after = kinds(&f);
     assert!(after.contains(&"woke".to_owned()));
     assert_eq!(
@@ -260,15 +260,15 @@ fn asleep_machine_with_working_box_wakes_only_the_machine() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
+        .apply(Decision::new(f.id).box_input(HandsInput::Sleep))
         .unwrap();
-    assert_eq!(row(&f).boxed.unwrap().state, BoxState::Asleep);
+    assert_eq!(row(&f).hands.unwrap().state, HandsState::Asleep);
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(wake_calls(&f), 1);
     let r = row(&f);
     assert_eq!(r.lifecycle, BoxLifecycle::Ready);
     assert!(!r.session.is_quiet());
-    assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(r.hands.unwrap().state, HandsState::Ready);
     assert!(!kinds(&f).contains(&"woke".to_owned()));
 }
 
@@ -317,7 +317,7 @@ fn failed_workdir_lookup_after_wake_leaves_box_and_machine_asleep() {
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
     let r = row(&f);
     assert_eq!(r.lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
+    assert_eq!(r.hands.unwrap().state, HandsState::Asleep);
     assert_eq!(stored_workdir(&f), None);
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 2);

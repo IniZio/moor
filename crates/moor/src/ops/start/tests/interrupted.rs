@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
@@ -36,10 +36,10 @@ fn cut_off(driver: FakeDriver) -> World {
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
     assert_eq!(
-        row.boxed.as_ref().map(|b| b.state),
-        Some(BoxState::Starting)
+        row.hands.as_ref().map(|b| b.state),
+        Some(HandsState::Starting)
     );
-    assert!(row.boxed.as_ref().is_some_and(|b| b.handle.is_none()));
+    assert!(row.hands.as_ref().is_some_and(|b| b.handle.is_none()));
     w
 }
 
@@ -101,7 +101,7 @@ fn a_start_cut_while_the_host_still_warms_its_vm_survives_the_restart() {
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.boxed.as_ref().map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(row.hands.as_ref().map(|b| b.state), Some(HandsState::Ready));
     assert_eq!(row.intent, None);
     let events = store.events(row.id, 50).unwrap();
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
@@ -372,7 +372,10 @@ fn close_of_a_box_with_no_handle_releases_the_planned_one() {
     let v = close_demo(&w).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(releases(&w), ["release box-1"]);
-    assert_eq!(box_row(&w).boxed.map(|b| b.state), Some(BoxState::Deleted));
+    assert_eq!(
+        box_row(&w).hands.map(|b| b.state),
+        Some(HandsState::Deleted)
+    );
 }
 
 #[test]
@@ -425,7 +428,7 @@ fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machi
     assert!(releases(&w).is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
 }
 
 type Closed = Result<BoxLifecycle, String>;

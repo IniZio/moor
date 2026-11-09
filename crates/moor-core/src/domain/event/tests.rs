@@ -1,7 +1,7 @@
 //! Tests for the event kinds, payloads and step-to-event tables.
 
 use super::*;
-use crate::domain::boxes::{BoxInput, BoxState};
+use crate::domain::hands::{HandsInput, HandsState};
 use crate::name::BoxHandle;
 
 const PINNED_KINDS: [&str; 20] = [
@@ -487,31 +487,31 @@ fn asserted_kinds_are_real_unique_kinds() {
 
 #[test]
 fn box_events_table() {
-    use BoxState as B;
-    let ev = |from, to, input: BoxInput| box_events(from, to, &input, None);
+    use HandsState as B;
+    let ev = |from, to, input: HandsInput| box_events(from, to, &input, None);
     assert_eq!(
-        ev(None, B::Starting, BoxInput::Requested),
+        ev(None, B::Starting, HandsInput::Requested),
         vec![Event::BoxRequested]
     );
     assert_eq!(
         ev(
             Some(B::Starting),
             B::Ready,
-            BoxInput::Acquired {
+            HandsInput::Acquired {
                 handle: BoxHandle::new("h")
             }
         ),
         vec![Event::BoxReady]
     );
     assert_eq!(
-        ev(Some(B::Asleep), B::Ready, BoxInput::Wake),
+        ev(Some(B::Asleep), B::Ready, HandsInput::Wake),
         vec![Event::BoxReady]
     );
     assert_eq!(
         ev(
             Some(B::Starting),
             B::Failed,
-            BoxInput::AcquireFailed {
+            HandsInput::AcquireFailed {
                 cause: s("c"),
                 attempted: None
             }
@@ -522,22 +522,22 @@ fn box_events_table() {
         }]
     );
     assert_eq!(
-        ev(Some(B::Ready), B::Asleep, BoxInput::Sleep),
+        ev(Some(B::Ready), B::Asleep, HandsInput::Sleep),
         vec![Event::BoxAsleep]
     );
     assert_eq!(
-        ev(Some(B::Ready), B::Gone, BoxInput::DriverMissing),
+        ev(Some(B::Ready), B::Gone, HandsInput::DriverMissing),
         vec![Event::BoxGone]
     );
     assert_eq!(
-        ev(Some(B::Gone), B::Deleted, BoxInput::Released),
+        ev(Some(B::Gone), B::Deleted, HandsInput::Released),
         vec![Event::BoxDeleted]
     );
     assert_eq!(
         ev(
             Some(B::Gone),
             B::ReleaseFailed,
-            BoxInput::ReleaseErr { cause: s("c") }
+            HandsInput::ReleaseErr { cause: s("c") }
         ),
         vec![Event::BoxReleaseFailed {
             error: s("c"),
@@ -551,9 +551,9 @@ fn box_failure_events_carry_handle() {
     let h = BoxHandle::new("p/x");
     assert_eq!(
         box_events(
-            Some(BoxState::Ready),
-            BoxState::ReleaseFailed,
-            &BoxInput::ReleaseErr { cause: s("c") },
+            Some(HandsState::Ready),
+            HandsState::ReleaseFailed,
+            &HandsInput::ReleaseErr { cause: s("c") },
             Some(&h)
         ),
         vec![Event::BoxReleaseFailed {
@@ -561,12 +561,17 @@ fn box_failure_events_carry_handle() {
             handle: Some(s("p/x"))
         }]
     );
-    let failed = BoxInput::AcquireFailed {
+    let failed = HandsInput::AcquireFailed {
         cause: s("c"),
         attempted: Some(h),
     };
     assert_eq!(
-        box_events(Some(BoxState::Starting), BoxState::Failed, &failed, None),
+        box_events(
+            Some(HandsState::Starting),
+            HandsState::Failed,
+            &failed,
+            None
+        ),
         vec![Event::BoxFailed {
             error: s("c"),
             handle: Some(s("p/x"))

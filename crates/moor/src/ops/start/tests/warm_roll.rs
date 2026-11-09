@@ -254,7 +254,7 @@ fn kept_last_saved_by(s: &Scratch, id: BoxId) -> CheckpointRow {
     let taken = events(&s.w, id, "checkpoint_taken");
     let key = taken.last().unwrap()["key"].as_str().unwrap().to_owned();
     let key = LayerKey::restore(key).unwrap();
-    let provider = row(&s.w, id).boxed.unwrap().provider;
+    let provider = row(&s.w, id).hands.unwrap().provider;
     let store = s.w.cx.store().unwrap();
     store.checkpoint(&provider, &key).unwrap().unwrap()
 }

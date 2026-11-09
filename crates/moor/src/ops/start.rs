@@ -7,9 +7,9 @@
 use moor_core::config::{Flags, RepoConfig};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
+use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
@@ -106,7 +106,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let (done, agent) = {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
             .interruptible(cx.env().cancel());
-        let done = if reread(store, id)?.boxed.is_none() {
+        let done = if reread(store, id)?.hands.is_none() {
             provision(cx, store, id, Entry::Fresh, &cfg)?
         } else {
             Provisioned::skipped()
@@ -233,8 +233,8 @@ fn attach(
         )
     };
     let recreated = matches!(
-        row.boxed.as_ref().map(|b| b.state),
-        Some(BoxState::Failed | BoxState::Gone)
+        row.hands.as_ref().map(|b| b.state),
+        Some(HandsState::Failed | HandsState::Gone)
     );
     if asleep::wake(cx, store, req, row.id)? == asleep::Woken::Queued {
         return Ok(queued_view(cx, &reread(store, row.id)?, true));
@@ -273,7 +273,7 @@ pub(crate) fn settle_all(
         if draining() {
             break;
         }
-        if row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready) {
+        if row.hands.as_ref().map(|b| b.state) == Some(HandsState::Ready) {
             cx.for_box(row.user, || settle_one(cx, store, row));
         }
     }

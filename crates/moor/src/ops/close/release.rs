@@ -14,7 +14,7 @@ use crate::store::{BoxRow, Store};
 ///
 /// A listing that fails or is unsupported cannot tell, so the close goes on as usual.
 pub(super) fn machine_vanished(cx: &Cx, row: &BoxRow) -> bool {
-    let Some(b) = row.boxed.as_ref() else {
+    let Some(b) = row.hands.as_ref() else {
         return false;
     };
     let fact = BoxFact {
@@ -36,7 +36,7 @@ pub(super) fn release(
     row: &BoxRow,
     reason: Option<String>,
 ) -> Result<bool, CommandError> {
-    let Some(b) = row.boxed.as_ref() else {
+    let Some(b) = row.hands.as_ref() else {
         return Ok(false);
     };
     let Some(handle) = held(b) else {

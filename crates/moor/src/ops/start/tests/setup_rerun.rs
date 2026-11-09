@@ -1,7 +1,7 @@
 //! Tests for what a start does after a failed or interrupted setup.
 
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, BoxId};
 
@@ -71,7 +71,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
     );
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
@@ -172,7 +172,7 @@ fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
     let id = BoxId::new(1);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
-    assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
     assert_eq!(
         row.intent,
         Some(Intent::Setup {

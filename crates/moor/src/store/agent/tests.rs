@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
@@ -47,7 +47,7 @@ fn working(store: &Store, name: &str) -> BoxId {
     let id = add(store, name);
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -58,7 +58,7 @@ fn working(store: &Store, name: &str) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         });
     store.apply(d).unwrap();

@@ -6,9 +6,9 @@ use moor_core::box_key::BoxKey;
 use moor_core::config::{BoxSettings, Flags, Layer};
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::event::PostCloneStep;
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -69,9 +69,9 @@ pub(super) fn run(
 /// Records why an agent that should launch on a ready machine did not.
 fn not_working(cx: &Cx, store: &Store, row: &BoxRow) -> Result<AgentLaunchView, CommandError> {
     let ready = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Ready);
+        .is_some_and(|b| b.state == HandsState::Ready);
     let waits_for_retry = row.lifecycle == BoxLifecycle::SetupFailed;
     if !ready
         || waits_for_retry
@@ -169,7 +169,7 @@ fn launch_agent(
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
+    let handle = row.hands.as_ref().and_then(|b| b.handle.clone());
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let mut proxy = match box_exec::proxy(cx, id, handle, repo, cfg) {
         Ok(p) => p,
@@ -275,7 +275,10 @@ pub(super) fn working(row: &BoxRow) -> bool {
 
 /// What the Engine needs to launch `row`'s agent; none unless the Box is Working with a ready machine.
 pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
-    let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
+    let b = row
+        .hands
+        .as_ref()
+        .filter(|b| b.state == HandsState::Ready)?;
     if !working(row) {
         return None;
     }

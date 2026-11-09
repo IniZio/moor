@@ -3,7 +3,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::{AttachReq, ErrorKind};
 
 use crate::cx::Cx;
@@ -29,10 +29,10 @@ pub(crate) fn argv(cx: &Cx, req: &AttachReq) -> Result<Vec<String>, CommandError
         )
     };
     let boxed = row
-        .boxed
+        .hands
         .as_ref()
         .ok_or_else(|| refused("has no machine yet"))?;
-    if row.lifecycle == BoxLifecycle::Asleep || boxed.state == BoxState::Asleep {
+    if row.lifecycle == BoxLifecycle::Asleep || boxed.state == HandsState::Asleep {
         return Err(refused("is asleep; wake it first"));
     }
     let handle = boxed

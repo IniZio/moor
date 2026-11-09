@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::forge::ForgeRepo;
@@ -196,8 +196,8 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     let want = format!("moor/{}-demo", v.boxed.id);
     assert_eq!(v.boxed.branch.as_deref(), Some(want.as_str()));
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    let b = row.unwrap().unwrap().boxed.unwrap();
-    assert_eq!(b.state, BoxState::Ready);
+    let b = row.unwrap().unwrap().hands.unwrap();
+    assert_eq!(b.state, HandsState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
     assert_eq!(b.workdir.as_deref(), Some("/work/cbx_1/repo"));
 }
@@ -231,7 +231,7 @@ fn acquire_failure_keeps_a_failed_box_row() {
             .unwrap()
             .unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-    assert_eq!(row.boxed.unwrap().state, BoxState::Gone);
+    assert_eq!(row.hands.unwrap().state, HandsState::Gone);
     assert!(row.intent.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "release box-1"]);
 }
@@ -255,8 +255,8 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
     );
     let name = box_name("demo");
     let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
-    let b = row.unwrap().boxed.unwrap();
-    assert_eq!(b.state, BoxState::Failed);
+    let b = row.unwrap().hands.unwrap();
+    assert_eq!(b.state, HandsState::Failed);
     assert_eq!(b.attempted_handle.unwrap().as_str(), "box-1");
 }
 
@@ -271,7 +271,7 @@ fn restart_of_a_closed_name_creates_a_new_box() {
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .box_input(BoxInput::Released),
+                .box_input(HandsInput::Released),
         )
         .unwrap();
     let second = run(&w.cx, &req("again")).unwrap();
@@ -324,7 +324,10 @@ fn start_after_acquire_failure_gets_a_new_box() {
         state::WORKING
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
-    assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(
+        row.unwrap().unwrap().hands.unwrap().state,
+        HandsState::Ready
+    );
     assert_eq!(
         w.driver.calls(),
         ["acquire", "release box-1", "acquire", "peek_file box-1"]
@@ -338,15 +341,15 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(
         (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
-    assert_eq!(b.state, BoxState::Ready);
+    let b = store.box_row(id).unwrap().unwrap().hands.unwrap();
+    assert_eq!(b.state, HandsState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
     assert_eq!(
         w.driver.calls(),
@@ -439,7 +442,10 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
         state::WORKING
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
-    assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(
+        row.unwrap().unwrap().hands.unwrap().state,
+        HandsState::Ready
+    );
     assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
@@ -450,7 +456,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let id = BoxId::new(first.boxed.id);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let _held = hold(&w, "close");
     let err = run(&w.cx, &req("demo")).unwrap_err();
@@ -466,7 +472,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();

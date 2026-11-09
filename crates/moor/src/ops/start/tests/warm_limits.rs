@@ -115,9 +115,9 @@ fn at_depth(w: &World, first: BoxId, depth: u32) {
         depth,
         root_at: None,
     };
-    let provider = row(w, first).boxed.unwrap().provider;
+    let provider = row(w, first).hands.unwrap().provider;
     let store = w.cx.store().unwrap();
-    let handle = row(w, first).boxed.unwrap().handle.unwrap();
+    let handle = row(w, first).hands.unwrap().handle.unwrap();
     let made = w.driver.checkpoint(&handle, key.as_str()).unwrap();
     store
         .record_checkpoint(&provider, &key, &lineage, &made)

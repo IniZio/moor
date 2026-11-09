@@ -2,8 +2,8 @@
 //! that disk, and the one start from scratch it gets when a line fails there.
 
 use moor_core::config::BoxSettings;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::layers::WarmDisk;
 use moor_core::{BoxId, Warning};
 use serde::Deserialize as _;
@@ -134,9 +134,9 @@ pub(super) fn cold_again(
     let req = layered.machine_req(cx, store, &row, cfg)?;
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
-    store.apply(Decision::new(id).box_input(BoxInput::DriverMissing))?;
+    store.apply(Decision::new(id).box_input(HandsInput::DriverMissing))?;
     let begin = Decision::new(id)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_handle: Field::Clear,
             ..Fields::default()

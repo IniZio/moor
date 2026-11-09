@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunId, RunReq};
@@ -167,7 +167,7 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
     };
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = f
@@ -190,7 +190,7 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle })
+        .box_input(HandsInput::Acquired { handle: got.handle })
         .set(Fields {
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
             ..Fields::default()
@@ -362,7 +362,7 @@ fn gone_box_is_refused_and_recorded() {
     let f = ready();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let before = f.driver.calls().len();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
@@ -382,7 +382,7 @@ fn sleep(f: &Fx) {
         .apply(
             Decision::new(f.id)
                 .lifecycle(BoxLifecycleInput::sleep(false))
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -395,9 +395,9 @@ fn wake_calls(f: &Fx) -> usize {
         .count()
 }
 
-fn box_state(f: &Fx) -> BoxState {
+fn box_state(f: &Fx) -> HandsState {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    row.boxed.unwrap().state
+    row.hands.unwrap().state
 }
 
 #[test]
@@ -408,7 +408,7 @@ fn asleep_box_is_woken_before_the_command_runs() {
     assert!(v.ran);
     assert_eq!(wake_calls(&f), 1);
     assert_eq!(f.driver.launches().len(), 1);
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
     assert!(kinds(&f).contains(&"woke".to_owned()));
 }
 
@@ -419,7 +419,7 @@ fn failed_wake_refuses_the_run_and_leaves_the_box_asleep() {
     run(&f.cx, &req(&["true"])).unwrap_err();
     assert_eq!(wake_calls(&f), 1);
     assert!(f.driver.execs().is_empty());
-    assert_eq!(box_state(&f), BoxState::Asleep);
+    assert_eq!(box_state(&f), HandsState::Asleep);
     assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
     assert!(!kinds(&f).contains(&"woke".to_owned()));
 }
@@ -430,7 +430,7 @@ fn gone_asleep_box_is_refused_without_a_wake() {
     sleep(&f);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
     assert!(msg.contains("gone"), "{msg}");

@@ -9,8 +9,8 @@ use moor_core::boxscript::record::HEAD_MOVED;
 use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::clock::Ts;
@@ -80,9 +80,9 @@ fn locked(
 ) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
     let gone = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| matches!(b.state, BoxState::Gone | BoxState::Deleted));
+        .is_some_and(|b| matches!(b.state, HandsState::Gone | HandsState::Deleted));
     let woken;
     let row = if !gone && wake_and_revive(cx, store, row)? {
         woken = store.box_row(row.id)?.ok_or_else(|| {
@@ -238,7 +238,7 @@ fn follow_into(
 fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
     Site {
         handle: &target.handle,
-        provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
+        provider: row.hands.as_ref().map_or("", |b| b.provider.as_str()),
         workdir: target.workdir.as_ref(),
     }
 }

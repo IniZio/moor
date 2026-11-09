@@ -5,9 +5,9 @@ use moor_core::shape::Shape;
 use moor_core::{BoxHandle, ProviderId};
 
 use super::init::parsed_opt;
-use super::{to_u32, DriverRow, StoreError};
+use super::{to_u32, HandsRow, StoreError};
 use crate::store::db::Row;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 
 /// The delivered CPUs and memory of the joined box, when both are recorded.
 pub(super) fn delivered_from_row(row: &Row<'_>) -> Result<Option<Shape>, StoreError> {
@@ -23,16 +23,16 @@ pub(super) fn delivered_from_row(row: &Row<'_>) -> Result<Option<Shape>, StoreEr
     }))
 }
 
-/// Map the joined box columns (offset 17..=24) to a `DriverRow`, if the box exists.
-pub(super) fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
+/// Map the joined box columns (offset 17..=24) to a `HandsRow`, if the box exists.
+pub(super) fn driver_from_row(row: &Row<'_>) -> Result<Option<HandsRow>, StoreError> {
     let Some(provider) = row.get::<_, Option<String>>(17)? else {
         return Ok(None);
     };
     let state: String = row.get(19)?;
-    Ok(Some(DriverRow {
+    Ok(Some(HandsRow {
         provider: ProviderId::new(provider),
         handle: row.get::<_, Option<String>>(18)?.map(BoxHandle::new),
-        state: parsed_opt("box state", &state, BoxState::parse)?,
+        state: parsed_opt("box state", &state, HandsState::parse)?,
         attempted_handle: row.get::<_, Option<String>>(20)?.map(BoxHandle::new),
         workdir: row.get(21)?,
         egress: row.get(22)?,

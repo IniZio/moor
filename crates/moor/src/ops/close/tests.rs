@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
@@ -107,7 +107,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -126,7 +126,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle });
+        .box_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     id
 }
@@ -143,8 +143,8 @@ pub(super) fn is_working(r: &crate::store::BoxRow) -> bool {
     r.lifecycle == BoxLifecycle::Ready && !r.session.is_quiet()
 }
 
-pub(super) fn box_state(f: &Fx) -> BoxState {
-    row(f).boxed.unwrap().state
+pub(super) fn box_state(f: &Fx) -> HandsState {
+    row(f).hands.unwrap().state
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn clean_close_deletes_the_box_and_closes() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(v.box_deleted);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
     assert!(f.dir.path().is_dir());
 }
@@ -186,11 +186,11 @@ fn unpushed_work_in_the_box_is_refused_without_force() {
 #[test]
 fn release_not_found_counts_as_deleted() {
     let f = fx();
-    let h = row(&f).boxed.unwrap().handle.unwrap();
+    let h = row(&f).hands.unwrap().handle.unwrap();
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn release_error_on_a_ready_box_keeps_the_box_open() {
         e.error.to_string().contains(RAW),
         "the adapter summary is surfaced"
     );
-    let h = row(&f).boxed.unwrap().handle.unwrap();
+    let h = row(&f).hands.unwrap().handle.unwrap();
     let by_hand = format!(
         "release the Box by hand: stop it from /leases/{}",
         h.as_str()
@@ -215,7 +215,7 @@ fn release_error_on_a_ready_box_keeps_the_box_open() {
         e.hints
     );
     assert!(is_working(&row(&f)));
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }
 
 #[test]
@@ -225,12 +225,12 @@ fn release_error_on_a_failed_box_warns_and_closes() {
     }));
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
+        .apply(Decision::new(f.id).box_input(HandsInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(!v.box_deleted);
-    assert_eq!(box_state(&f), BoxState::ReleaseFailed);
+    assert_eq!(box_state(&f), HandsState::ReleaseFailed);
     let warnings = f.cx.take_warnings();
     assert!(!warnings.is_empty());
     assert!(warnings.iter().all(|w| !w.message.contains(RAW)));

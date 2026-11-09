@@ -10,8 +10,8 @@ use super::is_working;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::forge::ForgeRepo;
@@ -125,7 +125,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
@@ -133,7 +133,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle });
+        .box_input(HandsInput::Acquired { handle });
     store.apply(d).unwrap();
     on_provider_node(cx, id, PROVIDER);
     id
@@ -256,8 +256,8 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
     assert!(at("setting_up") < at("working"), "{seen:?}");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(is_working(&row));
-    let b = row.boxed.expect("promoted Box has a machine row");
-    assert_eq!(b.state, BoxState::Ready);
+    let b = row.hands.expect("promoted Box has a machine row");
+    assert_eq!(b.state, HandsState::Ready);
     assert!(b.handle.is_some());
     // The holder's acquire, two close probes and report collection come first; each is one exec and one peek,
     // and the close collects artifacts with one more exec.
@@ -311,7 +311,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
     let id = queue(&w, "first");
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(w.holder).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(w.holder).box_input(HandsInput::DriverMissing))
         .unwrap();
     let req = ShowReq {
         target: None,
@@ -425,7 +425,7 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
     close_holder(&w);
     assert!(is_working(&row_of(&w, id)));
     let handle = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let handle = handle.boxed.unwrap().handle.expect("promoted Box handle");
+    let handle = handle.hands.unwrap().handle.expect("promoted Box handle");
     let argvs: Vec<_> = w
         .driver
         .execs()

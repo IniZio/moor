@@ -12,7 +12,7 @@ use moor_core::{BoxHandle, BoxPath};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, DriverRow};
+use crate::store::{BoxRow, HandsRow};
 
 /// Wall-clock allowance for the probe script.
 pub(crate) const BOXWORK_DEADLINE: Duration = Duration::from_secs(60);
@@ -69,12 +69,12 @@ pub(crate) struct ProbePlan {
 ///
 /// Anything that stops the probe from giving a definite answer is
 /// [`BoxWork::Unknown`], so a caller never mistakes a failed probe for a clean Box.
-pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> BoxWork {
+pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &HandsRow) -> BoxWork {
     probe_within(cx, row, boxed, BOXWORK_DEADLINE)
 }
 
 /// [`probe`] with no more than `within` to answer.
-pub(crate) fn probe_within(cx: &Cx, row: &BoxRow, boxed: &DriverRow, within: Duration) -> BoxWork {
+pub(crate) fn probe_within(cx: &Cx, row: &BoxRow, boxed: &HandsRow, within: Duration) -> BoxWork {
     let plan = match plan(cx, row, boxed) {
         Ok(plan) => plan,
         Err(work) => return work,
@@ -86,7 +86,7 @@ pub(crate) fn probe_within(cx: &Cx, row: &BoxRow, boxed: &DriverRow, within: Dur
 }
 
 /// Builds the probe for the Box of `boxed`; the `Err` is the answer when no probe can be sent.
-pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan, BoxWork> {
+pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &HandsRow) -> Result<ProbePlan, BoxWork> {
     let handle = boxed.handle.as_ref().ok_or("the box has no handle")?;
     // Commits on a remote-tracking ref count as saved too; the clone fetched every branch.
     let saved: Vec<&str> = row

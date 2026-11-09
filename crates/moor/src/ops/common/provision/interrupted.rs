@@ -1,8 +1,8 @@
 //! Fails the starts an earlier controller process left unfinished.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::Released;
 use moor_core::{BoxHandle, BoxId, Warning};
 
@@ -83,9 +83,9 @@ pub(crate) fn fail_interrupted(
 /// start never begins, and a launch that failed says so.
 pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let ready = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Ready);
+        .is_some_and(|b| b.state == HandsState::Ready);
     let waits = row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet();
     if !ready || !waits || row.launch_failure.is_some() || store.live_session(row.id)?.is_some() {
         return Ok(false);
@@ -103,8 +103,8 @@ pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, Comman
 /// setup lines, or the steps after them once every line passed.
 fn followable(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::SettingUp
-        && row.boxed.as_ref().is_some_and(|b| {
-            b.state == BoxState::Ready && b.handle.is_some() && b.workdir.is_some()
+        && row.hands.as_ref().is_some_and(|b| {
+            b.state == HandsState::Ready && b.handle.is_some() && b.workdir.is_some()
         })
 }
 
@@ -112,8 +112,8 @@ fn followable(row: &BoxRow) -> bool {
 fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, CommandError> {
     let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
     let claim = IntentChange::Set(Intent::Provisioning { pid: me });
-    match row.boxed.as_ref().map(|b| b.state) {
-        Some(BoxState::Starting) => {
+    match row.hands.as_ref().map(|b| b.state) {
+        Some(HandsState::Starting) => {
             let planned = planned_root(store, row.id)?;
             let goes_on = planned
                 .as_ref()
@@ -125,7 +125,7 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, Co
             if goes_on {
                 // Stopping it can wait for it, and the controller is not serving yet.
                 let lost = Decision::new(row.id)
-                    .box_input(BoxInput::AcquireFailed {
+                    .box_input(HandsInput::AcquireFailed {
                         cause: CAUSE.to_owned(),
                         attempted: planned,
                     })
@@ -136,7 +136,7 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, Co
             fail_acquire(cx, store, row, me, setting_up && !cut_before(store, row)?)
         }
         // The process that claimed it to acquire again ended before it could.
-        Some(BoxState::Failed | BoxState::Gone) if setting_up => {
+        Some(HandsState::Failed | HandsState::Gone) if setting_up => {
             let lost = Decision::new(row.id)
                 .lifecycle(BoxLifecycleInput::SetupFailed {
                     cause: CAUSE.to_owned(),
@@ -170,7 +170,7 @@ fn fail_acquire(
     again: bool,
 ) -> Result<bool, CommandError> {
     let planned = planned_root(store, row.id)?;
-    let lost = Decision::new(row.id).box_input(BoxInput::AcquireFailed {
+    let lost = Decision::new(row.id).box_input(HandsInput::AcquireFailed {
         cause: CAUSE.to_owned(),
         attempted: planned.clone(),
     });
@@ -198,7 +198,7 @@ pub(super) fn release_warned(cx: &Cx, store: &Store, row: &BoxRow, handle: &BoxH
     match cx.driver().release(handle) {
         Ok(Released::Deleted) => true,
         Ok(Released::AlreadyGone) => {
-            let gone = Decision::new(row.id).box_input(BoxInput::DriverMissing);
+            let gone = Decision::new(row.id).box_input(HandsInput::DriverMissing);
             store.apply(gone).is_ok()
         }
         Err(e) => {

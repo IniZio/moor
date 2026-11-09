@@ -1,8 +1,8 @@
 //! The close decider: the data-loss gate and the release rules.
 
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
+use crate::domain::hands::{HandsInput, HandsState};
 use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 use crate::response::Warning;
@@ -19,7 +19,7 @@ pub struct CloseFacts {
     /// The state of its primary Session.
     pub session: SessionState,
     /// Its Box state; `None` when no Box ever existed.
-    pub box_state: Option<BoxState>,
+    pub box_state: Option<HandsState>,
     /// Whether a Driver handle is stored (kept even after a failed acquire).
     pub has_handle: bool,
     /// The box name, used in recovery commands.
@@ -196,14 +196,14 @@ pub fn close_gate_with_reason(
 
 /// A Gone Box is never released through the Driver; a Starting one is, under the handle its
 /// acquire planned, since the machine can exist before the acquire returns.
-const fn releasable(s: BoxState) -> bool {
+const fn releasable(s: HandsState) -> bool {
     matches!(
         s,
-        BoxState::Starting
-            | BoxState::Ready
-            | BoxState::Asleep
-            | BoxState::Failed
-            | BoxState::ReleaseFailed
+        HandsState::Starting
+            | HandsState::Ready
+            | HandsState::Asleep
+            | HandsState::Failed
+            | HandsState::ReleaseFailed
     )
 }
 
@@ -212,7 +212,7 @@ const fn releasable(s: BoxState) -> bool {
 /// A Box whose machine may still run keeps the Box open when it cannot be released;
 /// only a `ReleaseFailed` Box, already marked for manual release, does not hold the close back.
 #[must_use]
-pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
+pub fn release_outcome(box_id: BoxId, box_state: HandsState, r: ReleaseResult) -> ReleaseVerdict {
     release_outcome_with_reason(box_id, box_state, r, None)
 }
 
@@ -220,7 +220,7 @@ pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> 
 #[must_use]
 pub fn release_outcome_with_reason(
     box_id: BoxId,
-    box_state: BoxState,
+    box_state: HandsState,
     r: ReleaseResult,
     reason: Option<String>,
 ) -> ReleaseVerdict {
@@ -229,12 +229,12 @@ pub fn release_outcome_with_reason(
         .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
-            decision: Some(close.box_input(BoxInput::Released)),
+            decision: Some(close.box_input(HandsInput::Released)),
             warning: None,
             closes: true,
         },
         ReleaseResult::Failed => match box_state {
-            BoxState::Starting | BoxState::Ready | BoxState::Asleep | BoxState::Failed => {
+            HandsState::Starting | HandsState::Ready | HandsState::Asleep | HandsState::Failed => {
                 ReleaseVerdict {
                     decision: None,
                     warning: None,
@@ -251,11 +251,11 @@ pub fn release_outcome_with_reason(
 }
 
 /// Records `ReleaseFailed` unless the Box is already there.
-fn failed_close(close: Decision, from: BoxState) -> Decision {
-    if from == BoxState::ReleaseFailed {
+fn failed_close(close: Decision, from: HandsState) -> Decision {
+    if from == HandsState::ReleaseFailed {
         return close;
     }
-    close.box_input(BoxInput::ReleaseErr {
+    close.box_input(HandsInput::ReleaseErr {
         cause: "the Driver could not release the Box".to_owned(),
     })
 }

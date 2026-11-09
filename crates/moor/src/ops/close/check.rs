@@ -1,7 +1,7 @@
 //! What a close checks a Box for: work that exists only there.
 
 use moor_core::decide::close::{needs_box_check, BoxCheck};
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::DriverError;
 use moor_core::ErrorKind;
 
@@ -28,17 +28,17 @@ pub(super) fn box_check(
         return Ok(BoxCheck::Skipped);
     }
     let live = |r: &BoxRow| {
-        r.boxed.as_ref().is_some_and(|b| {
-            b.handle.is_some() && !matches!(b.state, BoxState::Gone | BoxState::Deleted)
+        r.hands.as_ref().is_some_and(|b| {
+            b.handle.is_some() && !matches!(b.state, HandsState::Gone | HandsState::Deleted)
         })
     };
     if !live(row) {
         return Ok(BoxCheck::Skipped);
     }
     let asleep = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     let stored = if asleep {
         store.suspend_check(row.id)?
     } else {
@@ -71,7 +71,7 @@ pub(super) fn box_check(
         }
     }
     // A Box that never got ready, or whose release already failed, has no reachable work tree.
-    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+    let Some(b) = row.hands.as_ref().filter(|b| b.state == HandsState::Ready) else {
         return Ok(BoxCheck::Skipped);
     };
     Ok(match probe(cx, row, b) {

@@ -1,5 +1,5 @@
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::shape::Shape;
 use moor_core::{BoxId, ShowReq};
 
@@ -39,7 +39,7 @@ fn the_delivered_cpus_and_memory_are_recorded_on_the_box() {
             .box_row(BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap();
-    assert_eq!(row.boxed.unwrap().delivered, Some(shape(4, 7900)));
+    assert_eq!(row.hands.unwrap().delivered, Some(shape(4, 7900)));
 }
 
 #[test]
@@ -88,11 +88,11 @@ fn a_re_provisioned_box_records_the_new_machine() {
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     run(&w.cx, &start_req()).unwrap();
     let row = store.box_row(id).unwrap().unwrap();
-    assert_eq!(row.boxed.unwrap().delivered, Some(shape(8, 15000)));
+    assert_eq!(row.hands.unwrap().delivered, Some(shape(8, 15000)));
 }
 
 #[test]

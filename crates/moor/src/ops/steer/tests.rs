@@ -7,8 +7,8 @@ use std::sync::Arc;
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
@@ -76,7 +76,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -95,7 +95,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: got.handle.clone(),
         })
         .set(Fields {
@@ -256,12 +256,12 @@ fn an_asleep_box_wakes_before_the_send() {
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::sleep(false))
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(row.hands.unwrap().state, HandsState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     assert_eq!(f.engine.steers().len(), 1);
 }
@@ -461,7 +461,7 @@ fn put_to_sleep(f: &Fx) {
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::sleep(false))
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     store.apply(d).unwrap();
 }
 

@@ -8,9 +8,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::EVENT_KINDS;
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::user::{Identity, UserId};
 use moor_core::{BoxHandle, BoxName, ProviderId, Secret};
@@ -135,7 +135,7 @@ fn a_box_without_matching_webhooks_queues_nothing_and_a_failed_apply_leaves_noth
     w.webhook(alice, &EVENT_KINDS);
     let illegal = insert("b")
         .requester(alice)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         })
         .set(Fields {

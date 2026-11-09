@@ -7,8 +7,8 @@ use std::time::Duration;
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::user::Identity;
@@ -48,7 +48,7 @@ pub(super) fn row(w: &World, id: BoxId) -> BoxRow {
 
 /// The setup lines that ran on Box `id`'s machine, by their text.
 pub(super) fn lines_on(w: &World, id: BoxId) -> Vec<&'static str> {
-    let handle = row(w, id).boxed.unwrap().handle.unwrap();
+    let handle = row(w, id).hands.unwrap().handle.unwrap();
     let ran: Vec<String> = w
         .driver
         .execs()
@@ -121,8 +121,8 @@ fn a_new_box_forks_the_deepest_matching_layer_and_runs_only_the_lines_after_it()
     );
     assert_eq!(lines_on(&w, second), ["three-c"]);
     let (a, b) = (
-        row(&w, first).boxed.unwrap(),
-        row(&w, second).boxed.unwrap(),
+        row(&w, first).hands.unwrap(),
+        row(&w, second).hands.unwrap(),
     );
     assert_ne!(a.handle, b.handle);
     assert_eq!(
@@ -254,7 +254,7 @@ fn without_checkpoints_a_second_box_runs_its_whole_setup() {
         w.driver.calls().iter().filter(|c| *c == "acquire").count(),
         2
     );
-    let ran = row(&w, second).boxed.unwrap().handle.unwrap();
+    let ran = row(&w, second).hands.unwrap().handle.unwrap();
     let execs = w.driver.execs();
     let setup = execs
         .iter()
@@ -332,17 +332,17 @@ fn a_working_box_that_loses_its_machine_relaunches_on_its_deepest_checkpoint_wit
         ..req("demo")
     };
     let id = BoxId::new(run(&w.cx, &start_req).unwrap().boxed.id);
-    let first = row(&w, id).boxed.unwrap().handle;
+    let first = row(&w, id).hands.unwrap().handle;
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     gone(&engine);
     let v = run(&w.cx, &start_req).unwrap();
     assert!(v.setup.ok && v.agent.launched, "{v:?}");
     let after = row(&w, id);
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
-    assert_ne!(after.boxed.unwrap().handle, first);
+    assert_ne!(after.hands.unwrap().handle, first);
     let calls = w.driver.calls();
     assert_eq!(
         calls.iter().filter(|c| *c == "acquire").count(),

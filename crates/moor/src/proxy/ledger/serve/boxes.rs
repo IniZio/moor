@@ -1,7 +1,7 @@
 //! The controller's answers to the shared egress Proxy's calls for one Box.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::user::SecretName;
 use moor_core::BoxId;
 use serde::Serialize;
@@ -97,11 +97,11 @@ pub(super) fn awake_tokens(store: &Store) -> Result<AwakeTokens, StoreError> {
 fn view(store: &Store, box_id: BoxId) -> Result<Option<BoxView>, StoreError> {
     Ok(store.box_row(box_id)?.map(|row| BoxView {
         open: !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected),
-        handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
+        handle: row.hands.as_ref().and_then(|b| b.handle.clone()),
         asleep: row
-            .boxed
+            .hands
             .as_ref()
-            .is_some_and(|b| b.state == BoxState::Asleep),
+            .is_some_and(|b| b.state == HandsState::Asleep),
     }))
 }
 

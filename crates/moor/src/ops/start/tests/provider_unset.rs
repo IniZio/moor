@@ -59,7 +59,7 @@ fn restarted_after_failed_acquire(later: impl FnOnce(&super::World) -> crate::cx
         .box_row(moor_core::BoxId::new(v.boxed.id));
     row.unwrap()
         .unwrap()
-        .boxed
+        .hands
         .unwrap()
         .provider
         .as_str()

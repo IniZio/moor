@@ -192,9 +192,9 @@ fn a_box_found_stopped_saved_nothing() {
     let store = w.cx.store().unwrap();
     store.set_pause_publish(b, PausePublish::Allowed).unwrap();
     let row = store.box_row(b).unwrap().unwrap();
-    w.driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    w.driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
-    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+    assert_eq!(state(&w, b), Some(HandsState::Asleep));
     assert_eq!(decided(&w, b), PausePublish::Denied);
 }
 
@@ -222,7 +222,7 @@ fn an_unwoken_close_of_a_box_denied_the_save_reports_the_loss() {
     let store = w.cx.store().unwrap();
     store.set_pause_publish(b, PausePublish::Denied).unwrap();
     close_box(&w, b, false).unwrap();
-    assert_eq!(state(&w, b), Some(BoxState::Deleted));
+    assert_eq!(state(&w, b), Some(HandsState::Deleted));
     assert!(lost(&w, b));
 }
 
@@ -390,8 +390,8 @@ fn a_box_found_stopped_records_no_decision() {
     idle(&w, b);
     let store = w.cx.store().unwrap();
     let row = store.box_row(b).unwrap().unwrap();
-    w.driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    w.driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
-    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+    assert_eq!(state(&w, b), Some(HandsState::Asleep));
     assert_eq!(cache_save(&w, b), None);
 }

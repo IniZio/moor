@@ -9,8 +9,8 @@ use std::sync::Arc;
 use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
@@ -68,7 +68,7 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -79,7 +79,7 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         })
         .set(Fields {
@@ -215,7 +215,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()

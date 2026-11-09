@@ -177,7 +177,7 @@ fn put_to_sleep_ended(f: &Fx) {
             auto: false,
             reason: None,
         })
-        .box_input(moor_core::domain::boxes::BoxInput::Sleep);
+        .box_input(moor_core::domain::hands::HandsInput::Sleep);
     f.cx.store().unwrap().apply(d).unwrap();
 }
 

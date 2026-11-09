@@ -23,7 +23,7 @@ pub use machine::{HeldMachineView, MachineHoldState};
 pub use sleep::unfinished_turn;
 
 use crate::domain::box_state::BoxLifecycle;
-use crate::domain::boxes::BoxState;
+use crate::domain::hands::HandsState;
 use crate::domain::session_state::SessionState;
 
 /// Why the agent could not be launched.
@@ -97,7 +97,7 @@ pub struct BoxSleepView {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DriverView {
     /// Box lifecycle state.
-    pub state: BoxState,
+    pub state: HandsState,
     /// Provider id.
     pub provider: String,
     /// Box handle, when one is known.

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::controller::ServerFrame;
 use moor_core::decide::wait_events::{wait_events_verdict, WaitEventsVerdict};
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::{BoxId, BoxName, ErrorKind, WaitEventsReq, Warning};
 use serde::Serialize;
 
@@ -133,7 +133,7 @@ fn settle(
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+    let ready = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Ready);
     if !ready {
         return Ok(());
     }

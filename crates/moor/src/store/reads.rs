@@ -3,7 +3,7 @@
 use moor_core::controller::ServerFrame;
 use moor_core::decide::turn::SteerMark;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::request::Pins;
 use moor_core::{BoxId, BoxName, SessionId};
 
@@ -12,7 +12,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 use serde_json::Value;
 
 use super::{
-    box_from_row, box_select, event_from_row, events_of, newest_event, BoxRow, DriverRow, EventRow,
+    box_from_row, box_select, event_from_row, events_of, newest_event, BoxRow, EventRow, HandsRow,
     Store, StoreError, EVENT_COLUMNS,
 };
 use crate::store::db::{self, Db, DbExt as _};
@@ -43,9 +43,9 @@ const SHUT: [&str; 2] = ["closed", "rejected"];
 
 /// Box states that count toward capacity, as SQL parameters.
 const LIVE_STATES: [&str; 3] = [
-    BoxState::Starting.as_str(),
-    BoxState::Ready.as_str(),
-    BoxState::Asleep.as_str(),
+    HandsState::Starting.as_str(),
+    HandsState::Ready.as_str(),
+    HandsState::Asleep.as_str(),
 ];
 
 /// An event with the name of the Box that owns it.
@@ -171,12 +171,12 @@ impl Store {
     }
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their box.
-    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, DriverRow)>, StoreError> {
+    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, HandsRow)>, StoreError> {
         let live = Expr::col(b(Boxes::DriverState)).is_in(LIVE_STATES);
         let rows = query_boxes(&self.reader()?, live, Order::Asc, None)?;
         Ok(rows
             .into_iter()
-            .filter_map(|t| t.boxed.map(|b| (t.id, b)))
+            .filter_map(|t| t.hands.map(|b| (t.id, b)))
             .collect())
     }
 

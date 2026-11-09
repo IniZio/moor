@@ -1,5 +1,5 @@
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::BoxId;
 
 use super::setup::{
@@ -20,7 +20,7 @@ fn observed(
     v: &moor_core::view::StartView,
 ) -> (String, Vec<Option<String>>, Vec<Option<String>>) {
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    let stored = row.unwrap().unwrap().boxed.unwrap().workdir.unwrap();
+    let stored = row.unwrap().unwrap().hands.unwrap().workdir.unwrap();
     let (mut setup, mut identity) = (Vec::new(), Vec::new());
     for (_, spec, _) in w.driver.execs() {
         let cwd = spec.cwd.map(|p| p.as_str().to_owned());
@@ -69,7 +69,7 @@ fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_com
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
@@ -82,7 +82,7 @@ fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_com
     assert_eq!(cwd.as_deref(), Some("/w/bin/../box/cbx_2/repo"));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
-        row.boxed.unwrap().workdir.as_deref(),
+        row.hands.unwrap().workdir.as_deref(),
         Some("/w/bin/../box/cbx_2/repo")
     );
 }

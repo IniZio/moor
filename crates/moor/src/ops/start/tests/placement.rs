@@ -160,17 +160,17 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
     store
         .apply(
             moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id))
-                .box_input(moor_core::domain::boxes::BoxInput::DriverMissing),
+                .box_input(moor_core::domain::hands::HandsInput::DriverMissing),
         )
         .unwrap();
     assert!(store
         .box_row(BoxId::new(waiter.boxed.id))
         .unwrap()
-        .is_some_and(|r| r.boxed.is_none()));
+        .is_some_and(|r| r.hands.is_none()));
     link(&w, hv, true, Some(1));
     let row = store.box_row(BoxId::new(waiter.boxed.id)).unwrap().unwrap();
     assert_eq!(
-        row.boxed.map(|b| b.provider.as_str().to_owned()).as_deref(),
+        row.hands.map(|b| b.provider.as_str().to_owned()).as_deref(),
         Some("cloudhypervisor@hv")
     );
 }
@@ -384,7 +384,7 @@ fn put_to_sleep(w: &World, id: BoxId) {
                 auto: false,
                 reason: None,
             })
-            .box_input(moor_core::domain::boxes::BoxInput::Sleep),
+            .box_input(moor_core::domain::hands::HandsInput::Sleep),
     );
 }
 

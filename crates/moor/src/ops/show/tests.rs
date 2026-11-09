@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
@@ -94,10 +94,10 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
-    let acquired = BoxInput::Acquired {
+    let acquired = HandsInput::Acquired {
         handle: got.handle.clone(),
     };
     store.apply(Decision::new(id).box_input(acquired)).unwrap();
@@ -110,7 +110,7 @@ fn first(v: &moor_core::view::ShowView) -> &moor_core::view::BoxView {
 }
 
 /// Machine state of the only Box, as the view reports it.
-fn box_state(cx: &Cx) -> BoxState {
+fn box_state(cx: &Cx) -> HandsState {
     let v = run(cx, &req(None, None)).unwrap();
     first(&v).driver.as_ref().unwrap().state
 }
@@ -156,9 +156,9 @@ fn reconcile_marks_forgotten_box_gone() {
     let cx = cx(dir.path(), &driver);
     let id = add(&cx, "a");
     let handle = ready_box(&cx, &driver, id);
-    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Ready);
     driver.forget(&handle);
-    assert_eq!(box_state(&cx), BoxState::Gone);
+    assert_eq!(box_state(&cx), HandsState::Gone);
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn list_failure_leaves_rows_untouched() {
     let id = add(&cx, "a");
     let handle = ready_box(&cx, &driver, id);
     driver.forget(&handle);
-    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Ready);
     let warned = cx.take_warnings();
     assert_eq!(warned.len(), 1);
     assert!(warned.first().unwrap().message.contains("boom"));
@@ -187,7 +187,7 @@ fn unsupported_list_is_skipped_silently() {
     let id = add(&cx, "a");
     let handle = ready_box(&cx, &driver, id);
     driver.forget(&handle);
-    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert_eq!(box_state(&cx), HandsState::Ready);
     assert!(cx.take_warnings().is_empty());
 }
 
@@ -263,7 +263,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
     let store = cx.store().unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -274,7 +274,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle })
+        .box_input(HandsInput::Acquired { handle: got.handle })
         .set(Fields {
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
@@ -513,7 +513,7 @@ fn list_sleeps_a_box_idle_past_the_threshold() {
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(first(&v).driver.as_ref().unwrap().state, BoxState::Asleep);
+    assert_eq!(first(&v).driver.as_ref().unwrap().state, HandsState::Asleep);
 }
 
 #[test]

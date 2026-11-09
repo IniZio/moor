@@ -1,10 +1,10 @@
 //! The only writer of box/box state and events: `Store::apply` plus run records.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::cache_save::CacheSave;
 use moor_core::domain::decision::{BoxTarget, Decision, Field, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -19,7 +19,7 @@ use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_s
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
 use super::select::newest_session;
-use super::{DriverRow, Store, StoreError};
+use super::{HandsRow, Store, StoreError};
 use crate::store::db::{self, DbExt as _, Tx};
 use moor_core::name::NodeName;
 
@@ -33,7 +33,7 @@ pub(crate) struct Applied {
     /// Primary Session state after the apply.
     pub(crate) session: SessionState,
     /// Box state after the apply, if the box has a box.
-    pub(crate) box_state: Option<BoxState>,
+    pub(crate) box_state: Option<HandsState>,
     /// Ids of the events inserted, in order.
     pub(crate) events: Vec<i64>,
 }
@@ -158,9 +158,9 @@ fn step_driver(
     tx: &Tx<'_>,
     now: Ts,
     id: BoxId,
-    existing: Option<&DriverRow>,
+    existing: Option<&HandsRow>,
     d: &Decision,
-) -> Result<Option<Step<BoxState>>, StoreError> {
+) -> Result<Option<Step<HandsState>>, StoreError> {
     let Some(input) = &d.box_input else {
         return Ok(existing.map(|b| Step {
             from: Some(b.state),
@@ -174,7 +174,7 @@ fn step_driver(
             to,
         }));
     }
-    let to = BoxState::initial(input)?;
+    let to = HandsState::initial(input)?;
     let Field::Set(provider) = &d.set.box_provider else {
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
@@ -282,7 +282,7 @@ fn write_box(
     id: BoxId,
     now: Ts,
     d: &Decision,
-    step: Option<&Step<BoxState>>,
+    step: Option<&Step<HandsState>>,
     quiet: &Step<bool>,
 ) -> Result<(), StoreError> {
     let mut sets = driver_field_sets(&d.set);
@@ -303,7 +303,7 @@ fn write_box(
     if let Some(input) = &d.box_input {
         sets.push((Boxes::DriverState, step.to.as_str().into()));
         // A guest that may run again can change, so what was checked before no longer stands.
-        if matches!(input, BoxInput::Wake | BoxInput::Acquired { .. }) {
+        if matches!(input, HandsInput::Wake | HandsInput::Acquired { .. }) {
             for column in [
                 Boxes::SuspendAhead,
                 Boxes::SuspendDirty,
@@ -333,10 +333,10 @@ fn box_update(id: BoxId) -> UpdateStatement {
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.
-fn input_handle_sets(input: &BoxInput, taken: &Sets<Boxes>) -> Sets<Boxes> {
+fn input_handle_sets(input: &HandsInput, taken: &Sets<Boxes>) -> Sets<Boxes> {
     let (col, handle) = match input {
-        BoxInput::Acquired { handle } => (Boxes::Handle, Some(handle)),
-        BoxInput::AcquireFailed { attempted, .. } => (Boxes::AttemptedHandle, attempted.as_ref()),
+        HandsInput::Acquired { handle } => (Boxes::Handle, Some(handle)),
+        HandsInput::AcquireFailed { attempted, .. } => (Boxes::AttemptedHandle, attempted.as_ref()),
         _ => return Vec::new(),
     };
     match handle {

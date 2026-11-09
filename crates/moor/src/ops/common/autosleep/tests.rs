@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, PausePublish, SleepOutcome};
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -51,7 +51,7 @@ fn working_with(driver: FakeDriver) -> Fx {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -70,7 +70,7 @@ fn working_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle });
+        .box_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -112,9 +112,9 @@ fn kinds(f: &Fx) -> Vec<String> {
 }
 
 /// Box lifecycle, Session and Box states now.
-fn states(f: &Fx) -> (BoxLifecycle, SessionState, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, SessionState, HandsState) {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    (row.lifecycle, row.session, row.boxed.unwrap().state)
+    (row.lifecycle, row.session, row.hands.unwrap().state)
 }
 
 fn sleep_calls(f: &Fx) -> usize {
@@ -132,7 +132,7 @@ fn a_box_idle_long_enough_sleeps() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+        (BoxLifecycle::Asleep, SessionState::Idle, HandsState::Asleep)
     );
     let k = kinds(&f);
     assert!(k.contains(&"asleep".to_owned()), "{k:?}");
@@ -147,7 +147,7 @@ fn a_native_sleep_counts_as_slept() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+        (BoxLifecycle::Asleep, SessionState::Idle, HandsState::Asleep)
     );
 }
 
@@ -158,7 +158,7 @@ fn a_box_not_idle_long_enough_is_left_alone() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
     );
     assert_eq!(sleep_calls(&f), 0);
 }
@@ -170,7 +170,11 @@ fn a_working_box_never_sleeps() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Working, BoxState::Ready)
+        (
+            BoxLifecycle::Ready,
+            SessionState::Working,
+            HandsState::Ready
+        )
     );
     assert_eq!(sleep_calls(&f), 0);
 }
@@ -190,7 +194,7 @@ fn a_held_box_lock_skips_the_sleep_silently() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
     );
     assert_eq!(sleep_calls(&f), 0);
     assert!(f.cx.take_warnings().is_empty());
@@ -212,7 +216,7 @@ fn a_run_in_flight_skips_the_sleep() {
             .unwrap();
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f).2, BoxState::Ready);
+    assert_eq!(states(&f).2, HandsState::Ready);
     assert_eq!(sleep_calls(&f), 0);
 }
 
@@ -226,7 +230,7 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
     );
     assert_eq!(sleep_calls(&f), 1);
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
@@ -239,7 +243,7 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
 /// The stored sleep reason of the Box.
 fn reason(f: &Fx) -> Option<String> {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    row.boxed.unwrap().sleep_reason
+    row.hands.unwrap().sleep_reason
 }
 
 fn step(f: &Fx, input: SessionInput) {
@@ -310,7 +314,7 @@ fn an_unknown_provider_stays_up_and_says_why() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
     );
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let shown = box_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
@@ -326,7 +330,7 @@ fn a_driver_failure_warns_and_changes_nothing() {
     auto_sleep(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
     );
     let warned = f.cx.take_warnings();
     assert_eq!(warned.len(), 1);
@@ -343,7 +347,7 @@ fn a_box_waiting_on_a_prompt_sleeps_after_five_minutes() {
     auto_sleep_blocked(&f);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+        (BoxLifecycle::Asleep, SessionState::Idle, HandsState::Asleep)
     );
 }
 
@@ -368,10 +372,10 @@ fn a_wake_restarts_the_awake_clock() {
     pass(&f, Duration::from_mins(119));
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
+        .apply(Decision::new(f.id).box_input(HandsInput::Sleep))
         .unwrap();
     store
-        .apply(Decision::new(f.id).box_input(BoxInput::Wake))
+        .apply(Decision::new(f.id).box_input(HandsInput::Wake))
         .unwrap();
     pass(&f, Duration::from_mins(119));
     auto_sleep(&f);
@@ -388,7 +392,7 @@ fn auto_sleep_parks_the_tunnel_first() {
     assert_eq!(host.calls(), vec![ProxyHostCall::Park(f.id)]);
     assert_eq!(
         states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+        (BoxLifecycle::Asleep, SessionState::Idle, HandsState::Asleep)
     );
 }
 

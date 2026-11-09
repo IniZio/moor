@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::DriverError;
 use moor_core::ErrorKind;
 
@@ -47,7 +47,7 @@ fn a_release_error_keeps_the_box_open_with_the_session_ended() {
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(!live_session(&f));
     assert!(is_working(&row(&f)));
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }
 
 #[test]

@@ -79,7 +79,7 @@ fn a_retry_fork_cut_by_a_restart_is_taken_over_by_the_next_process() {
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     let calls = w.driver.calls();
     assert!(calls.iter().any(|c| c == "adopt"), "{calls:?}");
-    let moved = after.boxed.unwrap().handle;
+    let moved = after.hands.unwrap().handle;
     assert_ne!(
         moved,
         Some(BoxHandle::new("box-1")),
@@ -101,7 +101,7 @@ fn a_retry_fork_cut_by_a_lost_link_is_taken_over_by_the_same_process() {
     let after = row(&w, id);
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     assert!(w.driver.calls().iter().any(|c| c == "adopt"));
-    assert_ne!(after.boxed.unwrap().handle, Some(BoxHandle::new("box-1")));
+    assert_ne!(after.hands.unwrap().handle, Some(BoxHandle::new("box-1")));
     assert_eq!(releases(&w), ["release box-1"]);
 }
 

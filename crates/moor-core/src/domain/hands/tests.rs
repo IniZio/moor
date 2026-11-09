@@ -1,34 +1,34 @@
 //! Tests for the Box state machine.
 
-use super::{BoxInput, BoxState};
+use super::{HandsInput, HandsState};
 use crate::domain::Illegal;
 use crate::name::BoxHandle;
 
-use BoxState::{Asleep, Deleted, Failed, Gone, Ready, ReleaseFailed, Starting};
+use HandsState::{Asleep, Deleted, Failed, Gone, Ready, ReleaseFailed, Starting};
 
 /// One sample of every input variant.
-fn inputs() -> Vec<BoxInput> {
+fn inputs() -> Vec<HandsInput> {
     vec![
-        BoxInput::Requested,
-        BoxInput::Acquired {
+        HandsInput::Requested,
+        HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         },
-        BoxInput::AcquireFailed {
+        HandsInput::AcquireFailed {
             cause: "c".to_owned(),
             attempted: None,
         },
-        BoxInput::Sleep,
-        BoxInput::Wake,
-        BoxInput::DriverMissing,
-        BoxInput::Released,
-        BoxInput::ReleaseErr {
+        HandsInput::Sleep,
+        HandsInput::Wake,
+        HandsInput::DriverMissing,
+        HandsInput::Released,
+        HandsInput::ReleaseErr {
             cause: "c".to_owned(),
         },
     ]
 }
 
 /// Picks the sample input with the given name.
-fn input(name: &str) -> BoxInput {
+fn input(name: &str) -> HandsInput {
     inputs()
         .into_iter()
         .find(|i| i.name() == name)
@@ -36,7 +36,7 @@ fn input(name: &str) -> BoxInput {
 }
 
 /// Every legal (from, input name, to) triple.
-const LEGAL: [(BoxState, &str, BoxState); 19] = [
+const LEGAL: [(HandsState, &str, HandsState); 19] = [
     (Starting, "acquired", Ready),
     (Starting, "acquire_failed", Failed),
     (Failed, "requested", Starting),
@@ -70,7 +70,7 @@ fn legal_transitions() {
 #[test]
 fn every_other_pair_is_illegal() {
     let mut checked = 0;
-    for from in BoxState::ALL {
+    for from in HandsState::ALL {
         for i in inputs() {
             if LEGAL.iter().any(|(f, n, _)| *f == from && *n == i.name()) {
                 continue;
@@ -85,16 +85,19 @@ fn every_other_pair_is_illegal() {
             checked += 1;
         }
     }
-    assert_eq!(checked, BoxState::ALL.len() * inputs().len() - LEGAL.len());
+    assert_eq!(
+        checked,
+        HandsState::ALL.len() * inputs().len() - LEGAL.len()
+    );
 }
 
 /// `initial` accepts only `Requested`.
 #[test]
 fn initial_only_requested() {
-    assert_eq!(BoxState::initial(&BoxInput::Requested), Ok(Starting));
+    assert_eq!(HandsState::initial(&HandsInput::Requested), Ok(Starting));
     for i in inputs().into_iter().filter(|i| i.name() != "requested") {
         assert_eq!(
-            BoxState::initial(&i),
+            HandsState::initial(&i),
             Err(Illegal {
                 from: "none".to_owned(),
                 input: i.name().to_owned(),
@@ -106,25 +109,25 @@ fn initial_only_requested() {
 /// `as_str` and `parse` round-trip and match serde.
 #[test]
 fn as_str_parse_serde() {
-    for s in BoxState::ALL {
-        assert_eq!(BoxState::parse(s.as_str()), Some(s));
+    for s in HandsState::ALL {
+        assert_eq!(HandsState::parse(s.as_str()), Some(s));
         assert_eq!(
             serde_json::to_string(&s).unwrap(),
             format!("\"{}\"", s.as_str())
         );
         assert_eq!(
-            serde_json::from_str::<BoxState>(&format!("\"{}\"", s.as_str())).unwrap(),
+            serde_json::from_str::<HandsState>(&format!("\"{}\"", s.as_str())).unwrap(),
             s
         );
     }
-    assert_eq!(BoxState::parse("stopped"), None);
-    assert_eq!(BoxState::parse(""), None);
+    assert_eq!(HandsState::parse("stopped"), None);
+    assert_eq!(HandsState::parse(""), None);
 }
 
 /// Only Starting, Ready and Asleep count toward capacity.
 #[test]
 fn capacity() {
-    for s in BoxState::ALL {
+    for s in HandsState::ALL {
         assert_eq!(
             s.counts_toward_capacity(),
             matches!(s, Starting | Ready | Asleep),
@@ -133,8 +136,8 @@ fn capacity() {
     }
 }
 
-/// Position of a state in `BoxState::ALL`; the exhaustive match fails to compile on a new variant.
-const fn state_index(s: BoxState) -> usize {
+/// Position of a state in `HandsState::ALL`; the exhaustive match fails to compile on a new variant.
+const fn state_index(s: HandsState) -> usize {
     match s {
         Starting => 0,
         Ready => 1,
@@ -147,24 +150,24 @@ const fn state_index(s: BoxState) -> usize {
 }
 
 /// Position of an input in `inputs()`; the exhaustive match fails to compile on a new variant.
-const fn input_index(i: &BoxInput) -> usize {
+const fn input_index(i: &HandsInput) -> usize {
     match i {
-        BoxInput::Requested => 0,
-        BoxInput::Acquired { .. } => 1,
-        BoxInput::AcquireFailed { .. } => 2,
-        BoxInput::Sleep => 3,
-        BoxInput::Wake => 4,
-        BoxInput::DriverMissing => 5,
-        BoxInput::Released => 6,
-        BoxInput::ReleaseErr { .. } => 7,
+        HandsInput::Requested => 0,
+        HandsInput::Acquired { .. } => 1,
+        HandsInput::AcquireFailed { .. } => 2,
+        HandsInput::Sleep => 3,
+        HandsInput::Wake => 4,
+        HandsInput::DriverMissing => 5,
+        HandsInput::Released => 6,
+        HandsInput::ReleaseErr { .. } => 7,
     }
 }
 
 /// `ALL` lists every state once, in match order.
 #[test]
 fn all_states_listed_once_in_order() {
-    assert_eq!(BoxState::ALL.len(), 7);
-    for (pos, s) in BoxState::ALL.into_iter().enumerate() {
+    assert_eq!(HandsState::ALL.len(), 7);
+    for (pos, s) in HandsState::ALL.into_iter().enumerate() {
         assert_eq!(state_index(s), pos, "{s:?}");
     }
 }
@@ -172,10 +175,10 @@ fn all_states_listed_once_in_order() {
 /// The hand-written name equals the serde name and parses back.
 #[test]
 fn state_names_match_serde_and_parse() {
-    for s in BoxState::ALL {
+    for s in HandsState::ALL {
         let json = serde_json::to_value(s).unwrap();
         assert_eq!(json.as_str(), Some(s.as_str()), "{s:?}");
-        assert_eq!(BoxState::parse(s.as_str()), Some(s), "{s:?}");
+        assert_eq!(HandsState::parse(s.as_str()), Some(s), "{s:?}");
     }
 }
 
@@ -187,7 +190,7 @@ fn input_samples_cover_every_variant_with_unique_names() {
     for (pos, i) in all.iter().enumerate() {
         assert_eq!(input_index(i), pos, "{i:?}");
     }
-    let mut names: Vec<_> = all.iter().map(BoxInput::name).collect();
+    let mut names: Vec<_> = all.iter().map(HandsInput::name).collect();
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), all.len());

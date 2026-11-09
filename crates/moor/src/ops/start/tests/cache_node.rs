@@ -61,7 +61,7 @@ fn a_personal_node_whose_link_drops_before_the_plan_records_why_the_box_is_cold(
     let cfg =
         crate::ops::common::facts::settings_of(&w.cx, &row, &moor_core::config::Flags::default())
             .unwrap();
-    let provider = row.boxed.clone().unwrap().provider;
+    let provider = row.hands.clone().unwrap().provider;
     let caps = w.cx.driver().caps(&provider).unwrap();
     crate::ops::common::cache::for_start(&w.cx, store, &row, &cfg, &provider, caps);
     assert_eq!(cold_reasons(&w), ["machine_offline"]);

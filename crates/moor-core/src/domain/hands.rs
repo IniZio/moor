@@ -6,7 +6,7 @@ use crate::name::BoxHandle;
 /// Lifecycle state of a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum BoxState {
+pub enum HandsState {
     /// Acquire requested, no handle yet.
     Starting,
     /// Acquired and usable.
@@ -23,7 +23,7 @@ pub enum BoxState {
     Deleted,
 }
 
-impl BoxState {
+impl HandsState {
     /// Every state, in declaration order.
     pub const ALL: [Self; 7] = [
         Self::Starting,
@@ -65,9 +65,9 @@ impl BoxState {
     ///
     /// # Errors
     /// [`Illegal`] with `from: "none"` for any other input.
-    pub fn initial(input: &BoxInput) -> Result<Self, Illegal> {
+    pub fn initial(input: &HandsInput) -> Result<Self, Illegal> {
         match input {
-            BoxInput::Requested => Ok(Self::Starting),
+            HandsInput::Requested => Ok(Self::Starting),
             _ => Err(Illegal {
                 from: "none".to_owned(),
                 input: input.name().to_owned(),
@@ -79,8 +79,8 @@ impl BoxState {
     ///
     /// # Errors
     /// [`Illegal`] for every pair outside the transition table.
-    pub fn step(self, input: &BoxInput) -> Result<Self, Illegal> {
-        use BoxInput as I;
+    pub fn step(self, input: &HandsInput) -> Result<Self, Illegal> {
+        use HandsInput as I;
         let to = match (self, input) {
             (Self::Starting, I::Acquired { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
             (Self::Starting, I::AcquireFailed { .. }) => Self::Failed,
@@ -112,7 +112,7 @@ impl BoxState {
 
 /// An input to the Box machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BoxInput {
+pub enum HandsInput {
     /// A Box is wanted.
     Requested,
     /// The Driver returned a handle.
@@ -142,7 +142,7 @@ pub enum BoxInput {
     },
 }
 
-impl BoxInput {
+impl HandsInput {
     /// The `snake_case` variant name.
     #[must_use]
     pub const fn name(&self) -> &'static str {

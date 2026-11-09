@@ -12,7 +12,7 @@ use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::sql::name_taken;
 use crate::store::db::{self, DbExt as _, Tx};
-use crate::store::{load_box, sessions::live_parent, DriverRow, StoreError};
+use crate::store::{load_box, sessions::live_parent, HandsRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
@@ -22,7 +22,7 @@ pub(super) struct Stepped {
     /// The Box written.
     pub(super) id: BoxId,
     /// The Box row before the step, if it existed.
-    pub(super) existing: Option<DriverRow>,
+    pub(super) existing: Option<HandsRow>,
     /// What the writer stores.
     pub(super) parts: Parts,
     /// The states before the step; `None` for a fresh Box.
@@ -65,7 +65,7 @@ pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, St
             };
             Ok(Stepped {
                 id: *id,
-                existing: row.boxed,
+                existing: row.hands,
                 parts,
                 from: Some((lifecycle, session)),
             })

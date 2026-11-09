@@ -3,10 +3,10 @@
 use std::num::NonZeroU32;
 
 use super::{admit, promote_order, Admission, CapacityFacts, HeldBox};
-use crate::domain::boxes::BoxState;
+use crate::domain::hands::HandsState;
 use crate::name::BoxId;
 
-fn held(holder: &str, state: BoxState) -> HeldBox {
+fn held(holder: &str, state: HandsState) -> HeldBox {
     HeldBox {
         holder: holder.to_owned(),
         state,
@@ -26,7 +26,7 @@ fn ids(raw: &[i64]) -> Vec<BoxId> {
 
 #[test]
 fn only_starting_ready_asleep_count() {
-    for state in [BoxState::Starting, BoxState::Ready, BoxState::Asleep] {
+    for state in [HandsState::Starting, HandsState::Ready, HandsState::Asleep] {
         let f = facts(Some(1), vec![held("a", state)]);
         assert!(
             matches!(admit(&f), Admission::AtCapacity { .. }),
@@ -34,10 +34,10 @@ fn only_starting_ready_asleep_count() {
         );
     }
     for state in [
-        BoxState::Failed,
-        BoxState::Gone,
-        BoxState::ReleaseFailed,
-        BoxState::Deleted,
+        HandsState::Failed,
+        HandsState::Gone,
+        HandsState::ReleaseFailed,
+        HandsState::Deleted,
     ] {
         let f = facts(Some(1), vec![held("a", state)]);
         assert_eq!(admit(&f), Admission::Admitted, "{state:?}");
@@ -49,9 +49,9 @@ fn at_limit_names_limit_and_holder() {
     let f = facts(
         Some(2),
         vec![
-            held("gone", BoxState::Gone),
-            held("one", BoxState::Ready),
-            held("two", BoxState::Asleep),
+            held("gone", HandsState::Gone),
+            held("one", HandsState::Ready),
+            held("two", HandsState::Asleep),
         ],
     );
     assert_eq!(
@@ -65,14 +65,14 @@ fn at_limit_names_limit_and_holder() {
 
 #[test]
 fn under_limit_is_admitted() {
-    let f = facts(Some(2), vec![held("one", BoxState::Ready)]);
+    let f = facts(Some(2), vec![held("one", HandsState::Ready)]);
     assert_eq!(admit(&f), Admission::Admitted);
 }
 
 #[test]
 fn no_limit_always_admits() {
     let boxes = (0..50)
-        .map(|i| held(&format!("t{i}"), BoxState::Ready))
+        .map(|i| held(&format!("t{i}"), HandsState::Ready))
         .collect();
     assert_eq!(admit(&facts(None, boxes)), Admission::Admitted);
 }

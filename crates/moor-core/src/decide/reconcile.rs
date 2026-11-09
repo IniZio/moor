@@ -3,8 +3,8 @@
 use std::collections::HashSet;
 
 use crate::domain::box_state::BoxLifecycleInput;
-use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
+use crate::domain::hands::{HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::BoxListing;
 
@@ -14,7 +14,7 @@ pub struct BoxFact {
     /// The owning box.
     pub box_id: BoxId,
     /// The Box state.
-    pub state: BoxState,
+    pub state: HandsState,
     /// The stored Driver handle, if any.
     pub handle: Option<BoxHandle>,
 }
@@ -34,9 +34,9 @@ pub const STOPPED_REASON: &str = "its machine stopped, as when its host restarts
 pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
     let listed: HashSet<&BoxHandle> = listing.iter().map(|l| &l.handle).collect();
     rows.iter()
-        .filter(|r| matches!(r.state, BoxState::Ready | BoxState::Asleep))
+        .filter(|r| matches!(r.state, HandsState::Ready | HandsState::Asleep))
         .filter(|r| r.handle.as_ref().is_some_and(|h| !listed.contains(h)))
-        .map(|r| Decision::new(r.box_id).box_input(BoxInput::DriverMissing))
+        .map(|r| Decision::new(r.box_id).box_input(HandsInput::DriverMissing))
         .chain(stopped(rows, listing))
         .collect()
 }
@@ -51,7 +51,7 @@ pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
         .map(|l| &l.handle)
         .collect();
     rows.iter()
-        .filter(|r| r.state == BoxState::Ready)
+        .filter(|r| r.state == HandsState::Ready)
         .filter(|r| r.handle.as_ref().is_some_and(|h| asleep.contains(h)))
         .map(|r| {
             Decision::new(r.box_id)
@@ -59,7 +59,7 @@ pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
                     auto: true,
                     reason: Some(STOPPED_REASON.to_owned()),
                 })
-                .box_input(BoxInput::Sleep)
+                .box_input(HandsInput::Sleep)
         })
         .collect()
 }

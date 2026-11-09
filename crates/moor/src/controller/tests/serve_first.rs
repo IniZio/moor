@@ -14,8 +14,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxName, ProviderId};
 use serde_json::{json, Value};
@@ -100,17 +100,17 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     };
     let starting = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields)
         .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
     store.apply(starting).expect("starting");
-    let cut = Decision::new(id).box_input(BoxInput::AcquireFailed {
+    let cut = Decision::new(id).box_input(HandsInput::AcquireFailed {
         cause: "cut once already".to_owned(),
         attempted: None,
     });
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .intent(IntentChange::Set(Intent::Provisioning { pid: dead }));
     store.apply(again).expect("again");
 }

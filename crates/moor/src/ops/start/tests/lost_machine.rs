@@ -1,7 +1,7 @@
 //! A start asks the provider about the machine of the Box it attaches to.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{Driver as _, DriverError};
 use moor_core::{BoxHandle, BoxId};
 
@@ -12,7 +12,7 @@ use crate::testing::engine::FakeEngine;
 
 fn handle_of(w: &World, id: BoxId) -> Option<BoxHandle> {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    row.boxed.unwrap().handle
+    row.hands.unwrap().handle
 }
 
 fn kinds(w: &World, id: BoxId) -> Vec<String> {
@@ -61,7 +61,7 @@ fn a_start_wakes_a_box_whose_machine_stopped_behind_moor() {
     run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(row.hands.unwrap().state, HandsState::Ready);
     let kinds = kinds(&w, id);
     assert!(kinds.iter().any(|k| k == "asleep"), "{kinds:?}");
     assert!(w.driver.calls().iter().any(|c| c.starts_with("wake")));

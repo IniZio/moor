@@ -1,6 +1,6 @@
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxHandle, BoxId};
 
@@ -14,7 +14,7 @@ fn ready_box(store: &Store) -> BoxId {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(BoxInput::Requested)
+                .box_input(HandsInput::Requested)
                 .set(provider()),
         )
         .unwrap();
@@ -25,7 +25,7 @@ fn ready_box(store: &Store) -> BoxId {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .box_input(BoxInput::Acquired {
+                .box_input(HandsInput::Acquired {
                     handle: BoxHandle::new("h1"),
                 }),
         )
@@ -43,7 +43,7 @@ fn fresh_box_has_no_sleep_reason() {
             .box_row(id)
             .unwrap()
             .unwrap()
-            .boxed
+            .hands
             .unwrap()
             .sleep_reason,
         None
@@ -63,11 +63,11 @@ fn sleep_reason_is_set_without_changing_states() {
         }))
         .unwrap();
     let after = store.box_row(id).unwrap().unwrap();
-    let b = after.boxed.unwrap();
+    let b = after.hands.unwrap();
     assert_eq!(b.sleep_reason.as_deref(), Some("no wake"));
     assert_eq!(
         (after.lifecycle, b.state),
-        (before.lifecycle, before.boxed.unwrap().state)
+        (before.lifecycle, before.hands.unwrap().state)
     );
 }
 
@@ -84,8 +84,8 @@ fn sleep_reason_clears_in_the_same_apply_as_a_box_input() {
     };
     store.apply(reason(Field::Set("no wake".into()))).unwrap();
     store
-        .apply(reason(Field::Clear).box_input(BoxInput::Sleep))
+        .apply(reason(Field::Clear).box_input(HandsInput::Sleep))
         .unwrap();
-    let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
-    assert_eq!((b.state, b.sleep_reason), (BoxState::Asleep, None));
+    let b = store.box_row(id).unwrap().unwrap().hands.unwrap();
+    assert_eq!((b.state, b.sleep_reason), (HandsState::Asleep, None));
 }

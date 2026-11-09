@@ -3,14 +3,14 @@
 use std::time::{Duration, Instant};
 
 use moor_core::boxscript::quote;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, DriverRow, Store};
+use crate::store::{BoxRow, HandsRow, Store};
 
 /// Wall-clock allowance for the index script.
 pub(crate) const INDEX_DEADLINE: Duration = Duration::from_secs(60);
@@ -76,10 +76,10 @@ pub(crate) fn parse_index(text: &str) -> (Vec<Entry>, usize) {
 }
 
 /// The Ready Box with a handle that Reports are collected from.
-pub(super) fn target(row: &BoxRow) -> Option<(&DriverRow, &BoxHandle)> {
-    row.boxed
+pub(super) fn target(row: &BoxRow) -> Option<(&HandsRow, &BoxHandle)> {
+    row.hands
         .as_ref()
-        .filter(|b| b.state == BoxState::Ready)
+        .filter(|b| b.state == HandsState::Ready)
         .and_then(|b| b.handle.as_ref().map(|h| (b, h)))
 }
 

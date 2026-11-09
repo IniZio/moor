@@ -311,7 +311,7 @@ pub(crate) fn session_ref(row: &BoxRow, launch: &SessionRow) -> Option<SessionRe
 
 /// The Box machine of `row` and its recorded workdir; none when the Box cannot be reached.
 pub(crate) fn box_place(row: &BoxRow) -> Option<(BoxHandle, BoxPath)> {
-    let b = row.boxed.as_ref()?;
+    let b = row.hands.as_ref()?;
     Some((b.handle.clone()?, recorded_workdir(b.workdir.as_deref()?)?))
 }
 

@@ -7,7 +7,7 @@ use moor_core::config::NodeConfig;
 use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::{Memory, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
 use moor_schema::tables::{Boxes, MachineLinks, UserMachinesV2};
@@ -42,7 +42,10 @@ fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
     for row in rows {
         let (node, driver, state, n) = row?;
         let n = usize::try_from(n).unwrap_or(0);
-        if driver.and_then(|d| BoxState::parse(&d)).is_some_and(counts) {
+        if driver
+            .and_then(|d| HandsState::parse(&d))
+            .is_some_and(counts)
+        {
             *live.entry(node.clone()).or_default() += n;
         }
         if state == BoxLifecycle::Pending.as_str() {

@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::request::OpenSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -72,7 +72,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -91,7 +91,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: got.handle.clone(),
         })
         .set(Fields {
@@ -184,7 +184,7 @@ fn an_asleep_box_is_refused_and_opens_nothing() {
             auto: false,
             reason: None,
         })
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     store.apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

@@ -2,8 +2,8 @@
 
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
@@ -65,10 +65,10 @@ pub(super) fn put_to_sleep(f: &Fx) {
                     auto: false,
                     reason: None,
                 })
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
-    assert_eq!(box_state(f), BoxState::Asleep);
+    assert_eq!(box_state(f), HandsState::Asleep);
 }
 
 fn count(f: &Fx, prefix: &str) -> usize {
@@ -141,7 +141,7 @@ fn close_proceeds_when_the_box_probe_is_clean() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
     assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
 
@@ -186,7 +186,7 @@ pub(super) fn fx_setup_failed() -> Fx {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(BoxInput::Requested)
+                .box_input(HandsInput::Requested)
                 .set(Fields {
                     box_provider: Field::Set(provider.clone()),
                     box_workdir: Field::Set("/work/box-1".into()),
@@ -208,7 +208,7 @@ pub(super) fn fx_setup_failed() -> Fx {
     store
         .apply(
             Decision::new(id)
-                .box_input(BoxInput::Acquired { handle: got.handle })
+                .box_input(HandsInput::Acquired { handle: got.handle })
                 .lifecycle(BoxLifecycleInput::SetupFailed {
                     cause: "clone failed".to_owned(),
                     which: None,
@@ -228,10 +228,10 @@ pub(super) fn fx_setup_failed() -> Fx {
 fn box_whose_setup_failed_before_launch_closes_without_the_probe() {
     let f = fx_setup_failed();
     assert_eq!(row(&f).lifecycle, BoxLifecycle::SetupFailed);
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
     assert_eq!(probes(&f), 0, "no unsaved-work probe");
 }
 
@@ -245,7 +245,7 @@ fn close_wakes_a_sleeping_box_and_refuses_when_it_holds_unsaved_work() {
     assert_eq!(count(&f, "wake"), 1);
     assert_eq!(count(&f, "exec"), 1);
     assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
-    assert_ne!(box_state(&f), BoxState::Deleted);
+    assert_ne!(box_state(&f), HandsState::Deleted);
     assert_eq!(count(&f, "release"), 0);
 }
 
@@ -268,14 +268,14 @@ fn close_refuses_and_leaves_the_box_asleep_when_it_cannot_be_woken() {
     put_to_sleep(&f);
     let t = text(&refused(&f));
     assert!(t.contains("could not wake the Box"), "{t}");
-    assert_eq!(box_state(&f), BoxState::Asleep);
+    assert_eq!(box_state(&f), HandsState::Asleep);
     assert_eq!(count(&f, "exec"), 0);
 }
 
 #[test]
 fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
     let f = fx_probe(Some("ahead=1 dirty=1"));
-    let h = row(&f).boxed.unwrap().handle.unwrap();
+    let h = row(&f).hands.unwrap().handle.unwrap();
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
@@ -314,9 +314,9 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
     let f = fx_probe(Some("ahead=1 dirty=1"));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
         .unwrap();
-    assert_eq!(box_state(&f), BoxState::Gone);
+    assert_eq!(box_state(&f), HandsState::Gone);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
@@ -342,7 +342,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(BoxInput::Requested)
+                .box_input(HandsInput::Requested)
                 .set(fields),
         )
         .unwrap();
@@ -354,7 +354,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
                     cause: cause.clone(),
                     which: None,
                 })
-                .box_input(BoxInput::AcquireFailed {
+                .box_input(HandsInput::AcquireFailed {
                     cause,
                     attempted: None,
                 }),
@@ -394,7 +394,7 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     assert_eq!(count(&f, "exec"), 3);
     assert_eq!(count(&f, "release"), 0);
     assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
-    assert_ne!(box_state(&f), BoxState::Deleted);
+    assert_ne!(box_state(&f), HandsState::Deleted);
     assert!(f.cx.store().unwrap().live_session(f.id).unwrap().is_none());
 }
 
@@ -417,7 +417,7 @@ fn close_proceeds_without_force_when_the_box_has_no_git_checkout() {
     let f = fx_box(driver, Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
     assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
 
@@ -428,7 +428,7 @@ fn close_proceeds_when_the_recheck_finds_no_git_checkout() {
     let f = fx_box(driver, Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(box_state(&f), HandsState::Deleted);
 }
 
 #[test]

@@ -114,7 +114,7 @@ fn woken(cx: &Cx, id: BoxId) -> Result<(BoxHandle, BoxPath), CommandError> {
         row = reload()?;
     }
     let handle = usable_handle(&row)?;
-    let recorded = row.boxed.as_ref().and_then(|b| b.workdir.as_deref());
+    let recorded = row.hands.as_ref().and_then(|b| b.workdir.as_deref());
     let workdir = match recorded.and_then(recorded_workdir) {
         Some(w) => w,
         None => cx.driver().workdir(&handle)?,

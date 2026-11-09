@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{BoxReq, ErrorKind};
@@ -73,7 +73,7 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                         reason: None,
                     })
                     .cache_save(parked.cache_save)
-                    .box_input(BoxInput::Sleep)
+                    .box_input(HandsInput::Sleep)
                     .set(fields),
             )?;
             Ok(())
