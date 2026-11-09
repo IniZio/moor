@@ -1,6 +1,8 @@
 //! The controller lock: a session advisory lock on a connection of its own, which Postgres frees
 //! the moment that session ends. It uses no table, so it can be taken before any migration.
 
+use std::time::Duration;
+
 use postgres::fallible_iterator::FallibleIterator as _;
 use postgres::Client;
 
@@ -102,14 +104,18 @@ impl ControllerLock {
         })
     }
 
-    /// Blocks reading this session's socket until it closes, without a timer, and says why.
-    pub(crate) fn until_lost(mut self) -> String {
-        let mut notifications = self.client.notifications();
-        let mut reads = notifications.blocking_iter();
+    /// Blocks on this session until it closes or stops holding the lock, and says why. It asks
+    /// every `every`, so no idle timeout on the way to the server can end a silent session.
+    pub(crate) fn until_lost(mut self, every: Duration) -> String {
         loop {
-            match reads.next() {
-                Ok(Some(_)) => {}
-                Ok(None) => return "the controller lock's connection closed".to_owned(),
+            if let Err(e) = self.client.notifications().timeout_iter(every).next() {
+                return format!("the controller lock's connection closed: {e}");
+            }
+            let holds = format!("SELECT count(*) {HELD} AND l.pid = pg_backend_pid()");
+            let rows = self.client.query_one(&holds, &[]);
+            match rows.and_then(|r| r.try_get::<_, i64>(0)) {
+                Ok(1) => {}
+                Ok(_) => return "the controller lock's session no longer holds it".to_owned(),
                 Err(e) => return format!("the controller lock's connection closed: {e}"),
             }
         }
@@ -128,6 +134,20 @@ impl ControllerLock {
                  WHERE application_name = $1",
                 &[&me],
             )
+            .unwrap();
+    }
+
+    /// Has the server end this session once it sits idle for a second.
+    pub(crate) fn idle_out(&mut self) {
+        self.client
+            .batch_execute("SET idle_session_timeout = '1s'")
+            .unwrap();
+    }
+
+    /// Frees the lock while keeping the session open.
+    pub(crate) fn let_go(&mut self) {
+        self.client
+            .batch_execute("SELECT pg_advisory_unlock_all()")
             .unwrap();
     }
 }
