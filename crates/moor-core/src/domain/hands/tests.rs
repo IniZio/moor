@@ -1,6 +1,6 @@
 //! Tests for the Box state machine.
 
-use super::{HandsInput, HandsState};
+use super::{HandsInc, HandsInput, HandsState};
 use crate::domain::Illegal;
 use crate::name::BoxHandle;
 
@@ -37,12 +37,10 @@ fn input(name: &str) -> HandsInput {
 }
 
 /// Every legal (from, input name, to) triple.
-const LEGAL: [(HandsState, &str, HandsState); 20] = [
+const LEGAL: [(HandsState, &str, HandsState); 18] = [
     (Starting, "acquired", Ready),
     (Starting, "acquire_failed", Failed),
     (Starting, "acquire_cut", Failed),
-    (Failed, "requested", Starting),
-    (Gone, "requested", Starting),
     (Ready, "sleep", Asleep),
     (Asleep, "wake", Ready),
     (Ready, "driver_missing", Gone),
@@ -124,6 +122,29 @@ fn as_str_parse_serde() {
     }
     assert_eq!(HandsState::parse("stopped"), None);
     assert_eq!(HandsState::parse(""), None);
+}
+
+/// An acquire after failed or lost hands gets new ones; one still under way keeps its own.
+#[test]
+fn an_acquire_after_ended_hands_gets_the_next_ones() {
+    let second = HandsInc::new(2);
+    assert_eq!(HandsInc::acquiring(None), HandsInc::FIRST);
+    for s in HandsState::ALL {
+        let want = if matches!(s, Failed | Gone) {
+            HandsInc::new(3)
+        } else {
+            second
+        };
+        assert_eq!(HandsInc::acquiring(Some((second, s))), want, "{s:?}");
+    }
+}
+
+/// Failed, Gone and Deleted hands are over.
+#[test]
+fn ended_states() {
+    for s in HandsState::ALL {
+        assert_eq!(s.ended(), matches!(s, Failed | Gone | Deleted), "{s:?}");
+    }
 }
 
 /// Only Starting, Ready and Asleep count toward capacity.

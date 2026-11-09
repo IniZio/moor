@@ -41,6 +41,9 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
     let target = (found.id, found.name.as_str());
+    if lost(&found) {
+        bring_back(cx, &found)?;
+    }
     let _turn = cx.turn(target.0, Cmd::Steer)?;
     let row = reload(store, target)?;
     if store.live_session(target.0)?.is_none() && row.asleep() {
@@ -376,10 +379,12 @@ fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
 }
 
 mod choose;
+mod lost;
 mod record;
 mod relaunch;
 
 use choose::choose;
+use lost::{bring_back, lost};
 use record::{record, Mark};
 use relaunch::Revived;
 

@@ -25,6 +25,17 @@ impl HandsInc {
     pub const fn get(self) -> i64 {
         self.0
     }
+
+    /// The hands an acquire writes, given the Box's `current` ones: new hands after ones that
+    /// ended, the current ones while they are still being acquired, the first for a Box with none.
+    #[must_use]
+    pub const fn acquiring(current: Option<(Self, HandsState)>) -> Self {
+        match current {
+            None => Self::FIRST,
+            Some((inc, state)) if state.replaceable() => Self(inc.0 + 1),
+            Some((inc, _)) => inc,
+        }
+    }
 }
 
 /// Lifecycle state of a Box.
@@ -85,7 +96,20 @@ impl HandsState {
         matches!(self, Self::Starting | Self::Ready | Self::Asleep)
     }
 
-    /// The state of a Box that has no row yet; only `Requested` creates one.
+    /// Whether hands in this state are over: their acquire failed, their VM was lost or released.
+    /// Nothing acquires them again; an acquire gets the Box new hands.
+    #[must_use]
+    pub const fn ended(self) -> bool {
+        matches!(self, Self::Failed | Self::Gone | Self::Deleted)
+    }
+
+    /// Whether a Box whose current hands are in this state may acquire new ones.
+    #[must_use]
+    pub const fn replaceable(self) -> bool {
+        matches!(self, Self::Failed | Self::Gone)
+    }
+
+    /// The state of new hands; only `Requested` creates them.
     ///
     /// # Errors
     /// [`Illegal`] with `from: "none"` for any other input.
@@ -108,7 +132,6 @@ impl HandsState {
         let to = match (self, input) {
             (Self::Starting, I::Acquired { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
             (Self::Starting, I::AcquireFailed { .. } | I::AcquireCut { .. }) => Self::Failed,
-            (Self::Failed | Self::Gone, I::Requested) => Self::Starting,
             (Self::Ready, I::Sleep) => Self::Asleep,
             (Self::Ready | Self::Asleep | Self::Failed, I::DriverMissing) => Self::Gone,
             (

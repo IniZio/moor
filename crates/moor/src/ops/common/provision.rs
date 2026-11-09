@@ -97,6 +97,7 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
             Some(Entry::Retry)
         }
         (BoxLifecycle::Ready, Some(HandsState::Failed | HandsState::Gone)) => Some(Entry::Stay),
+        (BoxLifecycle::Asleep, Some(HandsState::Gone)) => Some(Entry::Wake),
         _ => None,
     }
 }
@@ -138,7 +139,7 @@ pub(crate) fn provision(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let started = reread(store, id)?;
-    let inc = started.hands_inc();
+    let inc = started.acquire_inc();
     let requested = |provider: &ProviderId| requested((id, inc), entry, provider);
     let bound = if matches!(entry, Entry::Fresh | Entry::Waiting) {
         let fresh = (&started, entry == Entry::Fresh);
@@ -155,7 +156,7 @@ pub(crate) fn provision(
             require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
         store.apply(requested(&provider))?;
         Bound {
-            seat: node::seat_of(cx, store, &started)?,
+            seat: node::seat_of(cx, store, &reread(store, id)?)?,
             provider,
             caps,
         }
@@ -173,7 +174,7 @@ pub(crate) fn provision(
         _ if forced() => Err(forced_out(store, (id, inc), entry, &planned)?),
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
-            let replacing = (entry == Entry::Stay).then_some(&started);
+            let replacing = entry.replaces().then_some(&started);
             record_acquired(store, (id, inc), &got, replacing)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);

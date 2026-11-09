@@ -95,10 +95,11 @@ pub(crate) fn relieve_disk(cx: &Cx, store: &Store, node: &Node, link: &MachineLi
         let Some(id) = waiting.or(running) else {
             return Ok(true);
         };
+        let inc = store.box_row(id)?.map_or(1, |row| row.hands_inc().get());
         let seat = PoolSeat {
             machine: machine_id,
             controller: store.controller_id()?,
-            inc: 1,
+            inc,
         };
         make_room(cx, store, id, &seat.checkpoint_home(&runtime_id(node)))
     })();

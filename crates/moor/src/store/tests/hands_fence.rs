@@ -72,6 +72,27 @@ impl Store {
     }
 }
 
+impl Store {
+    /// Every hands row of Box `id`, oldest first: `inc`, state and whether it ended.
+    pub(crate) fn hands_history(&self, id: BoxId) -> Vec<(i64, String, bool)> {
+        self.writer()
+            .rows(
+                Query::select()
+                    .columns([BoxHands::Inc, BoxHands::State, BoxHands::EndedAt])
+                    .from(BoxHands::Table)
+                    .and_where(Expr::col(BoxHands::Box).eq(id.get()))
+                    .order_by(BoxHands::Inc, sea_query::Order::Asc),
+                |r| {
+                    let ended: Option<i64> = r.get(2)?;
+                    Ok::<_, crate::store::db::Error>((r.get(0)?, r.get(1)?, ended.is_some()))
+                },
+            )
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+}
+
 /// The stored state of Box `id`'s hands `inc`.
 fn state_of(store: &Store, id: BoxId, inc: HandsInc) -> String {
     store
@@ -176,4 +197,82 @@ fn pressure_writes_for_replaced_hands_are_refused_and_change_nothing() {
         .unwrap();
     assert_eq!(store.suspend_check(id).unwrap(), Some(clean));
     assert_eq!(store.pause_publish(id).unwrap(), PausePublish::Allowed);
+}
+
+#[test]
+fn a_request_after_lost_hands_adds_new_hands_and_keeps_the_old_as_ended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    store
+        .apply(Decision::new(id).hands_input(OLD, HandsInput::DriverMissing))
+        .unwrap();
+
+    store
+        .apply(Decision::new(id).hands_input(NEW, HandsInput::Requested))
+        .unwrap();
+
+    assert_eq!(
+        store.hands_history(id),
+        [
+            (1, "gone".to_owned(), true),
+            (2, "starting".to_owned(), false)
+        ]
+    );
+    let hands = store.box_row(id).unwrap().unwrap().hands.unwrap();
+    assert_eq!(hands.provider.as_str(), "p", "new hands keep the provider");
+}
+
+#[test]
+fn ended_hands_are_never_acquired_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    store
+        .apply(Decision::new(id).hands_input(OLD, HandsInput::DriverMissing))
+        .unwrap();
+
+    let again = store.apply(Decision::new(id).hands_input(OLD, HandsInput::Requested));
+
+    assert!(matches!(again, Err(StoreError::Illegal(_))), "{again:?}");
+    assert_eq!(store.hands_history(id), [(1, "gone".to_owned(), true)]);
+}
+
+#[test]
+fn a_late_verdict_on_lost_hands_is_refused_once_new_hands_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    store
+        .apply(Decision::new(id).hands_input(OLD, HandsInput::DriverMissing))
+        .unwrap();
+    store
+        .apply(Decision::new(id).hands_input(NEW, HandsInput::Requested))
+        .unwrap();
+
+    let late = store.apply(Decision::new(id).hands_input(OLD, HandsInput::Released));
+
+    assert!(
+        matches!(late, Err(StoreError::Stale { read, .. }) if read == OLD),
+        "{late:?}"
+    );
+    assert_eq!(
+        store.hands_history(id),
+        [
+            (1, "gone".to_owned(), true),
+            (2, "starting".to_owned(), false)
+        ]
+    );
+}
+
+#[test]
+fn hands_that_are_still_acquiring_get_no_second_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+
+    let skip = store.apply(Decision::new(id).hands_input(NEW, HandsInput::Requested));
+
+    assert!(matches!(skip, Err(StoreError::Stale { .. })), "{skip:?}");
+    assert_eq!(store.hands_history(id), [(1, "ready".to_owned(), false)]);
 }

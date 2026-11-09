@@ -174,8 +174,12 @@ pub(super) fn relaunch(
         Ended::Gone => None,
         Ended::Exited(code) => *code,
     };
-    // A resumed session keeps writing the same file on a disk that survived, so a copy now adds nothing.
-    let saved = if launch.resume.is_some() && !recreated {
+    // New hands hold none of the session, so a copy from them would replace it with nothing. A
+    // resumed session keeps writing the same file on a disk that survived, so a copy adds nothing.
+    let saved = if recreated {
+        transcript::record_skipped(store, &row, Trigger::Relaunch, "new hands");
+        None
+    } else if launch.resume.is_some() {
         transcript::record_skipped(store, &row, Trigger::Relaunch, "resumed on the same Box");
         None
     } else {

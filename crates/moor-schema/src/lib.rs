@@ -16,6 +16,7 @@ mod checkpoint_stale;
 mod drop_panes;
 mod egress_token;
 mod forward_port;
+mod hands_ended;
 mod held_prompt;
 mod insertion_order;
 mod link_runner;
@@ -131,6 +132,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V69__session_archive",
         write: session_archive::write,
+    },
+    Step {
+        name: "V70__hands_ended",
+        write: hands_ended::write,
     },
 ];
 

@@ -18,7 +18,7 @@ pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
-use super::hands::{fence, first_hands, update_hands};
+use super::hands::{fence, new_hands, update_hands};
 use super::select::{newest_session, state_update};
 use super::{HandsRow, Store, StoreError};
 use crate::store::db::{self, DbExt as _, Tx};
@@ -105,14 +105,13 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         parts,
         from,
     } = step_box(tx, now, &d)?;
-    fence(id, existing.as_ref(), &d)?;
+    let inc = fence(id, existing.as_ref(), &d)?;
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),
     };
-    let box_step = step_driver(tx, now, id, existing.as_ref(), &d)?;
+    let box_step = step_driver(tx, now, (id, inc), existing.as_ref(), &d)?;
     write_box_row(tx, id, now, &d, &quiet, parts)?;
-    let inc = existing.as_ref().map_or(HandsInc::FIRST, |h| h.inc);
     write_box(tx, id, now, (&d, inc), box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
@@ -151,11 +150,12 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
     })
 }
 
-/// Step the box state, recording the provider on the first input.
+/// Step the hands `inc` of Box `id`. An input to hands the Box does not hold yet creates them, on
+/// the provider the decision names, else on the provider of the hands they replace.
 fn step_driver(
     tx: &Tx<'_>,
     now: Ts,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     existing: Option<&HandsRow>,
     d: &Decision,
 ) -> Result<Option<Step<HandsState>>, StoreError> {
@@ -165,7 +165,7 @@ fn step_driver(
             to: b.state,
         }));
     };
-    if let Some(b) = existing {
+    if let Some(b) = existing.filter(|b| b.inc == inc) {
         let to = b.state.step(input)?;
         return Ok(Some(Step {
             from: Some(b.state),
@@ -173,10 +173,13 @@ fn step_driver(
         }));
     }
     let to = HandsState::initial(input)?;
-    let Some(Field::Set(provider)) = d.hands.as_ref().map(|w| &w.fields.provider) else {
-        return Err(StoreError::Invalid("new box needs box_provider".into()));
+    let provider = match d.hands.as_ref().map(|w| &w.fields.provider) {
+        Some(Field::Set(provider)) => provider,
+        _ => existing
+            .map(|b| &b.provider)
+            .ok_or_else(|| StoreError::Invalid("new box needs box_provider".into()))?,
     };
-    tx.run(first_hands(id, provider, to, now))?;
+    tx.run(new_hands((id, inc), provider, to, now))?;
     Ok(Some(Step { from: None, to }))
 }
 
@@ -318,6 +321,9 @@ fn write_box(
     }
     if d.input_to_hands().is_some() {
         sets.push((BoxHands::StateAt, now.as_millis().into()));
+        if step.to.ended() && !step.from.is_some_and(HandsState::ended) {
+            sets.push((BoxHands::EndedAt, now.as_millis().into()));
+        }
     }
     if sets.iter().any(|(c, _)| *c == BoxHands::Handle) {
         super::proxy::forget_egress_delivery(tx, id)?;
