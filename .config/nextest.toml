@@ -1,6 +1,8 @@
 # The tests mostly wait on child processes and timers, not the CPU, so run more than one per core.
 [profile.default]
 test-threads = 16
+# A hung test fails instead of hanging `make unit`; a test is killed after 90 s; the slowest takes about 11 s.
+slow-timeout = { period = "30s", terminate-after = 3 }
 
 [profile.timing.junit]
 path = "junit.xml"
