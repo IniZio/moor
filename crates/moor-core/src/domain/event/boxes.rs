@@ -20,6 +20,7 @@ pub fn box_events(
             error: cause.clone(),
             handle: text(attempted.as_ref().or(handle)),
         }],
+        HandsInput::AcquireCut { .. } => Vec::new(),
         HandsInput::Sleep => vec![Event::BoxAsleep],
         HandsInput::DriverMissing => vec![Event::BoxGone],
         HandsInput::Released => vec![Event::BoxDeleted],

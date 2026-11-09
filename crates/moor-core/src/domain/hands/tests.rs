@@ -17,6 +17,7 @@ fn inputs() -> Vec<HandsInput> {
             cause: "c".to_owned(),
             attempted: None,
         },
+        HandsInput::AcquireCut { attempted: None },
         HandsInput::Sleep,
         HandsInput::Wake,
         HandsInput::DriverMissing,
@@ -36,9 +37,10 @@ fn input(name: &str) -> HandsInput {
 }
 
 /// Every legal (from, input name, to) triple.
-const LEGAL: [(HandsState, &str, HandsState); 19] = [
+const LEGAL: [(HandsState, &str, HandsState); 20] = [
     (Starting, "acquired", Ready),
     (Starting, "acquire_failed", Failed),
+    (Starting, "acquire_cut", Failed),
     (Failed, "requested", Starting),
     (Gone, "requested", Starting),
     (Ready, "sleep", Asleep),
@@ -155,11 +157,12 @@ const fn input_index(i: &HandsInput) -> usize {
         HandsInput::Requested => 0,
         HandsInput::Acquired { .. } => 1,
         HandsInput::AcquireFailed { .. } => 2,
-        HandsInput::Sleep => 3,
-        HandsInput::Wake => 4,
-        HandsInput::DriverMissing => 5,
-        HandsInput::Released => 6,
-        HandsInput::ReleaseErr { .. } => 7,
+        HandsInput::AcquireCut { .. } => 3,
+        HandsInput::Sleep => 4,
+        HandsInput::Wake => 5,
+        HandsInput::DriverMissing => 6,
+        HandsInput::Released => 7,
+        HandsInput::ReleaseErr { .. } => 8,
     }
 }
 
@@ -186,7 +189,7 @@ fn state_names_match_serde_and_parse() {
 #[test]
 fn input_samples_cover_every_variant_with_unique_names() {
     let all = inputs();
-    assert_eq!(all.len(), 8);
+    assert_eq!(all.len(), 9);
     for (pos, i) in all.iter().enumerate() {
         assert_eq!(input_index(i), pos, "{i:?}");
     }
