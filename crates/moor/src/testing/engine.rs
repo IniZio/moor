@@ -40,6 +40,7 @@ struct State {
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     on_steer: Option<Arc<dyn Fn() + Send + Sync>>,
     on_stop: Option<Box<dyn FnOnce() + Send>>,
+    on_probe: Option<Box<dyn FnOnce() + Send>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
     profile_install: Option<String>,
@@ -184,30 +185,12 @@ impl Engine for FakeEngine {
     }
 
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Probe {
-        let mut st = self.st();
-        *st.counts.entry(s.id.clone()).or_default() += 1;
-        if let Some(clock) = st.hang.clone() {
-            drop(st);
-            clock.sleep(deadline.0);
-            return Probe::TimedOut;
+        let read = self.read(s, deadline);
+        let hook = self.st().on_probe.take();
+        if let Some(f) = hook {
+            f();
         }
-        if st.fail_probe.remove(&s.id) {
-            return Probe::TimedOut;
-        }
-        st.queued
-            .get_mut(&s.id)
-            .and_then(VecDeque::pop_front)
-            .or_else(|| st.probes.get(&s.id).cloned())
-            .unwrap_or_else(|| Probe::Read {
-                term: Some(Term {
-                    life: Life::Live,
-                    status: None,
-                    status_at: None,
-                    turn: 0,
-                }),
-                note: Note::default(),
-                screen: None,
-            })
+        read
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
@@ -335,6 +318,36 @@ impl Engine for FakeEngine {
         text.map_or(Ok(()), |t| {
             std::fs::write(dest, t).map_err(|e| EngineError::Transcript(e.to_string()))
         })
+    }
+}
+
+impl FakeEngine {
+    /// What a probe of `s` reads.
+    fn read(&self, s: &SessionRef, deadline: Deadline) -> Probe {
+        let mut st = self.st();
+        *st.counts.entry(s.id.clone()).or_default() += 1;
+        if let Some(clock) = st.hang.clone() {
+            drop(st);
+            clock.sleep(deadline.0);
+            return Probe::TimedOut;
+        }
+        if st.fail_probe.remove(&s.id) {
+            return Probe::TimedOut;
+        }
+        st.queued
+            .get_mut(&s.id)
+            .and_then(VecDeque::pop_front)
+            .or_else(|| st.probes.get(&s.id).cloned())
+            .unwrap_or_else(|| Probe::Read {
+                term: Some(Term {
+                    life: Life::Live,
+                    status: None,
+                    status_at: None,
+                    turn: 0,
+                }),
+                note: Note::default(),
+                screen: None,
+            })
     }
 }
 

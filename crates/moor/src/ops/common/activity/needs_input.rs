@@ -1,10 +1,11 @@
 //! The `needs_input` event written once per waiting episode.
 
 use moor_core::activity::{Activity, AgentState, Source};
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::Event;
 
-use super::Reading;
+use super::{apply_read, Reading};
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
@@ -16,6 +17,7 @@ use crate::store::{BoxRow, Store};
 /// before any state step so a refused step cannot lose it. A first-run stop gets none: the start
 /// reports it, and typing into such a screen is never how moor gets past it.
 pub(super) fn note_needs_input(
+    cx: &Cx,
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
@@ -45,9 +47,9 @@ pub(super) fn note_needs_input(
             return Ok(());
         }
     }
-    store.apply(Decision::new(row.id).event(ExtraEvent::NeedsInput {
+    let asked = ExtraEvent::NeedsInput {
         question: question.clone(),
         options: options.clone(),
-    }))?;
-    Ok(())
+    };
+    apply_read(cx, store, reading.decision(row.id).event(asked))
 }

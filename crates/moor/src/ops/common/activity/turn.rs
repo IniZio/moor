@@ -54,9 +54,16 @@ pub(crate) fn turn_open(
 
 /// The answer `reading` gives to sent row `open`, when its turn is over.
 fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
-    let Delivery::Sent { at, mark, .. } = open.delivery else {
+    let Delivery::Sent { launch, at, mark } = open.delivery else {
         return None;
     };
+    // A turn belongs to the launch it was sent to: a reading of an older one says nothing of it,
+    // and a newer one means that launch, and its turn, ended.
+    match reading.launch {
+        Some(read) if read < launch => return None,
+        Some(read) if read > launch => return Some(TurnOutcome::Exited),
+        _ => {}
+    }
     let facts = TurnFacts {
         steer: Some(SteerMark {
             id: open.id.get(),

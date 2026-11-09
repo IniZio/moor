@@ -1,11 +1,10 @@
 //! The agent's last message, read from the note its hooks left when it went idle.
 
 use moor_core::activity::{Activity, AgentState, Probe, Source};
-use moor_core::domain::decision::{Decision, ExtraEvent};
 
 use super::Reading;
 use crate::error::CommandError;
-use crate::store::{BoxRow, Store};
+use crate::store::Store;
 
 /// Most characters of the agent's last message kept. Both ends are kept: a reply opens with its
 /// summary and closes with its result, and a long middle is usually pasted command output.
@@ -42,31 +41,17 @@ fn ends(text: &str, max: usize) -> String {
     format!("{head}{ELIDED}{tail}")
 }
 
-/// Records the reply `reading` saw ahead of a step that quiets the Box, once per idle status the
-/// agent reported: a run meanwhile does not say it again. False, with nothing written, when
-/// another settle stepped the Box after `row` was read: that settle recorded the message already.
-pub(super) fn record(
-    store: &Store,
-    row: &BoxRow,
-    quiet: bool,
-    reading: &Reading,
-) -> Result<bool, CommandError> {
-    if store
-        .box_row(row.id)?
-        .is_none_or(|now| now.session != row.session)
-    {
-        return Ok(false);
-    }
-    let Some(text) = reading.said.as_ref().filter(|_| quiet) else {
-        return Ok(true);
+/// The reply `reading` saw, once per idle status the agent reported, so neither a run meanwhile
+/// nor a second settle of the same status says it again.
+pub(super) fn reply(store: &Store, reading: &Reading) -> Result<Option<String>, CommandError> {
+    let Some(text) = reading.said.as_ref() else {
+        return Ok(None);
     };
     let since = reading.term.as_ref().and_then(|t| t.status_at);
     if let (Some(launch), Some(at)) = (reading.launch, since) {
         if store.note_said(launch, at)? {
-            return Ok(true);
+            return Ok(None);
         }
     }
-    let text = text.clone();
-    store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
-    Ok(true)
+    Ok(Some(text.clone()))
 }

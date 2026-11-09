@@ -3,6 +3,7 @@
 
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput};
+use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::{BoxId, LaunchId};
 
@@ -122,4 +123,21 @@ fn a_settle_across_new_hands_is_refused_and_the_session_stays_open() {
     assert!(stale_for(&got, id, launch), "{got:?}");
     assert_eq!(store.live_launch(id).unwrap(), None);
     assert_ne!(session_state(&store, id), SessionState::Ended);
+}
+
+#[test]
+fn marking_a_send_to_launch_n_after_n_plus_one_began_is_refused_and_the_row_stays_queued() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let (id, old, _) = relaunched(&store);
+    let row = store.enqueue(id, InboxKind::Steer, "hi", "steer").unwrap();
+
+    let got = store.mark_sending(id, row, old);
+
+    assert!(stale_for(&got, id, old), "{got:?}");
+    let queued = store.unsent(id).unwrap();
+    assert_eq!(
+        queued.first().map(|r| r.delivery),
+        Some(Delivery::Queued { attempts: 0 })
+    );
 }

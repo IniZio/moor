@@ -78,14 +78,15 @@ pub(crate) fn revive_after_wake(
         None => None,
     };
     let view = revive(cx, store, &row, ended.as_ref(), "wake")?;
-    Ok(if view.launched {
+    Ok(if view.is_some_and(|v| v.launched) {
         AfterWake::Relaunched
     } else {
         AfterWake::Unknown
     })
 }
 
-/// Starts the agent again, resuming its stored agent session, for a steer that found it exited.
+/// Starts the agent again, resuming its stored agent session, for a steer that found launch
+/// `gone` exited; none when another op replaced that launch since.
 ///
 /// The caller holds the Box's turn and saw the agent gone, so an unreadable pane counts as gone. A
 /// Box that is not Ready, or has nothing to resume, launches nothing.
@@ -96,34 +97,36 @@ pub(crate) fn revive_for_steer(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-) -> Result<AgentLaunchView, CommandError> {
+    gone: Option<&Launch>,
+) -> Result<Option<AgentLaunchView>, CommandError> {
     let row = reread(store, id)?;
     if row.lifecycle != BoxLifecycle::Ready {
-        return Ok(AgentLaunchView::default());
+        return Ok(Some(AgentLaunchView::default()));
     }
-    let ended = store.live_launch(id)?.map(|s| {
-        let end = ended(cx, &row, &s).unwrap_or(Ended::Gone);
-        (s, end)
+    let ended = gone.map(|s| {
+        let end = ended(cx, &row, s).unwrap_or(Ended::Gone);
+        (s.clone(), end)
     });
     revive(cx, store, &row, ended.as_ref(), "steer")
 }
 
 /// Relaunches the agent of `row` whose pane ended, or launches into a new Session when the last
 /// one ended, and watches the launch. Only a steer resumes the stored session in a new Session.
+/// None when the ended launch is no longer live: another op replaced it.
 fn revive(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     ended: Option<&(Launch, Ended)>,
     cause: &str,
-) -> Result<AgentLaunchView, CommandError> {
+) -> Result<Option<AgentLaunchView>, CommandError> {
     let id = row.id;
     if !revivable(row) {
-        return Ok(AgentLaunchView::default());
+        return Ok(Some(AgentLaunchView::default()));
     }
     let lost = ended.is_none() && lost_with_hands(store, row)?;
     if ended.is_none() && !lost && !reopen::ended_session(store, id, None)? {
-        return Ok(AgentLaunchView::default());
+        return Ok(Some(AgentLaunchView::default()));
     }
     check_cap(cx, store, row)?;
     super::asleep::wake_idle(store, id)?;
@@ -156,9 +159,14 @@ fn revive(
             }
             view
         }
-        Some((old, end)) => relaunch(cx, store, &req, (old, end), Some(cause), &settings)?,
+        Some((old, end)) => {
+            let Some(view) = relaunch(cx, store, &req, (old, end), Some(cause), &settings)? else {
+                return Ok(None);
+            };
+            view
+        }
     };
-    Ok(watch::run(cx, store, id, view))
+    Ok(Some(watch::run(cx, store, id, view)))
 }
 
 /// Whether Box `row` lost its agent with its hands: new hands ended its launch and left its

@@ -158,7 +158,7 @@ stands after the steps above. A cell names the step or the code behind it.
 
 | Dimension | moor after this charter | Rivet | ax | agentrun |
 | --- | --- | --- | --- | --- |
-| Identity and fencing | Key under a unique index, incarnation per hands, run per session, one owner per Box. Steps 1, 2, 3, 6. | Keyed ids, epoch per allocation, incarnation, effects with attempts. | Name per namespace. No fencing, no reconcile loop. | Run claim with epoch and holder, re-adopted on restart. |
+| Identity and fencing | Key under a unique index, incarnation per hands, a launch row per agent start, one owner per Box. Steps 1, 2, 3, 6. | Keyed ids, epoch per allocation, incarnation, effects with attempts. | Name per namespace. No fencing, no reconcile loop. | Run claim with epoch and holder, re-adopted on restart. |
 | Durability of the conversation | Claude's own session files, archived each turn, restored, `--resume`. Step 2. | Transcript kept by the client. A lost sandbox gets the last events replayed as text. | None. One headless run. | Every turn and tool call committed. Not a Claude Code conversation. |
 | Recovery from VM loss | New hands from the checkpoint chain, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves its job running. | A container per run. No snapshot. |
 | Interactivity and steering | Steer mid-turn, interrupt, inbox for an asleep Box. `ops/steer.rs`, step 5. | Prompt through the adapter, live events. | None. | A message waits for the turn to end. |

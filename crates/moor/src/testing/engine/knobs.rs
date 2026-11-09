@@ -44,4 +44,9 @@ impl FakeEngine {
     pub(crate) fn on_stop(&self, f: impl FnOnce() + Send + 'static) {
         self.st().on_stop = Some(Box::new(f));
     }
+
+    /// Runs `f` once, right after the next probe reads.
+    pub(crate) fn on_probe(&self, f: impl FnOnce() + Send + 'static) {
+        self.st().on_probe = Some(Box::new(f));
+    }
 }

@@ -4,13 +4,16 @@ use moor_core::domain::event::{Event, SteerSent};
 use moor_core::domain::inbox::{Delivery, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
-use moor_schema::tables::{BoxInbox, BoxState};
+use moor_schema::tables::{BoxInbox, BoxState, Events};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
+use serde_json::Value;
 
 use super::{one, rows, select, write_delivery};
 use crate::store::apply::insert_event;
 use crate::store::db::{DbExt as _, Tx};
+use crate::store::event_from_row;
 use crate::store::reads::SHUT;
+use crate::store::select::events_of;
 use crate::store::{InboxRow, Store, StoreError};
 
 impl Store {
@@ -122,4 +125,25 @@ pub(in crate::store) fn send_with_launch(
     });
     insert_event(tx, box_id, &steered, now)?;
     Ok(())
+}
+
+/// The newest `steered` event of Box `box_id` that sent row `id`.
+///
+/// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
+pub(super) fn steered_by(
+    tx: &Tx<'_>,
+    box_id: BoxId,
+    id: InboxId,
+) -> Result<Option<i64>, StoreError> {
+    let q = events_of(box_id)
+        .and_where(Expr::col(Events::Kind).eq("steered"))
+        .order_by(Events::Id, Order::Desc)
+        .take();
+    for event in tx.rows(q, event_from_row)? {
+        let event = event?;
+        if event.payload.get("inbox").and_then(Value::as_i64) == Some(id.get()) {
+            return Ok(Some(event.id));
+        }
+    }
+    Ok(None)
 }
