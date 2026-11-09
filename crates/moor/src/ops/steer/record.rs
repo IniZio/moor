@@ -1,12 +1,11 @@
 //! The `steered` event a sent steer leaves behind, and where the agent's terminal was at it.
 
 use moor_core::activity::{Status, Term};
-use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{Event, SteerSent};
 use moor_core::domain::inbox::{InboxId, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
-use moor_core::{BoxId, ErrorKind};
+use moor_core::BoxId;
 
 use crate::error::CommandError;
 use crate::store::{SessionRow, Store};
@@ -22,37 +21,29 @@ pub(super) struct Mark {
     pub(super) submit_retried: bool,
 }
 
-/// Append the `steered` event, confirming inbox row `inbox` in the same transaction when the
-/// steer was sent from one; its id.
+/// Append the `steered` event and confirm inbox row `inbox`, which the steer was sent from, in
+/// the same transaction; the event's id.
 pub(super) fn record(
     store: &Store,
     id: BoxId,
     session: &SessionRow,
     message: &str,
     mark: Mark,
-    inbox: Option<InboxId>,
+    inbox: InboxId,
 ) -> Result<i64, CommandError> {
-    let event = ExtraEvent::Steered(SteerSent {
+    let event = Event::Steered(SteerSent {
         session: session.session_ref.clone(),
         message: message.to_owned(),
         submit_retried: mark.submit_retried,
         turn_before: mark.turn_before,
         status_before: mark.status_before,
-        inbox: inbox.map(InboxId::get),
+        inbox: Some(inbox.get()),
     });
-    if let Some(row) = inbox {
-        let sent = SendMark {
-            turn_before: mark.turn_before,
-            status_before: mark.status_before,
-        };
-        return Ok(store.confirm_sent(id, row, sent, &Event::from(event))?.1);
-    }
-    let applied = store.apply(Decision::new(id).event(event))?;
-    applied
-        .events
-        .first()
-        .copied()
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, "the steered event was not recorded"))
+    let sent = SendMark {
+        turn_before: mark.turn_before,
+        status_before: mark.status_before,
+    };
+    Ok(store.confirm_sent(id, inbox, sent, &event)?.1)
 }
 
 /// The ended-turn count the turn of `steer` must pass: a prompt typed while the agent works waits
