@@ -10,10 +10,11 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
-use moor_schema::tables::{Boxes, MachineLinks, UserMachinesV2};
+use moor_schema::tables::{BoxHands, Boxes, MachineLinks, UserMachinesV2};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Func, Order, Query, SelectStatement};
 
 use crate::store::db::{Db, DbExt as _};
+use crate::store::hands::join_current;
 use crate::store::{Store, StoreError};
 
 /// Boxes per node name.
@@ -23,12 +24,18 @@ type Counts = HashMap<String, usize>;
 /// Boxes setting up.
 fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
     let rows = conn.rows(
-        Query::select()
-            .columns([Boxes::Node, Boxes::DriverState, Boxes::State])
-            .expr(Func::count(Expr::col(Asterisk)))
-            .from(Boxes::Table)
-            .and_where(Expr::col(Boxes::Node).is_not_null())
-            .group_by_columns([Boxes::Node, Boxes::DriverState, Boxes::State]),
+        join_current(
+            Query::select()
+                .column((Boxes::Table, Boxes::Node))
+                .column((BoxHands::Table, BoxHands::State))
+                .column((Boxes::Table, Boxes::State))
+                .expr(Func::count(Expr::col(Asterisk)))
+                .from(Boxes::Table),
+        )
+        .and_where(Expr::col((Boxes::Table, Boxes::Node)).is_not_null())
+        .group_by_col((Boxes::Table, Boxes::Node))
+        .group_by_col((BoxHands::Table, BoxHands::State))
+        .group_by_col((Boxes::Table, Boxes::State)),
         |r| {
             Ok::<_, crate::store::db::Error>((
                 r.get::<_, String>(0)?,

@@ -7,7 +7,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::request::Pins;
 use moor_core::{BoxId, BoxName, SessionId};
 
-use moor_schema::tables::{Boxes, Events, Sessions};
+use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 use serde_json::Value;
 
@@ -172,7 +172,7 @@ impl Store {
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their box.
     pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, HandsRow)>, StoreError> {
-        let live = Expr::col(b(Boxes::DriverState)).is_in(LIVE_STATES);
+        let live = Expr::col((BoxHands::Table, BoxHands::State)).is_in(LIVE_STATES);
         let rows = query_boxes(&self.reader()?, live, Order::Asc, None)?;
         Ok(rows
             .into_iter()

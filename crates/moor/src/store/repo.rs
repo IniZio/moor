@@ -4,9 +4,11 @@ use moor_core::domain::decision::{BoxRepo, ListedRepo};
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
 #[cfg(test)]
 use moor_core::BoxId;
+use moor_schema::tables::Boxes;
 use serde::Deserialize;
 
 use super::init::parsed;
+use super::select::box_at;
 use super::StoreError;
 use crate::store::db::Row;
 
@@ -21,10 +23,10 @@ struct StoredRepo {
 
 /// The Box's repo columns; a stored repo that is not `OWNER/NAME` is an invalid row.
 pub(super) fn repo_from_row(row: &Row<'_>) -> Result<Option<BoxRepo>, StoreError> {
-    let Some(repo) = row.get::<_, Option<String>>(2)? else {
+    let Some(repo) = row.get::<_, Option<String>>(const { box_at(Boxes::Repo) })? else {
         return Ok(None);
     };
-    let others = match row.get::<_, Option<String>>(34)? {
+    let others = match row.get::<_, Option<String>>(const { box_at(Boxes::OtherRepos) })? {
         Some(raw) => parsed("box other_repos", &raw, |s| {
             serde_json::from_str::<Vec<StoredRepo>>(s)
         })?
@@ -38,10 +40,14 @@ pub(super) fn repo_from_row(row: &Row<'_>) -> Result<Option<BoxRepo>, StoreError
     };
     Ok(Some(BoxRepo {
         repo: parsed("box repo", &repo, ForgeRepo::parse)?,
-        moor_yaml: row.get(29)?,
+        moor_yaml: row.get(const { box_at(Boxes::RepoConfig) })?,
         author: GitAuthor {
-            name: row.get::<_, Option<String>>(30)?.unwrap_or_default(),
-            email: row.get::<_, Option<String>>(31)?.unwrap_or_default(),
+            name: row
+                .get::<_, Option<String>>(const { box_at(Boxes::AuthorName) })?
+                .unwrap_or_default(),
+            email: row
+                .get::<_, Option<String>>(const { box_at(Boxes::AuthorEmail) })?
+                .unwrap_or_default(),
         },
         others,
     }))

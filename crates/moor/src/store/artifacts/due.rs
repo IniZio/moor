@@ -1,10 +1,11 @@
 //! Durable "collection is due" tracking: a Box is due when a turn ended after its last collection.
 
 use moor_core::BoxId;
-use moor_schema::tables::{ArtifactCursors, Boxes, Events};
+use moor_schema::tables::{ArtifactCursors, BoxHands, Boxes, Events};
 use sea_query::{Expr, ExprTrait as _, Func, JoinType, OnConflict, Order, Query, SelectStatement};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
+use crate::store::hands::join_current;
 use crate::store::{Store, StoreError};
 
 /// Event kinds that end a turn.
@@ -22,8 +23,9 @@ fn newest_turn_event(filter: Option<Expr>) -> SelectStatement {
 
 /// Ready, handled, intent-free open Boxes.
 fn collectable(q: &mut SelectStatement) -> &mut SelectStatement {
-    q.and_where(Expr::col((Boxes::Table, Boxes::State)).eq("ready"))
-        .and_where(Expr::col((Boxes::Table, Boxes::Handle)).is_not_null())
+    join_current(q)
+        .and_where(Expr::col((Boxes::Table, Boxes::State)).eq("ready"))
+        .and_where(Expr::col((BoxHands::Table, BoxHands::Handle)).is_not_null())
         .and_where(Expr::col((Boxes::Table, Boxes::IntentKind)).is_null())
         .order_by((Boxes::Table, Boxes::Id), Order::Asc)
 }

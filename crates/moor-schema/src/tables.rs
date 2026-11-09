@@ -47,10 +47,11 @@ tables! {
         Header, HeaderValue }
     Boxes { Id, Name, Repo, RepoConfig, AuthorName, AuthorEmail, User, Issue, Prompt, Base, Branch,
         State, StateReason, IntentKind, IntentPid, IntentRun, IntentAt, SetupFailedAt, IdleSince,
-        LaunchFailure, Provider, Handle, DriverState, AttemptedHandle, Workdir, Egress,
-        SleepReason, Cpus, MemMib, DriverUpdatedAt, CreatedAt, UpdatedAt, Node, NodeLabels,
-        NodeMemMib, ResumeFirstAt, OtherRepos, StepsPendingAt, SuspendAhead, SuspendDirty,
-        SuspendCheckedAt, HeldPrompt, SuspendPublish }
+        LaunchFailure, CreatedAt, UpdatedAt, Node, NodeLabels, ResumeFirstAt, OtherRepos,
+        StepsPendingAt, HeldPrompt }
+    BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
+        SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
+        CreatedAt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
