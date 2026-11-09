@@ -1,5 +1,7 @@
 //! Event stream and settle pass for the controller, behind the `Moor` facade.
 
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::controller::ServerFrame;
@@ -9,6 +11,7 @@ use moor_core::{BoxId, SessionId};
 
 use super::Moor;
 use crate::cx::owners::Cmd;
+use crate::env::Env;
 use crate::error::CommandError;
 use crate::ops;
 use crate::ops::common::provision::interrupted;
@@ -98,6 +101,24 @@ impl Moor {
         }
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
         out
+    }
+
+    /// `env` with the controller's log shared, so a write dropped as stale reaches it.
+    pub(crate) fn log_to(env: Env, sink: &Arc<Mutex<dyn Write + Send>>) -> Env {
+        env.sharing(ops::common::stale::ControllerLog::new(sink))
+    }
+
+    /// Corrects the stored Boxes against what each provider lists, as a read request does, but
+    /// under each Box's turn so a busy Box waits for the next call; returns what to log.
+    pub(crate) fn reconcile_open(&self, draining: &dyn Fn() -> bool) -> Vec<String> {
+        crate::cx::owners::checked(|| {
+            ops::common::reconcile::periodic(&self.cx, draining);
+            self.cx
+                .take_warnings()
+                .into_iter()
+                .map(|w| w.message)
+                .collect()
+        })
     }
 
     /// Closes each open Box whose setup failed at least `after` ago, once per call.

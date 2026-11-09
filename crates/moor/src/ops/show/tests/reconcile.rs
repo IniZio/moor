@@ -171,3 +171,33 @@ fn reconcile_drops_a_verdict_on_hands_replaced_since_its_listing_and_warns() {
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.hands.unwrap().state, HandsState::Starting);
 }
+
+#[test]
+fn a_dropped_stale_write_is_logged_by_the_controller_with_the_box_and_hands() {
+    use crate::ops::common::stale::ControllerLog;
+    use std::io::Write;
+    use std::sync::Mutex;
+
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let log = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let sink: Arc<Mutex<dyn Write + Send>> = log.clone();
+    let cx = cx(dir.path(), &driver).sharing(ControllerLog::new(&sink));
+    let id = working(&cx, &driver, "a", None);
+    let store = cx.store().unwrap();
+    let listed = store.box_row(id).unwrap().unwrap();
+    driver.stop_behind(listed.hands.as_ref().unwrap().handle.as_ref().unwrap());
+    store.replace_hands(id);
+
+    crate::ops::common::reconcile::one(&cx, store, &listed);
+
+    let line = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        line,
+        format!(
+            "moor controller: stale_hands_write: stale write dropped: Box {} has moved on from hands {}\n",
+            id.get(),
+            listed.hands.unwrap().inc.get()
+        )
+    );
+}

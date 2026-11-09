@@ -42,12 +42,35 @@ fn by_provider(
 /// whose listing fails is skipped with a warning; an apply that
 /// loses a race with another command is ignored.
 pub(crate) fn run(cx: &Cx) {
+    sweep(cx, &|| false, Verdicts::Any);
+}
+
+/// [`run`] for the controller's timer: each verdict is applied only under its Box's turn, so a Box
+/// an op is working on is left for the next pass, and the sweep stops once `draining` is true.
+pub(crate) fn periodic(cx: &Cx, draining: &dyn Fn() -> bool) {
+    sweep(cx, draining, Verdicts::IdleBoxes);
+}
+
+/// Which Boxes a sweep may write a verdict for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Verdicts {
+    /// Any Box, as a read request that may hold the Box's turn itself.
+    Any,
+    /// Only a Box no op holds the turn of.
+    IdleBoxes,
+}
+
+/// Lists each provider with live rows once and applies what the listing shows.
+fn sweep(cx: &Cx, draining: &dyn Fn() -> bool, who: Verdicts) {
     let Ok(store) = cx.store() else { return };
     let Ok(rows) = store.box_rows_live() else {
         return;
     };
     for (provider, facts) in by_provider(rows) {
-        reconcile_provider(cx, store, &provider, &facts);
+        if draining() {
+            return;
+        }
+        reconcile_provider(cx, store, &provider, &facts, who);
     }
 }
 
@@ -66,22 +89,28 @@ pub(crate) fn one(cx: &Cx, store: &Store, row: &BoxRow) {
         state: b.state,
         handle: b.handle.clone(),
     };
-    reconcile_provider(cx, store, &b.provider, &[fact]);
+    reconcile_provider(cx, store, &b.provider, &[fact], Verdicts::Any);
 }
 
 /// Corrects `facts` from what `provider` lists; see [`run`].
-fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[BoxFact]) {
+fn reconcile_provider(
+    cx: &Cx,
+    store: &Store,
+    provider: &ProviderId,
+    facts: &[BoxFact],
+    who: Verdicts,
+) {
     match cx.driver().list(provider) {
         Ok(listing) => {
             for d in reconcile(facts, &listing) {
-                apply(cx, store, d);
+                apply(cx, store, d, who);
             }
         }
         Err(DriverError::Unsupported(_)) => {
             let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
             if let Ok(listing) = cx.driver().list_handles(&handles) {
                 for d in stopped(facts, &listing) {
-                    apply(cx, store, d);
+                    apply(cx, store, d, who);
                 }
             }
         }
@@ -105,10 +134,20 @@ fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[Bo
 /// shows its machine as paused before that op records why, and the listing may predate what it
 /// recorded. A Box that was quiet just sleeps; one mid-turn has work to carry on, so it queues to
 /// resume first, its Session as it was.
-fn apply(cx: &Cx, store: &Store, d: Decision) {
+fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
     let sleep = d.input_to_hands() == Some(&HandsInput::Sleep);
     let (Some(w), BoxTarget::Existing(id), true) = (&d.hands, &d.target, sleep) else {
+        let turn = match (who, &d.target) {
+            (Verdicts::IdleBoxes, BoxTarget::Existing(id)) => {
+                let Some(turn) = cx.try_turn(*id, Cmd::Reconcile) else {
+                    return;
+                };
+                Some(turn)
+            }
+            _ => None,
+        };
         noted(cx, store.apply(d));
+        drop(turn);
         return;
     };
     let at = (*id, w.inc);
