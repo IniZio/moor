@@ -9,6 +9,7 @@ use moor_core::decide::schedule::{
 };
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::name::NodeName;
 use moor_core::request::WarmStarts;
 use moor_core::response::Warning;
@@ -121,7 +122,17 @@ pub(crate) fn seat_of(
     store: &Store,
     row: &BoxRow,
 ) -> Result<Option<PoolSeat>, CommandError> {
-    recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n, row.hands_inc().get()))
+    seat_at(cx, store, row, row.hands_inc())
+}
+
+/// The machine seat hands `inc` of Box `row` take on its recorded node, for a personal node.
+pub(crate) fn seat_at(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    inc: HandsInc,
+) -> Result<Option<PoolSeat>, CommandError> {
+    recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n, inc.get()))
 }
 
 /// What Box `row`'s checkpoints on `provider` are recorded under: the provider itself, or the

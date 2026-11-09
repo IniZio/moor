@@ -138,7 +138,7 @@ pub(super) fn cold_again(
         .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(begin)?;
     let row = reread(store, id)?;
-    let req = layered.machine_req(cx, store, &row, cfg)?;
+    let req = layered.machine_req(cx, store, (&row, inc), cfg)?;
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     let got = match acquire_timed(cx, store, id, &req) {

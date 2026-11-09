@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
+use moor_core::domain::hands::HandsInc;
 use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
@@ -17,7 +18,7 @@ use super::{nonce, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
-use crate::ops::common::node::{checkpoint_home, seat_of};
+use crate::ops::common::node::{checkpoint_home, seat_at};
 use crate::ops::common::setup::{Released, SetupRun};
 use crate::store::checkpoints::{CheckpointRow, Lineage, Place};
 use crate::store::{BoxRow, Store};
@@ -214,12 +215,12 @@ impl Layered {
         }
     }
 
-    /// What a new machine for Box `row` is asked for.
+    /// What a new machine for hands `inc` of Box `row` is asked for.
     pub(super) fn machine_req(
         &self,
         cx: &Cx,
         store: &Store,
-        row: &BoxRow,
+        (row, inc): (&BoxRow, HandsInc),
         cfg: &BoxSettings,
     ) -> Result<AcquireReq, CommandError> {
         Ok(AcquireReq {
@@ -229,7 +230,7 @@ impl Layered {
             class: cfg.size.as_ref().map(|s| s.value.as_str().to_owned()),
             nonce: nonce(cx.rng()),
             cache: self.cache.clone(),
-            pool_machine: seat_of(cx, store, row)?,
+            pool_machine: seat_at(cx, store, row, inc)?,
         })
     }
 

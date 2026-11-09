@@ -576,4 +576,5 @@ fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_resumes_from_the_deepest_
 }
 
 mod checkpoints;
+mod new_hands;
 mod roll;
