@@ -4,8 +4,10 @@ use super::Event;
 
 mod node_disk;
 mod stall;
+mod workflow;
 pub use node_disk::NodeDiskEvent;
 pub use stall::StallEvent;
+pub use workflow::WorkflowEvent;
 
 /// The event kinds the event tests pin. Frozen.
 pub const ASSERTED_KINDS: [&str; 20] = [
@@ -32,7 +34,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 87] = [
+pub const EVENT_KINDS: [&str; 88] = [
     "caches_not_saved",
     "disk_lost",
     "started",
@@ -75,6 +77,7 @@ pub const EVENT_KINDS: [&str; 87] = [
     "needs_input",
     "prompt_not_given",
     "agent_prompt_check_failed",
+    "previous_box_kept",
     "transcript_saved",
     "transcript_failed",
     "transcript_skipped",
@@ -190,6 +193,7 @@ impl Event {
             Self::Profile(p) => p.kind(),
             Self::Stall(s) => s.kind(),
             Self::NodeDisk(d) => d.kind(),
+            Self::Workflow(w) => w.kind(),
             Self::Timing(t) => t.kind(),
         }
     }

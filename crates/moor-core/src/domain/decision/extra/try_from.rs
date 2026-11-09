@@ -2,7 +2,7 @@
 
 use super::ExtraEvent;
 use crate::domain::event::{
-    AccessEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent,
+    AccessEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent, WorkflowEvent,
 };
 
 impl TryFrom<Event> for ExtraEvent {
@@ -189,6 +189,9 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::Stall(StallEvent::PromptNotGiven { attempt, error }) => {
                 Ok(Self::PromptNotGiven { attempt, error })
+            }
+            Event::Workflow(WorkflowEvent::PreviousBoxKept { name, reason }) => {
+                Ok(Self::PreviousBoxKept { name, reason })
             }
             Event::AgentPromptCheckFailed { error } => Ok(Self::AgentPromptCheckFailed { error }),
             Event::TranscriptSaved {

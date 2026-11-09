@@ -346,6 +346,10 @@ fn all_events() -> Vec<Event> {
             exit: Some(0),
             timed_out: false,
         }),
+        Event::Workflow(WorkflowEvent::PreviousBoxKept {
+            name: s("o/n-old"),
+            reason: s("its agent is working"),
+        }),
     ]
 }
 
@@ -454,6 +458,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::ColdAsked) => 84,
         Event::Stall(StallEvent::PromptNotGiven { .. }) => 85,
         Event::Access(AccessEvent::ExecRan { .. }) => 86,
+        Event::Workflow(WorkflowEvent::PreviousBoxKept { .. }) => 87,
     }
 }
 
@@ -461,7 +466,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 87);
+    assert_eq!(all.len(), 88);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
