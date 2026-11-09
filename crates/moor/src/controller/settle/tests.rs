@@ -24,6 +24,8 @@ use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
 use sha2::{Digest, Sha256};
 
 use super::passes;
+
+mod reconcile;
 use crate::controller::drain::{serve_until, Drain, Handler};
 use crate::controller::watch::{stream, Ask, Limits};
 use crate::controller::Sink;

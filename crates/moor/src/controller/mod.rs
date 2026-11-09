@@ -54,10 +54,10 @@ const REFUSED: u8 = 3;
 /// Serves the controller until SIGTERM, then drains; returns the process exit code.
 ///
 /// The drain stops accepting and starts no settle pass, gives in-flight requests and a running
-/// settle pass up to `drain_timeout_secs` to finish, answers waits, watches and requests it
-/// did not run with a `restarting` frame, and exits 0. Each front gets SIGTERM when the drain
-/// begins and SIGKILL when the budget ends; the controller exits once it has reaped each front's outer shim. Setup failures and the
-/// "already running" notice go to `stderr`.
+/// settle pass up to `drain_timeout_secs` to finish, answers waits, watches and requests it did
+/// not run with a `restarting` frame, and exits 0. Each front gets SIGTERM when the drain begins
+/// and SIGKILL when the budget ends; the controller exits once it has reaped each front's outer
+/// shim. Setup failures and the "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
     let on_sigterm = || {
@@ -224,7 +224,7 @@ fn start_until(
         vault: Arc::new(vault),
         _lock: lock,
         _state_lock: state_lock,
-        env: Arc::new(env),
+        env: Arc::new(Moor::log_to(env, sink)),
         settle_every: cfg.settle_every(),
         close_setup_failed_after: cfg.close_setup_failed_after(),
         drain_timeout: cfg.drain_timeout(),

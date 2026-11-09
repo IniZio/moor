@@ -17,6 +17,13 @@ impl Cx {
         self
     }
 
+    /// This context with `value` shared through its env.
+    #[cfg(test)]
+    pub(crate) fn sharing<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
+        let env = std::mem::take(&mut self.env).sharing(value);
+        Self { env, ..self }
+    }
+
     /// This context acting as `identity`, which the socket already checked.
     pub(crate) fn with_requester(mut self, identity: Identity) -> Self {
         self.requester = Some(identity);

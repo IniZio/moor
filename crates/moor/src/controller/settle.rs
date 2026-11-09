@@ -1,5 +1,6 @@
 //! The controller's periodic pass that keeps agent-state events current without any `show`.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -15,19 +16,60 @@ use crate::Moor;
 /// Each tick wires fresh adapters so config and tool changes apply; a failure is
 /// logged to `sink` and the next tick still runs.
 ///
+/// Also each [`RECONCILE_EVERY`], lists every provider holding open Boxes and marks those it no
+/// longer lists, so a lost VM is noticed without anyone reading the Box.
+///
 /// A Box that has been `setup_failed` for `close_after` is closed by the pass; `None` keeps them.
 pub(super) fn spawn(running: &Running, drain: &Arc<Drain>, sink: &Sink) {
     let env = Env::clone(&running.env);
     let close_after = running.close_setup_failed_after;
+    let reconcile = Every::new(RECONCILE_EVERY, running.settle_every);
     passes(
         running.settle_every,
         drain,
         sink,
         move |draining| match Moor::from_env(&env) {
-            Ok(moor) => moor.settle_open_closing(draining, close_after),
+            Ok(moor) => {
+                let mut out = moor.settle_open_closing(draining, close_after);
+                if reconcile.due() {
+                    out.extend(moor.reconcile_open(draining));
+                }
+                out
+            }
             Err(e) => vec![e.error.to_string()],
         },
     );
+}
+
+/// How often the settle pass lists providers to find Boxes whose VM is gone. Each run costs one
+/// listing per provider with open Boxes, and a lost VM is noticed within this plus one settle
+/// tick, so a minute keeps listings rare against the 5 s settle default.
+const RECONCILE_EVERY: Duration = Duration::from_secs(60);
+
+/// Counts settle ticks to say which are due for a job that runs once per `period`.
+struct Every {
+    /// Ticks between due calls, at least 1.
+    ticks: u64,
+    /// Calls so far.
+    seen: AtomicU64,
+}
+
+impl Every {
+    /// A gate firing on the first call, then once per `period` of `tick`-long calls.
+    fn new(period: Duration, tick: Duration) -> Self {
+        let ticks = period.as_millis().div_ceil(tick.as_millis().max(1));
+        Self {
+            ticks: u64::try_from(ticks).unwrap_or(u64::MAX).max(1),
+            seen: AtomicU64::new(0),
+        }
+    }
+
+    /// Whether this call is due.
+    fn due(&self) -> bool {
+        self.seen
+            .fetch_add(1, Ordering::Relaxed)
+            .is_multiple_of(self.ticks)
+    }
 }
 
 /// Refreshes users' OAuth MCP access tokens near expiry each `every`, on its own thread so a
