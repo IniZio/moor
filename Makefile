@@ -24,7 +24,7 @@ setup:
 	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-nextest@=$(NEXTEST_VERSION)
 	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install taplo-cli@=$(TAPLO_VERSION)
 	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install typos-cli@=$(TYPOS_VERSION)
-	@helm version --short 2>/dev/null | grep -q '^v$(HELM_VERSION)+' || echo "setup: make chart needs helm $(HELM_VERSION)"
+	@tools/install-tools.sh
 	@echo "setup: toolchain and pinned tools present"
 
 secret:
@@ -35,6 +35,7 @@ audit:
 	cargo machete
 
 lint:
+	tools/fetch-base.sh $(or $(BASE),origin/develop)
 	cargo fmt --all --check
 	taplo fmt --check
 	cargo clippy --workspace --all-targets --locked -- -D warnings

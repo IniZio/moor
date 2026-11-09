@@ -105,7 +105,7 @@ Box's Proxy through `HTTPS_PROXY`, so the inner secrets are placeholders.
 
 ## Build and test
 
-`make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
+`make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. `make setup` also runs [tools/install-tools.sh](../tools/install-tools.sh), which installs the pinned `helm` and `herdr-core` into `~/.cargo/bin`, checking each download's SHA-256. CI calls the same script. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
 
 In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](config.md#cache-volumes), so `make setup` runs once. A crabbox config without the `cache-volume` feature cannot keep that volume, so every Box runs `make setup` again.
 
