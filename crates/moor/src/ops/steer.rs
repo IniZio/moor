@@ -20,6 +20,7 @@ use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
@@ -165,24 +166,22 @@ impl Gone {
         }
     }
 
-    /// Saves the transcript of the gone agent, ends its launch and ends the Session.
-    pub(super) fn finish(&self, cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-        let live = store.live_launch(id)?;
-        let launch = self
-            .launch
-            .as_ref()
-            .filter(|l| live.is_some_and(|v| v.id == l.id));
-        if let (Some(launch), Some(row)) = (launch, store.box_row(id)?) {
-            let saved = transcript::save(cx, store, &row, launch, Trigger::Exit);
-            let end = LaunchEnd {
-                exit: self.code,
-                digest: saved.as_ref().map(|t| t.digest.as_str()),
-                session: None,
-            };
-            store.end_launch(id, launch.id, &end)?;
-        }
-        store.end_current_session(id, "exited", self.code)?;
-        Ok(())
+    /// Saves the transcript of the gone agent, ends its launch and ends the Session; false when
+    /// another op replaced the launch since it was read, which is left alone.
+    pub(super) fn finish(&self, cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
+        let Some(launch) = &self.launch else {
+            store.end_current_session(id, "exited", self.code)?;
+            return Ok(true);
+        };
+        let saved = store
+            .box_row(id)?
+            .and_then(|row| transcript::save(cx, store, &row, launch, Trigger::Exit));
+        let end = LaunchEnd {
+            exit: self.code,
+            digest: saved.as_ref().map(|t| t.digest.as_str()),
+            session: Some("exited"),
+        };
+        Ok(unless_stale(cx, store.end_launch(id, launch.id, &end))?.is_some())
     }
 }
 

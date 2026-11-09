@@ -2,7 +2,7 @@
 
 use moor_core::activity::AgentState;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::session_state::SessionInput;
 
 use super::launch::warn_launch_timed_out;
@@ -10,6 +10,7 @@ use super::said;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::stale::unless_stale;
 use crate::store::{BoxRow, Store, StoreError};
 
 use super::Reading;
@@ -37,12 +38,11 @@ pub(super) fn step(
     reading: &Reading,
 ) -> Result<(), CommandError> {
     // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
-    // A row sent to an agent that has since ended is no turn of the agent running now.
-    let live = store.live_launch(row.id)?.map(|l| l.id);
+    // A row sent to an agent other than the one read is no turn of it.
     let turn_open = store
         .sent(row.id)?
         .iter()
-        .any(|r| r.delivery.launch() == live);
+        .any(|r| r.delivery.launch() == reading.launch);
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
         (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
             SessionInput::AgentQuiet
@@ -58,24 +58,32 @@ pub(super) fn step(
         return Ok(());
     }
     let quiet = input == SessionInput::AgentQuiet;
-    if !said::record(store, row, quiet, reading)? {
-        return Ok(());
+    let reply = if quiet {
+        said::reply(store, reading)?
+    } else {
+        None
+    };
+    if let Some(text) = reply {
+        let said = reading
+            .decision(row.id)
+            .event(ExtraEvent::AgentSaid { text });
+        if unless_stale(cx, store.apply(said))?.is_none() {
+            return Ok(());
+        }
     }
-    let mut decision = Decision::new(row.id).session(input.clone());
-    let timed_out = reading
-        .launch_overdue
-        .filter(|_| input == SessionInput::AgentQuiet);
+    let mut decision = reading.decision(row.id).session(input);
+    let timed_out = reading.launch_overdue.filter(|_| quiet);
     if let Some(after_secs) = timed_out {
         decision = decision.event(ExtraEvent::LaunchTimedOut { after_secs });
     }
-    match store.apply(decision) {
-        Ok(_) => {
+    match unless_stale(cx, store.apply(decision)) {
+        Ok(Some(_)) => {
             if let Some(after_secs) = timed_out {
                 warn_launch_timed_out(cx, row, after_secs);
             }
             Ok(())
         }
-        Err(StoreError::Illegal(_)) => Ok(()),
+        Ok(None) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
