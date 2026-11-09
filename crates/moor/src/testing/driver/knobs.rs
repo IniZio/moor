@@ -94,7 +94,8 @@ impl FakeDriver {
         &self,
         handles: &[BoxHandle],
     ) -> Result<Vec<BoxListing>, DriverError> {
-        let s = self.st();
+        let mut s = self.st();
+        s.note("list_handles".to_owned());
         if !s.by_handle {
             return Err(DriverError::Unsupported("listed by provider"));
         }
