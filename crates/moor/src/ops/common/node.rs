@@ -70,12 +70,13 @@ pub(crate) fn runtime_id(node: &Node) -> ProviderId {
 }
 
 /// The machine seat a Box on `node` takes, for a personal node.
-fn seat(store: &Store, node: &Node) -> Result<Option<PoolSeat>, CommandError> {
+fn seat(store: &Store, node: &Node, inc: i64) -> Result<Option<PoolSeat>, CommandError> {
     match node.scope {
         Scope::Shared => Ok(None),
         Scope::Personal { machine_id, .. } => Ok(Some(PoolSeat {
             machine: machine_id,
             controller: store.controller_id()?,
+            inc,
         })),
     }
 }
@@ -120,7 +121,10 @@ pub(crate) fn seat_of(
     store: &Store,
     row: &BoxRow,
 ) -> Result<Option<PoolSeat>, CommandError> {
-    recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n))
+    recorded(cx, store, row)?.map_or_else(
+        || Ok(None),
+        |n| seat(store, &n, row.hands.as_ref().map_or(1, |h| h.inc)),
+    )
 }
 
 /// What Box `row`'s checkpoints on `provider` are recorded under: the provider itself, or the
@@ -232,7 +236,7 @@ pub(crate) fn admit(
         return Ok(None);
     }
     Ok(Some(Bound {
-        seat: seat(store, &node)?,
+        seat: seat(store, &node, row.hands.as_ref().map_or(1, |h| h.inc))?,
         provider,
         caps,
     }))

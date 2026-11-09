@@ -107,6 +107,7 @@ fn req() -> AcquireReq {
     req.pool_machine = Some(PoolSeat {
         machine: 42,
         controller: ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]),
+        inc: 1,
     });
     req
 }

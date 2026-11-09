@@ -97,6 +97,7 @@ impl Record {
             facts: json("facts", serde_json::to_string(&self.facts))?,
             stage: self.stage,
             evicted: self.evicted,
+            inc: None,
         })
     }
 

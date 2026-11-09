@@ -102,6 +102,10 @@ pub struct MachineBox {
     /// Whether its files on the machine were removed while it slept; until its next sync.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub evicted: bool,
+    /// Which of the Box's hands the writer served; none when it does not say, which a controller
+    /// reads as the current one. A runner sends it only when it knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inc: Option<i64>,
 }
 
 /// How far a Box on a machine got: a sync noted it, `prepare` ran, or `suspend` ran since.

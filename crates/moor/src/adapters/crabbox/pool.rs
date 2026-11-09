@@ -93,7 +93,7 @@ fn pool_provider(provider: &str) -> Option<(String, String)> {
     Some((id.base().to_owned(), id.host()?.to_owned()))
 }
 
-/// `<provider>/<machine id>/moor-<controller>-<box id>`: a pool Box's handle carries its host's machine.
+/// `<provider>/<machine id>/<pool slug>`: a pool Box's handle carries its host's machine.
 fn pool_handle(provider: &str, machine: i64, slug: &str) -> BoxHandle {
     handle_of(provider, &format!("{machine}/{slug}"))
 }
@@ -106,7 +106,7 @@ pub(super) fn planned(req: &AcquireReq) -> Result<BoxHandle, DriverError> {
             req.provider.as_str()
         ))
     })?;
-    let slug = BoxKey::new(req.box_id).pool_slug(&seat.controller);
+    let slug = BoxKey::new(req.box_id).pool_slug(&seat.controller, seat.inc);
     Ok(pool_handle(req.provider.as_str(), seat.machine, &slug))
 }
 

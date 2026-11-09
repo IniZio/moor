@@ -33,6 +33,7 @@ fn record(box_id: i64, machine_id: i64, stage: BoxStage) -> MachineBox {
         facts: r#"{"device":"d"}"#.to_owned(),
         stage,
         evicted: false,
+        inc: None,
     }
 }
 

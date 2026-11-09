@@ -16,9 +16,21 @@ fn slug_carries_id_and_nonce() {
 #[test]
 fn pool_slug_carries_controller_and_id_and_parses_back() {
     let ctl = ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]);
-    let slug = key(7).pool_slug(&ctl);
+    let slug = key(7).pool_slug(&ctl, 1);
     assert_eq!(slug, "moor-1a2b3c4d-7");
-    assert_eq!(parse_pool_slug(&slug), Some((ctl, BoxId::new(7))));
+    assert_eq!(parse_pool_slug(&slug), Some((ctl, BoxId::new(7), 1)));
+}
+
+#[test]
+fn a_later_incarnation_gets_its_own_slug_that_parses_back() {
+    let ctl = ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]);
+    let slug = key(7).pool_slug(&ctl, 3);
+    assert_eq!(slug, "moor-1a2b3c4d-7-h3");
+    assert_eq!(
+        parse_pool_slug(&slug),
+        Some((ctl.clone(), BoxId::new(7), 3))
+    );
+    assert_ne!(slug, key(7).pool_slug(&ctl, 1));
 }
 
 #[test]
@@ -46,6 +58,12 @@ fn only_a_well_formed_pool_slug_parses() {
         "box-1a2b3c4d-7",
         "../moor-1a2b3c4d-7",
         "moor-1a2b3c4d-7/x",
+        "moor-1a2b3c4d-7-h",
+        "moor-1a2b3c4d-7-h1",
+        "moor-1a2b3c4d-7-h02",
+        "moor-1a2b3c4d-7-h0",
+        "moor-1a2b3c4d-7-h2-x",
+        "moor-1a2b3c4d-7-g2",
     ] {
         assert_eq!(parse_pool_slug(bad), None, "{bad}");
     }

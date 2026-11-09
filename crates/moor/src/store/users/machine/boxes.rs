@@ -121,6 +121,7 @@ fn box_row(r: &db::Row<'_>) -> Result<MachineBox, StoreError> {
         facts: r.get(4)?,
         stage,
         evicted: r.get(7)?,
+        inc: None,
     })
 }
 
