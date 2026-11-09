@@ -189,8 +189,8 @@ fn an_asleep_box_gets_no_new_session_from_a_steer_relaunch() {
     assert!(store.end_current_session(f.id, "exited", None).unwrap());
     put_to_sleep_ended(&f);
     let before = store.box_sessions(f.id).unwrap().len();
-    let view = revive_for_steer(&f.cx, store, f.id).unwrap();
-    assert!(!view.launched);
+    let view = revive_for_steer(&f.cx, store, f.id, None).unwrap();
+    assert!(!view.unwrap().launched);
     assert_eq!(store.box_sessions(f.id).unwrap().len(), before);
 }
 

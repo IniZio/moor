@@ -29,7 +29,8 @@ pub(super) enum Revived {
 /// Relaunches the gone agent of `target`, resuming its stored agent session, unless the agent
 /// still runs on the Box.
 ///
-/// An agent that another op relaunched since this one read it is left to run.
+/// An agent that another op relaunched since this one read it is left to run: the end of the
+/// launch read is refused then.
 ///
 /// # Errors
 /// The gone agent's refusal when there is nothing to resume, a failure naming why the
@@ -47,11 +48,12 @@ pub(super) fn once(
     if relaunched_recently(cx, store, id)? {
         return Err(ended_again(cx, store, (id, name), &gone)?);
     }
-    let view = revive_for_steer(cx, store, id)?;
-    if view.launched {
+    let Some(view) = revive_for_steer(cx, store, id, gone.launch.as_ref())? else {
+        return Ok(Revived::Relaunched);
+    };
+    if view.launched || !gone.finish(cx, store, id)? {
         return Ok(Revived::Relaunched);
     }
-    gone.finish(cx, store, id)?;
     Err(match view.reason {
         Some(failure) => CommandError::new(
             ErrorKind::Failed,
@@ -64,8 +66,8 @@ pub(super) fn once(
     })
 }
 
-/// How the agent of `id`, found gone, is back without a relaunch: another op relaunched it, or it
-/// still runs and a new pane attached; none when it ended, its exit code then noted on `gone`.
+/// How the agent of `id`, found gone, is back without a relaunch: it still runs and a new pane
+/// attached; none when it ended, its exit code then noted on `gone`.
 ///
 /// # Errors
 /// A store failure, or the Box not answering.
@@ -75,13 +77,8 @@ pub(super) fn recover(
     (id, name): (BoxId, &str),
     gone: &mut Gone,
 ) -> Result<Option<Revived>, CommandError> {
-    let live = store.live_launch(id)?;
-    let live_id = live.as_ref().map(|l| l.id);
-    if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
-        return Ok(Some(Revived::Relaunched));
-    }
-    if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
-        match link::recover(cx, store, &row, &launch, gone.code)? {
+    if let (Some(launch), Some(row)) = (gone.launch.as_ref(), store.box_row(id)?) {
+        match link::recover(cx, store, &row, launch, gone.code)? {
             Fate::Running => return Ok(Some(Revived::Running)),
             Fate::Ended(exit) => gone.code = exit,
             Fate::Unreachable => return Err(unreachable(name)),

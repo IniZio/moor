@@ -4,12 +4,12 @@
 use moor_core::activity::{
     stalled_for, wait_overdue, Activity, AgentState, Probe, Source, Status, WaitCheck,
 };
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 
-use super::Reading;
+use super::{apply_read, Reading};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
@@ -45,6 +45,7 @@ pub(super) fn end_stale_wait(
 /// A run in flight keeps the agent busy by itself, so it is never a stall. Neither is a Box whose
 /// agent could not be read: the agent behind a broken probe may be fine.
 pub(super) fn note_stall(
+    cx: &Cx,
     store: &Store,
     row: &BoxRow,
     reading: &Reading,
@@ -81,9 +82,8 @@ pub(super) fn note_stall(
     let quiet = working.then(|| stalled_for(at, now)).flatten();
     match (quiet, stalled) {
         (Some(quiet_secs), _) if !open => {
-            store.apply(
-                Decision::new(row.id).event(ExtraEvent::AgentStalled { doing, quiet_secs }),
-            )?;
+            let stalled = ExtraEvent::AgentStalled { doing, quiet_secs };
+            apply_read(cx, store, reading.decision(row.id).event(stalled))?;
         }
         (None, Some(s)) if open && at > s.ts => {
             let before = s
@@ -91,9 +91,10 @@ pub(super) fn note_stall(
                 .get("quiet_secs")
                 .and_then(serde_json::Value::as_u64);
             let since = u64::try_from((at.as_millis() - s.ts.as_millis()) / 1000).unwrap_or(0);
-            store.apply(Decision::new(row.id).event(ExtraEvent::AgentResumed {
+            let resumed = ExtraEvent::AgentResumed {
                 quiet_secs: before.unwrap_or(0) + since,
-            }))?;
+            };
+            apply_read(cx, store, reading.decision(row.id).event(resumed))?;
         }
         _ => {}
     }

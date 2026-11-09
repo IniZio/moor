@@ -563,6 +563,7 @@ mod inbox;
 mod interrupt;
 mod queue;
 mod relaunch;
+mod stale_launch;
 mod target;
 mod turn_end;
 mod turns;

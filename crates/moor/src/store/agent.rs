@@ -60,6 +60,20 @@ impl Store {
             .optional()?)
     }
 
+    /// Launch `id`, ended or not.
+    pub(crate) fn launch(&self, id: LaunchId) -> Result<Option<Launch>, StoreError> {
+        let conn = self.reader()?;
+        Ok(conn
+            .row(
+                Query::select()
+                    .columns(LAUNCH_COLUMNS)
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Id).eq(id.get())),
+                launch_from_row,
+            )
+            .optional()?)
+    }
+
     /// When the first agent of `box_id` started, if one ever did.
     pub(crate) fn first_launch_at(&self, box_id: BoxId) -> Result<Option<Ts>, StoreError> {
         let conn = self.reader()?;
