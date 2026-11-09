@@ -90,11 +90,15 @@ Each step ends in a run on a real Box.
    hands as observed state, and `boxes::BoxState` goes. Proof. A Box starts,
    sleeps, wakes and closes on a real node with each concern in its own row.
    The prompt moves to state, because later starts replace it.
-1. **Box owner.** One owner per Box in the controller holds its rows. Start,
-   settle, wake, sleep, pressure, proxy and steer send it commands and await
-   the result. The host flock and `intent_pid` go. Proof. Close, steer and
-   suspend fired at one Box at once all apply in order, and a controller restart
-   resumes the owner from the rows.
+1. **Box owner.** One owner per Box in the controller admits every op on that
+   Box. Start, settle, wake, sleep, pressure and steer take a turn from it, and
+   the op runs under that turn. Background passes skip a busy Box. Op bodies
+   move into the owner with step 4, once effect state gives their phases a
+   place to live. Proxy keepers stay outside the owner, and step 2 fences
+   their writes. The host flock goes, and moor stops reading `intent_pid`. A
+   later migration drops the column, so a rolling deploy never meets a missing
+   one. Proof. Close, steer and suspend fired at one Box at once all apply in
+   order, and a controller restart resumes the owner from the rows.
 2. **Incarnation and portable session.** A new VM is a new hands row, and
    re-acquire inserts one instead of stepping the old row. The tables that hold
    VM facts per Box (`proxy`, `machine_boxes`, `machine_box_memory`,
