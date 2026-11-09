@@ -24,6 +24,7 @@ use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::reconcile;
 use crate::ops::common::resume_gate::demand;
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::suspend_check;
 use crate::store::{BoxRow, Store};
 
@@ -125,14 +126,15 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     };
     let settled = settled(cx, store, &row)?;
     let (slept, cache_save) = match sleep_parked(cx, store, &row, &handle, settled) {
-        Ok(parked) => (Ok(parked.outcome), parked.cache_save),
+        Ok(None) => return Ok(false),
+        Ok(Some(parked)) => (Ok(parked.outcome), parked.cache_save),
         Err(e) => (Err(e.error.to_string()), None),
     };
     if let Some(error) = why_not_slept(slept) {
         tell_suspend_failed(cx, store, id, reason, &error)?;
         return Ok(false);
     }
-    store.apply(
+    let slept = store.apply(
         Decision::new(id)
             .lifecycle(BoxLifecycleInput::Sleep {
                 auto: true,
@@ -151,8 +153,8 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
                     ..HandsFields::default()
                 },
             ),
-    )?;
-    Ok(true)
+    );
+    Ok(unless_stale(cx, slept)?.is_some())
 }
 
 /// On a new memory report from `node`: keeps it, tracks whether pressure is sustained, and
@@ -301,12 +303,15 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Ok(handle) = ready_handle(&row) else {
         return Ok(false);
     };
-    if let Some(error) = why_not_slept(park_and_suspend(cx, store, &row, &handle)?) {
+    let Some(suspended) = park_and_suspend(cx, store, &row, &handle)? else {
+        return Ok(false);
+    };
+    if let Some(error) = why_not_slept(suspended) {
         restore_tunnel(cx, id)?;
         tell_suspend_failed(cx, store, id, reason, &error)?;
         return Ok(false);
     }
-    store.apply(
+    let slept = store.apply(
         Decision::new(id)
             .lifecycle(BoxLifecycleInput::Suspend {
                 reason: reason.to_owned(),
@@ -329,24 +334,27 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
                     ..HandsFields::default()
                 },
             ),
-    )?;
-    Ok(true)
+    );
+    Ok(unless_stale(cx, slept)?.is_some())
 }
 
-/// Parks `row`'s tunnel and asks the Driver to suspend the Box, saving nothing.
+/// Parks `row`'s tunnel and asks the Driver to suspend the Box, saving nothing; none when its
+/// hands were replaced first.
 fn park_and_suspend(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     handle: &BoxHandle,
-) -> Result<Result<SleepOutcome, String>, CommandError> {
+) -> Result<Option<Result<SleepOutcome, String>>, CommandError> {
     let at = (row.id, row.hands_inc());
-    store.set_pause_publish(at, PausePublish::Denied)?;
+    if unless_stale(cx, store.set_pause_publish(at, PausePublish::Denied))?.is_none() {
+        return Ok(None);
+    }
     // Parking takes the Proxy away, and the check runs in the Box.
     suspend_check::record(cx, store, at, settled(cx, store, row)?.is_ok());
     park_tunnel(cx, row.id)?;
     let slept = cx.driver().sleep(handle, PausePublish::Denied);
-    Ok(slept.map_err(|e| e.to_string()))
+    Ok(Some(slept.map_err(|e| e.to_string())))
 }
 
 /// Why a sleep that ended as `slept` left the Box up; `None` when it slept.

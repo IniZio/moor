@@ -13,6 +13,7 @@ use super::*;
 use crate::store::SuspendCheck;
 
 mod pause_publish;
+mod stale_hands;
 
 const CEILING: u64 = 23 * 1024;
 const CLEAN: &str = "ahead=0 dirty=0";
