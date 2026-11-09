@@ -89,11 +89,12 @@ mod local_mode {
     }
 
     #[test]
-    fn the_controller_process_itself_is_not_locked_out() {
+    fn a_stray_local_open_inside_the_controller_process_is_refused() {
         let tmp = tempfile::tempdir().unwrap();
         let file = File::create(tmp.path().join("controller.lock")).unwrap();
         file.lock().unwrap();
         writeln!(&file, "{}\n/run/moor.sock", std::process::id()).unwrap();
-        assert!(open(tmp.path()).is_ok());
+        let err = open(tmp.path()).err().expect("refused");
+        assert!(matches!(err, StoreError::Served), "{err}");
     }
 }

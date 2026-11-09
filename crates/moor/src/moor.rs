@@ -1,8 +1,9 @@
 //! Composition root: the single entry every caller uses.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::cx::owners::checked;
+use crate::cx::owners::{checked, Owners};
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -133,6 +134,13 @@ impl Moor {
     /// egress Proxy needs.
     pub(crate) fn keepers_tunnel(env: &Env) -> bool {
         wire::keepers_tunnel(env)
+    }
+
+    /// What refuses every op still waiting for a Box's turn in `env`, and every later one, with a
+    /// restarting error; holders finish.
+    pub(crate) fn owners_drain(env: &Env) -> impl Fn() + Send + Sync + 'static {
+        let owners = env.shared::<Arc<Owners>>().cloned();
+        move || owners.iter().for_each(|o| o.drain())
     }
 
     /// Ends every Box's keeper, closing the tunnels and machine forwards this controller holds.

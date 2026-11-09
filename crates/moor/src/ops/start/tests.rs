@@ -514,7 +514,7 @@ fn provisioning_in_flight_on_another_op_is_busy_not_dead() {
     w.cx.clock().sleep(Duration::from_secs(121));
     let _start = w.cx.owners_arc().hold(BoxId::new(1), Cmd::Start);
     let err = run(&w.cx, &req("demo")).unwrap_err();
-    assert_eq!(err.error.to_string(), "box busy: setup in progress");
+    assert_eq!(err.error.to_string(), "box busy: start in progress");
 }
 
 #[test]

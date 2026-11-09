@@ -79,9 +79,9 @@ const LOCK_POLL: Duration = Duration::from_millis(20);
 
 /// The right to mutate the `SQLite` state dir in `state_dir` for as long as the file lives: the
 /// controller lock a controller holds until it exits, taken by a moor that is not the controller.
-/// None when this process is the controller. A controller holding it is a refusal; another
+/// A controller holding it is a refusal, also when that controller is this process; another
 /// local call holding it past `wait` is one too.
-pub(super) fn exclude(state_dir: &Path, wait: Duration) -> Result<Option<File>, StoreError> {
+pub(super) fn exclude(state_dir: &Path, wait: Duration) -> Result<File, StoreError> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -99,12 +99,7 @@ pub(super) fn exclude(state_dir: &Path, wait: Duration) -> Result<Option<File>, 
             Ok(()) => break,
             Err(TryLockError::WouldBlock) => {
                 let held = fs::read_to_string(&path).unwrap_or_default();
-                let mut lines = held.lines();
-                let pid = lines.next();
-                if pid == Some(std::process::id().to_string().as_str()) {
-                    return Ok(None);
-                }
-                let serves = lines.next().is_some_and(|socket| !socket.is_empty());
+                let serves = held.lines().nth(1).is_some_and(|socket| !socket.is_empty());
                 if serves {
                     return Err(StoreError::Served);
                 }
@@ -119,7 +114,7 @@ pub(super) fn exclude(state_dir: &Path, wait: Duration) -> Result<Option<File>, 
     }
     file.set_len(0)?;
     writeln!(file, "{}", std::process::id())?;
-    Ok(Some(file))
+    Ok(file)
 }
 
 /// The controller lock beside `db`, held until dropped; none when this process is the

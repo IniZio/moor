@@ -81,7 +81,7 @@ impl Store {
                 let lock = db::ControllerLock::exclude(&target, "moor command")?;
                 excludes = Some(Arc::new(Mutex::new(lock)));
             }
-            None => state_lock = init::exclude(state_dir, wait)?.map(Arc::new),
+            None => state_lock = Some(Arc::new(init::exclude(state_dir, wait)?)),
         }
         Ok(Self {
             _excludes: excludes,
