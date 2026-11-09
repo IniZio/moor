@@ -1,6 +1,6 @@
 //! Allow-list for the text of a `search` query: only the Box repo and the qualifiers gh emits.
 
-use super::super::{Reason, RepoRef};
+use super::super::{shown, Reason, RepoRef};
 
 /// Qualifiers that take one of a fixed set of values.
 const FIXED: &[(&str, &[&str])] = &[
@@ -67,7 +67,7 @@ pub(super) fn search_scope(query: &str, repo: &RepoRef) -> Result<(), Reason> {
     let want = format!("{}/{}", repo.owner, repo.name);
     let mut seen = false;
     for token in query.split_ascii_whitespace() {
-        let denied = || Reason::new(format!("search term `{token}` is not allowed"));
+        let denied = || Reason::new(format!("search term `{}` is not allowed", shown(token)));
         let Some((key, value)) = token.split_once(':') else {
             let word = token.chars().all(|c| name_char(c) && c != '/' && c != '@');
             if !word || matches!(token.to_ascii_lowercase().as_str(), "or" | "and" | "not") {

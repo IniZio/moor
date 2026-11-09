@@ -100,7 +100,16 @@ impl fmt::Debug for NonoConfig {
 }
 
 /// One nono route for `host` of `rule`.
-fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str) -> RouteConfig {
+///
+/// `id_forms` adds the `/repositories/*` entries; only the rule the filter checks them
+/// against gets them.
+fn route_for(
+    spec: &NonoSpec<'_>,
+    rule: &ResolvedRule,
+    index: usize,
+    host: &str,
+    id_forms: bool,
+) -> RouteConfig {
     let chained = spec
         .chain
         .as_ref()
@@ -113,7 +122,7 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
             path: r.path.clone(),
         })
         .collect();
-    if chained.is_some() {
+    if id_forms && chained.is_some() {
         for id_form in repo_id_forms(&endpoint_rules) {
             if !endpoint_rules.contains(&id_form) {
                 endpoint_rules.push(id_form);
@@ -184,10 +193,19 @@ fn repo_id_forms(rules: &[EndpointRule]) -> Vec<EndpointRule> {
 /// A token that is not UTF-8 leaves the session token unset; `start` refuses
 /// such a config.
 pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
+    // The filter checks a `/repositories/{id}` request against the first rule naming its
+    // host, so only that rule may credential one.
+    let id_rule = spec.chain.as_ref().and_then(|c| {
+        spec.rules.iter().position(|r| {
+            r.hosts
+                .iter()
+                .any(|h| bare_host(h).eq_ignore_ascii_case(c.host))
+        })
+    });
     let mut routes = Vec::new();
-    for rule in spec.rules {
+    for (n, rule) in spec.rules.iter().enumerate() {
         for (i, host) in rule.hosts.iter().enumerate() {
-            routes.push(route_for(spec, rule, i, host));
+            routes.push(route_for(spec, rule, i, host, id_rule == Some(n)));
         }
     }
     // An empty bypass list sends every CONNECT to the external proxy, so the

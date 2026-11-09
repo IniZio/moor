@@ -351,3 +351,37 @@ fn github_uploads_route_admits_only_the_asset_post() {
         assert!(!policy.is_allowed(m, p), "{m} {p}");
     }
 }
+
+#[test]
+fn only_the_first_chained_rule_gets_repo_id_forms() {
+    let pulls = |name: &str, host: &str| ResolvedRule {
+        endpoint_rules: vec![EndpointRule {
+            method: "GET".to_owned(),
+            path: "/repos/o/r/pulls".to_owned(),
+        }],
+        ..rule(name, &[host], bearer())
+    };
+    let rules = [
+        pulls("gh", GITHUB_API_HOST),
+        pulls("gh-other", GITHUB_API_HOST),
+        pulls("o", "o.test"),
+    ];
+    let cfg = chain_cfg(&rules);
+    let id_forms = |prefix: &str| {
+        cfg.inner()
+            .routes
+            .iter()
+            .find(|r| r.prefix.starts_with(&format!("{prefix}__")))
+            .map(|r| {
+                r.endpoint_rules
+                    .iter()
+                    .filter(|e| e.path.starts_with("/repositories/"))
+                    .map(|e| e.path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap()
+    };
+    assert_eq!(id_forms("gh"), ["/repositories/*/pulls"]);
+    assert!(id_forms("gh-other").is_empty());
+    assert!(id_forms("o").is_empty());
+}

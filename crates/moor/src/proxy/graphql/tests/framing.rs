@@ -81,6 +81,24 @@ fn chunked_other_repo_query_is_forwarded_without_credential() {
 }
 
 #[test]
+fn a_target_with_a_fragment_is_refused_before_upstream() {
+    let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
+    let body = repo_query("victim", "secrets", "Q");
+    for wire in [
+        request("GET", "/x#/../repositories/900/pulls", b""),
+        post("/x#/../graphql", &body),
+        request("GET", "/repos/o/r/pulls#top", b""),
+    ] {
+        let resp = rig.client().call(&wire);
+        assert_refused(&resp, 400);
+    }
+    assert!(
+        rig.requests().is_empty(),
+        "no fragment target may reach upstream"
+    );
+}
+
+#[test]
 fn other_paths_pass_through_unchanged() {
     let reply =
         b"HTTP/1.1 200 OK\r\nX-GitHub-Request-Id: AB12\r\ncontent-type: application/json\r\n\

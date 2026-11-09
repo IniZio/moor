@@ -68,7 +68,8 @@ impl Reason {
         &self.0
     }
 
-    /// Wraps a reason.
+    /// Wraps a reason. A value not known to be a GraphQL name goes in through [`shown`], so
+    /// the only backticks left are the ones the text puts around names and values.
     pub(crate) fn new(text: impl Into<String>) -> Self {
         Self(text.into())
     }
@@ -95,6 +96,12 @@ impl Reason {
             .take(MAX_REDACTED)
             .collect()
     }
+}
+
+/// `value` as a reason may quote it: its backticks become `'`, so it cannot close or open a
+/// backticked span.
+pub(crate) fn shown(value: &str) -> String {
+    value.replace('`', "'")
 }
 
 /// Longest redacted reason, in characters.
@@ -139,14 +146,19 @@ fn scope(body: &[u8], repo: &RepoRef) -> Result<Vec<NodeId>, Reason> {
         return Err(Reason::new("request body over 64 KiB"));
     }
     let (query, vars) = request(body)?;
-    let doc = parse::parse(&query).map_err(|err| Reason::new(format!("malformed query: {err}")))?;
+    let doc = parse::parse(&query)
+        .map_err(|err| Reason::new(format!("malformed query: {}", shown(&err))))?;
     policy::run(&doc, &vars, repo)
 }
 
 /// Splits the JSON request into query text and variables; `operationName` is ignored.
 fn request(body: &[u8]) -> Result<(String, Map<String, Json>), Reason> {
-    let strict: strict::Strict = serde_json::from_slice(body)
-        .map_err(|err| Reason::new(format!("malformed request json: {err}")))?;
+    let strict: strict::Strict = serde_json::from_slice(body).map_err(|err| {
+        Reason::new(format!(
+            "malformed request json: {}",
+            shown(&err.to_string())
+        ))
+    })?;
     let Json::Object(mut obj) = strict.0 else {
         return Err(Reason::new("request is not a json object"));
     };
@@ -154,7 +166,10 @@ fn request(body: &[u8]) -> Result<(String, Map<String, Json>), Reason> {
         .keys()
         .find(|k| !matches!(k.as_str(), "query" | "variables" | "operationName"))
     {
-        return Err(Reason::new(format!("unexpected request key `{key}`")));
+        return Err(Reason::new(format!(
+            "unexpected request key `{}`",
+            shown(key)
+        )));
     }
     let Some(Json::String(query)) = obj.remove("query") else {
         return Err(Reason::new("request has no query string"));
