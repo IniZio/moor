@@ -10,7 +10,7 @@ use moor_client::link::reach::Runner;
 
 use super::link::{keep, ForwardFailed, MachineLink, Via, MAX_PIPES};
 use super::Kept;
-use crate::store::{HeldMachine, MachineWake};
+use crate::store::{HeldMachine, MachineWake, StoreError};
 
 /// A held machine's id, the runner its link row names, and that runner with its name looked up
 /// for dialing.
@@ -127,12 +127,14 @@ impl Kept {
     pub(super) fn sleep_machine(&self) {
         let gone = std::mem::take(&mut self.lock().machine);
         drop(gone);
-        match self.deps.store.sleep_machine(self.box_id) {
+        let inc = self.lock().inc;
+        match self.deps.store.sleep_machine(self.box_id, inc) {
             Ok(Some(name)) => self.record(&Event::Machine(MachineEvent::MachineDetached {
                 name,
                 asleep: true,
             })),
             Ok(None) => {}
+            Err(e @ StoreError::Stale { .. }) => self.say(format_args!("stale_hands_write: {e}")),
             Err(e) => self.say(format_args!("cannot free the machine's slot: {e}")),
         }
     }
@@ -140,7 +142,8 @@ impl Kept {
     /// Grants the Box's want, saying so when no slot fits and its place in line changed.
     fn grant_machine(&self) {
         let store = &self.deps.store;
-        let event = match store.grant_machine(self.box_id) {
+        let inc = self.lock().inc;
+        let event = match store.grant_machine(self.box_id, inc) {
             Ok(MachineWake::Nothing | MachineWake::Woke) => return,
             Ok(MachineWake::Waiting {
                 name,
@@ -155,6 +158,9 @@ impl Kept {
                     position,
                     reason,
                 }
+            }
+            Err(e @ StoreError::Stale { .. }) => {
+                return self.say(format_args!("stale_hands_write: {e}"))
             }
             Err(e) => return self.say(format_args!("cannot grant the machine: {e}")),
         };

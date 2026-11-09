@@ -64,7 +64,7 @@ tables! {
     Reports { Id, Box, Session, Kind, Version, Path, Title, CreatedAt }
     Proxy { Box, BoxPort, EgressPort, Pid, Handle, Ready, LeaseOwner, LeaseHeartbeat, BootId,
         UpdatedAt, KeyHash, Ledger, Spec, CaCert, CaKey, TokenHash, TokenDelivered,
-        ForwardPort }
+        ForwardPort, Inc }
     BoxLease { Id, Box, Kind, Key, State, Booted, Pgid, Sid, RootPid, RootStart, SizeAtRelease,
         CreatedAt, UpdatedAt }
     Artifacts { Id, Box, Session, Name, Version, Kind, ContentType, Size, Sha256, Path, CreatedAt }
@@ -77,14 +77,14 @@ tables! {
         MemMib, Cpus, ReserveMib, MemAvailableMib, PsiCenti, ReportedAt, PsiFullCenti, DiskFreeMib,
         DiskTotalMib, RunnerAddr, HeardAt, DrainingSince, WarmStarts }
     BoxMachines { Box, User, State, Machine, Labels, Ports, Slot, SyncExclude, Since, Until,
-        Enrolled }
+        Enrolled, Inc }
     NodePressure { Node, Readings, HighSince, SuspendedAt }
-    MachineBoxMemory { MachineId, BoxId, HostMemoryMib, ResumeMemoryMib }
+    MachineBoxMemory { MachineId, BoxId, HostMemoryMib, ResumeMemoryMib, Inc }
     MachineBoxes { BoxId, MachineId, Slot, Reach, Facts, Prepared, SuspendedAt, Evicted,
-        UpdatedAt }
+        UpdatedAt, Inc }
     SetupCheckpoints { Provider, LayerKey, Checkpoint, Repo, Bytes, CreatedAt, LastUsedAt, Workdir,
         SetupMs, User, Chain, ChainAt, Parent, Evicting, Base, Depth, StaleSince }
-    SetupCheckpointPins { BoxId, Provider, LayerKey, Layer, Checkpoint }
+    SetupCheckpointPins { BoxId, Provider, LayerKey, Layer, Checkpoint, Inc }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
         TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,

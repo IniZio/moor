@@ -11,6 +11,7 @@ fn spec(full: bool) -> ProxySpec {
         }),
         rules: Vec::new(),
         user: crate::user::UserId::new(1),
+        hands_inc: full.then_some(2),
     }
 }
 

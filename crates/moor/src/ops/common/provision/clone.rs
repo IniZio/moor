@@ -10,6 +10,7 @@ use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::PostCloneStep;
+use moor_core::domain::hands::HandsInc;
 use moor_core::domain::layers::IGNORED_NAMED;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
@@ -103,6 +104,7 @@ pub(super) fn clone_with_proxy(
     cfg: &BoxSettings,
 ) -> Result<(Cloned, SetupProxy), CommandError> {
     let row = store.box_row(id)?;
+    let inc = row.as_ref().map_or(HandsInc::FIRST, BoxRow::hands_inc);
     let kept = row.as_ref().map_or_else(CachePlan::none, |r| {
         cache::derived(cx, store, r, cfg, &ProviderId::new(target.provider))
     });
@@ -115,7 +117,7 @@ pub(super) fn clone_with_proxy(
                 box_exec::proxy(
                     cx,
                     id,
-                    Some(target.handle.clone()),
+                    Some((target.handle.clone(), inc)),
                     target.repo.map(|r| &r.repo),
                     cfg,
                 )

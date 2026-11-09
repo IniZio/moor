@@ -77,7 +77,7 @@ pub(super) fn finish_steps(
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let wants = repo.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let proxy = wants
-        .then(|| box_exec::proxy(cx, row.id, Some(handle.clone()), repo, &cfg))
+        .then(|| box_exec::proxy(cx, row.id, Some((handle.clone(), held.inc)), repo, &cfg))
         .transpose();
     let at = (handle, held.provider.as_str());
     // The cut process may have finished the install, and running it again races what it left

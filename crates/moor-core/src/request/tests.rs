@@ -489,6 +489,7 @@ fn machine_links_with_box_memory_round_trip() {
             box_id: crate::name::BoxId::new(9),
             host_memory_mib: 1536,
             resume_memory_mib: Some(6144),
+            inc: None,
         }],
     };
     let back: MachineLinksReq =

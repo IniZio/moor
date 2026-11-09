@@ -26,6 +26,9 @@ pub struct ProxySpec {
     pub rules: Vec<ResolvedRule>,
     /// The user whose secrets the Proxy injects.
     pub user: UserId,
+    /// The hands `box_handle` is, as their `inc`; none when the Box has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hands_inc: Option<i64>,
 }
 
 /// A running Proxy's address as the Box sees it.

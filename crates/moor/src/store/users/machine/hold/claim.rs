@@ -191,6 +191,7 @@ fn new_want(
         state,
         ports: ports.unwrap_or_default(),
         sync_exclude: exclude.to_vec(),
+        inc: None,
     })
 }
 

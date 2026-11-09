@@ -69,7 +69,7 @@ fn detail_says_an_asleep_claim_waits_while_the_box_is_awake() {
     store
         .hold_machine(first, user, &HoldOp::repo(), Some(&want), &[])
         .unwrap();
-    store.sleep_machine(first).unwrap();
+    store.sleep_machine(first, None).unwrap();
 
     let view = run(&cx, &req(Some("a"), None)).unwrap();
     let held = view.boxed.unwrap().held_machine.unwrap();

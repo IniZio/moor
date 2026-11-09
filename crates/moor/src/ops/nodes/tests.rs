@@ -148,6 +148,7 @@ fn on(cx: &Cx, machine_id: i64, box_id: i64, host_memory_mib: u64) -> BoxHostMem
         box_id: BoxId::new(box_id),
         host_memory_mib,
         resume_memory_mib: None,
+        inc: None,
     }
 }
 

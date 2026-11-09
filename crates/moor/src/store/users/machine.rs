@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use moor_core::config::{EnrolledMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::MachineHoldState;
@@ -13,6 +14,7 @@ use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use crate::store::apply::insert_event;
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 mod boxes;
@@ -101,21 +103,30 @@ impl Store {
         Ok(gone == 1)
     }
 
-    /// Frees the slot of the machine `box_id` holds as the Box sleeps, keeping its claim on the
-    /// machine; the machine's name when the Box held a slot.
-    pub(crate) fn sleep_machine(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
-        let name = self
-            .writer()
-            .row(
-                Query::update()
-                    .table(BoxMachines::Table)
-                    .value(BoxMachines::State, "asleep")
-                    .and_where(Expr::col(BoxMachines::Box).eq(box_id.get()))
-                    .and_where(Expr::col(BoxMachines::State).eq("held"))
-                    .returning_col(BoxMachines::Machine),
-                |r| r.get(0),
-            )
-            .optional()?;
+    /// Frees the slot of the machine `box_id` holds as its hands `inc` sleep, keeping its claim on
+    /// the machine; the machine's name when the Box held a slot. Hands the Box has since replaced
+    /// are refused.
+    pub(crate) fn sleep_machine(
+        &self,
+        box_id: BoxId,
+        inc: Option<HandsInc>,
+    ) -> Result<Option<String>, StoreError> {
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        fence_inc(&tx, box_id, inc)?;
+        let mut asleep = Query::update();
+        asleep
+            .table(BoxMachines::Table)
+            .value(BoxMachines::State, "asleep")
+            .and_where(Expr::col(BoxMachines::Box).eq(box_id.get()))
+            .and_where(Expr::col(BoxMachines::State).eq("held"))
+            .returning_col(BoxMachines::Machine);
+        if let Some(inc) = inc {
+            asleep.value(BoxMachines::Inc, inc.get());
+        }
+        let name = tx.row(&mut asleep, |r| r.get(0)).optional()?;
+        tx.commit()?;
+        drop(conn);
         Ok(name)
     }
 

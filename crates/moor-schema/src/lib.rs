@@ -29,6 +29,7 @@ mod said_at;
 mod session_archive;
 mod suspend_check;
 pub mod tables;
+mod vm_inc;
 mod warm_starts;
 mod workflow_changes;
 mod workflows;
@@ -136,6 +137,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V70__hands_ended",
         write: hands_ended::write,
+    },
+    Step {
+        name: "V71__vm_inc",
+        write: vm_inc::write,
     },
 ];
 

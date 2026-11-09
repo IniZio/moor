@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -213,7 +214,14 @@ fn ensure_plans_the_proxy_for_the_user_of_the_box() {
         .apply(Decision::insert(new).requester(second))
         .unwrap()
         .box_id;
-    super::proxy(&r.cx, id, Some(BoxHandle::new("h")), None, &cfg()).unwrap();
+    super::proxy(
+        &r.cx,
+        id,
+        Some((BoxHandle::new("h"), HandsInc::FIRST)),
+        None,
+        &cfg(),
+    )
+    .unwrap();
     let users: Vec<UserId> = fake
         .calls()
         .into_iter()
@@ -241,7 +249,14 @@ fn egress_hosts(config: UserConfig) -> Vec<String> {
         .apply(Decision::insert(new).requester(user))
         .unwrap()
         .box_id;
-    let proxy = super::proxy(&r.cx, id, Some(BoxHandle::new("h")), None, &cfg()).unwrap();
+    let proxy = super::proxy(
+        &r.cx,
+        id,
+        Some((BoxHandle::new("h"), HandsInc::FIRST)),
+        None,
+        &cfg(),
+    )
+    .unwrap();
     proxy.addr.hosts
 }
 

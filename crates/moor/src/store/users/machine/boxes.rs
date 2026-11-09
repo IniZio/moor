@@ -1,11 +1,13 @@
 //! The runner's record of each Box it set up on a machine, kept here so any runner reads it.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::name::BoxId;
 use moor_core::request::{BoxStage, MachineBox};
 use moor_schema::tables::MachineBoxes;
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query, SelectStatement};
 
 use crate::store::db::{self, DbExt as _};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 impl Store {
@@ -31,14 +33,15 @@ impl Store {
         rows.collect()
     }
 
-    /// Writes `record` whole over any record of its Box.
+    /// Writes `record` whole over any record of its Box, unless it names hands the Box has since
+    /// replaced.
     pub(crate) fn put_machine_box(&self, record: &MachineBox) -> Result<(), StoreError> {
         let (prepared, suspended_at) = match record.stage {
             BoxStage::Noted => (false, None),
             BoxStage::Prepared => (true, None),
             BoxStage::Suspended { at } => (true, Some(i64::try_from(at).unwrap_or(i64::MAX))),
         };
-        let columns = [
+        let mut columns = vec![
             MachineBoxes::MachineId,
             MachineBoxes::Slot,
             MachineBoxes::Reach,
@@ -48,27 +51,39 @@ impl Store {
             MachineBoxes::Evicted,
             MachineBoxes::UpdatedAt,
         ];
-        self.writer().run(
+        if record.inc.is_some() {
+            columns.push(MachineBoxes::Inc);
+        }
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        fence_inc(&tx, record.box_id, record.inc.map(HandsInc::new))?;
+        tx.run(
             Query::insert()
                 .into_table(MachineBoxes::Table)
-                .columns(std::iter::once(MachineBoxes::BoxId).chain(columns))
-                .values_panic([
-                    record.box_id.get().into(),
-                    record.machine_id.into(),
-                    record.slot.into(),
-                    record.reach.as_str().into(),
-                    record.facts.as_str().into(),
-                    prepared.into(),
-                    suspended_at.into(),
-                    record.evicted.into(),
-                    self.now().as_millis().into(),
-                ])
+                .columns(std::iter::once(MachineBoxes::BoxId).chain(columns.iter().copied()))
+                .values_panic(
+                    [
+                        record.box_id.get().into(),
+                        record.machine_id.into(),
+                        record.slot.into(),
+                        record.reach.as_str().into(),
+                        record.facts.as_str().into(),
+                        prepared.into(),
+                        suspended_at.into(),
+                        record.evicted.into(),
+                        self.now().as_millis().into(),
+                    ]
+                    .into_iter()
+                    .chain(record.inc.map(Into::into)),
+                )
                 .on_conflict(
                     OnConflict::column(MachineBoxes::BoxId)
                         .update_columns(columns)
                         .to_owned(),
                 ),
         )?;
+        tx.commit()?;
+        drop(conn);
         Ok(())
     }
 
