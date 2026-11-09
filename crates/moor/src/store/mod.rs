@@ -17,7 +17,7 @@ use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use moor_migrate::Outcome;
-use moor_schema::tables::{Boxes, Events, Sessions};
+use moor_schema::tables::{BoxState, Boxes, Events, Sessions};
 use repo::repo_from_row;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
@@ -335,9 +335,9 @@ fn intent_from(
 
 /// Map a `BOX_SELECT` row to a `BoxRow`.
 fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
-    use select::box_at as at;
+    use select::{box_at as at, state_at};
     let name: String = row.get(const { at(Boxes::Name) })?;
-    let lifecycle: String = row.get(const { at(Boxes::State) })?;
+    let lifecycle: String = row.get(const { state_at(BoxState::State) })?;
     let session: Option<String> = row.get(const { select::session_at(Sessions::State) })?;
     let session = match session {
         Some(raw) => parsed_opt("session state", &raw, SessionState::parse)?,
@@ -353,26 +353,26 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             .get::<_, Option<i64>>(const { at(Boxes::User) })?
             .map(UserId::new),
         issue: row.get(const { at(Boxes::Issue) })?,
-        prompt: row.get(const { at(Boxes::Prompt) })?,
+        prompt: row.get(const { state_at(BoxState::Prompt) })?,
         base: row.get(const { at(Boxes::Base) })?,
         branch: row.get(const { at(Boxes::Branch) })?,
         agent_session_id: row.get(const { select::session_at(Sessions::AgentSessionId) })?,
         lifecycle,
         session,
-        state_reason: row.get(const { at(Boxes::StateReason) })?,
+        state_reason: row.get(const { state_at(BoxState::StateReason) })?,
         intent: intent_from(
-            row.get(const { at(Boxes::IntentKind) })?,
-            row.get(const { at(Boxes::IntentPid) })?,
-            row.get(const { at(Boxes::IntentRun) })?,
+            row.get(const { state_at(BoxState::IntentKind) })?,
+            row.get(const { state_at(BoxState::IntentPid) })?,
+            row.get(const { state_at(BoxState::IntentRun) })?,
         )?,
-        intent_at: ts(const { at(Boxes::IntentAt) })?,
-        setup_failed_at: ts(const { at(Boxes::SetupFailedAt) })?,
-        steps_pending_at: ts(const { at(Boxes::StepsPendingAt) })?,
+        intent_at: ts(const { state_at(BoxState::IntentAt) })?,
+        setup_failed_at: ts(const { state_at(BoxState::SetupFailedAt) })?,
+        steps_pending_at: ts(const { state_at(BoxState::StepsPendingAt) })?,
         created_at: Ts::from_millis(row.get(const { at(Boxes::CreatedAt) })?),
-        updated_at: Ts::from_millis(row.get(const { at(Boxes::UpdatedAt) })?),
-        idle_since: ts(const { at(Boxes::IdleSince) })?,
+        updated_at: Ts::from_millis(row.get(const { state_at(BoxState::UpdatedAt) })?),
+        idle_since: ts(const { state_at(BoxState::IdleSince) })?,
         launch_failure: row
-            .get::<_, Option<String>>(const { at(Boxes::LaunchFailure) })?
+            .get::<_, Option<String>>(const { state_at(BoxState::LaunchFailure) })?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
         hands: hands_from_row(row)?,

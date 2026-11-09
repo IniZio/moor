@@ -4,10 +4,11 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::BoxId;
-use moor_schema::tables::{Boxes, Launches, Sessions};
+use moor_schema::tables::{BoxState, Boxes, Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::apply::insert_event;
+use super::select::state_update;
 use super::{parsed_opt, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
@@ -83,16 +84,14 @@ fn newest_of(conn: &dyn Db, id: BoxId) -> Result<Option<(String, i64)>, StoreErr
 /// Stamp `idle_since` on Box `id` if it is Ready and has none, and mark it updated at `at`.
 fn stamp_idle(conn: &dyn Db, id: BoxId, at: i64) -> Result<(), StoreError> {
     let idle_since = Expr::case(
-        Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str()),
-        Func::coalesce([Expr::col(Boxes::IdleSince), Expr::val(at)]),
+        Expr::col(BoxState::State).eq(BoxLifecycle::Ready.as_str()),
+        Func::coalesce([Expr::col(BoxState::IdleSince), Expr::val(at)]),
     )
-    .finally(Expr::col(Boxes::IdleSince));
+    .finally(Expr::col(BoxState::IdleSince));
     conn.run(
-        Query::update()
-            .table(Boxes::Table)
-            .value(Boxes::IdleSince, idle_since)
-            .value(Boxes::UpdatedAt, at)
-            .and_where(Expr::col(Boxes::Id).eq(id.get())),
+        state_update(id)
+            .value(BoxState::IdleSince, idle_since)
+            .value(BoxState::UpdatedAt, at),
     )?;
     Ok(())
 }

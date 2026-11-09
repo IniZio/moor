@@ -8,8 +8,8 @@ use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
-use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement, Value};
+use moor_schema::tables::{BoxHands, BoxState, Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query, Value};
 
 mod sql;
 mod steps;
@@ -19,7 +19,7 @@ use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_s
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
 use super::hands::{first_hands, update_current};
-use super::select::newest_session;
+use super::select::{newest_session, state_update};
 use super::{HandsRow, Store, StoreError};
 use crate::store::db::{self, DbExt as _, Tx};
 use moor_core::name::NodeName;
@@ -77,7 +77,7 @@ impl Store {
             return Ok(None);
         };
         let applied = apply_in(&tx, now, d)?;
-        tx.run(box_update(id).value(Boxes::Node, node.as_str()))?;
+        tx.run(state_update(id).value(BoxState::Node, node.as_str()))?;
         tx.commit()?;
         drop(conn);
         Ok(Some(applied))
@@ -207,7 +207,11 @@ fn write_box_row(
     let mut session = session_field_sets(&d.set);
     let stepped = d.lifecycle_input.is_some() || d.session_input.is_some();
     if stepped {
-        sets.push((Boxes::State, lifecycle.as_str().into()));
+        sets.push((BoxState::State, lifecycle.as_str().into()));
+        if !lifecycle.is_live() {
+            sets.push((BoxState::OpenName, Value::String(None)));
+            sets.push((BoxState::OpenBranch, Value::String(None)));
+        }
         sets.extend(idle_since_sets(step, now));
         session.push((Sessions::State, session_state.as_str().into()));
         if session_state == SessionState::Ended {
@@ -215,8 +219,8 @@ fn write_box_row(
         }
     }
     sets.extend(intent_sets(d.intent, now));
-    sets.push((Boxes::UpdatedAt, now.as_millis().into()));
-    update(tx, &mut box_update(id), &sets)?;
+    sets.push((BoxState::UpdatedAt, now.as_millis().into()));
+    update(tx, &mut state_update(id), &sets)?;
     let newest = Query::select()
         .expr(Expr::col(Sessions::Ordinal).max())
         .from(Sessions::Table)
@@ -250,12 +254,12 @@ fn is_quiet((lifecycle, session): Parts) -> bool {
 }
 
 /// `idle_since` follows quietness: stamped on becoming quiet, cleared on leaving it.
-fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<Boxes> {
+fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<BoxState> {
     match (step.from, step.to) {
         (from, true) if from != Some(true) => {
-            vec![(Boxes::IdleSince, now.as_millis().into())]
+            vec![(BoxState::IdleSince, now.as_millis().into())]
         }
-        (Some(true), false) => vec![(Boxes::IdleSince, Value::BigInt(None))],
+        (Some(true), false) => vec![(BoxState::IdleSince, Value::BigInt(None))],
         _ => Vec::new(),
     }
 }
@@ -311,14 +315,6 @@ fn write_box(
     update(tx, &mut update_current(id), &sets)
 }
 
-/// An UPDATE of Box `id`'s row.
-fn box_update(id: BoxId) -> UpdateStatement {
-    Query::update()
-        .table(Boxes::Table)
-        .and_where(Expr::col(Boxes::Id).eq(id.get()))
-        .take()
-}
-
 /// Handles carried by a box input, unless the Fields already set that column.
 fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHands> {
     let (col, handle) = match input {
@@ -337,7 +333,7 @@ fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHand
 }
 
 /// Column assignments for an intent change.
-pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<Boxes> {
+pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<BoxState> {
     let (kind, pid, run, at) = match change {
         IntentChange::Keep => return Vec::new(),
         IntentChange::Clear => (None, None, None, None),
@@ -349,10 +345,10 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<Boxes> {
         ),
     };
     vec![
-        (Boxes::IntentKind, kind.into()),
-        (Boxes::IntentPid, pid.into()),
-        (Boxes::IntentRun, run.into()),
-        (Boxes::IntentAt, at.into()),
+        (BoxState::IntentKind, kind.into()),
+        (BoxState::IntentPid, pid.into()),
+        (BoxState::IntentRun, run.into()),
+        (BoxState::IntentAt, at.into()),
     ]
 }
 

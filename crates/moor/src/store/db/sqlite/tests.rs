@@ -93,10 +93,12 @@ fn readers_are_not_blocked_by_an_open_writer() {
     let path = dir.path().join("state").join("moor.db");
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
-        "BEGIN EXCLUSIVE; UPDATE boxes SET prompt = 'dirty'; \
-         INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'o/r', 'checking', 0, 0); \
+        "BEGIN EXCLUSIVE; UPDATE box_state SET prompt = 'dirty'; \
+         INSERT INTO boxes (name, repo, created_at) VALUES ('x', 'o/r', 0); \
+         INSERT INTO box_state (box, state, open_name, updated_at) \
+         VALUES (last_insert_rowid(), 'checking', 'x', 0); \
          INSERT INTO sessions (box, ordinal, state, started_at) \
-         VALUES (last_insert_rowid(), 1, 'starting', 0); \
+         VALUES ((SELECT max(id) FROM boxes), 1, 'starting', 0); \
          INSERT INTO events (box, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",
     )
     .unwrap();
@@ -128,7 +130,7 @@ fn waiting_boxes_returns_pending_in_id_order() {
     // An index on (state, name) lets the planner return rows in name order.
     store
         .writer()
-        .execute_batch("CREATE INDEX boxes_state_name ON boxes(state, name)")
+        .execute_batch("CREATE INDEX box_state_state_open_name ON box_state(state, open_name)")
         .unwrap();
     for id in [d, b, a] {
         let input = BoxLifecycleInput::AtCapacity { max_boxes: 1 };

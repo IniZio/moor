@@ -1,5 +1,5 @@
 use crate::store::db::DbExt as _;
-use moor_schema::tables::Boxes;
+use moor_schema::tables::{BoxState, Boxes};
 use sea_query::{Expr, ExprTrait as _, Query};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -397,7 +397,15 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
         Query::update()
             .table(Boxes::Table)
             .value(Boxes::Name, "")
-            .and_where(Expr::col(Boxes::State).eq("pending")),
+            .and_where(
+                Expr::col(Boxes::Id).in_subquery(
+                    Query::select()
+                        .column(BoxState::Box)
+                        .from(BoxState::Table)
+                        .and_where(Expr::col(BoxState::State).eq("pending"))
+                        .to_owned(),
+                ),
+            ),
     )
     .unwrap();
     let v = close_holder(&w);

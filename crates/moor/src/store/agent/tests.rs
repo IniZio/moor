@@ -12,7 +12,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use moor_schema::tables::{Boxes, Launches, Sessions};
+use moor_schema::tables::{BoxState, Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use crate::store::db::{self, DbExt as _};
@@ -73,9 +73,9 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
         .unwrap()
         .row(
             Query::select()
-                .column(Boxes::IdleSince)
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                .column(BoxState::IdleSince)
+                .from(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(id.get())),
             |r| r.get(0),
         )
         .unwrap()
@@ -88,9 +88,9 @@ fn state_cols(store: &Store, id: BoxId) -> (String, i64) {
         .unwrap()
         .row(
             Query::select()
-                .columns([Boxes::State, Boxes::UpdatedAt])
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                .columns([BoxState::State, BoxState::UpdatedAt])
+                .from(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(id.get())),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap()

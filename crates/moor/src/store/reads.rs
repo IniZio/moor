@@ -7,7 +7,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::request::Pins;
 use moor_core::{BoxId, BoxName, SessionId};
 
-use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
+use moor_schema::tables::{BoxHands, BoxState, Boxes, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 use serde_json::Value;
 
@@ -135,7 +135,7 @@ impl Store {
 
     /// Boxes that are neither closed nor rejected, by id ascending.
     pub(crate) fn open_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
-        let open = Expr::col(b(Boxes::State)).is_not_in(SHUT);
+        let open = Expr::col((BoxState::Table, BoxState::State)).is_not_in(SHUT);
         query_boxes(&self.reader()?, open, Order::Asc, None)
     }
 
@@ -153,9 +153,7 @@ impl Store {
                 |r: &BoxRow| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected);
             return Ok(self.box_row(id)?.filter(open));
         }
-        let named = Expr::col(b(Boxes::Name))
-            .eq(name.as_str())
-            .and(Expr::col(b(Boxes::State)).is_not_in(SHUT));
+        let named = Expr::col((BoxState::Table, BoxState::OpenName)).eq(name.as_str());
         let rows = query_boxes(&self.reader()?, named, Order::Desc, Some(1))?;
         Ok(rows.into_iter().next())
     }
@@ -204,7 +202,8 @@ impl Store {
     /// Boxes queued for a box, oldest id first.
     #[cfg(test)]
     pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
-        let pending = Expr::col(b(Boxes::State)).eq(BoxLifecycle::Pending.as_str());
+        let pending =
+            Expr::col((BoxState::Table, BoxState::State)).eq(BoxLifecycle::Pending.as_str());
         query_boxes(&self.reader()?, pending, Order::Asc, None)
     }
 }

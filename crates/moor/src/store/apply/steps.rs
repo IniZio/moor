@@ -7,11 +7,12 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxRefs, Boxes, Sessions};
+use moor_schema::tables::{BoxRefs, BoxState, Boxes, Sessions};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query, Value};
 
 use super::sql::name_taken;
 use crate::store::db::{self, DbExt as _, Tx};
+use crate::store::select::state_update;
 use crate::store::{load_box, sessions::live_parent, HandsRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
@@ -116,17 +117,34 @@ fn insert_box(
     if let Some(p) = parent_session {
         live_parent(tx, p)?;
     }
-    let row = box_columns(new, lifecycle, requester, now)?;
-    let id: i64 = tx
-        .row(
-            Query::insert()
-                .into_table(Boxes::Table)
-                .columns(row.iter().map(|(c, _)| *c))
-                .values_panic(row.into_iter().map(|(_, v)| v.into()))
-                .returning_col(Boxes::Id),
-            |r| r.get(0),
-        )
-        .map_err(|e| name_taken(e, new))?;
+    let row = box_columns(new, requester, now)?;
+    let id: i64 = tx.row(
+        Query::insert()
+            .into_table(Boxes::Table)
+            .columns(row.iter().map(|(c, _)| *c))
+            .values_panic(row.into_iter().map(|(_, v)| v.into()))
+            .returning_col(Boxes::Id),
+        |r| r.get(0),
+    )?;
+    tx.run(
+        Query::insert()
+            .into_table(BoxState::Table)
+            .columns([
+                BoxState::Box,
+                BoxState::State,
+                BoxState::OpenName,
+                BoxState::Prompt,
+                BoxState::UpdatedAt,
+            ])
+            .values_panic([
+                id.into(),
+                lifecycle.as_str().into(),
+                new.name.as_str().into(),
+                new.spec.prompt.as_deref().into(),
+                now.as_millis().into(),
+            ]),
+    )
+    .map_err(|e| name_taken(e, new))?;
     tx.run(
         Query::insert()
             .into_table(Sessions::Table)
@@ -153,7 +171,7 @@ fn insert_box(
     Ok(BoxId::new(id))
 }
 
-/// Name Box `id`'s branch, which the open-branch index refuses while another open Box has it.
+/// Name Box `id`'s branch, which the open-branch index refuses while another live Box has it.
 fn write_branch(tx: &Tx<'_>, id: BoxId, branch: &str) -> Result<(), StoreError> {
     tx.run(
         Query::update()
@@ -161,6 +179,7 @@ fn write_branch(tx: &Tx<'_>, id: BoxId, branch: &str) -> Result<(), StoreError> 
             .value(Boxes::Branch, branch)
             .and_where(Expr::col(Boxes::Id).eq(id.get())),
     )?;
+    tx.run(state_update(id).value(BoxState::OpenBranch, branch))?;
     tx.run(
         Query::insert()
             .into_table(BoxRefs::Table)
@@ -174,10 +193,9 @@ fn write_branch(tx: &Tx<'_>, id: BoxId, branch: &str) -> Result<(), StoreError> 
 /// The columns of a fresh Box row, each with its value.
 fn box_columns(
     new: &NewBox,
-    lifecycle: BoxLifecycle,
     requester: Option<UserId>,
     now: Ts,
-) -> Result<[(Boxes, Value); 14], StoreError> {
+) -> Result<[(Boxes, Value); 11], StoreError> {
     let repo = new.repo.as_ref();
     let labels = serde_json::to_string(&new.spec.labels)
         .map_err(|e| StoreError::Corrupt(format!("node labels: {e}")))?;
@@ -201,12 +219,9 @@ fn box_columns(
             repo.and_then(crate::store::repo::others_column).into(),
         ),
         (Boxes::Issue, new.spec.issue.as_deref().into()),
-        (Boxes::Prompt, new.spec.prompt.as_deref().into()),
         (Boxes::Base, new.spec.base.as_deref().into()),
         (Boxes::NodeLabels, labels.into()),
         (Boxes::User, requester.map(UserId::get).into()),
-        (Boxes::State, lifecycle.as_str().into()),
         (Boxes::CreatedAt, now.as_millis().into()),
-        (Boxes::UpdatedAt, now.as_millis().into()),
     ])
 }

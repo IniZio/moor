@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
-use moor_schema::tables::{BoxHands, Boxes, Events};
+use moor_schema::tables::{BoxHands, BoxState, Events};
 use sea_query::{Expr, ExprTrait as _, Query, Value};
 
 use crate::store::db::DbExt as _;
@@ -27,7 +27,7 @@ fn ready(store: &Store, name: &str) -> BoxId {
         spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    update(store, id, &[(Boxes::State, "ready".into())]);
+    update(store, id, &[(BoxState::State, "ready".into())]);
     store
         .writer()
         .run(
@@ -69,10 +69,10 @@ fn set_handle(store: &Store, id: BoxId, handle: Option<&str>) {
 }
 
 /// Assign `sets` on the Box row.
-fn update(store: &Store, id: BoxId, sets: &[(Boxes, Value)]) {
+fn update(store: &Store, id: BoxId, sets: &[(BoxState, Value)]) {
     let mut q = Query::update();
-    q.table(Boxes::Table)
-        .and_where(Expr::col(Boxes::Id).eq(id.get()));
+    q.table(BoxState::Table)
+        .and_where(Expr::col(BoxState::Box).eq(id.get()));
     for (col, v) in sets {
         q.value(*col, Expr::val(v.clone()));
     }
@@ -145,15 +145,15 @@ fn not_due_unless_ready_with_handle_and_no_intent() {
     let store = open(dir.path());
     let t = ready(&store, "a");
     event(&store, t, "idled");
-    update(&store, t, &[(Boxes::State, "sleeping".into())]);
+    update(&store, t, &[(BoxState::State, "sleeping".into())]);
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(&store, t, &[(Boxes::State, "ready".into())]);
+    update(&store, t, &[(BoxState::State, "ready".into())]);
     set_handle(&store, t, None);
     assert!(store.artifacts_due().unwrap().is_empty());
     set_handle(&store, t, Some("h"));
-    update(&store, t, &[(Boxes::IntentKind, "close".into())]);
+    update(&store, t, &[(BoxState::IntentKind, "close".into())]);
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(&store, t, &[(Boxes::IntentKind, None::<String>.into())]);
+    update(&store, t, &[(BoxState::IntentKind, None::<String>.into())]);
     assert_eq!(store.artifacts_due().unwrap().len(), 1);
 }
 

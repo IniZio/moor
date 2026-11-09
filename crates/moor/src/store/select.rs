@@ -1,39 +1,42 @@
 //! The selects the Box and event reads share.
 
 use moor_core::BoxId;
-use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
-use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
+use moor_schema::tables::{BoxHands, BoxState, Boxes, Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement, UpdateStatement};
 
 use super::hands::join_current;
 use super::{db, event_from_row, EventRow, StoreError};
 use crate::store::db::DbExt as _;
 
 /// The `boxes` columns a Box read takes first.
-const BOX_COLS: [Boxes; 24] = [
+const BOX_COLS: [Boxes; 12] = [
     Boxes::Id,
     Boxes::Name,
     Boxes::Repo,
     Boxes::Issue,
-    Boxes::Prompt,
     Boxes::Base,
     Boxes::Branch,
-    Boxes::State,
-    Boxes::StateReason,
-    Boxes::IntentKind,
-    Boxes::IntentPid,
-    Boxes::IntentRun,
-    Boxes::IntentAt,
-    Boxes::SetupFailedAt,
     Boxes::CreatedAt,
-    Boxes::UpdatedAt,
-    Boxes::IdleSince,
-    Boxes::LaunchFailure,
     Boxes::User,
     Boxes::RepoConfig,
     Boxes::AuthorName,
     Boxes::AuthorEmail,
     Boxes::OtherRepos,
-    Boxes::StepsPendingAt,
+];
+/// The `box_state` columns a Box read takes next.
+const STATE_COLS: [BoxState; 12] = [
+    BoxState::Prompt,
+    BoxState::State,
+    BoxState::StateReason,
+    BoxState::IntentKind,
+    BoxState::IntentPid,
+    BoxState::IntentRun,
+    BoxState::IntentAt,
+    BoxState::SetupFailedAt,
+    BoxState::UpdatedAt,
+    BoxState::IdleSince,
+    BoxState::LaunchFailure,
+    BoxState::StepsPendingAt,
 ];
 /// The newest Session's columns a Box read takes next.
 const SESSION_COLS: [Sessions; 2] = [Sessions::AgentSessionId, Sessions::State];
@@ -77,16 +80,37 @@ position!(
     box_at: Boxes, BOX_COLS, 0
 );
 position!(
+    /// The position of a `box_state` column in a Box read row.
+    state_at: BoxState, STATE_COLS, BOX_COLS.len()
+);
+position!(
     /// The position of a newest-Session column in a Box read row.
-    session_at: Sessions, SESSION_COLS, BOX_COLS.len()
+    session_at: Sessions, SESSION_COLS, BOX_COLS.len() + STATE_COLS.len()
 );
 position!(
     /// The position of a current-hands column in a Box read row.
-    hands_at: BoxHands, HANDS_COLS, BOX_COLS.len() + SESSION_COLS.len()
+    hands_at: BoxHands, HANDS_COLS, BOX_COLS.len() + STATE_COLS.len() + SESSION_COLS.len()
 );
 
-/// The Box reads' columns, in the order the positions above give: the session columns are the
-/// Box's newest Session's, the hands columns its current hands'.
+/// `q`, a select from `boxes`, with each Box's `box_state` row joined.
+pub(super) fn join_state(q: &mut SelectStatement) -> &mut SelectStatement {
+    q.inner_join(
+        BoxState::Table,
+        Expr::col((BoxState::Table, BoxState::Box)).equals((Boxes::Table, Boxes::Id)),
+    )
+}
+
+/// An UPDATE of Box `id`'s `box_state` row.
+pub(super) fn state_update(id: BoxId) -> UpdateStatement {
+    Query::update()
+        .table(BoxState::Table)
+        .and_where(Expr::col(BoxState::Box).eq(id.get()))
+        .take()
+}
+
+/// The Box reads' columns, in the order the positions above give: the state columns are the
+/// Box's `box_state` row's, the session columns its newest Session's, the hands columns its
+/// current hands'.
 pub(super) fn box_select() -> SelectStatement {
     let b = |c| (Boxes::Table, c);
     let s = |c| (Sessions::Table, c);
@@ -97,6 +121,7 @@ pub(super) fn box_select() -> SelectStatement {
         .take();
     let mut q = Query::select()
         .columns(BOX_COLS.map(b))
+        .columns(STATE_COLS.map(|c| (BoxState::Table, c)))
         .columns(SESSION_COLS.map(s))
         .columns(HANDS_COLS.map(|c| (BoxHands::Table, c)))
         .from(Boxes::Table)
@@ -107,6 +132,7 @@ pub(super) fn box_select() -> SelectStatement {
                 .and(Expr::col(s(Sessions::Ordinal)).eq(db::sub(newest))),
         )
         .take();
+    join_state(&mut q);
     join_current(&mut q);
     q
 }

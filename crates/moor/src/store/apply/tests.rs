@@ -4,7 +4,7 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
-use moor_schema::tables::{BoxRefs, Boxes, Sessions};
+use moor_schema::tables::{BoxRefs, BoxState, Boxes, Sessions};
 use sea_query::{Expr, ExprTrait as _, Func, Query};
 
 use crate::store::db::{self, DbExt as _};
@@ -51,9 +51,9 @@ fn states(store: &crate::store::Store, id: moor_core::BoxId) -> (String, String)
     let b: String = conn
         .row(
             Query::select()
-                .column(Boxes::State)
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                .column(BoxState::State)
+                .from(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(id.get())),
             |r| r.get(0),
         )
         .unwrap();
@@ -448,4 +448,37 @@ fn the_branch_of_a_closed_box_can_be_taken_again() {
         )
         .unwrap();
     store.apply(on_branch("b", "moor/x")).unwrap();
+}
+
+#[test]
+fn a_closed_or_rejected_box_frees_its_name_and_branch_for_the_next() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let end = |id, input| {
+        store
+            .apply(
+                Decision::new(id)
+                    .lifecycle(input)
+                    .session(SessionInput::End),
+            )
+            .unwrap();
+    };
+    let closed = store.apply(on_branch("a", "moor/x")).unwrap().box_id;
+    end(closed, BoxLifecycleInput::Close { reason: None });
+    let rejected = store.apply(on_branch("a", "moor/x")).unwrap().box_id;
+    end(
+        rejected,
+        BoxLifecycleInput::Rejected {
+            reason: "no".to_owned(),
+        },
+    );
+    let live = store.apply(on_branch("a", "moor/x")).unwrap().box_id;
+    let found = store
+        .open_box_by_name(&BoxName::parse_allow_bare("a").unwrap())
+        .unwrap();
+    assert_eq!(found.map(|b| b.id), Some(live));
+    let err = store.apply(on_branch("a", "moor/y")).unwrap_err();
+    assert!(matches!(err, StoreError::NameTaken(_)), "{err:?}");
+    let err = store.apply(on_branch("b", "moor/x")).unwrap_err();
+    assert!(matches!(err, StoreError::BranchTaken(_)), "{err:?}");
 }

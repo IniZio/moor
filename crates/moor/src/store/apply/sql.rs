@@ -1,7 +1,7 @@
 //! Generic column-assignment helpers for the store writer.
 
 use moor_core::domain::decision::{Field, Fields, HandsFields, NewBox};
-use moor_schema::tables::{BoxHands, Boxes, Sessions};
+use moor_schema::tables::{BoxHands, BoxState, Sessions};
 use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
 use super::StoreError;
@@ -28,19 +28,19 @@ fn text(f: &Field<String>) -> Option<Value> {
 }
 
 /// Column assignments for the Box state fields.
-pub(super) fn box_field_sets(s: &Fields) -> Sets<Boxes> {
+pub(super) fn box_field_sets(s: &Fields) -> Sets<BoxState> {
     let all = [
-        (Boxes::Prompt, text(&s.prompt)),
-        (Boxes::StateReason, text(&s.state_reason)),
+        (BoxState::Prompt, text(&s.prompt)),
+        (BoxState::StateReason, text(&s.state_reason)),
         (
-            Boxes::SetupFailedAt,
+            BoxState::SetupFailedAt,
             field_value(&s.setup_failed_at, |t| *t),
         ),
         (
-            Boxes::StepsPendingAt,
+            BoxState::StepsPendingAt,
             field_value(&s.steps_pending_at, |t| *t),
         ),
-        (Boxes::LaunchFailure, text(&s.launch_failure)),
+        (BoxState::LaunchFailure, text(&s.launch_failure)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
@@ -84,13 +84,13 @@ pub(in crate::store) fn update<C: IntoIden + Copy>(
     Ok(())
 }
 
-/// A UNIQUE failure on the open-branch index is a taken branch; other errors pass through.
+/// A UNIQUE failure on a live Box's branch is a taken branch; other errors pass through.
 pub(super) fn branch_taken(e: StoreError, branch: Option<&String>) -> StoreError {
     match (&e, branch) {
         (StoreError::Db(db), Some(branch))
             if db
                 .unique_key()
-                .is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Branch])) =>
+                .is_some_and(|k| k.is(&BoxState::Table, &[BoxState::OpenBranch])) =>
         {
             StoreError::BranchTaken(branch.clone())
         }
@@ -98,10 +98,10 @@ pub(super) fn branch_taken(e: StoreError, branch: Option<&String>) -> StoreError
     }
 }
 
-/// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
+/// A UNIQUE failure on a live Box's name is a taken name; other errors pass through.
 pub(super) fn name_taken(e: db::Error, new: &NewBox) -> StoreError {
     if e.unique_key()
-        .is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Name]))
+        .is_some_and(|k| k.is(&BoxState::Table, &[BoxState::OpenName]))
     {
         StoreError::NameTaken(new.name.clone())
     } else {

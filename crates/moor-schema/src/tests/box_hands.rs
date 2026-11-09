@@ -1,11 +1,9 @@
 //! A populated store keeps every Box and moves each Box's VM to `box_hands` through
 //! `V67__box_hands`, on both backends.
 
-use moor_migrate::{render, Backend};
+use moor_migrate::Backend;
 use postgres::{Client, NoTls};
 use rusqlite::Connection;
-
-use crate::STEPS;
 
 /// Boxes as the store held them before the move: a closed Box and a ready one sharing a name,
 /// an asleep Box whose suspend was checked, and a pending Box that never had a VM.
@@ -70,10 +68,7 @@ fn expected() -> (Vec<&'static str>, Vec<&'static str>) {
 
 /// The steps before the move, and the move itself, rendered for `backend`.
 fn before_and_move(backend: Backend) -> (String, String) {
-    let (last, before) = STEPS.split_last().unwrap();
-    assert_eq!(last.name, "V67__box_hands", "the move is the newest step");
-    let before = before.iter().map(|s| render(s, backend)).collect();
-    (before, render(last, backend))
+    super::before_and_step("V67__box_hands", backend)
 }
 
 #[test]

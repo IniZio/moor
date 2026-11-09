@@ -9,6 +9,7 @@ use moor_migrate::{Backend, Script, Step};
 mod agent_reads;
 mod baseline;
 mod box_hands;
+mod box_state;
 mod checkpoint_base;
 mod checkpoint_depth;
 mod checkpoint_stale;
@@ -121,6 +122,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V67__box_hands",
         write: box_hands::write,
+    },
+    Step {
+        name: "V68__box_state",
+        write: box_state::write,
     },
 ];
 
