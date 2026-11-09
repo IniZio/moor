@@ -1,12 +1,14 @@
 //! `wait`: poll a Box until it is idle or its run ends, or the timeout elapses.
 //!
 //! Never waits for the Box's turn. Each poll settles the Box the way the controller's own reads
-//! do, so `wait` reports idle only once the `idled` event is recorded.
+//! do, so `wait` reports idle only once the `idled` event is recorded. A Box still being set up
+//! has no agent yet, so it is never idle, and a Box whose setup failed fails the wait.
 
 use std::time::Duration;
 
 use moor_core::activity::AgentState;
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
@@ -52,22 +54,17 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
         let read_for = allowance(timeout, clock.instant().saturating_duration_since(started));
         let (row, reading) = read_settled(cx, store, id, name, read_for)?;
         let elapsed = clock.instant().saturating_duration_since(started);
-        if let Some(failure) = reading
-            .launch_failure
-            .as_ref()
-            .filter(|_| want != WaitFor::Run)
-        {
-            return Err(failed(cx, &row, &reading, failure.text(), Vec::new())?);
-        }
         if want != WaitFor::Run {
-            let limits = store.open_limits(id)?;
-            if let Some(first) = limits.first() {
-                let attention = limits.iter().map(AttentionView::from).collect();
-                return Err(failed(cx, &row, &reading, first.message(), attention)?);
+            if let Some(err) = refusal(cx, store, &row, &reading)? {
+                return Err(err);
             }
         }
         let in_flight = reconcile::run_in_flight(cx, store, id)?;
         let facts = WaitFacts {
+            setting_up: matches!(
+                row.lifecycle,
+                BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp
+            ),
             agent_active: agent_active(store, &row, &reading, clock.now())?,
             run_in_flight: in_flight.is_some(),
         };
@@ -92,6 +89,33 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
             run: shown.as_ref().map(|r| run_view(r, live)),
         });
     }
+}
+
+/// Why the Box can never go idle, as the error that ends the wait: its agent failed to launch,
+/// its setup failed, or a limit it hit is still open.
+fn refusal(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    reading: &activity::Reading,
+) -> Result<Option<CommandError>, CommandError> {
+    if let Some(failure) = &reading.launch_failure {
+        return failed(cx, row, reading, failure.text(), Vec::new()).map(Some);
+    }
+    if row.lifecycle == BoxLifecycle::SetupFailed {
+        let name = row.name.as_str();
+        let text = row.state_reason.as_deref().map_or_else(
+            || format!("Box {name} setup failed"),
+            |why| format!("Box {name} setup failed: {why}"),
+        );
+        return failed(cx, row, reading, text, Vec::new()).map(Some);
+    }
+    let limits = store.open_limits(row.id)?;
+    let Some(first) = limits.first() else {
+        return Ok(None);
+    };
+    let attention = limits.iter().map(AttentionView::from).collect();
+    failed(cx, row, reading, first.message(), attention).map(Some)
 }
 
 /// Reads Box `id`'s agent, settles the Box on that reading, and gives the Box as it then stands.

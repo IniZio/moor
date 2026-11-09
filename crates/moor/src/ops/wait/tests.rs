@@ -83,7 +83,7 @@ fn req(wait_for: Option<WaitFor>, timeout_secs: Option<u64>) -> WaitReq {
 fn returns_at_once_without_agent_or_run() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    add(&cx);
+    add_boxed(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(!v.timed_out);
     assert_eq!(v.waited_ms, 0);
@@ -134,7 +134,7 @@ fn reports_the_in_flight_run_with_its_argv() {
 fn a_run_whose_follower_is_gone_reports_interrupted() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_boxed(&cx);
     let claim = begin(&cx, id);
     drop(claim);
     let v = run(&cx, &req(None, Some(5))).unwrap();
@@ -185,7 +185,7 @@ fn unknown_box_fails_like_show() {
 fn never_takes_the_box_lock() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_boxed(&cx);
     let _held = cx.owners_arc().hold(id, Cmd::Close { force: false });
     let show = ShowReq {
         target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
@@ -368,7 +368,7 @@ fn the_payload_carries_the_agent() {
 fn a_box_without_a_session_has_no_agent_in_the_payload() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    add(&cx);
+    add_boxed(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(v.boxed.agent.is_none());
 }
@@ -518,7 +518,7 @@ fn an_open_rate_limit_fails_the_wait_with_attention() {
 fn a_recovered_rate_limit_no_longer_fails_the_wait() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_boxed(&cx);
     rate_limit(&cx, id);
     cx.store()
         .unwrap()
@@ -569,3 +569,5 @@ fn idle_returns_once_the_steered_turn_has_ended() {
     assert!(!v.timed_out);
     assert_eq!(v.waited_ms, 0);
 }
+
+mod setup;
