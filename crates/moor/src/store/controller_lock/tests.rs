@@ -111,6 +111,7 @@ fn a_lock_session_keeps_its_keepalives_and_no_server_timeout() {
     let config = config.config();
     assert_eq!(config.get_keepalives_idle(), Duration::from_secs(3));
     assert_eq!(config.get_keepalives_retries(), Some(3));
+    assert_eq!(config.get_tcp_user_timeout(), Some(&Duration::from_secs(4)));
     let options = config.get_options().unwrap();
     for wanted in [
         "tcp_keepalives_idle=5",
@@ -149,6 +150,13 @@ fn watch(lock: ControllerLock, every: Duration) -> mpsc::Receiver<String> {
     losses
 }
 
+/// Ends the session `me` that [`watch`] watches, and waits for its thread to report the loss.
+fn stop(fixture: &Fixture, me: &str, losses: &mpsc::Receiver<String>) {
+    ControllerLock::terminate(&fixture.target, me);
+    let why = losses.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert!(why.contains("closed"), "{why}");
+}
+
 #[test]
 fn a_holder_outlasts_an_idle_session_timeout() {
     let Some(fixture) = Fixture::new() else {
@@ -163,6 +171,7 @@ fn a_holder_outlasts_an_idle_session_timeout() {
     assert!(lost.is_err(), "{lost:?}");
     let mut other = fixture.session("other");
     assert_eq!(other.holder().unwrap().as_deref(), Some(me));
+    stop(&fixture, me, &losses);
 }
 
 #[test]
@@ -180,6 +189,7 @@ fn an_idle_holder_asks_its_session_on_schedule() {
     let after = ControllerLock::last_active(&fixture.target, me);
     assert!(after - before >= 0.5, "{before} then {after}");
     assert!(losses.try_recv().is_err());
+    stop(&fixture, me, &losses);
 }
 
 #[test]

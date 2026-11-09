@@ -126,8 +126,10 @@ impl Target {
     }
 
     /// This database for the controller lock's session, named `me`. A dead peer must end the
-    /// session on both sides without any write, and the holder's side first, so the client's
-    /// keepalive gives up in about 6 s and the server's in about 11 s. No server timeout may end
+    /// session on both sides, and the holder's side first. The server's keepalive gives up about
+    /// 11 s after it last heard the holder. The holder's keepalive gives up about 4 s after it
+    /// last heard the server, and a statement sent before that, whose unanswered data stops the
+    /// keepalive, gives up 4 s after it is sent: within 8 s either way. No server timeout may end
     /// a session that is meant to sit idle or blocked.
     pub(crate) fn lock_session(&self, me: &str) -> Self {
         let mut session = self.clone();
@@ -142,7 +144,8 @@ impl Target {
             .keepalives(true)
             .keepalives_idle(Duration::from_secs(3))
             .keepalives_interval(Duration::from_secs(1))
-            .keepalives_retries(3);
+            .keepalives_retries(3)
+            .tcp_user_timeout(Duration::from_secs(4));
         session
     }
 
