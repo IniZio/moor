@@ -121,10 +121,7 @@ pub(crate) fn seat_of(
     store: &Store,
     row: &BoxRow,
 ) -> Result<Option<PoolSeat>, CommandError> {
-    recorded(cx, store, row)?.map_or_else(
-        || Ok(None),
-        |n| seat(store, &n, row.hands.as_ref().map_or(1, |h| h.inc)),
-    )
+    recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n, row.hands_inc().get()))
 }
 
 /// What Box `row`'s checkpoints on `provider` are recorded under: the provider itself, or the
@@ -236,7 +233,7 @@ pub(crate) fn admit(
         return Ok(None);
     }
     Ok(Some(Bound {
-        seat: seat(store, &node, row.hands.as_ref().map_or(1, |h| h.inc))?,
+        seat: seat(store, &node, row.hands_inc().get())?,
         provider,
         caps,
     }))
