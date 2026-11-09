@@ -269,12 +269,14 @@ fn combined(first: SetupRun, next: SetupRun, repo: &str) -> SetupRun {
             SetupRun::Failed {
                 line,
                 exit,
+                reason,
                 ms,
                 tail,
             },
         ) => SetupRun::Failed {
             line: format!("{repo}: {line}"),
             exit,
+            reason,
             ms: first.ms().unwrap_or_default() + ms,
             tail,
         },
@@ -298,8 +300,9 @@ fn failed_before_run(cx: &Cx, reason: String) -> SetupRun {
         message: format!("setup did not run: {reason}"),
     });
     SetupRun::Failed {
-        line: reason,
+        line: reason.clone(),
         exit: None,
+        reason,
         ms: 0,
         tail: String::new(),
     }

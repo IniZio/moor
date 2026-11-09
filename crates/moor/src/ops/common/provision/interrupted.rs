@@ -7,7 +7,7 @@ use moor_core::seam::driver::Released;
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::lease::planned_root;
-use super::rerun::record_interrupted;
+use super::rerun::{record_interrupted, OWNER_DIED};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
@@ -45,7 +45,7 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
                 store.apply(Decision::new(row.id).intent(mine))?;
                 claimed.push(row.id);
             }
-            Intent::Setup { .. } => record_interrupted(cx, store, &row)?,
+            Intent::Setup { .. } => record_interrupted(cx, store, &row, OWNER_DIED.to_owned())?,
             Intent::Running { .. } => {}
             Intent::Closing { .. } => claimed.push(row.id),
         }

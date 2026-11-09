@@ -14,30 +14,20 @@ const TAIL_CHARS: usize = 2000;
 /// Most Proxy refusals the failure names.
 const NAMED: usize = 5;
 
-/// What to record beside a failed `run` of Box `id`; none when the run did not fail or has
-/// nothing to add.
+/// What to record beside a failed `run` of Box `id`; none when the run did not fail.
 pub(super) fn setup_why(store: &Store, id: BoxId, run: &SetupRun) -> Option<String> {
-    let SetupRun::Failed { exit, tail, .. } = run else {
+    let SetupRun::Failed { reason, tail, .. } = run else {
         return None;
     };
-    let mut why = String::new();
-    if let Some(code) = exit {
-        let _ = write!(why, "exit {code}");
-    }
+    let mut why = reason.clone();
     let tail = last_chars(tail);
     if !tail.is_empty() {
-        if !why.is_empty() {
-            why.push('\n');
-        }
-        let _ = write!(why, "output ended:\n{tail}");
+        let _ = write!(why, "\noutput ended:\n{tail}");
     }
     for refusal in refusals(store, id) {
-        if !why.is_empty() {
-            why.push('\n');
-        }
-        let _ = write!(why, "while it ran, the Proxy {refusal}");
+        let _ = write!(why, "\nwhile it ran, the Proxy {refusal}");
     }
-    Some(why).filter(|w| !w.is_empty())
+    Some(why)
 }
 
 /// `text` cut to its last [`TAIL_CHARS`] characters.

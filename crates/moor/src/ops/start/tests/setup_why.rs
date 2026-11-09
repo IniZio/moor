@@ -118,3 +118,49 @@ fn a_passing_setup_stores_nothing_extra() {
     assert!(events.iter().all(|e| e.kind != "setup_failed"));
     assert!(failure(&events).is_none());
 }
+
+#[test]
+fn an_exec_that_fails_with_no_output_still_says_why() {
+    let stalled = moor_core::seam::driver::DriverError::Timeout(std::time::Duration::from_secs(5));
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Err(stalled)]);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    let events = happened(&w, BoxId::new(v.boxed.id));
+    let (line, why) = failed_with(&events);
+    assert_eq!(line, "a");
+    assert!(why.contains("timed out"), "{why}");
+}
+
+#[test]
+fn a_setup_cut_by_a_restart_says_so() {
+    let w = super::world(FakeDriver::new());
+    super::script_base_yaml(&w, Some("setup: [a]\n"));
+    let store = w.cx.store().unwrap();
+    let id = BoxId::new(1);
+    w.driver.after_exec({
+        let driver = w.driver.clone();
+        let dying = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        move || {
+            let attached = driver.execs().last().is_some_and(|(_, spec, _)| {
+                spec.argv.last().is_some_and(|a| a.contains(".moor/runs/"))
+            });
+            if attached && dying.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                std::panic::resume_unwind(Box::new("controller restarted mid-setup"));
+            }
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(crate::ops::start::run(&w.cx, &super::setup::start_req()));
+    }));
+    assert!(crashed.is_err());
+    store
+        .apply(moor_core::domain::decision::Decision::new(id).set(
+            moor_core::domain::decision::Fields {
+                box_workdir: moor_core::domain::decision::Field::Clear,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    crate::ops::common::provision::interrupted::fail_interrupted(&w.cx, store).unwrap();
+    let (_, why) = failed_with(&happened(&w, id));
+    assert!(why.contains("controller restart"), "{why}");
+}

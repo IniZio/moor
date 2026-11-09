@@ -177,6 +177,7 @@ fn failing_line_comes_from_the_log_and_warns() {
         SetupRun::Failed {
             line: "bad".to_owned(),
             exit: Some(3),
+            reason: "exit 3".to_owned(),
             ms: 0,
             tail: "moor setup: $ a\nmoor setup: $ bad".to_owned(),
         }
@@ -214,6 +215,7 @@ fn the_last_announced_line_fails() {
         SetupRun::Failed {
             line: "b".to_owned(),
             exit: Some(1),
+            reason: "exit 1".to_owned(),
             ms: 0,
             tail: "moor setup: $ a\nmoor setup: $ b".to_owned(),
         }
@@ -239,6 +241,7 @@ fn a_failed_copy_falls_back_to_the_first_line() {
         SetupRun::Failed {
             line: "a".to_owned(),
             exit: Some(1),
+            reason: "exit 1".to_owned(),
             ms: 0,
             tail: String::new(),
         }
@@ -265,6 +268,7 @@ fn a_failed_copy_takes_the_line_from_the_exec_output() {
         SetupRun::Failed {
             line: "b".to_owned(),
             exit: Some(255),
+            reason: "exit 255".to_owned(),
             ms: 0,
             tail: "moor setup: $ a\nmoor setup: $ b\nfetching".to_owned(),
         }
@@ -290,6 +294,7 @@ fn driver_timeout_fails_the_line() {
         SetupRun::Failed {
             line: "slow".to_owned(),
             exit: None,
+            reason: format!("exec failed: {}", DriverError::Timeout(SETUP_LINE_DEADLINE)),
             ms: 0,
             tail: "moor setup: $ slow".to_owned(),
         }
@@ -334,6 +339,7 @@ fn outcome_maps_skipped_and_ok_to_ok() {
         SetupRun::Failed {
             line: "x".to_owned(),
             exit: None,
+            reason: "exit 1".to_owned(),
             ms: 0,
             tail: String::new(),
         }
@@ -365,6 +371,7 @@ fn view_maps_each_variant() {
         SetupRun::Failed {
             line: "x".to_owned(),
             exit: None,
+            reason: "exit 1".to_owned(),
             ms: 0,
             tail: String::new(),
         }
@@ -390,6 +397,7 @@ fn failed_is_true_only_for_failed() {
     assert!(SetupRun::Failed {
         line: "x".to_owned(),
         exit: None,
+        reason: "exit 1".to_owned(),
         ms: 0,
         tail: String::new(),
     }
