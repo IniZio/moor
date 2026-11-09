@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{Driver, TunnelHandle};
 use moor_core::{BoxHandle, BoxId};
@@ -67,6 +67,8 @@ struct View {
     open: bool,
     /// Its machine, when it has one.
     handle: Option<BoxHandle>,
+    /// The hands that machine is; none when the Box has none.
+    inc: Option<HandsInc>,
     /// Whether it sleeps.
     asleep: bool,
 }
@@ -75,6 +77,8 @@ struct View {
 struct Inner {
     /// The handle the tunnel and forwards lead into.
     handle: Option<BoxHandle>,
+    /// The hands that handle is, which each machine write names.
+    inc: Option<HandsInc>,
     /// The tunnel; dropping it closes it.
     tunnel: Option<Box<dyn TunnelHandle>>,
     /// Whether the tunnel stays closed because the Box sleeps.
@@ -203,6 +207,7 @@ impl Kept {
             deps,
             inner: Mutex::new(Inner {
                 handle: None,
+                inc: None,
                 tunnel: None,
                 parked,
                 failures: 0,
@@ -238,7 +243,7 @@ impl Kept {
         if self.stopped() {
             return false;
         }
-        let parked = self.follow(view.handle);
+        let parked = self.follow(view.handle, view.inc);
         if parked {
             self.sleep_machine();
         } else {
@@ -262,11 +267,11 @@ impl Kept {
 
     /// Opens the tunnel now unless it is up or parked; why it is not up after.
     pub(crate) fn bring_up(&self) -> Result<(), String> {
-        let handle = view(&self.deps.store, self.box_id)
+        let (handle, inc) = view(&self.deps.store, self.box_id)
             .map_err(|e| format!("cannot read the Box: {e}"))?
-            .and_then(|v| v.handle);
+            .map_or((None, None), |v| (v.handle, v.inc));
         let busy = lock(&self.busy);
-        if self.follow(handle) || self.deps.egress.is_none() || self.stopped() {
+        if self.follow(handle, inc) || self.deps.egress.is_none() || self.stopped() {
             return Ok(());
         }
         self.lock().next_open = None;
@@ -315,9 +320,10 @@ impl Kept {
 
     /// Drops the tunnel and forwards when the Box's handle changed: they lead into a machine
     /// that is gone. Whether the Box is parked.
-    fn follow(&self, handle: Option<BoxHandle>) -> bool {
+    fn follow(&self, handle: Option<BoxHandle>, inc: Option<HandsInc>) -> bool {
         let mut inner = self.lock();
         let parked = inner.parked;
+        inner.inc = inc;
         if inner.handle == handle {
             return parked;
         }
@@ -367,6 +373,7 @@ fn view(store: &Store, box_id: BoxId) -> Result<Option<View>, StoreError> {
     Ok(store.box_row(box_id)?.map(|row| View {
         open: !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected),
         handle: row.hands.as_ref().and_then(|b| b.handle.clone()),
+        inc: row.hands.as_ref().map(|b| b.inc),
         asleep: row
             .hands
             .as_ref()

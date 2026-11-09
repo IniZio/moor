@@ -11,7 +11,7 @@ use sea_query::{Expr, ExprTrait as _, InsertStatement, Query, SelectStatement, U
 use super::init::parsed_opt;
 use super::select::hands_at;
 use super::{to_u32, HandsRow, StoreError};
-use crate::store::db::{self, Row};
+use crate::store::db::{self, Db, DbExt as _, Row};
 
 /// The highest `inc` among the hands of the Box `of` names.
 fn current_inc(of: Expr) -> SelectStatement {
@@ -65,6 +65,22 @@ pub(super) fn fence(id: BoxId, current: Option<&HandsRow>, d: &Decision) -> Resu
 /// are no longer the Box's current ones.
 pub(super) const fn fenced(id: BoxId, inc: HandsInc, rows: usize) -> Result<(), StoreError> {
     if rows == 0 {
+        return Err(StoreError::Stale {
+            box_id: id,
+            read: inc,
+        });
+    }
+    Ok(())
+}
+
+/// Refuses a write about Box `id`'s hands `inc` once the Box has newer hands. A write that names
+/// no hands, as an older runner sends, is let through.
+pub(super) fn fence_inc(conn: &dyn Db, id: BoxId, inc: Option<HandsInc>) -> Result<(), StoreError> {
+    let Some(inc) = inc else {
+        return Ok(());
+    };
+    let current: Option<i64> = conn.row(current_inc(Expr::val(id.get())), |r| r.get(0))?;
+    if current.is_some_and(|now| now > inc.get()) {
         return Err(StoreError::Stale {
             box_id: id,
             read: inc,

@@ -34,6 +34,7 @@ fn a_box_supervisor_reads_the_spec_the_controller_recorded() {
         box_repo: None,
         rules: Vec::new(),
         user: UserId::new(1),
+        hands_inc: None,
     };
     w.store.set_proxy_spec(id, &spec).unwrap();
     assert_eq!(on.spec(), Ok(Some(spec)));

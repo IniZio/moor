@@ -97,7 +97,7 @@ pub(in super::super) fn warm(
     if chain_expired(cx, store, id, layered, (layer, &kept))? {
         return Ok(None);
     }
-    store.pin_checkpoint(id, &layered.home, &key, layer)?;
+    store.pin_checkpoint((id, None), &layered.home, &key, layer)?;
     make_room(cx, store, id, &layered.home)?;
     if !store.use_checkpoint(&layered.home, &key)? {
         return Ok(None);

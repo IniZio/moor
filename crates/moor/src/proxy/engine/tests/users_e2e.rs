@@ -64,6 +64,7 @@ fn start_for(host: &Host, up: &Upstream, vault: &Arc<Vault>, name: &str, user: U
         box_repo: None,
         rules: vec![claude_rule(up.port)],
         user,
+        hands_inc: None,
     };
     let wiring = Wiring {
         secrets,

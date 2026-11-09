@@ -1,12 +1,14 @@
 //! What a Proxy is started from, kept in its row: the spec, and the interception CA the Box
 //! trusts for its whole life, with the CA key sealed by the vault.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::BoxId;
 use moor_schema::tables::Proxy;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 /// A Box's interception CA as the row keeps it.
@@ -25,18 +27,27 @@ impl std::fmt::Debug for StoredCa {
 }
 
 impl Store {
-    /// Records `spec` as what `box_id`'s Proxy starts from.
+    /// Records `spec` as what `box_id`'s Proxy starts from, unless it was made for hands the Box
+    /// has since replaced.
     pub(crate) fn set_proxy_spec(&self, box_id: BoxId, spec: &ProxySpec) -> Result<(), StoreError> {
         let json = serde_json::to_string(spec).map_err(|e| StoreError::Invalid(e.to_string()))?;
-        let changed = self.writer().run(
-            Query::update()
-                .table(Proxy::Table)
-                .value(Proxy::Spec, json)
-                .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
-        )?;
-        if changed == 0 {
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        let inc = spec.hands_inc.map(HandsInc::new);
+        fence_inc(&tx, box_id, inc)?;
+        let mut update = Query::update();
+        update
+            .table(Proxy::Table)
+            .value(Proxy::Spec, json)
+            .and_where(Expr::col(Proxy::Box).eq(box_id.get()));
+        if let Some(inc) = inc {
+            update.value(Proxy::Inc, inc.get());
+        }
+        if tx.run(&mut update)? == 0 {
             return Err(StoreError::NotFound(box_id));
         }
+        tx.commit()?;
+        drop(conn);
         Ok(())
     }
 
@@ -130,6 +141,7 @@ mod tests {
             box_repo: None,
             rules: Vec::new(),
             user: UserId::new(1),
+            hands_inc: None,
         }
     }
 

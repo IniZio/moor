@@ -157,6 +157,10 @@ pub struct BoxHostMemory {
     /// MiB of the host its suspended VM needs to resume; none when its provider does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_memory_mib: Option<u64>,
+    /// Which of the Box's hands the VM is; none when the runner does not say, which a controller
+    /// reads as the current one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inc: Option<i64>,
 }
 
 /// Whether a machine's agent serves checkpoints, which a warm start needs.

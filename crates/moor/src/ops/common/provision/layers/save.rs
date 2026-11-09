@@ -115,7 +115,9 @@ pub(super) fn save(
         store
             .record_checkpoint(&layered.home, key, &layered.lineage_at(store.now()), &made)
             .and_then(|()| store.place_checkpoint(&layered.home, key, &place))
-            .and_then(|()| store.pin_checkpoint(layered.id, &layered.home, key, layer))
+            .and_then(|()| {
+                store.pin_checkpoint((layered.id, layered.inc), &layered.home, key, layer)
+            })
             .map_err(|e| e.to_string())
     });
     if let Err(e) = saved {

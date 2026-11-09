@@ -101,7 +101,7 @@ fn kept_layer(
     let Some(key) = layered.keys.get(layer) else {
         return Ok(None);
     };
-    store.pin_checkpoint(row.id, &layered.home, key, layer)?;
+    store.pin_checkpoint((row.id, None), &layered.home, key, layer)?;
     if !store.use_checkpoint(&layered.home, key)? {
         return Ok(None);
     }

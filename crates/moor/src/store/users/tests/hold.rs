@@ -171,13 +171,13 @@ fn the_older_of_two_waiters_takes_the_freed_slot() {
 
     r.claim_as(a, r.user, &HoldOp::Release);
     assert!(matches!(
-        r.store.grant_machine(c).unwrap(),
+        r.store.grant_machine(c, None).unwrap(),
         MachineWake::Waiting { .. }
     ));
 
     assert_eq!(r.slot_of(b), Some(0), "the older waiter holds the slot");
     assert_eq!(r.slot_of(c), None);
-    assert_eq!(r.store.grant_machine(b).unwrap(), MachineWake::Woke);
+    assert_eq!(r.store.grant_machine(b, None).unwrap(), MachineWake::Woke);
 }
 
 #[test]
@@ -191,11 +191,14 @@ fn an_expired_want_is_dropped_and_the_slot_goes_to_the_next_waiter() {
     r.clock.sleep(Duration::from_secs(60));
 
     r.claim_as(a, r.user, &HoldOp::Release);
-    assert_eq!(r.store.grant_machine(c).unwrap(), MachineWake::Woke);
+    assert_eq!(r.store.grant_machine(c, None).unwrap(), MachineWake::Woke);
 
     assert_eq!(r.slot_of(c), Some(0));
     assert!(!r.has_row(b), "the expired want is gone");
-    assert_eq!(r.store.grant_machine(b).unwrap(), MachineWake::Nothing);
+    assert_eq!(
+        r.store.grant_machine(b, None).unwrap(),
+        MachineWake::Nothing
+    );
 }
 
 #[test]
@@ -222,7 +225,10 @@ fn sleep_frees_the_slot_and_a_wake_takes_one_again_through_the_grant() {
     let (a, b, c) = (r.new_box("a"), r.new_box("b"), r.new_box("c"));
     r.claim(a, None);
     r.claim(b, None);
-    assert_eq!(r.store.sleep_machine(a).unwrap().as_deref(), Some("mini"));
+    assert_eq!(
+        r.store.sleep_machine(a, None).unwrap().as_deref(),
+        Some("mini")
+    );
     let claim = r.store.claimed_machine(a).unwrap().unwrap();
     assert_eq!(claim.state, MachineHoldState::Asleep);
     assert_eq!((claim.slot, claim.ports), (0, vec![8081]));
@@ -230,12 +236,12 @@ fn sleep_frees_the_slot_and_a_wake_takes_one_again_through_the_grant() {
     assert_eq!(held_slot(&r.claim(c, None)), Some(0), "the freed slot");
     r.claim_as(b, r.user, &HoldOp::Release);
 
-    assert_eq!(r.store.grant_machine(a).unwrap(), MachineWake::Woke);
+    assert_eq!(r.store.grant_machine(a, None).unwrap(), MachineWake::Woke);
 
     let held = r.store.box_machine(a).unwrap().unwrap();
     assert_eq!((held.slot, held.ports), (1, vec![8091]), "a different slot");
     assert_eq!(
-        r.store.grant_machine(a).unwrap(),
+        r.store.grant_machine(a, None).unwrap(),
         MachineWake::Woke,
         "still held"
     );

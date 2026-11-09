@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use moor_core::config::{pick_machine, unslot_ports, MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent, EVENT_KINDS};
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
@@ -14,6 +15,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 mod claim;
@@ -67,13 +69,17 @@ pub(crate) enum MachineWake {
 }
 
 impl Store {
-    /// Each keeper tick of an awake Box: an asleep claim is wanted again on the same machine,
-    /// then the oldest wants that a free slot fits are granted and expired ones dropped. Only a
-    /// Box that waits or slept takes the write lock.
+    /// Each keeper tick of an awake Box on its hands `inc`: an asleep claim is wanted again on the
+    /// same machine, then the oldest wants that a free slot fits are granted and expired ones
+    /// dropped. Only a Box that waits or slept takes the write lock.
     ///
     /// # Errors
-    /// A store read or write failed.
-    pub(crate) fn grant_machine(&self, id: BoxId) -> Result<MachineWake, StoreError> {
+    /// A store read or write failed, or the Box has hands newer than `inc`.
+    pub(crate) fn grant_machine(
+        &self,
+        id: BoxId,
+        inc: Option<HandsInc>,
+    ) -> Result<MachineWake, StoreError> {
         match claim_in(&self.reader()?, id)?.map(|c| c.state) {
             None => return Ok(MachineWake::Nothing),
             Some(ClaimState::Held { .. }) => return Ok(MachineWake::Woke),
@@ -82,26 +88,27 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
+        fence_inc(&tx, id, inc)?;
         let Some(claim) = claim_in(&tx, id)? else {
             return Ok(MachineWake::Nothing);
         };
-        let user = claim.user;
-        if let ClaimState::Asleep { machine, last_slot } = claim.state {
-            let ports = unslot_ports(&claim.ports, last_slot)
-                .map_err(|e| StoreError::Corrupt(format!("box_machines ports: {e}")))?;
-            let state = ClaimState::Wanted {
-                labels: Vec::new(),
-                machine: Some(machine),
-                since: now,
-                until: None,
-            };
-            let ports_kept = Claim {
-                state,
-                ports,
+        let (user, inc) = (claim.user, inc.or(claim.inc));
+        let claim = match claim.state {
+            ClaimState::Asleep { machine, last_slot } => Claim {
+                state: ClaimState::Wanted {
+                    labels: Vec::new(),
+                    machine: Some(machine),
+                    since: now,
+                    until: None,
+                },
+                ports: unslot_ports(&claim.ports, last_slot)
+                    .map_err(|e| StoreError::Corrupt(format!("box_machines ports: {e}")))?,
+                inc,
                 ..claim
-            };
-            put_in(&tx, id, &ports_kept)?;
-        }
+            },
+            _ => Claim { inc, ..claim },
+        };
+        put_in(&tx, id, &claim)?;
         grant_in(&tx, user, now)?;
         let wake = match claim_in(&tx, id)? {
             None => MachineWake::Nothing,

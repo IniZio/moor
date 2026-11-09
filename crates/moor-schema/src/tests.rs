@@ -15,6 +15,7 @@ mod insertion_order;
 mod postgres;
 mod session_archive;
 mod sqlite;
+mod vm_inc;
 
 /// The steps before the one `name`s, and that step, rendered for `backend`.
 fn before_and_step(name: &str, backend: Backend) -> (String, String) {

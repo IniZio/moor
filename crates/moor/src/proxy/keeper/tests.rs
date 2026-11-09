@@ -416,6 +416,21 @@ fn a_parked_box_frees_its_machine_slot() {
     assert!(w.store.box_machine(w.id).unwrap().is_none());
 }
 
+#[test]
+fn a_park_for_hands_the_box_replaced_keeps_the_slot_and_logs_the_stale_write() {
+    let w = World::new([]);
+    hold_machine(&w);
+    let _asked = runner(&w);
+    let kept = w.kept(false);
+    assert!(kept.tick());
+    w.store.replace_hands(w.id);
+    kept.park();
+    assert_eq!(w.kinds(), ["machine_attached"]);
+    assert!(w.store.box_machine(w.id).unwrap().is_some(), "still held");
+    let log = String::from_utf8(w.log.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("stale_hands_write"), "{log}");
+}
+
 /// Holds each clear of the Box port until released; says when one began.
 struct Gate {
     began: Receiver<()>,
@@ -554,6 +569,7 @@ fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it(
         other_repos: Vec::new(),
         rules: Vec::new(),
         user: moor_core::user::UserId::new(1),
+        hands_inc: None,
     };
     let ep = host.ensure(&spec).unwrap();
     let after = w.store.proxy(w.id).unwrap().unwrap();

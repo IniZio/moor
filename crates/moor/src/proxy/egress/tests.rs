@@ -74,6 +74,7 @@ impl World {
             other_repos: Vec::new(),
             rules: vec![rule(up.port)],
             user,
+            hands_inc: None,
         };
         store.set_proxy_spec(id, &spec).unwrap();
         let socket = dir.path().join("proxy.sock");

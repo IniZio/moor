@@ -110,6 +110,7 @@ fn engine_injects_the_credential_audits_requests_and_stops() {
         box_repo: None,
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),
+        hands_inc: None,
     };
     let wiring = Wiring {
         secrets: Arc::new(|name| {
