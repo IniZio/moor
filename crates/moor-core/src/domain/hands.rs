@@ -26,13 +26,19 @@ impl HandsInc {
         self.0
     }
 
+    /// The hands after these.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+
     /// The hands an acquire writes, given the Box's `current` ones: new hands after ones that
     /// ended, the current ones while they are still being acquired, the first for a Box with none.
     #[must_use]
     pub const fn acquiring(current: Option<(Self, HandsState)>) -> Self {
         match current {
             None => Self::FIRST,
-            Some((inc, state)) if state.replaceable() => Self(inc.0 + 1),
+            Some((inc, state)) if state.replaceable() => inc.next(),
             Some((inc, _)) => inc,
         }
     }

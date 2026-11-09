@@ -2,6 +2,7 @@
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields};
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::{AcquireReq, DriverError, Forked};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
@@ -33,7 +34,7 @@ pub(in super::super) fn resume(
     let Some((layer, saved)) = kept_layer(cx, store, row, cfg, layered)? else {
         return Ok(None);
     };
-    let req = layered.machine_req(cx, store, row, cfg)?;
+    let req = layered.machine_req(cx, store, (row, row.hands_inc().next()), cfg)?;
     // Planned first, so a fork cut short is still found from its record.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(row.id, LeaseKind::BoxRoot, planned.as_str())?;
@@ -67,15 +68,7 @@ pub(in super::super) fn resume(
         }
     };
     hold_new(store, row.id, (root, &planned), &new)?;
-    // One write, so a restart never reads this machine with the fork of the one before it.
-    let moved = Decision::new(row.id).event(told).hands(
-        row.hands_inc(),
-        HandsFields {
-            handle: Field::Set(new.clone()),
-            ..HandsFields::default()
-        },
-    );
-    store.apply(moved)?;
+    move_hands(store, row, &new, Some(told))?;
     layered.stand_on(layer, saved.place.as_ref());
     release_old(cx, store, row.id, old)?;
     Ok(Some(new))
@@ -129,6 +122,37 @@ fn fork_unless_forced(
     Ok(forked)
 }
 
+/// Puts Box `row` on new hands, the fork `new` of its machine, with `told`. The hands it leaves end
+/// as Gone first, so nothing the old machine still reports lands on the fork. The handle and `told`
+/// go in one write, so a restart never reads the fork without the layer it stands on.
+fn move_hands(
+    store: &Store,
+    row: &BoxRow,
+    new: &BoxHandle,
+    told: Option<ExtraEvent>,
+) -> Result<(), CommandError> {
+    let (id, old) = (row.id, row.hands_inc());
+    store.apply(Decision::new(id).hands_input(old, HandsInput::DriverMissing))?;
+    let inc = old.next();
+    store.apply(Decision::new(id).hands_input(inc, HandsInput::Requested))?;
+    let workdir = row.hands.as_ref().and_then(|h| h.workdir.clone());
+    let acquired = HandsInput::Acquired {
+        handle: new.clone(),
+    };
+    let fields = HandsFields {
+        workdir: workdir.map_or(Field::Keep, Field::Set),
+        ..HandsFields::default()
+    };
+    let mut moved = Decision::new(id)
+        .hands_input(inc, acquired)
+        .hands(inc, fields);
+    if let Some(told) = told {
+        moved = moved.event(told);
+    }
+    store.apply(moved)?;
+    Ok(())
+}
+
 /// Holds the lease of `new`, the machine a fork planned as `planned` came to.
 fn hold_new(
     store: &Store,
@@ -169,14 +193,7 @@ fn took_over(
         return Err(CommandError::new(ErrorKind::Failed, FORCED_CLOSE));
     }
     store.hold_lease(root)?;
-    let moved = Decision::new(row.id).hands(
-        row.hands_inc(),
-        HandsFields {
-            handle: Field::Set(new.clone()),
-            ..HandsFields::default()
-        },
-    );
-    store.apply(moved)?;
+    move_hands(store, row, &new, None)?;
     release_old(cx, store, row.id, old)?;
     Ok(Some(new))
 }
