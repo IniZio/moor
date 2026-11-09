@@ -63,6 +63,7 @@ pub(super) fn serve_started(
         sink,
     );
     settle::spawn_workflows(&running.env, &drain, sink);
+    settle::spawn_inbox(&running.env, running.settle_every, &drain, sink);
     reconcile_in_background((after, reconcile), &running.env, &drain, sink);
     running.serve_until(wake, &drain, sink);
     fronts.wait();

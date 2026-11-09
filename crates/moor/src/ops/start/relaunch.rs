@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::AgentLaunchView;
-use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
+use moor_core::{BoxId, ErrorKind, SessionId, StartReq};
 use std::time::Duration;
 
 use super::launch;
@@ -77,7 +77,6 @@ fn launch_asked(
         .live_session(id)?
         .is_some_and(|s| ended(cx, &row, &s).is_none())
     {
-        on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     }
     let Some(old) = store.live_session(id)? else {
@@ -86,7 +85,6 @@ fn launch_asked(
         return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
     };
     let Some(end) = ended(cx, &row, &old) else {
-        on_live(cx, req, &row);
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
@@ -115,11 +113,6 @@ pub(super) fn check_resume(req: &StartReq, row: &BoxRow) -> Result<(), CommandEr
 /// The refusal for `--resume` with no agent session to resume.
 pub(super) fn nothing_to_resume() -> CommandError {
     CommandError::new(ErrorKind::Refused, "no agent session to resume")
-}
-
-/// Tells a start that found the agent live that its prompt went nowhere.
-fn on_live(cx: &Cx, req: &StartReq, row: &BoxRow) {
-    warn_prompt_ignored(cx, req, &row.name);
 }
 
 /// Stores a given prompt on the Box, replacing any it holds, so the launch sends it.
@@ -157,11 +150,14 @@ pub(super) fn relaunch(
         return Ok(AgentLaunchView::default());
     };
     let cfg = settings()?;
-    launch.resume = resume;
-    launch.prompt = req
+    let asked = req
         .prompt
         .clone()
         .map_or(LaunchPrompt::None, LaunchPrompt::Text);
+    if resume.is_none() {
+        launch.prompt = launch::queued_or(store, id, asked)?;
+    }
+    launch.resume = resume;
     launch::with_profile(store, &mut launch, &cfg)?;
     if let Some(g) = &req.prompt {
         let set = Fields {
@@ -225,18 +221,5 @@ pub(super) fn ended(cx: &Cx, row: &BoxRow, session: &SessionRow) -> Option<Ended
             ..
         } => Some(Ended::Exited(exit)),
         Probe::Read { .. } | Probe::TimedOut => None,
-    }
-}
-
-/// Warns that a given prompt does not reach a live agent.
-fn warn_prompt_ignored(cx: &Cx, req: &StartReq, name: &moor_core::BoxName) {
-    if req.prompt.is_some() {
-        cx.warn(Warning {
-            code: "prompt_ignored".to_owned(),
-            message: format!(
-                "--prompt ignored: the agent for {} is live; use moor steer",
-                name.as_str()
-            ),
-        });
     }
 }

@@ -205,7 +205,7 @@ fn text_goes_to_the_agent_and_is_recorded() {
     let v = run(&f.cx, &text("do x")).unwrap();
     assert_eq!((v.box_name.as_str(), v.sent.as_str()), ("t", "do x"));
     assert!(!v.answered_menu);
-    assert_eq!(v.steer, steered_id(&f));
+    assert_eq!(v.steer, Some(steered_id(&f)));
     assert_eq!(
         f.engine.steers(),
         vec![("agent-1".to_owned(), Steer::Text("do x".into()))]
@@ -258,13 +258,10 @@ fn an_unchecked_submit_warns() {
 fn an_asleep_box_wakes_before_the_send() {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
-    store.apply(quiet).unwrap();
-    let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::sleep(false))
-        .hands_input(HandsInc::FIRST, HandsInput::Sleep);
-    store.apply(d).unwrap();
+    put_to_sleep(&f);
     run(&f.cx, &text("hi")).unwrap();
+    queue::reports_idle(&f, "agent-1");
+    queue::pass(&f);
     let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.hands.unwrap().state, HandsState::Ready);
@@ -294,7 +291,7 @@ fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
     let v = run(&f.cx, &text(" /exit ")).unwrap();
     assert_eq!(v.sent, " /exit ");
     assert!(!v.answered_menu);
-    assert_eq!(v.steer, steered_id(&f));
+    assert_eq!(v.steer, Some(steered_id(&f)));
     assert!(!live(&f));
     let warned = f.cx.take_warnings();
     assert_eq!(
@@ -478,13 +475,15 @@ fn steering_during_a_run_is_sent_while_the_box_lock_is_held() {
 }
 
 #[test]
-fn an_asleep_box_under_a_held_lock_is_refused_and_nothing_is_sent() {
+fn an_asleep_box_under_a_held_lock_is_queued_and_nothing_is_sent() {
     let f = fx();
     put_to_sleep(&f);
     let _held = hold_lock(&f);
-    let err = run(&f.cx, &text("hi")).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(err.error.to_string().contains("busy"), "{}", err.error);
+    let v = run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(
+        v.delivery,
+        moor_core::view::steer::Delivery::Queued(moor_core::domain::inbox::QueueCause::Asleep)
+    );
     assert!(f.engine.steers().is_empty());
 }
 
@@ -560,6 +559,7 @@ mod arrival;
 mod cold_boot;
 mod inbox;
 mod interrupt;
+mod queue;
 mod relaunch;
 mod target;
 mod turn_end;

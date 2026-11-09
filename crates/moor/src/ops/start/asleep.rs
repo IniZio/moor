@@ -24,7 +24,7 @@ pub(super) enum Woken {
 }
 
 /// Wakes an asleep Box being started and brings its tunnel back, since the agent launch that
-/// follows needs both. A node without room leaves it queued, holding any given prompt for later.
+/// follows needs both. A node without room leaves it queued; its inbox keeps any given prompt.
 /// The caller holds the Box's turn.
 pub(super) fn wake(
     cx: &Cx,
@@ -42,9 +42,6 @@ pub(super) fn wake(
             return Err(e);
         }
         relaunch::store_prompt(store, req, id)?;
-        if req.prompt.is_some() {
-            store.set_held_prompt(id, req.prompt.as_deref())?;
-        }
         return Ok(Woken::Queued);
     }
     if machine_asleep {

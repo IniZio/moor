@@ -6,7 +6,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::domain::hands::HandsState;
-use moor_core::seam::engine::SessionRef;
+use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, BoxTarget, CloseReq, ErrorKind};
 
@@ -23,7 +23,7 @@ use crate::error::CommandError;
 use crate::ops::close;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
-use crate::ops::start::launch_after_retry;
+use crate::ops::start::{launch_after_retry, queued_or};
 use crate::store::{BoxRow, Store};
 
 /// Longest one question to the Box about its agent may take.
@@ -131,7 +131,14 @@ fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
             }),
             ..
         } => {
-            store.begin_session(row.id, &session.id)?;
+            // The launch a restart cut off carried the oldest queued prompt unless it resumed.
+            let fresh = row.agent_session_id.as_deref().is_none_or(str::is_empty);
+            let argv = if fresh {
+                queued_or(store, row.id, LaunchPrompt::None)?
+            } else {
+                LaunchPrompt::None
+            };
+            store.begin_session_with(row.id, &session.id, argv.text())?;
             Ok(())
         }
         Probe::Read { .. } => launch_after_retry(cx, store, row.id).map(drop),

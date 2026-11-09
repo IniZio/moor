@@ -1,5 +1,7 @@
 //! Typed `value` payload for `steer` (JSON wire shape).
 
+use crate::domain::inbox::QueueCause;
+
 /// Result of `steer`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SteerValue {
@@ -10,6 +12,21 @@ pub struct SteerValue {
     pub sent: String,
     /// Whether a menu choice was sent and the agent no longer waits at the menu.
     pub answered_menu: bool,
-    /// Id of the `steered` event this steer wrote.
-    pub steer: i64,
+    /// Id of the `steered` event this steer wrote; none while it waits in the inbox.
+    pub steer: Option<i64>,
+    /// Whether the agent has it now, or it waits in the inbox.
+    #[serde(flatten)]
+    pub delivery: Delivery,
+    /// The inbox row the steer is sent from.
+    pub inbox: i64,
+}
+
+/// Whether a steer reached the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "delivery", content = "cause", rename_all = "snake_case")]
+pub enum Delivery {
+    /// The agent has it.
+    Delivered,
+    /// It waits in the Box's inbox for this cause, and moor sends it once the agent can take it.
+    Queued(QueueCause),
 }

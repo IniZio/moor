@@ -504,3 +504,17 @@ fn a_failing_setup_command_after_a_good_clone_launches_no_agent() {
         .collect();
     assert_eq!(clones, [true, false]);
 }
+
+#[test]
+fn a_retry_after_a_failed_setup_launches_the_agent_on_the_first_prompt() {
+    let (w, engine, got) = start_recording_launches("setup: [a]\n", [Ok(exit(0)), Ok(exit(1))]);
+    assert!(!got.unwrap().setup.ok);
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ok);
+    let prompts: Vec<_> = engine
+        .launches()
+        .iter()
+        .map(|l| l.prompt.text().map(str::to_owned))
+        .collect();
+    assert_eq!(prompts, [Some("ship it".to_owned())]);
+}

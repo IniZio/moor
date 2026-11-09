@@ -75,5 +75,5 @@ fn give(cx: &Cx, store: &Store, row: &BoxRow, seen: Seen) -> Result<(), CommandE
         return Ok(());
     }
     tell_after_suspend(cx, store, row, after)?;
-    crate::ops::common::held_prompt::give_after_wake(cx, store, row, after)
+    crate::ops::steer::deliver(cx, store, id).map(drop)
 }

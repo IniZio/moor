@@ -182,8 +182,7 @@ impl Cx {
     /// # Errors
     /// As [`Owners::turn`].
     pub(crate) fn turn(&self, id: BoxId, cmd: Cmd) -> Result<Turn<'_>, CommandError> {
-        let deadline = self.clock.instant() + QUEUE_WAIT;
-        self.owners().turn(id, cmd, self.env.cancel(), deadline)
+        self.turn_within(id, cmd, QUEUE_WAIT)
     }
 
     /// Box `id`'s turn for `cmd`, unless this thread already holds it; `None` then, as the
@@ -394,6 +393,7 @@ impl Cx {
     }
 }
 
+mod bounded;
 pub(crate) mod owners;
 mod requester;
 #[cfg(test)]

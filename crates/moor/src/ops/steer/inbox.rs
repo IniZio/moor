@@ -23,6 +23,14 @@ impl Slot {
         Self { kind, row: None }
     }
 
+    /// Row `row`, already queued with `text` of `kind`.
+    pub(super) fn made(kind: InboxKind, row: InboxId, text: &str) -> Self {
+        Self {
+            kind,
+            row: Some((row, kind, text.to_owned())),
+        }
+    }
+
     /// Marks the row of `text` of `kind` as being sent to `launch`. A retry that sends something
     /// else, such as a text the relaunched agent's menu turned into a choice, gets a row of its own.
     fn mark(

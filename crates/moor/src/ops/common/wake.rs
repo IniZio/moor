@@ -16,7 +16,6 @@ use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::guest;
-use crate::ops::common::held_prompt;
 use crate::ops::common::node::now;
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
@@ -72,7 +71,7 @@ fn revive(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<bool, Comm
         await_guest(cx, store, row)?;
         let after = revive_after_wake(cx, store, row.id)?;
         tell_after_suspend(cx, store, row, after)?;
-        held_prompt::give_after_wake(cx, store, row, after)?;
+        crate::ops::steer::deliver(cx, store, row.id)?;
     }
     Ok(woke.any)
 }

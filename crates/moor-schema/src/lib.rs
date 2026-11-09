@@ -19,6 +19,7 @@ mod egress_token;
 mod forward_port;
 mod hands_ended;
 mod held_prompt;
+mod inbox_prompts;
 mod insertion_order;
 mod link_runner;
 mod machine_boxes;
@@ -146,6 +147,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V72__box_inbox",
         write: box_inbox::write,
+    },
+    Step {
+        name: "V73__inbox_prompts",
+        write: inbox_prompts::write,
     },
 ];
 

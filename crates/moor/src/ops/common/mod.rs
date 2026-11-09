@@ -12,7 +12,6 @@ pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;
 pub(crate) mod guest;
-pub(crate) mod held_prompt;
 pub(crate) mod host_path;
 pub(crate) mod identity;
 pub(crate) mod link;

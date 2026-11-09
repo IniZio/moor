@@ -85,7 +85,7 @@ fn an_interrupt_to_an_idle_agent_leaves_its_session_idle() {
     assert!(row.session.is_quiet(), "no turn ran, so none is left open");
     assert_eq!(
         turns_done(&f),
-        [answered(&f, v.steer, "idle")],
+        [answered(&f, v.steer.unwrap(), "idle")],
         "the interrupt is answered at the next read"
     );
 }
@@ -105,7 +105,7 @@ fn an_interrupt_that_leaves_a_blocked_agent_idle_ends_its_turn() {
     settle(&f.cx, store, &row, &reading).unwrap();
     assert_eq!(
         turns_done(&f),
-        [answered(&f, v.steer, "idle")],
+        [answered(&f, v.steer.unwrap(), "idle")],
         "the idle status hc set after the interrupt ends the turn"
     );
     let row = store.box_row(f.id).unwrap().unwrap();

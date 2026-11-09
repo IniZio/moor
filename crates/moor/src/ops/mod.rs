@@ -47,6 +47,7 @@ pub(crate) mod workflow;
 pub(crate) use run::tests as run_fixture;
 use run::Sink;
 pub(crate) use start::settle_all;
+pub(crate) use steer::pass as inbox_pass;
 
 #[cfg(test)]
 mod tests;

@@ -4,6 +4,7 @@ use moor_core::activity::AgentState;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::LaunchId;
 
 use super::launch::warn_launch_timed_out;
 use super::said;
@@ -37,7 +38,12 @@ pub(super) fn step(
     reading: &Reading,
 ) -> Result<(), CommandError> {
     // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
-    let turn_open = !store.sent(row.id)?.is_empty();
+    // A row sent to an agent that has since ended is no turn of the agent running now.
+    let live = store.live_session(row.id)?.map(|l| LaunchId::new(l.id));
+    let turn_open = store
+        .sent(row.id)?
+        .iter()
+        .any(|r| r.delivery.launch() == live);
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
         (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
             SessionInput::AgentQuiet

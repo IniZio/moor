@@ -17,7 +17,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
-    #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn unsent(&self, box_id: BoxId) -> Result<Vec<InboxRow>, StoreError> {
         let q = select(box_id)
             .and_where(Expr::col(BoxInbox::SentAt).is_null())
@@ -29,7 +28,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn boxes_with_unsent(&self) -> Result<Vec<BoxId>, StoreError> {
         let q = Query::select()
             .distinct()
@@ -48,7 +46,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn unconfirmed(&self, box_id: BoxId, id: InboxId) -> Result<(), StoreError> {
         self.check_write(box_id);
         let now = self.now();

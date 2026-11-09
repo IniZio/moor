@@ -41,17 +41,8 @@ pub(super) fn once(
     (id, name): (BoxId, &str),
     mut gone: Gone,
 ) -> Result<Revived, CommandError> {
-    let live = store.live_session(id)?;
-    let live_id = live.as_ref().map(|l| l.id);
-    if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
-        return Ok(Revived::Relaunched);
-    }
-    if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
-        match link::recover(cx, store, &row, &launch, gone.code)? {
-            Fate::Running => return Ok(Revived::Running),
-            Fate::Ended(exit) => gone.code = exit,
-            Fate::Unreachable => return Err(unreachable(name)),
-        }
+    if let Some(revived) = recover(cx, store, (id, name), &mut gone)? {
+        return Ok(revived);
     }
     if relaunched_recently(cx, store, id)? {
         return Err(ended_again(cx, store, (id, name), &gone)?);
@@ -71,6 +62,32 @@ pub(super) fn once(
         ),
         None => gone.error,
     })
+}
+
+/// How the agent of `id`, found gone, is back without a relaunch: another op relaunched it, or it
+/// still runs and a new pane attached; none when it ended, its exit code then noted on `gone`.
+///
+/// # Errors
+/// A store failure, or the Box not answering.
+pub(super) fn recover(
+    cx: &Cx,
+    store: &Store,
+    (id, name): (BoxId, &str),
+    gone: &mut Gone,
+) -> Result<Option<Revived>, CommandError> {
+    let live = store.live_session(id)?;
+    let live_id = live.as_ref().map(|l| l.id);
+    if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
+        return Ok(Some(Revived::Relaunched));
+    }
+    if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
+        match link::recover(cx, store, &row, &launch, gone.code)? {
+            Fate::Running => return Ok(Some(Revived::Running)),
+            Fate::Ended(exit) => gone.code = exit,
+            Fate::Unreachable => return Err(unreachable(name)),
+        }
+    }
+    Ok(None)
 }
 
 /// The refusal while the Box of `name` does not answer; the session waits for a later try.

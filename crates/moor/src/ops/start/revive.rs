@@ -195,17 +195,8 @@ pub(crate) fn launch_after_retry(
 /// Only the first refusal after a relaunch is recorded as `relaunch_capped`. An explicit
 /// `moor start --resume` is not an automatic relaunch and never meets the cap.
 fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let now = cx.clock().now().as_millis();
-    let window = i64::try_from(RELAUNCH_WINDOW.as_millis()).unwrap_or(i64::MAX);
     let events = store.events(row.id, CAP_EVENTS)?;
-    let recent = events
-        .iter()
-        .filter(|e| {
-            e.kind == "relaunched"
-                && e.payload.get("cause").is_some_and(|c| !c.is_null())
-                && now.saturating_sub(e.ts.as_millis()) < window
-        })
-        .count();
+    let recent = recent_relaunches(cx, &events);
     if recent < RELAUNCH_CAP {
         return Ok(());
     }
@@ -232,8 +223,30 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     .with_detail(ErrorDetail::RelaunchCapped))
 }
 
+/// Whether moor relaunched the agent of Box `id` too often to do it again on its own now.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn capped(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
+    Ok(recent_relaunches(cx, &store.events(id, CAP_EVENTS)?) >= RELAUNCH_CAP)
+}
+
+/// The automatic relaunches among `events` within `RELAUNCH_WINDOW`.
+fn recent_relaunches(cx: &Cx, events: &[crate::store::EventRow]) -> usize {
+    let now = cx.clock().now().as_millis();
+    let window = i64::try_from(RELAUNCH_WINDOW.as_millis()).unwrap_or(i64::MAX);
+    events
+        .iter()
+        .filter(|e| {
+            e.kind == "relaunched"
+                && e.payload.get("cause").is_some_and(|c| !c.is_null())
+                && now.saturating_sub(e.ts.as_millis()) < window
+        })
+        .count()
+}
+
 /// Whether `row` holds a prompt or an agent session to start again.
-fn revivable(row: &BoxRow) -> bool {
+pub(crate) fn revivable(row: &BoxRow) -> bool {
     row.prompt.is_some()
         || row
             .agent_session_id
