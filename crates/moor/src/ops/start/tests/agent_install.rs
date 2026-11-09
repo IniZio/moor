@@ -73,7 +73,7 @@ fn install_world(
 }
 
 /// Execs that were the install step, with their deadlines.
-fn installs(w: &World) -> Vec<(ExecSpec, Deadline)> {
+pub(super) fn installs(w: &World) -> Vec<(ExecSpec, Deadline)> {
     w.driver
         .execs()
         .into_iter()
@@ -392,7 +392,7 @@ fn each_repo_setup_line_is_recorded_as_it_starts_and_ends() {
 }
 
 /// A world whose first start died in the agent install after its setup line passed, then restarted.
-fn install_cut_off() -> (World, Arc<FakeEngine>) {
+pub(super) fn install_cut_off() -> (World, Arc<FakeEngine>) {
     let (w, engine) = install_world("setup: [a]\n", None, true, FakeDriver::new());
     let execs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     w.driver.on_exec(move || {
@@ -515,31 +515,9 @@ fn a_box_started_with_no_agent_gets_none_after_a_restart() {
 }
 
 #[test]
-fn a_restart_during_the_install_is_not_a_failed_setup() {
-    let (w, engine) = install_cut_off();
-    assert!(engine.launches().is_empty());
-    crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
-        .unwrap();
-    assert_eq!(engine.launches().len(), 1);
-    let row =
-        w.cx.store()
-            .unwrap()
-            .box_row(BoxId::new(1))
-            .unwrap()
-            .unwrap();
-    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
-    assert_eq!(row.setup_failed_at, None);
-    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
-    assert!(
-        events.iter().all(|e| e.kind != "setup_failed"),
-        "{events:?}"
-    );
-}
-
-#[test]
 fn the_controller_after_a_restart_during_the_install_installs_then_launches() {
     let (w, engine) = install_cut_off();
+    w.driver.push_exec_result(Ok(exit(1)));
     drop(w.cx.take_warnings());
     crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
         .unwrap();
@@ -565,6 +543,7 @@ fn the_controller_after_a_restart_during_the_install_installs_then_launches() {
 fn a_failed_install_after_a_restart_holds_the_box_in_setup_failed() {
     let (w, engine) = install_cut_off();
     w.driver.push_exec_result(Ok(exit(1)));
+    w.driver.push_exec_result(Ok(exit(1)));
     crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
         .unwrap();
     let row =
@@ -585,6 +564,7 @@ fn a_failed_install_after_a_restart_holds_the_box_in_setup_failed() {
 #[test]
 fn a_failed_install_after_a_restart_says_why() {
     let (w, _) = install_cut_off();
+    w.driver.push_exec_result(Ok(exit(1)));
     w.driver.push_exec_result(Ok(exit(1)));
     crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
         .unwrap();

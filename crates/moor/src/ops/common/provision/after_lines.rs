@@ -46,7 +46,7 @@ pub(super) fn steps_after_lines(
         roll_forward(cx, store, on_fork, l, l.top());
     }
     let began = cx.clock().instant();
-    let after = after_setup(cx, store, at, id, cfg, proxy)?;
+    let after = after_setup(cx, store, at, id, cfg, proxy, true)?;
     if after.went_well() {
         let spent = cx.clock().instant().saturating_duration_since(began);
         let ms = u64::try_from(spent.as_millis()).unwrap_or(u64::MAX);
@@ -104,8 +104,13 @@ fn refresh_login(cx: &Cx, handle: &BoxHandle) {
     }
 }
 
-/// Runs the steps after the setup lines. A failed agent install is warned and returned as the
-/// Box's failed step, and the profile, which needs the agent, waits for the retry.
+/// Runs the steps after the setup lines, the agent install only when `install`. A failed agent
+/// install is warned and returned as the Box's failed step, and the profile, which needs the
+/// agent, waits for the retry.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Box, settings, Proxy and whether to install"
+)]
 pub(super) fn after_setup(
     cx: &Cx,
     store: &Store,
@@ -113,9 +118,15 @@ pub(super) fn after_setup(
     id: BoxId,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
+    install: bool,
 ) -> Result<AfterSetup, CommandError> {
     let dotfiles = apply_dotfiles(cx, store, at, id, cfg, proxy);
-    if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, proxy) {
+    let installed = if install {
+        agent_install::apply(cx, store, at, id, cfg, proxy)
+    } else {
+        Ok(())
+    };
+    if let Err(reason) = installed {
         cx.warn(agent_install::warning(&reason));
         return Ok(AfterSetup {
             dotfiles,

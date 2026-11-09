@@ -4,7 +4,9 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, Field, Fields, Intent};
 use moor_core::BoxId;
 
+use super::agent_install::{install_cut_off, installs};
 use super::interrupted::{box_row, restarted_mid_setup, setup_attaches};
+use super::setup::unwrapped;
 use super::World;
 use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
 use crate::ops::common::provision::resume_setup;
@@ -130,4 +132,51 @@ fn later_steps_cut_on_a_machine_that_is_not_ready_fail_the_setup_with_why() {
     assert!(why.contains("not ready"), "{why}");
     let events = store.events(row.id, 200).unwrap();
     assert!(!events.iter().any(|e| e.kind == "working"));
+}
+
+/// Execs that asked whether the agent is there.
+fn presence_checks(w: &World) -> usize {
+    w.driver
+        .execs()
+        .into_iter()
+        .filter(|e| unwrapped(e.1.argv.clone()) == ["sh", "-c", "true"])
+        .count()
+}
+
+#[test]
+fn a_restart_after_the_agent_landed_skips_the_install_and_launches() {
+    let (w, engine) = install_cut_off();
+    resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1)).unwrap();
+    assert_eq!(presence_checks(&w), 1);
+    assert!(installs(&w).is_empty(), "the agent is already there");
+    assert_eq!(engine.launches().len(), 1);
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+}
+
+#[test]
+fn a_restart_during_the_install_is_not_a_failed_setup() {
+    let (w, engine) = install_cut_off();
+    assert!(engine.launches().is_empty());
+    resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 1);
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+    assert_eq!(row.setup_failed_at, None);
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    assert!(
+        events.iter().all(|e| e.kind != "setup_failed"),
+        "{events:?}"
+    );
 }

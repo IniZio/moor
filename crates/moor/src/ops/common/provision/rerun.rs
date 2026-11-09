@@ -16,10 +16,10 @@ use super::outcome::{dotfiles_noted, setup_ended};
 use super::Provisioned;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::box_exec;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::setup::SetupRun;
 use crate::ops::common::view::rfc3339;
+use crate::ops::common::{agent_install, box_exec};
 use crate::store::{BoxRow, Store};
 
 /// Runs the steps a restart cut off after the setup lines passed in a ready Box, or warns that a
@@ -80,7 +80,10 @@ pub(super) fn finish_steps(
         .then(|| box_exec::proxy(cx, row.id, Some(handle.clone()), repo, &cfg))
         .transpose();
     let at = (handle, held.provider.as_str());
-    let after = after_setup(cx, store, at, row.id, &cfg, &proxy)?;
+    // The cut process may have finished the install, and running it again races what it left
+    // going in the Box.
+    let install = !agent_install::present(cx, at, row.id, &cfg, &proxy);
+    let after = after_setup(cx, store, at, row.id, &cfg, &proxy, install)?;
     let mut set = Fields {
         steps_pending_at: Field::Clear,
         ..Fields::default()
