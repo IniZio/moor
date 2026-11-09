@@ -49,6 +49,10 @@ const FAKE_SSH: &str = "#!/bin/sh\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
 
+/// Marks `$HOME/started`, waits until `$HOME/release` exists, then exits 7.
+const UNTIL_RELEASED_THEN_7: &str =
+    r#"touch "$HOME/started"; until [ -e "$HOME/release" ]; do sleep 0.1; done; exit 7"#;
+
 /// The pid of the leader of run 1's process group in the Box whose `HOME` is `home`, once
 /// it has started.
 fn run_leader(home: &Path) -> Option<u32> {
@@ -232,20 +236,23 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (mut busy, mut busy_read) = greeted(&socket);
     let run = RunReq {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
-        ..req(&["sleep 1; exit 7"])
+        ..req(&[UNTIL_RELEASED_THEN_7])
     };
     let ask_run = ClientFrame::Request {
         id: "r".to_owned(),
         request: Box::new(Request::Run(run)),
     };
     busy.write_all(ask_run.to_line().as_bytes()).unwrap();
-    assert!(run_leader(dir.path()).is_some(), "the command started");
+    assert!(
+        super::past_box_setup(&dir.path().join("started")),
+        "the command started"
+    );
     signal.write_all(b"x").unwrap();
     let ended = frame(&mut idle_read);
     assert_eq!(ended["kind"], "restarting", "{ended}");
-    let mut rest = String::new();
-    idle_read.read_line(&mut rest).unwrap();
-    assert_eq!(rest, "", "the idle connection was closed by the drain");
+    let rest = idle_read.fill_buf().unwrap().len();
+    assert_eq!(rest, 0, "the idle connection was closed by the drain");
+    std::fs::write(dir.path().join("release"), "").unwrap();
     let reply = reply(&mut busy_read);
     assert_eq!(reply["frame"], "response", "{reply}");
     let last = store.last_run(id).unwrap().unwrap();
