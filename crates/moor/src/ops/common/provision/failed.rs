@@ -2,7 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, IntentChange};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::driver::{AcquireReq, DriverError, Released};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
 
@@ -17,7 +17,7 @@ use crate::store::Store;
 /// release, and the error that ends the start. The close's intent stays.
 pub(super) fn forced_out(
     store: &Store,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     entry: Entry,
     planned: &BoxHandle,
 ) -> Result<CommandError, CommandError> {
@@ -26,10 +26,13 @@ pub(super) fn forced_out(
         cause: FORCED_CLOSE.to_owned(),
         which: None,
     });
-    store.apply(lost.hands_input(HandsInput::AcquireFailed {
-        cause: FORCED_CLOSE.to_owned(),
-        attempted: Some(planned.clone()),
-    }))?;
+    store.apply(lost.hands_input(
+        inc,
+        HandsInput::AcquireFailed {
+            cause: FORCED_CLOSE.to_owned(),
+            attempted: Some(planned.clone()),
+        },
+    ))?;
     Ok(CommandError::new(ErrorKind::Failed, FORCED_CLOSE))
 }
 
@@ -37,7 +40,7 @@ pub(super) fn forced_out(
 pub(super) fn failed(
     cx: &Cx,
     store: &Store,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     entry: Entry,
     req: &AcquireReq,
     err: DriverError,
@@ -50,17 +53,20 @@ pub(super) fn failed(
         which: None,
     });
     let lost = lost
-        .hands_input(HandsInput::AcquireFailed {
-            cause,
-            attempted: Some(attempted.clone()),
-        })
+        .hands_input(
+            inc,
+            HandsInput::AcquireFailed {
+                cause,
+                attempted: Some(attempted.clone()),
+            },
+        )
         .intent(IntentChange::Clear);
     if let Err(write) = store.apply(lost) {
         return write.into();
     }
     match cx.driver().release(&attempted) {
         Ok(Released::AlreadyGone) => {
-            let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
+            let gone = Decision::new(id).hands_input(inc, HandsInput::DriverMissing);
             if let Err(write) = store.apply(gone) {
                 return write.into();
             }

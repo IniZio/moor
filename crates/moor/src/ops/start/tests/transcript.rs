@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxId, StartReq};
 
@@ -141,7 +141,7 @@ fn a_relaunch_with_a_new_prompt_still_saves_though_a_session_is_stored() {
 fn a_resuming_relaunch_on_a_recreated_box_still_saves() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
-    let lost = Decision::new(id).hands_input(HandsInput::DriverMissing);
+    let lost = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
     w.cx.store().unwrap().apply(lost).unwrap();
     gone(&engine);
     let v = run(&w.cx, &asked(true)).unwrap();

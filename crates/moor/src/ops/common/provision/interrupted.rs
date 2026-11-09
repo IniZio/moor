@@ -160,10 +160,13 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
             if goes_on {
                 // The resume stops it once the controller serves, as stopping waits for it.
                 let lost = Decision::new(row.id)
-                    .hands_input(HandsInput::AcquireFailed {
-                        cause: CAUSE.to_owned(),
-                        attempted: planned,
-                    })
+                    .hands_input(
+                        row.hands_inc(),
+                        HandsInput::AcquireFailed {
+                            cause: CAUSE.to_owned(),
+                            attempted: planned,
+                        },
+                    )
                     .intent(claim);
                 store.apply(lost)?;
                 return Ok(Then::Resume);
@@ -209,7 +212,7 @@ fn fail_acquire(store: &Store, row: &BoxRow, again: bool) -> Result<Then, Comman
             attempted: planned.clone(),
         }
     };
-    let lost = Decision::new(row.id).hands_input(input);
+    let lost = Decision::new(row.id).hands_input(row.hands_inc(), input);
     store.apply(lost.intent(IntentChange::Set(Intent::Provisioning)))?;
     if !again {
         store.apply(gave_up(row))?;
@@ -240,7 +243,8 @@ pub(super) fn release_warned(cx: &Cx, store: &Store, row: &BoxRow, handle: &BoxH
     match cx.driver().release(handle) {
         Ok(Released::Deleted) => true,
         Ok(Released::AlreadyGone) => {
-            let gone = Decision::new(row.id).hands_input(HandsInput::DriverMissing);
+            let gone =
+                Decision::new(row.id).hands_input(row.hands_inc(), HandsInput::DriverMissing);
             store.apply(gone).is_ok()
         }
         Err(e) => {

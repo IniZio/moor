@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::CloseFailedReq;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
@@ -46,12 +46,15 @@ fn admitted(w: &World, n: &str, machine: bool) -> BoxId {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .hands_input(HandsInput::Requested)
-                .hands(HandsFields {
-                    provider: Field::Set(ProviderId::new("p")),
-                    workdir: Field::Set("/work/box-1".into()),
-                    ..HandsFields::default()
-                }),
+                .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                .hands(
+                    HandsInc::FIRST,
+                    HandsFields {
+                        provider: Field::Set(ProviderId::new("p")),
+                        workdir: Field::Set("/work/box-1".into()),
+                        ..HandsFields::default()
+                    },
+                ),
         )
         .unwrap();
     if machine {
@@ -68,7 +71,10 @@ fn admitted(w: &World, n: &str, machine: bool) -> BoxId {
             })
             .unwrap();
         store
-            .apply(Decision::new(id).hands_input(HandsInput::Acquired { handle: got.handle }))
+            .apply(
+                Decision::new(id)
+                    .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle }),
+            )
             .unwrap();
     }
     id

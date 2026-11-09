@@ -2,6 +2,7 @@
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, Field, HandsFields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::shape::Shape;
 use moor_core::{BoxId, Warning};
 
@@ -14,7 +15,7 @@ use crate::store::Store;
 pub(super) fn record_delivered(
     cx: &Cx,
     store: &Store,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     cfg: &BoxSettings,
     delivered: Option<Shape>,
 ) -> Result<(), CommandError> {
@@ -38,10 +39,13 @@ pub(super) fn record_delivered(
             ),
         });
     }
-    store.apply(Decision::new(id).hands(HandsFields {
-        cpus: Field::Set(i64::from(got.cpus)),
-        mem_mib: Field::Set(i64::try_from(got.mem_mib).unwrap_or(i64::MAX)),
-        ..HandsFields::default()
-    }))?;
+    store.apply(Decision::new(id).hands(
+        inc,
+        HandsFields {
+            cpus: Field::Set(i64::from(got.cpus)),
+            mem_mib: Field::Set(i64::try_from(got.mem_mib).unwrap_or(i64::MAX)),
+            ..HandsFields::default()
+        },
+    ))?;
     Ok(())
 }

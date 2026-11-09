@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle::{self, Asleep, Pending, Ready};
 use moor_core::domain::decision::{Decision, Field, HandsFields};
+use moor_core::domain::hands::HandsInc;
 use moor_core::request::BoxHostMemory;
 use moor_core::seam::driver::DriverError;
 
@@ -19,11 +20,14 @@ const fn with_free(free: u64) -> u64 {
 fn guest_memory(w: &World, id: BoxId, mib: u64) {
     apply(
         w,
-        Decision::new(id).hands(HandsFields {
-            cpus: Field::Set(4),
-            mem_mib: Field::Set(i64::try_from(mib).unwrap()),
-            ..HandsFields::default()
-        }),
+        Decision::new(id).hands(
+            HandsInc::FIRST,
+            HandsFields {
+                cpus: Field::Set(4),
+                mem_mib: Field::Set(i64::try_from(mib).unwrap()),
+                ..HandsFields::default()
+            },
+        ),
     );
 }
 

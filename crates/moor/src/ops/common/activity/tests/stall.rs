@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::activity::{Activity, Life, Status, Term};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Clock;
 
 use super::*;
@@ -117,7 +117,7 @@ fn a_box_suspended_mid_turn_is_not_a_stall() {
         .apply(
             Decision::new(rig.id)
                 .lifecycle(suspend)
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
     rig.pass(working(None), 11 * MINUTE, false);

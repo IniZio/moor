@@ -16,7 +16,7 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{
     Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
 };
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxName, ProviderId};
 use serde_json::{json, Value};
@@ -99,17 +99,20 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     };
     let starting = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields)
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields)
         .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(starting).expect("starting");
-    let cut = Decision::new(id).hands_input(HandsInput::AcquireFailed {
-        cause: "cut once already".to_owned(),
-        attempted: None,
-    });
+    let cut = Decision::new(id).hands_input(
+        HandsInc::FIRST,
+        HandsInput::AcquireFailed {
+            cause: "cut once already".to_owned(),
+            attempted: None,
+        },
+    );
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
-        .hands_input(HandsInput::Requested)
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
         .intent(IntentChange::Set(Intent::Provisioning));
     store.apply(again).expect("again");
 }

@@ -73,8 +73,8 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                         reason: None,
                     })
                     .cache_save(parked.cache_save)
-                    .hands_input(HandsInput::Sleep)
-                    .hands(fields),
+                    .hands_input(row.hands_inc(), HandsInput::Sleep)
+                    .hands(row.hands_inc(), fields),
             )?;
             Ok(())
         }
@@ -83,7 +83,7 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                 sleep_reason: Field::Set(reason.clone()),
                 ..HandsFields::default()
             };
-            store.apply(Decision::new(row.id).hands(fields))?;
+            store.apply(Decision::new(row.id).hands(row.hands_inc(), fields))?;
             Err(refuse(format!("the Box cannot sleep: {reason}")))
         }
     }

@@ -5,7 +5,7 @@ use std::time::Duration;
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
 use moor_core::seam::proxy_host::ProxyStatus;
@@ -278,7 +278,7 @@ pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
     let at = w.cx.clock().now().as_millis() / 1000;

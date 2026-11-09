@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::layers::{chain, LayerIdentity, LayerKey};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
@@ -193,7 +193,7 @@ fn retry_where_the_machine_is_gone_acquires_a_new_one_and_runs_setup() {
     let id = started(&w);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ran && v.setup.ok);
@@ -531,7 +531,7 @@ fn relaunch_failing_a_line() -> (World, Arc<FakeEngine>, BoxId) {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let _ = crate::ops::start::run(&w.cx, &start_req());
     (w, engine, id)

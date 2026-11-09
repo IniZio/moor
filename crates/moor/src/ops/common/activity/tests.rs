@@ -10,7 +10,7 @@ use moor_core::activity::{AgentState, Probe, Source, STARTUP_GRACE};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
@@ -69,24 +69,33 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: BoxHandle::new("h"),
-        })
-        .hands(HandsFields {
-            workdir: Field::Set("/work".into()),
-            ..HandsFields::default()
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: BoxHandle::new("h"),
+            },
+        )
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Set("/work".into()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     if session {
         store.begin_session(id, SESSION).unwrap();
@@ -217,11 +226,14 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     store.begin_session(id, SESSION).unwrap();
     let _claim = begin(&cx, id);

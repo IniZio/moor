@@ -5,7 +5,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
@@ -61,17 +61,20 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired {
-            handle: moor_core::BoxHandle::new("box-1"),
-        });
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::Acquired {
+                handle: moor_core::BoxHandle::new("box-1"),
+            },
+        );
     store.apply(d).unwrap();
     store.begin_session(id, "s-1").unwrap();
     (
@@ -138,7 +141,7 @@ fn a_save_points_the_session_at_its_archive_and_the_hands_that_took_it() {
         .unwrap()
         .unwrap();
     assert_eq!(pointer.key, saved.key.as_str());
-    assert_eq!(pointer.inc, row.hands.as_ref().unwrap().inc);
+    assert_eq!(pointer.inc, row.hands.as_ref().unwrap().inc.get());
     assert_eq!(pointer.at, taken);
 }
 

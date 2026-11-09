@@ -15,7 +15,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
@@ -66,22 +66,28 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         .unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle })
-        .hands(HandsFields {
-            workdir: Field::Set("/work".into()),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle })
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Set("/work".into()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     store.begin_session(id, session).unwrap();
     id

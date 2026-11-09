@@ -8,7 +8,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome
 use moor_core::domain::decision::{
     Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
 };
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunId, RunReq};
@@ -159,11 +159,14 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
     let provider = ProviderId::new("p");
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(provider.clone()),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(provider.clone()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     let got = f
         .driver
@@ -185,11 +188,14 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle })
-        .hands(HandsFields {
-            workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle })
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Set(got.workdir.as_str().to_owned()),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     f
 }
@@ -357,7 +363,7 @@ fn gone_box_is_refused_and_recorded() {
     let f = ready();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let before = f.driver.calls().len();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
@@ -377,7 +383,7 @@ fn sleep(f: &Fx) {
         .apply(
             Decision::new(f.id)
                 .lifecycle(BoxLifecycleInput::sleep(false))
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -425,7 +431,7 @@ fn gone_asleep_box_is_refused_without_a_wake() {
     sleep(&f);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
     assert!(msg.contains("gone"), "{msg}");

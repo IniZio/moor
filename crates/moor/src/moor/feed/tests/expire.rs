@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -62,11 +62,14 @@ impl World {
             .apply(
                 Decision::new(id)
                     .lifecycle(BoxLifecycleInput::Admitted)
-                    .hands_input(HandsInput::Requested)
-                    .hands(HandsFields {
-                        provider: Field::Set(ProviderId::new("p")),
-                        ..HandsFields::default()
-                    }),
+                    .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                    .hands(
+                        HandsInc::FIRST,
+                        HandsFields {
+                            provider: Field::Set(ProviderId::new("p")),
+                            ..HandsFields::default()
+                        },
+                    ),
             )
             .unwrap();
         if machine {
@@ -83,7 +86,10 @@ impl World {
                 })
                 .unwrap();
             store
-                .apply(Decision::new(id).hands_input(HandsInput::Acquired { handle: got.handle }))
+                .apply(
+                    Decision::new(id)
+                        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle }),
+                )
                 .unwrap();
         }
         store

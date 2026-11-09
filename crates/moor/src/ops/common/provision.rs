@@ -7,7 +7,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, HandsFields, Intent, IntentChange,
 };
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
@@ -101,25 +101,28 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
     }
 }
 
-/// What marks Box `id` as wanting a machine from `provider`. A takeover only claims the acquire
-/// already under way.
-fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
+/// What marks Box `id`, with hands `inc`, as wanting a machine from `provider`. A takeover only
+/// claims the acquire already under way.
+fn requested((id, inc): (BoxId, HandsInc), entry: Entry, provider: &ProviderId) -> Decision {
     let claim = IntentChange::Set(Intent::Provisioning);
     if entry == Entry::Adopt {
         return Decision::new(id).intent(claim);
     }
     let mut d = Decision::new(id);
     d.lifecycle_input = entry.begin();
-    d.hands_input(HandsInput::Requested)
+    d.hands_input(inc, HandsInput::Requested)
         .set(Fields {
             state_reason: entry.reason_once_admitted(),
             ..Fields::default()
         })
-        .hands(HandsFields {
-            provider: Field::Set(provider.clone()),
-            handle: Field::Clear,
-            ..HandsFields::default()
-        })
+        .hands(
+            inc,
+            HandsFields {
+                provider: Field::Set(provider.clone()),
+                handle: Field::Clear,
+                ..HandsFields::default()
+            },
+        )
         .intent(claim)
 }
 
@@ -135,7 +138,8 @@ pub(crate) fn provision(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let started = reread(store, id)?;
-    let requested = |provider: &ProviderId| requested(id, entry, provider);
+    let inc = started.hands_inc();
+    let requested = |provider: &ProviderId| requested((id, inc), entry, provider);
     let bound = if matches!(entry, Entry::Fresh | Entry::Waiting) {
         let fresh = (&started, entry == Entry::Fresh);
         match node::admit(cx, store, fresh, requested)? {
@@ -166,15 +170,16 @@ pub(crate) fn provision(
     let forced = || cx.env().cancel().is_cancelled();
     match acquired {
         // Whatever it made is the forced close's to release.
-        _ if forced() => Err(forced_out(store, id, entry, &planned)?),
+        _ if forced() => Err(forced_out(store, (id, inc), entry, &planned)?),
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
-            record_acquired(store, id, &got, (entry == Entry::Stay).then_some(&started))?;
+            let replacing = (entry == Entry::Stay).then_some(&started);
+            record_acquired(store, (id, inc), &got, replacing)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
             let repo = started.repo.as_ref();
             let target = SetupTarget::new(&got, provider, repo, &log_dir, layered.as_ref());
-            let done = run_and_record(cx, store, id, entry.sets_up(), &target, cfg)?;
+            let done = run_and_record(cx, store, (id, inc), entry.sets_up(), &target, cfg)?;
             // A Box a forced close is waiting on gets no agent.
             if cx.env().cancel().is_cancelled() {
                 return Err(CommandError::new(ErrorKind::Failed, setup::FORCED_CLOSE));
@@ -185,7 +190,7 @@ pub(crate) fn provision(
         Err(e) if cx.env().draining().is_cancelled() && goes_on_after(cx, &req, &e) => {
             Err(setup::Released.into())
         }
-        Err(e) => Err(failed(cx, store, id, entry, &req, e)),
+        Err(e) => Err(failed(cx, store, (id, inc), entry, &req, e)),
     }
 }
 
@@ -259,7 +264,7 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 fn run_and_record(
     cx: &Cx,
     store: &Store,
-    id: BoxId,
+    (id, inc): (BoxId, HandsInc),
     advance: bool,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
@@ -273,7 +278,7 @@ fn run_and_record(
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
-    record_delivered(cx, store, id, cfg, cloned.delivered)?;
+    record_delivered(cx, store, (id, inc), cfg, cloned.delivered)?;
     let warm_disk = warm_rerun::record_disk(store, id, (stale, reran.is_some()), &cloned)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
     let retries = run.failed() && reran.is_some() && !cx.env().cancel().is_cancelled();

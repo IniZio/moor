@@ -5,7 +5,7 @@ use std::time::Duration;
 use moor_core::boxscript::detached::attached_script;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::domain::decision::{Decision, Intent};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::forge::{GitAuthor, RepoAt};
@@ -295,7 +295,7 @@ fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     assert!(failed_at_set(&w, &v));
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let gone = Decision::new(id).hands_input(HandsInput::DriverMissing);
+    let gone = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
     store.apply(gone).unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert_eq!(again.boxed.id, v.boxed.id);
@@ -354,7 +354,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert_eq!(again.boxed.lifecycle, BoxLifecycle::SetupFailed);

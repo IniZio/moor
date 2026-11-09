@@ -260,5 +260,5 @@ fn set_up_in_machine(
         tree_of: None,
         layered: layered.as_ref(),
     };
-    run_and_record(cx, store, row.id, true, &target, cfg)
+    run_and_record(cx, store, (row.id, row.hands_inc()), true, &target, cfg)
 }

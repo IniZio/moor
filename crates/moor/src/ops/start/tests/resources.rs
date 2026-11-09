@@ -1,5 +1,5 @@
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::shape::Shape;
 use moor_core::{BoxId, ShowReq};
 
@@ -88,7 +88,7 @@ fn a_re_provisioned_box_records_the_new_machine() {
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     run(&w.cx, &start_req()).unwrap();
     let row = store.box_row(id).unwrap().unwrap();

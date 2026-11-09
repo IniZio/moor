@@ -2,9 +2,9 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::cache_save::CacheSave;
-use moor_core::domain::decision::{BoxTarget, Decision, Field, IntentChange};
+use moor_core::domain::decision::{BoxTarget, Decision, Field, HandsFields, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -18,7 +18,7 @@ pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
-use super::hands::{first_hands, update_current};
+use super::hands::{fence, first_hands, update_hands};
 use super::select::{newest_session, state_update};
 use super::{HandsRow, Store, StoreError};
 use crate::store::db::{self, DbExt as _, Tx};
@@ -105,13 +105,15 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         parts,
         from,
     } = step_box(tx, now, &d)?;
+    fence(id, existing.as_ref(), &d)?;
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),
     };
     let box_step = step_driver(tx, now, id, existing.as_ref(), &d)?;
     write_box_row(tx, id, now, &d, &quiet, parts)?;
-    write_box(tx, id, now, &d, box_step.as_ref(), &quiet)?;
+    let inc = existing.as_ref().map_or(HandsInc::FIRST, |h| h.inc);
+    write_box(tx, id, now, (&d, inc), box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
         (Some(l), _) => lifecycle_events(from.map(|p| p.0), parts.0, l),
@@ -126,7 +128,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         ids.push(insert_event(tx, id, e, now)?);
     }
     let mut events = Vec::new();
-    if let (Some(i), Some(s)) = (&d.hands_input, &box_step) {
+    if let (Some(i), Some(s)) = (d.input_to_hands(), &box_step) {
         events.extend(box_events(
             s.from,
             s.to,
@@ -157,7 +159,7 @@ fn step_driver(
     existing: Option<&HandsRow>,
     d: &Decision,
 ) -> Result<Option<Step<HandsState>>, StoreError> {
-    let Some(input) = &d.hands_input else {
+    let Some(input) = d.input_to_hands() else {
         return Ok(existing.map(|b| Step {
             from: Some(b.state),
             to: b.state,
@@ -171,7 +173,7 @@ fn step_driver(
         }));
     }
     let to = HandsState::initial(input)?;
-    let Field::Set(provider) = &d.hands.provider else {
+    let Some(Field::Set(provider)) = d.hands.as_ref().map(|w| &w.fields.provider) else {
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
     tx.run(first_hands(id, provider, to, now))?;
@@ -274,15 +276,17 @@ fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<BoxState> {
 /// a fresh disk, so the egress token delivered to the old one is delivered again.
 ///
 /// A step out of quiet drops the recorded sleep refusal, so the next Idle stretch asks again.
+/// The writes go to the current hands `inc`, which [`fence`] checked `d` against.
 fn write_box(
     tx: &Tx<'_>,
     id: BoxId,
     now: Ts,
-    d: &Decision,
+    (d, inc): (&Decision, HandsInc),
     step: Option<&Step<HandsState>>,
     quiet: &Step<bool>,
 ) -> Result<(), StoreError> {
-    let mut sets = driver_field_sets(&d.hands);
+    let none = HandsFields::default();
+    let mut sets = driver_field_sets(d.hands.as_ref().map_or(&none, |w| &w.fields));
     if quiet.from == Some(true) && !quiet.to {
         if let Some(i) = sets.iter().position(|(c, _)| *c == BoxHands::SleepReason) {
             sets.remove(i);
@@ -297,7 +301,7 @@ fn write_box(
             "Box fields set but the Box has no machine".into(),
         ));
     };
-    if let Some(input) = &d.hands_input {
+    if let Some(input) = d.input_to_hands() {
         sets.push((BoxHands::State, step.to.as_str().into()));
         // A guest that may run again can change, so what was checked before no longer stands.
         if matches!(input, HandsInput::Wake | HandsInput::Acquired { .. }) {
@@ -312,13 +316,13 @@ fn write_box(
         }
         sets.extend(input_handle_sets(input, &sets));
     }
-    if d.hands_input.is_some() {
+    if d.input_to_hands().is_some() {
         sets.push((BoxHands::StateAt, now.as_millis().into()));
     }
     if sets.iter().any(|(c, _)| *c == BoxHands::Handle) {
         super::proxy::forget_egress_delivery(tx, id)?;
     }
-    update(tx, &mut update_current(id), &sets)
+    update(tx, &mut update_hands(id, inc), &sets)
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.

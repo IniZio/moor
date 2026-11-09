@@ -92,7 +92,14 @@ fn archive(
     let deadline = archive_deadline(trigger);
     let (event, outcome) = match try_save(cx, row, box_session, session, &s, deadline) {
         Ok((saved, fresh)) => {
-            point(cx, store, row.id, box_session, &saved, (hands.inc, taken));
+            point(
+                cx,
+                store,
+                row.id,
+                box_session,
+                &saved,
+                (hands.inc.get(), taken),
+            );
             if !fresh {
                 return Outcome::Saved(saved);
             }

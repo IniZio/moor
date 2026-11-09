@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
@@ -91,8 +91,8 @@ fn fx_with(driver: FakeDriver) -> Fx {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .hands_input(HandsInput::Requested)
-                .hands(fields),
+                .hands_input(HandsInc::FIRST, HandsInput::Requested)
+                .hands(HandsInc::FIRST, fields),
         )
         .unwrap();
     let got = driver.acquire(&acquire_req(provider, id, name)).unwrap();
@@ -103,11 +103,14 @@ fn fx_with(driver: FakeDriver) -> Fx {
                     setup: SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started)
-                .hands_input(HandsInput::Acquired { handle: got.handle })
-                .hands(HandsFields {
-                    workdir: Field::Set(got.workdir.as_str().to_owned()),
-                    ..HandsFields::default()
-                }),
+                .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle })
+                .hands(
+                    HandsInc::FIRST,
+                    HandsFields {
+                        workdir: Field::Set(got.workdir.as_str().to_owned()),
+                        ..HandsFields::default()
+                    },
+                ),
         )
         .unwrap();
     Fx {
@@ -136,7 +139,7 @@ fn sleep(f: &Fx) {
                     auto: false,
                     reason: None,
                 })
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
 }
@@ -219,7 +222,7 @@ fn gone_box_is_refused_without_a_driver_call() {
     sleep(&f);
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -260,7 +263,7 @@ fn asleep_machine_with_working_box_wakes_only_the_machine() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).hands_input(HandsInput::Sleep))
+        .apply(Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::Sleep))
         .unwrap();
     assert_eq!(row(&f).hands.unwrap().state, HandsState::Asleep);
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
@@ -287,10 +290,13 @@ fn waking_a_box_with_a_stored_workdir_does_not_probe() {
 fn clear_workdir(f: &Fx) {
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).hands(HandsFields {
-            workdir: Field::Clear,
-            ..HandsFields::default()
-        }))
+        .apply(Decision::new(f.id).hands(
+            HandsInc::FIRST,
+            HandsFields {
+                workdir: Field::Clear,
+                ..HandsFields::default()
+            },
+        ))
         .unwrap();
     assert_eq!(stored_workdir(f), None);
 }

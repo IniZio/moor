@@ -11,7 +11,7 @@ use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::forge::ForgeRepo;
@@ -126,15 +126,15 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle });
     store.apply(d).unwrap();
     on_provider_node(cx, id, PROVIDER);
     id
@@ -312,7 +312,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
     let id = queue(&w, "first");
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(w.holder).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(w.holder).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let req = ShowReq {
         target: None,
@@ -337,7 +337,7 @@ fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
     };
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(w.holder).hands(set))
+        .apply(Decision::new(w.holder).hands(HandsInc::FIRST, set))
         .unwrap();
     on_provider_node(&w.cx, w.holder, "other-provider");
     let v = close_holder(&w);

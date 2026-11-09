@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, Intent, IntentChange};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::forge::ForgeRepo;
@@ -272,7 +272,7 @@ fn restart_of_a_closed_name_creates_a_new_box() {
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .hands_input(HandsInput::Released),
+                .hands_input(HandsInc::FIRST, HandsInput::Released),
         )
         .unwrap();
     let second = run(&w.cx, &req("again")).unwrap();
@@ -342,7 +342,7 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(
@@ -445,7 +445,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let id = BoxId::new(first.boxed.id);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let _held = hold(&w, Cmd::Close { force: false });
     let err = run(&w.cx, &req("demo")).unwrap_err();
@@ -461,7 +461,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
@@ -482,10 +482,13 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
 fn stuck_provisioning(w: &World) {
     let first = run(&w.cx, &req("demo")).unwrap();
     let stuck = Decision::new(BoxId::new(first.boxed.id))
-        .hands(HandsFields {
-            handle: Field::Clear,
-            ..HandsFields::default()
-        })
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                handle: Field::Clear,
+                ..HandsFields::default()
+            },
+        )
         .intent(IntentChange::Set(Intent::Provisioning));
     w.cx.store().unwrap().apply(stuck).unwrap();
 }

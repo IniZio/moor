@@ -1,6 +1,7 @@
 //! A steer to an awake Box whose agent exited relaunches the agent once, then sends.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use moor_core::domain::hands::HandsInc;
 use std::time::Duration;
 
 use moor_core::activity::Probe;
@@ -177,7 +178,7 @@ fn put_to_sleep_ended(f: &Fx) {
             auto: false,
             reason: None,
         })
-        .hands_input(moor_core::domain::hands::HandsInput::Sleep);
+        .hands_input(HandsInc::FIRST, moor_core::domain::hands::HandsInput::Sleep);
     f.cx.store().unwrap().apply(d).unwrap();
 }
 

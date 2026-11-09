@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::{BoxId, BoxName, SteerReq};
@@ -175,7 +175,7 @@ fn an_agent_whose_box_a_start_woke_after_a_mid_turn_suspend_is_told_once() {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .hands_input(HandsInput::Sleep),
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
         )
         .unwrap();
     store.set_resume_first(id, Some(0)).unwrap();

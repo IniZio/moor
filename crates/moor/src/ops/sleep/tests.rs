@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
@@ -48,8 +48,8 @@ fn fx_with(driver: FakeDriver) -> Fx {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -67,7 +67,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -231,10 +231,13 @@ fn unknown_provider_refuses_naming_the_provider() {
 #[test]
 fn a_later_successful_sleep_clears_the_reason() {
     let f = idle();
-    let d = Decision::new(f.id).hands(HandsFields {
-        sleep_reason: Field::Set("old".to_owned()),
-        ..HandsFields::default()
-    });
+    let d = Decision::new(f.id).hands(
+        HandsInc::FIRST,
+        HandsFields {
+            sleep_reason: Field::Set("old".to_owned()),
+            ..HandsFields::default()
+        },
+    );
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(reason(&f).as_deref(), Some("old"));
     run(&f.cx, &req()).unwrap();
@@ -292,11 +295,14 @@ fn starting() -> Fx {
         .box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new("p")),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new("p")),
+                ..HandsFields::default()
+            },
+        );
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -326,9 +332,12 @@ fn assert_refused_untouched(f: &Fx) {
 #[test]
 fn refuses_a_box_that_is_still_setting_up() {
     let f = starting();
-    let d = Decision::new(f.id).hands_input(HandsInput::Acquired {
-        handle: moor_core::name::BoxHandle::new("box-1"),
-    });
+    let d = Decision::new(f.id).hands_input(
+        HandsInc::FIRST,
+        HandsInput::Acquired {
+            handle: moor_core::name::BoxHandle::new("box-1"),
+        },
+    );
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::SettingUp, HandsState::Ready));
     assert_refused_untouched(&f);
@@ -342,7 +351,7 @@ fn refuses_a_working_box_whose_box_is_starting() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands(with_handle());
+        .hands(HandsInc::FIRST, with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Starting));
     assert_eq!(session(&f), SessionState::Working);
@@ -357,11 +366,14 @@ fn refuses_a_working_box_whose_box_failed() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::AcquireFailed {
-            cause: "no capacity".to_owned(),
-            attempted: None,
-        })
-        .hands(with_handle());
+        .hands_input(
+            HandsInc::FIRST,
+            HandsInput::AcquireFailed {
+                cause: "no capacity".to_owned(),
+                attempted: None,
+            },
+        )
+        .hands(HandsInc::FIRST, with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Failed));
     assert_eq!(session(&f), SessionState::Working);
@@ -371,10 +383,13 @@ fn refuses_a_working_box_whose_box_failed() {
 #[test]
 fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
     let f = idle();
-    let d = Decision::new(f.id).hands(HandsFields {
-        handle: Field::Clear,
-        ..HandsFields::default()
-    });
+    let d = Decision::new(f.id).hands(
+        HandsInc::FIRST,
+        HandsFields {
+            handle: Field::Clear,
+            ..HandsFields::default()
+        },
+    );
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Idle);

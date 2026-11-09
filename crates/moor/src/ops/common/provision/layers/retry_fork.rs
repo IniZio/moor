@@ -68,10 +68,13 @@ pub(in super::super) fn resume(
     };
     hold_new(store, row.id, (root, &planned), &new)?;
     // One write, so a restart never reads this machine with the fork of the one before it.
-    let moved = Decision::new(row.id).event(told).hands(HandsFields {
-        handle: Field::Set(new.clone()),
-        ..HandsFields::default()
-    });
+    let moved = Decision::new(row.id).event(told).hands(
+        row.hands_inc(),
+        HandsFields {
+            handle: Field::Set(new.clone()),
+            ..HandsFields::default()
+        },
+    );
     store.apply(moved)?;
     layered.stand_on(layer, saved.place.as_ref());
     release_old(cx, store, row.id, old)?;
@@ -166,10 +169,13 @@ fn took_over(
         return Err(CommandError::new(ErrorKind::Failed, FORCED_CLOSE));
     }
     store.hold_lease(root)?;
-    let moved = Decision::new(row.id).hands(HandsFields {
-        handle: Field::Set(new.clone()),
-        ..HandsFields::default()
-    });
+    let moved = Decision::new(row.id).hands(
+        row.hands_inc(),
+        HandsFields {
+            handle: Field::Set(new.clone()),
+            ..HandsFields::default()
+        },
+    );
     store.apply(moved)?;
     release_old(cx, store, row.id, old)?;
     Ok(Some(new))

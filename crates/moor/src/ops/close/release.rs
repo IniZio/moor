@@ -19,6 +19,7 @@ pub(super) fn machine_vanished(cx: &Cx, row: &BoxRow) -> bool {
     };
     let fact = BoxFact {
         box_id: row.id,
+        inc: b.inc,
         state: b.state,
         handle: b.handle.clone(),
     };
@@ -46,7 +47,7 @@ pub(super) fn release(
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),
     };
-    let verdict = release_outcome_with_reason(row.id, b.state, result, reason);
+    let verdict = release_outcome_with_reason(row.id, (b.inc, b.state), result, reason);
     if let Some(d) = verdict.decision {
         store.apply(d)?;
     }

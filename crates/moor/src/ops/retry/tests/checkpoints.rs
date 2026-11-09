@@ -3,7 +3,7 @@
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::Identity;
 use moor_core::{BoxId, BoxName, BoxReq, StartReq};
@@ -123,7 +123,7 @@ fn relaunched(clone_says: &str) -> Vec<String> {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     w.driver.offer_checkpoints();
     w.driver.push_exec_stdout(clone_says);

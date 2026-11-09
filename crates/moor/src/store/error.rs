@@ -1,5 +1,6 @@
 //! How a store operation fails.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::{BoxId, BoxName};
 
 /// Store failure.
@@ -84,6 +85,14 @@ pub(crate) enum StoreError {
     /// No such box.
     #[error("box {} not found", .0.get())]
     NotFound(BoxId),
+    /// A write about hands the Box no longer has: they were replaced after the writer read them.
+    #[error("stale write dropped: Box {} has moved on from hands {}", .box_id.get(), .read.get())]
+    Stale {
+        /// The Box written.
+        box_id: BoxId,
+        /// The hands the writer read.
+        read: HandsInc,
+    },
     /// The decision or request was malformed.
     #[error("invalid: {0}")]
     Invalid(String),

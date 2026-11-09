@@ -1,6 +1,7 @@
 //! A failed setup line says why: its exit code, the end of its output and what the Proxy withheld.
 
 use moor_core::domain::event::Event;
+use moor_core::domain::hands::HandsInc;
 use moor_core::view::progress::{failure, Happened};
 use moor_core::BoxId;
 
@@ -156,6 +157,7 @@ fn a_setup_cut_by_a_restart_says_so() {
     assert!(crashed.is_err());
     store
         .apply(moor_core::domain::decision::Decision::new(id).hands(
+            HandsInc::FIRST,
             moor_core::domain::decision::HandsFields {
                 workdir: moor_core::domain::decision::Field::Clear,
                 ..Default::default()

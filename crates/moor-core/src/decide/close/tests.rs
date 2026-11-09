@@ -4,7 +4,7 @@ use super::{
     close_gate, release_outcome, BoxCheck, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict,
 };
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use crate::domain::hands::HandsState;
+use crate::domain::hands::{HandsInc, HandsState};
 use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 
@@ -262,7 +262,7 @@ fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: HandsState) -> (BoxLifecycle
         .lifecycle_input
         .as_ref()
         .map_or(Ok(life), |i| life.step(&[], i));
-    let bx = d.hands_input.as_ref().map_or(Ok(b), |i| b.step(i));
+    let bx = d.input_to_hands().map_or(Ok(b), |i| b.step(i));
     (l.expect("lifecycle step"), bx.expect("box step"))
 }
 
@@ -270,7 +270,7 @@ fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: HandsState) -> (BoxLifecycle
 fn deleted_and_already_gone_mark_the_box_deleted() {
     for r in [R::Deleted, R::AlreadyGone] {
         for b in [B::Ready, B::Asleep, B::Failed, B::ReleaseFailed] {
-            let v = release_outcome(BoxId::new(7), b, r);
+            let v = release_outcome(BoxId::new(7), (HandsInc::FIRST, b), r);
             assert!(v.closes && v.warning.is_none());
             assert_eq!(
                 apply(&v, BoxLifecycle::Ready, b),
@@ -283,7 +283,7 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
 #[test]
 fn failed_release_of_a_box_whose_machine_may_run_keeps_the_box_open() {
     for b in [B::Starting, B::Ready, B::Asleep, B::Failed] {
-        let v = release_outcome(BoxId::new(7), b, R::Failed);
+        let v = release_outcome(BoxId::new(7), (HandsInc::FIRST, b), R::Failed);
         assert!(
             !v.closes && v.decision.is_none() && v.warning.is_none(),
             "{b:?}"
@@ -293,7 +293,11 @@ fn failed_release_of_a_box_whose_machine_may_run_keeps_the_box_open() {
 
 #[test]
 fn failed_release_of_a_release_failed_box_stays_release_failed() {
-    let v = release_outcome(BoxId::new(7), B::ReleaseFailed, R::Failed);
+    let v = release_outcome(
+        BoxId::new(7),
+        (HandsInc::FIRST, B::ReleaseFailed),
+        R::Failed,
+    );
     assert!(v.closes && v.warning.is_some());
     assert_eq!(
         apply(&v, BoxLifecycle::SetupFailed, B::ReleaseFailed),

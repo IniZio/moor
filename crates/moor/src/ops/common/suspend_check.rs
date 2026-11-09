@@ -8,6 +8,7 @@
 use std::time::{Duration, Instant};
 
 use moor_core::decide::pressure::critical;
+use moor_core::domain::hands::HandsInc;
 use moor_core::{BoxId, Warning};
 
 use crate::cx::Cx;
@@ -25,13 +26,13 @@ const CHECK_WITHIN: Duration = Duration::from_secs(10);
 ///
 /// A row can read quiet only because the sleep marked it so, hence `settled`. Work could write
 /// between the check and the snapshot, and a stored clean lets a close delete the Box unwoken.
-pub(crate) fn record(cx: &Cx, store: &Store, id: BoxId, settled: bool) {
+pub(crate) fn record(cx: &Cx, store: &Store, (id, inc): (BoxId, HandsInc), settled: bool) {
     let answer = if settled {
         answer(cx, store, id)
     } else {
         Ok(None)
     };
-    let answer = answer.and_then(|check| Ok(store.set_suspend_check(id, check)?));
+    let answer = answer.and_then(|check| Ok(store.set_suspend_check((id, inc), check)?));
     if let Err(e) = answer {
         cx.warn(Warning {
             code: "suspend_check_failed".to_owned(),

@@ -6,7 +6,7 @@ use moor_core::{ErrorKind, NameError};
 
 impl From<StoreError> for CommandError {
     /// `Illegal` is a moor bug; a taken name, a state database from another schema version
-    /// or a sleep blocked by busy Sessions is a refusal;
+    /// a sleep blocked by busy Sessions or a write about replaced hands is a refusal;
     /// every other store failure is a plain failure.
     fn from(e: StoreError) -> Self {
         match e {
@@ -19,7 +19,8 @@ impl From<StoreError> for CommandError {
             | StoreError::InUse
             | StoreError::Leased { .. }
             | StoreError::LockNotHeld { .. }
-            | StoreError::SleepBlocked { .. } => Self::new(ErrorKind::Refused, e),
+            | StoreError::SleepBlocked { .. }
+            | StoreError::Stale { .. } => Self::new(ErrorKind::Refused, e),
             StoreError::Url(_) | StoreError::Readers(_) => Self::new(ErrorKind::Usage, e),
             other => Self::new(ErrorKind::Failed, format!("state store error: {other}")),
         }

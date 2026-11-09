@@ -1,7 +1,7 @@
 //! Tests for what a start does after a failed or interrupted setup.
 
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, BoxId};
 
@@ -72,7 +72,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
     );
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();

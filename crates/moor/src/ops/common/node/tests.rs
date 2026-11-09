@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use moor_core::decide::schedule::BoxSpec;
@@ -56,17 +56,20 @@ fn legacy(w: &World, name: &str, provider: &str, handle: &str) -> BoxId {
     let id = store.apply(Decision::insert(new)).unwrap().box_id;
     let requested = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(HandsFields {
-            provider: Field::Set(ProviderId::new(provider)),
-            ..HandsFields::default()
-        });
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(
+            HandsInc::FIRST,
+            HandsFields {
+                provider: Field::Set(ProviderId::new(provider)),
+                ..HandsFields::default()
+            },
+        );
     store.apply(requested).unwrap();
     let acquired = HandsInput::Acquired {
         handle: BoxHandle::new(handle),
     };
     store
-        .apply(Decision::new(id).hands_input(acquired))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, acquired))
         .unwrap();
     id
 }

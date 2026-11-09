@@ -1,5 +1,5 @@
 use moor_core::domain::decision::Decision;
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::BoxId;
 
 use super::setup::{
@@ -69,7 +69,7 @@ fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_com
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).hands_input(HandsInput::DriverMissing))
+        .apply(Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);

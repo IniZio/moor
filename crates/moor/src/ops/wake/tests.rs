@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
-use moor_core::domain::hands::{HandsInput, HandsState};
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
@@ -45,8 +45,8 @@ fn fx_with(driver: FakeDriver) -> Fx {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .hands_input(HandsInput::Requested)
-        .hands(fields);
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
@@ -64,7 +64,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .hands_input(HandsInput::Acquired { handle: got.handle });
+        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -89,7 +89,7 @@ fn asleep(f: &Fx) {
             auto: false,
             reason: None,
         })
-        .hands_input(HandsInput::Sleep);
+        .hands_input(HandsInc::FIRST, HandsInput::Sleep);
     store.apply(d).unwrap();
 }
 
@@ -164,7 +164,7 @@ fn failed_resume_leaves_box_and_box_asleep() {
 fn gone_box_is_refused_without_a_resume() {
     let f = fx();
     asleep(&f);
-    let d = Decision::new(f.id).hands_input(HandsInput::DriverMissing);
+    let d = Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
     f.cx.store().unwrap().apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

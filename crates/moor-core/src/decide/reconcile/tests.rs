@@ -3,13 +3,14 @@
 use super::{reconcile, stopped, BoxFact};
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::decision::BoxTarget;
-use crate::domain::hands::{HandsInput, HandsState};
+use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::BoxListing;
 
 fn fact(n: i64, state: HandsState, h: Option<&str>) -> BoxFact {
     BoxFact {
         box_id: BoxId::new(n),
+        inc: HandsInc::new(n + 1),
         state,
         handle: h.map(BoxHandle::new),
     }
@@ -32,7 +33,12 @@ fn missing_ready_and_asleep_become_gone() {
     let out = reconcile(&rows, &[]);
     assert_eq!(out.len(), 2);
     for (d, r) in out.iter().zip(&rows) {
-        assert_eq!(d.hands_input, Some(HandsInput::DriverMissing));
+        assert_eq!(d.input_to_hands(), Some(&HandsInput::DriverMissing));
+        assert_eq!(
+            d.hands.as_ref().map(|w| w.inc),
+            Some(r.inc),
+            "names the hands it read"
+        );
         assert_eq!(d.lifecycle_input, None);
         assert_eq!(d.session_input, None);
         assert_eq!(
@@ -62,7 +68,8 @@ fn a_ready_box_listed_stopped_sleeps_and_keeps_its_machine() {
     assert_eq!(out.len(), 1, "one decision, got {out:?}");
     let slept = out.first().expect("one decision");
     assert_eq!(slept.target, BoxTarget::Existing(BoxId::new(1)));
-    assert_eq!(slept.hands_input, Some(HandsInput::Sleep));
+    assert_eq!(slept.input_to_hands(), Some(&HandsInput::Sleep));
+    assert_eq!(slept.hands.as_ref().map(|w| w.inc), Some(HandsInc::new(2)));
     assert!(matches!(
         slept.lifecycle_input,
         Some(BoxLifecycleInput::Sleep { auto: true, .. })
