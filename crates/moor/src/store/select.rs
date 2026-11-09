@@ -1,14 +1,15 @@
 //! The selects the Box and event reads share.
 
 use moor_core::BoxId;
-use moor_schema::tables::{Boxes, Events, Sessions};
+use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
+use super::hands::join_current;
 use super::{db, event_from_row, EventRow, StoreError};
 use crate::store::db::DbExt as _;
 
-/// The Box columns a Box read starts with.
-const BOX_HEAD: [Boxes; 7] = [
+/// The `boxes` columns a Box read takes first.
+const BOX_COLS: [Boxes; 24] = [
     Boxes::Id,
     Boxes::Name,
     Boxes::Repo,
@@ -16,9 +17,6 @@ const BOX_HEAD: [Boxes; 7] = [
     Boxes::Prompt,
     Boxes::Base,
     Boxes::Branch,
-];
-/// The Box columns between the newest Session's ids and its state.
-const BOX_MIDDLE: [Boxes; 19] = [
     Boxes::State,
     Boxes::StateReason,
     Boxes::IntentKind,
@@ -28,31 +26,67 @@ const BOX_MIDDLE: [Boxes; 19] = [
     Boxes::SetupFailedAt,
     Boxes::CreatedAt,
     Boxes::UpdatedAt,
-    Boxes::Provider,
-    Boxes::Handle,
-    Boxes::DriverState,
-    Boxes::AttemptedHandle,
-    Boxes::Workdir,
-    Boxes::Egress,
-    Boxes::SleepReason,
-    Boxes::DriverUpdatedAt,
     Boxes::IdleSince,
     Boxes::LaunchFailure,
-];
-/// The Box columns a Box read ends with.
-const BOX_TAIL: [Boxes; 8] = [
     Boxes::User,
     Boxes::RepoConfig,
     Boxes::AuthorName,
     Boxes::AuthorEmail,
-    Boxes::Cpus,
-    Boxes::MemMib,
     Boxes::OtherRepos,
     Boxes::StepsPendingAt,
 ];
+/// The newest Session's columns a Box read takes next.
+const SESSION_COLS: [Sessions; 2] = [Sessions::AgentSessionId, Sessions::State];
+/// The current hands' columns a Box read ends with.
+const HANDS_COLS: [BoxHands; 11] = [
+    BoxHands::Inc,
+    BoxHands::Provider,
+    BoxHands::Handle,
+    BoxHands::State,
+    BoxHands::AttemptedHandle,
+    BoxHands::Workdir,
+    BoxHands::Egress,
+    BoxHands::SleepReason,
+    BoxHands::Cpus,
+    BoxHands::MemMib,
+    BoxHands::StateAt,
+];
 
-/// The Box reads' columns, in the order [`super::box_from_row`] reads them; the session columns are
-/// the Box's newest Session's.
+/// A const fn giving a column's position in a Box read row: its place in `$cols`, after `$skip`.
+/// Called in a `const` block, a column the read does not take fails the build.
+macro_rules! position {
+    ($(#[$doc:meta])* $name:ident: $ty:ty, $cols:expr, $skip:expr) => {
+        $(#[$doc])*
+        pub(super) const fn $name(c: $ty) -> usize {
+            let mut rest: &[$ty] = &$cols;
+            let mut at = $skip;
+            while let [first, tail @ ..] = rest {
+                if *first as usize == c as usize {
+                    return at;
+                }
+                rest = tail;
+                at += 1;
+            }
+            panic!("not a column of the Box read")
+        }
+    };
+}
+
+position!(
+    /// The position of a `boxes` column in a Box read row.
+    box_at: Boxes, BOX_COLS, 0
+);
+position!(
+    /// The position of a newest-Session column in a Box read row.
+    session_at: Sessions, SESSION_COLS, BOX_COLS.len()
+);
+position!(
+    /// The position of a current-hands column in a Box read row.
+    hands_at: BoxHands, HANDS_COLS, BOX_COLS.len() + SESSION_COLS.len()
+);
+
+/// The Box reads' columns, in the order the positions above give: the session columns are the
+/// Box's newest Session's, the hands columns its current hands'.
 pub(super) fn box_select() -> SelectStatement {
     let b = |c| (Boxes::Table, c);
     let s = |c| (Sessions::Table, c);
@@ -61,12 +95,10 @@ pub(super) fn box_select() -> SelectStatement {
         .from_as(Sessions::Table, "newest")
         .and_where(Expr::col(("newest", Sessions::Box)).equals(b(Boxes::Id)))
         .take();
-    Query::select()
-        .columns(BOX_HEAD.map(b))
-        .column(s(Sessions::AgentSessionId))
-        .columns(BOX_MIDDLE.map(b))
-        .column(s(Sessions::State))
-        .columns(BOX_TAIL.map(b))
+    let mut q = Query::select()
+        .columns(BOX_COLS.map(b))
+        .columns(SESSION_COLS.map(s))
+        .columns(HANDS_COLS.map(|c| (BoxHands::Table, c)))
         .from(Boxes::Table)
         .left_join(
             Sessions::Table,
@@ -74,7 +106,9 @@ pub(super) fn box_select() -> SelectStatement {
                 .equals(b(Boxes::Id))
                 .and(Expr::col(s(Sessions::Ordinal)).eq(db::sub(newest))),
         )
-        .take()
+        .take();
+    join_current(&mut q);
+    q
 }
 
 /// The id of Box `id`'s newest Session.

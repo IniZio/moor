@@ -1,7 +1,7 @@
 //! Generic column-assignment helpers for the store writer.
 
 use moor_core::domain::decision::{Field, Fields, HandsFields, NewBox};
-use moor_schema::tables::{Boxes, Sessions};
+use moor_schema::tables::{BoxHands, Boxes, Sessions};
 use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
 use super::StoreError;
@@ -51,22 +51,22 @@ pub(super) fn session_field_sets(s: &Fields) -> Sets<Sessions> {
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
 
-/// Column assignments for the machine fields.
-pub(super) fn driver_field_sets(s: &HandsFields) -> Sets<Boxes> {
+/// Column assignments for the hands fields.
+pub(super) fn driver_field_sets(s: &HandsFields) -> Sets<BoxHands> {
     let all = [
         (
-            Boxes::Provider,
+            BoxHands::Provider,
             field_value(&s.provider, |p| p.as_str().to_owned()),
         ),
         (
-            Boxes::Handle,
+            BoxHands::Handle,
             field_value(&s.handle, |h| h.as_str().to_owned()),
         ),
-        (Boxes::Workdir, text(&s.workdir)),
-        (Boxes::Egress, text(&s.egress)),
-        (Boxes::SleepReason, text(&s.sleep_reason)),
-        (Boxes::Cpus, field_value(&s.cpus, |c| *c)),
-        (Boxes::MemMib, field_value(&s.mem_mib, |m| *m)),
+        (BoxHands::Workdir, text(&s.workdir)),
+        (BoxHands::Egress, text(&s.egress)),
+        (BoxHands::SleepReason, text(&s.sleep_reason)),
+        (BoxHands::Cpus, field_value(&s.cpus, |c| *c)),
+        (BoxHands::MemMib, field_value(&s.mem_mib, |m| *m)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }

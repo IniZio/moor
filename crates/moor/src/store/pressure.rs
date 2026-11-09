@@ -6,10 +6,11 @@ use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
 use moor_core::name::{BoxId, NodeName};
 use moor_core::seam::driver::PausePublish;
 
-use moor_schema::tables::{Boxes, NodePressure};
+use moor_schema::tables::{BoxHands, Boxes, NodePressure};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
+use crate::store::hands::{select_current, update_current};
 use crate::store::{Store, StoreError};
 
 /// A node's pressure state: its recent reports, oldest first, since when pressure has been
@@ -161,12 +162,10 @@ impl Store {
         check: Option<SuspendCheck>,
     ) -> Result<(), StoreError> {
         self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::SuspendAhead, check.map(|c| i64::from(c.ahead)))
-                .value(Boxes::SuspendDirty, check.map(|c| i64::from(c.dirty)))
-                .value(Boxes::SuspendCheckedAt, check.map(|c| c.at))
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+            update_current(id)
+                .value(BoxHands::SuspendAhead, check.map(|c| i64::from(c.ahead)))
+                .value(BoxHands::SuspendDirty, check.map(|c| i64::from(c.dirty)))
+                .value(BoxHands::SuspendCheckedAt, check.map(|c| c.at)),
         )?;
         Ok(())
     }
@@ -176,14 +175,14 @@ impl Store {
         let conn = self.reader()?;
         let row: Option<(Option<i64>, Option<i64>, Option<i64>)> = conn
             .row(
-                Query::select()
-                    .columns([
-                        Boxes::SuspendAhead,
-                        Boxes::SuspendDirty,
-                        Boxes::SuspendCheckedAt,
-                    ])
-                    .from(Boxes::Table)
-                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
+                select_current(
+                    id,
+                    [
+                        BoxHands::SuspendAhead,
+                        BoxHands::SuspendDirty,
+                        BoxHands::SuspendCheckedAt,
+                    ],
+                ),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -204,12 +203,8 @@ impl Store {
         publish: PausePublish,
     ) -> Result<(), StoreError> {
         let allowed = (publish == PausePublish::Allowed).then_some(1_i64);
-        self.writer().run(
-            Query::update()
-                .table(Boxes::Table)
-                .value(Boxes::SuspendPublish, allowed)
-                .and_where(Expr::col(Boxes::Id).eq(id.get())),
-        )?;
+        self.writer()
+            .run(update_current(id).value(BoxHands::SuspendPublish, allowed))?;
         Ok(())
     }
 
@@ -217,13 +212,7 @@ impl Store {
     pub(crate) fn pause_publish(&self, id: BoxId) -> Result<PausePublish, StoreError> {
         let conn = self.reader()?;
         let allowed: Option<Option<i64>> = conn
-            .row(
-                Query::select()
-                    .column(Boxes::SuspendPublish)
-                    .from(Boxes::Table)
-                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
-                |r| r.get(0),
-            )
+            .row(select_current(id, [BoxHands::SuspendPublish]), |r| r.get(0))
             .optional()?;
         Ok(if allowed.flatten().is_some() {
             PausePublish::Allowed

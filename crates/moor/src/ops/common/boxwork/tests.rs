@@ -66,6 +66,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
 
 fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
     let boxed = HandsRow {
+        inc: 1,
         provider: ProviderId::new("p"),
         handle: Some(handle),
         state: HandsState::Ready,

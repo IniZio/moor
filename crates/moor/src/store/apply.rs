@@ -8,7 +8,7 @@ use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use moor_schema::tables::{Boxes, Events, Sessions};
+use moor_schema::tables::{BoxHands, Boxes, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement, Value};
 
 mod sql;
@@ -18,6 +18,7 @@ pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
+use super::hands::{first_hands, update_current};
 use super::select::newest_session;
 use super::{HandsRow, Store, StoreError};
 use crate::store::db::{self, DbExt as _, Tx};
@@ -169,12 +170,7 @@ fn step_driver(
     let Field::Set(provider) = &d.hands.provider else {
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
-    tx.run(
-        box_update(id)
-            .value(Boxes::Provider, provider.as_str())
-            .value(Boxes::DriverState, to.as_str())
-            .value(Boxes::DriverUpdatedAt, now.as_millis()),
-    )?;
+    tx.run(first_hands(id, provider, to, now))?;
     Ok(Some(Step { from: None, to }))
 }
 
@@ -278,10 +274,10 @@ fn write_box(
 ) -> Result<(), StoreError> {
     let mut sets = driver_field_sets(&d.hands);
     if quiet.from == Some(true) && !quiet.to {
-        if let Some(i) = sets.iter().position(|(c, _)| *c == Boxes::SleepReason) {
+        if let Some(i) = sets.iter().position(|(c, _)| *c == BoxHands::SleepReason) {
             sets.remove(i);
         }
-        sets.push((Boxes::SleepReason, Value::String(None)));
+        sets.push((BoxHands::SleepReason, Value::String(None)));
     }
     let Some(step) = step else {
         if sets.is_empty() {
@@ -292,14 +288,14 @@ fn write_box(
         ));
     };
     if let Some(input) = &d.hands_input {
-        sets.push((Boxes::DriverState, step.to.as_str().into()));
+        sets.push((BoxHands::State, step.to.as_str().into()));
         // A guest that may run again can change, so what was checked before no longer stands.
         if matches!(input, HandsInput::Wake | HandsInput::Acquired { .. }) {
             for column in [
-                Boxes::SuspendAhead,
-                Boxes::SuspendDirty,
-                Boxes::SuspendCheckedAt,
-                Boxes::SuspendPublish,
+                BoxHands::SuspendAhead,
+                BoxHands::SuspendDirty,
+                BoxHands::SuspendCheckedAt,
+                BoxHands::SuspendPublish,
             ] {
                 sets.push((column, None::<i64>.into()));
             }
@@ -307,12 +303,12 @@ fn write_box(
         sets.extend(input_handle_sets(input, &sets));
     }
     if d.hands_input.is_some() {
-        sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
+        sets.push((BoxHands::StateAt, now.as_millis().into()));
     }
-    if sets.iter().any(|(c, _)| *c == Boxes::Handle) {
+    if sets.iter().any(|(c, _)| *c == BoxHands::Handle) {
         super::proxy::forget_egress_delivery(tx, id)?;
     }
-    update(tx, &mut box_update(id), &sets)
+    update(tx, &mut update_current(id), &sets)
 }
 
 /// An UPDATE of Box `id`'s row.
@@ -324,10 +320,12 @@ fn box_update(id: BoxId) -> UpdateStatement {
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.
-fn input_handle_sets(input: &HandsInput, taken: &Sets<Boxes>) -> Sets<Boxes> {
+fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHands> {
     let (col, handle) = match input {
-        HandsInput::Acquired { handle } => (Boxes::Handle, Some(handle)),
-        HandsInput::AcquireFailed { attempted, .. } => (Boxes::AttemptedHandle, attempted.as_ref()),
+        HandsInput::Acquired { handle } => (BoxHands::Handle, Some(handle)),
+        HandsInput::AcquireFailed { attempted, .. } => {
+            (BoxHands::AttemptedHandle, attempted.as_ref())
+        }
         _ => return Vec::new(),
     };
     match handle {

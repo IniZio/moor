@@ -8,11 +8,22 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::BoxId;
-use moor_schema::tables::Boxes;
+use moor_schema::tables::{BoxHands, Boxes};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
+use super::hands::join_current;
 use super::{Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension};
+
+/// A column of `boxes`, where a read joins `box_hands`.
+const fn b(c: Boxes) -> (Boxes, Boxes) {
+    (Boxes::Table, c)
+}
+
+/// A column of `box_hands`.
+const fn h(c: BoxHands) -> (BoxHands, BoxHands) {
+    (BoxHands::Table, c)
+}
 
 /// Boxes holding a slot on `node` as seen on `conn`, counted the way admission counts them,
 /// and Boxes setting up there.
@@ -21,12 +32,16 @@ pub(super) fn live_on_node_in(
     node: &NodeName,
 ) -> Result<(usize, usize), StoreError> {
     let rows = conn.rows(
-        Query::select()
-            .columns([Boxes::DriverState, Boxes::State])
-            .expr(Expr::col(Asterisk).count())
-            .from(Boxes::Table)
-            .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
-            .group_by_columns([Boxes::DriverState, Boxes::State]),
+        join_current(
+            Query::select()
+                .column(h(BoxHands::State))
+                .column(b(Boxes::State))
+                .expr(Expr::col(Asterisk).count())
+                .from(Boxes::Table),
+        )
+        .and_where(Expr::col(b(Boxes::Node)).eq(node.as_str()))
+        .group_by_col(h(BoxHands::State))
+        .group_by_col(b(Boxes::State)),
         |r| {
             Ok::<_, StoreError>((
                 r.get::<_, Option<String>>(0)?,
@@ -151,22 +166,20 @@ impl Store {
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
         let rows = conn.rows(
-            Query::select()
-                .column(Boxes::Id)
-                .from(Boxes::Table)
-                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
-                .and_where(Expr::col(Boxes::State).eq(BoxLifecycle::Pending.as_str()))
-                .order_by_expr(Expr::col(Boxes::ResumeFirstAt).is_null(), Order::Asc)
+            join_current(Query::select().column(b(Boxes::Id)).from(Boxes::Table))
+                .and_where(Expr::col(b(Boxes::Node)).eq(node.as_str()))
+                .and_where(Expr::col(b(Boxes::State)).eq(BoxLifecycle::Pending.as_str()))
+                .order_by_expr(Expr::col(b(Boxes::ResumeFirstAt)).is_null(), Order::Asc)
                 .order_by_expr(
                     Expr::case(
-                        Expr::col(Boxes::DriverState).eq(HandsState::Asleep.as_str()),
+                        Expr::col(h(BoxHands::State)).eq(HandsState::Asleep.as_str()),
                         0,
                     )
                     .finally(1)
                     .into(),
                     Order::Asc,
                 )
-                .order_by(Boxes::Id, Order::Asc),
+                .order_by(b(Boxes::Id), Order::Asc),
             |r| r.get::<_, i64>(0),
         )?;
         rows.map(|r| Ok(BoxId::new(r?))).collect()

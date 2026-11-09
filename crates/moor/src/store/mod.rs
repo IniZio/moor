@@ -17,11 +17,11 @@ use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use moor_migrate::Outcome;
-use moor_schema::tables::{Boxes, Events};
+use moor_schema::tables::{Boxes, Events, Sessions};
 use repo::repo_from_row;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
-use driver_row::driver_from_row;
+use hands::hands_from_row;
 use init::{parsed, parsed_opt};
 use select::{box_select, events_of, limit, newest_event, EVENT_COLUMNS};
 
@@ -42,11 +42,11 @@ pub(crate) mod checkpoints;
 pub(crate) mod controller_lock;
 pub(crate) mod copy;
 pub(crate) mod db;
-mod driver_row;
 mod error;
 mod events_of;
 pub(crate) use bindings::Binding;
 mod follow;
+mod hands;
 #[cfg(test)]
 pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
@@ -87,6 +87,8 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HandsRow {
+    /// Which of the Box's hands this is; a later one has a higher `inc`.
+    pub(crate) inc: i64,
     /// Driver provider id.
     pub(crate) provider: ProviderId,
     /// Driver handle once acquired.
@@ -333,39 +335,47 @@ fn intent_from(
 
 /// Map a `BOX_SELECT` row to a `BoxRow`.
 fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
-    let name: String = row.get(1)?;
-    let lifecycle: String = row.get(8)?;
-    let session: Option<String> = row.get(27)?;
+    use select::box_at as at;
+    let name: String = row.get(const { at(Boxes::Name) })?;
+    let lifecycle: String = row.get(const { at(Boxes::State) })?;
+    let session: Option<String> = row.get(const { select::session_at(Sessions::State) })?;
     let session = match session {
         Some(raw) => parsed_opt("session state", &raw, SessionState::parse)?,
         None => SessionState::Starting,
     };
     let lifecycle = parsed_opt("box state", &lifecycle, BoxLifecycle::parse)?;
+    let ts = |at| Ok::<_, StoreError>(row.get::<_, Option<i64>>(at)?.map(Ts::from_millis));
     Ok(BoxRow {
-        id: BoxId::new(row.get(0)?),
+        id: BoxId::new(row.get(const { at(Boxes::Id) })?),
         name: parsed("box name", &name, BoxName::parse_allow_bare)?,
         repo: repo_from_row(row)?,
-        user: row.get::<_, Option<i64>>(28)?.map(UserId::new),
-        issue: row.get(3)?,
-        prompt: row.get(4)?,
-        base: row.get(5)?,
-        branch: row.get(6)?,
-        agent_session_id: row.get(7)?,
+        user: row
+            .get::<_, Option<i64>>(const { at(Boxes::User) })?
+            .map(UserId::new),
+        issue: row.get(const { at(Boxes::Issue) })?,
+        prompt: row.get(const { at(Boxes::Prompt) })?,
+        base: row.get(const { at(Boxes::Base) })?,
+        branch: row.get(const { at(Boxes::Branch) })?,
+        agent_session_id: row.get(const { select::session_at(Sessions::AgentSessionId) })?,
         lifecycle,
         session,
-        state_reason: row.get(9)?,
-        intent: intent_from(row.get(10)?, row.get(11)?, row.get(12)?)?,
-        intent_at: row.get::<_, Option<i64>>(13)?.map(Ts::from_millis),
-        setup_failed_at: row.get::<_, Option<i64>>(14)?.map(Ts::from_millis),
-        steps_pending_at: row.get::<_, Option<i64>>(35)?.map(Ts::from_millis),
-        created_at: Ts::from_millis(row.get(15)?),
-        updated_at: Ts::from_millis(row.get(16)?),
-        idle_since: row.get::<_, Option<i64>>(25)?.map(Ts::from_millis),
+        state_reason: row.get(const { at(Boxes::StateReason) })?,
+        intent: intent_from(
+            row.get(const { at(Boxes::IntentKind) })?,
+            row.get(const { at(Boxes::IntentPid) })?,
+            row.get(const { at(Boxes::IntentRun) })?,
+        )?,
+        intent_at: ts(const { at(Boxes::IntentAt) })?,
+        setup_failed_at: ts(const { at(Boxes::SetupFailedAt) })?,
+        steps_pending_at: ts(const { at(Boxes::StepsPendingAt) })?,
+        created_at: Ts::from_millis(row.get(const { at(Boxes::CreatedAt) })?),
+        updated_at: Ts::from_millis(row.get(const { at(Boxes::UpdatedAt) })?),
+        idle_since: ts(const { at(Boxes::IdleSince) })?,
         launch_failure: row
-            .get::<_, Option<String>>(26)?
+            .get::<_, Option<String>>(const { at(Boxes::LaunchFailure) })?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
-        hands: driver_from_row(row)?,
+        hands: hands_from_row(row)?,
     })
 }
 

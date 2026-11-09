@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
-use moor_schema::tables::{Boxes, Events};
+use moor_schema::tables::{BoxHands, Boxes, Events};
 use sea_query::{Expr, ExprTrait as _, Query, Value};
 
 use crate::store::db::DbExt as _;
@@ -27,12 +27,45 @@ fn ready(store: &Store, name: &str) -> BoxId {
         spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    update(
-        store,
-        id,
-        &[(Boxes::State, "ready".into()), (Boxes::Handle, "h".into())],
-    );
+    update(store, id, &[(Boxes::State, "ready".into())]);
+    store
+        .writer()
+        .run(
+            Query::insert()
+                .into_table(BoxHands::Table)
+                .columns([
+                    BoxHands::Box,
+                    BoxHands::Inc,
+                    BoxHands::Provider,
+                    BoxHands::State,
+                    BoxHands::StateAt,
+                    BoxHands::CreatedAt,
+                ])
+                .values_panic([
+                    id.get().into(),
+                    1_i64.into(),
+                    "p".into(),
+                    "ready".into(),
+                    0_i64.into(),
+                    0_i64.into(),
+                ]),
+        )
+        .unwrap();
+    set_handle(store, id, Some("h"));
     id
+}
+
+/// Set the handle of the Box's hands.
+fn set_handle(store: &Store, id: BoxId, handle: Option<&str>) {
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(BoxHands::Table)
+                .value(BoxHands::Handle, handle)
+                .and_where(Expr::col(BoxHands::Box).eq(id.get())),
+        )
+        .unwrap();
 }
 
 /// Assign `sets` on the Box row.
@@ -114,23 +147,11 @@ fn not_due_unless_ready_with_handle_and_no_intent() {
     event(&store, t, "idled");
     update(&store, t, &[(Boxes::State, "sleeping".into())]);
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(
-        &store,
-        t,
-        &[
-            (Boxes::State, "ready".into()),
-            (Boxes::Handle, None::<String>.into()),
-        ],
-    );
+    update(&store, t, &[(Boxes::State, "ready".into())]);
+    set_handle(&store, t, None);
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(
-        &store,
-        t,
-        &[
-            (Boxes::Handle, "h".into()),
-            (Boxes::IntentKind, "close".into()),
-        ],
-    );
+    set_handle(&store, t, Some("h"));
+    update(&store, t, &[(Boxes::IntentKind, "close".into())]);
     assert!(store.artifacts_due().unwrap().is_empty());
     update(&store, t, &[(Boxes::IntentKind, None::<String>.into())]);
     assert_eq!(store.artifacts_due().unwrap().len(), 1);
