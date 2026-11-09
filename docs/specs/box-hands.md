@@ -15,7 +15,7 @@ Box   key = (user, repo, n) or (front, conversation, n)
  ├─ state         phase, prompt, wanted action, in-flight effects
  ├─ inbox         steers, delivered at least once
  ├─ hands[inc]    provider, node, handle, observed state, workdir, config text
- └─ sessions[n]   agent_session_id, run, status
+ └─ sessions[n]   agent_session_id, status, launches[id]
 Thread    bindings and its Box index, owned by the controller
 Workflow  schedule and runs
 Node      capacity
@@ -29,8 +29,9 @@ Node      capacity
   preflight and admission read it before any hands exist. From step 8 a hands
   row also holds the text it was built from, so a rebuild is new hands under
   the same spec.
-- **Run.** Each agent launch bumps the session's run. A stale wake, relaunch,
-  settle or delivery carries an old run and is dropped.
+- **Launch.** Each agent launch is a new launch row, and its id fences stale
+  work. A stale wake, relaunch, settle or delivery carries an old launch and is
+  dropped.
 - **Wanted action.** Close, suspend and sleep are recorded as data with a fixed
   precedence. Close beats suspend, and suspend beats sleep.
 - **Owner.** One owner per Box applies every mutation of that Box in order.
@@ -72,7 +73,7 @@ Node      capacity
 | Hands rows carry an incarnation | A late write for a dead VM cannot land on its replacement. |
 | A hands row records observed VM state with its time | moor decides while a node is away. A live read of the provider answers nothing then. |
 | From step 8 a hands row holds its config text | A rebuild from a changed `.moor.yaml` is new hands, not a new Box. |
-| Sessions carry a run number | Stale agent work is dropped by number. Re-check guards can go. |
+| Each agent launch has its own row, and its id fences stale work | Stale agent work is dropped by number. Re-check guards can go. The row exists today, so no counter is added. |
 | Wanted action is a field with precedence | Racing close, suspend and sleep resolve the same way every time. |
 | In-flight effects live in state, events are audit only | A decision never depends on scanning history. |
 | Each effect names whether a restart reruns it | Acquire and a setup attach rerun. An exec or a prompt send is reported, never repeated. |
@@ -108,9 +109,12 @@ Each step ends in a run on a real Box.
    a VM lost mid-turn loses at most that turn. Proof. Kill a Box's VM
    mid-conversation. It comes back in new hands and its next turn recalls the
    earlier turns.
-3. **Run number.** Launch bumps the session's run. Wake, relaunch, settle and
-   delivery carry it. Proof. A settle and a delivery for run n arrive after run
-   n+1 launched, and both are dropped. Then the re-check guards it covers go.
+3. **Launch fence.** Wake, relaunch, settle and delivery carry the launch they
+   read. A write for a launch that is no longer live is refused, and new hands
+   end the live launch. A steer belongs to the Box, so only an attempt made for
+   an old launch is dropped and the steer waits for the next one. Proof. A
+   settle and a delivery for launch n arrive after launch n+1 began, and both
+   are dropped. Then the re-check guards it covers go.
 4. **Wanted action and effect state.** Replace `intent_kind` and the
    event-as-state reads with fields. The interrupted-start pass at controller
    start reads effect state, so the handover in the controller replicas spec
