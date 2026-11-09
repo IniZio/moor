@@ -131,6 +131,11 @@ impl FakeDriver {
         self.st().on_wake = Some(Arc::new(f));
     }
 
+    /// Runs `f` at the start of every later `release`, outside the Driver's lock.
+    pub(crate) fn on_release(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_release = Some(Arc::new(f));
+    }
+
     /// Runs `f` inside every later `sleep` that succeeds, outside the Driver's lock.
     pub(crate) fn on_sleep(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_sleep = Some(Arc::new(f));

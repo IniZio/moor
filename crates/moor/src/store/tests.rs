@@ -27,6 +27,7 @@ mod node_count;
 mod open_boxes;
 mod poison;
 mod repos;
+mod rollback_pid;
 mod sleep_reason;
 mod turns;
 

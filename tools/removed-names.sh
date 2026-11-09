@@ -50,8 +50,12 @@ if [ -n "$hits" ]; then
   exit 1
 fi
 
+# One write stays, never a read: a rolled-back binary refuses an intent with no pid until the
+# column is dropped. Its test reads the column back as that binary would.
 pid_hits=$(grep -rnw --include='*.rs' --exclude-dir=target -e intent_pid -e IntentPid crates/ \
-  | grep -v '^crates/moor-schema/' || true)
+  | grep -v '^crates/moor-schema/' \
+  | grep -vE '^crates/moor/src/store/apply\.rs:[0-9]+:        \(BoxState::IntentPid, pid\.into\(\)\),$' \
+  | grep -v '^crates/moor/src/store/tests/rollback_pid\.rs:' || true)
 if [ -n "$pid_hits" ]; then
   echo "removed-names: the intent pid is read or written"
   echo "$pid_hits"

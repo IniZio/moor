@@ -166,11 +166,12 @@ impl Moor {
             let user = store.box_row(id)?.and_then(|r| r.user);
             self.cx.for_box(user, || {
                 let _turn = self.cx.turn(id, Cmd::Resume)?;
-                let goes_on = interrupted::settle(&self.cx, store, id);
+                let then = interrupted::settle(&self.cx, store, id);
                 if let Some(settled) = settled.take() {
-                    settled(self.logged(id, goes_on.as_ref().err()));
+                    settled(self.logged(id, then.as_ref().err()));
                 }
-                if goes_on.unwrap_or(false) {
+                let Ok(then) = then else { return Ok(()) };
+                if interrupted::release_then(&self.cx, store, id, then)? {
                     ops::common::provision::resume_setup(&self.cx, store, id)?;
                 }
                 Ok(())

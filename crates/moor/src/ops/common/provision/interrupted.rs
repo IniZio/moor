@@ -33,24 +33,70 @@ pub(crate) fn cut_short(store: &Store) -> Result<Vec<BoxId>, CommandError> {
     Ok(cut)
 }
 
-/// Settles the cut-off start of Box `id` under the Resume turn the caller holds; returns whether
-/// [`super::resume_setup`] goes on with it: its setup can be followed again or finished in its
-/// machine, its acquire was cut for the first time in this start, its launch was cut, or a forced
-/// close wants it gone.
-pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
+/// What a resume does once its Box has settled, which is when the controller may serve.
+#[derive(Debug)]
+pub(crate) enum Then {
+    /// Nothing more.
+    Rest,
+    /// [`super::resume_setup`] goes on with the start.
+    Resume,
+    /// Release the machine the cut acquire may have made, then acquire again when `again` and the
+    /// release went through.
+    Release {
+        /// The machine.
+        handle: BoxHandle,
+        /// Whether this start acquires again.
+        again: bool,
+    },
+}
+
+/// Settles the cut-off start of Box `id` under the Resume turn the caller holds, with no call to
+/// a provider. A start goes on when its setup can be followed again or finished in its machine,
+/// its acquire was cut for the first time in this start, its launch was cut, or a forced close
+/// wants it gone.
+pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<Then, CommandError> {
     let Some(row) = store.box_row(id)? else {
-        return Ok(false);
+        return Ok(Then::Rest);
     };
     let Some(intent) = row.intent else {
-        return launch_was_cut(store, &row);
+        return Ok(if launch_was_cut(store, &row)? {
+            Then::Resume
+        } else {
+            Then::Rest
+        });
     };
     match intent {
         Intent::Provisioning => cx.for_box(row.user, || cut_acquire(cx, store, &row)),
-        Intent::Setup if followable(&row) => Ok(true),
-        Intent::Setup => record_interrupted(cx, store, &row, NOT_READY.to_owned()).map(|()| false),
-        Intent::Running { .. } => Ok(false),
-        Intent::Closing => Ok(true),
+        Intent::Setup if followable(&row) => Ok(Then::Resume),
+        Intent::Setup => {
+            record_interrupted(cx, store, &row, NOT_READY.to_owned()).map(|()| Then::Rest)
+        }
+        Intent::Running { .. } => Ok(Then::Rest),
+        Intent::Closing => Ok(Then::Resume),
     }
+}
+
+/// Does what `then` asks for Box `id`, still under the caller's Resume turn; returns whether
+/// [`super::resume_setup`] goes on with the start.
+pub(crate) fn release_then(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    then: Then,
+) -> Result<bool, CommandError> {
+    let (handle, again) = match then {
+        Then::Rest => return Ok(false),
+        Then::Resume => return Ok(true),
+        Then::Release { handle, again } => (handle, again),
+    };
+    let Some(row) = store.box_row(id)? else {
+        return Ok(false);
+    };
+    let released = cx.for_box(row.user, || release_warned(cx, store, &row, &handle));
+    if again && !released {
+        store.apply(gave_up(&row))?;
+    }
+    Ok(again && released)
 }
 
 /// Settles every Box [`cut_short`] finds, each under a Resume turn of its own; returns those that
@@ -60,7 +106,8 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
     let mut claimed = Vec::new();
     for id in cut_short(store)? {
         let _turn = cx.turn(id, crate::cx::owners::Cmd::Resume)?;
-        if settle(cx, store, id)? {
+        let then = settle(cx, store, id)?;
+        if release_then(cx, store, id, then)? {
             claimed.push(id);
         }
     }
@@ -96,8 +143,8 @@ fn followable(row: &BoxRow) -> bool {
         })
 }
 
-/// Settles a cut-off acquire; returns whether this process goes on with it.
-fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+/// Settles a cut-off acquire; returns what this process does with it once serving.
+fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandError> {
     let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
     let claim = IntentChange::Set(Intent::Provisioning);
     match row.hands.as_ref().map(|b| b.state) {
@@ -108,10 +155,10 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandErro
                 .is_some_and(|h| cx.driver().acquire_outlives_caller(h));
             if goes_on && setting_up {
                 store.apply(Decision::new(row.id).intent(claim))?;
-                return Ok(true);
+                return Ok(Then::Resume);
             }
             if goes_on {
-                // Stopping it can wait for it, and the controller is not serving yet.
+                // The resume stops it once the controller serves, as stopping waits for it.
                 let lost = Decision::new(row.id)
                     .hands_input(HandsInput::AcquireFailed {
                         cause: CAUSE.to_owned(),
@@ -119,9 +166,9 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandErro
                     })
                     .intent(claim);
                 store.apply(lost)?;
-                return Ok(true);
+                return Ok(Then::Resume);
             }
-            fail_acquire(cx, store, row, setting_up && !cut_before(store, row)?)
+            fail_acquire(store, row, setting_up && !cut_before(store, row)?)
         }
         // The process that claimed it to acquire again ended before it could.
         Some(HandsState::Failed | HandsState::Gone) if setting_up => {
@@ -132,9 +179,9 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandErro
                 })
                 .intent(IntentChange::Clear);
             store.apply(lost)?;
-            Ok(false)
+            Ok(Then::Rest)
         }
-        _ => Ok(false),
+        _ => Ok(Then::Rest),
     }
 }
 
@@ -147,31 +194,36 @@ fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     Ok(newest("box_failed")? > newest("setting_up")?)
 }
 
-/// Records the cut-off acquire as failed and releases the machine it may have created; returns
-/// whether this process acquires again, which `again` asks for. A machine that cannot be released
-/// may still be there, so its Box fails instead.
-fn fail_acquire(cx: &Cx, store: &Store, row: &BoxRow, again: bool) -> Result<bool, CommandError> {
+/// Records the cut-off acquire as failed; returns that the machine it may have made is released
+/// once serving, then acquired again when `again` asks. Not acquiring again settles the Box now.
+fn fail_acquire(store: &Store, row: &BoxRow, again: bool) -> Result<Then, CommandError> {
     let planned = planned_root(store, row.id)?;
     let lost = Decision::new(row.id).hands_input(HandsInput::AcquireFailed {
         cause: CAUSE.to_owned(),
         attempted: planned.clone(),
     });
     store.apply(lost.intent(IntentChange::Set(Intent::Provisioning)))?;
-    let released = planned
-        .as_ref()
-        .is_none_or(|handle| release_warned(cx, store, row, handle));
-    if again && released {
-        return Ok(true);
+    if !again {
+        store.apply(gave_up(row))?;
     }
-    let mut settled = Decision::new(row.id).intent(IntentChange::Clear);
-    if row.lifecycle == BoxLifecycle::SettingUp {
-        settled = settled.lifecycle(BoxLifecycleInput::SetupFailed {
-            cause: CAUSE.to_owned(),
-            which: None,
-        });
+    Ok(match planned {
+        Some(handle) => Then::Release { handle, again },
+        None if again => Then::Resume,
+        None => Then::Rest,
+    })
+}
+
+/// What ends the cut start of `row` that does not acquire again. A machine that cannot be
+/// released may still be there, so its Box fails.
+fn gave_up(row: &BoxRow) -> Decision {
+    let settled = Decision::new(row.id).intent(IntentChange::Clear);
+    if row.lifecycle != BoxLifecycle::SettingUp {
+        return settled;
     }
-    store.apply(settled)?;
-    Ok(false)
+    settled.lifecycle(BoxLifecycleInput::SetupFailed {
+        cause: CAUSE.to_owned(),
+        which: None,
+    })
 }
 
 /// Releases `handle`, what the cut-off acquire of `row` may have created; warns and returns false

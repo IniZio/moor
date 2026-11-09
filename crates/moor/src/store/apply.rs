@@ -347,8 +347,12 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<BoxState> {
             Some(now.as_millis()),
         ),
     };
+    // Written, never read: the previous binary, which a failed deploy rolls back to, refuses an
+    // intent without a pid until a later migration drops the column.
+    let pid = kind.as_ref().map(|_| i64::from(std::process::id()));
     vec![
         (BoxState::IntentKind, kind.into()),
+        (BoxState::IntentPid, pid.into()),
         (BoxState::IntentRun, run.into()),
         (BoxState::IntentAt, at.into()),
     ]
