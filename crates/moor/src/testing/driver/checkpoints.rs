@@ -38,6 +38,9 @@ pub(super) struct LayerKnobs {
     fork_fails: Option<DriverError>,
     /// Run as the next fork starts, outside the lock, once; a panic there is a process dying.
     during_fork: Option<Arc<ExecHook>>,
+    /// Run once the next fork made its machine, outside the lock, once; a panic there is a
+    /// process dying before it records the fork.
+    after_fork: Option<Arc<ExecHook>>,
     /// What every fork reports it spent its time on.
     fork_steps: Vec<ProviderStep>,
     /// The error the next checkpoint ends with, once.
@@ -98,6 +101,11 @@ impl FakeDriver {
     /// Runs `f` as the next fork starts, on a driver already in use.
     pub(crate) fn during_next_fork(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().layers.during_fork = Some(Arc::new(f));
+    }
+
+    /// Runs `f` once the next fork made its machine, on a driver already in use.
+    pub(crate) fn after_next_fork(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().layers.after_fork = Some(Arc::new(f));
     }
 
     /// Ends the next fork with `e`, on a driver already in use.
@@ -329,10 +337,16 @@ impl FakeDriver {
         s.live.push(handle.clone());
         s.providers.push((handle.clone(), req.provider.clone()));
         s.cache.classes.push(req.class.clone());
-        Ok(Forked {
+        let forked = Forked {
             handle: BoxHandle::new(handle),
             steps: s.layers.fork_steps.clone(),
-        })
+        };
+        let after = s.layers.after_fork.take();
+        drop(s);
+        if let Some(after) = after {
+            after();
+        }
+        Ok(forked)
     }
 }
 

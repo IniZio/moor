@@ -96,7 +96,7 @@ pub(crate) enum LeaseState {
 
 impl LeaseState {
     /// The stored name.
-    const fn as_str(self) -> &'static str {
+    pub(super) const fn as_str(self) -> &'static str {
         match self {
             Self::Planned => "planned",
             Self::Held => "held",
