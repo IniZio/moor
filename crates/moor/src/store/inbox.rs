@@ -123,7 +123,6 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
     /// gone or the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "queued delivery reads it"))]
     pub(crate) fn rollback(&self, box_id: BoxId, id: InboxId) -> Result<Delivery, StoreError> {
         self.move_delivery(box_id, id, Delivery::rollback)
     }

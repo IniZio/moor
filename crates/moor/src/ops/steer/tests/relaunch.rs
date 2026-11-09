@@ -1,4 +1,5 @@
-//! A steer to an awake Box whose agent exited relaunches the agent once, then sends.
+//! A text steer to a Box whose agent exited waits while the inbox pass relaunches the agent
+//! once, then sends; a menu choice relaunches it at once.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::domain::hands::HandsInc;
@@ -6,10 +7,13 @@ use std::time::Duration;
 
 use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::inbox::QueueCause;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer};
-use moor_core::{BoxHandle, BoxPath, ErrorDetail, ErrorKind};
+use moor_core::view::steer::Delivery;
+use moor_core::{BoxHandle, BoxPath};
 
+use super::queue::{pass, reports_idle};
 use super::{blocked, fx_with, menu, steered, text, Fx};
 use crate::ops::start::revive_for_steer;
 use crate::ops::steer::run;
@@ -45,6 +49,16 @@ fn resumable(engine: FakeEngine) -> Fx {
     f
 }
 
+/// The relaunched agent reports its agent session, as its hook does.
+fn resumes(f: &Fx) {
+    let reported = Fields {
+        agent_session_id: Field::Set("stored-1".into()),
+        ..Fields::default()
+    };
+    let store = f.cx.store().unwrap();
+    store.apply(Decision::new(f.id).set(reported)).unwrap();
+}
+
 fn relaunches(f: &Fx) -> Vec<serde_json::Value> {
     let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
     rows.into_iter()
@@ -62,12 +76,23 @@ fn session_state(f: &Fx) -> SessionState {
         .session
 }
 
+/// Steers `t`, which waits for the relaunch, and checks it says so.
+fn queued(f: &Fx, t: &str, why: QueueCause) {
+    let v = run(&f.cx, &text(t)).unwrap();
+    assert_eq!((v.delivery, v.steer), (Delivery::Queued(why), None));
+}
+
 #[test]
-fn a_gone_agent_is_relaunched_with_its_stored_session_then_steered() {
+fn a_gone_agent_is_relaunched_by_the_pass_with_its_stored_session_then_steered() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
-    let v = run(&f.cx, &text("hi")).unwrap();
-    assert_eq!(v.sent, "hi");
+    queued(&f, "hi", QueueCause::Relaunching);
+    assert!(
+        f.engine.launches().is_empty(),
+        "the steer itself relaunches nothing"
+    );
+    reports_idle(&f, "agent-2");
+    pass(&f);
     let launches = f.engine.launches();
     assert_eq!(launches.len(), 1);
     assert_eq!(launches[0].resume.as_deref(), Some("stored-1"));
@@ -80,52 +105,40 @@ fn a_gone_agent_is_relaunched_with_its_stored_session_then_steered() {
 }
 
 #[test]
-fn an_agent_gone_again_after_its_relaunch_fails_the_steer_and_ends_the_session() {
-    let engine = FakeEngine::new().steer_result(Err(EngineError::AgentGone));
+fn an_agent_gone_again_soon_after_its_relaunch_is_not_relaunched_and_its_steer_waits() {
+    let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
-    let err = run(&f.cx, &text("hi")).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Failed);
-    let message = err.error.to_string();
+    queued(&f, "hi", QueueCause::Relaunching);
+    f.engine.set_probes("agent-2", agent::gone());
+    pass(&f);
+    resumes(&f);
+    f.cx.take_warnings();
+    pass(&f);
+    let warned = f.cx.take_warnings();
     assert!(
-        message.contains("again within 60s of its relaunch"),
-        "{message}"
+        warned
+            .iter()
+            .any(|w| w.message.contains("again within 60s")),
+        "{warned:?}"
     );
-    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::RelaunchCapped));
     assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
     assert_eq!(session_state(&f), SessionState::Ended);
     assert!(steered(&f).is_empty());
-}
-
-#[test]
-fn a_second_steer_within_a_minute_of_the_relaunch_does_not_relaunch_again() {
-    let engine = FakeEngine::new();
-    let f = resumable(engine.probes("agent-1", agent::gone()));
-    run(&f.cx, &text("one")).unwrap();
-    f.engine.set_probes("agent-2", agent::gone());
-    let err = run(&f.cx, &text("two")).unwrap_err();
-    assert!(
-        err.error.to_string().contains("again within 60s"),
-        "{}",
-        err.error
-    );
-    assert_eq!(f.engine.launches().len(), 1);
-    assert_eq!(session_state(&f), SessionState::Ended);
+    assert_eq!(f.cx.store().unwrap().unsent(f.id).unwrap().len(), 1);
 }
 
 #[test]
 fn a_gone_agent_a_minute_after_its_relaunch_is_relaunched_again() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
-    run(&f.cx, &text("one")).unwrap();
-    let reported = Fields {
-        agent_session_id: Field::Set("stored-1".into()),
-        ..Fields::default()
-    };
-    let store = f.cx.store().unwrap();
-    store.apply(Decision::new(f.id).set(reported)).unwrap();
+    queued(&f, "one", QueueCause::Relaunching);
+    reports_idle(&f, "agent-2");
+    pass(&f);
+    resumes(&f);
     f.engine.set_probes("agent-2", agent::gone());
     f.cx.clock().sleep(Duration::from_secs(61));
-    run(&f.cx, &text("two")).unwrap();
+    queued(&f, "two", QueueCause::Relaunching);
+    pass(&f);
     assert_eq!(f.engine.launches().len(), 2);
 }
 
@@ -143,20 +156,21 @@ fn an_answer_to_an_exited_agent_relaunches_it_and_picks_the_choice() {
 }
 
 #[test]
-fn a_steer_that_waited_out_another_relaunch_sends_to_the_new_agent() {
+fn a_steer_queued_before_another_relaunch_goes_to_the_new_agent_first() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
     let store = f.cx.store().unwrap();
     let old = store.live_session(f.id).unwrap();
-    run(&f.cx, &text("one")).unwrap();
-    assert_eq!(session_state(&f), SessionState::Working);
+    queued(&f, "one", QueueCause::Relaunching);
     let gone = Gone::new("t", old, None);
     relaunch::once(&f.cx, store, (f.id, "t"), gone).unwrap();
     assert_eq!(session_state(&f), SessionState::Working);
-    assert!(store.live_session(f.id).unwrap().is_some());
-    run(&f.cx, &text("two")).unwrap();
+    reports_idle(&f, "agent-2");
+    let v = run(&f.cx, &text("two")).unwrap();
+    assert_eq!(v.delivery, Delivery::Delivered);
     assert_eq!(f.engine.launches().len(), 1);
-    assert_eq!(steered(&f).len(), 2);
+    let sent: Vec<_> = steered(&f).iter().map(|e| e["message"].clone()).collect();
+    assert_eq!(sent, ["one", "two"]);
 }
 
 #[test]
@@ -205,23 +219,15 @@ fn kinds(f: &Fx, kind: &str) -> Vec<serde_json::Value> {
 }
 
 #[test]
-fn a_fourth_automatic_relaunch_within_ten_minutes_is_refused_and_recorded_once() {
+fn a_steer_after_three_automatic_relaunches_within_ten_minutes_waits_as_capped() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
     record_relaunches(&f, 3);
     f.cx.clock().sleep(Duration::from_secs(90));
-    let err = run(&f.cx, &text("hi")).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    let message = err.error.to_string();
-    assert!(
-        message.contains("3 times in the last 10 minutes"),
-        "{message}"
-    );
+    queued(&f, "hi", QueueCause::RelaunchCapped);
+    pass(&f);
     assert!(f.engine.launches().is_empty(), "no agent was launched");
-    assert_eq!(
-        kinds(&f, "relaunch_capped"),
-        [serde_json::json!({"count": 3, "window_secs": 600})]
-    );
+    assert_eq!(f.cx.store().unwrap().unsent(f.id).unwrap().len(), 1);
 }
 
 #[test]
@@ -230,7 +236,8 @@ fn relaunches_older_than_ten_minutes_do_not_count() {
     let f = resumable(engine.probes("agent-1", agent::gone()));
     record_relaunches(&f, 3);
     f.cx.clock().sleep(Duration::from_mins(11));
-    run(&f.cx, &text("hi")).unwrap();
+    queued(&f, "hi", QueueCause::Relaunching);
+    pass(&f);
     assert_eq!(f.engine.launches().len(), 1);
     assert!(kinds(&f, "relaunch_capped").is_empty());
 }

@@ -4,7 +4,7 @@ use moor_core::activity::Probe;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef, Steer};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
@@ -186,16 +186,12 @@ fn an_unread_agent_counts_as_live() {
 }
 
 #[test]
-fn a_given_prompt_with_a_live_agent_warns_and_changes_nothing() {
+fn a_given_prompt_with_a_live_agent_is_typed_in_once_it_reports_idle() {
     let (w, engine, id) = started();
-    w.cx.take_warnings();
+    engine.set_probes("p-1", agent::idle(Ts::from_millis(i64::MAX / 2)));
     run(&w.cx, &prompt_req("new prompt")).unwrap();
-    let warned = w.cx.take_warnings();
-    let msg = warned.iter().find(|x| x.code == "prompt_ignored").unwrap();
-    assert_eq!(
-        msg.message,
-        "--prompt ignored: the agent for demo is live; use moor steer"
-    );
+    let typed: Vec<_> = engine.steers().into_iter().map(|(_, s)| s).collect();
+    assert_eq!(typed, [Steer::Text("new prompt".to_owned())]);
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(live_ref(&w, id), "p-1");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
@@ -355,7 +351,7 @@ fn an_issue_alone_launches_a_promptless_box_asking_to_resolve_it() {
 }
 
 #[test]
-fn a_prompt_on_a_promptless_box_with_a_live_agent_warns() {
+fn a_prompt_on_a_promptless_box_with_a_live_agent_waits_until_it_can_take_it() {
     let (w, engine, id) = started();
     let clear = Fields {
         prompt: Field::Clear,
@@ -367,7 +363,10 @@ fn a_prompt_on_a_promptless_box_with_a_live_agent_warns() {
         .unwrap();
     w.cx.take_warnings();
     run(&w.cx, &prompt_req("late prompt")).unwrap();
-    assert!(warning_codes(&w).contains(&"prompt_ignored".to_owned()));
+    assert!(engine.steers().is_empty());
+    let queued = w.cx.store().unwrap().unsent(id).unwrap();
+    let texts: Vec<_> = queued.into_iter().map(|r| r.text).collect();
+    assert_eq!(texts, ["late prompt"]);
     assert_eq!(engine.launches().len(), 1);
 }
 

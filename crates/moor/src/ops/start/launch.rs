@@ -9,6 +9,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsState;
+use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -58,7 +59,7 @@ pub(super) fn run(
         return not_working(cx, store, &row);
     };
     if resume.is_none() {
-        launch.prompt = first_prompt(req);
+        launch.prompt = queued_or(store, id, first_prompt(req))?;
     }
     launch.resume = resume;
     let cfg = settings()?;
@@ -245,7 +246,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_session(id, &sref)?;
+    store.begin_session_with(id, &sref, launch.prompt.text())?;
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }
@@ -314,6 +315,25 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         strip_env,
         prompt: LaunchPrompt::None,
     })
+}
+
+/// The first prompt of a fresh agent of Box `id`: `asked`, else the oldest prompt queued for it.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn queued_or(
+    store: &Store,
+    id: BoxId,
+    asked: LaunchPrompt,
+) -> Result<LaunchPrompt, CommandError> {
+    if asked != LaunchPrompt::None {
+        return Ok(asked);
+    }
+    let queued = store
+        .unsent(id)?
+        .into_iter()
+        .find(|r| r.kind == InboxKind::Prompt && matches!(r.delivery, Delivery::Queued { .. }));
+    Ok(queued.map_or(LaunchPrompt::None, |r| LaunchPrompt::Text(r.text)))
 }
 
 /// The first prompt `req` gives a fresh agent: its prompt, else one naming its Issue.

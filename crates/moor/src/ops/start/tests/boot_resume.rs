@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::{BoxId, BoxName, ErrorKind, SteerReq};
+use moor_core::domain::inbox::QueueCause;
+use moor_core::view::steer::Delivery;
+use moor_core::{BoxId, BoxName, SteerReq};
 
 use super::interrupted::{box_row, cut_off, releases, restarted_mid_setup, setup_attaches};
 use super::World;
@@ -36,7 +38,7 @@ fn restarted(w: &World, owners: &Arc<Owners>) -> Cx {
 /// Resumes Box 1 in a new controller over `w`'s store. A steer is fired at the Box from another
 /// request once the resume has settled it, which is when the controller starts serving; returns
 /// how the steer ended, and the setup attaches and acquires made by then.
-fn resume_and_steer(w: &World) -> (Result<(), CommandError>, (usize, usize)) {
+fn resume_and_steer(w: &World) -> (Result<Delivery, CommandError>, (usize, usize)) {
     let owners = Arc::new(Owners::new(Arc::new(SystemClock::real())));
     let (steered, steer_ended) = mpsc::channel();
     let got = std::cell::Cell::new(None);
@@ -51,7 +53,9 @@ fn resume_and_steer(w: &World) -> (Result<(), CommandError>, (usize, usize)) {
                 menu: None,
                 interrupt: false,
             };
-            steered.send(steer::run(&request, &req).map(drop)).ok();
+            steered
+                .send(steer::run(&request, &req).map(|v| v.delivery))
+                .ok();
         });
         // The resume keeps the turn until the steer answers, so a queued steer would never end.
         let answered = steer_ended.recv_timeout(Duration::from_secs(10));
@@ -64,18 +68,16 @@ fn resume_and_steer(w: &World) -> (Result<(), CommandError>, (usize, usize)) {
     (got, at_settle.into_inner())
 }
 
-/// Asserts `got` is the refusal a steer gets while the resume holds the Box.
-fn refused_for_setup(got: Result<(), CommandError>) {
-    let e = got.expect_err("the steer was refused");
-    assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(e.error.to_string(), "box busy: resume in progress");
+/// Asserts `got` is a steer queued while the resume holds the Box.
+fn queued_for_setup(got: Result<Delivery, CommandError>) {
+    assert_eq!(got.unwrap(), Delivery::Queued(QueueCause::Busy));
 }
 
 #[test]
-fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_refuses_a_steer_meanwhile() {
+fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_queues_a_steer_meanwhile() {
     let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
     let (steered, (followed_at_settle, _)) = resume_and_steer(&w);
-    refused_for_setup(steered);
+    queued_for_setup(steered);
     assert_eq!(
         followed_at_settle, 1,
         "serving starts before the setup is followed again"
@@ -87,11 +89,11 @@ fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_refuses_a_
 }
 
 #[test]
-fn a_restart_mid_acquire_acquires_exactly_once_more_and_refuses_a_steer_meanwhile() {
+fn a_restart_mid_acquire_acquires_exactly_once_more_and_queues_a_steer_meanwhile() {
     let w = cut_off(FakeDriver::new());
     let before = w.driver.acquired_nonces().len();
     let (steered, (_, acquires)) = resume_and_steer(&w);
-    refused_for_setup(steered);
+    queued_for_setup(steered);
     assert_eq!(
         acquires, before,
         "serving starts before the acquire runs again"
@@ -135,7 +137,7 @@ fn a_release_the_provider_holds_up_does_not_hold_up_serving() {
         menu: None,
         interrupt: false,
     };
-    refused_for_setup(steer::run(&request, &req).map(drop));
+    queued_for_setup(steer::run(&request, &req).map(|v| v.delivery));
     unblock.send(()).unwrap();
     assert!(resumed.join().unwrap().is_empty());
     assert_eq!(w.driver.acquired_nonces().len(), before + 1);
@@ -153,7 +155,7 @@ fn event_kinds(w: &World) -> Vec<String> {
 fn a_restart_mid_setup_that_resumes_emits_no_box_failed() {
     let (w, _) = restarted_mid_setup("setup: [a, b]\n");
     let (steered, _) = resume_and_steer(&w);
-    refused_for_setup(steered);
+    queued_for_setup(steered);
     let kinds = event_kinds(&w);
     assert!(!kinds.iter().any(|k| k == "box_failed"), "{kinds:?}");
     assert!(!kinds.iter().any(|k| k == "setup_failed"), "{kinds:?}");
@@ -163,7 +165,7 @@ fn a_restart_mid_setup_that_resumes_emits_no_box_failed() {
 fn a_restart_mid_acquire_that_acquires_again_emits_no_box_failed() {
     let w = cut_off(FakeDriver::new());
     let (steered, _) = resume_and_steer(&w);
-    refused_for_setup(steered);
+    queued_for_setup(steered);
     let kinds = event_kinds(&w);
     assert!(!kinds.iter().any(|k| k == "box_failed"), "{kinds:?}");
     assert!(!kinds.iter().any(|k| k == "setup_failed"), "{kinds:?}");

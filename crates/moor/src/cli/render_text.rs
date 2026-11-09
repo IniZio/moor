@@ -300,6 +300,10 @@ fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
 /// Formats the `steer` line, or `None` when the Box name is missing or mistyped.
 fn steer_line(value: &Value) -> Option<String> {
     let box_name = value.get("box")?.as_str()?;
+    if value.get("delivery").and_then(Value::as_str) == Some("queued") {
+        let cause = value.get("cause").and_then(Value::as_str).unwrap_or("busy");
+        return Some(format!("queued for {box_name} ({cause})\n"));
+    }
     Some(format!("steered {box_name}\n"))
 }
 

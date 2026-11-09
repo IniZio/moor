@@ -1,9 +1,10 @@
-//! `steer` on a Box whose machine cold-boots on wake and loses the agent process.
+//! A steer queued for a Box whose machine cold-boots on wake and loses the agent process.
 
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::engine::{SessionRef, Steer};
 use moor_core::{BoxHandle, BoxPath};
 
+use super::queue::{pass, reports_idle};
 use super::{fx_with, put_to_sleep, run, text, Fx};
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
@@ -47,6 +48,8 @@ fn a_cold_boot_wake_relaunches_the_agent_and_the_steer_reaches_it() {
     f.driver
         .on_wake(move || engine.set_probes("agent-1", agent::gone()));
     run(&f.cx, &text("carry on")).unwrap();
+    reports_idle(&f, "agent-2");
+    pass(&f);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     let launches = f.engine.launches();
     assert_eq!(launches.len(), 1);
@@ -70,6 +73,8 @@ fn a_cold_boot_wake_relaunches_the_agent_and_the_steer_reaches_it() {
 fn a_surviving_agent_is_steered_in_place_after_wake() {
     let f = asleep();
     run(&f.cx, &text("carry on")).unwrap();
+    reports_idle(&f, "agent-1");
+    pass(&f);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     assert!(f.engine.launches().is_empty());
     assert_eq!(

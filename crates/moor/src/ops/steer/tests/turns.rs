@@ -42,7 +42,7 @@ fn a_menu_choice_opens_a_turn_its_turn_done_ends() {
     f.engine.set_probes("agent-1", after);
     settle_once(&f);
     settle_once(&f);
-    assert_eq!(turns_done(&f), [answered(&f, v.steer, "idle")]);
+    assert_eq!(turns_done(&f), [answered(&f, v.steer.unwrap(), "idle")]);
     assert!(f.cx.store().unwrap().sent(f.id).unwrap().is_empty());
 }
 
@@ -58,7 +58,7 @@ fn an_interrupt_to_a_working_agent_opens_a_turn_its_turn_done_ends() {
     let after = agent::at_turn(agent::idle(Ts::from_millis(2_000)), 4);
     f.engine.set_probes("agent-1", after);
     settle_once(&f);
-    assert_eq!(turns_done(&f), [answered(&f, v.steer, "idle")]);
+    assert_eq!(turns_done(&f), [answered(&f, v.steer.unwrap(), "idle")]);
 }
 
 #[test]
@@ -68,5 +68,5 @@ fn an_exit_ends_its_turn_as_exited() {
     let v = run(&f.cx, &text("/exit")).unwrap();
     f.engine.set_probes("agent-1", agent::exited(Some(0)));
     settle_once(&f);
-    assert_eq!(turns_done(&f), [answered(&f, v.steer, "exited")]);
+    assert_eq!(turns_done(&f), [answered(&f, v.steer.unwrap(), "exited")]);
 }

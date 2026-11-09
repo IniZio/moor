@@ -89,6 +89,12 @@ pub(super) fn spawn_oauth(
     );
 }
 
+/// Runs the inbox pass each `every`, on its own thread, since waking a Box or bringing one back
+/// on new hands can take minutes and must not hold up settling the others.
+pub(super) fn spawn_inbox(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
+    passes(every, drain, sink, Moor::inbox_pass(env));
+}
+
 /// How often the controller looks for workflow runs to start, finish or expire.
 const WORKFLOW_EVERY: Duration = Duration::from_secs(30);
 

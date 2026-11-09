@@ -1,8 +1,8 @@
 //! `steer`: send a message or a menu choice to the Box's agent.
 //!
 //! The steer holds its Box's turn, which a run in flight leaves free, so a Box can be steered
-//! during a run. Each steer waits in the Box's inbox from just before its send until the turn
-//! it starts ends.
+//! during a run. Each steer waits in the Box's inbox until the turn it starts ends; a text
+//! steer to a Box that cannot take it now stays there, queued, and moor sends it later.
 
 use std::time::Duration;
 
@@ -30,8 +30,9 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Run `steer`.
 ///
-/// An awake Box whose agent exited gets the agent relaunched once, resuming its stored agent
-/// session, and the steer goes to the relaunched agent.
+/// A text steer is queued when the Box sleeps, lost its machine or agent, or another op holds
+/// it, and a later pass sends it. A menu choice, an interrupt or `/exit` to an awake Box whose
+/// agent exited gets the agent relaunched once, resuming its stored agent session.
 ///
 /// # Errors
 /// [`CommandError`] when the Box is unknown or has no live agent, the agent ended and could not
@@ -41,6 +42,9 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let found = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
+    if req.menu.is_none() && !req.interrupt && req.text.is_some() && !is_exit_req(req) {
+        return queue::steer(cx, store, req, &found);
+    }
     let target = (found.id, found.name.as_str());
     if lost(&found) {
         bring_back(cx, &found)?;
@@ -251,12 +255,12 @@ fn attempt(
         open_turn(store, &row)?;
     }
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
-    Ok(Attempt::Sent(SteerValue {
-        box_name: name.to_owned(),
+    Ok(Attempt::Sent(delivered(
+        name,
         sent,
         answered_menu,
-        steer: steer_id,
-    }))
+        (steer_id, inbox),
+    )))
 }
 
 /// The result of an exit steer whose pane was already gone: recorded, with a warning.
@@ -272,12 +276,7 @@ fn exited(
         code: "agent_exited".to_owned(),
         message: "the agent exited and its session ended".to_owned(),
     });
-    Ok(SteerValue {
-        box_name: name.to_owned(),
-        sent,
-        answered_menu: false,
-        steer,
-    })
+    Ok(delivered(name, sent, false, (steer, inbox)))
 }
 
 /// The command that starts the agent again.
@@ -380,13 +379,16 @@ fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
 mod choose;
 mod inbox;
 mod lost;
+mod queue;
 mod record;
 mod relaunch;
+
+pub(crate) use queue::{deliver, pass};
 
 use choose::choose;
 use inbox::Slot;
 use lost::{bring_back, lost};
-use record::{idle, record, status_before, turn_before, Mark};
+use record::{delivered, idle, record, status_before, turn_before, Mark};
 use relaunch::Revived;
 
 #[cfg(test)]

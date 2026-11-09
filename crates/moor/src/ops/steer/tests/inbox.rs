@@ -99,7 +99,7 @@ fn a_turn_that_answers_the_newest_steer_absorbs_the_older_one() {
     let answered: Vec<_> = turns_done(&f).iter().map(|d| d["steer"].clone()).collect();
     assert_eq!(
         answered,
-        [two.steer],
+        [two.steer.unwrap()],
         "one turn answered both, as one prompt"
     );
     assert!(sent(&f).is_empty(), "the older row went with it");

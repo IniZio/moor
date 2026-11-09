@@ -10,6 +10,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, NewBox, SpecFields};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::hands::HandsState;
+use moor_core::domain::inbox::InboxKind;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
@@ -19,7 +20,6 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use super::common::activity;
 use super::common::autosleep;
 use super::common::facts::{repo_config_of, resolved, settings_of};
-use super::common::held_prompt;
 use super::common::node;
 use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry};
@@ -49,9 +49,11 @@ mod watch;
 
 use response::{queued_view, set_agent, set_provisioned, view};
 
-pub(crate) use launch::begin_seeded;
+pub(crate) use launch::{begin_seeded, queued_or};
 pub(crate) use needs::run as needs;
-pub(crate) use revive::{launch_after_retry, revive_after_wake, revive_for_steer, AfterWake};
+pub(crate) use revive::{
+    capped, launch_after_retry, revivable, revive_after_wake, revive_for_steer, AfterWake,
+};
 pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.
@@ -100,6 +102,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
+    queue_prompt(store, id, req)?;
     let turn = cx.turn(id, Cmd::Start)?;
     store.set_box_node(id, spec.node.as_ref())?;
     cold::record(store, req, id)?;
@@ -202,6 +205,7 @@ fn attach(
     repo::check_kept(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
+    queue_prompt(store, row.id, req)?;
     reconcile::one(cx, store, row);
     let turn = cx.turn(row.id, Cmd::Start)?;
     let row = &reread(store, row.id)?;
@@ -232,20 +236,31 @@ fn attach(
     drop(turn);
     let agent = watch::run(cx, store, row.id, agent);
     let _turn = cx.turn(row.id, Cmd::Steer)?;
+    crate::ops::steer::deliver(cx, store, row.id)?;
     let row = &reread(store, row.id)?;
-    if req.prompt.is_some() {
-        store.set_held_prompt(row.id, None)?;
-    } else if agent.launched {
-        held_prompt::give_after_wake(cx, store, row, AfterWake::Relaunched)?;
-    } else {
-        held_prompt::give_after_wake(cx, store, row, AfterWake::Intact)?;
-    }
     let mut v = queued_view(cx, row, true);
     if let Some(p) = reprovisioned {
         set_provisioned(&mut v, &p);
     }
     set_agent(&mut v, agent);
     Ok(v)
+}
+
+/// Queues the prompt `req` gives for Box `id`'s agent, unless the same prompt already waits: a
+/// start retried with its prompt asks for it once. A fresh launch carries it, or it is typed in
+/// once the agent can take it.
+fn queue_prompt(store: &Store, id: BoxId, req: &StartReq) -> Result<(), CommandError> {
+    let Some(prompt) = &req.prompt else {
+        return Ok(());
+    };
+    let waits = store
+        .unsent(id)?
+        .iter()
+        .any(|r| r.kind == InboxKind::Prompt && r.text == *prompt && r.delivery.launch().is_none());
+    if !waits {
+        store.enqueue(id, InboxKind::Prompt, prompt, InboxKind::Prompt.as_str())?;
+    }
+    Ok(())
 }
 
 /// Moves each open Box with a ready machine between Working and Idle, until `draining`.
@@ -270,10 +285,7 @@ pub(crate) fn settle_all(
 /// Moves one open Box with a ready machine between Working and Idle, then lets it auto-sleep.
 fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     let settled = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)
-        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|f| (reading, f)))
-        .and_then(|(reading, f)| {
-            held_prompt::give_on_sweep(cx, store, row, &reading).map(|()| (reading, f))
-        });
+        .and_then(|reading| activity::settle(cx, store, row, &reading).map(|f| (reading, f)));
     match settled {
         Ok((reading, f)) => {
             if let Err(e) = resume_owed(cx, store, row.id, Seen::of(&reading, f)) {

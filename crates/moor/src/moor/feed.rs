@@ -103,6 +103,29 @@ impl Moor {
         out
     }
 
+    /// The pass that moves each Box's queued inbox rows towards its agent; returns what to log.
+    pub(crate) fn inbox_pass(
+        env: &Env,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        let env = env.clone();
+        move |draining| match Self::from_env(&env) {
+            Ok(moor) => crate::cx::owners::checked(|| {
+                let mut out = Vec::new();
+                match moor.cx.store() {
+                    Ok(store) => {
+                        if let Err(e) = ops::inbox_pass(&moor.cx, store, draining) {
+                            out.push(e.error.to_string());
+                        }
+                    }
+                    Err(e) => out.push(e.error.to_string()),
+                }
+                out.extend(moor.cx.take_warnings().into_iter().map(|w| w.message));
+                out
+            }),
+            Err(e) => vec![e.error.to_string()],
+        }
+    }
+
     /// `env` with the controller's log shared, so a write dropped as stale reaches it.
     pub(crate) fn log_to(env: Env, sink: &Arc<Mutex<dyn Write + Send>>) -> Env {
         env.sharing(ops::common::stale::ControllerLog::new(sink))

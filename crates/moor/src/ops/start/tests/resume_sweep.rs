@@ -206,7 +206,12 @@ fn an_agent_a_steer_relaunched_after_a_silent_wake_is_told_once_that_its_process
         interrupt: false,
     };
     crate::ops::steer::run(&w.cx, &req).unwrap();
-    assert_eq!(engine.launches().len(), 2, "the steer relaunched the agent");
+    crate::ops::inbox_pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    assert_eq!(
+        engine.launches().len(),
+        2,
+        "the inbox pass relaunched the agent"
+    );
     probes_read(&w, &engine, id, running_pane());
     sweep(&w);
     sweep(&w);

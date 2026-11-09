@@ -217,6 +217,13 @@ fn steer_prints_one_line() {
 }
 
 #[test]
+fn a_queued_steer_prints_queued_with_its_cause() {
+    let v = json!({"box": "t1", "sent": "hi", "delivery": "queued", "cause": "asleep"});
+    let (out, _) = render(&Response::ok("steer", Some(v)), false);
+    assert_eq!(out, "queued for t1 (asleep)\n");
+}
+
+#[test]
 fn end_session_prints_ordinal_id_and_box_kept() {
     let v = json!({"box": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let (out, _) = render(&Response::ok("end-session", Some(v)), false);

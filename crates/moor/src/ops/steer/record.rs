@@ -5,6 +5,7 @@ use moor_core::domain::event::{Event, SteerSent};
 use moor_core::domain::inbox::{InboxId, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
+use moor_core::view::steer::{Delivery, SteerValue};
 use moor_core::BoxId;
 
 use crate::error::CommandError;
@@ -65,4 +66,21 @@ pub(super) fn status_before(term: Option<&Term>) -> Option<i64> {
 /// Whether the agent's terminal reports no turn running, so an interrupt has nothing to stop.
 pub(super) fn idle(term: Option<&Term>) -> bool {
     term.is_some_and(|t| matches!(t.status, Some(Status::Idle | Status::Error { .. })))
+}
+
+/// The value of a steer the agent took from row `inbox`, recorded as `steered` event `steer`.
+pub(super) fn delivered(
+    name: &str,
+    sent: String,
+    answered_menu: bool,
+    (steer, inbox): (i64, InboxId),
+) -> SteerValue {
+    SteerValue {
+        box_name: name.to_owned(),
+        sent,
+        answered_menu,
+        steer: Some(steer),
+        delivery: Delivery::Delivered,
+        inbox: inbox.get(),
+    }
 }

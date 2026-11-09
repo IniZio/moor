@@ -38,8 +38,8 @@ fn reports_idle(engine: FakeEngine) -> FakeEngine {
     )
 }
 
-fn sweep(w: &World) {
-    start::settle_all(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+fn pass(w: &World) {
+    crate::ops::inbox_pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
 }
 
 fn kinds(w: &World, id: BoxId) -> Vec<String> {
@@ -109,6 +109,10 @@ fn a_new_start_on_an_issue_that_queued_launches_on_that_issue_when_promoted() {
 fn a_prompt_held_for_an_asleep_box_reaches_a_running_agent_once() {
     let engine = FakeEngine::new().launch_result(Ok(session("p-1")));
     let (w, hv, engine, id) = queued_with_prompt(engine, "carry on");
+    engine.set_probes(
+        "p-1",
+        crate::testing::agent::idle(Ts::from_millis(i64::MAX / 2)),
+    );
     tick(&w, hv, 32_768, 0, 0);
     assert_eq!(
         lifecycle(&w, id),
@@ -137,32 +141,38 @@ fn a_prompt_held_for_an_asleep_box_reaches_a_relaunched_agent_once_it_reports_id
         all.get(1).and_then(|l| l.resume.as_deref()),
         Some("agent-1")
     );
-    sweep(&w);
-    sweep(&w);
+    pass(&w);
+    pass(&w);
     assert_eq!(texts(&engine), ["carry on"]);
-    assert_eq!(steered(&w, id), 1);
+    assert_eq!(
+        steered(&w, id),
+        2,
+        "the first prompt at launch, this one typed"
+    );
+}
+
+/// A pane that refuses the next `n` sends.
+fn refusing(mut engine: FakeEngine, n: usize) -> FakeEngine {
+    for _ in 0..n {
+        engine = engine.steer_result(Err(EngineError::Failed {
+            step: "type",
+            message: "pane busy".into(),
+        }));
+    }
+    engine
 }
 
 #[test]
-fn a_held_prompt_whose_steer_fails_once_is_given_on_a_later_sweep_exactly_once() {
-    let engine = reports_idle(
-        FakeEngine::new()
-            .launch_result(Ok(session("p-1")))
-            .launch_result(Ok(session("p-2")))
-            .steer_result(Err(EngineError::Failed {
-                step: "type",
-                message: "pane busy".into(),
-            })),
-    );
-    let (w, hv, engine, id) = queued_with_prompt(engine, "carry on");
+fn a_queued_prompt_whose_send_fails_once_is_given_by_a_later_pass_exactly_once() {
+    let engine = FakeEngine::new()
+        .launch_result(Ok(session("p-1")))
+        .launch_result(Ok(session("p-2")));
+    let (w, hv, engine, id) = queued_with_prompt(reports_idle(refusing(engine, 1)), "carry on");
     gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
-    sweep(&w);
-    assert!(kinds(&w, id).contains(&"prompt_not_given".to_owned()));
-    assert_eq!(steered(&w, id), 0);
-    sweep(&w);
-    sweep(&w);
-    assert_eq!(steered(&w, id), 1, "given once, without another wake");
+    pass(&w);
+    pass(&w);
+    assert_eq!(steered(&w, id), 2, "given once, without another wake");
     assert_eq!(
         texts(&engine),
         ["carry on", "carry on"],
@@ -171,31 +181,22 @@ fn a_held_prompt_whose_steer_fails_once_is_given_on_a_later_sweep_exactly_once()
 }
 
 #[test]
-fn a_held_prompt_stops_being_tried_after_its_failed_tries() {
-    let fail = || {
-        Err(EngineError::Failed {
-            step: "type",
-            message: "pane busy".into(),
-        })
-    };
-    let mut engine = FakeEngine::new()
+fn a_queued_prompt_whose_two_sends_fail_is_reported_unconfirmed() {
+    let engine = FakeEngine::new()
         .launch_result(Ok(session("p-1")))
         .launch_result(Ok(session("p-2")));
-    for _ in 0..5 {
-        engine = engine.steer_result(fail());
-    }
-    let (w, hv, engine, id) = queued_with_prompt(reports_idle(engine), "carry on");
+    let (w, hv, engine, id) = queued_with_prompt(reports_idle(refusing(engine, 5)), "carry on");
     gone(&engine);
     tick(&w, hv, 32_768, 0, 0);
     for _ in 0..5 {
-        sweep(&w);
+        pass(&w);
     }
-    let failed = kinds(&w, id)
+    let unconfirmed = kinds(&w, id)
         .iter()
-        .filter(|k| *k == "prompt_not_given")
+        .filter(|k| *k == "steer_unconfirmed")
         .count();
-    assert_eq!(failed, 3);
-    assert_eq!(texts(&engine).len(), 3);
+    assert_eq!(unconfirmed, 1);
+    assert_eq!(texts(&engine).len(), 2);
 }
 
 #[test]
