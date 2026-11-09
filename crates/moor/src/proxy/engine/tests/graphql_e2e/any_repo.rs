@@ -8,7 +8,7 @@ use super::rejected::events_after;
 use super::{rig_spec, Rig, Seen, PLACEHOLDER, SECRET};
 
 /// A running Box on `o/r`, started with `--also o/lib`, with the default `github-api` rule.
-fn default_rule_rig() -> Rig {
+pub(super) fn default_rule_rig() -> Rig {
     let repo = ForgeRepo::new("o", "r");
     let also = ForgeRepo::new("o", "lib");
     let rules = resolve_rules(
@@ -24,7 +24,7 @@ fn default_rule_rig() -> Rig {
 }
 
 /// Sends `method path` to `api.github.com`; what the fake upstream received, the raw path intact.
-fn send(rig: &Rig, method: &str, path: &str, authorization: Option<&str>) -> Seen {
+pub(super) fn send(rig: &Rig, method: &str, path: &str, authorization: Option<&str>) -> Seen {
     let mut request = Request::builder()
         .method(method)
         .uri(format!("https://api.github.com{path}"));

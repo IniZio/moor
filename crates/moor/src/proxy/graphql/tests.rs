@@ -295,6 +295,7 @@ fn rig_placeholder(
         placeholder: placeholder.map(str::to_owned),
         upstream,
         guard,
+        rest: Vec::new(),
     })
     .unwrap();
     Rig { filter, up, ca_pem }

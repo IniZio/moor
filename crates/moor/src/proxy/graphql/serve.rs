@@ -11,6 +11,7 @@ use super::http::{
     copy_body, read_head, read_response_head, request_framing, response_framing, wants_close,
     write_refusal, Framing, Head, HttpError,
 };
+use super::repo_ids::{gate_id, IdGate, PREFIX as ID_PREFIX};
 use super::tunnel::{dial, parse_authority, splice};
 use super::upstream::TlsStream;
 use super::{Shared, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
@@ -164,6 +165,25 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
             Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), false),
             Err(_) => bad(client, 400, "moor: malformed request"),
         },
+        Route::RepoId(canonical) => {
+            let Ok(f) = request_framing(&head) else {
+                return bad(client, 400, "moor: malformed request");
+            };
+            match gate_id(shared, &head, &canonical) {
+                IdGate::Unchanged | IdGate::Forward => {
+                    forward(shared, client, up, &head, &Payload::Stream(f), false)
+                }
+                IdGate::Anonymous => {
+                    shared.withhold(&head.method, &head.target);
+                    let bare = without_credential(
+                        &head,
+                        &shared.credential_headers,
+                        shared.placeholder.as_deref(),
+                    );
+                    forward(shared, client, up, &bare, &Payload::Stream(f), true)
+                }
+            }
+        }
         Route::Graphql if head.target != "/graphql" => {
             let reason = "query string or non-canonical path on /graphql is not allowed";
             refuse(
@@ -180,7 +200,7 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
                 // The one place a request leaves without its credential. GitHub
                 // answers the placeholder with 401, which clients read as a bad
                 // token. No `Authorization` gets 403, which they read as a rate limit.
-                shared.withhold(&head.method);
+                shared.withhold(&head.method, "/graphql");
                 let bare = without_credential(
                     &head,
                     &shared.credential_headers,
@@ -231,12 +251,17 @@ enum Route {
     Passthrough,
     /// The GraphQL endpoint, however it is spelled.
     Graphql,
+    /// The numeric repo-id form, however it is spelled, with its canonical path.
+    RepoId(String),
 }
 
 /// Decides the route from the path alone.
 fn classify(target: &str) -> Route {
-    if canonical_path(target) == "/graphql" {
+    let canonical = canonical_path(target);
+    if canonical == "/graphql" {
         Route::Graphql
+    } else if canonical == ID_PREFIX || canonical.starts_with(&format!("{ID_PREFIX}/")) {
+        Route::RepoId(canonical)
     } else {
         Route::Passthrough
     }

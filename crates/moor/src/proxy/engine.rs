@@ -129,9 +129,9 @@ impl Engine {
         }
         apply(&audit, &self.withheld, &sink);
         let sink: &dyn EgressSink = &sink;
-        for method in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
+        for w in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
             self.withheld
-                .note(GITHUB_API_HOST, &method, "/graphql", sink);
+                .note(GITHUB_API_HOST, &w.method, &w.path, sink);
         }
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
             sink.refused(&Refusal {
@@ -195,11 +195,8 @@ fn start_filter(
     spec: &ProxySpec,
     ca: &ca::BoxCa,
 ) -> Result<Option<GraphqlFilter>, String> {
-    let rule = spec
-        .rules
-        .iter()
-        .find(|r| lists_host(r, GITHUB_API_HOST))
-        .map_or_else(|| "egress".to_owned(), |r| r.name.clone());
+    let github = spec.rules.iter().find(|r| lists_host(r, GITHUB_API_HOST));
+    let rule = github.map_or_else(|| "egress".to_owned(), |r| r.name.clone());
     let fail = |err: &dyn std::fmt::Display| format!("cannot start the GraphQL filter: {err}");
     let guard = Guard::new(parts.guard_exempt.to_vec()).with_proxy(Proxy::try_from_env());
     let upstream = Upstream::new(GITHUB_API_HOST, 443, parts.upstream_dial, parts.upstream_ca)
@@ -229,6 +226,7 @@ fn start_filter(
         placeholder: github_placeholder(&spec.rules),
         upstream,
         guard,
+        rest: github.map(|r| r.endpoint_rules.clone()).unwrap_or_default(),
     })
     .map(Some)
     .map_err(|err| fail(&err))

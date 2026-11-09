@@ -8,17 +8,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 
+use moor_core::config::proxy::EndpointRule;
 use moor_core::graphql_scope::RepoRef;
+use nono_proxy::config::{CompiledEndpointRules, EndpointRule as NonoRule};
 use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
 use rustls::ServerConfig;
 
 use crate::proxy::guard::Guard;
 use lookup::NodeCache;
+use repo_ids::RepoIds;
 use upstream::Upstream;
 
 mod gate;
 pub(crate) mod http;
 pub(crate) mod lookup;
+mod repo_ids;
 mod serve;
 mod tunnel;
 pub(crate) mod upstream;
@@ -61,6 +65,9 @@ pub(crate) struct FilterSpec {
     pub(crate) upstream: Upstream,
     /// Vets every other tunnel destination.
     pub(crate) guard: Guard,
+    /// The REST requests the rule credentials, checked against the `/repos/{owner}/{name}`
+    /// form of a `/repositories/{id}` request.
+    pub(crate) rest: Vec<EndpointRule>,
 }
 
 /// One refused request, reported without body, path, query or headers.
@@ -76,6 +83,15 @@ pub(crate) struct Refusal {
     pub(crate) category: &'static str,
 }
 
+/// One request forwarded without its credential. The path only templates the report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Withheld {
+    /// The request method.
+    pub(crate) method: String,
+    /// The request path.
+    pub(crate) path: String,
+}
+
 /// Why the filter could not start.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FilterError {
@@ -85,6 +101,9 @@ pub(crate) enum FilterError {
     /// The TLS server settings could not be built.
     #[error("graphql filter TLS setup failed: {0}")]
     Tls(String),
+    /// The rule's REST allow list does not compile.
+    #[error("graphql filter allow list is invalid: {0}")]
+    Rules(String),
 }
 
 /// State shared by the acceptor and every connection thread.
@@ -102,7 +121,7 @@ pub(super) struct Shared {
     /// `Authorization` token of requests forwarded without credential.
     pub(super) placeholder: Option<String>,
     /// Methods of requests forwarded without credential, not yet drained.
-    withheld: Mutex<VecDeque<String>>,
+    withheld: Mutex<VecDeque<Withheld>>,
     /// 401 and 403 statuses that say nothing about the credential, not yet
     /// drained: upstream answers to requests forwarded without it, and refusals.
     excused: Mutex<VecDeque<u16>>,
@@ -114,6 +133,10 @@ pub(super) struct Shared {
     pub(super) tls: Arc<ServerConfig>,
     /// Node-id verdicts seen so far.
     pub(super) cache: NodeCache,
+    /// Numeric ids of the Box repos learned so far.
+    pub(super) repo_ids: RepoIds,
+    /// The REST requests the rule credentials.
+    pub(super) rest: CompiledEndpointRules,
     /// Refusals not yet drained.
     refusals: Mutex<VecDeque<Refusal>>,
     /// Set when the filter is stopping.
@@ -140,13 +163,16 @@ impl Shared {
         });
     }
 
-    /// Notes a request to `/graphql` forwarded without its credential.
-    pub(super) fn withhold(&self, method: &str) {
+    /// Notes a request forwarded without its credential.
+    pub(super) fn withhold(&self, method: &str, path: &str) {
         let mut q = self.lock_withheld();
         if q.len() >= MAX_REFUSALS {
             q.pop_front();
         }
-        q.push_back(method.to_owned());
+        q.push_back(Withheld {
+            method: method.to_owned(),
+            path: path.to_owned(),
+        });
     }
 
     /// Notes a 401 or 403 answer that says nothing about the credential.
@@ -164,7 +190,7 @@ impl Shared {
     }
 
     /// Locks the withheld buffer, recovering from poisoning.
-    fn lock_withheld(&self) -> MutexGuard<'_, VecDeque<String>> {
+    fn lock_withheld(&self) -> MutexGuard<'_, VecDeque<Withheld>> {
         self.withheld.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -197,6 +223,15 @@ impl GraphqlFilter {
     pub(crate) fn start(spec: FilterSpec) -> Result<Self, FilterError> {
         let tls = build_server_config(Arc::new(CertCache::new(Arc::new(spec.ca))), false)
             .map_err(|e| FilterError::Tls(e.to_string()))?;
+        let rest: Vec<NonoRule> = spec
+            .rest
+            .iter()
+            .map(|r| NonoRule {
+                method: r.method.clone(),
+                path: r.path.clone(),
+            })
+            .collect();
+        let rest = CompiledEndpointRules::compile(&rest).map_err(FilterError::Rules)?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(FilterError::Listen)?;
         let addr = listener.local_addr().map_err(FilterError::Listen)?;
         let shared = Arc::new(Shared {
@@ -212,6 +247,8 @@ impl GraphqlFilter {
             guard: spec.guard,
             tls,
             cache: NodeCache::new(),
+            repo_ids: RepoIds::default(),
+            rest,
             refusals: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
         });
@@ -237,8 +274,8 @@ impl GraphqlFilter {
         self.shared.lock_refusals().drain(..).collect()
     }
 
-    /// Takes the methods of requests forwarded without credential since the last call.
-    pub(crate) fn drain_withheld(&self) -> Vec<String> {
+    /// Takes the requests forwarded without credential since the last call.
+    pub(crate) fn drain_withheld(&self) -> Vec<Withheld> {
         self.shared.lock_withheld().drain(..).collect()
     }
 

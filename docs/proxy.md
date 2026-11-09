@@ -40,7 +40,9 @@ The rules are narrower than the token, so a Box cannot do everything you can.
 - **GitHub API.** A Box can read repo metadata, releases, tags and file contents of any repo
   your token can read. For its own repos, it can also read Dependabot alerts
   and required checks. It can read the token owner's own profile, `GET /user`,
-  so `gh auth status` works. Any other request on a repo outside the Box leaves
+  so `gh auth status` works. GitHub's page links name a repo by its numeric id,
+  as in `/repositories/{id}/...`. Such a link gets the token only for the Box's
+  own repos, and only where the `/repos/{owner}/{name}/...` form would. Any other request on a repo outside the Box leaves
   without the token, including every write.
 - **Anthropic.** The `claude` rule adds your Claude token to
   `api.anthropic.com`.

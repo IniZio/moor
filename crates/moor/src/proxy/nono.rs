@@ -101,22 +101,31 @@ impl fmt::Debug for NonoConfig {
 
 /// One nono route for `host` of `rule`.
 fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str) -> RouteConfig {
+    let chained = spec
+        .chain
+        .as_ref()
+        .filter(|c| bare_host(host).eq_ignore_ascii_case(c.host));
+    let mut endpoint_rules: Vec<EndpointRule> = rule
+        .endpoint_rules
+        .iter()
+        .map(|r| EndpointRule {
+            method: r.method.clone(),
+            path: r.path.clone(),
+        })
+        .collect();
+    if chained.is_some() {
+        for id_form in repo_id_forms(&endpoint_rules) {
+            if !endpoint_rules.contains(&id_form) {
+                endpoint_rules.push(id_form);
+            }
+        }
+    }
     let mut route = RouteConfig {
         prefix: route_prefix(&rule.name, index),
         upstream: format!("https://{host}"),
         credential_key: Some(format!("cmd://{}", rule.name)),
-        endpoint_rules: rule
-            .endpoint_rules
-            .iter()
-            .map(|r| EndpointRule {
-                method: r.method.clone(),
-                path: r.path.clone(),
-            })
-            .collect(),
-        tls_ca: spec
-            .chain
-            .as_ref()
-            .filter(|c| bare_host(host).eq_ignore_ascii_case(c.host))
+        endpoint_rules,
+        tls_ca: chained
             .map(|c| c.ca_pem)
             .or(spec.upstream_ca)
             .map(|p| p.to_string_lossy().into_owned()),
@@ -150,6 +159,24 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
         }
     }
     route
+}
+
+/// Each `/repos/{owner}/{name}<rest>` entry as `/repositories/*<rest>`, the numeric-id form
+/// GitHub's pagination links use. The chained filter keeps the credential only for a Box
+/// repo's id whose `/repos` form the rule allows.
+fn repo_id_forms(rules: &[EndpointRule]) -> Vec<EndpointRule> {
+    rules
+        .iter()
+        .filter_map(|r| {
+            let mut parts = r.path.strip_prefix("/repos/")?.splitn(3, '/');
+            let (_owner, _name) = (parts.next()?, parts.next()?);
+            let rest = parts.next().map_or_else(String::new, |t| format!("/{t}"));
+            Some(EndpointRule {
+                method: r.method.clone(),
+                path: format!("/repositories/*{rest}"),
+            })
+        })
+        .collect()
 }
 
 /// Builds the nono config for one Box.
