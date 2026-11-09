@@ -42,13 +42,32 @@ fn by_provider(
 /// whose listing fails is skipped with a warning; an apply that
 /// loses a race with another command is ignored.
 pub(crate) fn run(cx: &Cx) {
-    sweep(cx, &|| false, Verdicts::Any);
+    let Ok(store) = cx.store() else { return };
+    let Ok(rows) = store.box_rows_live() else {
+        return;
+    };
+    sweep(cx, store, rows, &|| false, Verdicts::Any);
 }
 
 /// [`run`] for the controller's timer: each verdict is applied only under its Box's turn, so a Box
 /// an op is working on is left for the next pass, and the sweep stops once `draining` is true.
+/// A provider that can only be asked about handles is left alone, as that call has no deadline.
 pub(crate) fn periodic(cx: &Cx, draining: &dyn Fn() -> bool) {
-    sweep(cx, draining, Verdicts::IdleBoxes);
+    let Ok(store) = cx.store() else { return };
+    let Ok(rows) = store.box_rows_live() else {
+        return;
+    };
+    periodic_over(cx, store, rows, draining);
+}
+
+/// [`periodic`] over `rows` read earlier.
+pub(crate) fn periodic_over(
+    cx: &Cx,
+    store: &Store,
+    rows: Vec<(BoxId, crate::store::HandsRow)>,
+    draining: &dyn Fn() -> bool,
+) {
+    sweep(cx, store, rows, draining, Verdicts::IdleBoxes);
 }
 
 /// Which Boxes a sweep may write a verdict for.
@@ -60,12 +79,14 @@ enum Verdicts {
     IdleBoxes,
 }
 
-/// Lists each provider with live rows once and applies what the listing shows.
-fn sweep(cx: &Cx, draining: &dyn Fn() -> bool, who: Verdicts) {
-    let Ok(store) = cx.store() else { return };
-    let Ok(rows) = store.box_rows_live() else {
-        return;
-    };
+/// Lists each provider holding `rows` once and applies what the listing shows.
+fn sweep(
+    cx: &Cx,
+    store: &Store,
+    rows: Vec<(BoxId, crate::store::HandsRow)>,
+    draining: &dyn Fn() -> bool,
+    who: Verdicts,
+) {
     for (provider, facts) in by_provider(rows) {
         if draining() {
             return;
@@ -106,6 +127,7 @@ fn reconcile_provider(
                 apply(cx, store, d, who);
             }
         }
+        Err(DriverError::Unsupported(_)) if who == Verdicts::IdleBoxes => {}
         Err(DriverError::Unsupported(_)) => {
             let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
             if let Ok(listing) = cx.driver().list_handles(&handles) {

@@ -87,3 +87,33 @@ fn reconcile_runs_on_the_first_tick_then_once_per_period() {
     let at: Vec<usize> = (0..25).filter(|&i| due.get(i) == Some(&true)).collect();
     assert_eq!(at, [0, 12, 24]);
 }
+
+#[test]
+fn reconcile_pass_asks_a_pool_host_nothing_about_its_boxes() {
+    use moor_core::domain::hands::HandsState;
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", "s-a");
+    driver.stop_behind(&lease_of(&cx, id));
+    Moor::from_cx(cx).reconcile_open(&|| false);
+    assert!(!driver.calls().iter().any(|c| c == "list_handles"));
+    assert_eq!(hands_state(dir.path(), &driver, id), HandsState::Ready);
+}
+
+#[test]
+fn reconcile_pass_drops_a_verdict_on_hands_replaced_since_its_listing_and_warns() {
+    use moor_core::domain::hands::HandsState;
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", "s-a");
+    driver.forget(&lease_of(&cx, id));
+    let store = cx.store().unwrap();
+    let rows = store.box_rows_live().unwrap();
+    store.replace_hands(id);
+    crate::ops::common::reconcile::periodic_over(&cx, store, rows, &|| false);
+    let codes: Vec<_> = cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["stale_hands_write"]);
+    assert_eq!(hands_state(dir.path(), &driver, id), HandsState::Starting);
+}
