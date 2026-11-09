@@ -206,7 +206,13 @@ fn an_agent_a_steer_relaunched_after_a_silent_wake_is_told_once_that_its_process
         interrupt: false,
     };
     crate::ops::steer::run(&w.cx, &req).unwrap();
-    crate::ops::inbox_pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    crate::ops::inbox_pass(
+        &w.cx,
+        w.cx.store().unwrap(),
+        &|| false,
+        &crate::ops::InboxBackoff::default(),
+    )
+    .unwrap();
     assert_eq!(
         engine.launches().len(),
         2,

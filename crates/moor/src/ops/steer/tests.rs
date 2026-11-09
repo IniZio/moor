@@ -32,6 +32,7 @@ struct Fx {
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
     id: BoxId,
+    backoff: crate::ops::InboxBackoff,
 }
 
 /// Box `t` with a ready machine, an Idle state and a live session `agent-1`.
@@ -56,6 +57,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         engine,
         driver,
         id,
+        backoff: crate::ops::InboxBackoff::default(),
     }
 }
 

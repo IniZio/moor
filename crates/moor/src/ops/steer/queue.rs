@@ -1,12 +1,15 @@
 //! A text steer waits in its Box's inbox until the agent can take it, and the Box's owner sends
 //! the queue oldest first, stopping at the first row the agent cannot take now.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::inbox::{cause, next, AgentFact, Facts, Next};
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery as Row, InboxId, InboxKind, QueueCause, MAX_SENDS};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::{Delivery, SteerValue};
@@ -170,19 +173,20 @@ pub(crate) fn pass(
     cx: &Cx,
     store: &Store,
     draining: &dyn Fn() -> bool,
+    backoff: &Backoff,
 ) -> Result<(), CommandError> {
     for id in store.boxes_with_unsent()? {
         if draining() {
             break;
         }
-        let Some(row) = store.box_row(id)? else {
+        let now = cx.clock().now();
+        let Some(row) = store.box_row(id)?.filter(|_| !backoff.waits(id, now)) else {
             continue;
         };
-        if !row.lifecycle.is_live() {
-            continue;
-        }
         cx.for_box(row.user, || {
-            if let Err(e) = move_on(cx, store, &row) {
+            let moved = move_on(cx, store, &row);
+            backoff.note(id, moved.is_err().then_some(now));
+            if let Err(e) = moved {
                 cx.warn(Warning {
                     code: "inbox_failed".to_owned(),
                     message: format!("could not deliver to Box {}: {}", id.get(), e.error),
@@ -191,6 +195,35 @@ pub(crate) fn pass(
         });
     }
     Ok(())
+}
+
+/// How long the pass leaves a Box whose wake or relaunch failed: the relaunch guard, so an agent
+/// that ends again at once is not tried, and warned about, on every pass.
+const BACK_OFF: Duration = Duration::from_secs(60);
+
+/// When the pass last failed to move each Box on, while it backs off.
+#[derive(Debug, Default)]
+pub(crate) struct Backoff(Mutex<HashMap<BoxId, Ts>>);
+
+impl Backoff {
+    /// Whether Box `id` failed less than [`BACK_OFF`] before `now`.
+    fn waits(&self, id: BoxId, now: Ts) -> bool {
+        let window = i64::try_from(BACK_OFF.as_millis()).unwrap_or(i64::MAX);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&id)
+            .is_some_and(|at| now.as_millis().saturating_sub(at.as_millis()) < window)
+    }
+
+    /// Records that Box `id` failed at `failed`, or moved on when none.
+    fn note(&self, id: BoxId, failed: Option<Ts>) {
+        let mut seen = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        match failed {
+            Some(at) => seen.insert(id, at),
+            None => seen.remove(&id),
+        };
+    }
 }
 
 /// One step of [`pass`] for Box `row`.

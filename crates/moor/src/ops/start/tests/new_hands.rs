@@ -193,7 +193,13 @@ fn a_steer_to_a_box_whose_hands_were_lost_is_queued_and_the_pass_brings_it_back(
     let sent = crate::ops::steer::run(&w.cx, &req).unwrap();
     assert_eq!(sent.sent, "carry on");
     assert!(sent.steer.is_none());
-    crate::ops::inbox_pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    crate::ops::inbox_pass(
+        &w.cx,
+        w.cx.store().unwrap(),
+        &|| false,
+        &crate::ops::InboxBackoff::default(),
+    )
+    .unwrap();
 
     assert_eq!(history(&w, id), lost_and_replaced());
     assert_eq!(engine.launches().last().unwrap().handle.as_str(), "box-2");
