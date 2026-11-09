@@ -106,15 +106,25 @@ fn two_sim_slots_run_two_at_once_and_a_third_waits() {
 #[test]
 fn a_hold_on_another_machine_does_not_block() {
     let rig = Arc::new(Rig::with_resources(&["build=1"]));
-    let runs = concurrently(
-        &rig,
-        vec![
-            ("7", "minion", exec("sleep 2", &["build"])),
-            ("8", "other", exec("sleep 2", &["build"])),
-        ],
-    );
-    assert!(runs[1].1.is_empty(), "{:?}", runs[1].1);
-    assert!(runs[1].2 < Duration::from_millis(3500), "{:?}", runs[1].2);
+    rig.open.lock().unwrap().extend([7, 8]);
+    let holder = {
+        let rig = Arc::clone(&rig);
+        thread::spawn(move || {
+            let until_released =
+                "touch $HOME/held; until [ -e $HOME/released ]; do sleep 0.1; done; echo done";
+            let headers = caller(&rig, "7", "minion");
+            rig.call_progress("exec", exec(until_released, &["build"]), &headers)
+        })
+    };
+    wait_for(&rig.remote.join("held"));
+    let headers = caller(&rig, "8", "other");
+    let release =
+        json!({"command": "touch $HOME/released", "hold": ["build"], "hold_wait_secs": 60});
+    let (result, progress) = rig.call_progress("exec", release, &headers);
+    result.unwrap();
+    assert!(progress.is_empty(), "{progress:?}");
+    let (held, _) = holder.join().unwrap();
+    assert_eq!(output(&held), "done\n");
 }
 
 #[test]
