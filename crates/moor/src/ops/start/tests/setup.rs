@@ -518,3 +518,21 @@ fn a_retry_after_a_failed_setup_launches_the_agent_on_the_first_prompt() {
         .collect();
     assert_eq!(prompts, [Some("ship it".to_owned())]);
 }
+
+#[test]
+fn a_box_whose_setup_failed_is_not_brought_back_for_its_queued_prompt() {
+    let (w, _engine, got) = start_recording_launches("setup: [a]\n", [Ok(exit(0)), Ok(exit(1))]);
+    let id = BoxId::new(got.unwrap().boxed.id);
+    let store = w.cx.store().unwrap();
+    let gone = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
+    store.apply(gone).unwrap();
+    let acquired = w.driver.acquired_nonces().len();
+    let backoff = crate::ops::InboxBackoff::default();
+    crate::ops::inbox_pass(&w.cx, store, &|| false, &backoff).unwrap();
+    assert_eq!(w.driver.acquired_nonces().len(), acquired);
+    assert_eq!(
+        store.unsent(id).unwrap().len(),
+        1,
+        "the prompt waits for a retry"
+    );
+}

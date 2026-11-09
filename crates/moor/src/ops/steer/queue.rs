@@ -175,7 +175,9 @@ pub(crate) fn pass(
     draining: &dyn Fn() -> bool,
     backoff: &Backoff,
 ) -> Result<(), CommandError> {
-    for id in store.boxes_with_unsent()? {
+    let listed = store.boxes_with_unsent()?;
+    backoff.keep(&listed);
+    for id in listed {
         if draining() {
             break;
         }
@@ -214,6 +216,12 @@ impl Backoff {
             .unwrap_or_else(PoisonError::into_inner)
             .get(&id)
             .is_some_and(|at| now.as_millis().saturating_sub(at.as_millis()) < window)
+    }
+
+    /// Forgets every Box not in `listed`, which has nothing queued now.
+    fn keep(&self, listed: &[BoxId]) {
+        let mut seen = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        seen.retain(|id, _| listed.contains(id));
     }
 
     /// Records that Box `id` failed at `failed`, or moved on when none.

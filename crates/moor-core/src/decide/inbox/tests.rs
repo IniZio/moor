@@ -66,3 +66,13 @@ fn an_agent_that_cannot_take_a_message_holds_the_queue() {
     let f = at(BoxLifecycle::Ready, HandsState::Ready, AgentFact::NotReady);
     assert_eq!((next(&f), cause(&f)), (Next::Hold, QueueCause::Busy));
 }
+
+#[test]
+fn a_box_whose_setup_failed_is_held_for_a_retry_even_with_its_machine_gone() {
+    let f = at(
+        BoxLifecycle::SetupFailed,
+        HandsState::Gone,
+        AgentFact::NotReady,
+    );
+    assert_eq!(next(&f), Next::Hold);
+}
