@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::provision::reread;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, Launch, Store};
+use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
@@ -182,7 +182,12 @@ pub(super) fn relaunch(
         transcript::save(cx, store, &row, old, Trigger::Relaunch)
     };
     let digest = saved.as_ref().map(|t| t.digest.as_str());
-    store.end_launch(old.id, exit, digest)?;
+    let end = LaunchEnd {
+        exit,
+        digest,
+        session: None,
+    };
+    store.end_launch(id, old.id, &end)?;
     store.end_current_session(id, "relaunch", exit)?;
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;

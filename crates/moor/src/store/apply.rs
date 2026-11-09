@@ -1,7 +1,6 @@
 //! The only writer of box/box state and events: `Store::apply` plus run records.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::cache_save::CacheSave;
 use moor_core::domain::decision::{BoxTarget, Decision, Field, HandsFields, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
@@ -16,7 +15,8 @@ mod steps;
 
 pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
-use self::steps::{step_box, Parts};
+use self::steps::{step_box, with_cache_save, with_setup_why, Parts};
+use super::agent::{end_live_launches, fence_launch};
 use super::box_node::live_on_node_in;
 use super::hands::{fence, new_hands, update_hands};
 use super::select::{newest_session, state_update};
@@ -106,6 +106,9 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         from,
     } = step_box(tx, now, &d)?;
     let inc = fence(id, existing.as_ref(), &d)?;
+    if let Some(launch) = d.launch {
+        fence_launch(tx, id, launch)?;
+    }
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),
@@ -180,27 +183,8 @@ fn step_driver(
             .ok_or_else(|| StoreError::Invalid("new box needs box_provider".into()))?,
     };
     tx.run(new_hands((id, inc), provider, to, now))?;
+    end_live_launches(tx, id, now)?;
     Ok(Some(Step { from: None, to }))
-}
-
-/// `events` with an `asleep` event saying what its sleep decided about the caches.
-fn with_cache_save(mut events: Vec<Event>, save: Option<CacheSave>) -> Vec<Event> {
-    for e in &mut events {
-        if let Event::Asleep { cache_save, .. } = e {
-            *cache_save = save;
-        }
-    }
-    events
-}
-
-/// `events` with a `setup_failed` event saying why its line failed.
-fn with_setup_why(mut events: Vec<Event>, why: Option<&str>) -> Vec<Event> {
-    for e in &mut events {
-        if let Event::SetupFailed { why: slot, .. } = e {
-            *slot = why.map(str::to_owned);
-        }
-    }
-    events
 }
 
 /// Write box state, fields and intent.

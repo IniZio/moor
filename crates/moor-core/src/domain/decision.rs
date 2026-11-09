@@ -6,7 +6,7 @@ use super::box_state::BoxLifecycleInput;
 use super::cache_save::CacheSave;
 use super::hands::{HandsInc, HandsInput};
 use super::session_state::SessionInput;
-use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use crate::name::{BoxHandle, BoxId, BoxName, LaunchId, ProviderId, RunId};
 use crate::name::{ForgeRepo, GitAuthor};
 use crate::user::UserId;
 
@@ -203,6 +203,9 @@ pub struct Decision {
     pub set: Fields,
     /// What this decision writes to the Box's hands, and which hands it read.
     pub hands: Option<HandsWrite>,
+    /// The agent launch the deciding op read: the store applies the decision only while that
+    /// launch is still the Box's live one.
+    pub launch: Option<LaunchId>,
     /// Intent change.
     pub intent: IntentChange,
     /// Caller-supplied events appended after the derived ones. Derived state
@@ -241,6 +244,7 @@ impl Decision {
             session_input: None,
             set: Fields::default(),
             hands: None,
+            launch: None,
             intent: IntentChange::Keep,
             events: Vec::new(),
             parent_session: None,
@@ -249,6 +253,13 @@ impl Decision {
             cache_save: None,
             setup_why: None,
         }
+    }
+
+    /// Applies the decision only while `launch` is the Box's live agent launch.
+    #[must_use]
+    pub const fn launch(mut self, launch: LaunchId) -> Self {
+        self.launch = Some(launch);
+        self
     }
 
     /// Sets the Box lifecycle input.

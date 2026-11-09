@@ -21,6 +21,7 @@ mod hands_ended;
 mod held_prompt;
 mod inbox_prompts;
 mod insertion_order;
+mod launch_fence;
 mod link_runner;
 mod machine_boxes;
 mod pause_publish;
@@ -151,6 +152,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V73__inbox_prompts",
         write: inbox_prompts::write,
+    },
+    Step {
+        name: "V74__launch_fence",
+        write: launch_fence::write,
     },
 ];
 

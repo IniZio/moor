@@ -310,7 +310,7 @@ fn promptless() -> (World, Arc<FakeEngine>, BoxId) {
     let store = w.cx.store().unwrap();
     store.apply(Decision::new(id).set(clear)).unwrap();
     let live = store.live_launch(id).unwrap().unwrap();
-    store.end_launch(live.id, None, None).unwrap();
+    store.end_launch_with(live.id, None, None).unwrap();
     (w, engine, id)
 }
 
@@ -375,7 +375,7 @@ fn a_given_prompt_replaces_the_stored_prompt_when_there_is_no_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
     let live = store.live_launch(id).unwrap().unwrap();
-    store.end_launch(live.id, None, None).unwrap();
+    store.end_launch_with(live.id, None, None).unwrap();
     let v = run(&w.cx, &prompt_req("second prompt")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);

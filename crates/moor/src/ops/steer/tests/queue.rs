@@ -166,7 +166,7 @@ fn a_row_in_doubt_on_an_agent_that_ended_is_reported_and_not_sent_again() {
         .enqueue(f.id, InboxKind::Steer, "cut", "steer")
         .unwrap();
     store.mark_sending(f.id, row, old.id).unwrap();
-    store.end_launch(old.id, None, None).unwrap();
+    store.end_launch_with(old.id, None, None).unwrap();
     store.begin_launch(f.id, "agent-2").unwrap();
     queue(&f, "next");
     reports_idle(&f, "agent-2");

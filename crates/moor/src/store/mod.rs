@@ -25,7 +25,7 @@ use hands::hands_from_row;
 use init::{parsed, parsed_opt};
 use select::{box_select, events_of, limit, newest_event, EVENT_COLUMNS};
 
-pub(crate) use error::StoreError;
+pub(crate) use error::{Fence, StoreError};
 pub(crate) use users::front_leases::hash as token_hash;
 
 /// File name of the state database inside the state directory.
@@ -71,7 +71,7 @@ mod sessions;
 mod tests;
 mod users;
 
-pub(crate) use agent::Launch;
+pub(crate) use agent::{Launch, LaunchEnd};
 pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::ProxyRow;
 #[cfg(test)]

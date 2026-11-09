@@ -175,7 +175,7 @@ fn a_launch_that_already_stopped_still_ends_the_session() {
     let f = fx_with(true);
     let store = f.cx.store().unwrap();
     let launch = store.live_launch(f.id).unwrap().unwrap();
-    store.end_launch(launch.id, None, None).unwrap();
+    store.end_launch_with(launch.id, None, None).unwrap();
     run(&f.cx, &req()).unwrap();
     let first = store.box_sessions(f.id).unwrap().pop().unwrap();
     assert_eq!(first.state, SessionState::Ended);

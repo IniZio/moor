@@ -147,6 +147,9 @@ fn a_relaunch_on_new_hands_saves_nothing_over_the_session() {
     let v = run(&w.cx, &asked(true)).unwrap();
     assert!(v.agent.launched);
     assert!(engine.transcripts().is_empty());
-    assert_eq!(kinds(&w, id), ["transcript_skipped"]);
+    assert!(
+        kinds(&w, id).is_empty(),
+        "the new hands ended the launch, so none is saved"
+    );
     assert_eq!(first_digest(&w, id), None);
 }
