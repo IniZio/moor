@@ -15,6 +15,7 @@ mod box_state;
 mod hands_ended;
 mod inbox_prompts;
 mod insertion_order;
+mod launch_fence;
 mod postgres;
 mod session_archive;
 mod sqlite;

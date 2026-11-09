@@ -14,7 +14,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{new_box, open};
 use crate::store::db::DbExt as _;
-use crate::store::{Store, StoreError};
+use crate::store::{Fence, Store, StoreError};
 use crate::testing::rng::FakeRng;
 
 const OLD: HandsInc = HandsInc::FIRST;
@@ -28,7 +28,7 @@ fn replaced(store: &Store, name: &str) -> BoxId {
 }
 
 fn is_stale(got: &Result<(), StoreError>, id: BoxId) -> bool {
-    matches!(got, Err(StoreError::Stale { box_id, read }) if *box_id == id && *read == OLD)
+    matches!(got, Err(StoreError::Stale { box_id, read }) if *box_id == id && *read == Fence::Hands(OLD))
 }
 
 fn spec(id: BoxId, handle: &str, inc: Option<HandsInc>) -> ProxySpec {
@@ -138,7 +138,7 @@ fn memory_reported_for_replaced_hands_is_dropped_and_returned_as_stale() {
         .unwrap();
 
     assert!(
-        matches!(stale.as_slice(), [StoreError::Stale { box_id, read }] if *box_id == late && *read == OLD),
+        matches!(stale.as_slice(), [StoreError::Stale { box_id, read }] if *box_id == late && *read == Fence::Hands(OLD)),
         "{stale:?}"
     );
     let held = |id| store.box_host_memory(id).unwrap();

@@ -114,9 +114,9 @@ fn live_session_is_the_newest_unended_row() {
     let live = store.live_launch(id).unwrap().unwrap();
     assert_eq!((live.id, live.session_ref.as_str()), (second, "s2"));
     assert_eq!(live.started_at, Ts::from_millis(1_005));
-    store.end_launch(second, Some(0), Some("dg")).unwrap();
+    store.end_launch_with(second, Some(0), Some("dg")).unwrap();
     assert_eq!(store.live_launch(id).unwrap().unwrap().id, first);
-    store.end_launch(first, None, None).unwrap();
+    store.end_launch_with(first, None, None).unwrap();
     assert_eq!(store.live_launch(id).unwrap(), None);
 }
 
@@ -166,21 +166,24 @@ fn has_session_stays_true_once_a_session_began() {
     assert!(!store.has_session(id).unwrap());
     let s = store.begin_launch(id, "s1").unwrap();
     assert!(store.has_session(id).unwrap());
-    store.end_launch(s, Some(0), None).unwrap();
+    store.end_launch_with(s, Some(0), None).unwrap();
     assert!(store.has_session(id).unwrap());
     assert!(!store.has_session(other).unwrap());
 }
 
 #[test]
-fn end_session_records_outcome_once() {
+fn end_launch_records_outcome_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
     let s = store.begin_launch(id, "s1").unwrap();
     clock.sleep(Duration::from_millis(10));
-    store.end_launch(s, Some(3), Some("dg")).unwrap();
+    store.end_launch_with(s, Some(3), Some("dg")).unwrap();
     clock.sleep(Duration::from_millis(10));
-    store.end_launch(s, Some(9), None).unwrap();
+    assert!(matches!(
+        store.end_launch_with(s, Some(9), None),
+        Err(StoreError::Stale { .. })
+    ));
     let row: (i64, i32, String) = store
         .reader()
         .unwrap()
@@ -207,7 +210,7 @@ fn session_writes_leave_box_columns_alone() {
     let before = state_cols(&store, id);
     clock.sleep(Duration::from_millis(50));
     let s = store.begin_launch(id, "s1").unwrap();
-    store.end_launch(s, Some(0), None).unwrap();
+    store.end_launch_with(s, Some(0), None).unwrap();
     assert_eq!(state_cols(&store, id), before);
     assert_eq!(idle_since(&store, id), None);
 }
@@ -357,7 +360,7 @@ fn a_box_with_no_live_session_is_not_unread() {
     store
         .note_agent_read(launch, Ts::from_millis(1_000))
         .unwrap();
-    store.end_launch(launch, Some(0), None).unwrap();
+    store.end_launch_with(launch, Some(0), None).unwrap();
     assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
 }
 
@@ -367,7 +370,7 @@ fn a_read_of_an_ended_launch_is_ignored() {
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
     let first = store.begin_launch(id, "s1").unwrap();
-    store.end_launch(first, Some(0), None).unwrap();
+    store.end_launch_with(first, Some(0), None).unwrap();
     store
         .note_agent_read(first, Ts::from_millis(1_000))
         .unwrap();

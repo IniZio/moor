@@ -1,7 +1,35 @@
 //! How a store operation fails.
 
 use moor_core::domain::hands::HandsInc;
-use moor_core::{BoxId, BoxName};
+use moor_core::{BoxId, BoxName, LaunchId};
+
+/// What a write read, which the Box may have moved on from since.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fence {
+    /// The Box's hands.
+    Hands(HandsInc),
+    /// The Box's agent launch.
+    Launch(LaunchId),
+}
+
+impl Fence {
+    /// The warning code of a write dropped for this fence.
+    pub(crate) const fn code(self) -> &'static str {
+        match self {
+            Self::Hands(_) => "stale_hands_write",
+            Self::Launch(_) => "stale_launch_write",
+        }
+    }
+}
+
+impl std::fmt::Display for Fence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hands(inc) => write!(f, "hands {}", inc.get()),
+            Self::Launch(id) => write!(f, "launch {}", id.get()),
+        }
+    }
+}
 
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
@@ -85,13 +113,14 @@ pub(crate) enum StoreError {
     /// No such box.
     #[error("box {} not found", .0.get())]
     NotFound(BoxId),
-    /// A write about hands the Box no longer has: they were replaced after the writer read them.
-    #[error("stale write dropped: Box {} has moved on from hands {}", .box_id.get(), .read.get())]
+    /// A write about hands or a launch the Box no longer has: they were replaced after the
+    /// writer read them.
+    #[error("stale write dropped: Box {} has moved on from {read}", .box_id.get())]
     Stale {
         /// The Box written.
         box_id: BoxId,
-        /// The hands the writer read.
-        read: HandsInc,
+        /// What the writer read.
+        read: Fence,
     },
     /// The decision or request was malformed.
     #[error("invalid: {0}")]

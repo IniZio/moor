@@ -3,6 +3,7 @@
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::{BoxState, Boxes, Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
@@ -10,7 +11,7 @@ use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 use super::apply::insert_event;
 use super::select::state_update;
 use super::{parsed_opt, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Tx};
 
 mod read;
 
@@ -232,51 +233,10 @@ impl Store {
         if !box_exists(&tx, id)? {
             return Err(StoreError::NotFound(id));
         }
-        let current: Option<(i64, String)> = tx
-            .row(
-                Query::select()
-                    .columns([Sessions::Id, Sessions::State])
-                    .from(Sessions::Table)
-                    .and_where(Expr::col(Sessions::Box).eq(id.get()))
-                    .order_by(Sessions::Ordinal, Order::Desc)
-                    .limit(1),
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let Some((session, state)) = current else {
-            return Ok(false);
-        };
-        let state = parsed_opt("session state", &state, SessionState::parse)?;
-        if state == SessionState::Ended {
-            return Ok(false);
-        }
-        let ended = state.step(&SessionInput::End)?;
-        let at = now.as_millis();
-        tx.run(
-            Query::update()
-                .table(Sessions::Table)
-                .value(Sessions::State, ended.as_str())
-                .value(Sessions::EndedAt, at)
-                .and_where(Expr::col(Sessions::Id).eq(session)),
-        )?;
-        tx.run(
-            Query::update()
-                .table(Launches::Table)
-                .value(Launches::EndedAt, at)
-                .value(Launches::Exit, exit)
-                .and_where(Expr::col(Launches::Session).eq(session))
-                .and_where(Expr::col(Launches::EndedAt).is_null()),
-        )?;
-        stamp_idle(&tx, id, at)?;
-        let event = Event::SessionEnded {
-            session,
-            cause: cause.to_owned(),
-            exit,
-        };
-        insert_event(&tx, id, &event, now)?;
+        let ended = end_current(&tx, id, (cause, exit), now)?;
         tx.commit()?;
         drop(conn);
-        Ok(true)
+        Ok(ended)
     }
 
     /// Every Session of Box `id`, by ordinal.
@@ -309,6 +269,59 @@ impl Store {
         })
         .collect()
     }
+}
+
+/// Ends Box `id`'s current Session and its launches inside `tx`, the event saying `cause`;
+/// false, writing nothing, when the Box has no Session or its current one already ended.
+pub(super) fn end_current(
+    tx: &Tx<'_>,
+    id: BoxId,
+    (cause, exit): (&str, Option<i32>),
+    now: Ts,
+) -> Result<bool, StoreError> {
+    let current: Option<(i64, String)> = tx
+        .row(
+            Query::select()
+                .columns([Sessions::Id, Sessions::State])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .order_by(Sessions::Ordinal, Order::Desc)
+                .limit(1),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((session, state)) = current else {
+        return Ok(false);
+    };
+    let state = parsed_opt("session state", &state, SessionState::parse)?;
+    if state == SessionState::Ended {
+        return Ok(false);
+    }
+    let ended = state.step(&SessionInput::End)?;
+    let at = now.as_millis();
+    tx.run(
+        Query::update()
+            .table(Sessions::Table)
+            .value(Sessions::State, ended.as_str())
+            .value(Sessions::EndedAt, at)
+            .and_where(Expr::col(Sessions::Id).eq(session)),
+    )?;
+    tx.run(
+        Query::update()
+            .table(Launches::Table)
+            .value(Launches::EndedAt, at)
+            .value(Launches::Exit, exit)
+            .and_where(Expr::col(Launches::Session).eq(session))
+            .and_where(Expr::col(Launches::EndedAt).is_null()),
+    )?;
+    stamp_idle(tx, id, at)?;
+    let event = Event::SessionEnded {
+        session,
+        cause: cause.to_owned(),
+        exit,
+    };
+    insert_event(tx, id, &event, now)?;
+    Ok(true)
 }
 
 #[cfg(test)]

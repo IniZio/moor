@@ -100,7 +100,7 @@ fn a_promptless_start_after_the_session_ended_resumes_the_stored_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
     let live = store.live_launch(id).unwrap().unwrap();
-    store.end_launch(live.id, None, None).unwrap();
+    store.end_launch_with(live.id, None, None).unwrap();
     set_agent_session(&w, id, "agent-1");
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
     let next = second(&engine);

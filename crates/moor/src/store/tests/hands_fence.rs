@@ -10,13 +10,13 @@ use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::{kinds, new_box, open, provider};
 use crate::store::db::DbExt as _;
-use crate::store::{Store, StoreError, SuspendCheck};
+use crate::store::{Fence, Store, StoreError, SuspendCheck};
 
 const OLD: HandsInc = HandsInc::FIRST;
 const NEW: HandsInc = HandsInc::new(2);
 
 /// A working Box on its first hands, Ready on `h1`.
-fn ready_box(store: &Store) -> BoxId {
+pub(super) fn ready_box(store: &Store) -> BoxId {
     let id = new_box(store, "t");
     store
         .apply(
@@ -126,7 +126,7 @@ fn a_gone_verdict_on_replaced_hands_is_refused_and_changes_nothing() {
     let err = store.apply(gone).unwrap_err();
 
     assert!(
-        matches!(err, StoreError::Stale { box_id, read } if box_id == id && read == OLD),
+        matches!(err, StoreError::Stale { box_id, read } if box_id == id && read == Fence::Hands(OLD)),
         "{err:?}"
     );
     assert_eq!(state_of(&store, id, NEW), "starting");
@@ -253,7 +253,7 @@ fn a_late_verdict_on_lost_hands_is_refused_once_new_hands_exist() {
     let late = store.apply(Decision::new(id).hands_input(OLD, HandsInput::Released));
 
     assert!(
-        matches!(late, Err(StoreError::Stale { read, .. }) if read == OLD),
+        matches!(late, Err(StoreError::Stale { read, .. }) if read == Fence::Hands(OLD)),
         "{late:?}"
     );
     assert_eq!(

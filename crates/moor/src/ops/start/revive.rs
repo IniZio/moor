@@ -5,6 +5,7 @@ use std::time::Duration;
 use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::session_state::SessionState;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, ErrorDetail, ErrorKind, StartReq};
@@ -117,7 +118,11 @@ fn revive(
     cause: &str,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    if !revivable(row) || (ended.is_none() && !reopen::ended_session(store, id, None)?) {
+    if !revivable(row) {
+        return Ok(AgentLaunchView::default());
+    }
+    let lost = ended.is_none() && lost_with_hands(store, row)?;
+    if ended.is_none() && !lost && !reopen::ended_session(store, id, None)? {
         return Ok(AgentLaunchView::default());
     }
     check_cap(cx, store, row)?;
@@ -146,7 +151,7 @@ fn revive(
     let view = match ended {
         None => {
             let view = launch::run(cx, store, &req, id, None, &settings)?;
-            if view.launched && cause == "steer" {
+            if view.launched && (lost || cause == "steer") {
                 record_relaunch(store, id, row.prompt.clone(), Some(cause))?;
             }
             view
@@ -154,6 +159,15 @@ fn revive(
         Some((old, end)) => relaunch(cx, store, &req, (old, end), (false, Some(cause)), &settings)?,
     };
     Ok(watch::run(cx, store, id, view))
+}
+
+/// Whether Box `row` lost its agent with its hands: new hands ended its launch and left its
+/// Session open, since the conversation carries on there.
+fn lost_with_hands(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    Ok(row.launch_failure.is_none()
+        && row.session != SessionState::Ended
+        && store.live_launch(row.id)?.is_none()
+        && store.has_session(row.id)?)
 }
 
 /// Launches the agent of a Box whose retried setup just passed, as a fresh start does: the stored

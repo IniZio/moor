@@ -15,6 +15,7 @@ use super::apply::apply_in;
 use super::init::parsed_opt;
 use super::lease::{LeaseId, LeaseState};
 use super::select::hands_at;
+use super::Fence;
 use super::{to_u32, BoxRow, HandsRow, Store, StoreError};
 use crate::store::db::{self, Db, DbExt as _, Row};
 
@@ -146,7 +147,7 @@ pub(super) fn fence(
     }
     Err(StoreError::Stale {
         box_id: id,
-        read: w.inc,
+        read: Fence::Hands(w.inc),
     })
 }
 
@@ -156,7 +157,7 @@ pub(super) const fn fenced(id: BoxId, inc: HandsInc, rows: usize) -> Result<(), 
     if rows == 0 {
         return Err(StoreError::Stale {
             box_id: id,
-            read: inc,
+            read: Fence::Hands(inc),
         });
     }
     Ok(())
@@ -172,7 +173,7 @@ pub(super) fn fence_inc(conn: &dyn Db, id: BoxId, inc: Option<HandsInc>) -> Resu
     if current.is_some_and(|now| now > inc.get()) {
         return Err(StoreError::Stale {
             box_id: id,
-            read: inc,
+            read: Fence::Hands(inc),
         });
     }
     Ok(())
