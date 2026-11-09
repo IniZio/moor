@@ -2,7 +2,7 @@
 
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
-use moor_core::BoxId;
+use moor_core::{BoxId, LaunchId};
 
 use moor_schema::tables::{Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
@@ -148,6 +148,17 @@ impl Store {
         box_id: BoxId,
         session_ref: &str,
     ) -> Result<i64, StoreError> {
+        self.begin_session_with(box_id, session_ref, None)
+    }
+
+    /// [`Store::begin_session`] for an agent launched on `argv` as its first prompt: the oldest
+    /// queued prompt row holding that text is sent to the new launch in the same transaction.
+    pub(crate) fn begin_session_with(
+        &self,
+        box_id: BoxId,
+        session_ref: &str,
+        argv: Option<&str>,
+    ) -> Result<i64, StoreError> {
         self.check_write(box_id);
         let now = self.now();
         let mut conn = self.writer();
@@ -196,6 +207,15 @@ impl Store {
             session: session_ref.to_owned(),
         };
         insert_event(&tx, box_id, &started, now)?;
+        if let Some(text) = argv {
+            super::inbox::send_with_launch(
+                &tx,
+                box_id,
+                (LaunchId::new(id), session_ref),
+                text,
+                now,
+            )?;
+        }
         tx.commit()?;
         drop(conn);
         Ok(id)

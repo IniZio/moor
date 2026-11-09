@@ -301,3 +301,36 @@ fn access_events_read_back_from_their_json() {
         })
     );
 }
+
+#[test]
+fn box_failure_events_carry_handle() {
+    let h = BoxHandle::new("p/x");
+    assert_eq!(
+        box_events(
+            Some(HandsState::Ready),
+            HandsState::ReleaseFailed,
+            &HandsInput::ReleaseErr { cause: s("c") },
+            Some(&h)
+        ),
+        vec![Event::BoxReleaseFailed {
+            error: s("c"),
+            handle: Some(s("p/x"))
+        }]
+    );
+    let failed = HandsInput::AcquireFailed {
+        cause: s("c"),
+        attempted: Some(h),
+    };
+    assert_eq!(
+        box_events(
+            Some(HandsState::Starting),
+            HandsState::Failed,
+            &failed,
+            None
+        ),
+        vec![Event::BoxFailed {
+            error: s("c"),
+            handle: Some(s("p/x"))
+        }]
+    );
+}

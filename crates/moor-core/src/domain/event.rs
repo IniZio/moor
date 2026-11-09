@@ -334,6 +334,13 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inbox: Option<i64>,
     },
+    /// An inbox row that moor could not confirm reached the agent, deleted with this event.
+    SteerUnconfirmed {
+        /// The row.
+        inbox: i64,
+        /// Its text.
+        text: String,
+    },
     /// A Box file was stored as a new artifact version.
     ArtifactPublished {
         /// The file name.

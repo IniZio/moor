@@ -288,17 +288,7 @@ impl Store {
             Delivery::Queued { .. } | Delivery::Sent { .. } => 0,
         };
         let next = step(row.delivery)?;
-        let c = next.columns(sends);
-        tx.run(
-            Query::update()
-                .table(BoxInbox::Table)
-                .value(BoxInbox::Attempts, c.attempts)
-                .value(BoxInbox::Launch, c.launch)
-                .value(BoxInbox::SentAt, c.sent_at)
-                .value(BoxInbox::TurnBefore, c.turn_before)
-                .value(BoxInbox::StatusBefore, c.status_before)
-                .cond_where(one(box_id, id)),
-        )?;
+        write_delivery(&tx, box_id, id, next.columns(sends))?;
         let event = event
             .map(|e| insert_event(&tx, box_id, e, self.now()))
             .transpose()?;
@@ -306,6 +296,26 @@ impl Store {
         drop(conn);
         Ok((next, event))
     }
+}
+
+/// Stores `c` as row `id`'s delivery.
+fn write_delivery(
+    tx: &Tx<'_>,
+    box_id: BoxId,
+    id: InboxId,
+    c: DeliveryColumns,
+) -> Result<(), StoreError> {
+    tx.run(
+        Query::update()
+            .table(BoxInbox::Table)
+            .value(BoxInbox::Attempts, c.attempts)
+            .value(BoxInbox::Launch, c.launch)
+            .value(BoxInbox::SentAt, c.sent_at)
+            .value(BoxInbox::TurnBefore, c.turn_before)
+            .value(BoxInbox::StatusBefore, c.status_before)
+            .cond_where(one(box_id, id)),
+    )?;
+    Ok(())
 }
 
 /// The newest `steered` event of Box `box_id` that sent row `id`.
@@ -380,6 +390,10 @@ fn inbox_row(r: &Row<'_>) -> Result<InboxRow, StoreError> {
         })?,
     })
 }
+
+mod queue;
+
+pub(super) use queue::send_with_launch;
 
 #[cfg(test)]
 mod tests;

@@ -259,7 +259,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::AgentLinkLost { .. }
             | Event::AgentLinkRestored { .. }
             | Event::Machine(_)
-            | Event::TurnDone { .. }) => Err(e),
+            | Event::TurnDone { .. }
+            | Event::SteerUnconfirmed { .. }) => Err(e),
         }
     }
 }

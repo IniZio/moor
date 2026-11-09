@@ -36,7 +36,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 90] = [
+pub const EVENT_KINDS: [&str; 91] = [
     "caches_not_saved",
     "disk_lost",
     "started",
@@ -103,6 +103,7 @@ pub const EVENT_KINDS: [&str; 90] = [
     "node_disk_low",
     "node_disk_recovered",
     "turn_done",
+    "steer_unconfirmed",
     "artifact_published",
     "machine_attached",
     "machine_left_out",
@@ -191,6 +192,7 @@ impl Event {
             Self::AgentLinkRestored { .. } => "agent_link_restored",
             Self::AgentUnreachable { .. } => "agent_unreachable",
             Self::TurnDone { .. } => "turn_done",
+            Self::SteerUnconfirmed { .. } => "steer_unconfirmed",
             Self::ArtifactPublished { .. } => "artifact_published",
             Self::Access(a) => a.kind(),
             Self::Machine(m) => m.kind(),
