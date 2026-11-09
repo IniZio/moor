@@ -21,9 +21,9 @@ use crate::Moor;
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Prints `first`, waits in the Box until `$HOME/release` exists, prints `second`, exits 3.
-const COMMAND: &str =
-    r#"echo first; until [ -e "$HOME/release" ]; do sleep 0.1; done; echo second; exit 3"#;
+/// Marks `$HOME/started`, prints `first`, waits in the Box until `$HOME/release` exists, prints
+/// `second`, exits 3.
+const COMMAND: &str = r#"touch "$HOME/started"; echo first; until [ -e "$HOME/release" ]; do sleep 0.1; done; echo second; exit 3"#;
 
 /// Collects pieces from `got` until they spell `want`.
 fn expect_output(got: &Receiver<Vec<u8>>, want: &str) {
@@ -40,6 +40,7 @@ fn run_output_reaches_the_client_while_the_command_runs() {
     let f = ready_with(FakeDriver::new());
     let log = f.dir.path().join("runs").join("1.log");
     let release = f.box_dir.path().join("home/release");
+    let started = f.box_dir.path().join("home/started");
     let sock = f.dir.path().join("c.sock");
     let listener = UnixListener::bind(&sock).unwrap();
     let cx = Mutex::new(Some(f.cx));
@@ -73,6 +74,7 @@ fn run_output_reaches_the_client_while_the_command_runs() {
             |data| piece.send(data.to_vec()).unwrap(),
         )
     });
+    assert!(super::past_box_setup(&started), "the command started");
     expect_output(&got, "first\n");
     std::fs::write(&release, "").unwrap();
     expect_output(&got, "second\n");

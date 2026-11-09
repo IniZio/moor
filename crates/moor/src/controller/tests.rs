@@ -7,6 +7,17 @@ use std::sync::Arc;
 use super::{serve, start};
 use crate::env::Env;
 
+/// Whether `marker` appears within a minute. The Box's setup before a command spawns dozens of
+/// processes, which takes seconds on a loaded runner, so only a hang runs past this.
+fn past_box_setup(marker: &Path) -> bool {
+    (0..3000).any(|_| {
+        marker.exists() || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            false
+        }
+    })
+}
+
 fn env(dir: &Path) -> Env {
     env_with(dir, &[])
 }
