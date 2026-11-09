@@ -1,4 +1,4 @@
-//! Fails the starts an earlier controller process left unfinished.
+//! Settles the starts an earlier controller process left unfinished.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
@@ -10,70 +10,58 @@ use super::lease::planned_root;
 use super::rerun::{record_interrupted, NOT_READY};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{BoxRow, Database, Store};
+use crate::store::{BoxRow, Store};
 
 /// Why a Box whose acquire was cut off failed.
 const CAUSE: &str = "setup interrupted by a controller restart";
 
-/// Who else may hold a start on the store while this controller boots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Others {
-    /// The store is a shared database, and the controller lock keeps every other moor out. Each
-    /// start found is an exited process's, even when a process of this pod now has its pid.
-    LockedOut,
-    /// The store is a local file, so a `moor` command on this host may run a start beside the
-    /// controller, in the same pid namespace.
-    MayRun,
+/// The open Boxes whose start an earlier controller process left unfinished: an intent other than
+/// a run is set, or a launch was cut. The controller lock keeps every other process off the
+/// store, so each is dead and resumes as its owner's first turn.
+pub(crate) fn cut_short(store: &Store) -> Result<Vec<BoxId>, CommandError> {
+    let mut cut = Vec::new();
+    for row in store.open_boxes()? {
+        let resumes = match row.intent {
+            Some(Intent::Running { .. }) => false,
+            Some(_) => true,
+            None => launch_was_cut(store, &row)?,
+        };
+        if resumes {
+            cut.push(row.id);
+        }
+    }
+    Ok(cut)
 }
 
-impl Others {
-    /// Who else may hold a start on a store in `database`, or in a local file when `None`.
-    pub(crate) const fn of(database: Option<&Database>) -> Self {
-        match database {
-            Some(_) => Self::LockedOut,
-            None => Self::MayRun,
-        }
+/// Settles the cut-off start of Box `id` under the Resume turn the caller holds; returns whether
+/// [`super::resume_setup`] goes on with it: its setup can be followed again or finished in its
+/// machine, its acquire was cut for the first time in this start, its launch was cut, or a forced
+/// close wants it gone.
+pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
+    let Some(row) = store.box_row(id)? else {
+        return Ok(false);
+    };
+    let Some(intent) = row.intent else {
+        return launch_was_cut(store, &row);
+    };
+    match intent {
+        Intent::Provisioning => cx.for_box(row.user, || cut_acquire(cx, store, &row)),
+        Intent::Setup if followable(&row) => Ok(true),
+        Intent::Setup => record_interrupted(cx, store, &row, NOT_READY.to_owned()).map(|()| false),
+        Intent::Running { .. } => Ok(false),
+        Intent::Closing => Ok(true),
     }
 }
 
-/// Settles each open Box whose start no live process still runs, and claims for this process each
-/// Box that can go on: its setup can be followed again or finished in its machine, or its acquire
-/// was cut for the first time in this start. Returns the claimed Boxes, for [`super::resume_setup`].
-///
-/// Called before the controller serves, so no start of this process is under way yet: an intent
-/// naming this pid is an earlier process's, as a restarted container reuses its pid.
-pub(crate) fn fail_interrupted(
-    cx: &Cx,
-    store: &Store,
-    others: Others,
-) -> Result<Vec<BoxId>, CommandError> {
-    let me = std::process::id();
+/// Settles every Box [`cut_short`] finds, each under a Resume turn of its own; returns those that
+/// go on, for [`super::resume_setup`].
+#[cfg(test)]
+pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, CommandError> {
     let mut claimed = Vec::new();
-    for row in store.open_boxes()? {
-        let Some(intent) = row.intent else {
-            if launch_was_cut(store, &row)? {
-                claimed.push(row.id);
-            }
-            continue;
-        };
-        let pid = intent.pid();
-        if others == Others::MayRun && pid != me && cx.proc().alive(pid) {
-            continue;
-        }
-        match intent {
-            Intent::Provisioning { .. } => {
-                if cx.for_box(row.user, || cut_acquire(cx, store, &row, me))? {
-                    claimed.push(row.id);
-                }
-            }
-            Intent::Setup { .. } if followable(&row) => {
-                let mine = IntentChange::Set(Intent::Setup { pid: me });
-                store.apply(Decision::new(row.id).intent(mine))?;
-                claimed.push(row.id);
-            }
-            Intent::Setup { .. } => record_interrupted(cx, store, &row, NOT_READY.to_owned())?,
-            Intent::Running { .. } => {}
-            Intent::Closing { .. } => claimed.push(row.id),
+    for id in cut_short(store)? {
+        let _turn = cx.turn(id, crate::cx::owners::Cmd::Resume)?;
+        if settle(cx, store, id)? {
+            claimed.push(id);
         }
     }
     Ok(claimed)
@@ -109,9 +97,9 @@ fn followable(row: &BoxRow) -> bool {
 }
 
 /// Settles a cut-off acquire; returns whether this process goes on with it.
-fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, CommandError> {
+fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
-    let claim = IntentChange::Set(Intent::Provisioning { pid: me });
+    let claim = IntentChange::Set(Intent::Provisioning);
     match row.hands.as_ref().map(|b| b.state) {
         Some(HandsState::Starting) => {
             let planned = planned_root(store, row.id)?;
@@ -133,7 +121,7 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow, me: u32) -> Result<bool, Co
                 store.apply(lost)?;
                 return Ok(true);
             }
-            fail_acquire(cx, store, row, me, setting_up && !cut_before(store, row)?)
+            fail_acquire(cx, store, row, setting_up && !cut_before(store, row)?)
         }
         // The process that claimed it to acquire again ended before it could.
         Some(HandsState::Failed | HandsState::Gone) if setting_up => {
@@ -162,19 +150,13 @@ fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
 /// Records the cut-off acquire as failed and releases the machine it may have created; returns
 /// whether this process acquires again, which `again` asks for. A machine that cannot be released
 /// may still be there, so its Box fails instead.
-fn fail_acquire(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    me: u32,
-    again: bool,
-) -> Result<bool, CommandError> {
+fn fail_acquire(cx: &Cx, store: &Store, row: &BoxRow, again: bool) -> Result<bool, CommandError> {
     let planned = planned_root(store, row.id)?;
     let lost = Decision::new(row.id).hands_input(HandsInput::AcquireFailed {
         cause: CAUSE.to_owned(),
         attempted: planned.clone(),
     });
-    store.apply(lost.intent(IntentChange::Set(Intent::Provisioning { pid: me })))?;
+    store.apply(lost.intent(IntentChange::Set(Intent::Provisioning)))?;
     let released = planned
         .as_ref()
         .is_none_or(|handle| release_warned(cx, store, row, handle));

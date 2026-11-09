@@ -19,7 +19,7 @@ use super::warm::events;
 use super::warm_commits::setup_calls_on;
 use super::warm_trees::{git, Scratch};
 use super::{agentless_req, repo};
-use crate::ops::common::provision::interrupted::{fail_interrupted, Others};
+use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::profile::SOURCE_LOOKUP;
 use crate::ops::start::run;
@@ -286,7 +286,7 @@ fn a_restart_during_a_rerun_on_the_layer_still_runs_none_of_those_steps() {
     let store = p.s.w.cx.store().unwrap();
     let name = crate::testing::box_name("next");
     let next = store.open_box_by_name(&name).unwrap().unwrap().id;
-    fail_interrupted(&p.s.w.cx, store, Others::MayRun).unwrap();
+    fail_interrupted(&p.s.w.cx, store).unwrap();
     resume_setup(&p.s.w.cx, store, next).unwrap();
     assert_eq!(p.step_execs(next), 0);
     assert_eq!(p.runs_on_disk(next), [1, 1, 1]);
@@ -360,7 +360,7 @@ fn a_restart_of_a_retry_that_left_a_finished_fork_still_runs_the_steps() {
         .is_err()
     );
     dying.store(false, Ordering::SeqCst);
-    fail_interrupted(cx, store, Others::MayRun).unwrap();
+    fail_interrupted(cx, store).unwrap();
     resume_setup(cx, store, b).unwrap();
     assert_eq!(p.runs_on_disk(b), [1, 1, 1]);
 }

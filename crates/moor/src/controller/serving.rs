@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use super::drain::Drain;
@@ -13,9 +13,9 @@ use moor_core::BoxId;
 
 /// Serves `running` until `wake` turns readable.
 ///
-/// Interrupted starts are failed first, since requests read what that leaves. `reconcile` then
-/// starts each open Box's keeper on a thread of its own once `after` has passed, so requests are
-/// answered meanwhile.
+/// Starts an earlier process left unfinished are settled first, each as its Box owner's first
+/// turn, since requests read what that leaves. `reconcile` then starts each open Box's keeper on
+/// a thread of its own once `after` has passed, so requests are answered meanwhile.
 pub(super) fn serve_started(
     mut running: Running,
     wake: &UnixStream,
@@ -24,15 +24,20 @@ pub(super) fn serve_started(
     reconcile: impl FnOnce(&Env) -> Vec<String> + Send + 'static,
 ) -> u8 {
     log(sink, &format!("listening on {}", running.socket.display()));
-    let (interrupted, claimed) = Moor::from_env(&running.env).map_or_else(
+    let (lines, cut) = Moor::from_env(&running.env).map_or_else(
         |e| (vec![e.error.to_string()], Vec::new()),
-        |moor| moor.fail_interrupted_starts(),
+        |moor| moor.cut_short_starts(),
     );
-    for line in interrupted {
+    for line in lines {
+        log(sink, &format!("start: {line}"));
+    }
+    resume_cut_short(cut, &running.env, sink);
+    for line in Moor::from_env(&running.env)
+        .map_or_else(|e| vec![e.error.to_string()], |moor| moor.backfill_nodes())
+    {
         log(sink, &format!("start: {line}"));
     }
     log_nodes_in_background(&running.env, sink);
-    resume_setups_in_background(claimed, &running.env, sink);
     for line in Moor::from_env(&running.env).map_or_else(
         |e| vec![e.error.to_string()],
         |moor| moor.resolve_interrupted_workflow_runs(),
@@ -81,18 +86,27 @@ fn log_nodes_in_background(env: &Arc<Env>, sink: &Sink) {
     });
 }
 
-/// Picks up, each on a thread of its own, the starts an earlier process left in `claimed`; the
-/// drain does not wait for them, as the setup goes on in the Box and the next process follows it.
-fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink) {
-    for id in claimed {
+/// Resumes each Box in `cut` as its owner's first turn, each on a thread of its own, and returns
+/// once every one has settled, so no request reaches a Box before its Resume holds the turn. The
+/// drain does not wait for the starts that go on, as the setup goes on in the Box and the next
+/// process follows it.
+fn resume_cut_short(cut: Vec<BoxId>, env: &Arc<Env>, sink: &Sink) {
+    let (settled, all_settled) = mpsc::channel::<()>();
+    for id in cut {
         // Its own stop flag, so a forced close interrupting this start stops only it.
         let env = Env::clone(env).with_cancel(Cancel::default());
-        let sink = Arc::clone(sink);
+        let (sink, settled) = (Arc::clone(sink), settled.clone());
         std::thread::spawn(move || {
+            let on_settled = |lines: Vec<String>| {
+                for line in lines {
+                    log(&sink, &format!("start: {line}"));
+                }
+                drop(settled);
+            };
             let lines = Moor::checked(|| {
                 Moor::from_env(&env).map_or_else(
                     |e| vec![e.error.to_string()],
-                    |moor| moor.resume_setups(&[id]),
+                    |moor| moor.resume(id, on_settled),
                 )
             });
             for line in lines {
@@ -100,6 +114,9 @@ fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink)
             }
         });
     }
+    drop(settled);
+    // Nothing is sent: each thread hangs up once its Box has settled, or ends without settling it.
+    let _ = all_settled.recv();
 }
 
 /// Runs `reconcile` on its own thread after `after`; the drain waits for it, and none starts

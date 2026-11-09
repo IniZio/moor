@@ -8,7 +8,7 @@ use crate::name::{BoxHandle, RunId};
 use crate::seam::clock::Ts;
 
 fn provisioning() -> Intent {
-    Intent::Provisioning { pid: 42 }
+    Intent::Provisioning
 }
 
 fn secs(n: u64) -> Duration {
@@ -16,12 +16,12 @@ fn secs(n: u64) -> Duration {
 }
 
 #[test]
-fn dead_without_handle_past_grace_is_dead() {
+fn idle_without_handle_past_grace_is_dead() {
     assert!(provisioning_dead(&provisioning(), false, None, secs(121)));
 }
 
 #[test]
-fn alive_process_is_not_dead() {
+fn an_op_in_flight_is_not_dead() {
     assert!(!provisioning_dead(&provisioning(), true, None, secs(121)));
 }
 
@@ -54,35 +54,29 @@ fn inside_grace_is_not_dead() {
 
 #[test]
 fn running_intent_is_never_dead() {
-    let intent = Intent::Running {
-        run: RunId::new(1),
-        pid: 42,
-    };
+    let intent = Intent::Running { run: RunId::new(1) };
     assert!(!provisioning_dead(&intent, false, None, secs(1000)));
 }
 
 #[test]
 fn setup_intent_is_never_dead() {
-    let intent = Intent::Setup { pid: 42 };
+    let intent = Intent::Setup;
     assert!(!provisioning_dead(&intent, false, None, secs(1000)));
 }
 
 #[test]
-fn setup_with_dead_pid_is_dead() {
-    assert!(setup_dead(&Intent::Setup { pid: 42 }, false));
+fn setup_with_no_op_in_flight_is_dead() {
+    assert!(setup_dead(&Intent::Setup, false));
 }
 
 #[test]
-fn setup_with_live_pid_is_not_dead() {
-    assert!(!setup_dead(&Intent::Setup { pid: 42 }, true));
+fn setup_with_an_op_in_flight_is_not_dead() {
+    assert!(!setup_dead(&Intent::Setup, true));
 }
 
 #[test]
 fn provisioning_and_running_are_never_setup_dead() {
-    let running = Intent::Running {
-        run: RunId::new(1),
-        pid: 42,
-    };
+    let running = Intent::Running { run: RunId::new(1) };
     assert!(!setup_dead(&provisioning(), false));
     assert!(!setup_dead(&running, false));
 }

@@ -22,9 +22,7 @@ fn in_setup(cancel: &Cancel) -> (Fx, Held) {
     let f = fx_with(FakeDriver::new());
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Setup {
-            pid: std::process::id(),
-        })))
+        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Setup)))
         .unwrap();
     let held =
         f.cx.owners_arc()
@@ -47,7 +45,7 @@ fn a_plain_close_during_setup_is_refused_and_names_force() {
     let (f, _held) = in_setup(&cancel);
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(e.error.to_string(), "box busy: start in progress");
+    assert_eq!(e.error.to_string(), "box busy: setup in progress");
     assert!(
         e.hints
             .iter()

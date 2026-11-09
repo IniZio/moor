@@ -312,11 +312,11 @@ fn intent_set_clear_and_run_lifecycle() {
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
     store
-        .apply(Decision::new(id).intent(IntentChange::Set(Intent::Provisioning { pid: 7 })))
+        .apply(Decision::new(id).intent(IntentChange::Set(Intent::Provisioning)))
         .unwrap();
     assert_eq!(
         store.box_row(id).unwrap().unwrap().intent,
-        Some(Intent::Provisioning { pid: 7 })
+        Some(Intent::Provisioning)
     );
     store
         .apply(Decision::new(id).intent(IntentChange::Clear))
@@ -334,7 +334,7 @@ fn intent_set_clear_and_run_lifecycle() {
         .unwrap();
     assert_eq!(
         store.box_row(id).unwrap().unwrap().intent,
-        Some(Intent::Running { run, pid: 9 })
+        Some(Intent::Running { run })
     );
     store
         .finish_run(run, RunOutcome::ended(Some(3), false))

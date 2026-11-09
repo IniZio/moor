@@ -85,28 +85,17 @@ pub struct SpecFields {
 /// A recorded in-flight operation, kept so a crash can be recovered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intent {
-    /// A box is being provisioned by this process.
-    Provisioning {
-        /// Process id.
-        pid: u32,
-    },
+    /// A box is being provisioned.
+    Provisioning,
     /// A run is executing.
     Running {
         /// The run.
         run: RunId,
-        /// Process id.
-        pid: u32,
     },
     /// Box setup is executing.
-    Setup {
-        /// Process id.
-        pid: u32,
-    },
+    Setup,
     /// A forced close wants the Box gone, ahead of the start it is stopping; a restart honours it.
-    Closing {
-        /// Process id.
-        pid: u32,
-    },
+    Closing,
 }
 
 impl Intent {
@@ -114,21 +103,10 @@ impl Intent {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
-            Self::Provisioning { .. } => "provisioning",
+            Self::Provisioning => "provisioning",
             Self::Running { .. } => "running",
-            Self::Setup { .. } => "setup",
-            Self::Closing { .. } => "closing",
-        }
-    }
-
-    /// Returns the owning process id.
-    #[must_use]
-    pub const fn pid(&self) -> u32 {
-        match self {
-            Self::Provisioning { pid }
-            | Self::Running { pid, .. }
-            | Self::Setup { pid }
-            | Self::Closing { pid } => *pid,
+            Self::Setup => "setup",
+            Self::Closing => "closing",
         }
     }
 
@@ -136,8 +114,8 @@ impl Intent {
     #[must_use]
     pub const fn run(&self) -> Option<RunId> {
         match self {
-            Self::Running { run, .. } => Some(*run),
-            Self::Provisioning { .. } | Self::Setup { .. } | Self::Closing { .. } => None,
+            Self::Running { run } => Some(*run),
+            Self::Provisioning | Self::Setup | Self::Closing => None,
         }
     }
 }

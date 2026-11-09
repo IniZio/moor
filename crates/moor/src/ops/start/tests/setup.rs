@@ -385,9 +385,8 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
         sink.lock().unwrap().push(row.intent);
     });
     let v = run(&w.cx, &start_req()).unwrap();
-    let pid = std::process::id();
     // The clone and the setup script both run under it.
-    assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 2]);
+    assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup); 2]);
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }

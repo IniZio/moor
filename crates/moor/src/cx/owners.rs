@@ -19,9 +19,9 @@ mod policy;
 mod state;
 mod turn;
 
+pub(crate) use self::check::checked;
 #[cfg(test)]
 pub(crate) use self::check::Held;
-pub(crate) use self::check::{boot, checked};
 use self::state::{Grant, Holder, State};
 #[cfg(test)]
 pub(crate) use self::turn::RunHold;
@@ -178,6 +178,17 @@ impl Owners {
             .is_some_and(|h| h.thread == me);
         drop(st);
         held
+    }
+
+    /// Whether an op on another thread holds `box_id`'s turn or a run on it.
+    pub(crate) fn busy(&self, box_id: BoxId) -> bool {
+        let me = std::thread::current().id();
+        let st = self.lock();
+        let busy = st.boxes.get(&box_id).is_some_and(|o| {
+            o.holder.as_ref().is_some_and(|h| h.thread != me) || o.runs.iter().any(|t| *t != me)
+        });
+        drop(st);
+        busy
     }
 
     /// A share of the turn this thread holds, for a helper thread to act under; `None` when it

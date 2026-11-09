@@ -29,7 +29,7 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
         return Ok(());
     }
     if let Some(intent) = &row.intent {
-        if !setup_dead(intent, cx.proc().alive(intent.pid())) {
+        if !setup_dead(intent, cx.owners().busy(row.id)) {
             return Ok(());
         }
         record_interrupted(cx, store, row, OWNER_DIED.to_owned())?;

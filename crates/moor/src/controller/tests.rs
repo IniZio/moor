@@ -125,6 +125,28 @@ fn a_lock_held_past_the_wait_is_a_running_controller_and_a_failure() {
 }
 
 #[test]
+fn a_lock_held_by_a_local_command_names_that_command_not_a_controller() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let path = tmp.path().join("controller.lock");
+    let other = std::fs::File::create(&path).expect("create");
+    other.lock().expect("held");
+    std::fs::write(&path, "4242\n").expect("record");
+    let socket = tmp.path().join("controller.sock");
+    let short = std::time::Duration::from_millis(100);
+    let stop = super::lock::take_lock(&path, &socket, short).expect_err("held");
+    assert_eq!(
+        (stop.code, stop.message),
+        (
+            1,
+            format!(
+                "a local moor command (pid 4242) holds the state dir {}; wait for it to end",
+                tmp.path().display()
+            )
+        )
+    );
+}
+
+#[test]
 fn unknown_key_is_usage_error() {
     let tmp = tempfile::tempdir().expect("tmp");
     let cfg = config(tmp.path(), "bogus_key: 1\n");

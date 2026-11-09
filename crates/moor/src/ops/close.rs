@@ -130,26 +130,25 @@ fn close_with(
     })
 }
 
-/// Takes the Box's turn; under `force`, a start in flight is stopped and the close goes first.
+/// Takes the Box's turn, or `None` when this thread holds it already, as a resume honouring a
+/// recorded forced close does; under `force`, a start in flight is stopped and the close goes first.
 ///
 /// The stopped start records its setup as failed before it lets go. One that has not stopped
 /// after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still acquiring its
 /// machine has that boot cancelled, and the close is recorded first so a restart honours it.
-fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Turn<'a>, CommandError> {
+fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Option<Turn<'a>>, CommandError> {
+    if cx.owners().holds(row.id) {
+        return Ok(None);
+    }
     let name = row.name.as_str();
-    let starting = matches!(
-        row.intent,
-        Some(Intent::Setup { .. } | Intent::Provisioning { .. })
-    );
-    let acquiring = matches!(row.intent, Some(Intent::Provisioning { .. }));
+    let starting = matches!(row.intent, Some(Intent::Setup | Intent::Provisioning));
+    let acquiring = matches!(row.intent, Some(Intent::Provisioning));
     let store = cx.store()?;
     let deadline = cx.clock().instant() + QUEUE_WAIT;
     let cmd = Cmd::Close { force };
     let stop = || {
         if acquiring {
-            let closing = Intent::Closing {
-                pid: std::process::id(),
-            };
+            let closing = Intent::Closing;
             store.apply(Decision::new(row.id).intent(IntentChange::Set(closing)))?;
         }
         cancel_boot(cx, store, row)
@@ -158,7 +157,7 @@ fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Turn<'a>, CommandEr
         .owners()
         .preempting(row.id, cmd, cx.env().cancel(), deadline, stop)
     {
-        Ok((turn, _)) => Ok(turn),
+        Ok((turn, _)) => Ok(Some(turn)),
         Err(e) if e.kind == ErrorKind::Refused && starting && !force => Err(e.with_hint(format!(
             "`moor close {name} --force` interrupts the start and closes the Box"
         ))),

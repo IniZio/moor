@@ -15,7 +15,6 @@ impl From<StoreError> for CommandError {
             | StoreError::BranchTaken(_)
             | StoreError::Schema { .. }
             | StoreError::Migration { .. }
-            | StoreError::Owned { .. }
             | StoreError::Served
             | StoreError::InUse
             | StoreError::Leased { .. }

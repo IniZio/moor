@@ -50,6 +50,15 @@ if [ -n "$hits" ]; then
   exit 1
 fi
 
+pid_hits=$(grep -rnw --include='*.rs' --exclude-dir=target -e intent_pid -e IntentPid crates/ \
+  | grep -v '^crates/moor-schema/' || true)
+if [ -n "$pid_hits" ]; then
+  echo "removed-names: the intent pid is read or written"
+  echo "$pid_hits"
+  echo "fix: a Box's owner says whether an op is in flight; use Owners::busy"
+  exit 1
+fi
+
 texts=()
 for t in crates docs ./*.md; do [ -e "$t" ] && texts+=("${t#./}"); done
 # crabbox's own --no-sync flag is still passed by the crabbox adapter.

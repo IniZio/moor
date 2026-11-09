@@ -10,6 +10,7 @@ use super::setup::{
     start_with, warning_codes,
 };
 use super::{script_base_yaml, world, World};
+use crate::cx::owners::Cmd;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -83,19 +84,18 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
     assert!(!failed_at_set(&w, &again));
 }
 
-/// A started `demo` with a recorded Box whose setup intent belongs to `pid`.
-fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
+/// A started `demo` whose Box still records a setup in flight.
+fn interrupted_setup() -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid }));
+    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup));
     w.cx.store().unwrap().apply(held).unwrap();
     (w, v)
 }
 
 #[test]
-fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
-    let (w, _) = interrupted_setup(4242);
-    w.proc.dead(4242);
+fn start_does_not_re_run_setup_left_with_no_op_in_flight() {
+    let (w, _) = interrupted_setup();
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
@@ -110,8 +110,7 @@ fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
 
 #[test]
 fn start_after_an_interrupted_setup_does_not_sync_the_checkout_again() {
-    let (w, _) = interrupted_setup(4242);
-    w.proc.dead(4242);
+    let (w, _) = interrupted_setup();
     drop(warning_codes(&w));
     let syncs = |w: &World| {
         let all = w.driver.execs().into_iter();
@@ -128,39 +127,19 @@ fn start_after_an_interrupted_setup_does_not_sync_the_checkout_again() {
 }
 
 #[test]
-fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
-    let (w, _) = interrupted_setup(4242);
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(!again.setup.ran);
+fn start_is_refused_while_a_setup_is_in_flight_and_leaves_it_alone() {
+    let (w, v) = interrupted_setup();
+    let id = BoxId::new(v.boxed.id);
+    let _setup = w.cx.owners_arc().hold(id, Cmd::Start);
+    let e = run(&w.cx, &start_req()).unwrap_err();
+    assert_eq!(e.error.to_string(), "box busy: setup in progress");
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
-    assert_eq!(
-        row.unwrap().unwrap().intent,
-        Some(Intent::Setup { pid: 4242 })
-    );
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    assert_eq!(row.intent, Some(Intent::Setup));
 }
 
 #[test]
-fn start_on_a_setting_up_box_with_a_live_setup_owner_records_no_session() {
-    let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("setup: [a]\n"));
-    w.driver
-        .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
-    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        drop(run(&w.cx, &start_req()));
-    }));
-    assert!(crashed.is_err());
-    w.driver.on_exec(|| {});
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.boxed.lifecycle, BoxLifecycle::SettingUp);
-    let id = BoxId::new(again.boxed.id);
-    let store = w.cx.store().unwrap();
-    assert!(store.live_session(id).unwrap().is_none());
-    assert!(!store.has_session(id).unwrap());
-}
-
-#[test]
-fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
+fn start_does_not_re_run_setup_cut_off_in_a_setting_up_box() {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, Some("setup: [a]\n"));
     w.driver
@@ -173,14 +152,8 @@ fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
     assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
-    assert_eq!(
-        row.intent,
-        Some(Intent::Setup {
-            pid: std::process::id()
-        })
-    );
+    assert_eq!(row.intent, Some(Intent::Setup));
     w.driver.on_exec(|| {});
-    w.proc.dead(std::process::id());
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);

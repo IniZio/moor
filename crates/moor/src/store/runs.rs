@@ -159,7 +159,7 @@ impl Store {
                 .returning_col(Runs::Id),
             |r| r.get(0).map(RunId::new),
         )?;
-        let intent = IntentChange::Set(Intent::Running { run, pid });
+        let intent = IntentChange::Set(Intent::Running { run });
         let mut sets = intent_sets(intent, now);
         sets.push((BoxState::UpdatedAt, now.as_millis().into()));
         update(
@@ -300,29 +300,18 @@ impl Store {
         self.runs.join(format!("{}.follow", run.get()))
     }
 
-    /// Records `pid` as the process of run `id` and of its Box's running intent.
+    /// Records `pid` as the process of run `id`.
     pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
         #[cfg(test)]
         if let Some(run) = self.run(id)? {
             self.check_write(run.box_id);
         }
-        let mut conn = self.writer();
-        let tx = conn.immediate()?;
-        tx.run(
+        self.writer().run(
             Query::update()
                 .table(Runs::Table)
                 .value(Runs::Pid, pid)
                 .and_where(Expr::col(Runs::Id).eq(id.get())),
         )?;
-        tx.run(
-            Query::update()
-                .table(BoxState::Table)
-                .value(BoxState::IntentPid, pid)
-                .and_where(Expr::col(BoxState::IntentKind).eq("running"))
-                .and_where(Expr::col(BoxState::IntentRun).eq(id.get())),
-        )?;
-        tx.commit()?;
-        drop(conn);
         Ok(())
     }
 

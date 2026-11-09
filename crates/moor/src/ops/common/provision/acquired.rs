@@ -42,9 +42,7 @@ pub(super) fn record_acquired(
             workdir: Field::Set(got.workdir.as_str().to_owned()),
             ..HandsFields::default()
         })
-        .intent(IntentChange::Set(Intent::Setup {
-            pid: std::process::id(),
-        }));
+        .intent(IntentChange::Set(Intent::Setup));
     store.apply(acquired)?;
     Ok(())
 }
