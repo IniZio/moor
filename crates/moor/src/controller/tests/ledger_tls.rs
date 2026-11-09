@@ -233,11 +233,12 @@ fn a_connect_without_tls_gets_no_ledger_answer() {
     plain
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
-    writeln!(
+    // The controller may close the plaintext connection before this write lands, so a
+    // broken pipe here is the refusal arriving early, not a failure.
+    drop(writeln!(
         plain,
         r#"{{"egress":{{"v":1,"key":"{KEY}","box_id":null}}}}"#
-    )
-    .unwrap();
+    ));
     let mut reply = Vec::new();
     drop(plain.read_to_end(&mut reply));
     assert!(
