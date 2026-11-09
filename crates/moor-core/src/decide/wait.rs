@@ -7,6 +7,8 @@ use crate::request::WaitFor;
 /// What `wait` can observe about a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaitFacts {
+    /// The Box is still being admitted or set up, so it has no agent yet.
+    pub setting_up: bool,
     /// An agent is currently working.
     pub agent_active: bool,
     /// A run is in flight.
@@ -35,7 +37,7 @@ pub const fn wait_verdict(
 ) -> WaitVerdict {
     let met = match want {
         WaitFor::Idle | WaitFor::Done | WaitFor::Input => {
-            !facts.agent_active && !facts.run_in_flight
+            !facts.setting_up && !facts.agent_active && !facts.run_in_flight
         }
         WaitFor::Run => !facts.run_in_flight,
     };
