@@ -32,7 +32,7 @@ hyper-util = { version = "0.1", features = [
   "tokio",
   "http1",
 ] }
-rmcp = { version = "3.7", default-features = false, features = [
+rmcp = { version = "3.9", default-features = false, features = [
   "client",
   "server",
   "macros",

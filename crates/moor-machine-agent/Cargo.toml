@@ -59,7 +59,7 @@ tokio = { version = "1", features = [
 moor-core = { path = "../moor-core" }
 moor-gate = { path = "../moor-gate" }
 moor-testkit = { path = "../moor-testkit" }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 ureq = { version = "3", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = [
   "sink",
