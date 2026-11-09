@@ -79,7 +79,7 @@ Node      capacity
 | Restore Claude's session files into new hands | `--resume` keeps the whole conversation. Replaying recent events as a prompt drops context. |
 | The controller resolves a front's conversation key to a Box | Retries converge on one Box. Fronts keep a binding and an event cursor, not a copy of Box state. |
 | Steers go to a per-Box inbox, deleted after delivery | A sender never waits on a wake, and a crash never loses a steer. |
-| Agent events reach moor as a numbered stream through `hc` | A reader that reconnects replays what it missed. |
+| Agent status reaches moor through `hc`, resynced from its snapshot after a reconnect | `hc` is upstream code. It already flags missed events and sends a snapshot, and moor needs the current status, not each transition. |
 | claude stays in the guest under `hc` | Claude Code runs its tools where it runs. |
 
 ## Steps
@@ -121,11 +121,11 @@ Each step ends in a run on a real Box.
    event cursor. `slack.db` keeps the thread binding and the status message.
    Proof. A Slack retry starts no second Box, and the thread shows the
    controller's state.
-7. **Event stream.** `hc` forwards Claude Code's own status reports as numbered
-   events, and moor reads from its last number after a reconnect. Numbering and
-   replay are a change in `hc`, not in moor. Proof. Kill the link mid-turn,
-   reconnect, and no status change is lost or repeated. Then hook-file and pane
-   polling go.
+7. **Event stream.** moor reads Claude Code's own status reports through `hc`.
+   After a reconnect, `hc` flags the missed events and moor takes the state from
+   `hc`'s snapshot. `hc` itself does not change. Proof. Kill the link mid-turn
+   while a question is pending, reconnect, and moor shows the current status and
+   the pending question. Then hook-file and pane polling go.
 8. **Box tools.** A grant scoped to the Box's repo and branch. Setup test starts
    a throwaway Box from the branch and returns the setup log. Rebox moves the
    session into new hands built from the branch's `.moor.yaml`. Proof. A Box
