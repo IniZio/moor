@@ -31,7 +31,7 @@ Node      capacity
   settle or delivery carries an old run and is dropped.
 - **Wanted action.** Close, suspend and sleep are recorded as data with a fixed
   precedence. Close beats suspend, and suspend beats sleep.
-- **Owner.** One per-Box task applies every mutation of that Box in order.
+- **Owner.** One owner per Box applies every mutation of that Box in order.
   Ops send it commands, and nothing else writes the Box's rows.
 - **In-flight effects.** Each external step records its own phase and attempt in
   state. Each effect also says whether a restart reruns it or reports it as
@@ -65,7 +65,7 @@ Node      capacity
 
 | Decision | Reason |
 | --- | --- |
-| One owner task per Box applies all its mutations | One writer per Box replaces the host flock, `intent_pid` and many write paths. |
+| One owner per Box applies all its mutations | One writer per Box replaces the host flock, `intent_pid` and many write paths. |
 | Split `boxes` into spec, state and hands | A VM's lifecycle stops being the Box's lifecycle. One state machine per concern. |
 | Hands rows carry an incarnation | A late write for a dead VM cannot land on its replacement. |
 | A hands row records observed VM state with its time | moor decides while a node is away. A live read of the provider answers nothing then. |
@@ -87,7 +87,7 @@ Each step ends in a run on a real Box.
 0. **Split the row.** New spec, state and hands tables. `driver_state` moves to
    hands as observed state, and `boxes::BoxState` goes. Proof. A Box starts,
    sleeps, wakes and closes on a real node with each concern in its own row.
-1. **Box owner.** One task per Box in the controller owns its rows. Start,
+1. **Box owner.** One owner per Box in the controller holds its rows. Start,
    settle, wake, sleep, pressure, proxy and steer send it commands and await
    the result. The host flock and `intent_pid` go. Proof. Close, steer and
    suspend fired at one Box at once all apply in order, and a controller restart
@@ -141,16 +141,16 @@ stands after the steps above. A cell names the step or the code behind it.
 
 | Dimension | moor after this charter | Rivet | ax | agentrun |
 | --- | --- | --- | --- | --- |
-| Identity and fencing | Key under a unique index, incarnation per hands, run per session, one owner task. Steps 1, 2, 3, 6. | Keyed ids, epoch per allocation, incarnation, effects with attempts. | Name per namespace. No fencing, no reconcile loop. | Run claim with epoch and holder, re-adopted on restart. |
+| Identity and fencing | Key under a unique index, incarnation per hands, run per session, one owner per Box. Steps 1, 2, 3, 6. | Keyed ids, epoch per allocation, incarnation, effects with attempts. | Name per namespace. No fencing, no reconcile loop. | Run claim with epoch and holder, re-adopted on restart. |
 | Durability of the conversation | Claude's own session files, archived each turn, restored, `--resume`. Step 2. | Transcript kept by the client. A lost sandbox gets the last events replayed as text. | None. One headless run. | Every turn and tool call committed. Not a Claude Code conversation. |
-| Recovery from VM loss | New hands from the checkpoint chain, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves the task running. | A container per run. No snapshot. |
+| Recovery from VM loss | New hands from the checkpoint chain, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves its job running. | A container per run. No snapshot. |
 | Interactivity and steering | Steer mid-turn, interrupt, inbox for an asleep Box. `ops/steer.rs`, step 5. | Prompt through the adapter, live events. | None. | A message waits for the turn to end. |
 | Human in the loop | Questions posted with buttons, `needs_input` events and webhooks. `docs/slack.md`. | Permission requests over RPC. The reference app auto-accepts edits. | None. | Needs-input webhooks. Workflows cannot wait on a person. |
 | Real Claude Code fidelity | Claude Code in its terminal under `hc`, with the profile's plugins and the user's MCP servers. `docs/config.md`. | Driven through an agent protocol adapter. | `claude --print`. | The SDK with its native tools off. |
 | Warm start | Checkpoint chain per user, repo, machine class and cache plan. `docs/nodes.md`. | Forks from database checkpoints. No sandbox warm start. | Snapshot restore. No warm pool. | None. |
 | Workflows and triggers | Cron with a floor, latest missed due fired once, skip while active, breaker after three refused or timed-out runs. `docs/workflows.md`. | Schedules per actor. A failed run is not retried. | None. | Cron, at, every and signed webhooks. Catch-up window, pause after five, cost cap. |
 | Multi-user team model | Users, per-user secrets, machines and workflows. A run acts as its user. | Grants per resource. The reference app shares keys. | No sign-in. | One owner. |
-| Secrets and egress | The Proxy injects a secret per rule, so the Box never holds it. Egress goes through the Proxy, allowed per rule and host. `docs/config.md`. | Engine credentials stripped. Sandbox egress is not guarded. | Plaintext in the task spec. | A loopback proxy holds the keys. Egress to registries and GitHub. |
+| Secrets and egress | The Proxy injects a secret per rule, so the Box never holds it. Egress goes through the Proxy, allowed per rule and host. `docs/config.md`. | Engine credentials stripped. Sandbox egress is not guarded. | Plaintext in the job spec. | A loopback proxy holds the keys. Egress to registries and GitHub. |
 | Cost control | Awake limit, autosleep, capacity slots, cache budget. No spend cap. | None. | None. | Spend cap at the model proxy, paused at the cap. |
 | Rolling deploys | One controller, gate holds requests, runner relink measured at 0 to 1 s. Forward-only migrations. | Version families, paced drain, N-1 reads and writes. | Single replica. | Single server. |
 | Observability | Events per Box with an `after` cursor, listen, webhook outbox, inspect with the pane. Step 7 adds the agent's stream. | Live events, no replay. | None. Read a file over ssh. | Timeline with a cursor, webhook outbox. |
@@ -186,7 +186,7 @@ Rejected from the peers.
 ## Open
 
 - Today one controller runs under a flock, and the controller replicas spec
-  plans a lease. Owner tasks live in the one active controller and need no lease
+  plans a lease. Owners live in the one active controller and need no lease
   of their own. A second active controller would need one per Box.
 - Restoring `~/.claude/projects` onto new hands with the same work tree path
   gives a working `--resume`. Prove before any step's code.
