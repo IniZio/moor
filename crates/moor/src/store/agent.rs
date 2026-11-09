@@ -148,6 +148,7 @@ impl Store {
         box_id: BoxId,
         session_ref: &str,
     ) -> Result<i64, StoreError> {
+        self.check_write(box_id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;

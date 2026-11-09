@@ -128,6 +128,7 @@ impl Store {
         contents: Contents,
         place: impl FnOnce(&BlobKey) -> Result<(), BlobError>,
     ) -> Result<Option<ArtifactRow>, StoreError> {
+        self.check_write(box_id);
         let Contents { sha256, size } = contents;
         if !valid_name(name) {
             return Err(StoreError::Io(io::Error::new(

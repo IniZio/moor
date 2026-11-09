@@ -22,6 +22,7 @@ use crate::ops::common::autosleep::{ready_handle, settled, sleep_handle, sleep_p
 use crate::ops::common::cache::save_decision;
 use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
+use crate::ops::common::reconcile;
 use crate::ops::common::resume_gate::demand;
 use crate::ops::common::suspend_check;
 use crate::store::{BoxRow, Store};
@@ -183,7 +184,7 @@ pub(crate) fn on_report(
             boxes.push(Candidate {
                 resident: resident(cx, store, &row)?,
                 started_at: row.created_at.as_millis() / 1000,
-                in_flight: store.in_flight_run(id)?.is_some(),
+                in_flight: reconcile::run_in_flight(cx, store, id)?.is_some(),
                 resumed_at: resumed_at(store, id)?,
             });
         }

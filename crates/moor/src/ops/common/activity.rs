@@ -15,6 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
+use crate::ops::common::reconcile;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, SessionRow, Store};
 
@@ -145,7 +146,7 @@ pub(crate) fn read(
     now: Ts,
     deadline: Deadline,
 ) -> Result<Reading, CommandError> {
-    let in_flight = store.in_flight_run(row.id)?.is_some();
+    let in_flight = reconcile::run_in_flight(cx, store, row.id)?.is_some();
     let Some(session) = store.live_session(row.id)? else {
         return Ok(row.launch_failure.clone().map_or_else(
             || Reading::none(in_flight),

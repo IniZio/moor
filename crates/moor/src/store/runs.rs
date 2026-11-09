@@ -122,6 +122,7 @@ impl Store {
     /// The returned claim keeps the row in flight until it drops. It is taken before the row
     /// commits, so no reader ever sees the new row unclaimed.
     pub(crate) fn begin_run(&self, r: NewRun) -> Result<(RunId, FollowClaim), StoreError> {
+        self.check_write(r.box_id);
         let NewRun {
             box_id,
             argv,
@@ -194,6 +195,7 @@ impl Store {
         let box_id = BoxId::new(
             box_id.ok_or_else(|| StoreError::Invalid(format!("unknown run {}", id.get())))?,
         );
+        self.check_write(box_id);
         let changed = tx.run(
             Query::update()
                 .table(Runs::Table)
@@ -233,6 +235,7 @@ impl Store {
     ///
     /// Writes no run row and leaves the box's intent untouched.
     pub(crate) fn refused_run(&self, box_id: BoxId) -> Result<(), StoreError> {
+        self.check_write(box_id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
@@ -252,19 +255,11 @@ impl Store {
     ///
     /// Open runs of the box whose claim is free are finished as interrupted, so callers never
     /// see them. Older open runs are finished the same way even when claimed: only one run can be
-    /// live at once, as a Box's owner admits one run at a time.
+    /// live at once, as a Box's owner admits one run at a time. [`Store::held_run`] reads the
+    /// same run without finishing any.
     pub(crate) fn in_flight_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
-        let open = {
-            let conn = self.reader()?;
-            let q = run_select()
-                .and_where(Expr::col(Runs::Box).eq(box_id.get()))
-                .and_where(Expr::col(Runs::FinishedAt).is_null())
-                .order_by(Runs::Id, Order::Desc)
-                .take();
-            conn.rows(q, run_from_row)?.collect::<Result<Vec<_>, _>>()?
-        };
         let mut found = None;
-        for run in open {
+        for run in self.open_runs(box_id)? {
             let path = self.follow_path(run.id);
             if found.is_none() && follow::held(&path)? {
                 found = Some(run);
@@ -278,6 +273,28 @@ impl Store {
         Ok(found)
     }
 
+    /// The run [`Store::in_flight_run`] finds, read without finishing any stale run.
+    pub(crate) fn held_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
+        for run in self.open_runs(box_id)? {
+            if follow::held(&self.follow_path(run.id))? {
+                return Ok(Some(run));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The box's open runs, newest first.
+    fn open_runs(&self, box_id: BoxId) -> Result<Vec<RunRow>, StoreError> {
+        let conn = self.reader()?;
+        let q = run_select()
+            .and_where(Expr::col(Runs::Box).eq(box_id.get()))
+            .and_where(Expr::col(Runs::FinishedAt).is_null())
+            .order_by(Runs::Id, Order::Desc)
+            .take();
+        let rows = conn.rows(q, run_from_row)?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Where the follow claim of `run` lives: `<state>/runs/<id>.follow`.
     fn follow_path(&self, run: RunId) -> std::path::PathBuf {
         self.runs.join(format!("{}.follow", run.get()))
@@ -285,6 +302,10 @@ impl Store {
 
     /// Records `pid` as the process of run `id` and of its Box's running intent.
     pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
+        #[cfg(test)]
+        if let Some(run) = self.run(id)? {
+            self.check_write(run.box_id);
+        }
         let mut conn = self.writer();
         let tx = conn.immediate()?;
         tx.run(

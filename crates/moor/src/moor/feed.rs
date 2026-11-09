@@ -154,7 +154,8 @@ impl Moor {
         let mut claimed = Vec::new();
         let failed = self.cx.store().and_then(|store| {
             let others = Others::of(Database::from_env(self.cx.env())?.as_ref());
-            claimed = interrupted::fail_interrupted(&self.cx, store, others)?;
+            claimed =
+                crate::cx::owners::boot(|| interrupted::fail_interrupted(&self.cx, store, others))?;
             ops::common::node::backfill(&self.cx, store)
         });
         if let Err(e) = failed {
