@@ -404,3 +404,17 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         other.get()
     );
 }
+
+#[test]
+fn a_closed_box_is_not_named_for_delivery() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let closed = new_box(&store, "b");
+    store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
+    store.enqueue(closed, InboxKind::Steer, "go", "u").unwrap();
+    let close = moor_core::domain::decision::Decision::new(closed)
+        .lifecycle(moor_core::domain::box_state::BoxLifecycleInput::Close { reason: None });
+    store.apply(close).unwrap();
+    assert_eq!(store.boxes_with_unsent().unwrap(), [id]);
+}
