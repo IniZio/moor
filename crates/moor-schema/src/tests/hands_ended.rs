@@ -1,16 +1,20 @@
-//! `V70__hands_ended` only adds a nullable column: hands written before it keep every value, and
-//! hands written after it by a binary that knows nothing of `ended_at` still go in, on both
-//! backends.
+//! `V70__hands_ended` adds a nullable column: hands that ended before it get their last state
+//! change as `ended_at` and keep every other value, and hands written after it by a binary that
+//! knows nothing of `ended_at` still go in, on both backends.
 
 use moor_migrate::Backend;
 use postgres::{Client, NoTls};
 use rusqlite::Connection;
 
-/// A Box whose first hands were lost, as the store held them before the step.
+/// A Box whose first hands were lost and a Box whose hands are ready, as the store held them
+/// before the step.
 const BEFORE: &str = "
 INSERT INTO boxes (name, created_at) VALUES ('a', 1);
+INSERT INTO boxes (name, created_at) VALUES ('b', 1);
 INSERT INTO box_hands (box, inc, provider, handle, state, state_at, created_at)
     VALUES (1, 1, 'p', 'h1', 'gone', 5, 2);
+INSERT INTO box_hands (box, inc, provider, handle, state, state_at, created_at)
+    VALUES (2, 1, 'p', 'h3', 'ready', 6, 3);
 ";
 
 /// The Box's second hands, written as a binary without the step writes them.
@@ -25,7 +29,11 @@ const HANDS: &str = "SELECT CAST(box AS TEXT) || '|' || CAST(inc AS TEXT) || '|'
     || COALESCE(CAST(ended_at AS TEXT), '-') FROM box_hands ORDER BY box, inc";
 
 fn expected() -> Vec<&'static str> {
-    vec!["1|1|p|h1|gone|5|-", "1|2|p|-|starting|7|-"]
+    vec![
+        "1|1|p|h1|gone|5|5",
+        "1|2|p|-|starting|7|-",
+        "2|1|p|h3|ready|6|-",
+    ]
 }
 
 #[test]
