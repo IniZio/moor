@@ -253,14 +253,16 @@ pub(crate) fn settle(
     if row.asleep() {
         return Ok(None);
     }
-    turn::note_turn_done(store, row, reading, cx.clock().now())?;
+    let turn_end_pending = turn::note_turn_done(cx, store, row, reading, cx.clock().now())?;
     let fate = if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         let exit = match reading.activity.as_ref().map(|a| &a.state) {
             Some(AgentState::Exited { code }) => *code,
             _ => None,
         };
-        transcript::save_on_exit(cx, store, row, probed)?;
-        end_exited_session(cx, store, row, exit, probed)?;
+        if !turn_end_pending {
+            transcript::save_on_exit(cx, store, row, probed)?;
+            end_exited_session(cx, store, row, exit, probed)?;
+        }
         Some(Fate::Ended(exit))
     } else {
         None

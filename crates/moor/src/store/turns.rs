@@ -25,6 +25,7 @@ impl Store {
         steer: i64,
         outcome: TurnOutcome,
     ) -> Result<bool, StoreError> {
+        self.check_write(box_id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;

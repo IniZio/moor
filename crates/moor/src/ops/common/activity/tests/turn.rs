@@ -209,7 +209,7 @@ fn saved_once(engine: &Arc<FakeEngine>) -> (tempfile::TempDir, Cx, BoxId) {
 }
 
 #[test]
-fn a_turn_save_skipped_while_the_box_is_busy_runs_on_the_next_pass() {
+fn a_turn_end_seen_while_the_box_is_busy_is_marked_and_saved_on_the_next_pass() {
     let engine = Arc::new(
         FakeEngine::new()
             .probes(SESSION, idle(seen()))
@@ -219,10 +219,12 @@ fn a_turn_save_skipped_while_the_box_is_busy_runs_on_the_next_pass() {
     steer(&cx, id);
     let held = cx.owners_arc().hold(id, Cmd::Close { force: false });
     settle_once(&cx, id);
-    assert_eq!(events(&cx, id, "turn_done").len(), 1);
+    assert!(events(&cx, id, "turn_done").is_empty(), "busy: no turn end");
+    assert_eq!(cx.store().unwrap().archive_due(id).unwrap(), None);
     assert_eq!(engine.transcripts().len(), 1, "busy: nothing saved");
     drop(held);
     settle_once(&cx, id);
+    assert_eq!(events(&cx, id, "turn_done").len(), 1);
     assert_eq!(engine.transcripts().len(), 2, "the next pass saves");
     settle_once(&cx, id);
     assert_eq!(engine.transcripts().len(), 2, "a paid due saves no more");
