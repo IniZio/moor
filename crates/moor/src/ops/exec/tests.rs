@@ -7,7 +7,13 @@ use moor_core::view::ExecView;
 use moor_core::{BoxName, ErrorKind, ExecReq};
 use serde_json::json;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
+
+use crate::ops::common::boxlock::BoxLock;
 use crate::ops::run_fixture::{ready_with, Fx};
+use crate::store::SuspendCheck;
 use crate::testing::driver::FakeDriver;
 use crate::Moor;
 
@@ -159,4 +165,76 @@ fn an_empty_command_is_a_usage_error() {
     };
     let e = Moor::from_cx(f.cx).exec(&req("t", &[]), pipes).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Usage);
+}
+
+/// Puts Box `f` to sleep with a stored suspend check.
+fn asleep_with_check(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    store
+        .apply(
+            Decision::new(f.id)
+                .lifecycle(BoxLifecycleInput::sleep(false))
+                .hands_input(HandsInput::Sleep),
+        )
+        .unwrap();
+    let check = SuspendCheck {
+        ahead: 0,
+        dirty: 0,
+        at: 1,
+    };
+    store.set_suspend_check(f.id, Some(check)).unwrap();
+}
+
+#[test]
+fn exec_of_an_asleep_box_refuses_instead_of_waking_while_another_op_holds_the_box_lock() {
+    let f = ready_with(FakeDriver::new());
+    asleep_with_check(&f);
+    let _held = BoxLock::acquire(
+        f.cx.clock(),
+        f.cx.state_dir().unwrap(),
+        f.id,
+        "close",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let pipes = Pipes {
+        stdin: Box::new(std::io::empty()),
+        stdout: &mut out,
+        stderr: &mut err,
+        stop: &|| false,
+    };
+    let (done, clock) = (AtomicBool::new(false), f.cx.clock());
+    let outcome = std::thread::scope(|s| {
+        s.spawn(|| {
+            while !done.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(20));
+                clock.sleep(Duration::from_secs(5));
+            }
+        });
+        let outcome = crate::ops::exec::run(&f.cx, &req("t", &["true"]), pipes);
+        done.store(true, Ordering::SeqCst);
+        outcome
+    });
+    let e = outcome.expect_err("exec woke the Box past a held lock");
+    assert_eq!(e.kind, ErrorKind::Refused);
+    assert!(!f.driver.calls().iter().any(|c| c.starts_with("wake ")));
+    assert!(f.driver.execs().is_empty());
+}
+
+#[test]
+fn exec_of_an_asleep_box_clears_the_stored_check_before_it_lets_go_of_the_box_lock() {
+    let f = ready_with(FakeDriver::new());
+    asleep_with_check(&f);
+    exec_quiet(&f, &req("t", &["true"]));
+    let store = f.cx.store().unwrap();
+    assert_eq!(store.suspend_check(f.id).unwrap(), None);
+    let held = BoxLock::acquire(
+        f.cx.clock(),
+        f.cx.state_dir().unwrap(),
+        f.id,
+        "close",
+        Duration::ZERO,
+    );
+    assert!(held.is_ok(), "exec left the Box lock held");
 }

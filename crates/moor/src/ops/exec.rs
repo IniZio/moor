@@ -1,7 +1,8 @@
 //! `exec`: run a command in an open Box with its stdio streamed byte for byte, no terminal.
 //!
-//! Unlike `run` it keeps no run record and takes no Box lock, so it never waits on one. Each
-//! command that ran leaves one `exec_ran` event, so the Box's owner can see what ran in it.
+//! Unlike `run` it keeps no run record. The Box lock is taken only to wake an asleep Box, so a
+//! command can run in a Box during another run. Each command that ran leaves one `exec_ran`
+//! event, so the Box's owner can see what ran in it.
 
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ use moor_core::{BoxHandle, ErrorKind, ExecReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, Site};
+use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::target::{self, Rule};
@@ -40,8 +42,12 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
     };
     let mut row = open()?;
     dead_provisioning(cx, &row)?;
-    if wake_and_revive(cx, store, &row)? {
+    if row.asleep() {
+        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, "exec", boxlock::WAIT)?;
         row = open()?;
+        if wake_and_revive(cx, store, &row)? {
+            row = open()?;
+        }
     }
     let target = ready::target(store, &row)?;
     let cfg = settings_of(cx, &row, &Flags::default())?;
