@@ -150,3 +150,24 @@ fn status_reads_of_an_asleep_box_make_no_guest_call_and_keep_its_session() {
     assert_eq!(agent.pane, "gone");
     assert_ne!(agent.state, "exited");
 }
+
+#[test]
+fn reconcile_drops_a_verdict_on_hands_replaced_since_its_listing_and_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = cx(dir.path(), &driver);
+    let id = working(&cx, &driver, "a", None);
+    let store = cx.store().unwrap();
+    let listed = store.box_row(id).unwrap().unwrap();
+    driver.stop_behind(listed.hands.as_ref().unwrap().handle.as_ref().unwrap());
+    store.replace_hands(id);
+    drop(cx.take_warnings());
+
+    crate::ops::common::reconcile::one(&cx, store, &listed);
+
+    let codes: Vec<_> = cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["stale_hands_write"]);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.hands.unwrap().state, HandsState::Starting);
+}

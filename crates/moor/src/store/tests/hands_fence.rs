@@ -44,31 +44,32 @@ fn ready_box(store: &Store) -> BoxId {
     id
 }
 
-/// Gives Box `id` second hands, Starting, as a re-acquire after losing the first would.
-fn replace_hands(store: &Store, id: BoxId) {
-    store
-        .writer()
-        .run(
-            Query::insert()
-                .into_table(BoxHands::Table)
-                .columns([
-                    BoxHands::Box,
-                    BoxHands::Inc,
-                    BoxHands::Provider,
-                    BoxHands::State,
-                    BoxHands::StateAt,
-                    BoxHands::CreatedAt,
-                ])
-                .values_panic([
-                    id.get().into(),
-                    NEW.get().into(),
-                    "p".into(),
-                    HandsState::Starting.as_str().into(),
-                    1_i64.into(),
-                    1_i64.into(),
-                ]),
-        )
-        .unwrap();
+impl Store {
+    /// Gives Box `id` second hands, Starting, as a re-acquire after losing the first would.
+    pub(crate) fn replace_hands(&self, id: BoxId) {
+        self.writer()
+            .run(
+                Query::insert()
+                    .into_table(BoxHands::Table)
+                    .columns([
+                        BoxHands::Box,
+                        BoxHands::Inc,
+                        BoxHands::Provider,
+                        BoxHands::State,
+                        BoxHands::StateAt,
+                        BoxHands::CreatedAt,
+                    ])
+                    .values_panic([
+                        id.get().into(),
+                        NEW.get().into(),
+                        "p".into(),
+                        HandsState::Starting.as_str().into(),
+                        1_i64.into(),
+                        1_i64.into(),
+                    ]),
+            )
+            .unwrap();
+    }
 }
 
 /// The stored state of Box `id`'s hands `inc`.
@@ -98,7 +99,7 @@ fn a_gone_verdict_on_replaced_hands_is_refused_and_changes_nothing() {
         handle: Some(BoxHandle::new("h1")),
     };
     let gone = reconcile(&[fact], &[]).pop().expect("a Gone verdict");
-    replace_hands(&store, id);
+    store.replace_hands(id);
     let before = kinds(&store, id);
 
     let err = store.apply(gone).unwrap_err();
@@ -117,7 +118,7 @@ fn a_write_on_the_current_hands_lands() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready_box(&store);
-    replace_hands(&store, id);
+    store.replace_hands(id);
 
     store
         .apply(Decision::new(id).hands_input(
@@ -151,7 +152,7 @@ fn pressure_writes_for_replaced_hands_are_refused_and_change_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready_box(&store);
-    replace_hands(&store, id);
+    store.replace_hands(id);
     let clean = SuspendCheck {
         ahead: 0,
         dirty: 0,

@@ -128,7 +128,9 @@ fn a_run_in_flight_denies_the_save_and_the_answer_even_when_the_agent_is_quiet()
     let row = store.box_row(b).unwrap().unwrap();
     let handle = autosleep::ready_handle(&row).unwrap();
     let settled = autosleep::settled(&w.cx, store, &row).unwrap();
-    autosleep::sleep_parked(&w.cx, store, &row, &handle, settled).unwrap();
+    autosleep::sleep_parked(&w.cx, store, &row, &handle, settled)
+        .unwrap()
+        .unwrap();
     assert_eq!(publishes(&w), [PausePublish::Denied]);
     assert_eq!(stored(&w, b), None);
 }
@@ -369,7 +371,9 @@ fn a_sleep_with_a_run_in_flight_decides_the_run_denied_it() {
     let row = store.box_row(b).unwrap().unwrap();
     let handle = autosleep::ready_handle(&row).unwrap();
     let settled = autosleep::settled(&w.cx, store, &row).unwrap();
-    let parked = autosleep::sleep_parked(&w.cx, store, &row, &handle, settled).unwrap();
+    let parked = autosleep::sleep_parked(&w.cx, store, &row, &handle, settled)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         parked.cache_save,
         Some(moor_core::domain::cache_save::CacheSave::Denied {

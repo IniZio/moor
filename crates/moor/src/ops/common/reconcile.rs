@@ -11,6 +11,7 @@ use crate::adapters::proc::plain::last_sentence;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::ops::common::node::now;
+use crate::ops::common::stale::unless_stale;
 use crate::store::{BoxRow, RunRow, Store, StoreError};
 
 /// Group live Box rows by provider, keeping first-seen order.
@@ -144,17 +145,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
 /// Whether a verdict was written. One about hands the Box has since replaced is dropped with a
 /// warning, never retried; any other failure lost a race with another command.
 fn noted<T>(cx: &Cx, applied: Result<T, StoreError>) -> bool {
-    match applied {
-        Ok(_) => true,
-        Err(e @ StoreError::Stale { .. }) => {
-            cx.warn(Warning {
-                code: "stale_hands_write".to_owned(),
-                message: e.to_string(),
-            });
-            false
-        }
-        Err(_) => false,
-    }
+    matches!(unless_stale(cx, applied), Ok(Some(_)))
 }
 
 /// Tells each starting Box in `facts` that listing its provider fails, once per distinct error,

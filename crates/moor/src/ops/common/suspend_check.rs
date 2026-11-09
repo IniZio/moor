@@ -15,6 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxwork::{probe_within, BoxWork};
 use crate::ops::common::node::now;
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::{artifacts, reports};
 use crate::store::{BoxRow, Store, SuspendCheck};
 
@@ -32,7 +33,8 @@ pub(crate) fn record(cx: &Cx, store: &Store, (id, inc): (BoxId, HandsInc), settl
     } else {
         Ok(None)
     };
-    let answer = answer.and_then(|check| Ok(store.set_suspend_check((id, inc), check)?));
+    let answer =
+        answer.and_then(|check| Ok(unless_stale(cx, store.set_suspend_check((id, inc), check))?));
     if let Err(e) = answer {
         cx.warn(Warning {
             code: "suspend_check_failed".to_owned(),

@@ -20,6 +20,7 @@ use crate::ops::common::activity::Reading;
 use crate::ops::common::cache::save_decision;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::reconcile;
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::suspend_check;
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
@@ -110,11 +111,17 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
     if row.hands.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
-    let handle = sleep_handle(cx, &row)?;
+    sleep_now(cx, store, &row, agent)
+}
+
+/// Sleeps `row`, due to sleep, under its turn and records the outcome.
+fn sleep_now(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<(), CommandError> {
+    let id = row.id;
+    let handle = sleep_handle(cx, row)?;
     let settled = if agent == AgentRead::Unread {
         Err(CacheSaveDenied::AgentUnread)
     } else {
-        settled(cx, store, &row)?
+        settled(cx, store, row)?
     };
     if !row.session.is_quiet() {
         // Only the awake cap gets here; the sleep ends the agent's pane, so its Session is quiet.
@@ -124,9 +131,10 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
             Err(e) => return Err(e.into()),
         }
     }
-    let parked = sleep_parked(cx, store, &row, &handle, settled)?;
-    let decision = recorded(&row, parked);
-    match store.apply(decision) {
+    let Some(parked) = sleep_parked(cx, store, row, &handle, settled)? else {
+        return Ok(());
+    };
+    match unless_stale(cx, store.apply(recorded(row, parked))) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
@@ -170,13 +178,14 @@ pub(crate) struct Parked {
 /// to see.
 ///
 /// `settled` comes from [`settled`], read before anything marked the agent quiet for this sleep.
+/// None when `row`'s hands were replaced before the sleep began, so there is nothing to sleep.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     handle: &BoxHandle,
     settled: Result<(), CacheSaveDenied>,
-) -> Result<Parked, CommandError> {
+) -> Result<Option<Parked>, CommandError> {
     let id = row.id;
     let cache_save = save_decision(cx, store, row, settled);
     let publish = if cache_save == Some(CacheSave::Allowed) {
@@ -184,7 +193,9 @@ pub(crate) fn sleep_parked(
     } else {
         PausePublish::Denied
     };
-    store.set_pause_publish((id, row.hands_inc()), publish)?;
+    if unless_stale(cx, store.set_pause_publish((id, row.hands_inc()), publish))?.is_none() {
+        return Ok(None);
+    }
     // Parking takes the Proxy away, and the check runs in the Box.
     suspend_check::record(cx, store, (id, row.hands_inc()), settled.is_ok());
     park_tunnel(cx, id)?;
@@ -198,10 +209,10 @@ pub(crate) fn sleep_parked(
             });
         }
     }
-    Ok(Parked {
+    Ok(Some(Parked {
         outcome: slept?,
         cache_save,
-    })
+    }))
 }
 
 /// Ok when `row`'s agent is read and quiet and no run is in flight, so nothing it started writes to
