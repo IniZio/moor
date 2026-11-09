@@ -4,6 +4,7 @@ pub mod capacity;
 pub mod close;
 pub mod disk;
 pub mod gate;
+pub mod inbox;
 pub mod intent;
 pub mod preempt;
 pub mod pressure;

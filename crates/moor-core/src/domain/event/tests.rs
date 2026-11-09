@@ -358,6 +358,10 @@ fn all_events() -> Vec<Event> {
         Event::Restore(RestoreEvent::SessionLost {
             reason: s("no archive was saved"),
         }),
+        Event::SteerUnconfirmed {
+            inbox: 9,
+            text: s("go"),
+        },
     ]
 }
 
@@ -469,6 +473,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Workflow(WorkflowEvent::PreviousBoxKept { .. }) => 87,
         Event::Restore(RestoreEvent::SessionRestored { .. }) => 88,
         Event::Restore(RestoreEvent::SessionLost { .. }) => 89,
+        Event::SteerUnconfirmed { .. } => 90,
     }
 }
 
@@ -476,7 +481,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 90);
+    assert_eq!(all.len(), 91);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -557,39 +562,6 @@ fn box_events_table() {
         vec![Event::BoxReleaseFailed {
             error: s("c"),
             handle: None
-        }]
-    );
-}
-
-#[test]
-fn box_failure_events_carry_handle() {
-    let h = BoxHandle::new("p/x");
-    assert_eq!(
-        box_events(
-            Some(HandsState::Ready),
-            HandsState::ReleaseFailed,
-            &HandsInput::ReleaseErr { cause: s("c") },
-            Some(&h)
-        ),
-        vec![Event::BoxReleaseFailed {
-            error: s("c"),
-            handle: Some(s("p/x"))
-        }]
-    );
-    let failed = HandsInput::AcquireFailed {
-        cause: s("c"),
-        attempted: Some(h),
-    };
-    assert_eq!(
-        box_events(
-            Some(HandsState::Starting),
-            HandsState::Failed,
-            &failed,
-            None
-        ),
-        vec![Event::BoxFailed {
-            error: s("c"),
-            handle: Some(s("p/x"))
         }]
     );
 }

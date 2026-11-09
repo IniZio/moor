@@ -323,3 +323,84 @@ fn an_update_without_a_turn_panics() {
     let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
     drop(store.mark_sending(id, row, s));
 }
+
+#[test]
+fn unsent_rows_skip_sent_ones_and_name_only_boxes_with_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let quiet = new_box(&store, "b");
+    let s = launch(&store, id);
+    let one = store.enqueue(id, InboxKind::Steer, "one", "u").unwrap();
+    store.mark_sending(id, one, s).unwrap();
+    store.confirm_sent(id, one, MARK, &steered(one)).unwrap();
+    let two = store.enqueue(id, InboxKind::Steer, "two", "u").unwrap();
+    store.mark_sending(id, two, s).unwrap();
+    store.enqueue(id, InboxKind::Note, "three", "moor").unwrap();
+    let sent = store.enqueue(quiet, InboxKind::Steer, "x", "u").unwrap();
+    let q = launch(&store, quiet);
+    store.mark_sending(quiet, sent, q).unwrap();
+    store
+        .confirm_sent(quiet, sent, MARK, &steered(sent))
+        .unwrap();
+    assert_eq!(
+        texts(&store.unsent(id).unwrap()),
+        ["two:in_doubt", "three:queued"]
+    );
+    assert_eq!(store.boxes_with_unsent().unwrap(), [id]);
+}
+
+#[test]
+fn an_unconfirmed_row_is_deleted_with_its_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let row = store.enqueue(id, InboxKind::Steer, "go", "u").unwrap();
+    store.unconfirmed(id, row).unwrap();
+    assert_eq!(store.next_for(id).unwrap(), None);
+    let last = store.events(id, 1).unwrap().pop().unwrap();
+    assert_eq!(last.kind, "steer_unconfirmed");
+    assert_eq!(
+        last.payload,
+        serde_json::json!({"inbox": row.get(), "text": "go"})
+    );
+}
+
+#[test]
+fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    store.enqueue(id, InboxKind::Steer, "ahead", "u").unwrap();
+    let prompt = store
+        .enqueue(id, InboxKind::Prompt, "fix it", "start")
+        .unwrap();
+    let other = store
+        .enqueue(id, InboxKind::Prompt, "later", "start")
+        .unwrap();
+    let s = store
+        .begin_session_with(id, "agent", Some("fix it"))
+        .unwrap();
+    let sent = store.sent(id).unwrap();
+    assert_eq!(texts(&sent), ["fix it:sent"]);
+    assert!(matches!(
+        sent.first().map(|r| r.delivery),
+        Some(Delivery::Sent { launch, .. }) if launch == LaunchId::new(s)
+    ));
+    assert_eq!(store.next_for(id).unwrap().unwrap().text, "ahead");
+    let steered = store.events(id, 1).unwrap().pop().unwrap();
+    assert_eq!(steered.kind, "steered");
+    assert_eq!(
+        steered.payload.get("inbox"),
+        Some(&serde_json::json!(prompt.get()))
+    );
+    store
+        .begin_session_with(id, "agent", Some("not queued"))
+        .unwrap();
+    assert_eq!(
+        texts(&store.unsent(id).unwrap()),
+        ["ahead:queued", "later:queued"],
+        "row {} is left",
+        other.get()
+    );
+}

@@ -67,6 +67,22 @@ impl InboxKind {
     }
 }
 
+/// Why a steer waits in the inbox instead of reaching the agent now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueCause {
+    /// The Box sleeps; moor wakes it.
+    Asleep,
+    /// The Box waits for its node to have room to wake it.
+    WaitingForRoom,
+    /// The Box lost its machine or its agent, and moor starts it again.
+    Relaunching,
+    /// moor relaunched the agent too often to do it again on its own; `moor start --resume`.
+    RelaunchCapped,
+    /// Another op holds the Box, or the agent cannot take a message now.
+    Busy,
+}
+
 /// Where the agent's terminal was when a row's send was confirmed, so the turn it started can be
 /// told apart from the one before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +243,15 @@ impl Delivery {
                 attempts: attempts.saturating_sub(1),
             }),
             Self::Queued { .. } | Self::Sent { .. } => Err(self.illegal("refused")),
+        }
+    }
+
+    /// The launch a send went to; none for a row never sent.
+    #[must_use]
+    pub const fn launch(self) -> Option<LaunchId> {
+        match self {
+            Self::Queued { .. } => None,
+            Self::InDoubt { launch, .. } | Self::Sent { launch, .. } => Some(launch),
         }
     }
 
