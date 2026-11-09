@@ -161,12 +161,14 @@ pub(crate) fn provision(
             caps,
         }
     };
-    let req = acquire_req(cx, store, &started, cfg, bound);
+    // Read again under the hands the request made, which everything the acquire writes names.
+    let acquiring = reread(store, id)?;
+    let req = acquire_req(cx, store, &acquiring, cfg, bound);
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     let provider = req.provider.as_str();
-    let mut layered = layers::plan(cx, store, &started, provider, cfg, &req.cache);
+    let mut layered = layers::plan(cx, store, &acquiring, provider, cfg, &req.cache);
     let acquired = machine_for(cx, store, id, entry, &req, layered.as_mut())?;
     let forced = || cx.env().cancel().is_cancelled();
     match acquired {
