@@ -56,13 +56,13 @@ pub(super) struct Owner {
     /// Tickets waiting for the turn.
     pub(super) queue: VecDeque<u64>,
     /// Runs whose exec continues after their turn ended.
-    pub(super) runs: usize,
+    pub(super) runs: Vec<ThreadId>,
 }
 
 impl Owner {
     /// Nothing in flight or waiting.
     pub(super) fn idle(&self) -> bool {
-        self.holder.is_none() && self.queue.is_empty() && self.runs == 0
+        self.holder.is_none() && self.queue.is_empty() && self.runs.is_empty()
     }
 }
 
@@ -118,7 +118,7 @@ impl State {
             let why = format!("box busy: {} queued", owner.queue.len());
             return Err(CommandError::new(ErrorKind::Refused, why));
         }
-        let admitted = admit(cmd, holder.map(|h| h.cmd), owner.runs > 0);
+        let admitted = admit(cmd, holder.map(|h| h.cmd), !owner.runs.is_empty());
         match admitted {
             Admit::Refuse(why) => {
                 self.drop_idle(box_id);
@@ -155,7 +155,11 @@ impl State {
         if owner.queue.front() != Some(&ticket) {
             return Ok(Grant::Wait);
         }
-        match admit(cmd, owner.holder.as_ref().map(|h| h.cmd), owner.runs > 0) {
+        match admit(
+            cmd,
+            owner.holder.as_ref().map(|h| h.cmd),
+            !owner.runs.is_empty(),
+        ) {
             Admit::Now => {
                 owner.queue.pop_front();
                 owner.holder = Some(Holder::new(ticket, cmd, cancel));

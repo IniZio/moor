@@ -1,8 +1,9 @@
 //! `exec`: run a command in an open Box with its stdio streamed byte for byte, no terminal.
 //!
-//! Unlike `run` it keeps no run record. The Box's turn is taken only to wake an asleep Box and to
-//! record the command once it ends, so a command can run in a Box during another run. Each command that ran leaves one `exec_ran`
-//! event, so the Box's owner can see what ran in it.
+//! Unlike `run` it keeps no run record. The Box's turn is held only to wake an asleep Box; the
+//! command then counts as a run on the Box until its `exec_ran` event is recorded, so a command
+//! can run beside another run, a steer still reaches the agent, and no close can come between
+//! the command and its record.
 
 use std::time::Duration;
 
@@ -40,15 +41,15 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
         target::resolve(store, &req.target, Rule::Open)?
             .ok_or_else(|| failed(format!("no open Box {}", req.target)))
     };
+    let first = open()?;
+    dead_provisioning(cx, &first)?;
+    let turn = cx.turn(first.id, Cmd::Exec)?;
     let mut row = open()?;
-    dead_provisioning(cx, &row)?;
-    if row.asleep() {
-        let _turn = cx.turn(row.id, Cmd::Exec)?;
+    if row.asleep() && wake_and_revive(cx, store, &row)? {
         row = open()?;
-        if wake_and_revive(cx, store, &row)? {
-            row = open()?;
-        }
     }
+    let _running = turn.begin_run();
+    drop(turn);
     let target = ready::target(store, &row)?;
     let cfg = settings_of(cx, &row, &Flags::default())?;
     let proxy = box_exec::proxy(
@@ -85,7 +86,6 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
         exit: view.exit,
         timed_out: view.timed_out,
     };
-    let _turn = cx.turn(row.id, Cmd::Exec)?;
     store.apply(Decision::new(row.id).event(event))?;
     Ok(view)
 }

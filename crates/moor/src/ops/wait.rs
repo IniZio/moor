@@ -66,7 +66,7 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
                 return Err(failed(cx, &row, &reading, first.message(), attention)?);
             }
         }
-        let in_flight = store.in_flight_run(id)?;
+        let in_flight = reconcile::run_in_flight(cx, store, id)?;
         let facts = WaitFacts {
             agent_active: agent_active(store, &row, &reading, clock.now())?,
             run_in_flight: in_flight.is_some(),

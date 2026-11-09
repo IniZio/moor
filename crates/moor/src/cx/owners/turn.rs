@@ -1,11 +1,12 @@
 //! The proof that an op runs under its Box's turn.
 
 use std::marker::PhantomData;
+use std::thread::{self, ThreadId};
 
 use moor_core::name::BoxId;
 use moor_core::ErrorKind;
 
-use super::Owners;
+use super::{Owners, Released};
 use crate::error::CommandError;
 
 /// One Box's turn, released on drop, also when its op panics.
@@ -55,6 +56,8 @@ pub(crate) struct RunHold<'a> {
     owners: &'a Owners,
     /// The Box running it.
     box_id: BoxId,
+    /// The thread that began the run, which may write the Box's rows while it lasts.
+    thread: ThreadId,
 }
 
 impl<'a> Turn<'a> {
@@ -83,12 +86,14 @@ impl<'a> Turn<'a> {
 
     /// Marks a run in flight on this Box until the returned hold drops, past the end of the turn.
     pub(crate) fn begin_run(&self) -> RunHold<'a> {
+        let thread = thread::current().id();
         if let Some(owner) = self.owners.lock().boxes.get_mut(&self.box_id) {
-            owner.runs += 1;
+            owner.runs.push(thread);
         }
         RunHold {
             owners: self.owners,
             box_id: self.box_id,
+            thread,
         }
     }
 }
@@ -107,6 +112,8 @@ impl TurnShare<'_> {
             .and_then(|o| o.holder.as_ref())
             .is_some_and(|h| h.seq == self.seq);
         if held {
+            #[cfg(test)]
+            super::check::present(self.owners, self.box_id, self.seq);
             return Ok(self.box_id);
         }
         Err(CommandError::new(
@@ -118,12 +125,12 @@ impl TurnShare<'_> {
 
 impl Drop for Turn<'_> {
     fn drop(&mut self) {
-        self.owners.release(self.box_id, Some(self.seq));
+        self.owners.release(self.box_id, Released::Turn(self.seq));
     }
 }
 
 impl Drop for RunHold<'_> {
     fn drop(&mut self) {
-        self.owners.release(self.box_id, None);
+        self.owners.release(self.box_id, Released::Run(self.thread));
     }
 }

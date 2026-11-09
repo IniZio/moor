@@ -43,6 +43,7 @@ impl Store {
         content: &str,
         blobs: &dyn Blobs,
     ) -> Result<Option<ReportRow>, StoreError> {
+        self.check_write(box_id);
         if kind.is_empty() || kind.contains('/') || kind == "." || kind == ".." {
             return Err(StoreError::Io(io::Error::new(
                 io::ErrorKind::InvalidInput,

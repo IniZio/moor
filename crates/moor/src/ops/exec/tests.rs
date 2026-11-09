@@ -225,3 +225,68 @@ fn exec_of_an_asleep_box_clears_the_stored_check_before_it_lets_go_of_the_box_lo
     let held = f.cx.try_turn(f.id, Cmd::Close { force: false });
     assert!(held.is_some(), "exec left the Box lock held");
 }
+
+/// Stdin that yields nothing until its sender hangs up, so the command runs until then.
+struct Held(std::sync::mpsc::Receiver<()>);
+
+impl std::io::Read for Held {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        let _ = self.0.recv();
+        Ok(0)
+    }
+}
+
+#[test]
+fn a_forced_close_mid_command_waits_for_the_exec_to_record_its_result() {
+    let f = ready_with(FakeDriver::new());
+    let owners = std::sync::Arc::clone(f.cx.owners_arc());
+    let (release, held) = std::sync::mpsc::channel();
+    let closing = crate::cx::Cx::fake(
+        f.dir.path(),
+        f.driver.clone(),
+        std::sync::Arc::new(crate::testing::proc::ScriptedProc::new()),
+    )
+    .with_owners(std::sync::Arc::clone(&owners));
+    let (id, until) = (f.id, |done: &dyn Fn() -> bool| {
+        while !done() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    });
+    let view = std::thread::scope(|s| {
+        let owners = &owners;
+        let closer = s.spawn(move || {
+            until(&|| owners.running(id) == 1);
+            let req = moor_core::CloseReq {
+                target: BoxName::parse_allow_bare("t").unwrap().into(),
+                force: true,
+            };
+            crate::ops::close::run(&closing, &req).map(drop)
+        });
+        s.spawn(move || {
+            until(&|| owners.waiting(id) == 1);
+            drop(release);
+        });
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let pipes = Pipes {
+            stdin: Box::new(Held(held)),
+            stdout: &mut out,
+            stderr: &mut err,
+            stop: &|| false,
+        };
+        let view = crate::ops::exec::run(&f.cx, &req("t", &["cat"]), pipes);
+        let close = closer.join().unwrap();
+        assert!(close.is_ok(), "{:?}", close.err().map(|e| e.error));
+        view
+    });
+    assert_eq!(view.unwrap().exit, Some(0));
+    assert_eq!(
+        exec_ran(&f),
+        [json!({"command": "cat", "exit": 0, "timed_out": false})]
+    );
+    let events = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    let at = |kind: &str| events.iter().find(|e| e.kind == kind).map(|e| e.id);
+    assert!(
+        at("exec_ran").is_some() && at("exec_ran") < at("closed"),
+        "{events:?}"
+    );
+}

@@ -113,6 +113,7 @@ impl Store {
         id: BoxId,
         parent: Option<i64>,
     ) -> Result<BoxSession, StoreError> {
+        self.check_write(id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
@@ -176,6 +177,18 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::Illegal`] when the Session is not Starting, or [`StoreError`] when the database fails.
     pub(crate) fn start_session(&self, session: i64) -> Result<(), StoreError> {
+        #[cfg(test)]
+        {
+            let of = Query::select()
+                .column(Sessions::Box)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(session))
+                .take();
+            let id: Option<i64> = self.reader()?.row(of, |r| r.get(0)).optional()?;
+            if let Some(id) = id {
+                self.check_write(BoxId::new(id));
+            }
+        }
         let mut conn = self.writer();
         let tx = conn.immediate()?;
         let state: String = tx.row(
@@ -212,6 +225,7 @@ impl Store {
         cause: &str,
         exit: Option<i32>,
     ) -> Result<bool, StoreError> {
+        self.check_write(id);
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;

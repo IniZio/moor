@@ -19,11 +19,17 @@ use crate::env::Cancel;
 thread_local! {
     /// Whether this thread runs an op whose Box writes are checked against their owners.
     static CHECKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Why this thread's Box writes are not checked, while an exempt scope runs.
+    static EXEMPT: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+    /// The shared turns this thread presented, as (owners, Box, ticket).
+    static SHARES: std::cell::RefCell<Vec<(usize, BoxId, u64)>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
 }
 
 /// Runs `f`, an op entry, with every write it makes to a Box's rows on this thread checked, in
-/// test builds, against that Box's owner. Writes from a thread holding a turn are always checked;
-/// test fixtures that seed rows outside any op are not.
+/// test builds, against that Box's owner. A thread holding a turn, a run or a shared turn is
+/// always checked.
 pub(crate) fn checked<T>(f: impl FnOnce() -> T) -> T {
     #[cfg(test)]
     let was = CHECKED.replace(true);
@@ -33,21 +39,74 @@ pub(crate) fn checked<T>(f: impl FnOnce() -> T) -> T {
     out
 }
 
+/// Runs `f`, the boot pass that fails the starts a restart cut short, with its Box writes
+/// unchecked: it runs before the controller serves, so no other op can reach those Boxes.
+pub(crate) fn boot<T>(f: impl FnOnce() -> T) -> T {
+    exempt("boot", f)
+}
+
+/// Runs `f` with this thread's Box writes unchecked for `why`.
+fn exempt<T>(why: &'static str, f: impl FnOnce() -> T) -> T {
+    #[cfg(test)]
+    let was = EXEMPT.replace(Some(why));
+    #[cfg(not(test))]
+    let _ = why;
+    let out = f();
+    #[cfg(test)]
+    EXEMPT.set(was);
+    out
+}
+
+/// Records that this thread acts under ticket `seq`'s turn on `box_id`, shared with it.
+#[cfg(test)]
+pub(super) fn present(owners: &Owners, box_id: BoxId, seq: u64) {
+    let key = (std::ptr::from_ref(owners) as usize, box_id, seq);
+    SHARES.with_borrow_mut(|shares| {
+        if !shares.contains(&key) {
+            shares.push(key);
+        }
+    });
+}
+
 #[cfg(test)]
 impl Owners {
-    /// Panics unless something holds `box_id`'s owner: a turn, a waiter about to take it, or a
-    /// run. Per Box, not per thread, as a setup follower writes under its caller's turn.
+    /// Panics unless this thread may write `box_id`'s rows: it holds the Box's turn, began a run
+    /// on it that is still in flight, or presented a share of its current turn.
+    ///
+    /// Checked on every thread that runs an op or holds a turn, a run or a share; an exempt scope
+    /// skips it.
     pub(crate) fn check_write(&self, box_id: BoxId) {
-        let (armed, owned) = {
-            let st = self.lock();
-            (
-                CHECKED.get() || st.held_here().is_some(),
-                st.boxes.contains_key(&box_id),
-            )
+        if EXEMPT.get().is_some() {
+            return;
+        }
+        let me = thread::current().id();
+        let at = std::ptr::from_ref(self) as usize;
+        let shares = SHARES.with_borrow(Clone::clone);
+        let st = self.lock();
+        let (armed, allowed) = {
+            let current = |id: BoxId, seq: u64| {
+                st.boxes
+                    .get(&id)
+                    .and_then(|o| o.holder.as_ref())
+                    .is_some_and(|h| h.seq == seq)
+            };
+            let sharing = |id: BoxId| {
+                shares
+                    .iter()
+                    .any(|&(o, b, seq)| o == at && b == id && current(b, seq))
+            };
+            let mine = |id: BoxId| {
+                st.boxes.get(&id).is_some_and(|o| {
+                    o.holder.as_ref().is_some_and(|h| h.thread == me) || o.runs.contains(&me)
+                }) || sharing(id)
+            };
+            let busy_here = st.boxes.keys().any(|&id| mine(id));
+            (CHECKED.get() || busy_here, mine(box_id))
         };
+        drop(st);
         assert!(
-            !armed || owned,
-            "Box {} written with no turn held",
+            !armed || allowed,
+            "Box {} written by a thread that holds neither its turn, a run on it nor a share",
             box_id.get()
         );
     }
@@ -91,6 +150,11 @@ impl Owners {
     /// Owners currently held in memory.
     pub(super) fn owned(&self) -> usize {
         self.lock().boxes.len()
+    }
+
+    /// Runs in flight on `box_id`.
+    pub(crate) fn running(&self, box_id: BoxId) -> usize {
+        self.lock().boxes.get(&box_id).map_or(0, |o| o.runs.len())
     }
 
     /// Ops waiting for `box_id`'s turn.

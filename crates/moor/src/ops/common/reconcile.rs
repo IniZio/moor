@@ -5,13 +5,13 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, PausePublish};
-use moor_core::{ProviderId, Warning};
+use moor_core::{BoxId, ProviderId, Warning};
 
 use crate::adapters::proc::plain::last_sentence;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::ops::common::node::now;
-use crate::store::{BoxRow, Store};
+use crate::store::{BoxRow, RunRow, Store, StoreError};
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
@@ -154,4 +154,15 @@ fn note_starting(store: &Store, facts: &[BoxFact], e: &DriverError) {
             ),
         );
     }
+}
+
+/// Box `id`'s run in flight. Stale open runs are finished only under the Box's turn; a busy Box,
+/// or one whose turn this thread holds, is read without finishing any.
+pub(crate) fn run_in_flight(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+) -> Result<Option<RunRow>, StoreError> {
+    cx.try_turn(id, Cmd::Reconcile)
+        .map_or_else(|| store.held_run(id), |_turn| store.in_flight_run(id))
 }

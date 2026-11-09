@@ -19,13 +19,22 @@ mod policy;
 mod state;
 mod turn;
 
-pub(crate) use self::check::checked;
 #[cfg(test)]
 pub(crate) use self::check::Held;
+pub(crate) use self::check::{boot, checked};
 use self::state::{Grant, Holder, State};
 #[cfg(test)]
 pub(crate) use self::turn::RunHold;
 pub(crate) use self::turn::Turn;
+
+/// What ends on a Box: the turn granted to a ticket, or the run a thread began.
+#[derive(Clone, Copy)]
+enum Released {
+    /// The turn of this ticket.
+    Turn(u64),
+    /// The run this thread began.
+    Run(std::thread::ThreadId),
+}
 
 /// How long a forced close waits for the start it cancelled to let go.
 pub(crate) const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
@@ -220,17 +229,20 @@ impl Owners {
         }
     }
 
-    /// Releases ticket `seq`'s turn on `box_id`, or one of its runs when `seq` is `None`, and
-    /// wakes the waiters.
-    fn release(&self, box_id: BoxId, seq: Option<u64>) {
+    /// Releases `what` on `box_id` and wakes the waiters.
+    fn release(&self, box_id: BoxId, what: Released) {
         let mut st = self.lock();
         if let Some(owner) = st.boxes.get_mut(&box_id) {
-            match seq {
-                Some(seq) if owner.holder.as_ref().is_some_and(|h| h.seq == seq) => {
+            match what {
+                Released::Turn(seq) if owner.holder.as_ref().is_some_and(|h| h.seq == seq) => {
                     owner.holder = None;
                 }
-                Some(_) => {}
-                None => owner.runs = owner.runs.saturating_sub(1),
+                Released::Turn(_) => {}
+                Released::Run(thread) => {
+                    if let Some(at) = owner.runs.iter().position(|t| *t == thread) {
+                        owner.runs.swap_remove(at);
+                    }
+                }
             }
         }
         st.drop_idle(box_id);

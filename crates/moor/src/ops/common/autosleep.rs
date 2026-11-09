@@ -19,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::activity::Reading;
 use crate::ops::common::cache::save_decision;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
+use crate::ops::common::reconcile;
 use crate::ops::common::suspend_check;
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
@@ -208,7 +209,7 @@ pub(crate) fn settled(
 ) -> Result<Result<(), CacheSaveDenied>, CommandError> {
     Ok(if !row.session.is_quiet() {
         Err(CacheSaveDenied::AgentNotQuiet)
-    } else if store.in_flight_run(row.id)?.is_some() {
+    } else if reconcile::run_in_flight(cx, store, row.id)?.is_some() {
         Err(CacheSaveDenied::RunInFlight)
     } else if store.agent_unread(row.id, cx.clock().now())? {
         Err(CacheSaveDenied::AgentUnread)
@@ -225,7 +226,7 @@ pub(crate) fn refuse(why: String) -> CommandError {
 /// The handle of the ready Box when no run is in flight, or a refusal.
 pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let handle = ready_handle(row)?;
-    if cx.store()?.in_flight_run(row.id)?.is_some() {
+    if reconcile::run_in_flight(cx, cx.store()?, row.id)?.is_some() {
         return Err(refuse("a run is in flight".to_owned()));
     }
     Ok(handle)
