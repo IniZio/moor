@@ -14,13 +14,18 @@ use moor_core::ErrorKind;
 
 pub(crate) use self::policy::Cmd;
 use self::policy::{admit, Admit};
+pub(crate) use self::turn::Turn;
 use crate::cx::Cancel;
 use crate::error::CommandError;
 
 mod policy;
+mod turn;
 
 /// Most ops that may wait for one Box at once; past it a call is refused.
 const MAX_QUEUE: usize = 16;
+
+/// How long a forced close waits for the start it cancelled to let go.
+pub(crate) const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
 
 /// Longest a waiter sleeps before it looks at its own cancel flag and deadline again.
 const POLL: Duration = Duration::from_millis(50);
@@ -68,6 +73,16 @@ impl Owner {
     }
 }
 
+/// What a waiter heading its queue may do next.
+enum Grant {
+    /// It holds the turn.
+    Granted,
+    /// It keeps waiting.
+    Wait,
+    /// It cancelled this long holder and waits for it to let go.
+    Preempting(Cmd),
+}
+
 /// Every owner, behind the one lock.
 #[derive(Debug, Default)]
 struct State {
@@ -77,6 +92,12 @@ struct State {
     next: u64,
     /// Set once the controller stops admitting.
     draining: bool,
+}
+
+/// The refusal for a forced close whose cancelled `holder` kept the turn past [`INTERRUPT_WAIT`].
+fn not_stopped(holder: Cmd) -> CommandError {
+    let why = format!("box busy: {} did not stop after cancel", holder.name());
+    CommandError::new(ErrorKind::Refused, why)
 }
 
 /// The error every waiter and later call gets after a drain.
@@ -113,15 +134,14 @@ impl State {
         Ok(ticket)
     }
 
-    /// Grants `ticket` the turn when it heads the queue and the policy lets `cmd` in; whether it
-    /// did.
+    /// Grants `ticket` the turn when it heads the queue and the policy lets `cmd` in.
     fn grant(
         &mut self,
         box_id: BoxId,
         ticket: u64,
         cmd: Cmd,
         cancel: &Cancel,
-    ) -> Result<bool, CommandError> {
+    ) -> Result<Grant, CommandError> {
         if self.draining {
             return Err(restarting());
         }
@@ -132,20 +152,20 @@ impl State {
             ));
         };
         if owner.queue.front() != Some(&ticket) {
-            return Ok(false);
+            return Ok(Grant::Wait);
         }
         match admit(cmd, owner.holder.as_ref().map(|h| h.cmd), owner.runs > 0) {
             Admit::Now => {
                 owner.queue.pop_front();
                 owner.holder = Some(Holder::new(ticket, cmd, cancel));
-                Ok(true)
+                Ok(Grant::Granted)
             }
             Admit::Refuse(why) => Err(CommandError::new(ErrorKind::Refused, why)),
-            Admit::Preempt => {
-                owner.holder.iter().for_each(|h| h.cancel.cancel());
-                Ok(false)
-            }
-            Admit::Queue => Ok(false),
+            Admit::Preempt => Ok(owner.holder.as_ref().map_or(Grant::Wait, |h| {
+                h.cancel.cancel();
+                Grant::Preempting(h.cmd)
+            })),
+            Admit::Queue => Ok(Grant::Wait),
         }
     }
 
@@ -182,24 +202,6 @@ pub(crate) struct Owners {
     clock: Arc<dyn Clock>,
 }
 
-/// One Box's turn, released on drop, also when its op panics.
-pub(crate) struct Turn<'a> {
-    /// Where the turn is released.
-    owners: &'a Owners,
-    /// The Box whose turn this is.
-    box_id: BoxId,
-    /// The ticket the turn was granted to.
-    seq: u64,
-}
-
-/// A run whose exec goes on after its turn; the Box's owner counts it until this drops.
-pub(crate) struct RunHold<'a> {
-    /// Where the run is counted.
-    owners: &'a Owners,
-    /// The Box running it.
-    box_id: BoxId,
-}
-
 impl Owners {
     /// No owners yet; waiters read time from `clock`.
     pub(crate) fn new(clock: Arc<dyn Clock>) -> Self {
@@ -218,8 +220,8 @@ impl Owners {
     /// Runs `f` under `box_id`'s turn on this thread, once [`admit`] lets `cmd` in, and returns
     /// what `f` returns.
     ///
-    /// Waiters are served in arrival order; a forced close of a long holder cancels it and goes
-    /// first.
+    /// Waiters are served in arrival order. A forced close of a long holder cancels it and goes
+    /// first; one the holder still blocks after [`INTERRUPT_WAIT`] is refused, never run beside it.
     ///
     /// # Errors
     /// `Refused` when the policy refuses `cmd`, when [`MAX_QUEUE`] ops already wait, when
@@ -254,12 +256,7 @@ impl Owners {
         st.next += 1;
         st.boxes.entry(box_id).or_default().holder = Some(Holder::new(seq, cmd, cancel));
         drop(st);
-        let turn = Turn {
-            owners: self,
-            box_id,
-            seq,
-        };
-        Some(f(&turn))
+        Some(f(&Turn::new(self, box_id, seq)))
     }
 
     /// Wakes every waiter with a restarting error and refuses every later call; holders finish.
@@ -278,21 +275,20 @@ impl Owners {
     ) -> Result<Turn<'_>, CommandError> {
         let mut st = self.lock();
         let seq = st.enter(box_id, cmd)?;
+        let mut preempt_by = None;
         loop {
-            let granted = st.grant(box_id, seq, cmd, cancel);
-            let gave_up = cancel.is_cancelled() || self.clock.instant() >= deadline;
-            let err = match granted {
-                Ok(true) => {
-                    return Ok(Turn {
-                        owners: self,
-                        box_id,
-                        seq,
-                    })
+            let now = self.clock.instant();
+            let err = match st.grant(box_id, seq, cmd, cancel) {
+                Ok(Grant::Granted) => return Ok(Turn::new(self, box_id, seq)),
+                Ok(Grant::Preempting(holder)) => {
+                    let by = *preempt_by.get_or_insert(now + INTERRUPT_WAIT);
+                    (now >= by).then(|| not_stopped(holder))
                 }
-                Ok(false) if !gave_up => None,
-                Ok(false) => Some(st.busy(box_id)),
+                Ok(Grant::Wait) => None,
                 Err(e) => Some(e),
             };
+            let gave_up = cancel.is_cancelled() || now >= deadline;
+            let err = err.or_else(|| gave_up.then(|| st.busy(box_id)));
             if let Some(err) = err {
                 st.leave(box_id, seq);
                 drop(st);
@@ -335,31 +331,6 @@ impl Owners {
     #[cfg(test)]
     fn waiting(&self, box_id: BoxId) -> usize {
         self.lock().boxes.get(&box_id).map_or(0, |o| o.queue.len())
-    }
-}
-
-impl<'a> Turn<'a> {
-    /// Marks a run in flight on this Box until the returned hold drops, past the end of the turn.
-    pub(crate) fn begin_run(&self) -> RunHold<'a> {
-        if let Some(owner) = self.owners.lock().boxes.get_mut(&self.box_id) {
-            owner.runs += 1;
-        }
-        RunHold {
-            owners: self.owners,
-            box_id: self.box_id,
-        }
-    }
-}
-
-impl Drop for Turn<'_> {
-    fn drop(&mut self) {
-        self.owners.release(self.box_id, Some(self.seq));
-    }
-}
-
-impl Drop for RunHold<'_> {
-    fn drop(&mut self) {
-        self.owners.release(self.box_id, None);
     }
 }
 
