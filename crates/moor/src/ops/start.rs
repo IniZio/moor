@@ -102,8 +102,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
-    queue_prompt(store, id, req)?;
     let turn = cx.turn(id, Cmd::Start)?;
+    queue_prompt(store, id, req)?;
     store.set_box_node(id, spec.node.as_ref())?;
     cold::record(store, req, id)?;
     if let Some(gathered) = facts.profile.take() {
@@ -205,9 +205,9 @@ fn attach(
     repo::check_kept(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
-    queue_prompt(store, row.id, req)?;
     reconcile::one(cx, store, row);
     let turn = cx.turn(row.id, Cmd::Start)?;
+    queue_prompt(store, row.id, req)?;
     let row = &reread(store, row.id)?;
     let reprovisioned = reprovision(cx, store, row, &turn)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
@@ -246,8 +246,9 @@ fn attach(
     Ok(v)
 }
 
-/// Queues the prompt `req` gives for Box `id`'s agent, unless the same prompt already waits: a
-/// start retried with its prompt asks for it once. A fresh launch carries it, or it is typed in
+/// Queues the prompt `req` gives for Box `id`'s agent, once the start holds the Box's turn, so a
+/// start refused before then leaves nothing queued. The same prompt already waiting is not queued
+/// again: a start retried with its prompt asks for it once. A fresh launch carries it, or it is typed in
 /// once the agent can take it.
 fn queue_prompt(store: &Store, id: BoxId, req: &StartReq) -> Result<(), CommandError> {
     let Some(prompt) = &req.prompt else {

@@ -496,3 +496,26 @@ fn resume_with_a_prompt_is_not_refused_without_a_stored_session() {
         Some("G")
     );
 }
+
+#[test]
+fn a_start_refused_as_busy_leaves_no_prompt_to_arrive_later() {
+    let (w, _engine, id) = started();
+    let held = w.cx.owners_arc().hold(id, crate::cx::owners::Cmd::Start);
+    run(&w.cx, &prompt_req("too soon")).unwrap_err();
+    drop(held);
+    assert!(w.cx.store().unwrap().unsent(id).unwrap().is_empty());
+}
+
+#[test]
+fn a_resume_start_with_a_prompt_on_an_ended_agent_carries_it_as_its_first_prompt() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&engine);
+    let asked = StartReq {
+        resume: true,
+        ..prompt_req("again")
+    };
+    run(&w.cx, &asked).unwrap();
+    assert_eq!(relaunch_of(&engine).prompt.text(), Some("again"));
+    assert!(w.cx.store().unwrap().unsent(id).unwrap().is_empty());
+}
