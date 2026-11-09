@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::ProviderStep;
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::{BoxId, BoxName, BoxReq, CloseReq, StartReq};
 
@@ -55,7 +55,7 @@ fn a_box_at_another_commit_forks_the_deepest_layer_and_reruns_every_line_saving_
 
 /// The setup attaches and log copies made on Box `id`'s machine.
 pub(super) fn setup_calls_on(w: &World, id: BoxId) -> (usize, usize) {
-    let handle = row(w, id).boxed.unwrap().handle.unwrap();
+    let handle = row(w, id).hands.unwrap().handle.unwrap();
     let execs = w.driver.execs();
     let on = execs.iter().filter(|(h, _, _)| *h == handle);
     let attaches = on.filter(|(_, s, _)| s.argv.join(" ").contains("moor setup: $"));
@@ -206,7 +206,7 @@ fn every_fork_refreshes_its_tree_and_a_cold_box_does_not() {
     let again = start(&w, "again", "abc123", LINES);
     let moved = start(&w, "moved", "def456", LINES);
     let refreshes = |id| {
-        let handle = row(&w, id).boxed.unwrap().handle.unwrap();
+        let handle = row(&w, id).hands.unwrap().handle.unwrap();
         let execs = w.driver.execs();
         let on = execs.iter().filter(|(h, _, _)| *h == handle);
         on.filter(|(_, s, _)| s.argv.join(" ").contains("moor_tree_refresh\n"))
@@ -253,8 +253,8 @@ fn a_line_that_fails_on_a_rerun_warns_gives_up_the_fork_and_comes_up_cold() {
     let after = row(&w, moved);
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     assert!(after.setup_failed_at.is_none());
-    let boxed = after.boxed.unwrap();
-    assert_eq!(boxed.state, BoxState::Ready);
+    let boxed = after.hands.unwrap();
+    assert_eq!(boxed.state, HandsState::Ready);
     let fork = "box-2";
     assert_ne!(boxed.handle.unwrap().as_str(), fork);
     assert!(w.driver.calls().contains(&format!("release {fork}")));
@@ -283,7 +283,7 @@ fn a_box_that_gave_up_its_fork_no_longer_holds_that_checkpoint_back() {
         force: true,
     };
     crate::ops::close::run(&w.cx, &first).unwrap();
-    let provider = row(&w, moved).boxed.unwrap().provider;
+    let provider = row(&w, moved).hands.unwrap().provider;
     let store = w.cx.store().unwrap();
     let free = store.evictable(&provider).unwrap();
     let retired = store.evicting(&provider).unwrap();
@@ -329,7 +329,7 @@ fn a_retry_that_reruns_over_a_new_fork_says_so_in_its_reply() {
     let name = crate::testing::box_name("moved");
     let moved = store.open_box_by_name(&name).unwrap().unwrap().id;
     assert_eq!(row(&w, moved).lifecycle, BoxLifecycle::SetupFailed);
-    let gone = Decision::new(moved).box_input(BoxInput::DriverMissing);
+    let gone = Decision::new(moved).box_input(HandsInput::DriverMissing);
     w.cx.store().unwrap().apply(gone).unwrap();
     let retry = BoxReq {
         box_name: crate::testing::box_name("moved"),
@@ -393,7 +393,7 @@ fn the_agent_of_a_rerun_box_is_told_of_the_disk_and_a_later_cold_machine_is_not(
     let req = launch_req(&w.cx, &row(&w, id), None).unwrap();
     assert_eq!(req.disk_note.as_deref(), Some(note.as_str()));
     let store = w.cx.store().unwrap();
-    for input in [BoxInput::DriverMissing, BoxInput::Requested] {
+    for input in [HandsInput::DriverMissing, HandsInput::Requested] {
         store.apply(Decision::new(id).box_input(input)).unwrap();
     }
     assert_eq!(warm_disk_note(store, id), None);

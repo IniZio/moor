@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
@@ -244,7 +244,7 @@ fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
             .box_row(BoxId::new(1))
             .unwrap()
             .unwrap();
-    assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
     assert!(row.intent.is_none());
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
@@ -439,7 +439,7 @@ fn finished_world(dir: &Path, driver: FakeDriver) -> World {
 /// The argv of every exec on the machine of Box `id`.
 fn execs_on(w: &World, id: BoxId) -> Vec<String> {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let handle = row.boxed.unwrap().handle.unwrap();
+    let handle = row.hands.unwrap().handle.unwrap();
     let on = w.driver.execs().into_iter().filter(|e| e.0 == handle);
     on.map(|e| e.1.argv.join(" ")).collect()
 }

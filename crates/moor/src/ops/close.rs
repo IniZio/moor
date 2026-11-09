@@ -7,8 +7,8 @@ use moor_core::decide::close::{
 };
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::CloseView;
@@ -26,7 +26,7 @@ use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::box_view;
-use crate::store::{BoxRow, DriverRow, Store};
+use crate::store::{BoxRow, HandsRow, Store};
 
 /// How long a forced close waits for the start it interrupted to stop.
 const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
@@ -59,9 +59,9 @@ pub(crate) fn run_with_reason(
     let plan = close_gate_with_reason(&facts(&row, box_check), req.force, reason)
         .map_err(|r| refused(&row, r))?;
     let unwoken = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     // A forced close reads nothing in the Box, so it has no answer; its caches go with it all the same.
     if unwoken
         && (probed_clean || req.force)
@@ -87,7 +87,7 @@ pub(crate) fn run_with_reason(
     let closed = store.box_row(row.id)?.unwrap_or(row);
     // A ReleaseFailed machine may still run, and its leases are what a manual release needs.
     if closed.lifecycle == BoxLifecycle::Closed
-        && closed.boxed.as_ref().map(|b| b.state) != Some(BoxState::ReleaseFailed)
+        && closed.hands.as_ref().map(|b| b.state) != Some(HandsState::ReleaseFailed)
     {
         store.drop_box_leases(closed.id)?;
     }
@@ -162,7 +162,7 @@ fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
 /// Releases the machine a retry's fork made for `row` and never moved it to; the Box's own machine
 /// is released by the close itself, so it is left out.
 fn release_stray(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let own = row.boxed.as_ref().and_then(held);
+    let own = row.hands.as_ref().and_then(held);
     let Some(stray) = planned_root(store, row.id)?.filter(|p| Some(p) != own) else {
         return Ok(());
     };
@@ -198,7 +198,7 @@ fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>
 }
 
 /// The Driver handle to release: the acquired one, else one a failed acquire left.
-const fn held(b: &DriverRow) -> Option<&BoxHandle> {
+const fn held(b: &HandsRow) -> Option<&BoxHandle> {
     match (&b.handle, &b.attempted_handle) {
         (Some(h), _) | (None, Some(h)) => Some(h),
         (None, None) => None,
@@ -209,7 +209,7 @@ const fn held(b: &DriverRow) -> Option<&BoxHandle> {
 /// machine an unfinished acquire may have created.
 fn with_planned(store: &Store, row: &mut BoxRow) -> Result<(), CommandError> {
     let id = row.id;
-    if let Some(b) = row.boxed.as_mut().filter(|b| held(b).is_none()) {
+    if let Some(b) = row.hands.as_mut().filter(|b| held(b).is_none()) {
         b.attempted_handle = planned_root(store, id)?;
     }
     Ok(())
@@ -220,7 +220,7 @@ fn with_planned(store: &Store, row: &mut BoxRow) -> Result<(), CommandError> {
 /// no Report is stored then. The probe and the Report index run as one batch; when it stops
 /// early, Reports are collected on their own.
 fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+    let Some(b) = row.hands.as_ref().filter(|b| b.state == HandsState::Ready) else {
         reports::collect(cx, store, row);
         return Ok(());
     };
@@ -248,8 +248,8 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
 
 /// Collects the Box's artifacts when it is Ready; a Box that cannot run an exec has none to collect.
 fn collect_artifacts(cx: &Cx, store: &Store, row: &BoxRow) {
-    if let Some(b) = row.boxed.as_ref() {
-        if b.state == BoxState::Ready && b.handle.is_some() {
+    if let Some(b) = row.hands.as_ref() {
+        if b.state == HandsState::Ready && b.handle.is_some() {
             let cursor = store.newest_turn_event(row.id);
             artifacts::collect(cx, store, row);
             match cursor {
@@ -310,8 +310,8 @@ fn facts(row: &BoxRow, box_check: BoxCheck) -> CloseFacts {
         branch: row.branch.clone(),
         lifecycle: row.lifecycle,
         session: row.session,
-        box_state: row.boxed.as_ref().map(|b| b.state),
-        has_handle: row.boxed.as_ref().is_some_and(|b| held(b).is_some()),
+        box_state: row.hands.as_ref().map(|b| b.state),
+        has_handle: row.hands.as_ref().is_some_and(|b| held(b).is_some()),
         box_check,
     }
 }
@@ -338,7 +338,7 @@ fn wind_down(
         let gone = plan
             .decision_close
             .clone()
-            .box_input(BoxInput::DriverMissing);
+            .box_input(HandsInput::DriverMissing);
         store.apply(gone)?;
         return Ok(true);
     }

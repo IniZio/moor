@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
@@ -45,7 +45,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -64,7 +64,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle });
+        .box_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -89,7 +89,7 @@ fn asleep(f: &Fx) {
             auto: false,
             reason: None,
         })
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     store.apply(d).unwrap();
 }
 
@@ -99,9 +99,9 @@ fn req() -> BoxReq {
     }
 }
 
-fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, HandsState) {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    (row.lifecycle, row.boxed.unwrap().state)
+    (row.lifecycle, row.hands.unwrap().state)
 }
 
 fn session(f: &Fx) -> SessionState {
@@ -122,14 +122,14 @@ fn wakes(f: &Fx) -> usize {
 fn asleep_box_wakes_its_box() {
     let f = fx();
     asleep(&f);
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.box_name, "t");
-    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
+    assert_eq!(v.driver.unwrap().state, HandsState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Working);
 }
 
@@ -139,7 +139,7 @@ fn box_that_is_not_asleep_is_left_alone() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
     assert_eq!(wakes(&f), 0);
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Working);
 }
 
@@ -157,14 +157,14 @@ fn failed_resume_leaves_box_and_box_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::Quota("q".into())));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
 }
 
 #[test]
 fn gone_box_is_refused_without_a_resume() {
     let f = fx();
     asleep(&f);
-    let d = Decision::new(f.id).box_input(BoxInput::DriverMissing);
+    let d = Decision::new(f.id).box_input(HandsInput::DriverMissing);
     f.cx.store().unwrap().apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);

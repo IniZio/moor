@@ -6,8 +6,8 @@ use std::num::NonZeroU32;
 use moor_core::config::{EnrolledMachine, NodeConfig};
 use moor_core::decide::schedule::{BoxSpec, Node, Online, Scope};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::name::NodeName;
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
@@ -39,7 +39,7 @@ fn hold(store: &Store, name: &str, node: &str, provider: &str) {
     let id = new_box(store, name);
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new(provider)),
             ..Fields::default()
@@ -149,7 +149,7 @@ fn ready_for(store: &Store, name: &str, node: &str, user: UserId) -> BoxId {
         .box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()

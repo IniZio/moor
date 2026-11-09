@@ -1,6 +1,6 @@
 //! What a Box's Proxy tells the machine service about the Box's slot, read per request.
 
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
 
@@ -43,8 +43,8 @@ pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
         MachineHoldState::Waiting => true,
         MachineHoldState::Asleep => {
             let runs = store.box_row(box_id).is_ok_and(|row| {
-                row.and_then(|r| r.boxed)
-                    .is_some_and(|b| matches!(b.state, BoxState::Ready | BoxState::Starting))
+                row.and_then(|r| r.hands)
+                    .is_some_and(|b| matches!(b.state, HandsState::Ready | HandsState::Starting))
             });
             runs && !KEEPERS.get(box_id).is_some_and(|k| k.parked())
         }

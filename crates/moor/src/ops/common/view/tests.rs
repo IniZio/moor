@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::config::{parse_user, UserConfig};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -76,10 +76,14 @@ fn box_view_maps_box() {
         ..Fields::default()
     };
     store
-        .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
+        .apply(
+            Decision::new(id)
+                .set(fields)
+                .box_input(HandsInput::Requested),
+        )
         .unwrap();
     store
-        .apply(Decision::new(id).box_input(BoxInput::Acquired {
+        .apply(Decision::new(id).box_input(HandsInput::Acquired {
             handle: BoxHandle::new("h"),
         }))
         .unwrap();
@@ -88,7 +92,7 @@ fn box_view_maps_box() {
         .unwrap();
     assert_eq!(
         (b.state, b.provider.as_str(), b.handle.as_deref()),
-        (BoxState::Ready, "p", Some("h"))
+        (HandsState::Ready, "p", Some("h"))
     );
     assert!(b.asleep_since.is_none());
 }
@@ -108,7 +112,11 @@ fn box_view_maps_sleep_reason() {
         ..Fields::default()
     };
     store
-        .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
+        .apply(
+            Decision::new(id)
+                .set(fields)
+                .box_input(HandsInput::Requested),
+        )
         .unwrap();
     let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
@@ -144,7 +152,11 @@ fn box_view_shows_configured_sleep_after() {
         ..Fields::default()
     };
     store
-        .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
+        .apply(
+            Decision::new(id)
+                .set(fields)
+                .box_input(HandsInput::Requested),
+        )
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
     let b = box_view(&store.box_row(id).unwrap().unwrap(), &config)

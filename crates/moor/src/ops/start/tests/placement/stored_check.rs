@@ -2,8 +2,8 @@
 //! fit to wake.
 
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Closed, Pending, Ready};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::HandsState;
 use moor_core::{BoxPath, ErrorKind};
 
 use crate::ops::common::autosleep;
@@ -25,7 +25,7 @@ const OLD_CLEAN: SuspendCheck = SuspendCheck {
 /// Makes the check of `id` answer `text`.
 pub(super) fn holds(w: &World, id: BoxId, text: &str) {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let b = row.boxed.unwrap();
+    let b = row.hands.unwrap();
     let path = BoxPath::under(b.workdir.as_deref().unwrap(), ".moor/boxwork").unwrap();
     w.driver
         .set_peek_text(b.handle.unwrap().as_str(), &path, text);
@@ -77,9 +77,9 @@ fn calls(w: &World, of: &str) -> usize {
         .count()
 }
 
-fn state(w: &World, id: BoxId) -> Option<BoxState> {
+fn state(w: &World, id: BoxId) -> Option<HandsState> {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    row.boxed.map(|b| b.state)
+    row.hands.map(|b| b.state)
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn a_working_box_with_no_room_refuses_a_close() {
         "{}",
         refused.error
     );
-    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+    assert_eq!(state(&w, b), Some(HandsState::Asleep));
 }
 
 #[test]
@@ -210,9 +210,9 @@ fn a_box_found_stopped_keeps_no_answer_from_before_it_last_ran() {
     let store = w.cx.store().unwrap();
     store.set_suspend_check(a, Some(OLD_CLEAN)).unwrap();
     let row = store.box_row(a).unwrap().unwrap();
-    w.driver.stop_behind(&row.boxed.unwrap().handle.unwrap());
+    w.driver.stop_behind(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
-    assert_eq!(state(&w, a), Some(BoxState::Asleep));
+    assert_eq!(state(&w, a), Some(HandsState::Asleep));
     assert_eq!(stored(&w, a), None);
 }
 
@@ -259,7 +259,7 @@ fn close_of_a_clean_box_with_no_room_deletes_it_unwoken_and_says_caches_were_los
         .newest_event_of(b, "caches_not_saved")
         .unwrap()
         .is_some());
-    assert_eq!(state(&w, b), Some(BoxState::Deleted));
+    assert_eq!(state(&w, b), Some(HandsState::Deleted));
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn close_of_a_box_holding_unsaved_work_refuses_naming_it_without_a_wake() {
         "{said}"
     );
     assert_eq!(calls(&w, "wake"), before);
-    assert_eq!(state(&w, b), Some(BoxState::Asleep));
+    assert_eq!(state(&w, b), Some(HandsState::Asleep));
 }
 
 #[test]
@@ -295,7 +295,7 @@ fn idle_with_files(w: &World, extra: &str) -> BoxId {
     idle(w, id);
     holds(w, id, CLEAN);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let b = row.boxed.unwrap();
+    let b = row.hands.unwrap();
     let (handle, workdir) = (b.handle.unwrap(), b.workdir.unwrap());
     let at = |rel: &str| BoxPath::under(&workdir, rel).unwrap();
     w.driver
@@ -351,7 +351,7 @@ fn a_report_that_cannot_be_read_stores_no_answer_and_the_box_still_sleeps() {
     let id = idle_with_files(&w, "");
     let (w, _) = agents_report(w, &[id], &[]);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let workdir = row.boxed.unwrap().workdir.unwrap();
+    let workdir = row.hands.unwrap().workdir.unwrap();
     let path = BoxPath::under(&workdir, ".moor/reports/plan.md").unwrap();
     w.driver.fail_peek_of(
         &path,

@@ -75,7 +75,7 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(moor_core::domain::boxes::BoxInput::Requested)
+        .box_input(moor_core::domain::hands::HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(moor_core::ProviderId::new("p")),
             ..Fields::default()
@@ -107,7 +107,7 @@ fn insert_records_the_branch_ref() {
 fn failed_insert_leaves_no_box_and_no_branch_ref() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let mut d = insert("b").box_input(moor_core::domain::boxes::BoxInput::Requested);
+    let mut d = insert("b").box_input(moor_core::domain::hands::HandsInput::Requested);
     d.set.branch = Field::Set("feat/x".into());
     let err = store.apply(d).unwrap_err();
     assert!(
@@ -391,7 +391,7 @@ fn setting_up_after_admission_records_checking_as_from() {
     let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(moor_core::domain::boxes::BoxInput::Requested)
+        .box_input(moor_core::domain::hands::HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(moor_core::ProviderId::new("p")),
             ..Fields::default()

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{BoxId, BoxReq, ErrorKind, Warning};
@@ -165,9 +165,9 @@ struct Woke {
 /// Wake the Box and machine when Asleep and report what was woken.
 fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, CommandError> {
     let box_asleep = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     let row_asleep = row.lifecycle == BoxLifecycle::Asleep
         || (row.lifecycle == BoxLifecycle::Pending && box_asleep);
     if !row_asleep && !box_asleep {
@@ -177,8 +177,8 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
         });
     }
     let mut workdir = None;
-    if let Some(b) = &row.boxed {
-        if matches!(b.state, BoxState::Gone | BoxState::Deleted) {
+    if let Some(b) = &row.hands {
+        if matches!(b.state, HandsState::Gone | HandsState::Deleted) {
             return Err(CommandError::new(ErrorKind::Refused, "the Box is gone"));
         }
         if box_asleep {
@@ -209,7 +209,7 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
         }
     }
     if box_asleep {
-        d = d.box_input(BoxInput::Wake);
+        d = d.box_input(HandsInput::Wake);
     }
     d = d.set(Fields {
         box_workdir: workdir.map_or(Field::Keep, |w| Field::Set(w.as_str().to_owned())),
@@ -229,7 +229,7 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
 
 /// Waits for the guest of `row`'s resumed machine; see [`guest::await_guest`].
 pub(crate) fn await_guest(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let Some(handle) = row.boxed.as_ref().and_then(|b| b.handle.as_ref()) else {
+    let Some(handle) = row.hands.as_ref().and_then(|b| b.handle.as_ref()) else {
         return Ok(());
     };
     guest::await_guest(cx, store, row.id, handle)

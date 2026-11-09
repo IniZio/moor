@@ -5,8 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::BoxPath;
@@ -255,7 +255,7 @@ fn gone_box_collects_nothing() {
     let f = fx(driver_with(&[("result.md", "R")]));
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(f.id).box_input(HandsInput::DriverMissing))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(collect_execs(&f), 0);
@@ -277,10 +277,10 @@ fn asleep_box_under_force_is_not_woken_to_collect() {
                     auto: false,
                     reason: None,
                 })
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
-    assert_eq!(box_state(&f), BoxState::Asleep);
+    assert_eq!(box_state(&f), HandsState::Asleep);
     let v = run(&f.cx, &req(true)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(row(&f).lifecycle, BoxLifecycle::Closed);

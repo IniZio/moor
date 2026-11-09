@@ -4,11 +4,11 @@ use super::{
     close_gate, release_outcome, BoxCheck, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict,
 };
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use crate::domain::boxes::BoxState;
+use crate::domain::hands::HandsState;
 use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 
-use BoxState as B;
+use HandsState as B;
 use ReleaseResult as R;
 
 /// Clean facts for a working Box with a Ready lifecycle.
@@ -256,7 +256,7 @@ fn release_is_planned_only_for_a_releasable_box_with_a_handle() {
 }
 
 /// Applies a verdict's decision to the machines, returning the final states.
-fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: BoxState) -> (BoxLifecycle, BoxState) {
+fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: HandsState) -> (BoxLifecycle, HandsState) {
     let d = v.decision.as_ref().expect("decision");
     let l = d
         .lifecycle_input

@@ -26,7 +26,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let repo = repo_config(&row).unwrap();
     let cfg = resolved(&f.cx, repo.as_ref(), &Flags::default());
-    let boxed = row.boxed.unwrap();
+    let boxed = row.hands.unwrap();
     let workdir = recorded_workdir(boxed.workdir.as_deref().unwrap()).unwrap();
     let handle: BoxHandle = boxed.handle.unwrap();
     let before = f.driver.execs().len();

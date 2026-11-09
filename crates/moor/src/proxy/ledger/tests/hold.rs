@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::{MachineLink, RunnerAddr};
 use moor_core::seam::clock::{Clock as _, Ts};
@@ -169,11 +169,11 @@ fn an_asleep_claim_is_released_while_parked_and_waits_once_asked_up() {
             auto: false,
             reason: None,
         })
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     r.store.apply(sleep).unwrap();
     assert_eq!(r.missing(), RELEASED, "asleep");
     r.store
-        .apply(Decision::new(r.id).box_input(BoxInput::Wake))
+        .apply(Decision::new(r.id).box_input(HandsInput::Wake))
         .unwrap();
     kept.restore().unwrap();
     assert_eq!(r.missing(), NO_SLOT, "awake, before the keeper's next tick");

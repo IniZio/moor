@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
@@ -70,18 +70,18 @@ fn the_awake_tokens_name_every_open_awake_box_and_skip_a_row_that_cannot_be_read
 /// Takes `id` up on a machine, then to sleep.
 fn asleep(w: &World, id: BoxId) {
     let up = Decision::new(id)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
         });
     w.store.apply(up).unwrap();
-    let acquired = Decision::new(id).box_input(BoxInput::Acquired {
+    let acquired = Decision::new(id).box_input(HandsInput::Acquired {
         handle: BoxHandle::new("p/b"),
     });
     w.store.apply(acquired).unwrap();
     w.store
-        .apply(Decision::new(id).box_input(BoxInput::Sleep))
+        .apply(Decision::new(id).box_input(HandsInput::Sleep))
         .unwrap();
 }
 

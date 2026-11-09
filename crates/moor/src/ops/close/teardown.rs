@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::{BoxSettings, Flags};
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::{BoxHandle, ErrorKind, Warning};
@@ -21,7 +21,7 @@ use crate::store::BoxRow;
 /// start, which fails the close unless `force` is set, when it warns like the rest. The lines
 /// come from the `.moor.yaml` stored when the Box started. The env is the agent's Box env.
 pub(super) fn teardown(cx: &Cx, row: &BoxRow, force: bool) -> Result<(), CommandError> {
-    let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
+    let ready = row.hands.as_ref().filter(|b| b.state == HandsState::Ready);
     let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
         return Ok(());
     };

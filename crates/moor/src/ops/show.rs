@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
     ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, MachineHoldState, PaneView,
@@ -149,9 +149,9 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     let asleep = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id, asleep)?);
     detail.attention = attention(store, row.id)?;
     detail.said = if req.agent {

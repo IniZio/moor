@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
@@ -48,7 +48,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -67,7 +67,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle });
+        .box_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
         _dir: dir,
@@ -106,9 +106,9 @@ fn kinds(f: &Fx) -> Vec<String> {
 }
 
 /// Box and machine states now.
-fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, HandsState) {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    (row.lifecycle, row.boxed.unwrap().state)
+    (row.lifecycle, row.hands.unwrap().state)
 }
 
 fn session(f: &Fx) -> SessionState {
@@ -123,7 +123,7 @@ fn session(f: &Fx) -> SessionState {
 /// The stored sleep reason of the Box.
 fn reason(f: &Fx) -> Option<String> {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    row.boxed.unwrap().sleep_reason
+    row.hands.unwrap().sleep_reason
 }
 
 fn sleep_calls(f: &Fx) -> usize {
@@ -153,13 +153,13 @@ fn begin_run(f: &Fx) -> FollowClaim {
 fn sleeps_an_idle_box() {
     let f = idle();
     let v = run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
     let k = kinds(&f);
     assert!(k.contains(&"asleep".to_owned()), "{k:?}");
     assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
     assert_eq!(v.box_name, "t");
     assert!(!v.woke);
-    assert_eq!(v.driver.unwrap().state, BoxState::Asleep);
+    assert_eq!(v.driver.unwrap().state, HandsState::Asleep);
     assert_eq!(sleep_calls(&f), 1);
 }
 
@@ -169,7 +169,7 @@ fn sleeps_a_working_box_without_a_run() {
     assert_eq!(states(&f).0, BoxLifecycle::Ready);
     assert_eq!(session(&f), SessionState::Working);
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn refuses_while_a_run_is_in_flight() {
         err.error
     );
     assert_eq!(sleep_calls(&f), 0);
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Working);
 }
 
@@ -192,7 +192,7 @@ fn refuses_while_a_run_is_in_flight() {
 fn native_sleep_transitions_like_slept() {
     let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::Native));
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
         "{}",
         err.error
     );
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
@@ -223,7 +223,7 @@ fn unknown_provider_refuses_naming_the_provider() {
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains(why), "{}", err.error);
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some(why));
 }
@@ -280,7 +280,7 @@ fn an_asleep_box_is_left_alone() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
     assert_eq!(sleep_calls(&f), 1);
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
 }
 
 /// A Box and machine seeded through `Requested`: Box `SettingUp`, machine Starting.
@@ -298,7 +298,7 @@ fn starting() -> Fx {
         .box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -332,11 +332,11 @@ fn assert_refused_untouched(f: &Fx) {
 #[test]
 fn refuses_a_box_that_is_still_setting_up() {
     let f = starting();
-    let d = Decision::new(f.id).box_input(BoxInput::Acquired {
+    let d = Decision::new(f.id).box_input(HandsInput::Acquired {
         handle: moor_core::name::BoxHandle::new("box-1"),
     });
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::SettingUp, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::SettingUp, HandsState::Ready));
     assert_refused_untouched(&f);
 }
 
@@ -350,7 +350,7 @@ fn refuses_a_working_box_whose_box_is_starting() {
         .session(SessionInput::Started)
         .set(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Starting));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Starting));
     assert_eq!(session(&f), SessionState::Working);
     assert_refused_untouched(&f);
 }
@@ -363,13 +363,13 @@ fn refuses_a_working_box_whose_box_failed() {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::AcquireFailed {
+        .box_input(HandsInput::AcquireFailed {
             cause: "no capacity".to_owned(),
             attempted: None,
         })
         .set(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Failed));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Failed));
     assert_eq!(session(&f), SessionState::Working);
     assert_refused_untouched(&f);
 }
@@ -382,7 +382,7 @@ fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
         ..Fields::default()
     });
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Idle);
     assert_refused_untouched(&f);
 }
@@ -422,7 +422,7 @@ fn sleep_parks_the_tunnel_first() {
     f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
     run(&f.cx, &req()).unwrap();
     assert_eq!(host.calls(), vec![ProxyHostCall::Park(f.id)]);
-    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, HandsState::Asleep));
 }
 
 #[test]

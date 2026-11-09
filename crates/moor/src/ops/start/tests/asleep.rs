@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
@@ -48,7 +48,7 @@ fn asleep_after_failed_launch() -> (World, Arc<FakeEngine>, BoxId) {
                     auto: true,
                     reason: None,
                 })
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
     (w, engine, id)

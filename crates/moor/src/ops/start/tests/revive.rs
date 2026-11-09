@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
 use moor_core::seam::proxy_host::ProxyStatus;
@@ -278,7 +278,7 @@ pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
     let at = w.cx.clock().now().as_millis() / 1000;
@@ -377,7 +377,7 @@ fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
         .box_row(id)
         .unwrap()
         .unwrap()
-        .boxed
+        .hands
         .unwrap()
         .handle
         .unwrap();
@@ -405,7 +405,7 @@ fn a_host_restart_that_lost_the_agent_relaunches_it_and_says_so() {
 fn replaced_machine(w: &World, id: BoxId) {
     let store = w.cx.store().unwrap();
     let row = store.box_row(id).unwrap().unwrap();
-    let handle = row.boxed.unwrap().handle.unwrap();
+    let handle = row.hands.unwrap().handle.unwrap();
     w.driver.stop_behind(&handle);
     crate::ops::common::reconcile::run(&w.cx);
     assert!(store.resume_first(id).unwrap().is_some());
@@ -460,7 +460,7 @@ fn a_start_that_replaces_a_lost_machine_records_the_disk_and_tells_the_agent() {
     let (w, engine, id) = unanswered();
     let store = w.cx.store().unwrap();
     let row = store.box_row(id).unwrap().unwrap();
-    w.driver.forget(&row.boxed.unwrap().handle.unwrap());
+    w.driver.forget(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
     gone(&engine);
     run(&w.cx, &super::req("demo")).unwrap();

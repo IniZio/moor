@@ -22,7 +22,7 @@ fn asleep_without_agent() -> Fx {
     let store = f.cx.store().unwrap();
     store.end_current_session(f.id, "exited", None).unwrap();
     sleep(&f);
-    let handle = row(&f).boxed.unwrap().handle.unwrap();
+    let handle = row(&f).hands.unwrap().handle.unwrap();
     f.driver
         .set_peek_text(handle.as_str(), &environ(), "HOME=/home/box\0USER=box\0");
     f.cx =

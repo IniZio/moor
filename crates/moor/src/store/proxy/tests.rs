@@ -212,15 +212,15 @@ fn a_reserve_again_needs_the_token_delivered_again() {
 /// A Box acquired as `p/first`, with a reserved proxy row whose egress token was delivered.
 fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     use moor_core::domain::box_state::BoxLifecycleInput;
-    use moor_core::domain::boxes::BoxInput;
     use moor_core::domain::decision::{Field, Fields};
+    use moor_core::domain::hands::HandsInput;
     use moor_core::ProviderId;
     let (store, clock, id) = reserved(dir);
     store
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Admitted)
-                .box_input(BoxInput::Requested)
+                .box_input(HandsInput::Requested)
                 .set(Fields {
                     box_provider: Field::Set(ProviderId::new("p")),
                     ..Fields::default()
@@ -235,9 +235,9 @@ fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
 
 /// Records Box `id` acquired as `handle`, as a start or a retry onto a fresh machine does.
 fn acquire(store: &Store, id: BoxId, handle: &str) {
-    use moor_core::domain::boxes::BoxInput;
+    use moor_core::domain::hands::HandsInput;
     store
-        .apply(Decision::new(id).box_input(BoxInput::Acquired {
+        .apply(Decision::new(id).box_input(HandsInput::Acquired {
             handle: moor_core::BoxHandle::new(handle),
         }))
         .unwrap();
@@ -245,10 +245,10 @@ fn acquire(store: &Store, id: BoxId, handle: &str) {
 
 #[test]
 fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
-    use moor_core::domain::boxes::BoxInput;
+    use moor_core::domain::hands::HandsInput;
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
-    for input in [BoxInput::DriverMissing, BoxInput::Requested] {
+    for input in [HandsInput::DriverMissing, HandsInput::Requested] {
         store.apply(Decision::new(id).box_input(input)).unwrap();
     }
     acquire(&store, id, "p/second");

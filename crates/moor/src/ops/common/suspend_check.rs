@@ -45,7 +45,7 @@ fn answer(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<SuspendCheck>, Com
     let Some(row) = store.box_row(id)? else {
         return Ok(None);
     };
-    let Some(boxed) = row.boxed.as_ref() else {
+    let Some(boxed) = row.hands.as_ref() else {
         return Ok(None);
     };
     if memory_critical(store, &row)? {

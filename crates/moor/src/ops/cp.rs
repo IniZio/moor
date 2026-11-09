@@ -6,8 +6,8 @@ use std::fs;
 use std::path::Path;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::hands::HandsState;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::view::run::CpValue;
 use moor_core::{CpReq, ErrorKind};
@@ -82,12 +82,12 @@ pub(crate) fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
         return Err(refuse("the Box is waiting for a machine"));
     }
     let b = row
-        .boxed
+        .hands
         .as_ref()
         .ok_or_else(|| refuse("the Box has no machine"))?;
     match b.state {
-        BoxState::Ready => {}
-        BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone")),
+        HandsState::Ready => {}
+        HandsState::Gone | HandsState::Deleted => return Err(refuse("the Box is gone")),
         _ => return Err(refuse("the Box is not ready")),
     }
     b.handle
@@ -101,7 +101,7 @@ fn source(cx: &Cx, row: &BoxRow, handle: &BoxHandle, src: &str) -> Result<BoxPat
     if let Some(rel) = src.strip_prefix('/') {
         return BoxPath::under("/", &without_cur_dir(rel)).map_err(usage);
     }
-    let recorded = row.boxed.as_ref().and_then(|b| b.workdir.as_deref());
+    let recorded = row.hands.as_ref().and_then(|b| b.workdir.as_deref());
     let workdir = match recorded.and_then(recorded_workdir) {
         Some(w) => w,
         None => cx.driver().workdir(handle)?,

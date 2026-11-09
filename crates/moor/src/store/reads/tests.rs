@@ -4,8 +4,8 @@ use moor_core::decide::turn::SteerMark;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -77,18 +77,18 @@ fn box_rows_live_skips_deleted_boxes() {
     for id in [live, gone] {
         let d = Decision::new(id)
             .lifecycle(BoxLifecycleInput::Admitted)
-            .box_input(BoxInput::Requested)
+            .box_input(HandsInput::Requested)
             .set(fields.clone());
         store.apply(d).unwrap();
     }
-    let failed = BoxInput::AcquireFailed {
+    let failed = HandsInput::AcquireFailed {
         attempted: None,
         cause: "x".into(),
     };
     store.apply(Decision::new(gone).box_input(failed)).unwrap();
     let rows = store.box_rows_live().unwrap();
     let got: Vec<_> = rows.iter().map(|(id, b)| (*id, b.state)).collect();
-    assert_eq!(got, [(live, BoxState::Starting)]);
+    assert_eq!(got, [(live, HandsState::Starting)]);
 }
 
 fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {

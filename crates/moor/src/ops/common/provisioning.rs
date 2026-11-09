@@ -12,7 +12,7 @@ pub(crate) fn dead_provisioning(cx: &Cx, row: &BoxRow) -> Result<(), CommandErro
     let (Some(intent), Some(at)) = (row.intent, row.intent_at) else {
         return Ok(());
     };
-    let handle = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
+    let handle = row.hands.as_ref().and_then(|b| b.handle.as_ref());
     let held = age(at, cx.clock().now());
     if !provisioning_dead(&intent, cx.proc().alive(intent.pid()), handle, held) {
         return Ok(());

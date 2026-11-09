@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::request::EndSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -72,7 +72,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -91,7 +91,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: got.handle.clone(),
         })
         .set(Fields {
@@ -148,7 +148,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
     assert!(store.live_session(f.id).unwrap().is_none());
     let row = store.open_box_by_name(&BoxName::parse_allow_bare("t").unwrap());
     let row = row.unwrap().unwrap();
-    assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(row.hands.unwrap().state, HandsState::Ready);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert!(row.session.is_quiet());
 }
@@ -229,12 +229,12 @@ fn an_asleep_box_wakes_before_the_session_ends() {
             auto: false,
             reason: None,
         })
-        .box_input(BoxInput::Sleep);
+        .box_input(HandsInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &req()).unwrap();
     let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(row.hands.unwrap().state, HandsState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     assert_eq!(count(&f, "session_ended"), 1);
 }

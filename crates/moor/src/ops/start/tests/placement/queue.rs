@@ -245,7 +245,7 @@ fn a_box_whose_machine_vanished_while_it_waited_gets_a_new_one_only_when_there_i
     assert_eq!(lifecycle(&w, b), Pending);
     let store = w.cx.store().unwrap();
     let row = store.box_row(b).unwrap().unwrap();
-    w.driver.forget(&row.boxed.unwrap().handle.unwrap());
+    w.driver.forget(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
     tick(&w, hv, BELOW_RESERVE, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending, "no room yet");
@@ -258,7 +258,7 @@ fn a_box_whose_machine_vanished_while_it_waited_gets_a_new_one_only_when_there_i
 #[test]
 fn a_close_that_cannot_wake_a_box_leaves_it_asleep_and_asks_nothing_of_the_node() {
     use moor_core::domain::box_state::BoxLifecycle::Asleep;
-    use moor_core::domain::boxes::BoxState;
+    use moor_core::domain::hands::HandsState;
     let (w, hv) = live_world(32_768);
     let shut = asleep(&w, "shut", CEILING);
     let other = started(&w, "other");
@@ -285,7 +285,7 @@ fn a_close_that_cannot_wake_a_box_leaves_it_asleep_and_asks_nothing_of_the_node(
     let after = store.box_row(shut).unwrap().unwrap();
     assert_eq!(after.session, before.session);
     assert_eq!(after.state_reason, before.state_reason);
-    assert_eq!(after.boxed.map(|b| b.state), Some(BoxState::Asleep));
+    assert_eq!(after.hands.map(|b| b.state), Some(HandsState::Asleep));
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn asleep_since_stays_when_a_waiting_box_is_only_given_a_reason() {
             .box_row(big)
             .unwrap()
             .unwrap()
-            .boxed
+            .hands
             .unwrap()
             .updated_at
     };

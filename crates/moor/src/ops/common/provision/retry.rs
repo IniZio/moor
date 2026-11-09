@@ -4,8 +4,8 @@ use moor_core::activity::{Life, Probe, Term};
 use moor_core::box_key::BoxKey;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, BoxTarget, CloseReq, ErrorKind};
@@ -31,7 +31,10 @@ const FATE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The handle and workdir of the machine `row` holds, when it is ready.
 fn machine(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
-    let boxed = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
+    let boxed = row
+        .hands
+        .as_ref()
+        .filter(|b| b.state == HandsState::Ready)?;
     let workdir = boxed.workdir.as_deref().and_then(recorded_workdir)?;
     Some((boxed.handle.as_ref()?, workdir))
 }
@@ -95,7 +98,7 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
     }
     let done = if acquiring {
         let cfg = settings_of(cx, &row, &Flags::default())?;
-        let goes_on = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Starting);
+        let goes_on = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Starting);
         let entry = if goes_on { Entry::Adopt } else { Entry::Again };
         super::provision(cx, store, id, entry, &cfg)?
     } else if row.intent == Some(Intent::Setup { pid: me }) && row.steps_pending_at.is_some() {
@@ -208,7 +211,7 @@ enum Fork {
 /// What became of a retry fork an earlier process left: taken over when its host keeps it going,
 /// else released, as nothing else would.
 fn cut_fork(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Fork, CommandError> {
-    let held = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
+    let held = row.hands.as_ref().and_then(|b| b.handle.as_ref());
     let Some(planned) = planned_root(store, row.id)?.filter(|p| Some(p) != held) else {
         return Ok(Fork::No);
     };
@@ -234,7 +237,7 @@ fn set_up_in_machine(
     cfg: &BoxSettings,
     fork: Fork,
 ) -> Result<Provisioned, CommandError> {
-    let (Some((handle, workdir)), Some(held)) = (machine(row), row.boxed.as_ref()) else {
+    let (Some((handle, workdir)), Some(held)) = (machine(row), row.hands.as_ref()) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
     };
     let provider = held.provider.as_str();

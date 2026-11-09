@@ -2,8 +2,8 @@
 
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::Identity;
 use moor_core::{BoxId, BoxName, BoxReq, StartReq};
@@ -66,7 +66,7 @@ fn retry(w: &World, name: &str) {
 
 /// Which setup lines ran on the machine Box `id` is on now.
 fn lines_on_its_machine(w: &World, id: BoxId) -> Vec<(bool, bool)> {
-    let handle = row(w, id).boxed.unwrap().handle.unwrap();
+    let handle = row(w, id).hands.unwrap().handle.unwrap();
     setup_execs(w)
         .into_iter()
         .filter(|(h, _)| h == handle.as_str())
@@ -123,7 +123,7 @@ fn relaunched(clone_says: &str) -> Vec<String> {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
         .unwrap()
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .apply(Decision::new(id).box_input(HandsInput::DriverMissing))
         .unwrap();
     w.driver.offer_checkpoints();
     w.driver.push_exec_stdout(clone_says);

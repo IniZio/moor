@@ -10,9 +10,9 @@ use moor_core::decide::pressure::{
 };
 use moor_core::decide::schedule::{Memory, Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::cache_save::CacheSaveDenied;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionState;
 use moor_core::name::{BoxHandle, BoxId, NodeName};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
@@ -141,7 +141,7 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
                 reason: Some(reason.to_owned()),
             })
             .cache_save(cache_save)
-            .box_input(BoxInput::Sleep)
+            .box_input(HandsInput::Sleep)
             .set(Fields {
                 box_sleep_reason: Field::Clear,
                 state_reason: Field::Set(reason.to_owned()),
@@ -311,7 +311,7 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
                 &row,
                 Err(CacheSaveDenied::LastResort),
             ))
-            .box_input(BoxInput::Sleep)
+            .box_input(HandsInput::Sleep)
             .set(Fields {
                 box_sleep_reason: Field::Clear,
                 state_reason: Field::Set(reason.to_owned()),

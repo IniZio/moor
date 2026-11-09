@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -59,7 +59,7 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -70,7 +70,7 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle })
+        .box_input(HandsInput::Acquired { handle: got.handle })
         .set(Fields {
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()

@@ -2,8 +2,8 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::Grant;
 use moor_core::seam::clock::Ts;
@@ -46,7 +46,7 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
     let (_, theirs) = open(2000);
     let starting = Decision::new(theirs)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()

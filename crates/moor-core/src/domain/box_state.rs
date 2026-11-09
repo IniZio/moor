@@ -1,6 +1,4 @@
 //! The Box lifecycle machine: every state change is `step()`, and every other pair is an error.
-//!
-//! This will replace `boxes::BoxState` when the schema changes over.
 
 use super::session_state::SessionState;
 use super::Illegal;

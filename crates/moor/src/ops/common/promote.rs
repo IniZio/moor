@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::{BoxId, BoxName, ErrorKind, Warning};
 
@@ -143,13 +143,13 @@ fn promote_one(
         return Ok(Promotion::Skipped);
     }
     let asleep = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     let gone = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Gone);
+        .is_some_and(|b| b.state == HandsState::Gone);
     let started = if asleep {
         wake_in_turn(cx, store, &row).map(|_| ())
     } else if gone {

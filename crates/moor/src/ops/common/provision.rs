@@ -4,8 +4,8 @@ use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
@@ -61,7 +61,7 @@ pub(crate) fn reprovision(
     row: &BoxRow,
     op: &str,
 ) -> Result<Option<Provisioned>, CommandError> {
-    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+    let ready = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Ready);
     if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
         return Ok(None);
     }
@@ -90,12 +90,14 @@ pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
 
 /// How a Box that wants a machine starts over; `None` when it has one or is being provisioned.
 fn entry_for(row: &BoxRow) -> Option<Entry> {
-    let box_state = row.boxed.as_ref().map(|b| b.state);
+    let box_state = row.hands.as_ref().map(|b| b.state);
     match (row.lifecycle, box_state) {
         (BoxLifecycle::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
         (BoxLifecycle::Pending, None) if row.intent.is_none() => Some(Entry::Waiting),
-        (BoxLifecycle::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
-        (BoxLifecycle::Ready, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Stay),
+        (BoxLifecycle::SetupFailed, Some(HandsState::Failed | HandsState::Gone)) => {
+            Some(Entry::Retry)
+        }
+        (BoxLifecycle::Ready, Some(HandsState::Failed | HandsState::Gone)) => Some(Entry::Stay),
         _ => None,
     }
 }
@@ -111,7 +113,7 @@ fn requested(id: BoxId, entry: Entry, provider: &ProviderId) -> Decision {
     }
     let mut d = Decision::new(id);
     d.lifecycle_input = entry.begin();
-    d.box_input(BoxInput::Requested)
+    d.box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(provider.clone()),
             box_handle: Field::Clear,
@@ -141,7 +143,7 @@ pub(crate) fn provision(
             None => return Ok(Provisioned::skipped()),
         }
     } else {
-        let provider = match started.boxed.as_ref() {
+        let provider = match started.hands.as_ref() {
             Some(held) => held.provider.clone(),
             None => node::runtime_of(cx, store, &started)?,
         };

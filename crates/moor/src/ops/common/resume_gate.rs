@@ -3,7 +3,7 @@
 
 use moor_core::decide::pressure::Demand;
 use moor_core::decide::schedule::{needed_to_resume, Memory, Node, ResumeAsk, Shortfall};
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -34,8 +34,8 @@ fn ahead_of(store: &Store, node: &Node, row: &BoxRow) -> Result<usize, CommandEr
     for id in queue {
         let asleep = store
             .box_row(id)?
-            .and_then(|r| r.boxed)
-            .is_some_and(|b| b.state == BoxState::Asleep);
+            .and_then(|r| r.hands)
+            .is_some_and(|b| b.state == HandsState::Asleep);
         resumes += usize::from(asleep);
     }
     Ok(resumes)
@@ -51,7 +51,7 @@ fn resume_shortfall(
     now: i64,
 ) -> Result<Option<Shortfall>, CommandError> {
     let guest = row
-        .boxed
+        .hands
         .as_ref()
         .and_then(|b| b.delivered)
         .map(|d| d.mem_mib);
@@ -81,7 +81,7 @@ pub(crate) fn beyond_reach(
     memory: &Memory,
     row: &BoxRow,
 ) -> Result<bool, CommandError> {
-    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Asleep) else {
+    let Some(b) = row.hands.as_ref().filter(|b| b.state == HandsState::Asleep) else {
         return Ok(false);
     };
     let guest = b.delivered.map(|d| d.mem_mib);
@@ -151,9 +151,9 @@ pub(super) fn demand(
         return Ok(Demand::default());
     };
     let asleep = head
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     let short = if asleep {
         resume_shortfall(store, node, memory, &head, now)?
     } else {

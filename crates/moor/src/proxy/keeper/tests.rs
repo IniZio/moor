@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::{MachineLink, RunnerAddr};
 use moor_core::seam::clock::Clock as _;
@@ -80,7 +80,7 @@ impl World {
 
     fn handle(&self) -> BoxHandle {
         let row = self.store.box_row(self.id).unwrap().unwrap();
-        row.boxed.unwrap().handle.unwrap()
+        row.hands.unwrap().handle.unwrap()
     }
 
     /// The handles each tunnel was opened into, in order.
@@ -91,13 +91,13 @@ impl World {
 
     /// Gives the Box a fresh machine, as a retry that moves it does.
     fn move_box(&self) -> BoxHandle {
-        for input in [BoxInput::DriverMissing, BoxInput::Requested] {
+        for input in [HandsInput::DriverMissing, HandsInput::Requested] {
             self.store
                 .apply(Decision::new(self.id).box_input(input))
                 .unwrap();
         }
         let handle = acquire(&self.driver, self.id, "moved");
-        let acquired = BoxInput::Acquired {
+        let acquired = HandsInput::Acquired {
             handle: handle.clone(),
         };
         self.store
@@ -110,7 +110,7 @@ impl World {
         let d = Decision::new(self.id)
             .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End)
-            .box_input(BoxInput::Released);
+            .box_input(HandsInput::Released);
         self.store.apply(d).unwrap();
     }
 
@@ -148,7 +148,7 @@ pub(crate) fn ready_box(store: &Store, driver: &FakeDriver) -> BoxId {
     let id = store.apply(Decision::insert(new)).unwrap().box_id;
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -160,7 +160,7 @@ pub(crate) fn ready_box(store: &Store, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle });
+        .box_input(HandsInput::Acquired { handle });
     store.apply(ready).unwrap();
     id
 }

@@ -121,7 +121,7 @@ fn machine_features(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Optio
 
 /// Ok when the provider under `row` can save cache volumes while the Box sleeps; why not otherwise.
 pub(crate) fn saves_on_pause(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CacheSaveDenied> {
-    let boxed = row.boxed.as_ref().ok_or(CacheSaveDenied::NoFeature)?;
+    let boxed = row.hands.as_ref().ok_or(CacheSaveDenied::NoFeature)?;
     let reports = if boxed.provider.host().is_some() {
         row.user
             .and_then(|user| machine_features(cx, store, row, user))
@@ -154,7 +154,7 @@ pub(crate) fn save_decision(
 
 /// Whether `row`'s plan holds any volumes.
 fn holds_volumes(cx: &Cx, store: &Store, row: &BoxRow) -> bool {
-    let Some(boxed) = row.boxed.as_ref() else {
+    let Some(boxed) = row.hands.as_ref() else {
         return false;
     };
     settings_of(cx, row, &Flags::default()).is_ok_and(|cfg| {

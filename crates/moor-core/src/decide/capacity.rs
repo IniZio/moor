@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use crate::domain::boxes::BoxState;
+use crate::domain::hands::HandsState;
 use crate::name::BoxId;
 
 /// A Box slot as the start op read it.
@@ -11,7 +11,7 @@ pub struct HeldBox {
     /// Name of the Box holding the slot.
     pub holder: String,
     /// The Box's state.
-    pub state: BoxState,
+    pub state: HandsState,
 }
 
 /// What the start op read before asking for a slot.
@@ -39,10 +39,10 @@ pub enum Admission {
 
 /// Whether a Box in `state` takes a capacity slot.
 #[must_use]
-pub const fn counts(state: BoxState) -> bool {
+pub const fn counts(state: HandsState) -> bool {
     matches!(
         state,
-        BoxState::Starting | BoxState::Ready | BoxState::Asleep
+        HandsState::Starting | HandsState::Ready | HandsState::Asleep
     )
 }
 

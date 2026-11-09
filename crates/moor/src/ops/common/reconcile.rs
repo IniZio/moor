@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use moor_core::decide::reconcile::{reconcile, stopped, BoxFact, STOPPED_REASON};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, PausePublish};
 use moor_core::{ProviderId, Warning};
 
@@ -17,7 +17,7 @@ use crate::store::{BoxRow, Store};
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
-    rows: Vec<(moor_core::BoxId, crate::store::DriverRow)>,
+    rows: Vec<(moor_core::BoxId, crate::store::HandsRow)>,
 ) -> Vec<(ProviderId, Vec<BoxFact>)> {
     let mut groups: Vec<(ProviderId, Vec<BoxFact>)> = Vec::new();
     for (box_id, b) in rows {
@@ -54,9 +54,9 @@ pub(crate) fn run(cx: &Cx) {
 /// Reconciles the one Box `row`, when it holds a machine that reconcile can find missing or stopped.
 pub(crate) fn one(cx: &Cx, store: &Store, row: &BoxRow) {
     let Some(b) = row
-        .boxed
+        .hands
         .as_ref()
-        .filter(|b| matches!(b.state, BoxState::Ready | BoxState::Asleep))
+        .filter(|b| matches!(b.state, HandsState::Ready | HandsState::Asleep))
     else {
         return;
     };
@@ -105,7 +105,7 @@ fn reconcile_provider(cx: &Cx, store: &Store, provider: &ProviderId, facts: &[Bo
 /// recorded. A Box that was quiet just sleeps; one mid-turn has work to carry on, so it queues to
 /// resume first, its Session as it was.
 fn apply(cx: &Cx, store: &Store, d: Decision) {
-    let (Some(BoxInput::Sleep), BoxTarget::Existing(id)) = (&d.box_input, &d.target) else {
+    let (Some(HandsInput::Sleep), BoxTarget::Existing(id)) = (&d.box_input, &d.target) else {
         let _ = store.apply(d);
         return;
     };
@@ -130,7 +130,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision) {
         .lifecycle(BoxLifecycleInput::Suspend {
             reason: STOPPED_REASON.to_owned(),
         })
-        .box_input(BoxInput::Sleep)
+        .box_input(HandsInput::Sleep)
         .set(Fields {
             state_reason: Field::Set(STOPPED_REASON.to_owned()),
             ..Fields::default()
@@ -146,7 +146,7 @@ fn note_starting(store: &Store, facts: &[BoxFact], e: &DriverError) {
     let Some(text) = last_sentence(&e.to_string()) else {
         return;
     };
-    for f in facts.iter().filter(|f| f.state == BoxState::Starting) {
+    for f in facts.iter().filter(|f| f.state == HandsState::Starting) {
         let last = store.last_event_of(f.box_id, "box_progress").ok().flatten();
         if last.is_some_and(|ev| ev.payload.get("text").and_then(|t| t.as_str()) == Some(&text)) {
             continue;

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::BoxId;
 use moor_schema::tables::Boxes;
@@ -39,7 +39,10 @@ pub(super) fn live_on_node_in(
     for row in rows {
         let (driver, state, n) = row?;
         let n = usize::try_from(n).unwrap_or(0);
-        if driver.and_then(|d| BoxState::parse(&d)).is_some_and(counts) {
+        if driver
+            .and_then(|d| HandsState::parse(&d))
+            .is_some_and(counts)
+        {
             used += n;
         }
         if state == BoxLifecycle::SettingUp.as_str() {
@@ -155,7 +158,7 @@ impl Store {
                 .order_by_expr(Expr::col(Boxes::ResumeFirstAt).is_null(), Order::Asc)
                 .order_by_expr(
                     Expr::case(
-                        Expr::col(Boxes::DriverState).eq(BoxState::Asleep.as_str()),
+                        Expr::col(Boxes::DriverState).eq(HandsState::Asleep.as_str()),
                         0,
                     )
                     .finally(1)

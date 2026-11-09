@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
@@ -65,7 +65,7 @@ fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
     };
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let got = driver
@@ -84,7 +84,7 @@ fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired { handle: got.handle });
+        .box_input(HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     id
 }
@@ -280,7 +280,7 @@ fn the_index_script_checks_the_directory_and_has_a_shasum_fallback() {
 fn a_row_without_a_box_collects_nothing() {
     let f = fx();
     let mut r = row(&f);
-    r.boxed = None;
+    r.hands = None;
     assert_eq!(collect(&f.cx, f.cx.store().unwrap(), &r), 0);
     assert!(f.driver.execs().is_empty());
     assert!(codes(&f).is_empty());

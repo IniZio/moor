@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proxy_host::ProxySpec;
@@ -150,7 +150,7 @@ impl World {
         let d = Decision::new(self.id)
             .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End)
-            .box_input(BoxInput::Released);
+            .box_input(HandsInput::Released);
         self.store.apply(d).unwrap();
     }
 
@@ -190,7 +190,7 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
         .box_id;
     let admitted = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
+        .box_input(HandsInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
@@ -201,7 +201,7 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
             setup: SetupOutcome::Ok,
         })
         .session(SessionInput::Started)
-        .box_input(BoxInput::Acquired {
+        .box_input(HandsInput::Acquired {
             handle: BoxHandle::new("p/demo"),
         });
     store.apply(ready).unwrap();

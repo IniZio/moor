@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use moor_core::activity::AgentState;
 use moor_core::config::UserConfig;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::SleepKind;
 use moor_core::view::{AgentView, BoxSleepView, BoxView, DriverView, EventView, RunView};
@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 
 use crate::cx::Cx;
 use crate::ops::common::activity::Reading;
-use crate::store::{BoxRow, DriverRow, EventRow, RunRow};
+use crate::store::{BoxRow, EventRow, HandsRow, RunRow};
 
 #[cfg(test)]
 mod tests;
@@ -70,10 +70,10 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
 }
 
 /// The handle to show: live, or the attempted one once the Box failed.
-fn box_handle(b: &DriverRow) -> Option<String> {
+fn box_handle(b: &HandsRow) -> Option<String> {
     let h = match b.state {
-        BoxState::Gone | BoxState::Deleted => None,
-        BoxState::Failed | BoxState::ReleaseFailed => {
+        HandsState::Gone | HandsState::Deleted => None,
+        HandsState::Failed | HandsState::ReleaseFailed => {
             b.handle.as_ref().or(b.attempted_handle.as_ref())
         }
         _ => b.handle.as_ref(),
@@ -82,7 +82,7 @@ fn box_handle(b: &DriverRow) -> Option<String> {
 }
 
 /// Map a Box row to its view.
-fn driver_view(b: &DriverRow, config: &UserConfig) -> DriverView {
+fn driver_view(b: &HandsRow, config: &UserConfig) -> DriverView {
     DriverView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
@@ -91,7 +91,7 @@ fn driver_view(b: &DriverRow, config: &UserConfig) -> DriverView {
         egress: b.egress.clone(),
         cpus: b.delivered.map(|d| d.cpus),
         mem_mib: b.delivered.map(|d| d.mem_mib),
-        asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
+        asleep_since: (b.state == HandsState::Asleep).then(|| rfc3339(b.updated_at)),
         sleep: BoxSleepView {
             after: Some(config.box_.sleep_after_label()),
             reason: b.sleep_reason.clone(),
@@ -144,7 +144,7 @@ pub(crate) fn box_view_with_run(
         state_reason: row.state_reason.clone(),
         base: row.base.clone(),
         branch: row.branch.clone(),
-        driver: row.boxed.as_ref().map(|b| driver_view(b, config)),
+        driver: row.hands.as_ref().map(|b| driver_view(b, config)),
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),

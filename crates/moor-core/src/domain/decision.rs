@@ -3,8 +3,8 @@
 mod extra;
 
 use super::box_state::BoxLifecycleInput;
-use super::boxes::BoxInput;
 use super::cache_save::CacheSave;
+use super::hands::HandsInput;
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use crate::name::{ForgeRepo, GitAuthor};
@@ -187,7 +187,7 @@ pub struct Decision {
     /// Primary Session input.
     pub session_input: Option<SessionInput>,
     /// Box state machine input.
-    pub box_input: Option<BoxInput>,
+    pub box_input: Option<HandsInput>,
     /// Column changes.
     pub set: Fields,
     /// Intent change.
@@ -268,7 +268,7 @@ impl Decision {
 
     /// Sets the box input.
     #[must_use]
-    pub fn box_input(mut self, i: BoxInput) -> Self {
+    pub fn box_input(mut self, i: HandsInput) -> Self {
         self.box_input = Some(i);
         self
     }

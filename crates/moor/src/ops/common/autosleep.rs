@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
@@ -106,7 +106,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
     if !due(cx, store, &row, agent)? {
         return Ok(());
     }
-    if row.boxed.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
+    if row.hands.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
@@ -131,7 +131,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
                 auto: true,
                 reason: None,
             })
-            .box_input(BoxInput::Sleep)
+            .box_input(HandsInput::Sleep)
             .set(Fields {
                 box_sleep_reason: Field::Clear,
                 ..Fields::default()
@@ -234,12 +234,12 @@ pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandEr
 /// The handle of the ready Box, or a refusal.
 pub(crate) fn ready_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let b = row
-        .boxed
+        .hands
         .as_ref()
         .ok_or_else(|| refuse("the Box has no machine".to_owned()))?;
     match b.state {
-        BoxState::Ready => {}
-        BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone".to_owned())),
+        HandsState::Ready => {}
+        HandsState::Gone | HandsState::Deleted => return Err(refuse("the Box is gone".to_owned())),
         _ => return Err(refuse("the Box is not ready".to_owned())),
     }
     b.handle

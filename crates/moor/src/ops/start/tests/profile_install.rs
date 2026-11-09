@@ -19,7 +19,7 @@ fn relaunch_with(failures: Option<&str>) -> (Vec<String>, Vec<String>) {
     set_profile(&w, None);
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let boxed = row.boxed.unwrap();
+    let boxed = row.hands.unwrap();
     if let Some(text) = failures {
         let workdir = boxed.workdir.unwrap();
         let path = BoxPath::under(&workdir, ".moor/profile-failures").unwrap();

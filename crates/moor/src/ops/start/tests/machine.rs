@@ -5,8 +5,8 @@
 
 use moor_core::config::UserMachine;
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::StartView;
 use moor_core::{BoxId, HoldOp, HoldValue, MachineHoldReq};
@@ -120,7 +120,7 @@ fn close(w: &World, v: &StartView) {
             Decision::new(BoxId::new(v.boxed.id))
                 .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
-                .box_input(BoxInput::Released),
+                .box_input(HandsInput::Released),
         )
         .unwrap();
 }

@@ -1,5 +1,5 @@
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::DriverError;
 
 use super::boxwork::fx_setup_failed;
@@ -47,7 +47,7 @@ fn a_release_failed_box_keeps_its_leases_for_the_manual_release() {
     plan_leases(&f);
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
+        .apply(Decision::new(f.id).box_input(HandsInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(lease_count(&f), 2);

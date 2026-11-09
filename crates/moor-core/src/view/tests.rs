@@ -19,7 +19,7 @@ fn sample_box() -> BoxView {
         base: None,
         branch: Some("b".into()),
         driver: Some(DriverView {
-            state: BoxState::Ready,
+            state: HandsState::Ready,
             provider: "p".into(),
             handle: Some("h".into()),
             workdir: Some("/work/repo".into()),
@@ -353,7 +353,7 @@ fn env_row_value_kind() {
 
 fn box_view(after: Option<&str>, reason: Option<&str>) -> DriverView {
     DriverView {
-        state: BoxState::Ready,
+        state: HandsState::Ready,
         provider: "p".into(),
         handle: None,
         workdir: None,

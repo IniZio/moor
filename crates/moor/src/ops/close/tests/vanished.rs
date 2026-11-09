@@ -1,5 +1,5 @@
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::DriverError;
 use moor_core::ErrorKind;
 
@@ -20,7 +20,7 @@ fn vanished_with(driver: FakeDriver) -> super::Fx {
         }),
         YAML,
     );
-    f.driver.forget(&row(&f).boxed.unwrap().handle.unwrap());
+    f.driver.forget(&row(&f).hands.unwrap().handle.unwrap());
     f
 }
 
@@ -29,7 +29,7 @@ fn force_closes_a_box_whose_machine_vanished_in_one_call() {
     let f = vanished();
     let v = run(&f.cx, &req(true)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert_eq!(box_state(&f), BoxState::Gone);
+    assert_eq!(box_state(&f), HandsState::Gone);
     let warnings = f.cx.take_warnings();
     let codes: Vec<_> = warnings.iter().map(|w| w.code.as_str()).collect();
     assert_eq!(codes, ["box_already_gone"], "one note: {warnings:?}");
@@ -49,7 +49,7 @@ fn force_close_of_a_listed_box_still_fails_on_a_release_error() {
     let e = run(&f.cx, &req(true)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains(RAW));
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
     assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
 }
 
@@ -60,7 +60,7 @@ fn force_close_goes_on_as_usual_when_the_listing_fails() {
     }));
     let e = run(&f.cx, &req(true)).unwrap_err();
     assert!(e.error.to_string().contains(RAW), "{e:?}");
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }
 
 #[test]

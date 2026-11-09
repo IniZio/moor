@@ -2,15 +2,15 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::proxy_host::ProxyHostError;
 
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
 /// The woken Box is recorded awake.
-fn box_state(f: &Fx) -> BoxState {
-    row(f).boxed.unwrap().state
+fn box_state(f: &Fx) -> HandsState {
+    row(f).hands.unwrap().state
 }
 
 /// `f` with `host` as its Proxy host.
@@ -32,7 +32,7 @@ fn wake_restores_the_tunnel() {
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(host.calls().contains(&ProxyHostCall::Restore(f.id)));
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn tunnel_failure_fails_the_wake_and_leaves_the_box_awake() {
     let store = f.cx.store().unwrap();
     let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
     assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn tunnel_failure_attempts_no_relaunch() {
     let store = f.cx.store().unwrap();
     let err = wake_and_revive(&f.cx, store, &row(&f)).unwrap_err();
     assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
     assert!(f.engine.launches().is_empty());
 }
 
@@ -85,5 +85,5 @@ fn waking_only_the_box_leaves_the_tunnel_and_the_agent_alone() {
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(!host.calls().contains(&ProxyHostCall::Restore(f.id)));
     assert!(f.engine.launches().is_empty());
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), HandsState::Ready);
 }

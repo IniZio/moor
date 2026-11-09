@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::decide::transcript::{digest, is_duplicate, next_number, Trigger};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -40,7 +40,7 @@ pub(crate) fn save(
     session: &SessionRow,
     trigger: Trigger,
 ) -> Option<Saved> {
-    if row.boxed.as_ref()?.state != BoxState::Ready {
+    if row.hands.as_ref()?.state != HandsState::Ready {
         return None;
     }
     let known = |id: &Option<String>| id.as_deref().is_some_and(|id| !id.is_empty());

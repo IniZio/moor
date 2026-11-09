@@ -1,7 +1,7 @@
 //! What `run` checks before it touches the machine: the Box must hold a usable machine.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::ErrorKind;
 
@@ -29,12 +29,12 @@ pub(crate) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError
             format!("{name} is waiting for a free box"),
         ));
     }
-    let Some(boxed) = &row.boxed else {
+    let Some(boxed) = &row.hands else {
         return Err(failed(format!("{name} has no box")));
     };
     match boxed.state {
-        BoxState::Ready => {}
-        BoxState::Gone => {
+        HandsState::Ready => {}
+        HandsState::Gone => {
             store.refused_run(row.id)?;
             return Err(
                 failed(format!("box of {name} is gone; run moor close {name}"))

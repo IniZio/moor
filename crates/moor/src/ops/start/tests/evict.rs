@@ -169,7 +169,7 @@ fn a_checkpoint_claimed_before_a_crash_stays_tracked_and_the_next_start_deletes_
         .box_row(first)
         .unwrap()
         .unwrap()
-        .boxed
+        .hands
         .unwrap()
         .provider;
     let evictable = store.evictable(&provider).unwrap();
@@ -211,7 +211,7 @@ fn a_checkpoint_a_rerun_replaced_waits_for_the_delta_over_it() {
 /// The provider Box `id` runs on, and the key of the chain its first checkpoint began.
 fn chain_of(w: &World, id: moor_core::BoxId) -> (moor_core::ProviderId, LayerKey) {
     let store = w.cx.store().unwrap();
-    let provider = store.box_row(id).unwrap().unwrap().boxed.unwrap().provider;
+    let provider = store.box_row(id).unwrap().unwrap().hands.unwrap().provider;
     let taken = events(w, id, "checkpoint_taken");
     let key = taken[0]["key"].as_str().unwrap().to_owned();
     (provider, LayerKey::restore(key).unwrap())

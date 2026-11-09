@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxId;
 
@@ -63,7 +63,7 @@ fn polled_asleep(suspend: BoxLifecycleInput, quiet: bool) -> (Cx, Arc<FakeEngine
         .apply(
             Decision::new(id)
                 .lifecycle(suspend)
-                .box_input(BoxInput::Sleep),
+                .box_input(HandsInput::Sleep),
         )
         .unwrap();
     for _ in 0..2 {
@@ -115,7 +115,7 @@ fn an_asleep_box_is_not_touched_by_settling_and_a_wake_resumes_polling() {
     let store = cx.store().unwrap();
     let wake = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Wake)
-        .box_input(BoxInput::Wake);
+        .box_input(HandsInput::Wake);
     store.apply(wake).unwrap();
     engine.set_probes(SESSION, crate::testing::agent::working(super::seen()));
     let reading = run_once(&cx, id);

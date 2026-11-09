@@ -61,7 +61,7 @@ fn steps(w: &World) -> Vec<String> {
             .box_row(BoxId::new(1))
             .unwrap()
             .unwrap()
-            .boxed
+            .hands
             .unwrap()
             .workdir
             .unwrap();

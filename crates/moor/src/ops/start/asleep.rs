@@ -1,8 +1,8 @@
 //! Rouses an asleep or Idle Box that a start attaches to, before its agent launches.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
 
@@ -35,9 +35,9 @@ pub(super) fn wake(
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let row = reread(store, id)?;
     let machine_asleep = row
-        .boxed
+        .hands
         .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep);
+        .is_some_and(|b| b.state == HandsState::Asleep);
     if let Err(e) = wake_box_if_asleep(cx, store, &row) {
         if reread(store, id)?.lifecycle != BoxLifecycle::Pending {
             return Err(e);

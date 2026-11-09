@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use db::{Conn, DbExt as _, Reader, Readers, Row};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Intent};
+use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::{Clock, Ts};
@@ -86,13 +86,13 @@ pub(crate) use webhook_outbox::ClaimedDelivery;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DriverRow {
+pub(crate) struct HandsRow {
     /// Driver provider id.
     pub(crate) provider: ProviderId,
     /// Driver handle once acquired.
     pub(crate) handle: Option<BoxHandle>,
     /// Box state.
-    pub(crate) state: BoxState,
+    pub(crate) state: HandsState,
     /// Handle of a failed acquire attempt, for cleanup.
     pub(crate) attempted_handle: Option<BoxHandle>,
     /// Working directory in the box.
@@ -151,7 +151,7 @@ pub(crate) struct BoxRow {
     /// Last update.
     pub(crate) updated_at: Ts,
     /// The box's box, if any.
-    pub(crate) boxed: Option<DriverRow>,
+    pub(crate) hands: Option<HandsRow>,
 }
 
 impl BoxRow {
@@ -159,9 +159,9 @@ impl BoxRow {
     pub(crate) fn asleep(&self) -> bool {
         self.lifecycle == BoxLifecycle::Asleep
             || self
-                .boxed
+                .hands
                 .as_ref()
-                .is_some_and(|b| b.state == BoxState::Asleep)
+                .is_some_and(|b| b.state == HandsState::Asleep)
     }
 }
 
@@ -365,7 +365,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             .get::<_, Option<String>>(26)?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
-        boxed: driver_from_row(row)?,
+        hands: driver_from_row(row)?,
     })
 }
 

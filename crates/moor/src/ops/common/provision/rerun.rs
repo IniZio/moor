@@ -4,8 +4,8 @@
 use moor_core::decide::intent::setup_dead;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::domain::hands::HandsState;
 
 use moor_core::{ErrorKind, Warning};
 
@@ -25,7 +25,7 @@ use crate::store::{BoxRow, Store};
 /// Runs the steps a restart cut off after the setup lines passed in a ready Box, or warns that a
 /// setup that failed or was interrupted mid-line is not re-run.
 pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
+    if row.hands.as_ref().map(|b| b.state) != Some(HandsState::Ready) {
         return Ok(());
     }
     if let Some(intent) = &row.intent {
@@ -64,7 +64,7 @@ pub(super) fn finish_steps(
     advance: bool,
 ) -> Result<Provisioned, CommandError> {
     let Some((held, handle)) = row
-        .boxed
+        .hands
         .as_ref()
         .and_then(|b| Some((b, b.handle.as_ref()?)))
     else {

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::artifact::{fresh, parse_index, valid_name, ArtifactFile};
 use moor_core::boxscript::quote;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
@@ -65,9 +65,9 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
             continue;
         };
         let ready = row
-            .boxed
+            .hands
             .as_ref()
-            .is_some_and(|b| b.state == BoxState::Ready && b.handle.is_some());
+            .is_some_and(|b| b.state == HandsState::Ready && b.handle.is_some());
         if !ready || row.intent.is_some() {
             continue;
         }
