@@ -78,7 +78,7 @@ Node      capacity
 | Each effect names whether a restart reruns it | Acquire and a setup attach rerun. An exec or a prompt send is reported, never repeated. |
 | Restore Claude's session files into new hands | `--resume` keeps the whole conversation. Replaying recent events as a prompt drops context. |
 | The controller resolves a front's conversation key to a Box | Retries converge on one Box. Fronts keep a binding and an event cursor, not a copy of Box state. |
-| Steers go to a per-Box inbox, deleted after delivery | A sender never waits on a wake, and a crash never loses a steer. |
+| Steers go to a per-Box inbox, deleted when their turn ends | A sender never waits on a wake, a crash never loses a steer, and a turn cut by a lost VM is named. |
 | Agent status reaches moor through `hc`, resynced from its snapshot after a reconnect | `hc` is upstream code. It already flags missed events and sends a snapshot, and moor needs the current status, not each transition. |
 | claude stays in the guest under `hc` | Claude Code runs its tools where it runs. |
 
@@ -117,8 +117,11 @@ Each step ends in a run on a real Box.
    keeps working. Proof. A close racing a suspend ends closed, and the relaunch
    cap holds with the Box's events deleted.
 5. **Box inbox.** A steer is stored, then delivered once the agent is ready.
-   Proof. Steer an asleep Box and a Box whose agent died. Each gets the
-   message, and a crash between send and delete repeats it at most once.
+   Senders only append rows. The owner marks a row before it sends and
+   deletes it when the turn ends. A steer whose turn a lost VM cut is named
+   to the user and not sent again. Proof. Steer an asleep Box and a Box whose
+   agent died. Each gets the message, and a crash between send and delete
+   repeats it at most once.
 6. **Keyed Boxes, fronts without copies.** The controller resolves
    `(front, conversation, n)` under a unique index. The Slack front drops its
    copy of Box state, branch and node, and reads state from the controller's
