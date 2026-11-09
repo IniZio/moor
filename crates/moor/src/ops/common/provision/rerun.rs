@@ -12,11 +12,13 @@ use moor_core::Warning;
 use moor_core::config::Flags;
 
 use super::after_lines::after_setup;
-use super::outcome::{dotfiles_noted, step_failed};
+use super::outcome::{dotfiles_noted, setup_ended};
+use super::Provisioned;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
 use crate::ops::common::facts::settings_of;
+use crate::ops::common::setup::SetupRun;
 use crate::ops::common::view::rfc3339;
 use crate::store::{BoxRow, Store};
 
@@ -33,7 +35,7 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
         record_interrupted(cx, store, row)?;
     }
     if row.steps_pending_at.is_some() {
-        return finish_steps(cx, store, row);
+        return finish_steps(cx, store, row, false).map(drop);
     }
     let name = row.name.as_str();
     let by_hand = format!("`moor start` does not re-run it; run each `setup:` line by hand with `moor run {name} -- '<line>'`");
@@ -54,13 +56,19 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
 }
 
 /// Runs the steps after the setup lines, which all passed, in the Box a restart cut them off in.
-fn finish_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+/// `advance` moves a Box still setting up on to working, or to setup-failed, and ends its intent.
+pub(super) fn finish_steps(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    advance: bool,
+) -> Result<Provisioned, CommandError> {
     let Some((held, handle)) = row
         .boxed
         .as_ref()
         .and_then(|b| Some((b, b.handle.as_ref()?)))
     else {
-        return Ok(());
+        return Ok(Provisioned::skipped());
     };
     let cfg = settings_of(cx, row, &Flags::default())?;
     let repo = row.repo.as_ref().map(|r| &r.repo);
@@ -70,17 +78,30 @@ fn finish_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError
         .transpose();
     let at = (handle, held.provider.as_str());
     let after = after_setup(cx, store, at, row.id, &cfg, &proxy)?;
-    let mut done = dotfiles_noted(row.id, &after.dotfiles);
     let mut set = Fields {
         steps_pending_at: Field::Clear,
         ..Fields::default()
     };
-    if let Err(cause) = after.installed {
-        done = step_failed(done, false, cause);
-        set.setup_failed_at = Field::Set(cx.clock().now().as_millis());
+    let install_failed = after.installed.is_err();
+    let outcome = match after.installed {
+        Ok(()) => SetupOutcome::Ok,
+        Err(line) => {
+            set.setup_failed_at = Field::Set(cx.clock().now().as_millis());
+            SetupOutcome::Failed { line }
+        }
+    };
+    let mut done = setup_ended(dotfiles_noted(row.id, &after.dotfiles), advance, outcome).set(set);
+    if advance {
+        done = done.intent(IntentChange::Clear);
     }
-    store.apply(done.set(set))?;
-    Ok(())
+    store.apply(done)?;
+    Ok(Provisioned {
+        setup: SetupRun::Skipped,
+        dotfiles: after.dotfiles,
+        work_tree: None,
+        install_failed,
+        warm_disk: None,
+    })
 }
 
 /// Records a dead setup as failed, as a failed setup run would, without running anything, so the

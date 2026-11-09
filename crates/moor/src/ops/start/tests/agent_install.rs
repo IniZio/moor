@@ -502,6 +502,9 @@ fn a_box_started_with_no_agent_gets_none_after_a_restart() {
 fn a_restart_during_the_install_is_not_a_failed_setup() {
     let (w, engine) = install_cut_off();
     assert!(engine.launches().is_empty());
+    crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
+        .unwrap();
+    assert_eq!(engine.launches().len(), 1);
     let row =
         w.cx.store()
             .unwrap()
@@ -519,9 +522,11 @@ fn a_restart_during_the_install_is_not_a_failed_setup() {
 }
 
 #[test]
-fn a_start_after_a_restart_during_the_install_installs_then_launches() {
+fn the_controller_after_a_restart_during_the_install_installs_then_launches() {
     let (w, engine) = install_cut_off();
     drop(w.cx.take_warnings());
+    crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
+        .unwrap();
     let v = run(&w.cx, &prompt_req()).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(installs(&w).len(), 1);
@@ -544,8 +549,15 @@ fn a_start_after_a_restart_during_the_install_installs_then_launches() {
 fn a_failed_install_after_a_restart_holds_the_box_in_setup_failed() {
     let (w, engine) = install_cut_off();
     w.driver.push_exec_result(Ok(exit(1)));
-    let v = run(&w.cx, &prompt_req()).unwrap();
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    crate::ops::common::provision::resume_setup(&w.cx, w.cx.store().unwrap(), BoxId::new(1))
+        .unwrap();
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(installs(&w).len(), 1);
     assert!(engine.launches().is_empty());
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
