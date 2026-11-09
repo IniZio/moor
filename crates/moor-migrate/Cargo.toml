@@ -11,7 +11,7 @@ refinery-core = { version = "0.10", default-features = false, features = [
 ] }
 postgres = "0.19.14"
 time = { version = "0.3", features = ["parsing"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 sea-query = { version = "1.0.2", default-features = false, features = [
   "backend-postgres",
   "backend-sqlite",

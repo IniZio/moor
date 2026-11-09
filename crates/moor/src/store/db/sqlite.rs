@@ -169,7 +169,7 @@ fn execute(conn: &Connection, s: &Statement) -> Result<usize> {
 fn query(conn: &Connection, s: &Statement) -> Result<Rows> {
     let (text, values) = s.render(SqliteQueryBuilder)?;
     let mut stmt = conn.prepare_cached(&text).map_err(error)?;
-    let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+    let names: Vec<String> = stmt.column_names().map(str::to_owned).collect();
     let mut rows = stmt
         .query(rusqlite::params_from_iter(values.into_iter().map(sql)))
         .map_err(error)?;

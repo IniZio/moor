@@ -20,7 +20,7 @@ clap = { version = "4", features = ["derive", "env"] }
 command-fds = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 rustix = { version = "1", features = ["process"] }
 sha2 = "0.10"
 signal-hook = "=0.4.4"
