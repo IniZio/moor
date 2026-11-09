@@ -32,7 +32,14 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     let handle: BoxHandle = boxed.handle.unwrap();
     let before = f.driver.execs().len();
     let forge_repo = row.repo.as_ref().map(|r| &r.repo);
-    let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), forge_repo, &cfg).ok();
+    let proxy = box_exec::proxy(
+        &f.cx,
+        f.id,
+        Some((handle.clone(), HandsInc::FIRST)),
+        forge_repo,
+        &cfg,
+    )
+    .ok();
     let provider = boxed.provider.as_str();
     let _ = run_setup(
         &f.cx,

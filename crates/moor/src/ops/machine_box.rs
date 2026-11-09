@@ -6,6 +6,7 @@ use moor_core::view::user::MachineBoxValue;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::stale::unless_stale;
 
 /// Gets, puts, drops or lists records as `op` says; what it read or wrote.
 pub(super) fn run(cx: &Cx, op: MachineBoxOp) -> Result<MachineBoxValue, CommandError> {
@@ -18,10 +19,10 @@ pub(super) fn run(cx: &Cx, op: MachineBoxOp) -> Result<MachineBoxValue, CommandE
             });
             store.machine_box(box_id)?.into_iter().collect()
         }
-        MachineBoxOp::Put(record) => {
-            store.put_machine_box(&record)?;
-            vec![record]
-        }
+        MachineBoxOp::Put(record) => unless_stale(cx, store.put_machine_box(&record))?
+            .map(|()| record)
+            .into_iter()
+            .collect(),
         MachineBoxOp::Drop { box_id } => {
             store.drop_machine_box(box_id)?;
             Vec::new()

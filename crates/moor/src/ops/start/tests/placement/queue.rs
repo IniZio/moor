@@ -40,6 +40,7 @@ fn provider_says(w: &World, hv: i64, id: BoxId, mib: u64) {
             box_id: id,
             host_memory_mib: 0,
             resume_memory_mib: Some(mib),
+            inc: None,
         }])
         .unwrap();
 }
@@ -315,6 +316,7 @@ fn holding(w: &World, hv: i64, boxes: &[(BoxId, u64)]) {
             box_id: *id,
             host_memory_mib: *mib,
             resume_memory_mib: None,
+            inc: None,
         })
         .collect();
     store.set_box_memory(&rows).unwrap();

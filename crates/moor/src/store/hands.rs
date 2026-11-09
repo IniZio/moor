@@ -16,7 +16,7 @@ use super::init::parsed_opt;
 use super::lease::{LeaseId, LeaseState};
 use super::select::hands_at;
 use super::{to_u32, BoxRow, HandsRow, Store, StoreError};
-use crate::store::db::{self, DbExt as _, Row};
+use crate::store::db::{self, Db, DbExt as _, Row};
 
 impl Store {
     /// Applies `moves`, each to Box `id`, and holds lease `hold`, in one transaction: a Box moving
@@ -154,6 +154,22 @@ pub(super) fn fence(
 /// are no longer the Box's current ones.
 pub(super) const fn fenced(id: BoxId, inc: HandsInc, rows: usize) -> Result<(), StoreError> {
     if rows == 0 {
+        return Err(StoreError::Stale {
+            box_id: id,
+            read: inc,
+        });
+    }
+    Ok(())
+}
+
+/// Refuses a write about Box `id`'s hands `inc` once the Box has newer hands. A write that names
+/// no hands, as an older runner sends, is let through.
+pub(super) fn fence_inc(conn: &dyn Db, id: BoxId, inc: Option<HandsInc>) -> Result<(), StoreError> {
+    let Some(inc) = inc else {
+        return Ok(());
+    };
+    let current: Option<i64> = conn.row(current_inc(Expr::val(id.get())), |r| r.get(0))?;
+    if current.is_some_and(|now| now > inc.get()) {
         return Err(StoreError::Stale {
             box_id: id,
             read: inc,

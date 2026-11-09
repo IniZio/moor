@@ -1,6 +1,7 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
 use moor_core::config::BoxSettings;
+use moor_core::domain::hands::HandsInc;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::forge::ForgeRepo;
@@ -38,15 +39,17 @@ pub(crate) struct Site<'a> {
 pub(crate) fn proxy(
     cx: &Cx,
     box_id: BoxId,
-    handle: Option<BoxHandle>,
+    hands: Option<(BoxHandle, HandsInc)>,
     repo: Option<&ForgeRepo>,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
     let (user, plan) = box_plan(cx, box_id, repo)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
+    let (box_handle, hands_inc) = hands.map_or((None, None), |(h, inc)| (Some(h), Some(inc.get())));
     let spec = ProxySpec {
         box_id,
-        box_handle: handle,
+        box_handle,
+        hands_inc,
         box_repo: plan.repos.first().cloned(),
         other_repos: plan.repos.get(1..).unwrap_or_default().to_vec(),
         rules: plan.rules,

@@ -1,12 +1,14 @@
 //! Which setup checkpoints may go to free disk, in the order they go, and the Boxes that hold
 //! some back.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::domain::layers::LayerKey;
 use moor_core::{BoxId, ProviderId};
 use moor_schema::tables::{BoxState, SetupCheckpointPins as Pins, SetupCheckpoints as Checkpoints};
 use sea_query::{DynIden, Expr, ExprTrait as _, IntoIden, OnConflict, Order, Query};
 
 use crate::store::db::{self, DbExt as _, OptionalExtension};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 /// Why a checkpoint goes before the ones after it.
@@ -115,17 +117,21 @@ fn superseded(c: &DynIden) -> Expr {
 }
 
 impl Store {
-    /// Marks layer `layer`, keyed `key`, under `provider` as one Box `id` stands on, at the checkpoint
-    /// kept for it now.
+    /// Marks layer `layer`, keyed `key`, under `provider` as one Box `id`'s hands `inc` stand on,
+    /// at the checkpoint kept for it now. Hands the Box has since replaced are refused: their disk
+    /// is not the one the Box stands on.
     pub(crate) fn pin_checkpoint(
         &self,
-        id: BoxId,
+        (id, inc): (BoxId, Option<HandsInc>),
         provider: &ProviderId,
         key: &LayerKey,
         layer: usize,
     ) -> Result<(), StoreError> {
         let now = self.checkpoint(provider, key)?.map(|row| row.checkpoint);
-        self.writer().run(
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        fence_inc(&tx, id, inc)?;
+        tx.run(
             Query::insert()
                 .into_table(Pins::Table)
                 .columns([
@@ -134,6 +140,7 @@ impl Store {
                     Pins::LayerKey,
                     Pins::Layer,
                     Pins::Checkpoint,
+                    Pins::Inc,
                 ])
                 .values_panic([
                     id.get().into(),
@@ -141,13 +148,18 @@ impl Store {
                     key.as_str().into(),
                     i64::try_from(layer).unwrap_or(i64::MAX).into(),
                     now.into(),
+                    inc.map(HandsInc::get).into(),
                 ])
                 .on_conflict(
                     OnConflict::columns([Pins::BoxId, Pins::Provider, Pins::LayerKey])
-                        .update_column(Pins::Checkpoint)
+                        .update_columns(
+                            std::iter::once(Pins::Checkpoint).chain(inc.map(|_| Pins::Inc)),
+                        )
                         .to_owned(),
                 ),
         )?;
+        tx.commit()?;
+        drop(conn);
         Ok(())
     }
 

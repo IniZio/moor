@@ -55,7 +55,7 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
     let proxy = box_exec::proxy(
         cx,
         row.id,
-        Some(target.handle.clone()),
+        Some((target.handle.clone(), row.hands_inc())),
         row.repo.as_ref().map(|r| &r.repo),
         &cfg,
     )

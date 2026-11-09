@@ -169,9 +169,12 @@ fn launch_agent(
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let handle = row.hands.as_ref().and_then(|b| b.handle.clone());
+    let hands = row
+        .hands
+        .as_ref()
+        .and_then(|b| Some((b.handle.clone()?, b.inc)));
     let repo = row.repo.as_ref().map(|r| &r.repo);
-    let mut proxy = match box_exec::proxy(cx, id, handle, repo, cfg) {
+    let mut proxy = match box_exec::proxy(cx, id, hands, repo, cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {

@@ -74,6 +74,8 @@ pub(super) struct Layered {
     lineage: Lineage,
     /// The Box the layers are for.
     id: BoxId,
+    /// The hands the layers are set up on, whose saves are refused once the Box replaced them.
+    inc: Option<HandsInc>,
     /// The commit the Box starts from.
     base: String,
     /// What the Box's disk holds.
@@ -292,6 +294,7 @@ pub(super) fn plan(
         provider,
         home,
         id: row.id,
+        inc: row.hands.as_ref().map(|h| h.inc),
         base: base.to_owned(),
         disk: Disk::Fresh,
         cache: cache.clone(),

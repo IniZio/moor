@@ -1,5 +1,6 @@
 //! The `box_machines` row a Box's claim on a machine lives in.
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
@@ -20,6 +21,8 @@ pub(super) struct Claim {
     pub(super) ports: Vec<u16>,
     /// What syncs leave alone.
     pub(super) sync_exclude: Vec<String>,
+    /// The hands whose keeper last granted or slept the claim; none for a claim no keeper has.
+    pub(super) inc: Option<HandsInc>,
 }
 
 /// The `box_machines` row of `box_id`, read through `conn`.
@@ -37,6 +40,7 @@ pub(super) fn claim_in(conn: &dyn Db, box_id: BoxId) -> Result<Option<Claim>, St
                     BoxMachines::SyncExclude,
                     BoxMachines::Since,
                     BoxMachines::Until,
+                    BoxMachines::Inc,
                 ])
                 .from(BoxMachines::Table)
                 .and_where(Expr::col(BoxMachines::Box).eq(box_id.get())),
@@ -66,6 +70,8 @@ struct ClaimRow {
     since: i64,
     /// `until`, in ms.
     until: Option<i64>,
+    /// `inc`.
+    inc: Option<i64>,
 }
 
 impl ClaimRow {
@@ -81,6 +87,7 @@ impl ClaimRow {
             sync_exclude: r.get(6)?,
             since: r.get(7)?,
             until: r.get(8)?,
+            inc: r.get(9)?,
         })
     }
 
@@ -111,6 +118,7 @@ impl ClaimRow {
             state,
             ports: from_json("ports", &self.ports)?,
             sync_exclude: from_json("sync_exclude", &self.sync_exclude)?,
+            inc: self.inc.map(HandsInc::new),
         })
     }
 }
@@ -196,6 +204,7 @@ pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), 
                 BoxMachines::SyncExclude,
                 BoxMachines::Since,
                 BoxMachines::Until,
+                BoxMachines::Inc,
             ])
             .values_panic([
                 box_id.get().into(),
@@ -208,6 +217,7 @@ pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), 
                 to_json(&claim.sync_exclude)?.into(),
                 since.into(),
                 until.into(),
+                claim.inc.map(HandsInc::get).into(),
             ]),
     )?;
     Ok(())

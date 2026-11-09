@@ -257,7 +257,7 @@ fn box_env(
     let proxy = box_exec::proxy(
         cx,
         row.id,
-        Some(target.handle.clone()),
+        Some((target.handle.clone(), row.hands_inc())),
         row.repo.as_ref().map(|r| &r.repo),
         cfg,
     )

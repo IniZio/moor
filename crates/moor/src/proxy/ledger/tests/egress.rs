@@ -146,6 +146,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         other_repos: Vec::new(),
         rules: vec![rule],
         user: w.ann,
+        hands_inc: None,
     };
     w.store.set_proxy_spec(a, &spec).unwrap();
     let ledger = BoxLedger::egress(Endpoint::Unix(w.socket.clone()), a, EGRESS_KEY.to_owned());

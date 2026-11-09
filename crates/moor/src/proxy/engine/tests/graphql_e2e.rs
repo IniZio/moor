@@ -308,6 +308,7 @@ pub(super) fn rig_spec(
         box_repo: Some(repo),
         rules,
         user: moor_core::user::UserId::new(1),
+        hands_inc: None,
     };
     let wiring = Wiring {
         secrets: Arc::new(|_| Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))),

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use moor_core::domain::hands::HandsInc;
 use moor_core::name::BoxId;
 use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport, RunnerAddr};
 use moor_core::seam::clock::Ts;
@@ -13,6 +14,7 @@ use sea_query::{
 };
 
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension};
+use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 mod route;
@@ -44,12 +46,17 @@ impl Store {
     }
 
     /// Replaces the stored per-Box host memory with `boxes`, dropping any for a machine that is not
-    /// enrolled or a Box another controller named.
-    pub(crate) fn set_box_memory(&self, boxes: &[BoxHostMemory]) -> Result<(), StoreError> {
+    /// enrolled or a Box another controller named; and any for hands the Box has since replaced,
+    /// which it returns as stale writes.
+    pub(crate) fn set_box_memory(
+        &self,
+        boxes: &[BoxHostMemory],
+    ) -> Result<Vec<StoreError>, StoreError> {
         let own = self.controller_id()?;
         let mut conn = self.writer();
         let tx = conn.transaction()?;
         tx.run(Query::delete().from_table(MachineBoxMemory::Table))?;
+        let mut stale = Vec::new();
         for b in boxes.iter().filter(|b| b.controller == own) {
             tx.run(
                 Query::delete()
@@ -60,6 +67,13 @@ impl Store {
             if !is_enrolled(&tx, b.machine_id)? {
                 continue;
             }
+            match fence_inc(&tx, b.box_id, b.inc.map(HandsInc::new)) {
+                Err(e @ StoreError::Stale { .. }) => {
+                    stale.push(e);
+                    continue;
+                }
+                other => other?,
+            }
             tx.run(
                 Query::insert()
                     .into_table(MachineBoxMemory::Table)
@@ -68,6 +82,7 @@ impl Store {
                         MachineBoxMemory::BoxId,
                         MachineBoxMemory::HostMemoryMib,
                         MachineBoxMemory::ResumeMemoryMib,
+                        MachineBoxMemory::Inc,
                     ])
                     .values_panic([
                         b.machine_id.into(),
@@ -76,12 +91,13 @@ impl Store {
                         b.resume_memory_mib
                             .and_then(|m| i64::try_from(m).ok())
                             .into(),
+                        b.inc.into(),
                     ]),
             )?;
         }
         tx.commit()?;
         drop(conn);
-        Ok(())
+        Ok(stale)
     }
 
     /// The MiB of host memory the Boxes of each machine that reported any hold, by machine id.

@@ -80,7 +80,7 @@ fn teardown_proxy(
     match box_exec::proxy(
         cx,
         row.id,
-        Some(handle.clone()),
+        Some((handle.clone(), row.hands_inc())),
         row.repo.as_ref().map(|r| &r.repo),
         cfg,
     ) {
