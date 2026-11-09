@@ -455,7 +455,9 @@ fn unsigned_tokens_are_refused_before_they_spend_any_budget() {
 #[test]
 fn signed_unknown_tokens_are_never_kept_and_spend_only_the_shared_lookup_budget() {
     let w = World::new();
-    let server = w.server_with(10.0, 4.0);
+    let mut unwarmed = w.config(10.0, 4.0, 64);
+    unwarmed.warm = None;
+    let server = Server::start(unwarmed).unwrap();
     assert!(
         open(&server, &w.token, &w.target()).is_ok(),
         "the first lookup"

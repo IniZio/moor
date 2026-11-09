@@ -273,12 +273,13 @@ fn a_connect_to_the_machine_service_is_refused() {
 
 #[test]
 fn a_machine_service_that_is_down_is_502() {
+    use rustix::net::{bind, socket, AddressFamily, SocketType};
     let w = World::new();
     let plain = Plain::start();
-    let down = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let down = socket(AddressFamily::INET, SocketType::STREAM, None).unwrap();
+    bind(&down, &SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+    let bound_never_listening = TcpListener::from(down);
+    let down = bound_never_listening.local_addr().unwrap();
     let server = server(&w, &plain, Some(down.to_string()));
     assert_eq!(
         open_as(&server, &w.token, &format!("{MACHINE}:80"), true).err(),
