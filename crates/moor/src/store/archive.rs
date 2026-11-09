@@ -6,7 +6,7 @@
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::{BoxState, Sessions};
-use sea_query::{Cond, Expr, ExprTrait as _, Query, Value};
+use sea_query::{Cond, Expr, ExprTrait as _, Order, Query, Value};
 
 use super::{Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension as _};
@@ -89,6 +89,37 @@ impl Store {
         reschedule(&*conn, id, seen, next)?;
         drop(conn);
         Ok(())
+    }
+
+    /// The newest archive any Session of Box `id` points at. Every Session of a Box shares its
+    /// work tree, so that archive holds all of them.
+    pub(crate) fn newest_archive(&self, id: BoxId) -> Result<Option<ArchivePointer>, StoreError> {
+        let conn = self.reader()?;
+        Ok(conn
+            .row(
+                Query::select()
+                    .columns([
+                        Sessions::ArchiveKey,
+                        Sessions::ArchiveInc,
+                        Sessions::ArchiveAt,
+                    ])
+                    .from(Sessions::Table)
+                    .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                    .and_where(Expr::col(Sessions::ArchiveKey).is_not_null())
+                    .and_where(Expr::col(Sessions::ArchiveInc).is_not_null())
+                    .and_where(Expr::col(Sessions::ArchiveAt).is_not_null())
+                    .order_by(Sessions::ArchiveInc, Order::Desc)
+                    .order_by(Sessions::ArchiveAt, Order::Desc)
+                    .limit(1),
+                |r| {
+                    Ok(ArchivePointer {
+                        key: r.get(0)?,
+                        inc: r.get(1)?,
+                        at: Ts::from_millis(r.get(2)?),
+                    })
+                },
+            )
+            .optional()?)
     }
 
     /// The archive Session `session` points at.

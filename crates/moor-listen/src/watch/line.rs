@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 /// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 13] = [
+const WORTH: [&str; 15] = [
     "idled",
     "needs_input",
     "agent_stalled",
@@ -16,6 +16,8 @@ const WORTH: [&str; 13] = [
     "box_failed",
     "relaunch_capped",
     "disk_lost",
+    "session_restored",
+    "session_lost",
     "closed",
 ];
 
@@ -79,12 +81,23 @@ pub(super) fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Opt
     }
 }
 
-/// The line for a node's disk running low or coming back; none for other kinds.
+/// The line for a lost machine, what came back of the conversation, or a node's disk running
+/// low or coming back; none for other kinds.
 pub(super) fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
-    if kind == "disk_lost" {
-        return Some(format!(
-            "moor: box {name} disk_lost: its machine was replaced, so anything not pushed is gone"
-        ));
+    let lost = match kind {
+        "disk_lost" => Some("its machine was replaced, so anything not pushed is gone"),
+        "session_restored" => Some(
+            "its conversation up to its last saved turn is back; a prompt sent after that was \
+             not sent again",
+        ),
+        "session_lost" => Some(
+            "its conversation could not be brought back, so its agent started without it; a \
+             prompt it was working on was not sent again",
+        ),
+        _ => None,
+    };
+    if let Some(what) = lost {
+        return Some(format!("moor: box {name} {kind}: {what}"));
     }
     if !matches!(kind, "node_disk_low" | "node_disk_recovered") {
         return None;

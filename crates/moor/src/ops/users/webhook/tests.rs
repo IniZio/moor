@@ -84,6 +84,7 @@ fn add_replies_with_an_id_waiting_for_setup_and_never_a_key() {
             "launch_timed_out",
             "relaunch_capped",
             "disk_lost",
+            "session_lost",
             "box_failed",
             "agent_stalled",
             "node_disk_low",

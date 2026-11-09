@@ -1,6 +1,7 @@
 //! The Claude Code profile: launch arguments, hook setup and hook state file parsing.
 
 use moor_core::activity::{Note, Question};
+use moor_core::boxscript::quote;
 use moor_core::name::NameError;
 use moor_core::seam::agent_adapter::{
     AgentAdapter, AgentInstall, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
@@ -12,6 +13,9 @@ mod install;
 mod launch;
 mod profile;
 mod wait;
+
+/// Sets `d` to the project directory Claude Code keeps the sessions of the work tree in.
+const PROJECT_DIR: &str = r#"d="$HOME/.claude/projects/$(pwd -P | sed 's/[^A-Za-z0-9]/-/g')""#;
 
 /// The lines of a JSON array of strings; empty when it is none.
 fn lines(v: Option<&Value>) -> Vec<String> {
@@ -113,10 +117,42 @@ impl AgentAdapter for Claude {
         Key::Escape
     }
 
+    fn session_check_script(&self, session_id: &str) -> String {
+        let f = quote(&format!("{session_id}.jsonl"));
+        format!("{PROJECT_DIR}\ntest -f \"$d\"/{f}\n")
+    }
+
+    // The session file moves in last, so a run cut short leaves it missing and the next run
+    // starts again from the archive.
+    fn restore_script(&self, session_id: &str, archive: &str) -> String {
+        let f = quote(&format!("{session_id}.jsonl"));
+        let a = quote(archive);
+        format!(
+            r#"set -e
+{PROJECT_DIR}
+t="$d.moor-restore"
+trap 'rm -rf "$t" {a}' EXIT
+test -f "$d"/{f} && exit 0
+rm -rf "$t"
+mkdir -p "$t" "$d"
+tar xzf {a} -C "$t"
+if ! test -f "$t"/{f}; then
+  echo 'moor: the archive does not hold the session' >&2
+  exit 3
+fi
+for p in "$t"/* "$t"/.[!.]*; do
+  n="${{p##*/}}"
+  if [ -e "$p" ] && [ "$n" != {f} ] && [ ! -e "$d/$n" ]; then mv "$p" "$d/$n"; fi
+done
+mv "$t"/{f} "$d"/{f}
+"#
+        )
+    }
+
     fn transcript_script(&self, archive: &str) -> String {
         format!(
             r#"set -e
-d="$HOME/.claude/projects/$(pwd -P | sed 's/[^A-Za-z0-9]/-/g')"
+{PROJECT_DIR}
 mkdir -p "$(dirname {archive})"
 if [ ! -d "$d" ]; then
   echo '{NOTHING_TO_ARCHIVE}'

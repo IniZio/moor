@@ -27,6 +27,10 @@ pub(super) enum Note {
     RelaunchCapped(u64, u64),
     /// The machine was lost and replaced, along with its disk.
     DiskLost,
+    /// The agent's conversation came back on the new machine.
+    SessionRestored,
+    /// The agent's conversation could not be brought back on the new machine.
+    SessionLost,
 }
 
 impl Note {
@@ -44,6 +48,8 @@ impl Note {
             }
             "relaunch_capped" => Some(Self::RelaunchCapped(number("count"), number("window_secs"))),
             "disk_lost" => Some(Self::DiskLost),
+            "session_restored" => Some(Self::SessionRestored),
+            "session_lost" => Some(Self::SessionLost),
             _ => None,
         }
     }
@@ -57,6 +63,8 @@ impl Note {
             Self::Relaunched => BoxEvent::Relaunched,
             Self::RelaunchCapped(..) => BoxEvent::RelaunchCapped,
             Self::DiskLost => BoxEvent::DiskLost,
+            Self::SessionRestored => BoxEvent::SessionRestored,
+            Self::SessionLost => BoxEvent::SessionLost,
         }
     }
 
@@ -83,6 +91,12 @@ impl Note {
             ),
             Self::DiskLost => format!(
                 "Box `{name}`'s machine was lost and replaced, so its disk is new and anything not pushed is gone."
+            ),
+            Self::SessionRestored => format!(
+                "Box `{name}`'s conversation is back on its new machine, up to its last finished turn. A message sent after that was not sent again, so reply here to send it again."
+            ),
+            Self::SessionLost => format!(
+                "Box `{name}`'s conversation could not be brought back on its new machine, so its agent started without it. A message it was working on was not sent again, so reply here to send it again."
             ),
         }
     }

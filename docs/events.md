@@ -17,6 +17,8 @@ A webhook that names no events gets the kinds marked with a check.
 | `relaunch_capped` | ✓ | The agent ended 3 times in 10 minutes, so moor stopped restarting it. |
 | `box_failed` | ✓ | The Box's VM could not be made. |
 | `disk_lost` | ✓ | The Box's VM was gone and a new, empty one replaced it. Work that was not pushed is lost. |
+| `session_lost` | ✓ | The new VM could not get back the agent's conversation, so the agent started without it. `data.reason` says why. A prompt it was working on is not sent again. |
+| `session_restored` | | The new VM got back the agent's conversation up to its last saved turn. `data.archive_at` is when that was saved. A prompt sent after then is not sent again. |
 | `agent_stalled` | ✓ | The agent reported busy and sent nothing for 10 minutes. Once per stall. |
 | `agent_resumed` | | A stalled agent reported again. |
 | `node_disk_low` | ✓ | The Box's node fell below its free-disk floor. Once per owner. |
@@ -78,7 +80,7 @@ listener prints the events it missed.
 | `moor: box NAME EVENT: SAID` | An `idled`, `needs_input`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped`, or `closed` event. `SAID` is the first line of the agent's message, cut at 200 characters. |
 | `moor: box NAME stalled: no progress for N min while DOING` | `agent_stalled`. |
 | `moor: box NAME resumed after N min` | `agent_resumed`. |
-| `moor: box NAME disk_lost: ...` | `disk_lost`. |
+| `moor: box NAME disk_lost: ...` | `disk_lost`, and `session_restored` and `session_lost` in the same shape. |
 | `moor: box NAME node_disk_low: NODE has N GiB free of M GiB` | `node_disk_low`, and `node_disk_recovered` in the same shape. |
 | `moor-listen: stream lost (REASON); reconnecting` | The stream dropped and the first reconnect failed. |
 | `moor-listen: reconnected` | The stream is back. |

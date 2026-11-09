@@ -45,6 +45,10 @@ struct State {
     /// Probes a session reads from once a steer is sent to it.
     after_steer: Vec<(String, Probe)>,
     asked: Vec<&'static str>,
+    held: Option<sessions::Held>,
+    restores: Vec<(String, String, Vec<u8>)>,
+    fail_restore: Option<EngineError>,
+    resumes: Vec<(String, String, bool)>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -228,7 +232,21 @@ impl Engine for FakeEngine {
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
+        self.note_resume(req);
         self.scripted_launch(req)
+    }
+
+    fn holds_session(&self, req: &LaunchReq, session_id: &str) -> Result<bool, EngineError> {
+        Ok(self.holds(req, session_id))
+    }
+
+    fn restore_session(
+        &self,
+        req: &LaunchReq,
+        session_id: &str,
+        archive: &[u8],
+    ) -> Result<(), EngineError> {
+        self.restore(req, session_id, archive)
     }
 
     fn relay_argv(&self, connect: &[String]) -> Option<Vec<String>> {
@@ -305,6 +323,7 @@ impl Engine for FakeEngine {
 mod installs;
 mod knobs;
 mod script;
+mod sessions;
 
 #[cfg(test)]
 mod tests;

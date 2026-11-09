@@ -70,6 +70,7 @@ mod repos;
 mod requester;
 mod rerun;
 mod resources;
+mod restore;
 mod resume_sweep;
 mod revive;
 mod session;

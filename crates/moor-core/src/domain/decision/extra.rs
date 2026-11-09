@@ -393,7 +393,8 @@ pub enum ExtraEvent {
         /// Why the tunnel was restarted.
         reason: String,
     },
+    /// What new hands got back of the agent's conversation.
+    Restore(crate::domain::event::RestoreEvent),
 }
-
 mod convert;
 mod try_from;

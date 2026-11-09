@@ -150,3 +150,16 @@ fn a_reschedule_keeps_a_due_marked_after_the_save_began() {
     store.reschedule_archive(id, later, Some(retry)).unwrap();
     assert_eq!(store.archive_due(id).unwrap(), Some(retry));
 }
+
+#[test]
+fn the_newest_archive_of_a_box_is_the_one_its_newest_hands_took_across_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock, id, first) = fx(dir.path());
+    assert_eq!(store.newest_archive(id).unwrap(), None);
+    store.advance_archive(id, first, &at("a", 2, 100)).unwrap();
+    store.end_current_session(id, "relaunch", None).unwrap();
+    let second = store.open_child_session(id, None).unwrap().id;
+    store.advance_archive(id, second, &at("b", 1, 900)).unwrap();
+
+    assert_eq!(store.newest_archive(id).unwrap(), Some(at("a", 2, 100)));
+}

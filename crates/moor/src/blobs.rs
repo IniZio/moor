@@ -42,6 +42,11 @@ impl BlobKey {
         Self(relative_path(box_id, session, digest))
     }
 
+    /// A key the store recorded when the blob was put.
+    pub(crate) const fn recorded(key: String) -> Self {
+        Self(key)
+    }
+
     /// A key spelled out, for a test that lays out its own files.
     #[cfg(test)]
     pub(crate) fn raw(key: &str) -> Self {

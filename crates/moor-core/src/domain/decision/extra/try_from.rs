@@ -215,6 +215,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::TranscriptSkipped { trigger, reason } => {
                 Ok(Self::TranscriptSkipped { trigger, reason })
             }
+            Event::Restore(r) => Ok(Self::Restore(r)),
             Event::Steered {
                 session,
                 message,

@@ -212,6 +212,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::TranscriptSkipped { trigger, reason } => {
                 Self::TranscriptSkipped { trigger, reason }
             }
+            ExtraEvent::Restore(r) => Self::Restore(r),
             ExtraEvent::Steered {
                 session,
                 message,
