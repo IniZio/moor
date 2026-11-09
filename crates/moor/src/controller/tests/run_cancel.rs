@@ -172,11 +172,15 @@ fn fake_egress(dir: &Path, store: &Store, id: BoxId) -> moor_testkit::FakeEgress
     egress
 }
 
+/// The longest a read in these tests waits: a hang fails instead of stalling the suite.
+const READ_LIMIT: Duration = Duration::from_secs(30);
+
 /// A connection to `socket` that has said hello.
 fn greeted(socket: &Path) -> (UnixStream, BufReader<UnixStream>) {
     let mut stream = UnixStream::connect(socket).unwrap();
     let hello = ClientFrame::Hello { protocol: PROTOCOL };
     stream.write_all(hello.to_line().as_bytes()).unwrap();
+    stream.set_read_timeout(Some(READ_LIMIT)).unwrap();
     let mut read = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
     read.read_line(&mut line).unwrap();

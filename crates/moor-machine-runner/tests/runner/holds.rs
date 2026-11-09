@@ -82,25 +82,42 @@ fn one_build_slot_runs_two_calls_one_after_the_other() {
 #[test]
 fn two_sim_slots_run_two_at_once_and_a_third_waits() {
     let rig = Arc::new(Rig::with_resources(&["sim=2"]));
-    let runs = concurrently(
-        &rig,
-        vec![
-            ("7", "minion", exec("sleep 2", &["sim"])),
-            ("8", "minion", exec("sleep 2", &["sim"])),
-            ("9", "minion", exec("sleep 2", &["sim"])),
-        ],
-    );
+    rig.open.lock().unwrap().extend([7, 8, 9]);
+    let until_released = |name: &str| {
+        format!(
+            "touch $HOME/{name}.started; until [ -e $HOME/released ]; do sleep 0.1; done; echo done"
+        )
+    };
+    let start = |id: &'static str, name: &str| {
+        let rig = Arc::clone(&rig);
+        let args = exec(&until_released(name), &["sim"]);
+        thread::spawn(move || {
+            let headers = caller(&rig, id, "minion");
+            rig.call_progress("exec", args, &headers)
+        })
+    };
+    let first = start("7", "a");
+    let second = start("8", "b");
+    wait_for(&rig.remote.join("a.started"));
+    wait_for(&rig.remote.join("b.started"));
+    let third = start("9", "c");
+    thread::sleep(Duration::from_secs(1));
     assert!(
-        runs[0].1.is_empty() && runs[1].1.is_empty(),
-        "two ran at once"
+        !rig.remote.join("c.started").exists(),
+        "the third ran with both slots taken"
     );
-    assert!(runs[1].2 < Duration::from_millis(3500), "{:?}", runs[1].2);
+    std::fs::write(rig.remote.join("released"), "").unwrap();
+    let (third, third_progress) = third.join().unwrap();
+    assert_eq!(output(&third), "done\n");
+    for held in [first, second] {
+        let (result, progress) = held.join().unwrap();
+        assert_eq!(output(&result), "done\n");
+        assert!(progress.is_empty(), "two ran at once: {progress:?}");
+    }
     assert!(
-        runs[2].1[0].starts_with("waiting for sim on minion: held by Box "),
-        "{:?}",
-        runs[2].1
+        third_progress[0].starts_with("waiting for sim on minion: held by Box "),
+        "{third_progress:?}"
     );
-    assert!(runs[2].2 >= Duration::from_millis(3800), "{:?}", runs[2].2);
 }
 
 #[test]
@@ -119,7 +136,7 @@ fn a_hold_on_another_machine_does_not_block() {
     wait_for(&rig.remote.join("held"));
     let headers = caller(&rig, "8", "other");
     let release =
-        json!({"command": "touch $HOME/released", "hold": ["build"], "hold_wait_secs": 60});
+        json!({"command": "touch $HOME/released", "hold": ["build"], "hold_wait_secs": 5});
     let (result, progress) = rig.call_progress("exec", release, &headers);
     result.unwrap();
     assert!(progress.is_empty(), "{progress:?}");

@@ -226,11 +226,11 @@ fn anon_kb(pid: u32) -> u64 {
 }
 
 /// What the controller saw before it answered: whether the client had printed every byte,
-/// and the client's anonymous memory after the first chunk and after the last.
+/// the client's anonymous memory after the first chunk, and its peak after any later chunk.
 struct BeforeAnswer {
     printed_all: bool,
     first_kb: u64,
-    last_kb: u64,
+    peak_kb: u64,
 }
 
 /// Reads the big output from `stdout` on a thread of its own, signalling `first` once the first
@@ -280,15 +280,17 @@ fn large_run_output_streams_with_bounded_client_memory() {
         write_bytes(stream, id, &piece).unwrap();
         first_rx.recv_timeout(Duration::from_secs(20)).unwrap();
         let first_kb = anon_kb(pid);
+        let mut peak_kb = first_kb;
         for _ in 1..BIG / BYTES_MAX {
             write_bytes(stream, id, &piece).unwrap();
+            peak_kb = peak_kb.max(anon_kb(pid));
         }
         let printed_all = printed_rx.recv_timeout(Duration::from_secs(20)).is_ok();
         seen_tx
             .send(BeforeAnswer {
                 printed_all,
                 first_kb,
-                last_kb: anon_kb(pid),
+                peak_kb: peak_kb.max(anon_kb(pid)),
             })
             .unwrap();
     });
@@ -306,10 +308,10 @@ fn large_run_output_streams_with_bounded_client_memory() {
         "the client printed the output only at the end"
     );
     assert!(
-        seen.last_kb.saturating_sub(seen.first_kb) < GROWTH_KB,
-        "client memory grew from {} kB to {} kB while streaming {BIG} bytes",
+        seen.peak_kb.saturating_sub(seen.first_kb) < GROWTH_KB,
+        "client memory grew from {} kB to a peak of {} kB while streaming {BIG} bytes",
         seen.first_kb,
-        seen.last_kb
+        seen.peak_kb
     );
     assert_eq!(child.wait().unwrap().code(), Some(EXIT));
     server.join().unwrap();
