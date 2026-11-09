@@ -99,7 +99,12 @@ impl Lexer {
                 self.pos += 1;
                 Tok::Punct(c)
             }
-            other => return Err(format!("unexpected character {other:?}")),
+            other => {
+                return Err(format!(
+                    "unexpected character {}",
+                    crate::graphql_scope::shown(&format!("{other:?}"))
+                ))
+            }
         };
         Ok(Some(tok))
     }

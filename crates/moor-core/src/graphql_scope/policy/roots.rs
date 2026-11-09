@@ -3,7 +3,7 @@
 use serde_json::Value as Json;
 
 use super::super::parse::{Field, Value};
-use super::super::Reason;
+use super::super::{shown, Reason};
 use super::{deny_field, Policy};
 
 /// Subfields of `viewer` that are allowed.
@@ -78,7 +78,9 @@ impl<'a> Policy<'a> {
             return Ok(());
         }
         Err(Reason::new(format!(
-            "field `repository` names `{owner}/{name}`, not the Box repo"
+            "field `repository` names `{}/{}`, not the Box repo",
+            shown(&owner),
+            shown(&name)
         )))
     }
 

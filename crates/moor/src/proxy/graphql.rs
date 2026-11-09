@@ -23,6 +23,7 @@ mod gate;
 pub(crate) mod http;
 pub(crate) mod lookup;
 mod repo_ids;
+mod route;
 mod serve;
 mod tunnel;
 pub(crate) mod upstream;

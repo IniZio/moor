@@ -11,7 +11,8 @@ use super::http::{
     copy_body, read_head, read_response_head, request_framing, response_framing, wants_close,
     write_refusal, Framing, Head, HttpError,
 };
-use super::repo_ids::{gate_id, IdGate, PREFIX as ID_PREFIX};
+use super::repo_ids::{gate_id, IdGate};
+use super::route::{classify, Route};
 use super::tunnel::{dial, parse_authority, splice};
 use super::upstream::TlsStream;
 use super::{Shared, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
@@ -160,30 +161,17 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
     if !head.target.starts_with('/') {
         return bad(client, 400, "moor: malformed request");
     }
+    // nono matches the whole target, `#` included, while the routes below judge only the
+    // part before it; a fragment never belongs on the wire, so nothing is forwarded.
+    if head.target.contains('#') {
+        return bad(client, 400, "moor: fragment in request target");
+    }
     match classify(&head.target) {
         Route::Passthrough => match request_framing(&head) {
             Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), false),
             Err(_) => bad(client, 400, "moor: malformed request"),
         },
-        Route::RepoId(canonical) => {
-            let Ok(f) = request_framing(&head) else {
-                return bad(client, 400, "moor: malformed request");
-            };
-            match gate_id(shared, &head, &canonical) {
-                IdGate::Unchanged | IdGate::Forward => {
-                    forward(shared, client, up, &head, &Payload::Stream(f), false)
-                }
-                IdGate::Anonymous(reason) => {
-                    shared.withhold(&head.method, &head.target, reason);
-                    let bare = without_credential(
-                        &head,
-                        &shared.credential_headers,
-                        shared.placeholder.as_deref(),
-                    );
-                    forward(shared, client, up, &bare, &Payload::Stream(f), true)
-                }
-            }
-        }
+        Route::RepoId(canonical) => repo_id(shared, client, up, &head, &canonical),
         Route::Graphql if head.target != "/graphql" => {
             let reason = "query string or non-canonical path on /graphql is not allowed";
             refuse(
@@ -211,6 +199,33 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
             Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),
             Gate::Abort => Flow::Close,
         },
+    }
+}
+
+/// Handles a request on the numeric repo-id form.
+fn repo_id(
+    shared: &Shared,
+    client: &mut Client,
+    up: &mut Up,
+    head: &Head,
+    canonical: &str,
+) -> Flow {
+    let Ok(f) = request_framing(head) else {
+        return bad(client, 400, "moor: malformed request");
+    };
+    match gate_id(shared, head, canonical) {
+        IdGate::Unchanged | IdGate::Forward => {
+            forward(shared, client, up, head, &Payload::Stream(f), false)
+        }
+        IdGate::Anonymous(reason) => {
+            shared.withhold(&head.method, &head.target, reason);
+            let bare = without_credential(
+                head,
+                &shared.credential_headers,
+                shared.placeholder.as_deref(),
+            );
+            forward(shared, client, up, &bare, &Payload::Stream(f), true)
+        }
     }
 }
 
@@ -243,62 +258,6 @@ fn drain(tcp: &mut TcpStream) {
             break;
         }
     }
-}
-
-/// Which handling a request path gets.
-enum Route {
-    /// Forwarded without looking at the body.
-    Passthrough,
-    /// The GraphQL endpoint, however it is spelled.
-    Graphql,
-    /// The numeric repo-id form, however it is spelled, with its canonical path.
-    RepoId(String),
-}
-
-/// Decides the route from the path alone.
-fn classify(target: &str) -> Route {
-    let canonical = canonical_path(target);
-    if canonical == "/graphql" {
-        Route::Graphql
-    } else if canonical == ID_PREFIX || canonical.starts_with(&format!("{ID_PREFIX}/")) {
-        Route::RepoId(canonical)
-    } else {
-        Route::Passthrough
-    }
-}
-
-/// The path part of `target` percent-decoded, lowercased, with backslashes
-/// as slashes, dot segments resolved and empty segments dropped.
-fn canonical_path(target: &str) -> String {
-    let path = target.split(['?', '#']).next().unwrap_or_default();
-    let bytes = path.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while let Some(&b) = bytes.get(i) {
-        let hex = bytes
-            .get(i + 1..i + 3)
-            .and_then(|h| std::str::from_utf8(h).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        if let (b'%', Some(v)) = (b, hex) {
-            decoded.push(v);
-            i += 3;
-        } else {
-            decoded.push(b);
-            i += 1;
-        }
-    }
-    let text = String::from_utf8_lossy(&decoded)
-        .to_ascii_lowercase()
-        .replace('\\', "/");
-    let mut segments: Vec<&str> = Vec::new();
-    for seg in text.split('/') {
-        match seg {
-            "" | "." => {}
-            ".." => drop(segments.pop()),
-            s => segments.push(s),
-        }
-    }
-    format!("/{}", segments.join("/"))
 }
 
 /// Sends the request upstream and relays the response.
