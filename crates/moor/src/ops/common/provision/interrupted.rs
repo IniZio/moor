@@ -52,8 +52,8 @@ pub(crate) enum Then {
 
 /// Settles the cut-off start of Box `id` under the Resume turn the caller holds, with no call to
 /// a provider. A start goes on when its setup can be followed again or finished in its machine,
-/// its acquire was cut for the first time in this start, its launch was cut, or a forced close
-/// wants it gone.
+/// its acquire was cut for the first time in this start, its agent was still to launch or its
+/// launch was cut, or a forced close wants it gone.
 pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<Then, CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(Then::Rest);
@@ -72,7 +72,7 @@ pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<Then, CommandE
             record_interrupted(cx, store, &row, NOT_READY.to_owned()).map(|()| Then::Rest)
         }
         Intent::Running { .. } => Ok(Then::Rest),
-        Intent::Closing => Ok(Then::Resume),
+        Intent::Closing | Intent::Launching => Ok(Then::Resume),
     }
 }
 

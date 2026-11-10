@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{Probe, STARTUP_GRACE};
+use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
-use moor_core::domain::event::Event;
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -19,6 +19,8 @@ use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq
 use super::{run, run_polling};
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
+use crate::ops::common::facts::settings_of;
+use crate::ops::common::provision::{provision, Entry};
 use crate::store::{FollowClaim, NewRun};
 use crate::testing::agent;
 use crate::testing::clock::FakeClock;
@@ -83,7 +85,7 @@ fn req(wait_for: Option<WaitFor>, timeout_secs: Option<u64>) -> WaitReq {
 fn returns_at_once_without_agent_or_run() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    add_boxed(&cx);
+    add_agentless(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(!v.timed_out);
     assert_eq!(v.waited_ms, 0);
@@ -95,7 +97,7 @@ fn returns_at_once_without_agent_or_run() {
 fn times_out_while_a_run_is_in_flight() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_agentless(&cx);
     let _claim = begin(&cx, id);
     let before = cx.clock().now();
     let v = run(&cx, &req(None, Some(3))).unwrap();
@@ -108,7 +110,7 @@ fn times_out_while_a_run_is_in_flight() {
 fn a_short_timeout_caps_the_total_sleep() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_agentless(&cx);
     let _claim = begin(&cx, id);
     let before = cx.clock().now();
     let v = run(&cx, &req(None, Some(1))).unwrap();
@@ -121,7 +123,7 @@ fn a_short_timeout_caps_the_total_sleep() {
 fn reports_the_in_flight_run_with_its_argv() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_agentless(&cx);
     let _claim = begin(&cx, id);
     let v = run(&cx, &req(None, Some(1))).unwrap();
     let r = v.run.unwrap();
@@ -134,7 +136,7 @@ fn reports_the_in_flight_run_with_its_argv() {
 fn a_run_whose_follower_is_gone_reports_interrupted() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add_boxed(&cx);
+    let id = add_agentless(&cx);
     let claim = begin(&cx, id);
     drop(claim);
     let v = run(&cx, &req(None, Some(5))).unwrap();
@@ -150,7 +152,7 @@ fn a_run_whose_follower_is_gone_reports_interrupted() {
 fn done_behaves_like_idle() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add(&cx);
+    let id = add_agentless(&cx);
     let _claim = begin(&cx, id);
     let v = run(&cx, &req(Some(WaitFor::Done), Some(1))).unwrap();
     assert!(v.timed_out);
@@ -185,7 +187,7 @@ fn unknown_box_fails_like_show() {
 fn never_takes_the_box_lock() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    let id = add_boxed(&cx);
+    let id = add_agentless(&cx);
     let _held = cx.owners_arc().hold(id, Cmd::Close { force: false });
     let show = ShowReq {
         target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
@@ -213,14 +215,48 @@ fn agent_cx(dir: &Path, probes: Probe) -> (Cx, Arc<FakeEngine>) {
 
 /// Insert Box `demo` with a machine the driver lists as live and a live agent session.
 fn add_live(cx: &Cx) -> BoxId {
-    let id = add_boxed(cx);
+    live(cx, add(cx))
+}
+
+/// Gives Box `id` a machine the driver lists as live and a launched agent on [`SESSION`].
+fn live(cx: &Cx, id: BoxId) -> BoxId {
+    ready(cx, id);
     cx.store().unwrap().begin_launch(id, SESSION).unwrap();
     id
 }
 
-/// Insert Box `demo` with a machine the driver lists as live and no agent session.
-fn add_boxed(cx: &Cx) -> BoxId {
-    let id = add(cx);
+/// Starts Box `demo` the way `moor start --no-agent` does: set up on a ready machine, with no
+/// agent to launch.
+fn add_agentless(cx: &Cx) -> BoxId {
+    let flags = Flags {
+        no_agent: true,
+        ..Flags::default()
+    };
+    set_up(cx, &flags)
+}
+
+/// Inserts Box `demo` for the caller's user and sets it up the way a start with `flags` does,
+/// up to the moment its agent would launch.
+fn set_up(cx: &Cx, flags: &Flags) -> BoxId {
+    let store = cx.store().unwrap();
+    let user = cx.requester().unwrap().1.unwrap();
+    let nt = NewBox {
+        name: BoxName::parse_allow_bare("demo").unwrap(),
+        repo: None,
+        spec: SpecFields::default(),
+    };
+    let id = store
+        .apply(Decision::insert(nt).requester(user))
+        .unwrap()
+        .box_id;
+    let row = store.box_row(id).unwrap().unwrap();
+    let cfg = settings_of(cx, &row, flags).unwrap();
+    provision(cx, store, id, Entry::Fresh, &cfg).unwrap();
+    id
+}
+
+/// Gives Box `id` a machine the driver lists as live, ready with no agent session yet.
+fn ready(cx: &Cx, id: BoxId) -> BoxId {
     let got = cx
         .driver()
         .acquire(&AcquireReq {
@@ -368,7 +404,7 @@ fn the_payload_carries_the_agent() {
 fn a_box_without_a_session_has_no_agent_in_the_payload() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
-    add_boxed(&cx);
+    add_agentless(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(v.boxed.agent.is_none());
 }
@@ -440,7 +476,7 @@ fn sleep_label_follows_provider_sleep_support() {
     for (kind, after) in SLEEP_LABELS {
         let dir = tempfile::tempdir().unwrap();
         let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
-        add_boxed(&cx);
+        add_agentless(&cx);
         let v = run(&cx, &req(None, None)).unwrap();
         assert_eq!(v.boxed.driver.unwrap().sleep.after.as_deref(), after);
     }
@@ -451,7 +487,7 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
     for (kind, after) in SLEEP_LABELS {
         let dir = tempfile::tempdir().unwrap();
         let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
-        let id = add_boxed(&cx);
+        let id = ready(&cx, add(&cx));
         let failure = LaunchFailure {
             step: "pane".into(),
             message: "no tab".into(),
@@ -475,73 +511,6 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
             after
         );
     }
-}
-
-/// Record an `agent_rate_limited` event for the `claude` rule on `Box`.
-fn rate_limit(cx: &Cx, box_id: BoxId) {
-    cx.store()
-        .unwrap()
-        .record_proxy_event(
-            box_id,
-            &Event::AgentRateLimited {
-                rule: "claude".into(),
-                status: 429,
-                resets_at: None,
-            },
-        )
-        .unwrap();
-}
-
-#[test]
-fn an_open_rate_limit_fails_the_wait_with_attention() {
-    let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = cx(dir.path());
-    let id = add(&cx);
-    rate_limit(&cx, id);
-    let e = run(&cx, &req(None, None)).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Failed);
-    assert_eq!(e.error.to_string(), "Claude account rate limited (429)");
-    let shown = e.value.unwrap();
-    assert_eq!(
-        shown.pointer("/attention/0/kind").and_then(|v| v.as_str()),
-        Some("agent_rate_limited")
-    );
-    assert_eq!(
-        shown
-            .pointer("/attention/0/status")
-            .and_then(serde_json::Value::as_u64),
-        Some(429)
-    );
-}
-
-#[test]
-fn a_recovered_rate_limit_no_longer_fails_the_wait() {
-    let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = cx(dir.path());
-    let id = add_boxed(&cx);
-    rate_limit(&cx, id);
-    cx.store()
-        .unwrap()
-        .record_proxy_event(
-            id,
-            &Event::ProxyCredentialRecovered {
-                rule: "claude".into(),
-            },
-        )
-        .unwrap();
-    let v = run(&cx, &req(None, None)).unwrap();
-    assert!(!v.timed_out);
-    assert!(v.boxed.attention.is_empty());
-}
-
-#[test]
-fn waiting_for_the_run_ignores_open_limits() {
-    let dir = tempfile::tempdir().unwrap();
-    let (cx, _) = cx(dir.path());
-    let id = add(&cx);
-    rate_limit(&cx, id);
-    let v = run(&cx, &req(Some(WaitFor::Run), None)).unwrap();
-    assert_eq!(v.wait_for, WaitFor::Run);
 }
 
 /// Records a steer to `demo` sent once its agent had ended `turn_before` turns.
@@ -570,4 +539,6 @@ fn idle_returns_once_the_steered_turn_has_ended() {
     assert_eq!(v.waited_ms, 0);
 }
 
+mod launch;
+mod limits;
 mod setup;

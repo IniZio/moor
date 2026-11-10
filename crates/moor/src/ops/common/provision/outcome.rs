@@ -1,7 +1,8 @@
 //! What provisioning ran in a Box, and how a failed step is recorded and reported.
 
+use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::layers::WarmDisk;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::WorkTreeView;
@@ -71,6 +72,20 @@ pub(super) fn step_outcome(run: &SetupRun, installed: Result<(), String>) -> Set
     match (run.outcome(), installed) {
         (SetupOutcome::Ok, Err(cause)) => SetupOutcome::Failed { line: cause },
         (outcome, _) => outcome,
+    }
+}
+
+/// The intent the write that ends setup leaves: a Box this moves to working whose agent the
+/// command launches is launching until a session or a failed launch is recorded.
+pub(super) fn intent_after(
+    advance: bool,
+    outcome: &SetupOutcome,
+    cfg: &BoxSettings,
+) -> IntentChange {
+    if advance && *outcome == SetupOutcome::Ok && cfg.launch_agent {
+        IntentChange::Set(Intent::Launching)
+    } else {
+        IntentChange::Clear
     }
 }
 

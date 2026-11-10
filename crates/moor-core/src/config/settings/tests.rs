@@ -20,6 +20,7 @@ fn resolve(u: &str, r: Option<&str>, flags: &Flags) -> BoxSettings {
 fn flag_model(m: &str) -> Flags {
     Flags {
         model: Some(m.into()),
+        ..Flags::default()
     }
 }
 
@@ -45,6 +46,7 @@ fn model_precedence() {
     for (u, r, f, want) in cases {
         let flags = Flags {
             model: f.map(String::from),
+            ..Flags::default()
         };
         let got = resolve(u, Some(r), &flags).model;
         let want = want.map(|(v, s)| Sourced::new(v.to_string(), s));

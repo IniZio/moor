@@ -89,6 +89,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let mut facts = gather(cx, req, user)?;
     let flags = Flags {
         model: req.model.clone(),
+        no_agent: req.no_agent,
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
@@ -209,18 +210,14 @@ fn attach(
     let turn = cx.turn(row.id, Cmd::Start)?;
     queue_prompt(store, row.id, req)?;
     let row = &reread(store, row.id)?;
-    let reprovisioned = reprovision(cx, store, row, &turn)?;
+    let flags = Flags {
+        model: req.model.clone(),
+        no_agent: req.no_agent,
+    };
+    let reprovisioned = reprovision(cx, store, row, &flags, &turn)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
-    let settings = || {
-        settings_of(
-            cx,
-            row,
-            &Flags {
-                model: req.model.clone(),
-            },
-        )
-    };
+    let settings = || settings_of(cx, row, &flags);
     if asleep::wake(cx, store, req, row.id)? == asleep::Woken::Queued {
         return Ok(queued_view(cx, &reread(store, row.id)?, true));
     }
@@ -229,6 +226,7 @@ fn attach(
     }
     asleep::wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
+    launch::end_launching(store, row.id)?;
     drop(turn);
     let agent = watch::run(cx, store, row.id, agent);
     let _turn = cx.turn(row.id, Cmd::Steer)?;

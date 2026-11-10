@@ -3,6 +3,7 @@
 //! The Box's turn is held from the provisioning step, which reads the row again under it,
 //! through the agent's launch.
 
+use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::WarmDisk;
 use moor_core::view::{AgentLaunchView, StartView};
@@ -34,7 +35,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
     }
     store.forget_egress_delivery(row.id)?;
     let turn = cx.turn(row.id, Cmd::Retry)?;
-    let Some(provisioned) = reprovision(cx, store, &row, &turn)? else {
+    let Some(provisioned) = reprovision(cx, store, &row, &Flags::default(), &turn)? else {
         return Err(CommandError::new(
             ErrorKind::Failed,
             format!("Box {name} has no machine that can run setup again"),
