@@ -214,3 +214,38 @@ fn agentless_start() -> StartReq {
         identity: None,
     }
 }
+
+/// Context with no agent running, whose every launch fails with `no tab`.
+fn failing_cx(dir: &std::path::Path) -> Cx {
+    let engine = FakeEngine::new()
+        .probes(LAUNCHED, agent::gone())
+        .launch_result(Err(EngineError::Failed {
+            step: "launch",
+            message: "no tab".into(),
+        }));
+    launch_cx(dir, engine)
+}
+
+#[test]
+fn a_launch_that_fails_after_a_restart_ends_the_launch_and_fails_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = failing_cx(dir.path());
+    let id = set_up(&cx, &Flags::default());
+    let store = cx.store().unwrap();
+    resume_setup(&cx, store, id).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    let e = run(&cx, &req(None, Some(5))).unwrap_err();
+    assert!(e.error.to_string().contains("no tab"), "{}", e.error);
+}
+
+#[test]
+fn a_seeded_launch_that_fails_ends_the_launch() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = failing_cx(dir.path());
+    let id = set_up(&cx, &Flags::default());
+    let store = cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    let view = crate::ops::start::begin_seeded(&cx, store, &row, "go".into()).unwrap();
+    assert!(!view.launched);
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+}
