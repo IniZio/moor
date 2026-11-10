@@ -57,23 +57,27 @@ impl Linked {
             .collect();
         let paths: Vec<&[String]> = rooted.iter().map(Vec::as_slice).collect();
         let mut out = Vec::with_capacity(body.len());
-        walk(raw, &paths, repos, &mut out)?;
+        walk(raw, &paths, repos, false, &mut out)?;
         Ok(out)
     }
 }
 
 /// Writes `raw` to `out`, blanking the linked issues at the end of `paths`, which start
-/// at `raw`. Lists on the way are followed through every item.
+/// at `raw`. Lists on the way are followed through every item, but a list directly in a
+/// list, which GitHub never sends there, is refused: each one would cost a stack frame and
+/// a fresh parse without taking a path step.
 fn walk(
     raw: &RawValue,
     paths: &[&[String]],
     repos: &[RepoRef],
+    in_list: bool,
     out: &mut Vec<u8>,
 ) -> serde_json::Result<()> {
     let text = raw.get();
     let level = Level { paths, repos, out };
     match text.trim_start().as_bytes().first() {
         _ if paths.is_empty() => level.out.extend_from_slice(text.as_bytes()),
+        Some(b'[') if in_list => return Err(de::Error::custom("a list in a list")),
         Some(b'[') => serde_json::Deserializer::from_str(text).deserialize_seq(level)?,
         Some(b'{') if paths.iter().all(|p| !p.is_empty()) => {
             serde_json::Deserializer::from_str(text).deserialize_map(level)?;
@@ -114,7 +118,7 @@ impl<'de> Visitor<'de> for Level<'_, '_> {
             if !std::mem::take(&mut first) {
                 self.out.push(b',');
             }
-            walk(item, self.paths, self.repos, self.out).map_err(de::Error::custom)?;
+            walk(item, self.paths, self.repos, true, self.out).map_err(de::Error::custom)?;
         }
         self.out.push(b']');
         Ok(())
@@ -137,7 +141,7 @@ impl<'de> Visitor<'de> for Level<'_, '_> {
                 .filter(|(step, _)| step.as_str() == key.as_ref())
                 .map(|(_, rest)| rest)
                 .collect();
-            walk(value, &under, self.repos, self.out).map_err(de::Error::custom)?;
+            walk(value, &under, self.repos, false, self.out).map_err(de::Error::custom)?;
         }
         self.out.push(b'}');
         Ok(())
