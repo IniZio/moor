@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, HandsFields};
+use moor_core::domain::decision::{Decision, Field, HandsFields, Wanted};
 use moor_core::domain::hands::HandsInput;
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
@@ -41,7 +41,10 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     };
     let row = reload()?;
     if row.lifecycle != BoxLifecycle::Asleep {
-        sleep_box(cx, &row)?;
+        let sleep = || sleep_box(cx, &row);
+        if crate::ops::common::wanted::parking(store, id, Wanted::Sleep, sleep)?.is_none() {
+            return Err(refuse("a close of the Box waits to finish".into()));
+        }
     }
     let mut boxed = box_view(&reload()?, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());

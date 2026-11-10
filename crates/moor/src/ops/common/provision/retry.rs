@@ -82,10 +82,11 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         .filter(|w| w.kind() == WantedKind::Close);
     if wanted.is_some() || row.effect == Some(Effect::Release) {
         let req = CloseReq {
-            target: BoxTarget::Name(row.name),
+            target: BoxTarget::Name(row.name.clone()),
             force: wanted.is_none_or(Wanted::force),
         };
-        return close::run(cx, &req).map(drop);
+        let reason = wanted.and_then(Wanted::reason).map(str::to_owned);
+        return close::run_with_reason(cx, &req, reason).map(drop);
     }
     if launch_was_cut(store, &row)? {
         return finish_launch(cx, store, &row);

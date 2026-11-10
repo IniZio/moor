@@ -6,7 +6,7 @@
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Wanted};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
@@ -125,7 +125,8 @@ fn try_sleep(
     if row.hands.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
-    sleep_now(cx, store, &row, (agent, launch))
+    let sleep = || sleep_now(cx, store, &row, (agent, launch));
+    crate::ops::common::wanted::parking(store, id, Wanted::Sleep, sleep).map(drop)
 }
 
 /// Sleeps `row`, due to sleep, under its turn and records the outcome.

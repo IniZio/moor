@@ -33,12 +33,15 @@ Node      capacity
   work. A stale wake, relaunch, settle or delivery carries an old launch and is
   dropped.
 - **Wanted action.** Close, suspend and sleep are recorded as data with a fixed
-  precedence. Close beats suspend, and suspend beats sleep.
+  precedence. Close beats suspend, and suspend beats sleep. Only a close
+  outlives a restart. A wanted suspend or sleep is dropped then, and the
+  pressure and autosleep passes decide it again from what holds.
 - **Owner.** One owner per Box applies every mutation of that Box in order.
   Ops send it commands, and nothing else writes the Box's rows.
 - **In-flight effects.** Each external step records its own phase and attempt in
   state. Each effect also says whether a restart reruns it or reports it as
-  interrupted. Events record what happened. No decision reads events back.
+  interrupted. A launch reruns unless its agent lives. Events record what
+  happened. No decision reads events back.
 
 ## Today
 

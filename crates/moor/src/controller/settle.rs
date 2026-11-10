@@ -95,6 +95,12 @@ pub(super) fn spawn_inbox(env: &Env, every: Duration, drain: &Arc<Drain>, sink: 
     passes(every, drain, sink, Moor::inbox_pass(env));
 }
 
+/// Runs the wanted pass each `every`, on its own thread, since a close that waited for room wakes
+/// its Box first and must not hold up the inbox or settling the others.
+pub(super) fn spawn_wanted(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
+    passes(every, drain, sink, Moor::wanted_pass(env));
+}
+
 /// How often the controller looks for workflow runs to start, finish or expire.
 const WORKFLOW_EVERY: Duration = Duration::from_secs(30);
 

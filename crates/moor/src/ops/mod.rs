@@ -43,6 +43,7 @@ mod wake;
 pub(crate) mod webhook_outbox;
 pub(crate) mod workflow;
 
+pub(crate) use close::wanted::pass as wanted_pass;
 #[cfg(test)]
 pub(crate) use run::tests as run_fixture;
 use run::Sink;
