@@ -110,6 +110,7 @@ fn every_clearing_kind_clears() {
         "closed",
         "agent_link_restored",
         "proxy_credential_recovered",
+        "egress_recovered",
     ] {
         let events = [
             at(
@@ -213,6 +214,23 @@ fn an_aborted_handshake_points_to_clock_skew() {
             stuck_of(&[at("egress_aborted", payload, "2026-01-01T00:00:00Z")]).expect("stuck");
         assert!(view.detail.contains("clock"), "{}", view.detail);
     }
+}
+
+#[test]
+fn a_recovered_handshake_clears_an_aborted_one() {
+    let events = [
+        at(
+            "egress_aborted",
+            json!({"host": "x.example", "rule": null}),
+            "2026-01-01T00:00:00Z",
+        ),
+        at(
+            "egress_recovered",
+            json!({"host": "x.example", "rule": null}),
+            "2026-01-01T00:05:00Z",
+        ),
+    ];
+    assert_eq!(stuck_of(&events), None);
 }
 
 #[test]

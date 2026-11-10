@@ -261,12 +261,9 @@ pub enum Event {
         reason: Option<String>,
     },
     /// A client in the Box hung up during an intercepted TLS handshake without sending an alert; the Proxy refused nothing.
-    EgressAborted {
-        /// The host the connection was for.
-        host: String,
-        /// The tool rule the host belongs to, when it belongs to one.
-        rule: Option<String>,
-    },
+    EgressAborted(EgressHost),
+    /// The Proxy allowed a request to a host whose intercepted TLS handshake was aborted earlier.
+    EgressRecovered(EgressHost),
     /// The Proxy forwarded a request to a credential host without the credential.
     CredentialWithheld {
         /// The credential host the request was for.
@@ -383,12 +380,13 @@ pub enum Event {
     #[serde(untagged)]
     Timing(TimingEvent),
 }
-pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, kind::*};
+pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, egress::*, kind::*};
 pub use self::{machine::MachineEvent, post_clone::*, profile::*, steered::SteerSent, steps::*};
 mod access;
 mod boxes;
 mod checked;
 pub mod close_reason;
+mod egress;
 mod kind;
 mod machine;
 mod post_clone;

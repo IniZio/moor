@@ -36,7 +36,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 92] = [
+pub const EVENT_KINDS: [&str; 93] = [
     "caches_not_saved",
     "disk_lost",
     "wanted_dropped",
@@ -91,6 +91,7 @@ pub const EVENT_KINDS: [&str; 92] = [
     "tunnel_restarted",
     "egress_refused",
     "egress_aborted",
+    "egress_recovered",
     "credential_withheld",
     "proxy_credential_failed",
     "agent_rate_limited",
@@ -185,6 +186,7 @@ impl Event {
             Self::TunnelRestarted { .. } => "tunnel_restarted",
             Self::EgressRefused { .. } => "egress_refused",
             Self::EgressAborted { .. } => "egress_aborted",
+            Self::EgressRecovered { .. } => "egress_recovered",
             Self::CredentialWithheld { .. } => "credential_withheld",
             Self::ProxyCredentialFailed { .. } => "proxy_credential_failed",
             Self::AgentRateLimited { .. } => "agent_rate_limited",

@@ -6,7 +6,7 @@ use super::progress::Happened;
 use super::StuckView;
 
 /// Kinds after which an earlier stuck event no longer counts.
-const CLEARS: [&str; 9] = [
+const CLEARS: [&str; 10] = [
     "agent_resumed",
     "turn_done",
     "idled",
@@ -16,6 +16,7 @@ const CLEARS: [&str; 9] = [
     "closed",
     "agent_link_restored",
     "proxy_credential_recovered",
+    "egress_recovered",
 ];
 
 /// The newest stuck event that nothing since has cleared, `events` oldest first.
