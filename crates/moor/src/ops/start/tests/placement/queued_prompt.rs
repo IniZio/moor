@@ -157,6 +157,33 @@ fn a_prompt_held_for_an_asleep_box_reaches_a_relaunched_agent_once_it_reports_id
     );
 }
 
+#[test]
+fn a_prompt_held_for_an_asleep_box_reaches_a_resumed_agent_idle_before_any_turn() {
+    let engine = FakeEngine::new()
+        .launch_result(Ok(session("p-1")))
+        .launch_result(Ok(session("p-2")))
+        .probes(
+            "p-2",
+            crate::testing::agent::at_turn(
+                crate::testing::agent::idle(Ts::from_millis(i64::MAX / 2)),
+                0,
+            ),
+        );
+    let (w, hv, engine, _id) = queued_with_prompt(engine, "carry on");
+    gone(&engine);
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(
+        engine.launches().get(1).and_then(|l| l.resume.as_deref()),
+        Some("agent-1")
+    );
+    pass(&w);
+    assert_eq!(
+        texts(&engine),
+        ["carry on"],
+        "a resumed agent carried no prompt, so its idle is real"
+    );
+}
+
 /// A pane that refuses the next `n` sends.
 fn refusing(mut engine: FakeEngine, n: usize) -> FakeEngine {
     for _ in 0..n {

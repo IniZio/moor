@@ -302,9 +302,10 @@ pub fn decide(probe: &Probe, now: Ts, started: Ts, first_run: Option<&str>) -> A
     act(state, Source::Status)
 }
 
-/// `activity` for an agent given a first prompt, starting until it takes the prompt up.
+/// `activity` for an agent launched on a first prompt, starting until it takes the prompt up.
 ///
-/// A `prompted` agent that reads idle before any of its turns has ended has not begun on the
+/// An agent is `prompted` when its own launch carried the prompt; a resumed agent was given
+/// none, so its idle is real. A prompted agent that reads idle before any of its turns has ended has not begun on the
 /// prompt, so within [`STARTUP_GRACE`] of `started` it counts as starting.
 #[must_use]
 pub fn before_first_turn(
