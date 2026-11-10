@@ -48,7 +48,7 @@ use moor_core::seam::rng::Rng;
 
 use caps::{class_args, size_of};
 use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
-use errors::{map_error, Op};
+use errors::{log_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};
 pub(crate) use pool::{HostLists, PoolHosts, DIAL_WITHIN};
 
@@ -154,7 +154,7 @@ impl Crabbox {
         provider: Option<&str>,
         spec: &ProcSpec,
     ) -> Result<ProcOutput, DriverError> {
-        self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
+        self.proc.run(spec).map_err(|e| log_error(op, provider, &e))
     }
 
     /// Asks for the relative work root [`WORK_ROOT`], which crabbox joins to the lease's login home.

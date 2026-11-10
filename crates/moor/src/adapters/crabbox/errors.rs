@@ -2,7 +2,11 @@
 //!
 //! crabbox never prints JSON errors: the message is free text on stderr and
 //! the exit code is coarse. Raw text is read for classification; only the
-//! generic acquire, release and provider lookup failures carry a short stderr tail.
+//! generic acquire, release, checkpoint and provider lookup failures carry a short stderr
+//! tail. A failed acquire, release or checkpoint also writes all of its stderr to moor's own.
+
+use std::fmt::Write as _;
+use std::io::Write as _;
 
 use moor_core::seam::driver::{DriverError, TunnelFailure};
 use moor_core::seam::proc::ProcError;
@@ -205,13 +209,17 @@ pub(super) fn is_tunnel_claim_race(e: &DriverError) -> bool {
 
 /// Longest stderr tail, in characters, appended to a summary.
 const TAIL_MAX: usize = 300;
+/// Longest cause line, in characters, kept ahead of the tail of a long stderr.
+const CAUSE_MAX: usize = 150;
+/// Starts of the lines crabbox prints while it cleans up, after the cause of a failure.
+const CHATTER: [&str; 2] = ["warn:", "cache group"];
 
 /// The stderr tail appended to a summary of `op`, or nothing.
 fn stderr_suffix(op: Op, stderr: &str) -> String {
     if matches!(op, Op::List) {
         return last_sentence(stderr).map_or_else(String::new, |s| format!(": {s}"));
     }
-    if !matches!(op, Op::Acquire | Op::Release | Op::Caps) {
+    if !matches!(op, Op::Acquire | Op::Release | Op::Caps | Op::Checkpoint) {
         return String::new();
     }
     let line = one_line(stderr);
@@ -222,7 +230,10 @@ fn stderr_suffix(op: Op, stderr: &str) -> String {
     }
 }
 
-/// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
+/// `stderr` as one line: trimmed non-empty lines joined by `; `, at most `TAIL_MAX` characters.
+///
+/// Longer text keeps its first line that is not cleanup chatter, which names the cause, and
+/// as much of the end after it as fits.
 pub(super) fn one_line(stderr: &str) -> String {
     let lines: Vec<&str> = stderr
         .lines()
@@ -230,12 +241,89 @@ pub(super) fn one_line(stderr: &str) -> String {
         .filter(|l| !l.is_empty())
         .collect();
     let joined = lines.join("; ");
-    let count = joined.chars().count();
-    if count <= TAIL_MAX {
+    if joined.chars().count() <= TAIL_MAX {
         return joined;
     }
-    let tail: String = joined.chars().skip(count - (TAIL_MAX - 1)).collect();
+    let Some(at) = lines.iter().position(|l| !is_chatter(l)) else {
+        return keep_end(&joined, TAIL_MAX);
+    };
+    let (Some(first), Some(after)) = (lines.get(at), lines.get(at + 1..)) else {
+        return keep_end(&joined, TAIL_MAX);
+    };
+    let lead = if at == 0 { "" } else { "…" };
+    let cause = keep_start(first, CAUSE_MAX);
+    let rest = after.join("; ");
+    if rest.is_empty() {
+        return format!("{lead}{cause}");
+    }
+    let room = TAIL_MAX - lead.chars().count() - cause.chars().count() - "; ".len();
+    format!("{lead}{cause}; {}", keep_end(&rest, room))
+}
+
+/// Whether `line` is crabbox cleaning up rather than saying what failed.
+fn is_chatter(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    CHATTER.iter().any(|c| lower.starts_with(c))
+}
+
+/// `text`, cut from the front to at most `max` characters with a leading `…`.
+fn keep_end(text: &str, max: usize) -> String {
+    let count = text.chars().count();
+    if count <= max {
+        return text.to_owned();
+    }
+    let tail: String = text.chars().skip(count - (max - 1)).collect();
     format!("…{}", tail.trim_start())
+}
+
+/// `text`, cut from the back to at most `max` characters with a trailing `…`.
+fn keep_start(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let head: String = text.chars().take(max - 1).collect();
+    format!("{}…", head.trim_end())
+}
+
+/// What a failed acquire, release or checkpoint printed, for the log, or `None`.
+///
+/// The summary keeps one line of it; the log keeps every line moor caught.
+pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Option<String> {
+    if !matches!(op, Op::Acquire | Op::Release | Op::Checkpoint) {
+        return None;
+    }
+    let ProcError::NonZero {
+        code, stderr_tail, ..
+    } = e
+    else {
+        return None;
+    };
+    let lines: Vec<&str> = stderr_tail
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let on = provider.map_or_else(String::new, |p| format!(" on provider {p}"));
+    let what = op.phrase();
+    let mut record = String::new();
+    for line in lines {
+        let _ = writeln!(
+            record,
+            "{what} failed{on} (exit {code}), crabbox said: {line}"
+        );
+    }
+    Some(record)
+}
+
+/// Writes what a failed `op` printed to moor's stderr, the controller log, then maps it.
+pub(super) fn log_error(op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
+    if let Some(record) = stderr_record(op, provider, e) {
+        drop(std::io::stderr().lock().write_all(record.as_bytes()));
+    }
+    map_error(op, provider, e)
 }
 
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.
