@@ -132,8 +132,8 @@ fn fetch_id(shared: &Shared, auth: &str, repo: &RepoRef) -> Option<u64> {
         return None;
     }
     let framing = response_framing(&head, "GET").ok()?;
-    let body = read_body(&mut conn, &framing, MAX_REPO).ok()?;
-    let root: Value = serde_json::from_slice(&body.decoded).ok()?;
+    let body = read_body(&mut conn, &framing, MAX_REPO, &mut std::io::sink()).ok()?;
+    let root: Value = serde_json::from_slice(&body).ok()?;
     root.get("id")?.as_u64()
 }
 

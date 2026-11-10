@@ -1,6 +1,6 @@
 //! Decides whether a request to `/graphql` may go upstream.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 
 use moor_core::graphql_scope::{judge_linked, Linked, NodeId, RepoRef, Verdict};
 
@@ -39,7 +39,8 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         }
         Err(_) => return Gate::Abort,
     };
-    let body = match read_body(r, &framing, MAX_BODY) {
+    let mut raw = Vec::new();
+    let body = match read_body(r, &framing, MAX_BODY, &mut raw) {
         Ok(b) => b,
         Err(HttpError::TooLarge) => {
             return Gate::Refuse(413, "moor: graphql body too large".to_owned())
@@ -49,7 +50,7 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         }
         Err(_) => return Gate::Abort,
     };
-    let in_scope = |repo: &RepoRef| match judge_linked(&body.decoded, repo) {
+    let in_scope = |repo: &RepoRef| match judge_linked(&body, repo) {
         (Verdict::Allow, linked) => Ok(linked),
         (Verdict::Deny(reason), _) => Err(reason.redacted()),
         (Verdict::NeedsNodeCheck(ids), linked) => match nodes_listed(shared, head, &ids) {
@@ -61,16 +62,13 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
     let mut why = None;
     for repo in &shared.repos {
         match in_scope(repo) {
-            Ok(linked) => return Gate::Forward(body.raw, linked),
+            Ok(linked) => return Gate::Forward(raw, linked),
             Err(reason) => {
                 why.get_or_insert(reason);
             }
         }
     }
-    Gate::Anonymous(
-        body.raw,
-        why.unwrap_or_else(|| "the Box has no repo".to_owned()),
-    )
+    Gate::Anonymous(raw, why.unwrap_or_else(|| "the Box has no repo".to_owned()))
 }
 
 /// `head` without `Authorization` or any of the `injected` header names, in
@@ -138,6 +136,6 @@ fn lookup(shared: &Shared, auth: &str, ids: &[NodeId]) -> Option<Vec<bool>> {
         return None;
     }
     let framing = response_framing(&head, "POST").ok()?;
-    let body = read_body(&mut conn, &framing, MAX_LOOKUP).ok()?;
-    resolve(&body.decoded, ids, &shared.repos)
+    let body = read_body(&mut conn, &framing, MAX_LOOKUP, &mut io::sink()).ok()?;
+    resolve(&body, ids, &shared.repos)
 }

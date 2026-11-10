@@ -15,6 +15,7 @@ use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
 use rustls::ServerConfig;
 
 use crate::proxy::guard::Guard;
+use check::Turns;
 use lookup::NodeCache;
 use repo_ids::RepoIds;
 use upstream::Upstream;
@@ -141,6 +142,8 @@ pub(super) struct Shared {
     pub(super) repo_ids: RepoIds,
     /// The REST requests the rule credentials.
     pub(super) rest: CompiledEndpointRules,
+    /// Turns of the requests whose response is checked.
+    checking: Turns,
     /// Refusals not yet drained.
     refusals: Mutex<VecDeque<Refusal>>,
     /// Set when the filter is stopping.
@@ -254,6 +257,7 @@ impl GraphqlFilter {
             cache: NodeCache::new(),
             repo_ids: RepoIds::default(),
             rest,
+            checking: Turns::default(),
             refusals: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
         });

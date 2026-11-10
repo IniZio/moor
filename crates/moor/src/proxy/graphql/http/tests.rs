@@ -1,6 +1,6 @@
 //! Tests for HTTP framing.
 
-use std::io::Cursor;
+use std::io::{self, Cursor};
 
 use serde_json::Value;
 
@@ -163,33 +163,41 @@ fn response_framing_rules() {
 #[test]
 fn length_body_reads_exactly() {
     let mut r = Cursor::new(b"helloEXTRA".as_slice());
-    let b = read_body(&mut r, &Framing::Length(5), 100).unwrap();
-    assert_eq!(b.raw, b"hello");
-    assert_eq!(b.decoded, b"hello");
+    let mut raw = Vec::new();
+    let b = read_body(&mut r, &Framing::Length(5), 100, &mut raw).unwrap();
+    assert_eq!(raw, b"hello");
+    assert_eq!(b, b"hello");
     assert_eq!(r.position(), 5);
 }
 
 #[test]
 fn chunked_body_keeps_raw_and_decodes() {
-    let b = read_body(&mut Cursor::new(CHUNKED), &Framing::Chunked, 100).unwrap();
-    assert_eq!(b.raw, CHUNKED);
-    assert_eq!(b.decoded, b"Wikipedia");
+    let mut raw = Vec::new();
+    let b = read_body(&mut Cursor::new(CHUNKED), &Framing::Chunked, 100, &mut raw).unwrap();
+    assert_eq!(raw, CHUNKED);
+    assert_eq!(b, b"Wikipedia");
 }
 
 #[test]
 fn cap_is_enforced() {
     let r = &mut Cursor::new(b"helloworld".as_slice());
     assert!(matches!(
-        read_body(r, &Framing::Length(10), 9),
+        read_body(r, &Framing::Length(10), 9, &mut io::sink()),
         Err(HttpError::TooLarge)
     ));
     assert_eq!(r.position(), 0);
     let r = &mut Cursor::new(CHUNKED);
     assert!(matches!(
-        read_body(r, &Framing::Chunked, 8),
+        read_body(r, &Framing::Chunked, 8, &mut io::sink()),
         Err(HttpError::TooLarge)
     ));
-    assert!(read_body(&mut Cursor::new(CHUNKED), &Framing::Chunked, 9).is_ok());
+    assert!(read_body(
+        &mut Cursor::new(CHUNKED),
+        &Framing::Chunked,
+        9,
+        &mut io::sink()
+    )
+    .is_ok());
 }
 
 #[test]
@@ -203,19 +211,34 @@ fn bad_chunking_is_rejected() {
         b"4\r\nWiki\r\n0\r\n",
         b"4\nWiki\r\n0\r\n\r\n",
     ] {
-        let got = read_body(&mut Cursor::new(bad), &Framing::Chunked, 100);
+        let got = read_body(
+            &mut Cursor::new(bad),
+            &Framing::Chunked,
+            100,
+            &mut io::sink(),
+        );
         assert!(matches!(got, Err(HttpError::Malformed)), "{bad:?}");
     }
     let long = format!("4;{}\r\nWiki\r\n0\r\n\r\n", "x".repeat(2000));
     assert!(matches!(
-        read_body(&mut Cursor::new(long.as_bytes()), &Framing::Chunked, 100),
+        read_body(
+            &mut Cursor::new(long.as_bytes()),
+            &Framing::Chunked,
+            100,
+            &mut io::sink()
+        ),
         Err(HttpError::TooLarge)
     ));
 }
 
 #[test]
 fn until_close_cannot_be_buffered() {
-    let got = read_body(&mut Cursor::new(b"x".as_slice()), &Framing::UntilClose, 10);
+    let got = read_body(
+        &mut Cursor::new(b"x".as_slice()),
+        &Framing::UntilClose,
+        10,
+        &mut io::sink(),
+    );
     assert!(matches!(got, Err(HttpError::Malformed)));
 }
 
@@ -270,8 +293,8 @@ fn refusal_is_json_with_message() {
     assert_eq!(find("Content-Type"), Some("application/json"));
     assert!(wants_close(&h.headers));
     let framing = response_framing(&h, "POST").unwrap();
-    let body = read_body(&mut r, &framing, 1000).unwrap();
-    let v: Value = serde_json::from_slice(&body.decoded).unwrap();
+    let body = read_body(&mut r, &framing, 1000, &mut io::sink()).unwrap();
+    let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         v.get("message").and_then(Value::as_str),
         Some("mutation \"x\" not allowed")

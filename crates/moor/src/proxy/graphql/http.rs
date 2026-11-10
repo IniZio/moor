@@ -58,15 +58,6 @@ pub(crate) enum Framing {
     UntilClose,
 }
 
-/// A body read into memory.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Body {
-    /// The exact wire bytes, including chunk sizes, extensions and trailers.
-    pub(crate) raw: Vec<u8>,
-    /// The payload with the framing removed.
-    pub(crate) decoded: Vec<u8>,
-}
-
 /// Why a message could not be read.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum HttpError {
@@ -342,19 +333,24 @@ impl Sink<'_> {
     }
 }
 
-/// Reads a whole body, failing with `TooLarge` once its payload passes `cap`.
-pub(crate) fn read_body(r: &mut impl BufRead, f: &Framing, cap: usize) -> Result<Body, HttpError> {
+/// Reads a whole body and returns its payload, failing with `TooLarge` once that passes
+/// `cap`. The exact wire bytes, chunk sizes, extensions and trailers included, go to `raw`.
+pub(crate) fn read_body(
+    r: &mut impl BufRead,
+    f: &Framing,
+    cap: usize,
+    raw: &mut impl Write,
+) -> Result<Vec<u8>, HttpError> {
     if *f == Framing::UntilClose {
         return Err(HttpError::Malformed);
     }
-    let mut raw = Vec::new();
     let mut decoded = Vec::new();
     Sink {
-        raw: &mut raw,
+        raw,
         decoded: Some((&mut decoded, cap)),
     }
     .walk(r, f)?;
-    Ok(Body { raw, decoded })
+    Ok(decoded)
 }
 
 /// Streams a body from `r` to `w` byte for byte, in bounded memory.

@@ -2,13 +2,52 @@
 //! the Box only when their repo is a Box repo, see [`Linked::blank`].
 
 use std::io::BufRead;
+use std::sync::{Condvar, Mutex, PoisonError};
 
 use moor_core::graphql_scope::{Linked, RepoRef};
 
 use super::http::{read_body, Framing, Head, ResponseHead};
 
-/// Largest response body checked, in bytes.
-const MAX_CHECKED: usize = 32 * 1024 * 1024;
+/// Largest response body checked, in bytes: `gh issue view --comments` reads 100 comments
+/// of up to 64 KiB and 100 sub-issues.
+const MAX_CHECKED: usize = 8 * 1024 * 1024;
+
+/// Most checked requests one filter, so one Box, has in flight at once.
+const MAX_IN_FLIGHT: usize = 1;
+
+/// Bounds the memory checked responses take: each is held whole, so a Box gets
+/// [`MAX_IN_FLIGHT`] at once and the rest wait their turn.
+#[derive(Default)]
+pub(super) struct Turns {
+    /// Checked requests in flight.
+    busy: Mutex<usize>,
+    /// Signalled when one ends.
+    freed: Condvar,
+}
+
+impl Turns {
+    /// Waits for a free turn, held until the returned guard drops.
+    pub(super) fn take(&self) -> Turn<'_> {
+        let busy = self.busy.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut busy = self
+            .freed
+            .wait_while(busy, |n| *n >= MAX_IN_FLIGHT)
+            .unwrap_or_else(PoisonError::into_inner);
+        *busy += 1;
+        drop(busy);
+        Turn(self)
+    }
+}
+
+/// One checked request in flight.
+pub(super) struct Turn<'a>(&'a Turns);
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        *self.0.busy.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+        self.0.freed.notify_one();
+    }
+}
 
 /// How a response is relayed.
 #[derive(Clone, Copy)]
@@ -54,7 +93,7 @@ pub(super) fn unencoded(head: &Head) -> Head {
 }
 
 /// Reads the response body from `r`, blanks the linked issues outside `repos`, and returns
-/// the whole response to relay, framed by its length. Fails, with the refusal message,
+/// the head and body to relay, framed by its length. Fails, with the refusal message,
 /// when the body is encoded, too large, unframed or not JSON.
 pub(super) fn checked(
     resp: &ResponseHead,
@@ -62,10 +101,10 @@ pub(super) fn checked(
     r: &mut impl BufRead,
     linked: &Linked,
     repos: &[RepoRef],
-) -> Result<Vec<u8>, String> {
+) -> Result<(Vec<u8>, Vec<u8>), String> {
     let fail = |why: &str| format!("moor: response could not be checked: {why}");
     if *framing == Framing::Empty {
-        return Ok(resp.raw.clone());
+        return Ok((resp.raw.clone(), Vec::new()));
     }
     let encoded = resp
         .headers
@@ -75,16 +114,17 @@ pub(super) fn checked(
     if encoded {
         return Err(fail("encoded response"));
     }
-    let body = read_body(r, framing, MAX_CHECKED).map_err(|_| fail("unreadable response body"))?;
-    let body = if body.decoded.is_empty() {
-        Vec::new()
+    let body = read_body(r, framing, MAX_CHECKED, &mut std::io::sink())
+        .map_err(|_| fail("unreadable response body"))?;
+    let body = if body.is_empty() {
+        body
     } else {
-        let mut json =
-            serde_json::from_slice(&body.decoded).map_err(|_| fail("response is not json"))?;
+        let mut json = serde_json::from_slice(&body).map_err(|_| fail("response is not json"))?;
+        drop(body);
         linked.blank(&mut json, repos);
         serde_json::to_vec(&json).map_err(|_| fail("response is not json"))?
     };
-    let mut out = Vec::with_capacity(resp.raw.len() + body.len());
+    let mut out = Vec::with_capacity(resp.raw.len());
     for (i, line) in resp.raw.split_inclusive(|&b| b == b'\n').enumerate() {
         let name = line.split(|&b| b == b':').next().unwrap_or_default();
         if line == b"\r\n"
@@ -98,6 +138,5 @@ pub(super) fn checked(
         out.extend_from_slice(line);
     }
     out.extend_from_slice(format!("content-length: {}\r\n\r\n", body.len()).as_bytes());
-    out.extend_from_slice(&body);
-    Ok(out)
+    Ok((out, body))
 }
