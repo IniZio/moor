@@ -83,6 +83,7 @@ mod state;
 mod step_timing;
 mod transcript;
 mod user_mcp;
+mod vrace;
 mod warm;
 mod warm_commits;
 mod warm_limits;
