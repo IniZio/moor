@@ -188,31 +188,13 @@ pub(crate) fn save_on_exit(
     let Some(session) = store.live_launch(row.id)?.filter(|s| s.id == probed) else {
         return Ok(());
     };
-    if exit_save_ended(store, &row)? {
+    if session.exit_save_at.is_some() {
         return Ok(());
     }
     if let Some(saved) = save(cx, store, &row, &session, Trigger::Exit) {
         store.set_transcript_digest(session.id, &saved.digest)?;
     }
     Ok(())
-}
-
-/// Whether an exit save ran, failed or was skipped since the Box's latest session started.
-fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let events = store.events(row.id, usize::MAX)?;
-    Ok(events
-        .iter()
-        .rev()
-        .take_while(|e| e.kind != "session_started")
-        .any(|e| {
-            [
-                "transcript_saved",
-                "transcript_failed",
-                "transcript_skipped",
-            ]
-            .contains(&e.kind.as_str())
-                && e.payload.get("trigger").and_then(|t| t.as_str()) == Some("exit")
-        }))
 }
 
 /// Saves Box `id`'s archive when one is due, so losing the Box later keeps everything up to the

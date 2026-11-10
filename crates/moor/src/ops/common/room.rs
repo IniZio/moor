@@ -230,7 +230,7 @@ pub(crate) fn on_report(
         if done {
             p.suspended_at = Some(now);
             if s.last_resort {
-                store.set_resume_first(s.id, Some(now))?;
+                store.owe_suspended(s.id, now, false)?;
             }
             break;
         }

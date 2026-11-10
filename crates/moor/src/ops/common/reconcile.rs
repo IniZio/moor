@@ -205,7 +205,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
             ..Fields::default()
         });
     if noted(cx, store.apply(suspend)) {
-        let _ = store.set_resume_first(id, Some(now(cx)));
+        let _ = store.owe_suspended(id, now(cx), true);
     }
 }
 
