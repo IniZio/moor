@@ -51,6 +51,8 @@ struct Shared {
     closed: AtomicBool,
     /// The poller reached the end of the store with follow off.
     caught_up: AtomicBool,
+    /// The poller has read to the end of the store at least once.
+    tip: AtomicBool,
     /// Last event id the poller scanned, including events the filter skipped.
     scanned: AtomicI64,
     /// Why the poller could not open or read the store, if that is why it stopped.
@@ -137,8 +139,9 @@ pub(crate) struct Ask {
 /// Stream every stored event with a cursor above `since` that `filter` matches to `writer`, then follow new ones.
 ///
 /// With `follow` off the stream sends a `caught-up` frame and ends once it has caught up. Otherwise it returns when the writer fails, the store cannot be read, or the client falls
-/// behind by more than `limits.buffer` frames. A following stream that sends nothing for
-/// `limits.keepalive` sends a `caught-up` frame with the cursor scanned so far. A slow client gets a `slow-client`
+/// behind by more than `limits.buffer` frames. A following stream that has read to the end of
+/// the store and then sends nothing for `limits.keepalive` sends a `caught-up` frame with the
+/// cursor scanned so far. A slow client gets a `slow-client`
 /// error frame and a store failure a `store-unavailable` one. The client resumes from the last cursor it received.
 pub(crate) fn stream(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits) {
     run(writer, env, ask, limits, &Arc::new(Shared::default()));
@@ -195,10 +198,12 @@ fn run(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits, shared: &Ar
                 // Read before looking at the queue: the poller queues an event before it moves
                 // `scanned` past it, so an empty queue now means every event up to `cursor` went.
                 let cursor = shared.scanned.load(Ordering::Acquire).max(last);
+                // Before the first read reaches the end, unread events may still lie ahead.
+                let tip = shared.tip.load(Ordering::Acquire);
                 match rx.try_recv() {
                     Ok(frame) => frame,
                     Err(TryRecvError::Disconnected) => break,
-                    Err(TryRecvError::Empty) if follow => ServerFrame::CaughtUp { cursor },
+                    Err(TryRecvError::Empty) if follow && tip => ServerFrame::CaughtUp { cursor },
                     Err(TryRecvError::Empty) => continue,
                 }
             }
@@ -277,6 +282,7 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
                 shared.caught_up.store(true, Ordering::Release);
                 return;
             }
+            shared.tip.store(true, Ordering::Release);
             thread::sleep(limits.poll);
             continue;
         }
