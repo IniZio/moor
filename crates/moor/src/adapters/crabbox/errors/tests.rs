@@ -166,13 +166,59 @@ fn long_stderr_keeps_the_cause_ahead_of_teardown_chatter() {
 }
 
 #[test]
-fn a_failed_acquire_release_or_checkpoint_records_all_its_stderr() {
+fn long_stderr_keeps_the_cause_after_progress_lines() {
+    let stderr = CAUSE_THEN_TEARDOWN.replacen(
+        "warn: lease claim kept from an earlier run\n",
+        "acquire: cold; created cbx_0123456789ab with a 40 GB disk\n\
+         waiting for 192.168.100.7:22 external provider SSH... elapsed=595s\n",
+        1,
+    );
+    let summary = map_error(Op::Acquire, Some("external"), &nz(1, &stderr)).to_string();
+    let tail = summary
+        .strip_prefix("box acquire failed on provider external (exit 1): ")
+        .expect("prefix");
+    assert!(tail.chars().count() <= 300, "{summary}");
+    assert!(tail.contains("ssh not ready after 10m0s"), "{summary}");
+}
+
+#[test]
+fn a_long_one_line_error_keeps_its_root_cause() {
+    let stderr = format!(
+        "error: acquire external box: run adapter: {}: permission denied",
+        "context ".repeat(40)
+    );
+    let summary = map_error(Op::Acquire, Some("external"), &nz(1, &stderr)).to_string();
+    let tail = summary
+        .strip_prefix("box acquire failed on provider external (exit 1): ")
+        .expect("prefix");
+    assert!(tail.chars().count() <= 300, "{summary}");
+    assert!(tail.ends_with("permission denied"), "{summary}");
+}
+
+#[test]
+fn the_stderr_record_drops_words_that_can_carry_a_secret() {
+    let stderr = "run details repo=https://x.test/r?token=ghp_0123456789abcdefABCDEF workdir=/w\n\
+                  error: acquire external box: ssh not ready after 10m0s\n";
+    let record = stderr_record(Op::Acquire, Some("external"), &nz(1, stderr)).expect("a record");
+    assert!(!record.contains("ghp_0123456789abcdefABCDEF"), "{record}");
+    assert!(!record.contains("token="), "{record}");
+    assert!(record.contains("ssh not ready after"), "{record}");
+}
+
+#[test]
+fn a_failed_acquire_release_or_checkpoint_records_each_stderr_line() {
     for op in [Op::Acquire, Op::Release, Op::Checkpoint] {
         let record =
             stderr_record(op, Some("external"), &nz(1, CAUSE_THEN_TEARDOWN)).expect("a record");
-        for line in CAUSE_THEN_TEARDOWN.lines() {
-            assert!(record.contains(line), "{op:?} lost {line:?}: {record}");
-        }
+        assert_eq!(
+            record.lines().count(),
+            CAUSE_THEN_TEARDOWN.lines().count(),
+            "{record}"
+        );
+        assert!(
+            record.contains("crabbox said: error: acquire external box: ssh not ready after"),
+            "{record}"
+        );
         assert!(record.contains("exit 1"), "{record}");
     }
 }
