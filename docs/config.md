@@ -229,8 +229,8 @@ runs only the lines above that layer. At another commit, it resets tracked
 files, keeps ignored ones, and runs every line again. A chain lives 7 days and
 rolls forward 8 times at most. `moor start --cold` skips it.
 
-The events `warm_started`, `warm_rerun`, `checkpoint_skipped`, and
-`checkpoint_evicted` record what happened.
+The events `warm_started`, `warm_rerun`, `checkpoint_skipped`,
+`checkpoint_unfinished`, and `checkpoint_evicted` record what happened.
 
 ### Cache volumes
 

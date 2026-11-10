@@ -106,6 +106,15 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
             }
+            Event::Timing(TimingEvent::CheckpointUnfinished {
+                layer,
+                checkpoint,
+                error,
+            }) => Ok(Self::CheckpointUnfinished {
+                layer,
+                checkpoint,
+                error,
+            }),
             Event::Timing(TimingEvent::CacheCold { reason, detail }) => {
                 Ok(Self::CacheCold { reason, detail })
             }

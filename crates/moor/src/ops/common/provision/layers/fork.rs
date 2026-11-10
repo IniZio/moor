@@ -147,7 +147,12 @@ fn fork_failed(
 ) -> Result<Option<Result<Acquired, DriverError>>, CommandError> {
     let error = e.to_string();
     if matches!(e, DriverError::UnfinishedCheckpoint { .. }) {
-        store.retire_checkpoint(&layered.home, &kept.checkpoint)?;
+        let told = ExtraEvent::CheckpointUnfinished {
+            layer: u32::try_from(layer).unwrap_or(u32::MAX),
+            checkpoint: kept.checkpoint.clone(),
+            error: error.clone(),
+        };
+        store.retire_checkpoint((id, told), &layered.home, &kept.checkpoint)?;
         cx.warn(Warning {
             code: "checkpoint_unfinished".to_owned(),
             message: format!(

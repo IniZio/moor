@@ -13,11 +13,20 @@ fn unfinished() -> DriverError {
     }
 }
 
+/// `retired` is one event that names `ckpt-2`, its layer and what the provider said.
+fn told_retired(retired: &[serde_json::Value]) {
+    assert_eq!(retired.len(), 1, "{retired:?}");
+    assert_eq!(retired[0]["layer"], 2);
+    assert_eq!(retired[0]["checkpoint"], "ckpt-2");
+    assert_eq!(retired[0]["error"], unfinished().to_string());
+}
+
 #[test]
 fn an_unfinished_top_checkpoint_is_skipped_for_the_layer_below_and_never_offered_again() {
     let (w, _) = after_a_partial_setup(FakeDriver::new().fork_fails_once(unfinished()));
     let second = start(&w, "second", "abc123", LINES);
     assert!(events(&w, second, "warm_start_failed").is_empty());
+    told_retired(&events(&w, second, "checkpoint_unfinished"));
     let warm = events(&w, second, "warm_started");
     assert_eq!(warm.len(), 1, "{warm:?}");
     assert_eq!(

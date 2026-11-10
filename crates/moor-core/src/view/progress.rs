@@ -105,6 +105,21 @@ fn checkpoint_evicted(payload: &Value) -> String {
     )
 }
 
+/// A failed fork of a setup checkpoint: `warm_start_failed` or `checkpoint_unfinished`.
+fn fork_failed(kind: &str, payload: &Value) -> String {
+    let layer = num(payload, "layer");
+    let error = payload
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if kind == "checkpoint_unfinished" {
+        return format!(
+            "setup checkpoint {layer} was never finished: {error}; trying the layer below"
+        );
+    }
+    format!("could not start from setup checkpoint {layer}: {error}; setting up from scratch")
+}
+
 /// Event `kind` as a step, or `None` for one that says nothing about getting the Box up.
 fn step(kind: &str, payload: &Value) -> Option<String> {
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
@@ -138,11 +153,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         ),
         "checkpoint_taken" => checkpoint_taken(payload),
         "checkpoint_evicted" => checkpoint_evicted(payload),
-        "warm_start_failed" => format!(
-            "could not start from setup checkpoint {}: {}; setting up from scratch",
-            num(payload, "layer"),
-            text("error")
-        ),
+        "warm_start_failed" | "checkpoint_unfinished" => fork_failed(kind, payload),
         "setup_finished" if payload.get("ok").and_then(Value::as_bool) == Some(false) => {
             format!("setup finished with failures{}", took())
         }

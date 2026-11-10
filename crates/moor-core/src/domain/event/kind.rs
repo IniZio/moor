@@ -138,6 +138,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "cache_emptied",
     "checkpoint_taken",
     "checkpoint_evicted",
+    "checkpoint_unfinished",
 ];
 
 impl Event {
