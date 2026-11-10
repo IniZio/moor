@@ -34,3 +34,4 @@ pub(crate) mod target;
 pub(crate) mod transcript;
 pub(crate) mod view;
 pub(crate) mod wake;
+pub(crate) mod wanted;

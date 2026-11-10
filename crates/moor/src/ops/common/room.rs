@@ -1,18 +1,19 @@
 //! Making room on a full node, by suspending its longest-idle Boxes, and relieving a node under
 //! memory pressure.
 
-use moor_core::decide::disk::{judge, Change, Report, State};
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
 use moor_core::decide::pressure::{
     relieve, sustained, working, Candidate, Cooldown, Reading, SETTLE_SECS,
 };
-use moor_core::decide::schedule::{Memory, Node, Shortfall};
+use moor_core::decide::schedule::{Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::cache_save::CacheSaveDenied;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, HandsFields};
+use moor_core::domain::decision::{
+    Decision, ExtraEvent, Field, Fields, HandsFields, WantChange, Wanted, WantedKind,
+};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::session_state::SessionState;
-use moor_core::name::{BoxHandle, BoxId, NodeName};
+use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
 
 use crate::cx::owners::Cmd;
@@ -26,7 +27,11 @@ use crate::ops::common::reconcile;
 use crate::ops::common::resume_gate::demand;
 use crate::ops::common::stale::unless_stale;
 use crate::ops::common::suspend_check;
+use crate::ops::common::wanted::parking;
 use crate::store::{BoxRow, Store};
+use disk::{judge_disk, tell_disk};
+
+mod disk;
 
 /// How long the same failure to suspend a Box goes unrepeated in its events, in seconds.
 const FAILURE_REPEAT_SECS: i64 = 600;
@@ -109,12 +114,20 @@ fn resident(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Resident, CommandErr
     })
 }
 
-/// Suspends Box `id` for `reason` if it is still idle and its turn is free; false otherwise. A
-/// failure to suspend it is recorded on the Box.
+/// Suspends Box `id` for `reason` if it is still idle, its turn is free and it wants no close;
+/// false otherwise. A failure to suspend it is recorded on the Box.
 fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Some(_turn) = cx.try_turn(id, Cmd::Suspend) else {
         return Ok(false);
     };
+    let wanted = Wanted::Suspend {
+        reason: reason.to_owned(),
+    };
+    Ok(parking(store, id, wanted, || suspend_idle(cx, store, id, reason))?.unwrap_or(false))
+}
+
+/// [`suspend`] under the turn and the wanted suspend.
+fn suspend_idle(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };
@@ -140,6 +153,7 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
                 auto: true,
                 reason: Some(reason.to_owned()),
             })
+            .want(WantChange::Done(WantedKind::Suspend))
             .cache_save(cache_save)
             .hands_input(row.hands_inc(), HandsInput::Sleep)
             .set(Fields {
@@ -225,74 +239,22 @@ pub(crate) fn on_report(
     Ok(())
 }
 
-/// `reading` marked with whether the node's disk is low after it, and the crossing it made.
-fn judge_disk(
-    memory: &Memory,
-    last: Option<&Reading>,
-    reading: Reading,
-    now: i64,
-) -> (Reading, Option<Change>) {
-    let was = if last.is_some_and(|r| r.disk_low) {
-        State::Low
-    } else {
-        State::Ok
-    };
-    let (disk, change) = judge(
-        was,
-        Report {
-            at: reading.at,
-            free_mib: memory.disk_free_mib,
-            total_mib: memory.disk_total_mib,
-        },
-        now,
-    );
-    let reading = Reading {
-        disk_low: disk == State::Low,
-        ..reading
-    };
-    (reading, change)
-}
-
-/// Records `change` of `node`'s disk once for each owner with a Box there, so each hears through
-/// the webhooks and streams that already carry Box events. Nothing else happens to the Boxes; a
-/// Box with an op in flight is skipped.
-fn tell_disk(cx: &Cx, store: &Store, node: &NodeName, change: Change) -> Result<(), CommandError> {
-    let ids = store.one_live_per_owner_on(node)?;
-    let node = node.to_string();
-    for id in ids {
-        let event = match change {
-            Change::WentLow {
-                free_mib,
-                total_mib,
-            } => ExtraEvent::NodeDiskLow {
-                node: node.clone(),
-                free_mib,
-                total_mib,
-            },
-            Change::Recovered {
-                free_mib,
-                total_mib,
-            } => ExtraEvent::NodeDiskRecovered {
-                node: node.clone(),
-                free_mib,
-                total_mib,
-            },
-        };
-        if let Some(_turn) = cx.try_turn(id, Cmd::Settle) {
-            store.apply(Decision::new(id).event(event))?;
-        }
-    }
-    Ok(())
-}
-
-/// Suspends running Box `id` for `reason` and leaves it waiting for room, if nothing changed and
-/// its turn is free; false otherwise. Its agent pane stays open, since the suspension keeps the
+/// Suspends running Box `id` for `reason` and leaves it waiting for room, if nothing changed, its
+/// turn is free and it wants no close; false otherwise. Its agent pane stays open, since the suspension keeps the
 /// agent's process, while a run in flight loses its connection. A failure to suspend it is
 /// recorded on the Box.
 fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Some(_turn) = cx.try_turn(id, Cmd::Suspend) else {
         return Ok(false);
     };
+    let wanted = Wanted::Suspend {
+        reason: reason.to_owned(),
+    };
+    Ok(parking(store, id, wanted, || suspend_running(cx, store, id, reason))?.unwrap_or(false))
+}
+
+/// [`suspend_working`] under the turn and the wanted suspend.
+fn suspend_running(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };

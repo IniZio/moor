@@ -12,6 +12,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::DiskLost => Self::DiskLost,
             ExtraEvent::CachesNotSaved => Self::CachesNotSaved,
+            ExtraEvent::WantedDropped => Self::WantedDropped,
             ExtraEvent::Ran {
                 run,
                 exit,
