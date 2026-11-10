@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use moor_core::activity::{decide, may_apply_quiet, Activity, AgentState, Probe, Term};
+use moor_core::activity::{
+    before_first_turn, decide, may_apply_quiet, Activity, AgentState, Probe, Term,
+};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
@@ -185,6 +187,8 @@ pub(crate) fn read(
     let pane_text = probe.screen().map(str::to_owned);
     let first_run = first_run(cx, pane_text.as_deref());
     let mut activity = decide(&probe, now, session.started_at, first_run);
+    let prompted = row.prompt.is_some() || row.issue.is_some();
+    activity = before_first_turn(activity, probe.term(), now, session.started_at, prompted);
     activity = stall::end_stale_wait(cx, &sref, &probe, activity, now, deadline);
     let pane = if asleep {
         PaneLiveness::Gone

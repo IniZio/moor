@@ -328,6 +328,7 @@ fn intent_from(kind: Option<String>, run: Option<i64>) -> Result<Option<Intent>,
         "provisioning" => Ok(Some(Intent::Provisioning)),
         "setup" => Ok(Some(Intent::Setup)),
         "closing" => Ok(Some(Intent::Closing)),
+        "launching" => Ok(Some(Intent::Launching)),
         "running" => {
             let run =
                 run.ok_or_else(|| StoreError::Corrupt("running intent without run".into()))?;

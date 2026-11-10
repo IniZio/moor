@@ -82,7 +82,8 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         };
         return close::run(cx, &req).map(drop);
     }
-    if row.intent.is_none() && launch_was_cut(store, &row)? {
+    let launching = row.intent == Some(Intent::Launching);
+    if launching || (row.intent.is_none() && launch_was_cut(store, &row)?) {
         return finish_launch(cx, store, &row);
     }
     let acquiring = row.intent == Some(Intent::Provisioning);

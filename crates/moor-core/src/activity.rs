@@ -302,6 +302,32 @@ pub fn decide(probe: &Probe, now: Ts, started: Ts, first_run: Option<&str>) -> A
     act(state, Source::Status)
 }
 
+/// `activity` for an agent given a first prompt, starting until it takes the prompt up.
+///
+/// A `prompted` agent that reads idle before any of its turns has ended has not begun on the
+/// prompt, so within [`STARTUP_GRACE`] of `started` it counts as starting.
+#[must_use]
+pub fn before_first_turn(
+    activity: Activity,
+    term: Option<&Term>,
+    now: Ts,
+    started: Ts,
+    prompted: bool,
+) -> Activity {
+    let idle = matches!(
+        activity,
+        Activity {
+            state: AgentState::Idle,
+            source: Source::Status,
+        }
+    );
+    let fresh = term.is_some_and(|t| t.turn == 0);
+    if prompted && idle && fresh && age(now, started) < STARTUP_GRACE {
+        return act(AgentState::Starting, Source::Terminal);
+    }
+    activity
+}
+
 /// Whether a reading may move a Working Box to Idle: only one the agent's own status gives, an
 /// ended agent, a first-run screen, or no live session (`probe` is `None`).
 #[must_use]
