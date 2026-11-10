@@ -76,3 +76,38 @@ fn a_lost_disk_is_owed_to_the_agent_until_dropped() {
     store.drop_owed_note(id).unwrap();
     assert_eq!(store.owed_note(id).unwrap(), None);
 }
+
+#[test]
+fn hands_record_when_they_woke_and_an_acquire_is_no_wake() {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::hands::{HandsInc, HandsInput};
+    use moor_core::domain::session_state::SessionInput;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    let id = ready_box(&store);
+    let woke = |s: &crate::store::Store| s.box_row(id).unwrap().unwrap().hands.unwrap().woke_at;
+    assert_eq!(woke(&store), None, "acquired, never woken");
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    let sleep = BoxLifecycleInput::Sleep {
+        auto: true,
+        reason: None,
+    };
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(sleep)
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
+        )
+        .unwrap();
+    clock.sleep(Duration::from_secs(5));
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Wake)
+                .hands_input(HandsInc::FIRST, HandsInput::Wake),
+        )
+        .unwrap();
+    assert_eq!(woke(&store), Some(clock.now()));
+}
