@@ -42,6 +42,9 @@ pub struct Fields {
     pub steps_pending_at: Field<i64>,
     /// The recorded launch failure, as JSON.
     pub launch_failure: Field<String>,
+    /// When the Box was parked while its agent worked; the store also sets it for a park out of a
+    /// working Session, and clears it on wake.
+    pub parked_at_work: Field<i64>,
 }
 
 /// Changes to the facts about a Box's machine.
