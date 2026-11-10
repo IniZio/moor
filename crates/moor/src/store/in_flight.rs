@@ -23,6 +23,22 @@ impl Store {
         );
         query_boxes(&self.reader()?, in_flight, Order::Asc, None)
     }
+
+    /// The open Boxes that want something of `kinds`, by id.
+    pub(crate) fn wanting(&self, kinds: &[WantedKind]) -> Result<Vec<BoxRow>, StoreError> {
+        let col = |c| Expr::col((BoxState::Table, c));
+        let names = kinds.iter().map(|k| k.as_str());
+        let wanting = col(BoxState::State)
+            .is_not_in(SHUT)
+            .and(col(BoxState::Wanted).is_in(names));
+        query_boxes(&self.reader()?, wanting, Order::Asc, None)
+    }
+
+    /// The open Boxes that want a close and have no effect in flight, by id.
+    pub(crate) fn wanting_close(&self) -> Result<Vec<BoxRow>, StoreError> {
+        let rows = self.wanting(&[WantedKind::Close])?;
+        Ok(rows.into_iter().filter(|r| r.effect.is_none()).collect())
+    }
 }
 
 /// The wanted action a Box read row holds.

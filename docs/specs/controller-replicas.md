@@ -95,7 +95,7 @@ The controller log was not read, since this host's kubeconfig only names a local
 | Box lock | [`ops/common/boxlock.rs:43-48`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/boxlock.rs#L43-L48) | flock on the PVC guards one host only. A roll drops it, which is safe. | Stays, on `emptyDir` |
 | Forced-close table | [`ops/common/boxlock.rs:27`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/boxlock.rs#L27) | Per process. A close cannot stop a start on another replica. | Stays |
 | Run follow claim | [`store/follow.rs:3`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/follow.rs#L3) | flock on the PVC. A roll frees it. | Stays, on `emptyDir` |
-| Intent with a pid | [`ops/common/provision.rs:158-160`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision.rs#L158-L160), [`ops/common/provision/retry.rs:51`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/retry.rs#L51) | Pids mean nothing across pods. | Stays, as the op table |
+| Effect in flight, `box_state.effect` | [`ops/common/provision.rs:158-160`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision.rs#L158-L160), [`ops/common/provision/retry.rs:51`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/retry.rs#L51) | The effect and its attempt are columns, so any process reads them. | Stays, as the op table |
 | Interrupted-start pass | [`ops/common/provision/interrupted.rs:24-33`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/interrupted.rs#L24-L33) | A second replica would claim live setups, and any start fails or claims them. A roll is its purpose. | Stays |
 | Setup in flight | [`ops/common/setup/attach.rs:82-100`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/setup/attach.rs#L82-L100) | #1174, above. | Stays, follower waits and hands over |
 | Acquire in flight | [`ops/common/provision/interrupted.rs:35-36`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/interrupted.rs#L35-L36), [`:60-78`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/provision/interrupted.rs#L60-L78) | A roll fails the Box. Acquire took 86 s on `hkfc-warm-1`. | Re-acquire once on the next process |
@@ -167,7 +167,7 @@ sequenceDiagram
 
 | Thing | Use |
 | --- | --- |
-| `boxes.intent`, detached runs, `resume_setup` | The resumable op table already exists. No new table. |
+| `box_state.effect` and `wanted`, detached runs, `resume_setup` | The resumable op table already exists. No new table. |
 | `moor-client` redial | The hold. Raise `refused` from 5 s to the hold for the gate. |
 | Front hello over ledger TLS | The gate reaches the controller with no shared volume. |
 | Kubernetes Lease API, rejected | Needs RBAC, and the chart sets `automountServiceAccountToken: false`. |

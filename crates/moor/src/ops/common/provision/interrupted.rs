@@ -1,7 +1,9 @@
 //! Settles the starts an earlier controller process left unfinished.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Effect, EffectChange, Restart, Wanted, WantedKind};
+use moor_core::domain::decision::{
+    Decision, Effect, EffectChange, ExtraEvent, Restart, WantChange, Wanted, WantedKind,
+};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::Released;
 use moor_core::{BoxHandle, BoxId, Warning};
@@ -20,6 +22,22 @@ const CAUSE: &str = "setup interrupted by a controller restart";
 /// and settles as its owner's first turn.
 pub(crate) fn cut_short(store: &Store) -> Result<Vec<BoxId>, CommandError> {
     Ok(store.in_flight_boxes()?.into_iter().map(|r| r.id).collect())
+}
+
+/// Drops what an earlier process wanted an open Box to end as when it is a sleep or a suspend,
+/// with a `wanted_dropped` event: the pressure and autosleep passes decide those again from what
+/// holds now. Only a close outlives a restart.
+pub(crate) fn drop_wanted(store: &Store) -> Result<(), CommandError> {
+    for row in store.wanting(&[WantedKind::Sleep, WantedKind::Suspend])? {
+        let Some(kind) = row.wanted.as_ref().map(Wanted::kind) else {
+            continue;
+        };
+        let dropped = Decision::new(row.id)
+            .want(WantChange::Done(kind))
+            .event(ExtraEvent::WantedDropped);
+        store.apply(dropped)?;
+    }
+    Ok(())
 }
 
 /// What a resume does once its Box has settled, which is when the controller may serve.
