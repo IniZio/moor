@@ -148,3 +148,26 @@ fn a_box_is_beyond_reach_only_when_what_runs_could_not_make_room_for_it() {
         );
     }
 }
+
+#[test]
+fn a_reported_reserve_sets_the_line_and_an_absent_one_falls_back_to_the_default() {
+    // available, reserve the node reported, whether one more Box fits
+    let table = [
+        (2048 + 2048, Some(2048), true),
+        (2048 + 2047, Some(2048), false),
+        (RESERVE + 2048, None, true),
+        (RESERVE + 2047, None, false),
+        (2048 + 2048, None, false),
+    ];
+    for (available, reserve, fits) in table {
+        let m = Memory {
+            reserve_mib: reserve,
+            ..memory(available)
+        };
+        assert_eq!(
+            m.shortfall(NOW).is_none(),
+            fits,
+            "available {available}, reserve {reserve:?}"
+        );
+    }
+}

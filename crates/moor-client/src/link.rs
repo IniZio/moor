@@ -60,6 +60,10 @@ pub struct Report {
     /// Size of that filesystem, in MiB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_total_mib: Option<u64>,
+    /// The memory, in MiB, the agent keeps for the host and holds its Boxes slice under; none
+    /// from an agent that does not say, which the controller then gives its default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_mib: Option<u64>,
     /// The memory the host's VMs hold, for each lease whose provider says; leases it cannot tell
     /// are left out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -43,6 +43,7 @@ fn a_report_reads_available_total_and_both_psi_avg10s() {
             psi_full_avg10: Some(1.0),
             disk_free_mib: None,
             disk_total_mib: None,
+            reserve_mib: None,
             boxes: Vec::new(),
         })
     );
@@ -78,6 +79,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
                 psi_full_avg10: None,
                 disk_free_mib: None,
                 disk_total_mib: None,
+                reserve_mib: None,
                 boxes: Vec::new(),
             }
         }
@@ -101,4 +103,39 @@ fn a_home_that_does_not_exist_reports_no_disk() {
     fake_proc(&dir, None);
     let r = report(&dir, Some(&dir.join("missing"))).unwrap();
     assert_eq!((r.disk_free_mib, r.disk_total_mib), (None, None));
+}
+
+/// The reserve on the first report `pool` sends from the 32000 MiB fake host.
+async fn first_reserve(pool: Option<&crate::Pool>) -> Option<u64> {
+    let dir = scratch("reserve");
+    fake_proc(&dir, None);
+    let (near, mut far) = tokio::io::duplex(4096);
+    let sending = tokio::spawn({
+        let (dir, pool) = (dir.clone(), pool.cloned());
+        async move { send_reports(near, &dir, None, pool.as_ref()).await }
+    });
+    let opened: Opened = read_line(&mut far).await.unwrap();
+    drop(far);
+    sending.abort();
+    match opened {
+        Opened::Report { report } => report.reserve_mib,
+        Opened::Accepted(_) => Some(u64::MAX),
+    }
+}
+
+fn pool(reserve_mib: Option<u64>) -> crate::Pool {
+    crate::Pool {
+        provider: "p".to_owned(),
+        max: None,
+        reserve_mib,
+        cache_gb: None,
+        crabbox: "crabbox".into(),
+    }
+}
+
+#[tokio::test]
+async fn a_pool_reports_its_flag_or_the_default_and_a_host_without_one_reports_none() {
+    assert_eq!(first_reserve(Some(&pool(Some(2048)))).await, Some(2048));
+    assert_eq!(first_reserve(Some(&pool(None))).await, Some(4096 + 3200));
+    assert_eq!(first_reserve(None).await, None);
 }

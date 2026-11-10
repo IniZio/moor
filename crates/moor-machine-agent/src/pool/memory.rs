@@ -5,10 +5,23 @@ use std::path::Path;
 use moor_client::link::ops;
 use moor_client::link::{self, Opened, Report};
 
+use moor_core::decide::schedule::default_reserve_mib;
+
 use super::Pool;
 
+impl Pool {
+    /// The memory, in MiB, this host keeps for itself when it totals `total_mib`: the flag, else
+    /// the default every controller shares.
+    #[must_use]
+    pub fn reserve(&self, total_mib: u64) -> u64 {
+        self.reserve_mib
+            .unwrap_or_else(|| default_reserve_mib(total_mib))
+    }
+}
+
 /// The host's total memory from `/proc/meminfo`; none off Linux.
-pub(super) fn host_mem_mib() -> Option<u64> {
+#[must_use]
+pub fn host_mem_mib() -> Option<u64> {
     let info = std::fs::read_to_string("/proc/meminfo").ok()?;
     mem_total_mib(&info)
 }
@@ -30,6 +43,7 @@ fn report(proc: &Path, home: Option<&Path>) -> Option<Report> {
         psi_full_avg10: psi.as_deref().and_then(|p| avg10(p, "full ")),
         disk_free_mib: disk.map(|d| d.0),
         disk_total_mib: disk.map(|d| d.1),
+        reserve_mib: None,
         boxes: Vec::new(),
     })
 }
@@ -73,6 +87,7 @@ pub(crate) async fn send_reports<W>(
             report.boxes = super::box_memory(home, pool).await.unwrap_or_default();
         }
         first = false;
+        report.reserve_mib = pool.map(|p| p.reserve(report.mem_total_mib));
         if ops::write_line(&mut stream, &Opened::Report { report })
             .await
             .is_err()

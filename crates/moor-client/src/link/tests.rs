@@ -93,6 +93,7 @@ fn a_report_with_the_per_box_list_round_trips() {
             psi_full_avg10: None,
             disk_free_mib: None,
             disk_total_mib: None,
+            reserve_mib: None,
             boxes: vec![super::BoxMemory {
                 slug: "moor-0badcafe-7".to_owned(),
                 host_memory_mib: 1536,
@@ -119,4 +120,19 @@ fn a_report_from_an_older_agent_has_no_resume_memory() {
     };
     let text = serde_json::to_string(&with).unwrap();
     assert!(text.contains("\"resume_memory_mib\":6144"), "{text}");
+}
+
+#[test]
+fn a_report_from_an_older_agent_has_no_reserve_and_a_new_one_carries_it() {
+    let old = r#"{"mem_available_mib":1,"mem_total_mib":2}"#;
+    let back: super::Report = serde_json::from_str(old).unwrap();
+    assert_eq!(back.reserve_mib, None);
+    assert!(!serde_json::to_string(&back).unwrap().contains("reserve"));
+    let with = super::Report {
+        reserve_mib: Some(7296),
+        ..back
+    };
+    let text = serde_json::to_string(&with).unwrap();
+    assert!(text.contains("\"reserve_mib\":7296"), "{text}");
+    assert_eq!(serde_json::from_str::<super::Report>(&text).unwrap(), with);
 }
