@@ -52,14 +52,14 @@ pub(crate) fn unless_stale<T>(
 /// What ending a launch read earlier came to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Ending {
-    /// It is ended now, with its Session when `end` asked for that.
+    /// It is ended, now or by another op meanwhile.
     Ended,
     /// Another op began a newer launch since the read; nothing was written.
     Replaced,
 }
 
 /// Ends `launch` of Box `id` as `end` says. A launch that ended meanwhile with no newer one
-/// counts as ended, its Session ended too when asked; only a newer launch replaced it.
+/// counts as ended, with nothing more written: new hands end a launch and keep its Session open.
 ///
 /// # Errors
 /// A store failure.
@@ -72,14 +72,11 @@ pub(crate) fn end_read_launch(
     match store.end_launch(id, launch, end) {
         Ok(()) => Ok(Ending::Ended),
         Err(e @ StoreError::Stale { .. }) => {
-            if store.live_launch(id)?.is_some() {
-                unless_stale(cx, Err::<(), _>(e))?;
-                return Ok(Ending::Replaced);
+            if store.live_launch(id)?.is_none() {
+                return Ok(Ending::Ended);
             }
-            if let Some(cause) = end.session {
-                store.end_current_session(id, cause, end.exit)?;
-            }
-            Ok(Ending::Ended)
+            unless_stale(cx, Err::<(), _>(e))?;
+            Ok(Ending::Replaced)
         }
         Err(e) => Err(e.into()),
     }
