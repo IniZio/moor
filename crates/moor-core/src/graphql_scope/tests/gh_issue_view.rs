@@ -164,3 +164,59 @@ fn a_query_without_linked_issues_needs_no_response_check() {
     assert_eq!(verdict, Verdict::Allow);
     assert!(paths.is_empty());
 }
+
+/// Runs `check` on a thread with the 2 MiB stack the Proxy's connection threads get.
+fn on_proxy_stack(check: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(check)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// The `ISSUE_VIEW` response with `value` at `issue.<key>`, written by hand around it.
+fn issue_view_with(key: &str, value: &str) -> String {
+    format!(r#"{{"data":{{"repository":{{"issue":{{"title":"own",{key}:{value}}}}}}}}}"#)
+}
+
+#[test]
+fn a_deeply_nested_list_on_a_linked_path_is_left_unchecked() {
+    let (_, paths) = judge_linked(
+        &body(
+            ISSUE_VIEW,
+            &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
+        ),
+        &RepoRef::new("IniZio", "moor"),
+    );
+    on_proxy_stack(move || {
+        let depth = 5_000;
+        let nested = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+        let resp = issue_view_with(r#""parent""#, &nested);
+        assert!(paths
+            .blank(resp.as_bytes(), &[RepoRef::new("IniZio", "moor")])
+            .is_err());
+    });
+}
+
+#[test]
+#[allow(clippy::disallowed_methods, reason = "the test times the check")]
+fn a_huge_list_of_lists_of_sub_issues_is_refused_fast() {
+    let (_, paths) = judge_linked(
+        &body(
+            ISSUE_VIEW,
+            &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
+        ),
+        &RepoRef::new("IniZio", "moor"),
+    );
+    on_proxy_stack(move || {
+        let depth = 1_000_000;
+        let nested = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+        let resp = issue_view_with(r#""subIssues""#, &format!(r#"{{"nodes":{nested}}}"#));
+        let start = std::time::Instant::now();
+        assert!(paths
+            .blank(resp.as_bytes(), &[RepoRef::new("IniZio", "moor")])
+            .is_err());
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    });
+}
