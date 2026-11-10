@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
+use moor_core::domain::decision::{
+    Decision, Field, Fields, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
@@ -377,4 +379,26 @@ fn a_read_of_an_ended_launch_is_ignored() {
     set_session_state(&store, id, "working");
     store.begin_launch(id, "s2").unwrap();
     assert!(!store.agent_unread(id, Ts::from_millis(10_000_000)).unwrap());
+}
+
+#[test]
+fn ending_a_launch_leaves_a_run_that_began_meanwhile() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = working(&store, "demo");
+    let launching = IntentChange::Set(Intent::Launching);
+    store.apply(Decision::new(id).intent(launching)).unwrap();
+    let run = Intent::Running {
+        run: moor_core::RunId::new(7),
+    };
+    store
+        .apply(Decision::new(id).intent(IntentChange::Set(run)))
+        .unwrap();
+    store.end_launching(id).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, Some(run));
+    store
+        .apply(Decision::new(id).intent(IntentChange::Set(Intent::Launching)))
+        .unwrap();
+    store.end_launching(id).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
 }

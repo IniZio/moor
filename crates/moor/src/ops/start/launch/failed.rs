@@ -1,6 +1,6 @@
 //! Records how an agent launch failed on its Box.
 
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::seam::engine::EngineError;
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::BoxId;
@@ -8,7 +8,6 @@ use moor_core::BoxId;
 use super::TAIL_LINES;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::provision::reread;
 use crate::ops::common::view::rfc3339;
 use crate::store::Store;
 
@@ -78,9 +77,6 @@ pub(in crate::ops::start) fn record(
             step: f.step.clone(),
             message: f.message.clone(),
         });
-        if reread(store, id)?.intent == Some(Intent::Launching) {
-            decision = decision.intent(IntentChange::Clear);
-        }
     }
     store.apply(decision)?;
     Ok(())

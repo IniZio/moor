@@ -187,7 +187,8 @@ pub(crate) fn read(
     let pane_text = probe.screen().map(str::to_owned);
     let first_run = first_run(cx, pane_text.as_deref());
     let mut activity = decide(&probe, now, session.started_at, first_run);
-    let prompted = row.prompt.is_some() || row.issue.is_some();
+    let fresh = probe.term().is_some_and(|t| t.turn == 0);
+    let prompted = fresh && store.launched_on_prompt(row.id, &session)?;
     activity = before_first_turn(activity, probe.term(), now, session.started_at, prompted);
     activity = stall::end_stale_wait(cx, &sref, &probe, activity, now, deadline);
     let pane = if asleep {

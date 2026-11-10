@@ -4,7 +4,7 @@
 //! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Box; without a prompt or issue the agent waits for a prompt.
 
-use moor_core::config::{Flags, RepoConfig};
+use moor_core::config::{BoxSettings, Flags, RepoConfig};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, NewBox, SpecFields};
@@ -14,7 +14,7 @@ use moor_core::domain::inbox::InboxKind;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
-use moor_core::view::StartView;
+use moor_core::view::{AgentLaunchView, StartView};
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 
 use super::common::activity;
@@ -104,7 +104,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Err(e) => return raced(cx, store, (req, user), e),
     };
     let turn = cx.turn(id, Cmd::Start)?;
-    queue_prompt(store, id, req)?;
+    queue_prompt(store, id, launch::first_prompt(req).text())?;
     store.set_box_node(id, spec.node.as_ref())?;
     cold::record(store, req, id)?;
     if let Some(gathered) = facts.profile.take() {
@@ -208,7 +208,7 @@ fn attach(
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
     let turn = cx.turn(row.id, Cmd::Start)?;
-    queue_prompt(store, row.id, req)?;
+    queue_prompt(store, row.id, req.prompt.as_deref())?;
     let row = &reread(store, row.id)?;
     let flags = Flags {
         model: req.model.clone(),
@@ -218,15 +218,9 @@ fn attach(
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || settings_of(cx, row, &flags);
-    if asleep::wake(cx, store, req, row.id)? == asleep::Woken::Queued {
+    let Some(agent) = wake_and_launch(cx, store, req, row.id, setup_exit, &settings)? else {
         return Ok(queued_view(cx, &reread(store, row.id)?, true));
-    }
-    if relaunch::asks_for_agent(req) {
-        reopen::ended_session(store, row.id, req.parent.map(SessionId::get))?;
-    }
-    asleep::wake_idle(store, row.id)?;
-    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
-    launch::end_launching(store, row.id)?;
+    };
     drop(turn);
     let agent = watch::run(cx, store, row.id, agent);
     let _turn = cx.turn(row.id, Cmd::Steer)?;
@@ -240,18 +234,42 @@ fn attach(
     Ok(v)
 }
 
-/// Queues the prompt `req` gives for Box `id`'s agent, once the start holds the Box's turn, so a
-/// start refused before then leaves nothing queued. The same prompt already waiting is not queued
-/// again: a start retried with its prompt asks for it once. A fresh launch carries it, or it is typed in
-/// once the agent can take it.
-fn queue_prompt(store: &Store, id: BoxId, req: &StartReq) -> Result<(), CommandError> {
-    let Some(prompt) = &req.prompt else {
+/// Wakes Box `id` and launches its agent as `req` asks; `None` when the Box waits for room, and
+/// launches once it has it. Any other end ends the launch step.
+fn wake_and_launch(
+    cx: &Cx,
+    store: &Store,
+    req: &StartReq,
+    id: BoxId,
+    setup_exit: Option<i32>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
+) -> Result<Option<AgentLaunchView>, CommandError> {
+    let woken = asleep::wake(cx, store, req, id);
+    if matches!(woken, Ok(asleep::Woken::Queued)) {
+        return Ok(None);
+    }
+    let out = woken.and_then(|_| {
+        if relaunch::asks_for_agent(req) {
+            reopen::ended_session(store, id, req.parent.map(SessionId::get))?;
+        }
+        asleep::wake_idle(store, id)?;
+        relaunch::run(cx, store, req, id, setup_exit, settings)
+    });
+    launch::launch_over(store, id, out).map(Some)
+}
+
+/// Queues `prompt` for Box `id`'s agent, once the start holds the Box's turn, so a start refused
+/// before then leaves nothing queued. The same prompt already waiting is not queued again: a start
+/// retried with its prompt asks for it once. A fresh launch carries it, or it is typed in once the
+/// agent can take it.
+fn queue_prompt(store: &Store, id: BoxId, prompt: Option<&str>) -> Result<(), CommandError> {
+    let Some(prompt) = prompt else {
         return Ok(());
     };
     let waits = store
         .unsent(id)?
         .iter()
-        .any(|r| r.kind == InboxKind::Prompt && r.text == *prompt && r.delivery.launch().is_none());
+        .any(|r| r.kind == InboxKind::Prompt && r.text == prompt && r.delivery.launch().is_none());
     if !waits {
         store.enqueue(id, InboxKind::Prompt, prompt, InboxKind::Prompt.as_str())?;
     }

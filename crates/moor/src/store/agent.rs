@@ -147,6 +147,22 @@ impl Store {
             .is_some())
     }
 
+    /// Ends a launching intent on `box_id`, whatever came of its launch step; any other intent
+    /// stays.
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails.
+    pub(crate) fn end_launching(&self, box_id: BoxId) -> Result<(), StoreError> {
+        self.check_write(box_id);
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        end_launching(&tx, box_id, now)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
     /// Record the start of a launch on `box_id` and its `SessionStarted` event, ending a
     /// launching intent in the same write; the rest of the box state is not touched.
     pub(crate) fn begin_launch(
@@ -348,7 +364,8 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
     })
 }
 
-/// Ends a launching intent on `box_id`, once a launch is recorded, inside the caller's write.
+/// Ends a launching intent on `box_id` inside the caller's write. Any other intent is left, so a
+/// run that began meanwhile keeps its own.
 fn end_launching(tx: &dyn db::Db, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
     let mut launched = state_update(box_id)
         .and_where(Expr::col(BoxState::IntentKind).eq(Intent::Launching.kind()))

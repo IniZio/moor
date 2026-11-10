@@ -112,10 +112,12 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
 }
 
 /// Ends the launch a restart cut off in `row`. An agent already in the Box is attached to, as a
-/// second launch would replace it and start its work over. A Box that cannot say launches nothing,
-/// and the next process asks again.
+/// second launch would replace it and start its work over. A Box with no ready machine has no
+/// agent to launch, so its launch ends; a Box that cannot say launches nothing, and the next
+/// process asks again.
 fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some((handle, workdir)) = machine(row) else {
+        store.end_launching(row.id)?;
         return Ok(());
     };
     setup::await_reachable(cx, handle)?;
