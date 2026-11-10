@@ -234,8 +234,14 @@ fn a_box_that_failed_setup_on_lost_hands_with_a_live_launch_gets_new_hands_that_
     start(&w).unwrap();
 
     let live = store.live_launch(id).unwrap().map(|l| l.id);
-    assert!(live.is_some_and(|l| l > old), "{live:?}: the new hands ended launch {old:?}");
+    assert!(
+        live.is_some_and(|l| l > old),
+        "{live:?}: the new hands ended launch {old:?}"
+    );
     assert_eq!(row(&w).hands.map(|h| h.inc.get()), Some(2));
-    assert!(engine.transcripts().is_empty(), "nothing saved from the lost hands");
+    assert!(
+        engine.transcripts().is_empty(),
+        "nothing saved from the lost hands"
+    );
     assert!(!kinds(&w, id).iter().any(|k| k == "transcript_skipped"));
 }
