@@ -20,7 +20,7 @@ use crate::vault::Vault;
 
 /// The event kinds a webhook gets when it names none: a turn ended, a Box or its agent stopped in
 /// a way someone must look at, or the disk under its Boxes ran low or came back.
-const DEFAULT_EVENTS: [&str; 13] = [
+const DEFAULT_EVENTS: &[&str] = &[
     "idled",
     "needs_input",
     "closed",
@@ -65,7 +65,7 @@ pub(super) fn add(
     }
     let events = match events {
         Some(named) => checked_events(named)?,
-        None => DEFAULT_EVENTS.map(str::to_owned).to_vec(),
+        None => DEFAULT_EVENTS.iter().map(|&k| k.to_owned()).collect(),
     };
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| {

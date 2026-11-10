@@ -4,7 +4,7 @@ use super::*;
 use crate::domain::hands::{HandsInput, HandsState};
 use crate::name::BoxHandle;
 
-const PINNED_KINDS: [&str; 20] = [
+const PINNED_KINDS: &[&str] = &[
     "started",
     "rejected",
     "pending",
@@ -503,7 +503,7 @@ fn event_samples_cover_every_variant_with_unique_kinds() {
 fn asserted_kinds_are_real_unique_kinds() {
     let events = all_events();
     let kinds: Vec<_> = events.iter().map(Event::kind).collect();
-    for k in ASSERTED_KINDS {
+    for &k in ASSERTED_KINDS {
         assert!(kinds.contains(&k), "{k}");
         assert_eq!(ASSERTED_KINDS.iter().filter(|x| **x == k).count(), 1, "{k}");
     }

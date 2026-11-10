@@ -195,7 +195,8 @@ fn said_waiting(conn: &dyn Db, id: BoxId, position: u32) -> Result<bool, StoreEr
                 .and_where(
                     Expr::col(Events::Kind).is_in(
                         EVENT_KINDS
-                            .into_iter()
+                            .iter()
+                            .copied()
                             .filter(|k| k.starts_with("machine_")),
                     ),
                 )

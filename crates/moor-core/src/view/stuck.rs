@@ -6,7 +6,7 @@ use super::progress::Happened;
 use super::StuckView;
 
 /// Kinds after which an earlier stuck event no longer counts.
-const CLEARS: [&str; 9] = [
+const CLEARS: &[&str] = &[
     "agent_resumed",
     "turn_done",
     "idled",
