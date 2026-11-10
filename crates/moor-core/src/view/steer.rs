@@ -30,3 +30,15 @@ pub enum Delivery {
     /// It waits in the Box's inbox for this cause, and moor sends it once the agent can take it.
     Queued(QueueCause),
 }
+
+/// Why a queued steer waits, in words for a person, from the `cause` and the `resource` waited
+/// for in its reply: `waiting for room: memory`.
+#[must_use]
+pub fn queued_words(value: &serde_json::Value) -> String {
+    let field = |k: &str| value.get(k).and_then(serde_json::Value::as_str);
+    let cause = field("cause").unwrap_or("busy").replace('_', " ");
+    field("resource").map_or_else(|| cause.clone(), |r| format!("{cause}: {r}"))
+}
+
+#[cfg(test)]
+mod tests;
