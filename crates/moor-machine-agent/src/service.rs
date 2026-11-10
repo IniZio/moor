@@ -177,6 +177,17 @@ impl Manager {
         fs::read_to_string(self.file()).ok() != Some(self.render(service))
     }
 
+    /// Makes the manager read its unit files again; running units are not restarted.
+    ///
+    /// # Errors
+    /// The manager refuses, such as when there is no user bus.
+    pub fn reload(&self) -> Result<(), String> {
+        match self {
+            Self::Systemd { .. } => systemctl(&["daemon-reload"]),
+            Self::Launchd { .. } => Ok(()),
+        }
+    }
+
     /// Writes `service`'s file, makes it start at login, and starts it: anew when the file
     /// changed, else only when it is not running.
     ///

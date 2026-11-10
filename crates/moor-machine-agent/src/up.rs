@@ -6,11 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use moor_core::decide::schedule::default_reserve_mib;
-
 use crate::linked;
 use crate::pair::{self, Ask};
-use crate::pool::{doctor_failures, host_mem_mib};
+use crate::pool::doctor_failures;
 use crate::service::{Manager, Service};
 use crate::settings::{self, Ensured};
 use crate::slice;
@@ -92,16 +90,8 @@ pub fn up(
         None => pair::pair(&server, &ask, dir, say)?,
     };
     let service = service(&ask, crabbox.as_deref(), up.reserve_mib, dir, manager)?;
-    if let (Some(provider), Some(total)) = (&ask.provider, host_mem_mib()) {
-        let reserve = up.reserve_mib.unwrap_or_else(|| default_reserve_mib(total));
-        if slice::install(manager, total, reserve)? {
-            say(&format!(
-                "wrote {} with the Boxes' memory ceiling, {} MiB less than the host",
-                slice::SLICE,
-                reserve
-            ));
-        }
-        slice::tell_provider(manager, &settings::config_path(&up.home), provider, say);
+    if let Some(provider) = &ask.provider {
+        slice::ensure(manager, &up.home, provider, up.reserve_mib, say)?;
     }
     let linked = dir.join(linked::FILE);
     manager.install(&service)?;

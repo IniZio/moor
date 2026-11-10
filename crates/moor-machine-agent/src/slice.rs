@@ -3,6 +3,9 @@
 
 use std::path::Path;
 
+use moor_core::decide::schedule::default_reserve_mib;
+
+use crate::pool::host_mem_mib;
 use crate::service::Manager;
 use crate::settings::{self, Ensured};
 
@@ -43,6 +46,34 @@ pub fn install(manager: &Manager, total_mib: u64, reserve_mib: u64) -> Result<bo
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     std::fs::write(&file, text).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
     Ok(true)
+}
+
+/// Brings the Boxes slice and the provider's setting for it up to date: writes the unit, reloads
+/// the user manager only when the unit changed, then tells the provider. `up` and `run` share it.
+///
+/// A launchd host, or one that cannot say its memory, has nothing to do.
+///
+/// # Errors
+/// The unit cannot be written or the manager cannot reload.
+pub fn ensure(
+    manager: &Manager,
+    home: &Path,
+    provider: &str,
+    reserve_mib: Option<u64>,
+    say: &mut dyn FnMut(&str),
+) -> Result<(), String> {
+    let Some(total) = host_mem_mib() else {
+        return Ok(());
+    };
+    let reserve = reserve_mib.unwrap_or_else(|| default_reserve_mib(total));
+    if install(manager, total, reserve)? {
+        manager.reload()?;
+        say(&format!(
+            "wrote {SLICE} with the Boxes' memory ceiling, {reserve} MiB less than the host"
+        ));
+    }
+    tell_provider(manager, &settings::config_path(home), provider, say);
+    Ok(())
 }
 
 /// Tells the provider to put VM scopes in [`SLICE`], saying what changed.

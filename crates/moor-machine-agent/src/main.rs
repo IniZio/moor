@@ -10,6 +10,7 @@ use moor_client::link::lease::{Boot, Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::service::Manager;
+use moor_machine_agent::slice;
 use moor_machine_agent::up::{self, down, Runtime, Up};
 use moor_machine_agent::{run_with, state_dir, until_stopped, update, Ended, Machine, Pool};
 
@@ -224,6 +225,7 @@ fn run_here(
 ) -> Result<(), String> {
     if let Some(provider) = &pool.runtime {
         apply_settings(provider);
+        keep_slice(provider, pool.reserve_mib);
     }
     let machine = Machine {
         pool: pool.pool(cache_gb),
@@ -241,6 +243,23 @@ fn run_here(
         say(&format!("stopped by {signal}"));
     }
     Ok(())
+}
+
+/// Keeps the Boxes slice in place; the agent runs on without it, and says so.
+fn keep_slice(provider: &str, reserve_mib: Option<u64>) {
+    let home = Machine::from_env().home;
+    let kept = slice::ensure(
+        &Manager::here(&home),
+        &home,
+        provider,
+        reserve_mib,
+        &mut |line| say(line),
+    );
+    if let Err(e) = kept {
+        say(&format!(
+            "error: Boxes on this machine run with no memory ceiling: {e}"
+        ));
+    }
 }
 
 /// Adds what warm starts need to the crabbox user config, saying what changed.

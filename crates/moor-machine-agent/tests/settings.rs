@@ -320,7 +320,12 @@ fn a_run_keeps_an_owners_false() {
         "external:\n  capabilities:\n    checkpoints: false\n  config:\n    checkpoints: false\n";
     std::fs::write(&path, text).unwrap();
     agent(home.path(), &["run", "--runtime", "external"]);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    // A run also adds the Boxes slice; the owner's false stays.
+    let kept = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        kept.replace("    cgroupSlice: \"moorboxes.slice\"\n", ""),
+        text
+    );
 }
 
 #[test]
