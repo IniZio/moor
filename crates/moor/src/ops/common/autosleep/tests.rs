@@ -181,6 +181,16 @@ fn a_working_box_never_sleeps() {
 }
 
 #[test]
+fn a_working_box_past_the_awake_limit_sleeps_marked_as_parked_at_work() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_hours(2) + Duration::from_mins(1));
+    auto_sleep(&f);
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    assert!(row.parked_at_work.is_some());
+}
+
+#[test]
 fn a_held_box_lock_skips_the_sleep_silently() {
     let f = idle();
     pass(&f, LONG);
