@@ -262,8 +262,6 @@ fn move_on(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
                 return Ok(());
             };
             if facts.agent == AgentFact::Dead {
-                // The launch read, which a relaunch by another op since leaves stale; with none
-                // read there is nothing to go by but the live one.
                 let launch = match reading.as_ref().and_then(|r| r.launch) {
                     Some(read) => store.launch(read)?,
                     None => store.live_launch(id)?,
