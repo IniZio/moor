@@ -95,12 +95,12 @@ fn a_finished_turn_and_a_close_are_owed_lines_until_posted() {
 }
 
 #[test]
-fn a_close_moor_gave_up_is_owed_a_line_that_says_why_and_that_the_box_sleeps_again() {
+fn a_close_moor_gave_up_is_owed_a_line_that_says_why() {
     let Watched::Item(WatchItem::Event(mut e)) = event(4, Some(ID), "close_refused") else {
         unreachable!()
     };
     e.payload = json!({"reason": {"refusal": "unsaved", "branch": "b", "ahead": 2, "dirty": 1},
-        "error": "the Box holds work", "slept": true});
+        "error": "the Box holds work"});
     let mut fold = Fold::default();
     fold.take(Watched::Item(WatchItem::Event(e.clone())));
     assert_eq!(fold.given_up.get(&ID), Some(&vec![(4, e.payload.clone())]));
@@ -109,21 +109,38 @@ fn a_close_moor_gave_up_is_owed_a_line_that_says_why_and_that_the_box_sleeps_aga
         close_given_up(&name, &e.payload),
         "Box `slack-1-1` is still open: it holds work that is not saved anywhere (2 unpushed \
          commits and 1 uncommitted file), so its close was not finished. Nothing is lost unless \
-         you confirm. If you still want it closed, say so in this thread. It is asleep again."
+         you confirm. If you still want it closed, say so in this thread."
     );
     let unchecked = json!({"reason": {"refusal": "unchecked", "reason": "no shell"},
-        "error": "x", "slept": false});
+        "error": "x"});
     let line = close_given_up(&name, &unchecked);
     assert!(line.contains("could not check it"), "{line}");
-    assert!(
-        !line.contains("no shell") && !line.contains("asleep"),
-        "{line}"
-    );
-    let failed = close_given_up(
-        &name,
-        &json!({"reason": null, "error": "x", "slept": false}),
-    );
+    assert!(!line.contains("no shell"), "{line}");
+    let failed = close_given_up(&name, &json!({"reason": null, "error": "x"}));
     assert!(failed.contains("could not be finished"), "{failed}");
+}
+
+#[test]
+fn a_given_up_close_line_that_cannot_be_posted_queues_no_notice_and_is_tried_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let feed = feed(dir.path());
+    let db = Db::open(&feed.db_path).unwrap();
+    let row = bound_box(&db);
+    let Watched::Item(WatchItem::Event(mut e)) = event(4, Some(ID), "close_refused") else {
+        unreachable!()
+    };
+    e.payload = json!({"reason": null, "error": "x"});
+    let mut fold = Fold::default();
+    fold.take(Watched::Item(WatchItem::Event(e.clone())));
+    assert!(!feed.lines(&db, &mut fold, &row));
+    assert_eq!(
+        fold.given_up.get(&ID),
+        Some(&vec![(4, e.payload)]),
+        "still owed"
+    );
+    assert!(!db
+        .has_notice(&row, BoxEvent::CloseGivenUp, Some(4))
+        .unwrap());
 }
 
 fn said(cursor: i64, text: &str) -> Watched {
@@ -201,6 +218,34 @@ fn only_a_forced_sleep_and_a_relaunch_with_a_cause_owe_the_thread_a_line() {
     let want = vec![
         (3, lifecycle::Note::AutoSlept),
         (4, lifecycle::Note::Relaunched),
+    ];
+    assert_eq!(fold.notes.get(&ID), Some(&want));
+}
+
+#[test]
+fn only_the_first_asked_sleep_after_a_close_moor_gave_up_owes_an_asleep_again_line() {
+    let mut fold = Fold::default();
+    let at = |cursor, kind: &str, payload| {
+        let Watched::Item(WatchItem::Event(mut e)) = event(cursor, Some(ID), kind) else {
+            unreachable!()
+        };
+        e.payload = payload;
+        Watched::Item(WatchItem::Event(e))
+    };
+    let asked = || json!({"auto": false});
+    let refused = || json!({"reason": null, "error": "x"});
+    fold.take(at(1, "asleep", asked()));
+    fold.take(at(2, "close_refused", refused()));
+    fold.take(at(3, "asleep", asked()));
+    fold.take(at(4, "asleep", asked()));
+    fold.take(at(5, "close_refused", refused()));
+    fold.take(at(6, "woke", json!({})));
+    fold.take(at(7, "asleep", asked()));
+    fold.take(at(8, "close_refused", refused()));
+    fold.take(at(9, "asleep", json!({"auto": true})));
+    let want = vec![
+        (3, lifecycle::Note::AsleepAgain),
+        (9, lifecycle::Note::AutoSlept),
     ];
     assert_eq!(fold.notes.get(&ID), Some(&want));
 }

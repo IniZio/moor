@@ -46,7 +46,16 @@ pub(crate) fn run_with_reason(
     req: &CloseReq,
     reason: Option<String>,
 ) -> Result<CloseView, CommandError> {
-    close_with(cx, req, reason, None)
+    close_with(cx, req, reason, None, false)
+}
+
+/// [`run_with_reason`] for the close a Box still wants; giving it up records `close_refused`.
+pub(crate) fn run_wanted(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: Option<String>,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, reason, None, true)
 }
 
 /// Why a Box someone may still be using must stay open; `None` when it may close.
@@ -59,16 +68,18 @@ pub(crate) fn run_unless_kept(
     req: &CloseReq,
     keep: Keep<'_>,
 ) -> Result<CloseView, CommandError> {
-    close_with(cx, req, None, Some(keep))
+    close_with(cx, req, None, Some(keep), false)
 }
 
 /// The close of `req`; see [`run_unless_kept`] for `keep`. Once the Box's turn is held and `keep`
 /// lets it go, the close is wanted, so a restart or the wanted pass finishes what this cannot.
+/// `tell` records `close_refused` when the close is given up.
 fn close_with(
     cx: &Cx,
     req: &CloseReq,
     reason: Option<String>,
     keep: Option<Keep<'_>>,
+    tell: bool,
 ) -> Result<CloseView, CommandError> {
     let wake = keep.map_or(check::Wake::IfRoom, |_| check::Wake::Never);
     let store = cx.store()?;
@@ -83,7 +94,7 @@ fn close_with(
         force: req.force,
         reason: reason.clone(),
     };
-    wanted::closing(store, row.id, wanted, turn, |waits, turn| {
+    wanted::closing(cx, row.id, wanted, (turn, tell), |waits, turn| {
         close_held(cx, store, req, (row, turn), (reason, wake, waits))
     })
 }

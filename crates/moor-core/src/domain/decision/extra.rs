@@ -21,8 +21,6 @@ pub enum ExtraEvent {
         reason: Option<crate::response::CloseRefusal>,
         /// The failure, in moor's words.
         error: String,
-        /// True when the pass put the Box, which the close woke, back to sleep.
-        slept: bool,
     },
     /// A restart dropped the sleep or suspend moor wanted; its passes decide it again from now.
     WantedDropped,

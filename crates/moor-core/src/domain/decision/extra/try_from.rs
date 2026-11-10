@@ -16,15 +16,9 @@ impl TryFrom<Event> for ExtraEvent {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::DiskLost => Ok(Self::DiskLost),
             Event::Close(CloseEvent::CachesNotSaved) => Ok(Self::CachesNotSaved),
-            Event::Close(CloseEvent::CloseRefused {
-                reason,
-                error,
-                slept,
-            }) => Ok(Self::CloseRefused {
-                reason,
-                error,
-                slept,
-            }),
+            Event::Close(CloseEvent::CloseRefused { reason, error }) => {
+                Ok(Self::CloseRefused { reason, error })
+            }
             Event::WantedDropped => Ok(Self::WantedDropped),
             Event::Ran {
                 run,

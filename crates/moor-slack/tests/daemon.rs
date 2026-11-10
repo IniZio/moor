@@ -19,6 +19,8 @@ mod connect;
 mod feed;
 #[path = "daemon/front.rs"]
 mod front;
+#[path = "daemon/given_up.rs"]
+mod given_up;
 #[path = "daemon/identity.rs"]
 mod identity;
 #[path = "daemon/idle.rs"]

@@ -110,3 +110,25 @@ fn a_bare_number_is_one_positive_number_beside_mentions_only() {
         assert_eq!(bare_number(text), None, "{text:?}");
     }
 }
+
+#[test]
+fn a_notice_that_tells_the_coordinator_to_close_names_a_parameter_its_close_box_takes() {
+    let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
+    let close_box = crate::coordinator::tools::SPECS
+        .iter()
+        .find(|s| s.name == "close_box")
+        .unwrap();
+    let input = (close_box.input)();
+    for event in [
+        BoxEvent::Unsaved { ahead: 1, dirty: 0 },
+        BoxEvent::CloseGivenUp,
+    ] {
+        let notice = event.notice(&name);
+        let (_, after) = notice.split_once("close_box with ").unwrap();
+        let param = after.split_whitespace().next().unwrap();
+        assert!(
+            input.pointer(&format!("/properties/{param}")).is_some(),
+            "{notice} names {param}, which close_box does not take: {input}"
+        );
+    }
+}
