@@ -5,7 +5,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
-use crate::store::{BoxRow, LaunchEnd, Store};
+use crate::store::{BoxRow, LaunchEnd, Store, StoreError};
 
 /// Ends the live agent's terminal and its session, with the digest of its saved transcript.
 ///
@@ -29,7 +29,12 @@ pub(crate) fn stop_agent(
         digest,
         ..LaunchEnd::default()
     };
-    store.end_launch(row.id, session.id, &end)?;
+    match store.end_launch(row.id, session.id, &end) {
+        Ok(()) => {}
+        // Another op ended the launch meanwhile: the agent is stopped already.
+        Err(StoreError::Stale { .. }) => return Ok(false),
+        Err(e) => return Err(e.into()),
+    }
     store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {
         sessions: vec![session.session_ref],
     }))?;
