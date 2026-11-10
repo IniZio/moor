@@ -368,7 +368,7 @@ fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandEr
 /// Move an idle agent's session to working: the steer starts a turn, and the settle that sees
 /// that turn end is what tells the requester. A session in any other state is left as it is.
 fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    if row.intent.is_some() || !row.session.is_quiet() {
+    if row.effect.is_some() || !row.session.is_quiet() {
         return Ok(());
     }
     match store.apply(Decision::new(row.id).session(SessionInput::AgentBusy)) {

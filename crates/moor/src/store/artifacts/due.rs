@@ -22,17 +22,17 @@ fn newest_turn_event(filter: Option<Expr>) -> SelectStatement {
         .take()
 }
 
-/// Ready, handled, intent-free open Boxes.
+/// Ready, handled open Boxes with no effect in flight.
 fn collectable(q: &mut SelectStatement) -> &mut SelectStatement {
     join_current(join_state(q))
         .and_where(Expr::col((BoxState::Table, BoxState::State)).eq("ready"))
         .and_where(Expr::col((BoxHands::Table, BoxHands::Handle)).is_not_null())
-        .and_where(Expr::col((BoxState::Table, BoxState::IntentKind)).is_null())
+        .and_where(Expr::col((BoxState::Table, BoxState::Effect)).is_null())
         .order_by((Boxes::Table, Boxes::Id), Order::Asc)
 }
 
 impl Store {
-    /// Ready, handled, intent-free open Boxes whose newest turn-end event is past their
+    /// Ready, handled open Boxes with no effect in flight whose newest turn-end event is past their
     /// collection cursor, as (Box, that event id), ordered by Box id.
     pub(crate) fn artifacts_due(&self) -> Result<Vec<(BoxId, i64)>, StoreError> {
         let per_box = newest_turn_event(None)
@@ -62,7 +62,7 @@ impl Store {
         rows.collect()
     }
 
-    /// Ready, handled, intent-free open Boxes, by Box id; a Box mid-turn is among them.
+    /// Ready, handled open Boxes with no effect in flight, by Box id; a Box mid-turn is among them.
     pub(crate) fn artifacts_ready(&self) -> Result<Vec<BoxId>, StoreError> {
         let mut q = Query::select();
         q.column((Boxes::Table, Boxes::Id)).from(Boxes::Table);

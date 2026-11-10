@@ -430,7 +430,7 @@ fn a_stopped_box_whose_machine_is_gone_gets_a_new_one_and_leaves_the_queue() {
         "{:?}",
         w.cx.take_warnings()
     );
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
 }
 
 #[test]

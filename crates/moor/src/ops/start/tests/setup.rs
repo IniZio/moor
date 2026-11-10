@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::boxscript::detached::attached_script;
 use moor_core::boxscript::setup::setup_script;
-use moor_core::domain::decision::{Decision, Intent};
+use moor_core::domain::decision::{Decision, Effect};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
@@ -374,7 +374,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with
 }
 
 #[test]
-fn setup_holds_the_setup_intent_and_clears_it_after() {
+fn setup_holds_the_setup_effect_and_ends_it_after() {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, Some("setup: [a]\n"));
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -382,13 +382,13 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
         let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
-        sink.lock().unwrap().push(row.intent);
+        sink.lock().unwrap().push(row.effect);
     });
     let v = run(&w.cx, &start_req()).unwrap();
     // The clone and the setup script both run under it.
-    assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup); 2]);
+    assert_eq!(*seen.lock().unwrap(), [Some(Effect::Setup); 2]);
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    assert_eq!(row.unwrap().unwrap().intent, None);
+    assert_eq!(row.unwrap().unwrap().effect, None);
 }
 
 /// Starts `demo` like [`start_with`] and gives back its Box id; `driver`'s results decide
@@ -482,7 +482,7 @@ fn a_failed_clone_aborts_the_start_without_launching_the_agent() {
         let id = BoxId::new(1);
         let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
         assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-        assert!(row.intent.is_none() && row.setup_failed_at.is_some());
+        assert!(row.effect.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));
         let execs = w.driver.execs();
         assert_eq!(execs.len(), 1, "only the clone ran");

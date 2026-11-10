@@ -1,16 +1,16 @@
 //! Run records: begin, finish, in-flight detection with ghost healing, and recorded-run lookups.
 
-use moor_core::domain::decision::{Intent, IntentChange};
+use moor_core::domain::decision::Effect;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, RunId, Sha};
 use moor_schema::tables::{BoxState, Runs};
-use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement, Value};
 
-use super::apply::{insert_event, intent_sets, update};
+use super::apply::{insert_event, update};
 use super::follow::{self, FollowClaim};
 use super::{load_box, Store, StoreError};
-use crate::store::db::{DbExt as _, OptionalExtension, Row};
+use crate::store::db::{DbExt as _, OptionalExtension, Row, Tx};
 
 /// A run to record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,7 +117,9 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
 }
 
 impl Store {
-    /// Record a run start: run row, `Running` intent and `run_started` event.
+    /// Record a run start: run row, run effect and `run_started` event. The effect replaces only
+    /// none or an older run's: a run holds the Box past its owner's turn, so an op may begin
+    /// another effect while it runs, and that one stays.
     ///
     /// The returned claim keeps the row in flight until it drops. It is taken before the row
     /// commits, so no reader ever sees the new row unclaimed.
@@ -159,16 +161,7 @@ impl Store {
                 .returning_col(Runs::Id),
             |r| r.get(0).map(RunId::new),
         )?;
-        let intent = IntentChange::Set(Intent::Running { run });
-        let mut sets = intent_sets(intent, now);
-        sets.push((BoxState::UpdatedAt, now.as_millis().into()));
-        update(
-            &tx,
-            Query::update()
-                .table(BoxState::Table)
-                .and_where(Expr::col(BoxState::Box).eq(box_id.get())),
-            &sets,
-        )?;
+        begin_effect(&tx, box_id, run, now)?;
         insert_event(&tx, box_id, &Event::RunStarted { run }, now)?;
         let claim = FollowClaim::take(self.follow_path(run))?;
         tx.commit()?;
@@ -176,7 +169,7 @@ impl Store {
         Ok((run, claim))
     }
 
-    /// Record a run end: finish the row, clear its intent, emit `ran`.
+    /// Record a run end: finish the row, end its effect, emit `ran`.
     ///
     /// A run that already finished is left untouched and emits nothing.
     pub(crate) fn finish_run(&self, id: RunId, out: RunOutcome) -> Result<(), StoreError> {
@@ -208,17 +201,7 @@ impl Store {
         if changed == 0 {
             return Ok(());
         }
-        let mut clear = intent_sets(IntentChange::Clear, now);
-        clear.push((BoxState::UpdatedAt, now.as_millis().into()));
-        update(
-            &tx,
-            Query::update()
-                .table(BoxState::Table)
-                .and_where(Expr::col(BoxState::Box).eq(box_id.get()))
-                .and_where(Expr::col(BoxState::IntentKind).eq("running"))
-                .and_where(Expr::col(BoxState::IntentRun).eq(id.get())),
-            &clear,
-        )?;
+        end_effect(&tx, box_id, id, now)?;
         let ran = Event::Ran {
             run: Some(id),
             exit: out.exit,
@@ -233,7 +216,7 @@ impl Store {
 
     /// Record a run refused before any run row existed: one `ran` event with no run id.
     ///
-    /// Writes no run row and leaves the box's intent untouched.
+    /// Writes no run row and leaves the box's effect untouched.
     pub(crate) fn refused_run(&self, box_id: BoxId) -> Result<(), StoreError> {
         self.check_write(box_id);
         let now = self.now();
@@ -355,6 +338,50 @@ impl Store {
             })
             .collect())
     }
+}
+
+/// Records run `run` as Box `box_id`'s effect in flight, over none or an older run's.
+fn begin_effect(tx: &Tx<'_>, box_id: BoxId, run: RunId, now: Ts) -> Result<(), StoreError> {
+    let effect = Effect::Run { run };
+    let sets = [
+        (BoxState::Effect, effect.as_str().into()),
+        (BoxState::EffectAttempt, 1.into()),
+        (BoxState::EffectRun, run.get().into()),
+        (BoxState::EffectAt, now.as_millis().into()),
+        (BoxState::UpdatedAt, now.as_millis().into()),
+    ];
+    update(
+        tx,
+        Query::update()
+            .table(BoxState::Table)
+            .and_where(Expr::col(BoxState::Box).eq(box_id.get()))
+            .and_where(
+                Expr::col(BoxState::Effect)
+                    .is_null()
+                    .or(Expr::col(BoxState::Effect).eq(effect.as_str())),
+            ),
+        &sets,
+    )
+}
+
+/// Ends Box `box_id`'s effect while it is run `run`; another effect stays.
+fn end_effect(tx: &Tx<'_>, box_id: BoxId, run: RunId, now: Ts) -> Result<(), StoreError> {
+    let clear = [
+        (BoxState::Effect, Value::String(None)),
+        (BoxState::EffectAttempt, Value::BigInt(None)),
+        (BoxState::EffectRun, Value::BigInt(None)),
+        (BoxState::EffectAt, Value::BigInt(None)),
+        (BoxState::UpdatedAt, now.as_millis().into()),
+    ];
+    update(
+        tx,
+        Query::update()
+            .table(BoxState::Table)
+            .and_where(Expr::col(BoxState::Box).eq(box_id.get()))
+            .and_where(Expr::col(BoxState::Effect).eq("run"))
+            .and_where(Expr::col(BoxState::EffectRun).eq(run.get())),
+        &clear,
+    )
 }
 
 #[cfg(test)]

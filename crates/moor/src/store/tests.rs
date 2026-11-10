@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{
-    Decision, ExtraEvent, Field, Fields, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+    Decision, Effect, EffectChange, ExtraEvent, Field, Fields, HandsFields, NewBox, SpecFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -29,7 +29,6 @@ mod node_count;
 mod open_boxes;
 mod poison;
 mod repos;
-mod rollback_pid;
 mod sleep_reason;
 mod vm_fence;
 mod wanted_effect;
@@ -320,21 +319,21 @@ fn setup_failed_at_set_and_clear_round_trip() {
 }
 
 #[test]
-fn intent_set_clear_and_run_lifecycle() {
+fn effect_next_end_and_run_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
     store
-        .apply(Decision::new(id).intent(IntentChange::Set(Intent::Provisioning)))
+        .apply(Decision::new(id).effect(EffectChange::Next(Effect::Acquire)))
         .unwrap();
     assert_eq!(
-        store.box_row(id).unwrap().unwrap().intent,
-        Some(Intent::Provisioning)
+        store.box_row(id).unwrap().unwrap().effect,
+        Some(Effect::Acquire)
     );
     store
-        .apply(Decision::new(id).intent(IntentChange::Clear))
+        .apply(Decision::new(id).effect(EffectChange::End))
         .unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 
     let (run, _claim) = store
         .begin_run(NewRun {
@@ -346,13 +345,13 @@ fn intent_set_clear_and_run_lifecycle() {
         })
         .unwrap();
     assert_eq!(
-        store.box_row(id).unwrap().unwrap().intent,
-        Some(Intent::Running { run })
+        store.box_row(id).unwrap().unwrap().effect,
+        Some(Effect::Run { run })
     );
     store
         .finish_run(run, RunOutcome::ended(Some(3), false))
         .unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
     let events = store.events(id, 100).unwrap();
     let ran = events.last().unwrap();
     assert_eq!(ran.kind, "ran");

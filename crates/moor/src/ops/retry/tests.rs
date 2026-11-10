@@ -448,7 +448,7 @@ fn a_failed_setup_line_leaves_the_box_setup_failed_and_names_the_line() {
     let id = started(&w);
     let after = row(&w, id);
     assert_eq!(after.lifecycle, BoxLifecycle::SetupFailed);
-    assert!(after.setup_failed_at.is_some() && after.intent.is_none());
+    assert!(after.setup_failed_at.is_some() && after.effect.is_none());
     assert_eq!(failed_line(&w, id).as_deref(), Some("prep-one"));
 }
 
@@ -542,7 +542,7 @@ fn a_ready_box_whose_relaunch_fails_a_line_holds_in_setup_failed_with_no_agent()
     let (w, engine, id) = relaunch_failing_a_line();
     let after = row(&w, id);
     assert_eq!(after.lifecycle, BoxLifecycle::SetupFailed);
-    assert!(after.intent.is_none());
+    assert!(after.effect.is_none());
     assert_eq!(failed_line(&w, id).as_deref(), Some("run-two"));
     assert_eq!(acquires(&w), 2, "one relaunch");
     assert!(engine.launches().is_empty(), "no agent on the new machine");

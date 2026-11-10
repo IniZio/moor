@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, Intent, NewBox, SpecFields};
+use moor_core::domain::decision::{Decision, Effect, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, RunId, Sha};
 
@@ -172,7 +172,7 @@ fn unclaimed_run_is_interrupted_once() {
 
     assert!(store.in_flight_run(box_id).unwrap().is_none());
     assert_eq!(ran_events(&store, box_id), 1);
-    assert_eq!(store.box_row(box_id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(box_id).unwrap().unwrap().effect, None);
     let events = store.events(box_id, 100).unwrap();
     assert_eq!(
         events.last().unwrap().payload,
@@ -216,7 +216,7 @@ fn finishing_a_finished_run_changes_nothing() {
 }
 
 #[test]
-fn healing_keeps_a_running_intent_of_another_run() {
+fn healing_keeps_the_run_effect_of_another_run() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let box_id = add(&store, "t");
@@ -227,8 +227,8 @@ fn healing_keeps_a_running_intent_of_another_run() {
     assert_eq!(seen.id, new);
     assert_eq!(ran_events(&store, box_id), 1);
     assert_eq!(
-        store.box_row(box_id).unwrap().unwrap().intent,
-        Some(Intent::Running { run: new })
+        store.box_row(box_id).unwrap().unwrap().effect,
+        Some(Effect::Run { run: new })
     );
     assert_ne!(old, new);
 }
@@ -295,8 +295,8 @@ fn refused_run_emits_one_ran_event_without_a_run() {
     assert_eq!(payload["interrupted"], false);
     assert!(store.last_run(box_id).unwrap().is_none());
     assert_eq!(
-        store.box_row(box_id).unwrap().unwrap().intent,
-        before.intent
+        store.box_row(box_id).unwrap().unwrap().effect,
+        before.effect
     );
 }
 
@@ -311,8 +311,8 @@ fn refused_run_leaves_an_in_flight_run_alone() {
     assert_eq!(live.id, run);
     assert_eq!(live.finished_at, None);
     assert_eq!(
-        store.box_row(box_id).unwrap().unwrap().intent,
-        Some(Intent::Running { run })
+        store.box_row(box_id).unwrap().unwrap().effect,
+        Some(Effect::Run { run })
     );
     assert_eq!(ran_events(&store, box_id), 1);
 }

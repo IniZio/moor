@@ -5,7 +5,7 @@ use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{
-    Decision, ExtraEvent, Field, Fields, HandsFields, Intent, IntentChange,
+    Decision, Effect, EffectChange, ExtraEvent, Field, Fields, HandsFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
@@ -91,8 +91,8 @@ pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
 fn entry_for(row: &BoxRow) -> Option<Entry> {
     let box_state = row.hands.as_ref().map(|b| b.state);
     match (row.lifecycle, box_state) {
-        (BoxLifecycle::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
-        (BoxLifecycle::Pending, None) if row.intent.is_none() => Some(Entry::Waiting),
+        (BoxLifecycle::Checking, None) if row.effect.is_none() => Some(Entry::Fresh),
+        (BoxLifecycle::Pending, None) if row.effect.is_none() => Some(Entry::Waiting),
         (BoxLifecycle::SetupFailed, Some(HandsState::Failed | HandsState::Gone)) => {
             Some(Entry::Retry)
         }
@@ -103,11 +103,15 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
 }
 
 /// What marks Box `id`, with hands `inc`, as wanting a machine from `provider`. A takeover only
-/// claims the acquire already under way.
+/// claims the acquire already under way, and an acquire a restart cut goes again as the same
+/// effect, whose attempt the cut already counted.
 fn requested((id, inc): (BoxId, HandsInc), entry: Entry, provider: &ProviderId) -> Decision {
-    let claim = IntentChange::Set(Intent::Provisioning);
+    let claim = match entry {
+        Entry::Adopt | Entry::Again => EffectChange::Keep,
+        _ => EffectChange::Next(Effect::Acquire),
+    };
     if entry == Entry::Adopt {
-        return Decision::new(id).intent(claim);
+        return Decision::new(id);
     }
     let mut d = Decision::new(id);
     d.lifecycle_input = entry.begin();
@@ -124,7 +128,7 @@ fn requested((id, inc): (BoxId, HandsInc), entry: Entry, provider: &ProviderId) 
                 ..HandsFields::default()
             },
         )
-        .intent(claim)
+        .effect(claim)
 }
 
 /// Admits the Box, acquires its machine and records the outcome.
@@ -189,7 +193,7 @@ pub(crate) fn provision(
             }
             Ok(done)
         }
-        // The next process takes it over, as the intent stays.
+        // The next process takes it over, as the acquire stays in flight.
         Err(e) if cx.env().draining().is_cancelled() && goes_on_after(cx, &req, &e) => {
             Err(setup::Released.into())
         }
@@ -259,7 +263,7 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
-/// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
+/// Runs repo setup in a Box under the setup effect and records how it ended, ending the effect.
 ///
 /// `advance` moves the Box on to working; a failed line or agent install moves any Box to
 /// setup-failed, one that was already working included. The machine may have just come up, so
@@ -320,7 +324,7 @@ fn run_and_record(
             steps_pending_at: Field::Clear,
             ..Fields::default()
         })
-        .intent(IntentChange::Clear);
+        .effect(EffectChange::End);
     store.apply(done)?;
     Ok(Provisioned {
         setup: run,

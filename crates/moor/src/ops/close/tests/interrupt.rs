@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange};
 use moor_core::seam::clock::Ts;
 use moor_core::ErrorKind;
 
@@ -16,13 +16,13 @@ use crate::env::Cancel;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 
-/// A Ready Box whose setup a start is running: the setup intent is recorded and the start holds
+/// A Ready Box whose setup a start is running: the setup effect is in flight and the start holds
 /// the Box's turn until the returned hold drops, with `cancel` as its stop flag.
 fn in_setup(cancel: &Cancel) -> (Fx, Held) {
     let f = fx_with(FakeDriver::new());
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Setup)))
+        .apply(Decision::new(f.id).effect(EffectChange::Next(Effect::Setup)))
         .unwrap();
     let held =
         f.cx.owners_arc()

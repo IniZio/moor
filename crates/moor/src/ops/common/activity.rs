@@ -253,7 +253,7 @@ fn note_agent_session(
 /// transcript of an agent seen exited and end its session, and return the fate it answered.
 ///
 /// An asleep Box is not moved: nothing was read from it, and a wake asks after its agent. A Box
-/// that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
+/// that an op holds, or that has an effect in flight, is not moved. A Working Box goes Idle
 /// only when the reading `may_quiet` and is not busy; an Idle Box goes back to Working when the
 /// reading shows work. If the row changed since the read, the store refuses the step.
 ///
