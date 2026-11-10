@@ -471,3 +471,61 @@ fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_vms() {
     assert!(unit.contains("\"run\" \"--allow-exec\""), "{unit}");
     assert!(!unit.contains("--runtime"), "{unit}");
 }
+
+fn host_total_mib() -> u64 {
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap();
+    let kib: u64 = info
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))
+        .unwrap()
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .unwrap();
+    kib / 1024
+}
+
+#[test]
+fn up_writes_the_boxes_slice_and_a_new_reserve_rewrites_it() {
+    let w = world();
+    assert!(w.up().ok);
+    let slice = w.units().join("moorboxes.slice");
+    let total = host_total_mib();
+    let default = 4096 + total / 10;
+    let text = std::fs::read_to_string(&slice).unwrap();
+    assert!(
+        text.contains(&format!("MemoryHigh={}M\n", total - default)),
+        "{text}"
+    );
+    assert!(text.contains("CPUWeight=50"), "{text}");
+
+    let again = w.agent(&[
+        "up",
+        "--server",
+        &w.gate,
+        "--name",
+        "hv",
+        "--reserve-mib",
+        "2048",
+    ]);
+    assert!(again.ok, "{}", again.said);
+    let text = std::fs::read_to_string(&slice).unwrap();
+    assert!(
+        text.contains(&format!("MemoryHigh={}M\n", total - 2048)),
+        "{text}"
+    );
+    let unit = std::fs::read_to_string(w.unit()).unwrap();
+    assert!(unit.contains("\"--reserve-mib\" \"2048\""), "{unit}");
+    assert!(w.log("systemctl.log").matches("daemon-reload").count() >= 2);
+}
+
+#[test]
+fn up_for_a_machine_that_hosts_no_boxes_writes_no_slice() {
+    let w = world();
+    assert!(
+        w.agent(&["up", "--server", &w.gate, "--name", "hv", "--allow-exec"])
+            .ok
+    );
+    assert!(!w.units().join("moorboxes.slice").exists());
+}

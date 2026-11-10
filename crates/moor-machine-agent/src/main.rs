@@ -100,6 +100,9 @@ struct UpFlags {
     /// The most Boxes this machine holds at once; memory may allow fewer.
     #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..))]
     max_boxes: u16,
+    /// Keep this many MiB of memory for the host; Boxes get the rest. Default: 4096 plus a tenth.
+    #[arg(long, value_name = "MIB", conflicts_with = "allow_exec")]
+    reserve_mib: Option<u64>,
     /// The crabbox program.
     #[arg(long, default_value = "crabbox")]
     crabbox: PathBuf,
@@ -118,6 +121,7 @@ fn up_here(flags: UpFlags) -> ExitCode {
         name: flags.name.unwrap_or_else(host_name),
         labels: flags.labels,
         max_boxes: flags.max_boxes,
+        reserve_mib: flags.reserve_mib,
         runtime,
         crabbox: flags.crabbox,
         home: home.clone(),

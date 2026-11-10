@@ -6,11 +6,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use moor_core::decide::schedule::default_reserve_mib;
+
 use crate::linked;
 use crate::pair::{self, Ask};
-use crate::pool::doctor_failures;
+use crate::pool::{doctor_failures, host_mem_mib};
 use crate::service::{Manager, Service};
 use crate::settings::{self, Ensured};
+use crate::slice;
 use crate::{read_key, State, KEY};
 
 /// How many seconds `up` waits for the service's first link.
@@ -38,6 +41,8 @@ pub struct Up {
     pub labels: Vec<String>,
     /// How many Boxes may hold the machine at once.
     pub max_boxes: u16,
+    /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
+    pub reserve_mib: Option<u64>,
     /// What the machine offers.
     pub runtime: Runtime,
     /// The crabbox program.
@@ -86,7 +91,17 @@ pub fn up(
         }
         None => pair::pair(&server, &ask, dir, say)?,
     };
-    let service = service(&ask, crabbox.as_deref(), dir, manager)?;
+    let service = service(&ask, crabbox.as_deref(), up.reserve_mib, dir, manager)?;
+    if let (Some(_), Some(total)) = (&ask.provider, host_mem_mib()) {
+        let reserve = up.reserve_mib.unwrap_or_else(|| default_reserve_mib(total));
+        if slice::install(manager, total, reserve)? {
+            say(&format!(
+                "wrote {} with the Boxes' memory ceiling, {} MiB less than the host",
+                slice::SLICE,
+                reserve
+            ));
+        }
+    }
     let linked = dir.join(linked::FILE);
     manager.install(&service)?;
     if matches!(manager, Manager::Systemd { .. }) && !lingers() {
@@ -224,6 +239,7 @@ fn paired(dir: &Path, server: &str) -> Result<Option<State>, String> {
 fn service(
     ask: &Ask,
     crabbox: Option<&Path>,
+    reserve_mib: Option<u64>,
     dir: &Path,
     manager: &Manager,
 ) -> Result<Service, String> {
@@ -246,6 +262,9 @@ fn service(
             crabbox.to_string_lossy().into_owned(),
         ]),
         _ => args.push("--allow-exec".to_owned()),
+    }
+    if let (Some(_), Some(mib)) = (&ask.provider, reserve_mib) {
+        args.extend(["--reserve-mib".to_owned(), mib.to_string()]);
     }
     args.push("--auto-update".to_owned());
     Ok(Service {

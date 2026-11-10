@@ -28,6 +28,7 @@ mod release;
 mod serve;
 pub mod service;
 pub mod settings;
+pub mod slice;
 mod status;
 mod stop;
 mod sweep;
