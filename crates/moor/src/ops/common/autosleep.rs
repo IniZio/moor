@@ -6,10 +6,11 @@
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Wanted};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, HandsFields, Wanted};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
 use moor_core::{ErrorKind, LaunchId, Warning};
 
@@ -158,14 +159,16 @@ fn sleep_now(
     let Some(parked) = sleep_parked(cx, store, row, &handle, settled)? else {
         return Ok(());
     };
-    match unless_stale(cx, store.apply(recorded(row, parked))) {
+    match unless_stale(cx, store.apply(recorded(row, parked, cx.clock().now()))) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
 
-/// What records the sleep of `row` that `parked` came to.
-fn recorded(row: &BoxRow, parked: Parked) -> Decision {
+/// What records the sleep of `row` that `parked` came to at `now`. A sleep at the awake limit
+/// cuts a working agent, which `row`, read before its Session was made quiet, still shows.
+fn recorded(row: &BoxRow, parked: Parked, now: Ts) -> Decision {
+    let at_work = (!row.session.is_quiet()).then_some(now.as_millis());
     let inc = row.hands_inc();
     let refusal = |sleep_reason| HandsFields {
         sleep_reason,
@@ -179,7 +182,11 @@ fn recorded(row: &BoxRow, parked: Parked) -> Decision {
                 reason: None,
             })
             .hands_input(inc, HandsInput::Sleep)
-            .hands(inc, refusal(Field::Clear)),
+            .hands(inc, refusal(Field::Clear))
+            .set(Fields {
+                parked_at_work: at_work.map_or(Field::Keep, Field::Set),
+                ..Fields::default()
+            }),
         SleepOutcome::CannotSleep(reason) => Decision::new(row.id)
             .hands(inc, refusal(Field::Set(reason.clone())))
             .event(ExtraEvent::StaysUp { reason }),
