@@ -13,7 +13,7 @@ use super::{load_box, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
 
 /// The `launches` columns [`launch_from_row`] reads, in order.
-const LAUNCH_COLUMNS: [Launches; 9] = [
+const LAUNCH_COLUMNS: [Launches; 14] = [
     Launches::Id,
     Launches::Box,
     Launches::SessionRef,
@@ -23,6 +23,11 @@ const LAUNCH_COLUMNS: [Launches; 9] = [
     Launches::TranscriptDigest,
     Launches::RegisteredAgentSession,
     Launches::Session,
+    Launches::Cause,
+    Launches::HandsInc,
+    Launches::StalledAt,
+    Launches::UnreachableSince,
+    Launches::ExitSaveAt,
 ];
 
 /// The `launches.holder` value of every agent moor starts: herdr-core.
@@ -49,6 +54,16 @@ pub(crate) struct Launch {
     pub(crate) registered_agent_session: Option<String>,
     /// The Box's Session current when the agent started.
     pub(crate) session: Option<i64>,
+    /// Why moor relaunched the agent on its own; none for a start someone asked for.
+    pub(crate) cause: Option<String>,
+    /// The hands the agent started on.
+    pub(crate) hands_inc: Option<i64>,
+    /// When the agent's open stall began; none while it is not stalled.
+    pub(crate) stalled_at: Option<Ts>,
+    /// When the Box first failed to answer about the agent since its link was last restored.
+    pub(crate) unreachable_since: Option<Ts>,
+    /// When the save of the agent's transcript at its exit ran, failed or was skipped.
+    pub(crate) exit_save_at: Option<Ts>,
 }
 
 impl Store {
@@ -343,6 +358,11 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
         transcript_digest: r.get(6)?,
         registered_agent_session: r.get(7)?,
         session: r.get(8)?,
+        cause: r.get(9)?,
+        hands_inc: r.get(10)?,
+        stalled_at: r.get::<_, Option<i64>>(11)?.map(Ts::from_millis),
+        unreachable_since: r.get::<_, Option<i64>>(12)?.map(Ts::from_millis),
+        exit_save_at: r.get::<_, Option<i64>>(13)?.map(Ts::from_millis),
     })
 }
 
