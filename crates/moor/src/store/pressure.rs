@@ -116,10 +116,14 @@ impl Store {
         Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
     }
 
-    /// Marks Box `id` to resume first, as suspended at `at`, unix seconds; `None` clears it.
+    /// Marks Box `id` to resume first, as suspended at `at`, unix seconds; `None` clears it and the
+    /// note its agent was owed for that suspension.
     pub(crate) fn set_resume_first(&self, id: BoxId, at: Option<i64>) -> Result<(), StoreError> {
         self.writer()
             .run(state_update(id).value(BoxState::ResumeFirstAt, at))?;
+        if at.is_none() {
+            self.drop_suspended_note(id)?;
+        }
         Ok(())
     }
 

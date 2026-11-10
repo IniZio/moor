@@ -61,13 +61,8 @@ pub(super) fn note_stall(
     else {
         return Ok(());
     };
-    let stalled = store.newest_event_of(row.id, "agent_stalled")?;
-    let open = match &stalled {
-        Some(s) => store
-            .newest_event_of(row.id, "agent_resumed")?
-            .is_none_or(|r| r.id < s.id),
-        None => false,
-    };
+    let stalled = store.live_launch(row.id)?.and_then(|l| l.stalled_at);
+    let open = stalled.is_some();
     let working = matches!(
         reading.activity,
         Some(Activity {
@@ -85,12 +80,12 @@ pub(super) fn note_stall(
             let stalled = ExtraEvent::AgentStalled { doing, quiet_secs };
             apply_read(cx, store, reading.decision(row.id).event(stalled))?;
         }
-        (None, Some(s)) if open && at > s.ts => {
-            let before = s
-                .payload
-                .get("quiet_secs")
-                .and_then(serde_json::Value::as_u64);
-            let since = u64::try_from((at.as_millis() - s.ts.as_millis()) / 1000).unwrap_or(0);
+        (None, Some(s)) if at > s => {
+            // The quiet before the stall is only reported, so its event is read for the number.
+            let before = store
+                .newest_event_of(row.id, "agent_stalled")?
+                .and_then(|e| e.payload.get("quiet_secs")?.as_u64());
+            let since = u64::try_from((at.as_millis() - s.as_millis()) / 1000).unwrap_or(0);
             let resumed = ExtraEvent::AgentResumed {
                 quiet_secs: before.unwrap_or(0) + since,
             };

@@ -14,9 +14,6 @@ use crate::store::Store;
 /// An agent that is gone again this soon after a relaunch is not relaunched again.
 const RELAUNCH_GUARD: Duration = Duration::from_secs(60);
 
-/// Recent events searched for the last relaunch.
-const RECENT_EVENTS: usize = 50;
-
 /// How a gone agent was brought back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Revived {
@@ -144,9 +141,6 @@ fn relaunched_recently(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, Comman
     let now = cx.clock().now().as_millis();
     let window = i64::try_from(RELAUNCH_GUARD.as_millis()).unwrap_or(i64::MAX);
     Ok(store
-        .events(id, RECENT_EVENTS)?
-        .iter()
-        .rev()
-        .find(|e| e.kind == "relaunched")
-        .is_some_and(|e| now.saturating_sub(e.ts.as_millis()) < window))
+        .last_caused_launch(id)?
+        .is_some_and(|at| now.saturating_sub(at.as_millis()) < window))
 }

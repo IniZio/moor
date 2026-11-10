@@ -205,20 +205,6 @@ fn put_to_sleep_ended(f: &Fx) {
     f.cx.store().unwrap().apply(d).unwrap();
 }
 
-/// Records `n` automatic relaunches of the agent of Box `f`.
-fn record_relaunches(f: &Fx, n: usize) {
-    for _ in 0..n {
-        let event = ExtraEvent::Relaunched {
-            prompt: None,
-            cause: Some("wake".to_owned()),
-        };
-        f.cx.store()
-            .unwrap()
-            .apply(Decision::new(f.id).event(event))
-            .unwrap();
-    }
-}
-
 fn kinds(f: &Fx, kind: &str) -> Vec<serde_json::Value> {
     let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
     rows.into_iter()
@@ -231,7 +217,7 @@ fn kinds(f: &Fx, kind: &str) -> Vec<serde_json::Value> {
 fn a_steer_after_three_automatic_relaunches_within_ten_minutes_waits_as_capped() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
-    record_relaunches(&f, 3);
+    relaunch_launches(&f, 3);
     f.cx.clock().sleep(Duration::from_secs(90));
     queued(&f, "hi", QueueCause::RelaunchCapped);
     f.cx.take_warnings();
@@ -254,7 +240,7 @@ fn a_steer_after_three_automatic_relaunches_within_ten_minutes_waits_as_capped()
 fn relaunches_older_than_ten_minutes_do_not_count() {
     let engine = FakeEngine::new();
     let f = resumable(engine.probes("agent-1", agent::gone()));
-    record_relaunches(&f, 3);
+    relaunch_launches(&f, 3);
     f.cx.clock().sleep(Duration::from_mins(11));
     queued(&f, "hi", QueueCause::Relaunching);
     pass(&f);
@@ -301,4 +287,53 @@ fn a_steer_refused_every_time_while_the_agent_still_runs_fails_without_naming_a_
     assert!(!message.contains("of its relaunch"), "{message}");
     assert!(f.engine.launches().is_empty(), "no second agent");
     assert_ne!(session_state(&f), SessionState::Ended);
+}
+
+/// Records `n` automatic relaunches of the agent of Box `f`, each a launch of its own.
+fn relaunch_launches(f: &Fx, n: usize) {
+    let store = f.cx.store().unwrap();
+    for _ in 0..n {
+        store.begin_launch(f.id, "agent-1").unwrap();
+        let event = ExtraEvent::Relaunched {
+            prompt: None,
+            cause: Some("wake".to_owned()),
+        };
+        store.apply(Decision::new(f.id).event(event)).unwrap();
+    }
+}
+
+#[test]
+fn the_relaunch_cap_holds_with_the_box_events_deleted() {
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
+    relaunch_launches(&f, 3);
+    f.cx.store().unwrap().forget_events(f.id);
+    f.cx.clock().sleep(Duration::from_secs(90));
+    queued(&f, "hi", QueueCause::RelaunchCapped);
+    pass(&f);
+    assert!(f.engine.launches().is_empty(), "no agent was launched");
+    assert_eq!(kinds(&f, "relaunch_capped").len(), 1);
+    pass(&f);
+    assert_eq!(kinds(&f, "relaunch_capped").len(), 1, "recorded once");
+}
+
+#[test]
+fn the_relaunch_guard_fires_with_the_box_events_deleted() {
+    let engine = FakeEngine::new();
+    let f = resumable(engine.probes("agent-1", agent::gone()));
+    queued(&f, "hi", QueueCause::Relaunching);
+    f.engine.set_probes("agent-2", agent::gone());
+    pass(&f);
+    resumes(&f);
+    f.cx.store().unwrap().forget_events(f.id);
+    f.cx.take_warnings();
+    pass(&f);
+    let warned = f.cx.take_warnings();
+    assert!(
+        warned
+            .iter()
+            .any(|w| w.message.contains("again within 60s")),
+        "{warned:?}"
+    );
+    assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
 }

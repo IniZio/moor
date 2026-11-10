@@ -352,7 +352,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             },
             Some(row) => match run_verdict(Some(&box_facts(&row)), now) {
                 RunVerdict::Broken => WorkflowOutcome::Refused {
-                    detail: broken_detail(store, &row).unwrap_or_default(),
+                    detail: broken_detail(&row),
                 },
                 _ => WorkflowOutcome::Started { box_id: row.id },
             },
