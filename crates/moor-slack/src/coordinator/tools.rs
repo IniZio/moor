@@ -6,6 +6,7 @@
 use moor_client::ClientError;
 use moor_core::request::{Request, ShowReq, SteerReq};
 use moor_core::response::{ExitClass, Response};
+use moor_core::view::steer::queued_words;
 use serde_json::Value;
 
 use super::context::{action_line, Action};
@@ -239,13 +240,7 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
 /// Why moor keeps a steer queued rather than sending it now, in words; none when it was sent.
 fn queued_cause(reply: &Response) -> Option<String> {
     let value = reply.value.as_ref()?;
-    (value.get("delivery")?.as_str()? == "queued").then(|| {
-        value
-            .get("cause")
-            .and_then(Value::as_str)
-            .unwrap_or("busy")
-            .replace('_', " ")
-    })
+    (value.get("delivery")?.as_str()? == "queued").then(|| queued_words(value))
 }
 
 /// `close_box`: the journal row and the Box marked `closing`, in one transaction. The worker
