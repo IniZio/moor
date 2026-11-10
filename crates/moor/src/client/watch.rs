@@ -94,7 +94,13 @@ fn watch_session(
                 return Err(ClientError::Protocol(format!("{kind:?}: {message}")).into())
             }
             ServerFrame::Event { cursor, .. } => *since = *cursor,
-            ServerFrame::CaughtUp { cursor } => *since = (*since).max(*cursor),
+            ServerFrame::CaughtUp { cursor } => {
+                *since = (*since).max(*cursor);
+                // A follow's caught-up is a keepalive, not output.
+                if follow {
+                    continue;
+                }
+            }
             _ => {}
         }
         if out

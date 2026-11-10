@@ -25,7 +25,7 @@ pub(super) struct Fake {
     /// Each live watch.
     pub(super) live: Vec<UnixStream>,
     /// Live watches whose client hung up.
-    ended: usize,
+    pub(super) ended: usize,
     /// The event log every watch replays: offset, Box name and kind.
     pub(super) log: Vec<(i64, String, String)>,
 }

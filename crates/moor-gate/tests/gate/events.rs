@@ -1,9 +1,11 @@
 //! `list_events` against a fake controller that replays a fixed event log: a fetch from an
 //! offset, its filters, its bounded wait, and that repeating a fetch repeats the answer.
 
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use moor_core::controller::ServerFrame;
 use serde_json::{json, Value};
 
 use super::listen::{emit, next, post, token as token_for, wait_live, world as gate, Fake, TIP};
@@ -168,6 +170,50 @@ fn a_wait_with_no_event_returns_empty_when_the_time_is_up() {
         ),
         (vec![], Some(13), Some(true))
     );
+}
+
+/// Waits until the fake controller has seen `n` follows hang up.
+fn wait_ended(fake: &Mutex<Fake>, n: usize) {
+    for _ in 0..500 {
+        if fake.lock().unwrap().ended == n {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let ended = fake.lock().unwrap().ended;
+    panic!("{ended} follows hung up, not {n}");
+}
+
+#[test]
+fn a_wait_that_runs_out_hangs_up_its_follow() {
+    let (world, fake, token) = logged();
+    let result = list(&world, &token, json!({"after": 13, "wait_seconds": 1}));
+    assert_eq!(offsets(&result), Vec::<i64>::new(), "{result}");
+    wait_ended(&fake, 1);
+}
+
+#[test]
+fn a_keepalive_from_the_controller_does_not_end_a_wait() {
+    let (world, fake, token) = logged();
+    let feeder = Arc::clone(&fake);
+    let keepalive = std::thread::spawn(move || {
+        wait_live(&feeder);
+        let frame = ServerFrame::CaughtUp { cursor: 13 }.to_line();
+        for live in &mut feeder.lock().unwrap().live {
+            live.write_all(frame.as_bytes()).unwrap();
+        }
+    });
+    let started = Instant::now();
+    let result = list(&world, &token, json!({"after": 13, "wait_seconds": 2}));
+    keepalive.join().unwrap();
+    assert!(
+        started.elapsed() >= Duration::from_millis(1900),
+        "the wait ended after {:?}",
+        started.elapsed()
+    );
+    assert_eq!(offsets(&result), Vec::<i64>::new(), "{result}");
+    assert_eq!(result["structuredContent"]["next"], 13, "{result}");
+    wait_ended(&fake, 1);
 }
 
 #[test]

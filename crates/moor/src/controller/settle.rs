@@ -1,6 +1,6 @@
 //! The controller's periodic pass that keeps agent-state events current without any `show`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -93,6 +93,25 @@ pub(super) fn spawn_oauth(
 /// on new hands can take minutes and must not hold up settling the others.
 pub(super) fn spawn_inbox(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
     passes(every, drain, sink, Moor::inbox_pass(env));
+}
+
+/// How often the controller says how many watch streams are open, when the count changed.
+const WATCH_COUNT_EVERY: Duration = Duration::from_secs(60);
+
+/// Logs the number of open watch streams each [`WATCH_COUNT_EVERY`] when it changed since the
+/// last line, so streams that pile up show in the log.
+pub(super) fn spawn_watch_count(drain: &Arc<Drain>, sink: &Sink) {
+    let said = AtomicUsize::new(0);
+    passes(WATCH_COUNT_EVERY, drain, sink, move |_| {
+        let live = super::watch::live();
+        let before = said.swap(live, Ordering::Relaxed);
+        if live == before {
+            return Vec::new();
+        }
+        vec![format!(
+            "{live} watch streams open, {before} a minute before"
+        )]
+    });
 }
 
 /// How often the controller looks for workflow runs to start, finish or expire.
