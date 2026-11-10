@@ -37,6 +37,10 @@ Boxes slice                kernel ceiling = host memory − reserve
 - **Every Box is alike.** A Box kept for months and a Box for one task follow
   the same rules. A workflow's previous Box closes when its next run starts.
 - **Count is not a resource.** No rule counts Boxes.
+- **Every node with an agent reports.** That includes a shared node and a node
+  on an external runtime. No node with a host admits by count.
+- **A node with no host** is a cloud provider. moor has no host to protect
+  there. A start the provider refuses waits and says why.
 
 ## What each state holds
 
@@ -172,7 +176,7 @@ Each step ends in a check on a real node.
 | 2 | Disk account in the report. Floor includes suspend room. Reclaim runs on every report. | Fill the disk with saved setups. Free disk returns above the floor with no start refused. |
 | 3 | Caches join the reclaim order. Delete the cache budget flag and the runner's own floor. | Fill the disk with caches. Oldest caches go, open Boxes keep theirs. |
 | 4 | Drop snapshots of long-asleep Boxes. | A Box asleep with a dropped snapshot wakes with its session restored. |
-| 5 | Delete Box count limits. | Twenty asleep Boxes on one node. A new start is admitted on memory alone. |
+| 5 | Delete Box count limits. Every node with an agent admits on its report. | Twenty asleep Boxes on one node. A new start is admitted on memory alone. |
 | 6 | One set of memory lines. Need learned per repo. | Three heavy Boxes start together. They run one after another. None is suspended while working. |
 | 7 | CPU gate, if step 0 shows the need. | Starts wait under CPU pressure and begin when it clears. |
 | 8 | The charter's proof. | One Box per project kept for a week with short-lived Boxes on top. All bars met. |
