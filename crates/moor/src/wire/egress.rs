@@ -235,8 +235,6 @@ fn wait_ready(
     want: i64,
     log_path: &Path,
 ) -> Result<(), String> {
-    // Held by the thread that reaps the Proxy, so the pipe closes only when this process ends;
-    // `Child::wait` would close it first.
     let tie = child.stdin.take();
     let reap = move |mut child: std::process::Child| {
         std::thread::spawn(move || {
