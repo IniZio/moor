@@ -22,6 +22,7 @@ mod hands_ended;
 mod held_prompt;
 mod inbox_prompts;
 mod insertion_order;
+mod launch_facts;
 mod launch_fence;
 mod link_runner;
 mod machine_boxes;
@@ -166,6 +167,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V76__effect_backfill",
         write: effect_backfill::write,
+    },
+    Step {
+        name: "V77__launch_facts",
+        write: launch_facts::write,
     },
 ];
 

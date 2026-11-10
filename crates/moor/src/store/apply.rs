@@ -312,6 +312,9 @@ fn write_box(
     if let Some(input) = d.input_to_hands() {
         sets.push((BoxHands::State, step.to.as_str().into()));
         // A guest that may run again can change, so what was checked before no longer stands.
+        if *input == HandsInput::Wake {
+            sets.push((BoxHands::WokeAt, now.as_millis().into()));
+        }
         if matches!(input, HandsInput::Wake | HandsInput::Acquired { .. }) {
             for column in [
                 BoxHands::SuspendAhead,

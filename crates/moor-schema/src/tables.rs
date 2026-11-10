@@ -53,7 +53,7 @@ tables! {
         EffectAttempt, EffectRun, EffectAt, OwedNote, RelaunchCappedAt, ParkedAtWork }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
-        CreatedAt, EndedAt }
+        CreatedAt, EndedAt, WokeAt }
     Sessions { Id, Box, Ordinal, Agent, Model, AgentSessionId, State, StartedAt,
         EndedAt, ParentSession, Workdir, User, HostKey, ArchiveKey, ArchiveInc,
         ArchiveAt }

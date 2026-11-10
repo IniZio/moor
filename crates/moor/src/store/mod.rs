@@ -114,6 +114,8 @@ pub(crate) struct HandsRow {
     pub(crate) delivered: Option<Shape>,
     /// Last update.
     pub(crate) updated_at: Ts,
+    /// When these hands last woke from sleep; none when they never slept.
+    pub(crate) woke_at: Option<Ts>,
 }
 
 /// Box row with its optional box.
