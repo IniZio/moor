@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::deadlines::QUICK_DEADLINE;
-use super::errors::{unreadable, Op};
+use super::errors::{unfinished_fork, unreadable, Op};
 use super::{cache, caps, class_args, handle_of, pool, slug, split_handle, target_args, Crabbox};
 
 impl Crabbox {
@@ -82,6 +82,11 @@ pub(super) fn create(
 /// claimed there, with the Box's cache volumes as warmup gives them; a fork that fails releases
 /// what it started.
 pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
+    fork_on(cb, id, req).map_err(unfinished_fork)
+}
+
+/// [`fork`], on the provider `req` names.
+fn fork_on(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
     if pool::is_pool_provider(&req.provider) {
         return pool::checkpoints::fork(cb, id, req);
     }

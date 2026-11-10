@@ -26,7 +26,9 @@ impl fmt::Display for DriverError {
             Self::Transport { stderr_tail } => {
                 write!(f, "moor lost the ssh connection to the Box: {stderr_tail}")
             }
-            Self::Failed { summary } => f.write_str(summary),
+            Self::UnfinishedCheckpoint { summary } | Self::Failed { summary } => {
+                f.write_str(summary)
+            }
         }
     }
 }

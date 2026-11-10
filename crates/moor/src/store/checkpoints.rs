@@ -231,6 +231,23 @@ impl Store {
         Ok(())
     }
 
+    /// Retires checkpoint `checkpoint` under `provider`, which no Box can start from.
+    pub(crate) fn retire_checkpoint(
+        &self,
+        provider: &ProviderId,
+        checkpoint: &str,
+    ) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Evicting, RETIRED)
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
+        )?;
+        Ok(())
+    }
+
     /// Marks the checkpoint of layer `key` under `provider` used now; returns whether it exists.
     pub(crate) fn use_checkpoint(
         &self,
