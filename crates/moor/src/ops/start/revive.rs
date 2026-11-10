@@ -156,7 +156,7 @@ fn revive(
             }
             view
         }
-        Some((old, end)) => relaunch(cx, store, &req, (old, end), (false, Some(cause)), &settings)?,
+        Some((old, end)) => relaunch(cx, store, &req, (old, end), Some(cause), &settings)?,
     };
     Ok(watch::run(cx, store, id, view))
 }
