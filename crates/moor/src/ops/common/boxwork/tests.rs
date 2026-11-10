@@ -94,6 +94,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         effect: None,
         effect_attempt: 0,
         effect_at: None,
+        parked_at_work: None,
         setup_failed_at: None,
         steps_pending_at: None,
         idle_since: None,

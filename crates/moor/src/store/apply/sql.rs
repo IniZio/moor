@@ -41,6 +41,10 @@ pub(super) fn box_field_sets(s: &Fields) -> Sets<BoxState> {
             field_value(&s.steps_pending_at, |t| *t),
         ),
         (BoxState::LaunchFailure, text(&s.launch_failure)),
+        (
+            BoxState::ParkedAtWork,
+            field_value(&s.parked_at_work, |t| *t),
+        ),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }

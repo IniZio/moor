@@ -92,6 +92,12 @@ pub enum CloseRefusal {
         /// Why the check failed.
         reason: String,
     },
+    /// The Box sleeps and its node has no room to wake it for the check; the close stays wanted
+    /// and finishes once there is room.
+    WaitingForRoom {
+        /// What its node lacks, in the node's words.
+        reason: String,
+    },
 }
 
 /// Structured detail of an error, tagged by kind.

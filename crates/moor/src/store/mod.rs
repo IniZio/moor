@@ -149,6 +149,8 @@ pub(crate) struct BoxRow {
     pub(crate) effect_attempt: u32,
     /// When the effect in flight began, or began again.
     pub(crate) effect_at: Option<Ts>,
+    /// When the Box was parked while its agent worked; none once it woke, or when it was quiet.
+    pub(crate) parked_at_work: Option<Ts>,
     /// When setup last failed, if it has.
     pub(crate) setup_failed_at: Option<Ts>,
     /// When the steps after the setup lines began, while they have not all run.
@@ -360,6 +362,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             .get::<_, Option<i64>>(const { state_at(BoxState::EffectAttempt) })?
             .map_or(Ok(0), |n| to_u32("effect attempt", n))?,
         effect_at: ts(const { state_at(BoxState::EffectAt) })?,
+        parked_at_work: ts(const { state_at(BoxState::ParkedAtWork) })?,
         setup_failed_at: ts(const { state_at(BoxState::SetupFailedAt) })?,
         steps_pending_at: ts(const { state_at(BoxState::StepsPendingAt) })?,
         created_at: Ts::from_millis(row.get(const { at(Boxes::CreatedAt) })?),
