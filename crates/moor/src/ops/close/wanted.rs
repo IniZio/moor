@@ -4,6 +4,7 @@
 use std::cell::Cell;
 
 use moor_core::domain::decision::{Decision, WantChange, Wanted, WantedKind};
+use moor_core::response::{CloseRefusal, ErrorDetail};
 use moor_core::view::CloseView;
 use moor_core::{BoxId, BoxTarget, CloseReq, ErrorKind, Warning};
 
@@ -30,6 +31,12 @@ pub(super) fn closing<'a>(
     match close(&waits, &mut turn) {
         Err(mut e) if waits.get() => {
             e.error = format!("{}; moor closes it once its node has room", e.error).into();
+            if let Some(ErrorDetail::CloseRefused(CloseRefusal::Unchecked { reason })) =
+                e.detail.as_deref().cloned()
+            {
+                let room = CloseRefusal::WaitingForRoom { reason };
+                e.detail = Some(Box::new(ErrorDetail::CloseRefused(room)));
+            }
             Err(e)
         }
         Err(e) if turn.is_some() || !took => {

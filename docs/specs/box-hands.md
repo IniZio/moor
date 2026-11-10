@@ -122,7 +122,9 @@ Each step ends in a run on a real Box.
    event-as-state reads with fields. The interrupted-start pass at controller
    start reads effect state, so the handover in the controller replicas spec
    keeps working. Proof. A close racing a suspend ends closed, and the relaunch
-   cap holds with the Box's events deleted.
+   cap holds with the Box's events deleted. Resource decisions (admit, relieve,
+   last resort, reclaim) come from [node-resources.md](node-resources.md) and
+   act through `wanted`; the owner parks.
 5. **Box inbox.** A steer is stored, then delivered once the agent is ready.
    Senders only append rows. The owner marks a row before it sends and
    deletes it when the turn ends. A steer whose turn a lost VM cut is named

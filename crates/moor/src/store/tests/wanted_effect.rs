@@ -398,6 +398,53 @@ fn a_close_or_a_rejection_ends_the_effect_in_flight() {
     assert_eq!(effect(&store, other), (None, 0));
 }
 
+#[test]
+fn a_park_out_of_a_working_session_is_marked_until_the_box_wakes() {
+    use moor_core::domain::hands::{HandsInc, HandsInput};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    let parked = |s: &Store| s.box_row(id).unwrap().unwrap().parked_at_work;
+
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Suspend {
+                    reason: "memory".to_owned(),
+                })
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
+        )
+        .unwrap();
+    assert!(parked(&store).is_some(), "suspended mid-turn");
+
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Wake)
+                .hands_input(HandsInc::FIRST, HandsInput::Wake),
+        )
+        .unwrap();
+    assert_eq!(parked(&store), None, "a wake clears it");
+}
+
+#[test]
+fn a_park_of_a_quiet_box_leaves_no_mark() {
+    use moor_core::domain::hands::{HandsInc, HandsInput};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = quiet_box(&store);
+
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(sleep())
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
+        )
+        .unwrap();
+
+    assert_eq!(store.box_row(id).unwrap().unwrap().parked_at_work, None);
+}
+
 impl Store {
     /// Deletes every event of Box `id`, and the webhook deliveries queued for them, so a test
     /// proves a decision reads no history.

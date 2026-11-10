@@ -321,7 +321,15 @@ fn a_close_that_found_no_room_to_wake_its_box_closes_it_once_there_is_room() {
         target: name.into(),
         force: false,
     };
-    assert!(close::run(&w.cx, &req).is_err());
+    let refused = close::run(&w.cx, &req).unwrap_err();
+    let kind = refused
+        .detail
+        .as_deref()
+        .map(|d| serde_json::to_value(d).unwrap());
+    assert_eq!(
+        kind.and_then(|d| d.get("refusal").cloned()),
+        Some(serde_json::json!("waiting_for_room"))
+    );
     let wanted = store.box_row(shut).unwrap().unwrap().wanted;
     assert_eq!(wanted.map(|w| w.kind()), Some(WantedKind::Close));
     tick(&w, hv, 32_768, 0, 0);

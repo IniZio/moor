@@ -122,7 +122,7 @@ fn refusal(reply: Response) -> Closed {
         Some(CloseRefusal::AlreadyClosed) => Closed::Done,
         Some(CloseRefusal::Unsaved { ahead, dirty, .. }) => Closed::Unsaved { ahead, dirty },
         Some(CloseRefusal::Unchecked { reason }) => Closed::Unchecked(reason),
-        None => Closed::Refused(error_text(reply)),
+        Some(CloseRefusal::WaitingForRoom { .. }) | None => Closed::Refused(error_text(reply)),
     }
 }
 
