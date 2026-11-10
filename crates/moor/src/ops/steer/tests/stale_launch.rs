@@ -4,12 +4,15 @@
 
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::inbox::InboxKind;
+use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
+use moor_core::seam::engine::EngineError;
 
 use super::queue::pass;
 use super::{fx, Fx};
 use crate::store::LaunchEnd;
 use crate::testing::agent;
+use crate::testing::engine::FakeEngine;
 
 /// After the pass's first read, ends the live launch as a relaunch by another op does and begins
 /// the next one, whose terminal reads as `next`.
@@ -176,6 +179,42 @@ fn watch_records_no_launch_failure_for_a_launch_replaced_while_it_polled() {
         .launch_failure
         .is_none());
     assert!(store.live_launch(f.id).unwrap().is_some());
+}
+
+#[test]
+fn a_steer_relaunch_whose_launch_fails_ends_the_new_session() {
+    let f = super::fx_with(
+        FakeEngine::new().launch_result(Err(EngineError::Failed {
+            step: "pane",
+            message: "no tab".to_owned(),
+        })),
+        true,
+    );
+    store_agent_session(&f);
+    f.engine.set_probes("agent-1", agent::gone());
+    queue(&f, "hi");
+
+    pass(&f);
+
+    let store = f.cx.store().unwrap();
+    let events = store.events(f.id, 100).unwrap();
+    assert!(events.iter().any(|e| e.kind == "steer_unconfirmed"));
+    assert!(store.unsent(f.id).unwrap().is_empty());
+    let sessions: Vec<_> = store
+        .box_sessions(f.id)
+        .unwrap()
+        .iter()
+        .map(|s| s.state)
+        .collect();
+    assert_eq!(sessions, [SessionState::Ended, SessionState::Ended]);
+    let row = store.box_row(f.id).unwrap().unwrap();
+    assert_eq!(row.session, SessionState::Ended);
+    let causes: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "session_ended")
+        .map(|e| e.payload.get("cause").and_then(|c| c.as_str()))
+        .collect();
+    assert_eq!(causes, [Some("relaunch"), Some("exited")]);
 }
 
 #[test]

@@ -48,10 +48,16 @@ pub(super) fn once(
     if relaunched_recently(cx, store, id)? {
         return Err(ended_again(cx, store, (id, name), &gone)?);
     }
+    let before = current_session(store, id)?;
     let Some(view) = revive_for_steer(cx, store, id, gone.launch.as_ref())? else {
         return Ok(Revived::Relaunched);
     };
-    if view.launched || !gone.finish(cx, store, id)? {
+    if view.launched {
+        return Ok(Revived::Relaunched);
+    }
+    if current_session(store, id)? != before {
+        store.end_current_session(id, "exited", None)?;
+    } else if !gone.finish(cx, store, id)? {
         return Ok(Revived::Relaunched);
     }
     Err(match view.reason {
@@ -64,6 +70,11 @@ pub(super) fn once(
         ),
         None => gone.error,
     })
+}
+
+/// The row id of the latest Session of Box `id`.
+fn current_session(store: &Store, id: BoxId) -> Result<Option<i64>, CommandError> {
+    Ok(store.box_sessions(id)?.last().map(|s| s.id))
 }
 
 /// How the agent of `id`, found gone, is back without a relaunch: it still runs and a new pane
