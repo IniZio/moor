@@ -23,7 +23,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `agent_resumed` | | A stalled agent reported again. |
 | `node_disk_low` | ✓ | The Box's node fell below its free-disk floor. Once per owner. |
 | `node_disk_recovered` | ✓ | That node climbed back above its floor. |
-| `relaunched` | | moor restarted the agent after it ended. |
+| `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |
 | `caches_not_saved` | | A close deleted an asleep Box whose caches were not saved. |
