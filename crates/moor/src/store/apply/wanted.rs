@@ -88,6 +88,12 @@ fn wanted_columns(w: Option<&Wanted>, now: Ts) -> Sets<BoxState> {
 fn effect_sets(held: &Held, change: EffectChange, now: Ts) -> Result<Sets<BoxState>, StoreError> {
     let (effect, attempt) = match (change, held.effect) {
         (EffectChange::Keep, _) => return Ok(Vec::new()),
+        (EffectChange::Next(e), Some((Effect::Run { .. }, _))) if e.run().is_none() => {
+            return Ok(Vec::new());
+        }
+        (EffectChange::Finish(e), held) if held.is_none_or(|(on, _)| on.as_str() != e.as_str()) => {
+            return Ok(Vec::new());
+        }
         (EffectChange::Begin(e), None) | (EffectChange::Next(e), _) => (Some(e), 1),
         (EffectChange::Begin(e), Some((on, _))) => {
             return Err(StoreError::Invalid(format!(
@@ -102,7 +108,7 @@ fn effect_sets(held: &Held, change: EffectChange, now: Ts) -> Result<Sets<BoxSta
                 "no effect in flight to try again".into(),
             ));
         }
-        (EffectChange::End, _) => (None, 0),
+        (EffectChange::End | EffectChange::Finish(_), _) => (None, 0),
     };
     Ok(vec![
         (BoxState::Effect, effect.map(|e| e.as_str()).into()),

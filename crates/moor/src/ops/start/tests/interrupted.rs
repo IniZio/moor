@@ -324,6 +324,41 @@ fn a_run_cut_by_a_restart_is_ended_as_interrupted_and_never_run_again() {
     assert!(cut_short_of(&w).is_empty());
 }
 
+#[test]
+fn a_run_a_relaunch_raced_is_still_ended_as_interrupted_after_a_restart() {
+    use moor_core::domain::event::PostCloneStep;
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &start_req()).unwrap();
+    let store = w.cx.store().unwrap();
+    let (cut, claim) = store
+        .begin_run(crate::store::NewRun {
+            box_id: BoxId::new(1),
+            argv: vec!["make".to_owned()],
+            record: None,
+            sha: None,
+            pid: 1,
+        })
+        .unwrap();
+    let turn =
+        w.cx.turn(BoxId::new(1), crate::cx::owners::Cmd::Start)
+            .unwrap();
+    crate::ops::common::step::timed(&w.cx, store, BoxId::new(1), PostCloneStep::Launch, || {
+        ((), true)
+    });
+    drop(turn);
+    drop(claim);
+    assert_eq!(
+        cut_short_of(&w),
+        [BoxId::new(1)],
+        "the run is still in flight"
+    );
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    let ended = store.run(cut).unwrap().unwrap();
+    assert!(ended.finished_at.is_some() && ended.interrupted);
+    assert_eq!(box_row(&w).effect, None);
+}
+
 fn cut_short_of(w: &World) -> Vec<BoxId> {
     crate::ops::common::provision::interrupted::cut_short(w.cx.store().unwrap()).unwrap()
 }
