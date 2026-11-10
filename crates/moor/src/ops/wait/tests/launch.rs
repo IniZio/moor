@@ -86,7 +86,7 @@ fn prompted_live(cx: &Cx, prompt: Option<&str>, carried: bool) -> BoxId {
             .enqueue(id, InboxKind::Prompt, text, "prompt")
             .unwrap();
     }
-    store.begin_launch_with(id, SESSION, argv).unwrap();
+    store.begin_launch_with(id, SESSION, argv, None).unwrap();
     id
 }
 
