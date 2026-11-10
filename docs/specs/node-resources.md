@@ -78,8 +78,10 @@ critical ───────────────────────�
   pressure is critical.
 - **In flight.** Headroom also subtracts the need of every start and wake the
   controller has sent and the report does not show yet.
-- **First relief is free.** A guest returns its free pages to the host by
-  itself. Suspension starts only when that is not enough.
+- **First relief is the provider's.** A guest returns its free pages to the
+  host by itself. The adapter also shrinks guests as host pressure rises. Both
+  only give memory back. Neither picks a Box, so neither is a decider.
+  Suspension starts when that is not enough.
 - **Reserve** has one source. The agent applies it to its own ceiling and
   reports it. The controller reads that value.
 
@@ -123,7 +125,9 @@ shows starts failing under CPU pressure.
 ## Host ceiling
 
 `moor-machine-agent up` writes a user slice for Boxes beside the agent's
-service. Each VM starts as its own scope in that slice. It needs no sudo.
+service. It needs no sudo. The provider adapter already starts each VM in its
+own user scope when its cgroup option is on. The one change is a slice name the
+adapter puts those scopes in. The option becomes required on a node.
 
 - `MemoryHigh` is host memory less the reserve. Above it the kernel slows the
   Boxes and reclaims from them. The host and its other work stay responsive.
@@ -186,7 +190,8 @@ the risk that choice carries.
 | Memory lines | Admission and relief use separate constants. A start is charged 2 GiB whatever it will use. | Heavy Boxes are admitted together, then suspended. |
 | Box count | Controller `max_boxes`, agent pool limit, and a `moor up` formula. An asleep Box holds a slot in each. | A sleeping Box blocks a start though it holds no memory. |
 | CPU | Reported for display. | No rule. |
-| Host | No limit on the agent's service. | A host ran out of memory twice on 2026-11-01. |
+| Host | Each VM scope has its own limit. Nothing limits all Boxes together. | A host ran out of memory twice on 2026-11-01. |
+| Relief | Fired on a real node. One working Box was suspended four times in 25 minutes on 2026-11-08, and it finished its work. | Work survives. The admit and relieve lines sit too close. |
 
 ## Steps
 
@@ -194,7 +199,7 @@ Each step ends in a check on a real node.
 
 | Step | Change | Check |
 | --- | --- | --- |
-| 0 | Record which cgroup VMs sit in today. Run busy Boxes until relief fires and read which line fired. | Recorded cgroup path and event |
+| 0 | Record which cgroup VMs sit in on a real node. | Recorded cgroup path |
 | 1 | Boxes slice with its ceiling, one reserve, node refusal. | Boxes asked for more than the host has. Host memory stays above the reserve. No process outside the slice ends. The agent keeps reporting. Repeat with the controller disconnected and record whether any VM ends. |
 | 2 | Disk account in the report. Floor includes suspend room. Reclaim runs on every report. | Fill the disk with saved setups. Free disk returns above the floor with no start refused. |
 | 3 | Caches join the reclaim order. Delete the cache budget flag and the runner's own floor. | Fill the disk with caches. Oldest caches go, open Boxes keep theirs. |
@@ -229,9 +234,8 @@ from [Box hands](box-hands.md).
 
 ## Not yet verified
 
-- Which cgroup VMs sit in today, and that the provider can start each in a
-  scope of the Boxes slice.
+- Whether the adapter's cgroup option is on for real nodes today.
+- Whether a VM survives an agent restart. The agent's unit sets no kill mode.
 - A guest that is refused memory by the ceiling slows down and does not fault.
 - Which memory files a restored VM still reads.
-- The early relief line has fired on a real node.
 - The CPU load that failed Box clones on 2026-11-06 came from Boxes.
