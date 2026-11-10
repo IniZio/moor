@@ -57,7 +57,8 @@ pub(crate) struct Engine {
 /// Loads the Box CA, opens the log and starts the filter and the proxy.
 pub(crate) fn engine(parts: &Parts<'_>, box_id: BoxId, spec: &ProxySpec) -> Result<Engine, String> {
     let ca = box_ca(parts, box_id)?;
-    let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
+    let withheld =
+        Withheld::new(&spec.rules, spec.box_repo.clone()).with_other_repos(&spec.other_repos);
     let capture = Arc::new(MoorCapture::new(sources_for(&spec.rules, parts.secrets)));
     let internal = internal_token()?;
     let graphql = start_filter(parts, spec, &ca)?;

@@ -234,3 +234,62 @@ fn a_2xx_with_unknown_credential_state_recovers() {
         [rejected(403), recovered()]
     );
 }
+
+/// A credentialed GitHub API answer with `status` to `GET path` on rule `gh`.
+fn github(path: &str, status: u16) -> NetworkAuditEvent {
+    event(
+        "allow",
+        &json!({
+            "route_id": "gh__0",
+            "target": "api.github.com:443",
+            "method": "GET",
+            "path": path,
+            "status": status,
+            "managed_credential_active": true,
+        }),
+    )
+}
+
+/// The rejection event for `gh` with `status`.
+fn gh_rejected(status: u16) -> Event {
+    Event::ProxyCredentialRejected {
+        rule: "gh".to_owned(),
+        status,
+    }
+}
+
+#[test]
+fn a_rejection_on_a_repo_outside_the_box_records_nothing() {
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let sink = LimitSink::default();
+    let events = [
+        github("/repos/other/thing", 403),
+        github("/repos/other/thing/contents/README.md?ref=main", 401),
+    ];
+    assert!(run_limits(&sink, &events, &watch).is_empty());
+    assert_eq!(
+        run_limits(&sink, &[github("/repos/ACME/Widgets/pulls", 403)], &watch),
+        [gh_rejected(403)]
+    );
+}
+
+#[test]
+fn a_rejection_on_another_listed_repo_records() {
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")))
+        .with_other_repos(&[ForgeRepo::new("acme", "gears")]);
+    let sink = LimitSink::default();
+    assert_eq!(
+        run_limits(&sink, &[github("/repos/acme/gears", 401)], &watch),
+        [gh_rejected(401)]
+    );
+}
+
+#[test]
+fn a_rejection_outside_any_repo_still_records() {
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let sink = LimitSink::default();
+    assert_eq!(
+        run_limits(&sink, &[github("/user", 401)], &watch),
+        [gh_rejected(401)]
+    );
+}
