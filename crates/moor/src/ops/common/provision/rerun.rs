@@ -12,7 +12,7 @@ use moor_core::{ErrorKind, Warning};
 use moor_core::config::Flags;
 
 use super::after_lines::after_setup;
-use super::outcome::{dotfiles_noted, setup_ended};
+use super::outcome::{dotfiles_noted, intent_after, setup_ended};
 use super::Provisioned;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -97,11 +97,12 @@ pub(super) fn finish_steps(
             SetupOutcome::Failed { line }
         }
     };
+    let intent = intent_after(advance, &outcome, &cfg);
     let mut done = setup_ended(dotfiles_noted(row.id, &after.dotfiles), advance, outcome)
         .setup_why(why)
         .set(set);
     if advance {
-        done = done.intent(IntentChange::Clear);
+        done = done.intent(intent);
     }
     store.apply(done)?;
     Ok(Provisioned {

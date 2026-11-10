@@ -1,14 +1,17 @@
 //! `wait`: poll a Box until it is idle or its run ends, or the timeout elapses.
 //!
 //! Never waits for the Box's turn. Each poll settles the Box the way the controller's own reads
-//! do, so `wait` reports idle only once the `idled` event is recorded. A Box still being set up
-//! has no agent yet, so it is never idle, and a Box whose setup failed fails the wait.
+//! do, so `wait` reports idle only once the `idled` event is recorded. A Box with no agent at work
+//! yet is never idle: one being checked or set up, waiting for room or suspended mid-work, or
+//! whose agent is still to launch. A Box whose setup failed, or that was rejected or closed,
+//! fails the wait.
 
 use std::time::Duration;
 
 use moor_core::activity::AgentState;
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::decision::Intent;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
@@ -61,10 +64,7 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
         }
         let in_flight = reconcile::run_in_flight(cx, store, id)?;
         let facts = WaitFacts {
-            setting_up: matches!(
-                row.lifecycle,
-                BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp
-            ),
+            setting_up: no_agent_yet(&row),
             agent_active: agent_active(store, &row, &reading, clock.now())?,
             run_in_flight: in_flight.is_some(),
         };
@@ -91,8 +91,18 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
     }
 }
 
+/// Whether `row` has no agent at work yet: it is being checked or set up, waits for room or was
+/// suspended mid-work, or its agent is still to launch.
+fn no_agent_yet(row: &BoxRow) -> bool {
+    let unready = matches!(
+        row.lifecycle,
+        BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp
+    );
+    unready || row.intent == Some(Intent::Launching)
+}
+
 /// Why the Box can never go idle, as the error that ends the wait: its agent failed to launch,
-/// its setup failed, or a limit it hit is still open.
+/// its setup failed, it was rejected or closed, or a limit it hit is still open.
 fn refusal(
     cx: &Cx,
     store: &Store,
@@ -102,11 +112,17 @@ fn refusal(
     if let Some(failure) = &reading.launch_failure {
         return failed(cx, row, reading, failure.text(), Vec::new()).map(Some);
     }
-    if row.lifecycle == BoxLifecycle::SetupFailed {
-        let name = row.name.as_str();
+    let name = row.name.as_str();
+    let ended = match row.lifecycle {
+        BoxLifecycle::SetupFailed => Some("setup failed"),
+        BoxLifecycle::Rejected => Some("is rejected"),
+        BoxLifecycle::Closed => Some("is closed"),
+        _ => None,
+    };
+    if let Some(what) = ended {
         let text = row.state_reason.as_deref().map_or_else(
-            || format!("Box {name} setup failed"),
-            |why| format!("Box {name} setup failed: {why}"),
+            || format!("Box {name} {what}"),
+            |why| format!("Box {name} {what}: {why}"),
         );
         return failed(cx, row, reading, text, Vec::new()).map(Some);
     }

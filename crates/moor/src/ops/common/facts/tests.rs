@@ -43,6 +43,7 @@ fn flag_model_resolves_and_repo_has_no_model() {
 
     let flags = Flags {
         model: Some("flag-m".into()),
+        ..Flags::default()
     };
     let m = settings_of(&cx, &row, &flags).unwrap().model.unwrap();
     assert_eq!((m.value.as_str(), m.source), ("flag-m", Layer::Flag));

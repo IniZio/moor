@@ -40,6 +40,43 @@ fn idle_waits_while_the_box_sets_up() {
 }
 
 #[test]
+fn idle_waits_while_the_box_waits_for_room() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path());
+    let id = add(&cx);
+    let queued = Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 });
+    cx.store().unwrap().apply(queued).unwrap();
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out, "a Box waiting for room has no agent at work");
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Pending);
+}
+
+#[test]
+fn idle_fails_for_a_rejected_or_closed_box() {
+    let ended = [
+        (
+            BoxLifecycleInput::Rejected {
+                reason: "no credential".into(),
+            },
+            "rejected",
+        ),
+        (BoxLifecycleInput::Close { reason: None }, "closed"),
+    ];
+    for (input, lifecycle) in ended {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = cx(dir.path());
+        let id = add(&cx);
+        cx.store()
+            .unwrap()
+            .apply(Decision::new(id).lifecycle(input))
+            .unwrap();
+        let e = run(&cx, &req(None, Some(5))).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Failed, "{lifecycle}");
+        assert!(e.error.to_string().contains(lifecycle), "{}", e.error);
+    }
+}
+
+#[test]
 fn run_does_not_wait_for_setup() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());

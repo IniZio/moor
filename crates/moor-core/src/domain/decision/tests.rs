@@ -190,16 +190,18 @@ const fn intent_index(i: &Intent) -> usize {
         Intent::Running { .. } => 1,
         Intent::Setup => 2,
         Intent::Closing => 3,
+        Intent::Launching => 4,
     }
 }
 
 /// One sample of every intent variant.
-fn intent_samples() -> [Intent; 4] {
+fn intent_samples() -> [Intent; 5] {
     [
         Intent::Provisioning,
         Intent::Running { run: RunId::new(2) },
         Intent::Setup,
         Intent::Closing,
+        Intent::Launching,
     ]
 }
 

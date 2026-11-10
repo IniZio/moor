@@ -108,6 +108,8 @@ pub enum Intent {
     Setup,
     /// A forced close wants the Box gone, ahead of the start it is stopping; a restart honours it.
     Closing,
+    /// The Box is ready and its agent is still to launch; a session or a failed launch ends it.
+    Launching,
 }
 
 impl Intent {
@@ -119,6 +121,7 @@ impl Intent {
             Self::Running { .. } => "running",
             Self::Setup => "setup",
             Self::Closing => "closing",
+            Self::Launching => "launching",
         }
     }
 
@@ -127,7 +130,7 @@ impl Intent {
     pub const fn run(&self) -> Option<RunId> {
         match self {
             Self::Running { run } => Some(*run),
-            Self::Provisioning | Self::Setup | Self::Closing => None,
+            Self::Provisioning | Self::Setup | Self::Closing | Self::Launching => None,
         }
     }
 }
