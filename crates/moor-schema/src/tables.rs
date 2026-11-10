@@ -50,7 +50,7 @@ tables! {
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
         ResumeFirstAt, UpdatedAt, ArchiveDue, Wanted, WantedForce, WantedReason, WantedAt, Effect,
-        EffectAttempt, EffectRun, EffectAt, OwedNote, RelaunchCappedAt }
+        EffectAttempt, EffectRun, EffectAt, OwedNote, RelaunchCappedAt, ParkedAtWork }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
         CreatedAt, EndedAt }
