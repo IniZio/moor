@@ -133,6 +133,36 @@ fn a_wanted_close_that_wakes_its_box_to_unsaved_work_warns_and_parks_the_box_aga
 }
 
 #[test]
+fn a_wanted_close_given_up_for_unsaved_work_tells_the_box_why_and_that_it_sleeps_again() {
+    let f = fx_woken("ahead=2 dirty=1");
+    put_to_sleep(&f);
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).want(WantChange::Raise(UNFORCED)))
+        .unwrap();
+    wanted_pass(&f);
+    let events = store.events(f.id, 50).unwrap();
+    let refused: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "close_refused")
+        .map(|e| &e.payload)
+        .collect();
+    assert_eq!(refused.len(), 1, "{events:?}");
+    let given_up = refused.first().unwrap();
+    let reason = &given_up["reason"];
+    assert_eq!(reason["refusal"], "unsaved", "{reason}");
+    assert_eq!(reason["ahead"], 2, "{reason}");
+    assert_eq!(reason["dirty"], 1, "{reason}");
+    assert!(reason["branch"].is_string(), "{reason}");
+    assert_eq!(given_up["slept"], true, "{given_up}");
+    assert!(f
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|w| w.code == "close_failed"));
+}
+
+#[test]
 fn a_close_cut_mid_release_leaves_the_release_in_flight_and_a_restart_finishes_it() {
     let f = fx_with(FakeDriver::new());
     f.driver.on_release(|| {

@@ -323,7 +323,7 @@ fn all_events() -> Vec<Event> {
             total_mib: 409_600,
         }),
         Event::DiskLost,
-        Event::CachesNotSaved,
+        Event::Close(CloseEvent::CachesNotSaved),
         Event::Timing(TimingEvent::CacheEmptied {
             volume: s("docker"),
             reason: s("blob abc does not match its hash"),
@@ -372,6 +372,15 @@ fn all_events() -> Vec<Event> {
             sender: s("steer"),
         }),
         Event::Inbox(InboxEvent::SteersDropped { inbox: vec![9, 10] }),
+        Event::Close(CloseEvent::CloseRefused {
+            reason: Some(crate::response::CloseRefusal::Unsaved {
+                branch: s("b"),
+                ahead: 2,
+                dirty: 1,
+            }),
+            error: s("e"),
+            slept: true,
+        }),
     ]
 }
 
@@ -473,7 +482,7 @@ const fn event_index(e: &Event) -> usize {
         Event::NodeDisk(NodeDiskEvent::NodeDiskLow { .. }) => 77,
         Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered { .. }) => 78,
         Event::DiskLost => 79,
-        Event::CachesNotSaved => 80,
+        Event::Close(CloseEvent::CachesNotSaved) => 80,
         Event::Timing(TimingEvent::CacheEmptied { .. }) => 81,
         Event::Timing(TimingEvent::WarmRerun { .. }) => 82,
         Event::Timing(TimingEvent::WarmRerunFailed { .. }) => 83,
@@ -488,6 +497,7 @@ const fn event_index(e: &Event) -> usize {
         Event::EgressRecovered { .. } => 92,
         Event::Inbox(InboxEvent::SteerCut { .. }) => 93,
         Event::Inbox(InboxEvent::SteersDropped { .. }) => 94,
+        Event::Close(CloseEvent::CloseRefused { .. }) => 95,
     }
 }
 
@@ -495,7 +505,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 95);
+    assert_eq!(all.len(), 96);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

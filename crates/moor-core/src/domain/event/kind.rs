@@ -1,12 +1,15 @@
 //! Kind name, payload and assertion helpers for [`Event`].
 
 use super::Event;
+pub use crate::domain::turn::TurnOutcome;
 
+mod close;
 mod inbox;
 mod node_disk;
 mod restore;
 mod stall;
 mod workflow;
+pub use close::CloseEvent;
 pub use inbox::InboxEvent;
 pub use node_disk::NodeDiskEvent;
 pub use restore::RestoreEvent;
@@ -40,6 +43,7 @@ pub const ASSERTED_KINDS: &[&str] = &[
 /// Every event kind name an [`Event`] can carry.
 pub const EVENT_KINDS: &[&str] = &[
     "caches_not_saved",
+    "close_refused",
     "disk_lost",
     "wanted_dropped",
     "started",
@@ -164,7 +168,6 @@ impl Event {
             Self::BoxReleaseFailed { .. } => "box_release_failed",
             Self::StaysUp { .. } => "stays_up",
             Self::DiskLost => "disk_lost",
-            Self::CachesNotSaved => "caches_not_saved",
             Self::WantedDropped => "wanted_dropped",
             Self::Ran { .. } => "ran",
             Self::SessionStarted { .. } => "session_started",
@@ -209,6 +212,7 @@ impl Event {
             Self::NodeDisk(d) => d.kind(),
             Self::Workflow(w) => w.kind(),
             Self::Restore(r) => r.kind(),
+            Self::Close(c) => c.kind(),
             Self::Inbox(i) => i.kind(),
             Self::Timing(t) => t.kind(),
         }

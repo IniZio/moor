@@ -4,7 +4,7 @@
 use std::cell::Cell;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, WantChange, Wanted, WantedKind};
+use moor_core::domain::decision::{Decision, ExtraEvent, WantChange, Wanted, WantedKind};
 use moor_core::response::{CloseRefusal, ErrorDetail};
 use moor_core::view::CloseView;
 use moor_core::{BoxId, BoxName, BoxReq, BoxTarget, CloseReq, ErrorKind, Warning};
@@ -52,7 +52,7 @@ pub(super) fn closing<'a>(
 
 /// Closes each open Box that wants a close and has no op or effect on it, as the close it wanted.
 /// One that still has no room to wake is left for the next pass. Any other failure gives the close
-/// up with a warning, and a Box the close woke is put back to sleep.
+/// up with a warning and a `close_refused` event, and a Box the close woke is put back to sleep.
 ///
 /// # Errors
 /// A store failure listing the Boxes.
@@ -83,23 +83,39 @@ pub(crate) fn pass(
             continue;
         }
         cx.warn(given_up(&row.name, &e.error));
+        let mut slept = false;
         if e.kind == ErrorKind::Refused && asleep {
             let req = BoxReq {
                 box_name: row.name.clone(),
             };
-            if let Err(e) = cx.for_box(row.user, || crate::ops::sleep::run(cx, &req)) {
-                cx.warn(Warning {
+            match cx.for_box(row.user, || crate::ops::sleep::run(cx, &req)) {
+                Ok(_) => slept = true,
+                Err(e) => cx.warn(Warning {
                     code: "close_failed".to_owned(),
                     message: format!(
                         "{} stays awake after the close that woke it: {}",
                         row.name.as_str(),
                         e.error
                     ),
-                });
+                }),
             }
         }
+        store.apply(Decision::new(row.id).event(refused(&e, slept)))?;
     }
     Ok(())
+}
+
+/// The event that the pass gave up a close for `e`, and whether it put the Box back to sleep.
+fn refused(e: &CommandError, slept: bool) -> ExtraEvent {
+    let reason = match e.detail.as_deref() {
+        Some(ErrorDetail::CloseRefused(r)) => Some(r.clone()),
+        _ => None,
+    };
+    ExtraEvent::CloseRefused {
+        reason,
+        error: e.error.to_string(),
+        slept,
+    }
 }
 
 /// Whether Box `id` still wants a close, as one refused only for want of room does.

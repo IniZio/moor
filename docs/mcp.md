@@ -94,8 +94,9 @@ Reads your events from the log, from an offset you keep.
 | `limit` | 50 | At most 100. |
 | `wait_seconds` | 0 | When nothing is past `after`, wait up to this long. At most 30. |
 
-It returns `{events, next, caught_up}`. Pass `next` as `after` in the next
-call. The same arguments return the same events. Offsets increase with gaps,
+It returns `{events, next, caught_up}`. [Events](events.md#event-kinds) lists
+the kinds, such as `closed` and `close_refused`. Pass `next` as `after` in the
+next call. The same arguments return the same events. Offsets increase with gaps,
 because other users' events share the log.
 
 ## HTTP endpoints

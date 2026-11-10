@@ -1,5 +1,4 @@
 //! Typed box events. State events are derived from steps, so a row and its event cannot disagree.
-pub use crate::domain::turn::TurnOutcome;
 use crate::{domain::box_state::BoxLifecycle, name::RunId};
 /// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -100,8 +99,6 @@ pub enum Event {
     },
     /// The Box's machine was gone and a new one replaced it, without the old disk.
     DiskLost,
-    /// A close deleted the Box without waking it, so its caches were not saved.
-    CachesNotSaved,
     /// A restart dropped the sleep or suspend moor wanted; its passes decide it again from now.
     WantedDropped,
     /// A command run finished.
@@ -376,6 +373,9 @@ pub enum Event {
     /// What new hands got back of the agent's conversation.
     #[serde(untagged)]
     Restore(RestoreEvent),
+    /// What a close left undone.
+    #[serde(untagged)]
+    Close(CloseEvent),
     /// Steers a new launch cut, or a close dropped.
     #[serde(untagged)]
     Inbox(InboxEvent),

@@ -18,7 +18,7 @@ use moor_core::user::Identity;
 use moor_core::view::ArtifactView;
 
 use crate::api::Api;
-use crate::command::{closed, finished, BoxEvent, Stop};
+use crate::command::{close_given_up, closed, finished, BoxEvent, Stop};
 use crate::db::{BoxState, Db, FedBox, SlackBox};
 use crate::dial::{Tagged, Watched};
 use crate::identity::Link;
@@ -53,6 +53,9 @@ struct Fold {
     stopped: HashMap<BoxId, Vec<(i64, Stop)>>,
     /// Boxes that closed and whose closed line is not yet known to be posted.
     closed: HashSet<BoxId>,
+    /// Each Box's closes moor gave up, by cursor with the event's payload, whose line is not yet
+    /// known to be posted.
+    given_up: HashMap<BoxId, Vec<(i64, serde_json::Value)>>,
     /// The question each Box waits on.
     asked: HashMap<BoxId, prompts::Asked>,
     /// What happened to each Box that its thread is owed a line for, by cursor.
@@ -113,6 +116,10 @@ impl Fold {
                     .push((event.cursor, said));
             }
             "closed" => drop(self.closed.insert(id)),
+            "close_refused" => {
+                let given_up = self.given_up.entry(id).or_default();
+                given_up.push((event.cursor, event.payload.clone()));
+            }
             _ => {}
         }
     }
@@ -291,10 +298,10 @@ impl Feed {
         }
     }
 
-    /// Posts the finished and closed lines of `boxed` that are not yet posted, and marks a
-    /// bound Box the controller closed gone. A Box that is closing gets its closed line and
-    /// its `gone` from the worker's close path. Returns false when a line could not be posted
-    /// or recorded.
+    /// Posts the finished, given-up close and closed lines of `boxed` that are not yet posted,
+    /// and marks a bound Box the controller closed gone. A Box that is closing gets its closed
+    /// line and its `gone` from the worker's close path. Returns false when a line could not be
+    /// posted or recorded.
     fn lines(&self, db: &Db, fold: &mut Fold, boxed: &SlackBox) -> bool {
         let (BoxState::Bound { box_id, .. }
         | BoxState::Closing { box_id, .. }
@@ -311,6 +318,16 @@ impl Feed {
                     return false;
                 }
                 turns.remove(0);
+            }
+        }
+        if let Some(given_up) = fold.given_up.get_mut(&box_id) {
+            while let Some((cursor, payload)) = given_up.first() {
+                let queue = || db.notice(boxed, BoxEvent::CloseGivenUp, Some(*cursor));
+                let key = (BoxEvent::CloseGivenUp, Some(*cursor));
+                if !self.line(db, boxed, key, &close_given_up(name, payload), queue) {
+                    return false;
+                }
+                given_up.remove(0);
             }
         }
         if fold.closed.contains(&box_id) && !matches!(boxed.state, BoxState::Closing { .. }) {
