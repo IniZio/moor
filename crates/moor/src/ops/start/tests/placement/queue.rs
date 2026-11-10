@@ -307,7 +307,6 @@ fn a_close_with_room_still_wakes_and_closes_the_box() {
 #[test]
 fn a_close_that_found_no_room_to_wake_its_box_closes_it_once_there_is_room() {
     use moor_core::domain::box_state::BoxLifecycle::Closed;
-    use moor_core::domain::decision::WantedKind;
     let (w, hv) = live_world(32_768);
     let shut = asleep(&w, "shut", CEILING);
     let other = started(&w, "other");
@@ -331,7 +330,11 @@ fn a_close_that_found_no_room_to_wake_its_box_closes_it_once_there_is_room() {
         Some(serde_json::json!("waiting_for_room"))
     );
     let wanted = store.box_row(shut).unwrap().unwrap().wanted;
-    assert_eq!(wanted.map(|w| w.kind()), Some(WantedKind::Close));
+    let unforced = moor_core::domain::decision::Wanted::Close {
+        force: false,
+        reason: None,
+    };
+    assert_eq!(wanted, Some(unforced), "the close it was, not forced");
     tick(&w, hv, 32_768, 0, 0);
     crate::ops::wanted_pass(&w.cx, store, &|| false).unwrap();
     assert_eq!(lifecycle(&w, shut), Closed);
