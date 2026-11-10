@@ -1,20 +1,31 @@
 //! `V74__launch_fence` leaves each Box at most one live launch, its newest, on both backends:
-//! an older launch never ended takes the start of the launch after it as its end, and every
-//! other row stays as it was.
+//! an older launch never ended takes the start of the launch after it as its end, a launch begun
+//! before the Box's newest hands takes their creation as its end, and every other row stays as
+//! it was.
 
 use moor_migrate::Backend;
 use postgres::{Client, NoTls};
 use rusqlite::Connection;
 
-/// Box 1 has two launches never ended, then one ended; Box 2 has one live launch.
+/// Box 1 has two launches never ended, then one ended; Box 2 has one live launch on its only
+/// hands; Box 3 launched twice on hands it lost at 25 and got new hands at 30.
 const BEFORE: &str = "
 INSERT INTO boxes (name, created_at) VALUES ('a', 1);
 INSERT INTO boxes (name, created_at) VALUES ('b', 1);
+INSERT INTO boxes (name, created_at) VALUES ('c', 1);
+INSERT INTO box_hands (box, inc, provider, state, state_at, created_at)
+    VALUES (2, 1, 'p', 'ready', 45, 45);
+INSERT INTO box_hands (box, inc, provider, state, state_at, created_at, ended_at)
+    VALUES (3, 1, 'p', 'gone', 25, 2, 25);
+INSERT INTO box_hands (box, inc, provider, state, state_at, created_at)
+    VALUES (3, 2, 'p', 'starting', 30, 30);
 INSERT INTO launches (box, session_ref, started_at) VALUES (1, 's', 10);
 INSERT INTO launches (box, session_ref, started_at) VALUES (1, 's', 20);
 INSERT INTO launches (box, session_ref, started_at, ended_at, exit) VALUES (1, 's', 30, 35, 0);
 INSERT INTO launches (box, session_ref, started_at) VALUES (1, 's', 40);
 INSERT INTO launches (box, session_ref, started_at) VALUES (2, 's', 50);
+INSERT INTO launches (box, session_ref, started_at) VALUES (3, 's', 10);
+INSERT INTO launches (box, session_ref, started_at) VALUES (3, 's', 20);
 ";
 
 /// Each launch's Box, start and end, `-` for null.
@@ -22,7 +33,9 @@ const LAUNCHES: &str = "SELECT CAST(box AS TEXT) || '|' || CAST(started_at AS TE
     || COALESCE(CAST(ended_at AS TEXT), '-') FROM launches ORDER BY id";
 
 fn expected() -> Vec<&'static str> {
-    vec!["1|10|20", "1|20|30", "1|30|35", "1|40|-", "2|50|-"]
+    vec![
+        "1|10|20", "1|20|30", "1|30|35", "1|40|-", "2|50|-", "3|10|20", "3|20|30",
+    ]
 }
 
 #[test]
