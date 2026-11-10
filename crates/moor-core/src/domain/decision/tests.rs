@@ -1,7 +1,7 @@
-//! Tests for the decision builder and intents.
+//! Tests for the decision builder, wanted actions and effects.
 
 use super::{
-    BoxTarget, Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewBox, SpecFields,
+    BoxTarget, Decision, EffectChange, ExtraEvent, Field, Fields, NewBox, SpecFields, WantChange,
 };
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::box_state::BoxLifecycleInput;
@@ -16,7 +16,7 @@ fn new_is_empty() {
     assert_eq!(d.target, BoxTarget::Existing(BoxId::new(3)));
     assert!(d.lifecycle_input.is_none() && d.session_input.is_none() && d.hands.is_none());
     assert_eq!(d.set, Fields::default());
-    assert_eq!(d.intent, IntentChange::Keep);
+    assert_eq!((d.wanted, d.effect), (WantChange::Keep, EffectChange::Keep));
     assert!(d.events.is_empty());
 }
 
@@ -54,14 +54,14 @@ fn builder_chains() {
     let d = Decision::new(BoxId::new(1))
         .lifecycle(BoxLifecycleInput::Admitted)
         .set(f.clone())
-        .intent(IntentChange::Clear)
+        .effect(EffectChange::End)
         .event(ExtraEvent::RunStarted { run: RunId::new(1) })
         .event(ExtraEvent::SessionStarted {
             session: "s".into(),
         });
     assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Admitted));
     assert_eq!(d.set, f);
-    assert_eq!(d.intent, IntentChange::Clear);
+    assert_eq!(d.effect, EffectChange::End);
     assert_eq!(
         d.events,
         vec![
@@ -70,22 +70,6 @@ fn builder_chains() {
                 session: "s".into()
             }
         ]
-    );
-}
-
-/// Intent accessors report kind and run.
-#[test]
-fn intent_accessors() {
-    let p = Intent::Provisioning;
-    let r = Intent::Running { run: RunId::new(9) };
-    let s = Intent::Setup;
-    assert_eq!(
-        (p.kind(), r.kind(), s.kind()),
-        ("provisioning", "running", "setup")
-    );
-    assert_eq!(
-        (p.run(), r.run(), s.run()),
-        (None, Some(RunId::new(9)), None)
     );
 }
 
@@ -181,39 +165,6 @@ fn a_cache_emptied_event_round_trips() {
     let e = Event::from(x.clone());
     assert_eq!(e.kind(), "cache_emptied");
     assert_eq!(ExtraEvent::try_from(e).unwrap(), x);
-}
-
-/// Position of an intent in `intent_samples()`; the exhaustive match fails to compile on a new variant.
-const fn intent_index(i: &Intent) -> usize {
-    match i {
-        Intent::Provisioning => 0,
-        Intent::Running { .. } => 1,
-        Intent::Setup => 2,
-        Intent::Closing => 3,
-    }
-}
-
-/// One sample of every intent variant.
-fn intent_samples() -> [Intent; 4] {
-    [
-        Intent::Provisioning,
-        Intent::Running { run: RunId::new(2) },
-        Intent::Setup,
-        Intent::Closing,
-    ]
-}
-
-/// The samples cover every intent once, and the kind names are unique.
-#[test]
-fn intent_samples_cover_every_variant_with_unique_kinds() {
-    let all = intent_samples();
-    for (pos, i) in all.iter().enumerate() {
-        assert_eq!(intent_index(i), pos, "{i:?}");
-    }
-    let mut kinds: Vec<_> = all.iter().map(Intent::kind).collect();
-    kinds.sort_unstable();
-    kinds.dedup();
-    assert_eq!(kinds.len(), all.len());
 }
 
 /// A close outranks a suspend, which outranks a sleep; a raise of equal rank is absorbed.

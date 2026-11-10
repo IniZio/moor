@@ -24,13 +24,10 @@ const BOX_COLS: [Boxes; 12] = [
     Boxes::OtherRepos,
 ];
 /// The `box_state` columns a Box read takes next.
-const STATE_COLS: [BoxState; 18] = [
+const STATE_COLS: [BoxState; 15] = [
     BoxState::Prompt,
     BoxState::State,
     BoxState::StateReason,
-    BoxState::IntentKind,
-    BoxState::IntentRun,
-    BoxState::IntentAt,
     BoxState::SetupFailedAt,
     BoxState::UpdatedAt,
     BoxState::IdleSince,

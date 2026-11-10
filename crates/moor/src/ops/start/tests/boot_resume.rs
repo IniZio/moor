@@ -84,7 +84,7 @@ fn a_restart_mid_setup_follows_the_setup_as_the_owners_first_turn_and_queues_a_s
     );
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(setup_attaches(&w), [attached.clone(), attached]);
 }
 
@@ -102,7 +102,7 @@ fn a_restart_mid_acquire_acquires_exactly_once_more_and_queues_a_steer_meanwhile
     assert_eq!(releases(&w), ["release box-1"]);
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
 }
 
 #[test]

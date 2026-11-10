@@ -1,7 +1,7 @@
 //! The only writer of box/box state and events: `Store::apply` plus run records.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{BoxTarget, Decision, Field, HandsFields, IntentChange};
+use moor_core::domain::decision::{BoxTarget, Decision, Field, HandsFields};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
@@ -189,7 +189,7 @@ fn step_driver(
     Ok(Some(Step { from: None, to }))
 }
 
-/// Write box state, fields, intent, wanted action and effect; `held` is what the Box wanted and
+/// Write box state, fields, wanted action and effect; `held` is what the Box wanted and
 /// had in flight before.
 fn write_box_row(
     tx: &Tx<'_>,
@@ -214,7 +214,6 @@ fn write_box_row(
             session.push((Sessions::EndedAt, now.as_millis().into()));
         }
     }
-    sets.extend(intent_sets(d.intent, now));
     sets.extend(wanted::sets(held, d, now)?);
     sets.push((BoxState::UpdatedAt, now.as_millis().into()));
     update(tx, &mut state_update(id), &sets)?;
@@ -334,28 +333,6 @@ fn input_handle_sets(input: &HandsInput, taken: &Sets<BoxHands>) -> Sets<BoxHand
         }
         _ => Vec::new(),
     }
-}
-
-/// Column assignments for an intent change.
-pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<BoxState> {
-    let (kind, run, at) = match change {
-        IntentChange::Keep => return Vec::new(),
-        IntentChange::Clear => (None, None, None),
-        IntentChange::Set(i) => (
-            Some(i.kind().to_owned()),
-            i.run().map(moor_core::RunId::get),
-            Some(now.as_millis()),
-        ),
-    };
-    // Written, never read: the previous binary, which a failed deploy rolls back to, refuses an
-    // intent without a pid until a later migration drops the column.
-    let pid = kind.as_ref().map(|_| i64::from(std::process::id()));
-    vec![
-        (BoxState::IntentKind, kind.into()),
-        (BoxState::IntentPid, pid.into()),
-        (BoxState::IntentRun, run.into()),
-        (BoxState::IntentAt, at.into()),
-    ]
 }
 
 /// Insert one event row, stamped with the Box's newest Session, and return its id.

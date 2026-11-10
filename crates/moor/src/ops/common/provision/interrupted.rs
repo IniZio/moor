@@ -1,7 +1,7 @@
 //! Settles the starts an earlier controller process left unfinished.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, Restart, Wanted, WantedKind};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::Released;
 use moor_core::{BoxHandle, BoxId, Warning};
@@ -15,22 +15,11 @@ use crate::store::{BoxRow, Store};
 /// Why a Box whose acquire was cut off failed.
 const CAUSE: &str = "setup interrupted by a controller restart";
 
-/// The open Boxes whose start an earlier controller process left unfinished: an intent other than
-/// a run is set, or a launch was cut. The controller lock keeps every other process off the
-/// store, so each is dead and resumes as its owner's first turn.
+/// The open Boxes an earlier controller process left something in flight on: an effect, or a
+/// close it wanted. The controller lock keeps every other process off the store, so each is dead
+/// and settles as its owner's first turn.
 pub(crate) fn cut_short(store: &Store) -> Result<Vec<BoxId>, CommandError> {
-    let mut cut = Vec::new();
-    for row in store.open_boxes()? {
-        let resumes = match row.intent {
-            Some(Intent::Running { .. }) => false,
-            Some(_) => true,
-            None => launch_was_cut(store, &row)?,
-        };
-        if resumes {
-            cut.push(row.id);
-        }
-    }
-    Ok(cut)
+    Ok(store.in_flight_boxes()?.into_iter().map(|r| r.id).collect())
 }
 
 /// What a resume does once its Box has settled, which is when the controller may serve.
@@ -50,30 +39,50 @@ pub(crate) enum Then {
     },
 }
 
-/// Settles the cut-off start of Box `id` under the Resume turn the caller holds, with no call to
-/// a provider. A start goes on when its setup can be followed again or finished in its machine,
-/// its acquire was cut for the first time in this start, its launch was cut, or a forced close
-/// wants it gone.
+/// Settles what Box `id` had in flight under the Resume turn the caller holds, with no call to a
+/// provider. A wanted close goes on first. An effect that is safe to repeat goes on when its
+/// setup can be followed again or finished in its machine, its acquire was cut for the first time
+/// in this start, its launch was cut before an agent was recorded, or its release was cut. A
+/// cut run is reported, as running its command again could repeat what it did.
 pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<Then, CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(Then::Rest);
     };
-    let Some(intent) = row.intent else {
-        return Ok(if launch_was_cut(store, &row)? {
-            Then::Resume
-        } else {
-            Then::Rest
-        });
+    if row.wanted.as_ref().map(Wanted::kind) == Some(WantedKind::Close) {
+        return Ok(Then::Resume);
+    }
+    let Some(effect) = row.effect else {
+        return Ok(Then::Rest);
     };
-    match intent {
-        Intent::Provisioning => cx.for_box(row.user, || cut_acquire(cx, store, &row)),
-        Intent::Setup if followable(&row) => Ok(Then::Resume),
-        Intent::Setup => {
+    if effect.on_restart() == Restart::Report {
+        report_run(store, &row)?;
+        return Ok(Then::Rest);
+    }
+    match effect {
+        Effect::Acquire => cx.for_box(row.user, || cut_acquire(cx, store, &row)),
+        Effect::Setup if followable(&row) => Ok(Then::Resume),
+        Effect::Setup => {
             record_interrupted(cx, store, &row, NOT_READY.to_owned()).map(|()| Then::Rest)
         }
-        Intent::Running { .. } => Ok(Then::Rest),
-        Intent::Closing => Ok(Then::Resume),
+        Effect::Launch if launch_was_cut(store, &row)? => Ok(Then::Resume),
+        Effect::Launch | Effect::Run { .. } => {
+            store.apply(Decision::new(id).effect(EffectChange::End))?;
+            Ok(Then::Rest)
+        }
+        Effect::Release => Ok(Then::Resume),
     }
+}
+
+/// Ends the run a restart cut, as interrupted, when its row is still open, and its effect.
+fn report_run(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    store.in_flight_run(row.id)?;
+    if matches!(
+        store.box_row(row.id)?.and_then(|r| r.effect),
+        Some(Effect::Run { .. })
+    ) {
+        store.apply(Decision::new(row.id).effect(EffectChange::End))?;
+    }
+    Ok(())
 }
 
 /// Does what `then` asks for Box `id`, still under the caller's Resume turn; returns whether
@@ -114,24 +123,19 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, Com
     Ok(claimed)
 }
 
-/// Whether a start began launching the agent of `row` and no session came of it. A `--no-agent`
-/// start never begins, and a launch that failed says so.
+/// Whether the launch in flight on `row` was cut before an agent was recorded, on a machine that
+/// is still ready. A `--no-agent` start never begins one, and a launch that failed says so.
 pub(super) fn launch_was_cut(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let ready = row
         .hands
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Ready);
     let waits = row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet();
-    if !ready || !waits || row.launch_failure.is_some() || store.live_launch(row.id)?.is_some() {
-        return Ok(false);
-    }
-    let events = store.events(row.id, usize::MAX)?;
-    let began = events.iter().rfind(|e| {
-        e.kind == "step_started" && e.payload.get("step").and_then(|s| s.as_str()) == Some("launch")
-    });
-    let began = began.map_or(0, |e| e.id);
-    let session = events.iter().rfind(|e| e.kind == "session_started");
-    Ok(began > session.map_or(0, |e| e.id))
+    Ok(row.effect == Some(Effect::Launch)
+        && ready
+        && waits
+        && row.launch_failure.is_none()
+        && store.live_launch(row.id)?.is_none())
 }
 
 /// Whether the cut-off start of `row` was setting up in a machine it still holds: running its
@@ -146,7 +150,6 @@ fn followable(row: &BoxRow) -> bool {
 /// Settles a cut-off acquire; returns what this process does with it once serving.
 fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandError> {
     let setting_up = row.lifecycle == BoxLifecycle::SettingUp;
-    let claim = IntentChange::Set(Intent::Provisioning);
     match row.hands.as_ref().map(|b| b.state) {
         Some(HandsState::Starting) => {
             let planned = planned_root(store, row.id)?;
@@ -154,24 +157,21 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
                 .as_ref()
                 .is_some_and(|h| cx.driver().acquire_outlives_caller(h));
             if goes_on && setting_up {
-                store.apply(Decision::new(row.id).intent(claim))?;
                 return Ok(Then::Resume);
             }
             if goes_on {
                 // The resume stops it once the controller serves, as stopping waits for it.
-                let lost = Decision::new(row.id)
-                    .hands_input(
-                        row.hands_inc(),
-                        HandsInput::AcquireFailed {
-                            cause: CAUSE.to_owned(),
-                            attempted: planned,
-                        },
-                    )
-                    .intent(claim);
+                let lost = Decision::new(row.id).hands_input(
+                    row.hands_inc(),
+                    HandsInput::AcquireFailed {
+                        cause: CAUSE.to_owned(),
+                        attempted: planned,
+                    },
+                );
                 store.apply(lost)?;
                 return Ok(Then::Resume);
             }
-            fail_acquire(store, row, setting_up && !cut_before(store, row)?)
+            fail_acquire(store, row, setting_up && !cut_before(row))
         }
         // The process that claimed it to acquire again ended before it could.
         Some(HandsState::Failed | HandsState::Gone) if setting_up => {
@@ -180,7 +180,7 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
                     cause: CAUSE.to_owned(),
                     which: None,
                 })
-                .intent(IntentChange::Clear);
+                .effect(EffectChange::End);
             store.apply(lost)?;
             Ok(Then::Rest)
         }
@@ -189,13 +189,8 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
 }
 
 /// Whether this start already asked for a machine twice, as a cut acquire that goes again does.
-fn cut_before(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
-    let began = store
-        .newest_events_of(row.id, "setting_up", 1)?
-        .first()
-        .map_or(0, |e| e.id);
-    let asked = store.newest_events_of(row.id, "box_requested", 2)?;
-    Ok(asked.len() == 2 && asked.iter().all(|e| e.id > began))
+const fn cut_before(row: &BoxRow) -> bool {
+    row.effect_attempt >= 2
 }
 
 /// Records the cut-off acquire as failed; returns that the machine it may have made is released
@@ -213,7 +208,11 @@ fn fail_acquire(store: &Store, row: &BoxRow, again: bool) -> Result<Then, Comman
         }
     };
     let lost = Decision::new(row.id).hands_input(row.hands_inc(), input);
-    store.apply(lost.intent(IntentChange::Set(Intent::Provisioning)))?;
+    store.apply(lost.effect(if again {
+        EffectChange::Again
+    } else {
+        EffectChange::Keep
+    }))?;
     if !again {
         store.apply(gave_up(row))?;
     }
@@ -227,7 +226,7 @@ fn fail_acquire(store: &Store, row: &BoxRow, again: bool) -> Result<Then, Comman
 /// What ends the cut start of `row` that does not acquire again. A machine that cannot be
 /// released may still be there, so its Box fails.
 fn gave_up(row: &BoxRow) -> Decision {
-    let settled = Decision::new(row.id).intent(IntentChange::Clear);
+    let settled = Decision::new(row.id).effect(EffectChange::End);
     if row.lifecycle != BoxLifecycle::SettingUp {
         return settled;
     }

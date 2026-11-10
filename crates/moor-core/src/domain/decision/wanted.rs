@@ -192,6 +192,9 @@ pub enum EffectChange {
     Keep,
     /// Begin this effect; the Box must have none in flight.
     Begin(Effect),
+    /// The effect in flight, if any, ended, and this one begins: a start's acquire hands over to
+    /// its setup, and a launch replaces a run it outlived.
+    Next(Effect),
     /// Try the effect in flight once more.
     Again,
     /// The effect in flight ended.

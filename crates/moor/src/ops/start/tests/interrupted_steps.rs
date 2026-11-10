@@ -1,7 +1,7 @@
 //! Tests for a restart that cut a start after its setup lines passed, on the steps after them.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, Intent};
+use moor_core::domain::decision::{Decision, Effect, Field, Fields, HandsFields};
 use moor_core::domain::hands::HandsInc;
 use moor_core::BoxId;
 
@@ -28,7 +28,7 @@ fn a_restart_once_the_setup_lines_passed_finishes_the_later_steps_and_launches_t
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(row.steps_pending_at, None);
     let after: Vec<(String, String)> = store
         .events(row.id, 200)
@@ -90,7 +90,7 @@ fn later_steps_that_cannot_finish_after_a_restart_fail_the_setup_with_why() {
     assert!(resume_setup(&w.cx, store, BoxId::new(1)).is_err());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     let why = setup_why_of(&w).expect("a why");
     assert!(!why.is_empty());
     let events = store.events(row.id, 200).unwrap();
@@ -105,7 +105,7 @@ fn a_drain_leaves_later_steps_that_cannot_finish_to_the_next_process() {
     assert!(resume_setup(&w.cx, store, BoxId::new(1)).is_err());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
-    assert!(matches!(row.intent, Some(Intent::Setup)));
+    assert!(matches!(row.effect, Some(Effect::Setup)));
     assert_eq!(setup_why_of(&w), None);
 }
 
@@ -132,7 +132,7 @@ fn later_steps_cut_on_a_machine_that_is_not_ready_fail_the_setup_with_why() {
     assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     let why = setup_why_of(&w).expect("a why");
     assert!(why.contains("not ready"), "{why}");
     let events = store.events(row.id, 200).unwrap();
@@ -177,7 +177,7 @@ fn a_restart_during_the_install_is_not_a_failed_setup() {
             .unwrap()
             .unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(row.setup_failed_at, None);
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     assert!(

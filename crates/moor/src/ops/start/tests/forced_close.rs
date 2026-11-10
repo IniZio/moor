@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, WantChange, Wanted};
 use moor_core::domain::hands::HandsState;
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
@@ -128,9 +128,12 @@ fn the_next_process_honours_a_forced_close_a_restart_cut_off() {
     assert!(crashed.is_err());
     w.driver.notes_while_acquiring(&[], || {});
     let store = w.cx.store().unwrap();
-    let closing = IntentChange::Set(Intent::Closing);
+    let closing = WantChange::Raise(Wanted::Close {
+        force: true,
+        reason: None,
+    });
     store
-        .apply(Decision::new(BoxId::new(1)).intent(closing))
+        .apply(Decision::new(BoxId::new(1)).want(closing))
         .unwrap();
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();

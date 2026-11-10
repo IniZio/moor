@@ -19,7 +19,7 @@ fn open(dir: &Path) -> Store {
     crate::store::db::testing::open_store(&dir.join("moor.db"), clock)
 }
 
-/// Insert a Box that is Ready with a handle and no intent.
+/// Insert a Box that is Ready with a handle and no effect in flight.
 fn ready(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
@@ -140,7 +140,7 @@ fn due_lists_boxes_in_id_order() {
 }
 
 #[test]
-fn not_due_unless_ready_with_handle_and_no_intent() {
+fn not_due_unless_ready_with_handle_and_no_effect_in_flight() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = ready(&store, "a");
@@ -151,9 +151,9 @@ fn not_due_unless_ready_with_handle_and_no_intent() {
     set_handle(&store, t, None);
     assert!(store.artifacts_due().unwrap().is_empty());
     set_handle(&store, t, Some("h"));
-    update(&store, t, &[(BoxState::IntentKind, "close".into())]);
+    update(&store, t, &[(BoxState::Effect, "launch".into())]);
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(&store, t, &[(BoxState::IntentKind, None::<String>.into())]);
+    update(&store, t, &[(BoxState::Effect, None::<String>.into())]);
     assert_eq!(store.artifacts_due().unwrap().len(), 1);
 }
 

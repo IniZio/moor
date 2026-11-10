@@ -90,8 +90,6 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         lifecycle: BoxLifecycle::Ready,
         session: SessionState::Working,
         state_reason: None,
-        intent: None,
-        intent_at: None,
         wanted: None,
         effect: None,
         effect_attempt: 0,

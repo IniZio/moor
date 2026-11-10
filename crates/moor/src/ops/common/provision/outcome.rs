@@ -1,7 +1,7 @@
 //! What provisioning ran in a Box, and how a failed step is recorded and reported.
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::domain::decision::{Decision, EffectChange, ExtraEvent, Field, Fields};
 use moor_core::domain::layers::WarmDisk;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::WorkTreeView;
@@ -116,7 +116,7 @@ pub(super) fn clone_failed(
             setup_failed_at: Field::Set(cx.clock().now().as_millis()),
             ..Fields::default()
         })
-        .intent(IntentChange::Clear);
+        .effect(EffectChange::End);
     if let Err(write) = store.apply(done) {
         return write.into();
     }
