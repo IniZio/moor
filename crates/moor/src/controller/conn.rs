@@ -89,13 +89,7 @@ pub(crate) fn handle(
                 viewer: Moor::from_env(env)
                     .map_or(Viewer::Nobody, |m| m.watcher(&peer.caller, asserted)),
             };
-            watch::stream_draining(
-                writer,
-                env,
-                ask,
-                watch::Limits::default(),
-                peer.conn.drain(),
-            );
+            watch::stream_on(writer, env, ask, peer.conn.drain(), peer.hangup.as_ref());
         },
     );
 }

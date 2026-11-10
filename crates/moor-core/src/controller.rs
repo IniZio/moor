@@ -190,7 +190,9 @@ pub enum ServerFrame {
         /// Event timestamp.
         ts: i64,
     },
-    /// Sent once before the controller closes a watch with `follow` off; `cursor` is the last event id scanned, including events the filter skipped — resume from it.
+    /// Sent once before the controller closes a watch with `follow` off, and every few seconds a
+    /// following watch has nothing to send, so a write to a vanished client fails; `cursor` is
+    /// the last event id scanned, including events the filter skipped — resume from it.
     CaughtUp {
         /// Last event id scanned.
         cursor: i64,

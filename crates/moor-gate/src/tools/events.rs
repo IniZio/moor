@@ -188,6 +188,8 @@ fn collect(
                 }
             }
             Ok(Ok(WatchItem::Event(_))) => {}
+            // A follow sends caught-up as a keepalive while it has nothing to send.
+            Ok(Ok(WatchItem::CaughtUp { .. })) if until.is_some() => {}
             Ok(Ok(WatchItem::CaughtUp { cursor })) => return Ok((events, Some(cursor))),
             Ok(Err(e)) => return Err(format!("the controller ended the watch: {e}")),
             Err(RecvTimeoutError::Timeout) => break,

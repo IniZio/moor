@@ -38,6 +38,7 @@ fn fast(buffer: usize) -> Limits {
         buffer,
         poll: Duration::from_millis(10),
         batch: 3,
+        keepalive: Duration::from_secs(5),
     }
 }
 
@@ -455,7 +456,7 @@ fn a_following_watch_ends_with_restarting_once_the_drain_begins() {
             &env,
             ask(0, everything(), true),
             fast(16),
-            &streaming,
+            (&streaming, crate::env::Cancel::default()),
         );
         done.send(()).ok();
     });
@@ -485,4 +486,5 @@ fn a_following_watch_ends_with_restarting_once_the_drain_begins() {
         .contains(&format!("cursor {last}")));
 }
 
+mod gone;
 mod parent;

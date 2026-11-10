@@ -183,6 +183,7 @@ fn stream_delivers_idle_without_any_show() {
         buffer: 64,
         poll: Duration::from_millis(10),
         batch: 10,
+        ..Limits::default()
     };
     let seen = Arc::default();
     stream(

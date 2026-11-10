@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -13,7 +13,8 @@ use moor_core::user::Viewer;
 use moor_core::{BoxId, SessionId};
 
 use super::drain::Drain;
-use crate::env::Env;
+use super::hangup::Hangup;
+use crate::env::{Cancel, Env};
 use crate::Moor;
 
 /// Sizes and pacing of one watch stream.
@@ -25,6 +26,9 @@ pub(crate) struct Limits {
     pub(crate) poll: Duration,
     /// Most events read from the store at once.
     pub(crate) batch: usize,
+    /// Longest a following stream stays silent: then it sends a `caught-up` frame, so a client
+    /// that vanished without closing its socket fails the write and ends the stream.
+    pub(crate) keepalive: Duration,
 }
 
 impl Default for Limits {
@@ -33,6 +37,7 @@ impl Default for Limits {
             buffer: 1024,
             poll: Duration::from_millis(200),
             batch: 256,
+            keepalive: Duration::from_secs(5),
         }
     }
 }
@@ -54,6 +59,8 @@ struct Shared {
     drain: Option<Arc<Drain>>,
     /// The poller stopped because the drain began.
     restarting: AtomicBool,
+    /// Set once the client hangs up; the poller stops then.
+    gone: Cancel,
 }
 
 impl Shared {
@@ -64,19 +71,44 @@ impl Shared {
         }
     }
 
-    /// Whether the poller must stop: the connection closed, or the drain began, which the
-    /// stream then reports.
+    /// Whether the poller must stop: the connection closed, the client hung up, or the drain
+    /// began, which the stream then reports.
     fn stopping(&self) -> bool {
         if self.drain.as_ref().is_some_and(|d| d.begun()) {
             self.restarting.store(true, Ordering::Release);
             return true;
         }
-        self.closed.load(Ordering::Acquire)
+        self.closed.load(Ordering::Acquire) || self.gone.is_cancelled()
     }
 
     /// Take the recorded store failure.
     fn take_failure(&self) -> Option<String> {
         self.failure.lock().ok()?.take()
+    }
+}
+
+/// Watch streams whose poller runs, across the process.
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// How many watch streams are open now.
+pub(crate) fn live() -> usize {
+    LIVE.load(Ordering::Acquire)
+}
+
+/// Counts one poller in [`LIVE`] until it ends, however it ends.
+struct Live;
+
+impl Live {
+    /// Counts a poller that starts now.
+    fn start() -> Self {
+        LIVE.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        LIVE.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -105,25 +137,45 @@ pub(crate) struct Ask {
 /// Stream every stored event with a cursor above `since` that `filter` matches to `writer`, then follow new ones.
 ///
 /// With `follow` off the stream sends a `caught-up` frame and ends once it has caught up. Otherwise it returns when the writer fails, the store cannot be read, or the client falls
-/// behind by more than `limits.buffer` frames. A slow client gets a `slow-client`
+/// behind by more than `limits.buffer` frames. A following stream that sends nothing for
+/// `limits.keepalive` sends a `caught-up` frame with the cursor scanned so far. A slow client gets a `slow-client`
 /// error frame and a store failure a `store-unavailable` one. The client resumes from the last cursor it received.
 pub(crate) fn stream(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits) {
     run(writer, env, ask, limits, &Arc::new(Shared::default()));
 }
 
-/// [`stream`] that ends with a `restarting` error frame once `drain` begins.
+/// [`stream`] that ends with a `restarting` error frame once `drain` begins, and ends without a
+/// word once `gone` is set.
 pub(crate) fn stream_draining(
     writer: &mut impl Write,
     env: &Env,
     ask: Ask,
     limits: Limits,
-    drain: &Arc<Drain>,
+    (drain, gone): (&Arc<Drain>, Cancel),
 ) {
     let shared = Shared {
         drain: Some(Arc::clone(drain)),
+        gone,
         ..Shared::default()
     };
     run(writer, env, ask, limits, &Arc::new(shared));
+}
+
+/// [`stream_draining`] that also ends once `hangup` sees the client leave. Nothing reads the
+/// connection while it streams, so a follow with nothing to send would not notice otherwise.
+pub(crate) fn stream_on(
+    writer: &mut impl Write,
+    env: &Env,
+    ask: Ask,
+    drain: &Arc<Drain>,
+    hangup: Option<&Hangup>,
+) {
+    let gone = Cancel::default();
+    let stream = || stream_draining(writer, env, ask, Limits::default(), (drain, gone.clone()));
+    match hangup {
+        Some(hangup) => hangup.cancels(&gone, stream),
+        None => stream(),
+    }
 }
 
 /// [`stream`] with the shared flags supplied by the caller.
@@ -132,10 +184,25 @@ fn run(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits, shared: &Ar
     let (tx, rx) = sync_channel(limits.buffer);
     let env = env.clone();
     let poller = Arc::clone(shared);
-    let since = ask.since;
+    let (since, follow) = (ask.since, ask.follow);
     thread::spawn(move || crate::Moor::checked(|| poll(&env, &ask, limits, &tx, &poller)));
     let mut last = since;
-    for frame in rx {
+    loop {
+        let frame = match rx.recv_timeout(limits.keepalive) {
+            Ok(frame) => frame,
+            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => {
+                // Read before looking at the queue: the poller queues an event before it moves
+                // `scanned` past it, so an empty queue now means every event up to `cursor` went.
+                let cursor = shared.scanned.load(Ordering::Acquire).max(last);
+                match rx.try_recv() {
+                    Ok(frame) => frame,
+                    Err(TryRecvError::Disconnected) => break,
+                    Err(TryRecvError::Empty) if follow => ServerFrame::CaughtUp { cursor },
+                    Err(TryRecvError::Empty) => continue,
+                }
+            }
+        };
         if let ServerFrame::Event { cursor, .. } = &frame {
             last = *cursor;
         }
@@ -185,6 +252,7 @@ fn send(writer: &mut impl Write, frame: &ServerFrame) -> std::io::Result<()> {
 /// leaves no gap. Without `follow` it stops after a short read. A store failure is
 /// recorded in `shared` for the connection to report.
 fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shared: &Shared) {
+    let _live = Live::start();
     // `Moor` is not `Send`, so it is built here rather than handed to the thread.
     let moor = match Moor::from_env(env) {
         Ok(moor) => moor.viewing_as(ask.viewer),
