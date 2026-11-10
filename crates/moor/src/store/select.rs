@@ -45,7 +45,7 @@ const STATE_COLS: [BoxState; 16] = [
 /// The newest Session's columns a Box read takes next.
 const SESSION_COLS: [Sessions; 2] = [Sessions::AgentSessionId, Sessions::State];
 /// The current hands' columns a Box read ends with.
-const HANDS_COLS: [BoxHands; 11] = [
+const HANDS_COLS: [BoxHands; 12] = [
     BoxHands::Inc,
     BoxHands::Provider,
     BoxHands::Handle,
@@ -57,6 +57,7 @@ const HANDS_COLS: [BoxHands; 11] = [
     BoxHands::Cpus,
     BoxHands::MemMib,
     BoxHands::StateAt,
+    BoxHands::WokeAt,
 ];
 
 /// A const fn giving a column's position in a Box read row: its place in `$cols`, after `$skip`.
