@@ -11,7 +11,7 @@ use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
-use moor_core::{ErrorKind, Warning};
+use moor_core::{ErrorKind, LaunchId, Warning};
 
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
@@ -50,13 +50,22 @@ impl AgentRead {
 }
 
 /// Sleep the machine of Box `id` when it has been Idle for `box.sleep_after`, Idle for
-/// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`.
-/// While its agent is unread, only the awake cap sleeps it.
+/// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`,
+/// going by `reading`. While its agent is unread, only the awake cap sleeps it.
 ///
 /// An op in flight, a Box that cannot be slept right now and a step the store refuses leave
-/// everything as it was. A Box with a recorded refusal is not asked again until it has left Idle. Any other failure becomes a warning.
+/// everything as it was. A step taken for the agent lands only while the launch `reading` probed
+/// is live. A Box with a recorded refusal is not asked again until it has left Idle. Any other
+/// failure becomes a warning.
+pub(crate) fn run_after_read(cx: &Cx, store: &Store, id: BoxId, reading: &Reading) {
+    let read = (AgentRead::of(reading), reading.launch);
+    report(cx, try_sleep(cx, store, id, read));
+}
+
+/// [`run_after_read`] on an agent read as `agent`, with no launch to go by.
+#[cfg(test)]
 pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) {
-    report(cx, try_sleep(cx, store, id, agent));
+    report(cx, try_sleep(cx, store, id, (agent, None)));
 }
 
 /// Warns of a failure other than a refusal.
@@ -92,7 +101,12 @@ fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, C
 }
 
 /// Sleep the machine once the Box's turn is free and the Box is still due.
-fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), CommandError> {
+fn try_sleep(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    (agent, launch): (AgentRead, Option<LaunchId>),
+) -> Result<(), CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
@@ -111,11 +125,16 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, agent: AgentRead) -> Result<(), 
     if row.hands.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
-    sleep_now(cx, store, &row, agent)
+    sleep_now(cx, store, &row, (agent, launch))
 }
 
 /// Sleeps `row`, due to sleep, under its turn and records the outcome.
-fn sleep_now(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<(), CommandError> {
+fn sleep_now(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    (agent, launch): (AgentRead, Option<LaunchId>),
+) -> Result<(), CommandError> {
     let id = row.id;
     let handle = sleep_handle(cx, row)?;
     let settled = if agent == AgentRead::Unread {
@@ -125,9 +144,13 @@ fn sleep_now(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<(
     };
     if !row.session.is_quiet() {
         // Only the awake cap gets here; the sleep ends the agent's pane, so its Session is quiet.
-        match store.apply(Decision::new(id).session(SessionInput::AgentQuiet)) {
-            Ok(_) => {}
-            Err(StoreError::Illegal(_)) => return Ok(()),
+        let mut quiet = Decision::new(id).session(SessionInput::AgentQuiet);
+        if let Some(launch) = launch {
+            quiet = quiet.launch(launch);
+        }
+        match unless_stale(cx, store.apply(quiet)) {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(StoreError::Illegal(_)) => return Ok(()),
             Err(e) => return Err(e.into()),
         }
     }
