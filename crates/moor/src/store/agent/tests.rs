@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{
-    Decision, Field, Fields, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+    Decision, Effect, EffectChange, Field, Fields, HandsFields, NewBox, SpecFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
@@ -386,19 +386,22 @@ fn ending_a_launch_leaves_a_run_that_began_meanwhile() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = working(&store, "demo");
-    let launching = IntentChange::Set(Intent::Launching);
-    store.apply(Decision::new(id).intent(launching)).unwrap();
-    let run = Intent::Running {
+    let launching = EffectChange::Next(Effect::Launch);
+    store.apply(Decision::new(id).effect(launching)).unwrap();
+    let run = Effect::Run {
         run: moor_core::RunId::new(7),
     };
     store
-        .apply(Decision::new(id).intent(IntentChange::Set(run)))
+        .apply(Decision::new(id).effect(EffectChange::Next(run)))
         .unwrap();
     store.end_launching(id).unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, Some(run));
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, Some(run));
     store
-        .apply(Decision::new(id).intent(IntentChange::Set(Intent::Launching)))
+        .apply(Decision::new(id).effect(EffectChange::End))
+        .unwrap();
+    store
+        .apply(Decision::new(id).effect(EffectChange::Next(Effect::Launch)))
         .unwrap();
     store.end_launching(id).unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 }

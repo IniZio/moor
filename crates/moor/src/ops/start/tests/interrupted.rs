@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::Intent;
+use moor_core::domain::decision::Effect;
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
@@ -80,7 +80,7 @@ fn a_start_cut_off_by_a_restart_acquires_once_more() {
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     let events = store.events(row.id, 50).unwrap();
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
 }
@@ -95,7 +95,7 @@ fn a_start_cut_while_the_host_still_warms_its_vm_survives_the_restart() {
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.hands.as_ref().map(|b| b.state), Some(HandsState::Ready));
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     let events = store.events(row.id, 50).unwrap();
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
     assert!(!events.iter().any(|e| e.kind == "box_failed"));
@@ -268,7 +268,7 @@ fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
     assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(releases(&w).len(), 2);
     let events = w.cx.store().unwrap().events(row.id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
@@ -280,6 +280,52 @@ fn a_second_cut_of_the_same_start_fails_and_releases_its_planned_machine() {
         "{:?}",
         failed.payload
     );
+}
+
+#[test]
+fn a_second_cut_acquire_fails_the_box_with_its_events_deleted() {
+    let w = cut_off(FakeDriver::new());
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.driver.notes_while_acquiring(&[], || {
+        std::panic::resume_unwind(Box::new("process died mid-acquire"))
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(resume_setup(&w.cx, store, BoxId::new(1)));
+    }));
+    assert!(crashed.is_err());
+    w.driver.notes_while_acquiring(&[], || {});
+    store.forget_events(BoxId::new(1));
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(releases(&w).len(), 2);
+}
+
+#[test]
+fn a_run_cut_by_a_restart_is_ended_as_interrupted_and_never_run_again() {
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &start_req()).unwrap();
+    let store = w.cx.store().unwrap();
+    let (cut, claim) = store
+        .begin_run(crate::store::NewRun {
+            box_id: BoxId::new(1),
+            argv: vec!["make".to_owned()],
+            record: None,
+            sha: None,
+            pid: 1,
+        })
+        .unwrap();
+    drop(claim);
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    let ended = store.run(cut).unwrap().unwrap();
+    assert!(ended.finished_at.is_some() && ended.interrupted);
+    assert_eq!(box_row(&w).effect, None);
+    assert!(cut_short_of(&w).is_empty());
+}
+
+fn cut_short_of(w: &World) -> Vec<BoxId> {
+    crate::ops::common::provision::interrupted::cut_short(w.cx.store().unwrap()).unwrap()
 }
 
 #[test]
@@ -407,7 +453,7 @@ fn a_restart_mid_setup_follows_the_same_run_again_and_the_box_comes_up() {
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(setup_attaches(&w), [attached.clone(), attached]);
 }
 
@@ -463,7 +509,7 @@ fn a_drain_during_a_link_gap_leaves_the_setup_for_the_next_process_to_follow() {
     assert!(resume_setup(&w.cx, store, BoxId::new(1)).is_err());
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
-    assert!(matches!(row.intent, Some(Intent::Setup)));
+    assert!(matches!(row.effect, Some(Effect::Setup)));
     let events = store.events(row.id, 50).unwrap();
     assert!(!events.iter().any(|e| e.kind == "setup_failed"));
     assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);

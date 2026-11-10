@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, Field, Fields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::StartReq;
@@ -188,14 +188,14 @@ fn a_prompt_held_for_an_asleep_box_reaches_a_resumed_agent_idle_before_any_turn(
 fn a_start_that_queues_for_room_ends_a_launch_left_on_the_box() {
     let (w, _hv, _engine, id) = queued_with_prompt(FakeEngine::new(), "carry on");
     let store = w.cx.store().unwrap();
-    let launching = IntentChange::Set(Intent::Launching);
-    store.apply(Decision::new(id).intent(launching)).unwrap();
+    let launching = EffectChange::Next(Effect::Launch);
+    store.apply(Decision::new(id).effect(launching)).unwrap();
     assert!(
         start::run(&w.cx, &with_prompt("a", "again"))
             .unwrap()
             .queued
     );
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 }
 
 /// A pane that refuses the next `n` sends.

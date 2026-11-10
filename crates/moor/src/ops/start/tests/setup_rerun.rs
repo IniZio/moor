@@ -1,6 +1,6 @@
 //! Tests for what a start does after a failed or interrupted setup.
 
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, BoxId};
@@ -88,7 +88,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
 fn interrupted_setup() -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup));
+    let held = Decision::new(id).effect(EffectChange::Next(Effect::Setup));
     w.cx.store().unwrap().apply(held).unwrap();
     (w, v)
 }
@@ -105,7 +105,7 @@ fn start_does_not_re_run_setup_left_with_no_op_in_flight() {
     assert!(message.ends_with(BY_HAND), "{message}");
     assert!(failed_at_set(&w, &again));
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
-    assert_eq!(row.unwrap().unwrap().intent, None);
+    assert_eq!(row.unwrap().unwrap().effect, None);
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn start_is_refused_while_a_setup_is_in_flight_and_leaves_it_alone() {
     assert_eq!(e.error.to_string(), "box busy: start in progress");
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.intent, Some(Intent::Setup));
+    assert_eq!(row.effect, Some(Effect::Setup));
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn start_does_not_re_run_setup_cut_off_in_a_setting_up_box() {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
     assert_eq!(row.hands.map(|b| b.state), Some(HandsState::Ready));
-    assert_eq!(row.intent, Some(Intent::Setup));
+    assert_eq!(row.effect, Some(Effect::Setup));
     w.driver.on_exec(|| {});
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
@@ -164,6 +164,6 @@ fn start_does_not_re_run_setup_cut_off_in_a_setting_up_box() {
     );
     assert!(failed_at_set(&w, &again));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
 }

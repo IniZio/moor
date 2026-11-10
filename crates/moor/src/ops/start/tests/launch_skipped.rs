@@ -1,5 +1,5 @@
 use moor_core::config::Flags;
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
 
@@ -87,17 +87,17 @@ fn launching() -> (World, BoxId) {
         ..req("demo")
     };
     let id = BoxId::new(run(&w.cx, &start).unwrap().boxed.id);
-    let set = Decision::new(id).intent(IntentChange::Set(Intent::Launching));
+    let set = Decision::new(id).effect(EffectChange::Next(Effect::Launch));
     w.cx.store().unwrap().apply(set).unwrap();
     (w, id)
 }
 
-fn intent(w: &World, id: BoxId) -> Option<Intent> {
-    w.cx.store().unwrap().box_row(id).unwrap().unwrap().intent
+fn effect(w: &World, id: BoxId) -> Option<Effect> {
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap().effect
 }
 
 #[test]
-fn a_skipped_launch_ends_the_launching_intent() {
+fn a_skipped_launch_ends_the_launch_effect() {
     let (w, id) = launching();
     let start = StartReq {
         no_agent: true,
@@ -105,11 +105,11 @@ fn a_skipped_launch_ends_the_launching_intent() {
     };
     let view = launch_with(&w, id, &start);
     assert!(!view.launched);
-    assert_eq!(intent(&w, id), None);
+    assert_eq!(effect(&w, id), None);
 }
 
 #[test]
-fn a_launch_that_errors_before_it_is_recorded_ends_the_launching_intent() {
+fn a_launch_that_errors_before_it_is_recorded_ends_the_launch_effect() {
     let (w, id) = launching();
     let broken = || {
         Err(crate::error::CommandError::new(
@@ -119,5 +119,5 @@ fn a_launch_that_errors_before_it_is_recorded_ends_the_launching_intent() {
     };
     let store = w.cx.store().unwrap();
     launch::run(&w.cx, store, &req("demo"), id, None, &broken).unwrap_err();
-    assert_eq!(intent(&w, id), None);
+    assert_eq!(effect(&w, id), None);
 }

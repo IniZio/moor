@@ -23,10 +23,24 @@ pub(super) struct Held {
 /// A raise lands only when it outranks what the Box wants, so ops that race resolve the same way
 /// whichever writes first. The lifecycle step a wanted action ends in then clears it, and any
 /// weaker one it fulfils: a close clears every one, a suspend a suspend or sleep, a sleep a sleep.
+/// A close or rejection also ends the effect in flight, as nothing goes on in a closed Box.
 pub(super) fn sets(held: &Held, d: &Decision, now: Ts) -> Result<Sets<BoxState>, StoreError> {
     let mut sets = want_sets(held, d, now);
-    sets.extend(effect_sets(held, d.effect, now)?);
+    let effect = if closes(d) {
+        EffectChange::End
+    } else {
+        d.effect
+    };
+    sets.extend(effect_sets(held, effect, now)?);
     Ok(sets)
+}
+
+/// Whether `d` closes or rejects the Box, which leaves nothing in flight on it.
+const fn closes(d: &Decision) -> bool {
+    matches!(
+        d.lifecycle_input,
+        Some(BoxLifecycleInput::Close { .. } | BoxLifecycleInput::Rejected { .. })
+    )
 }
 
 /// The wanted columns `d` writes, if any.
@@ -40,9 +54,7 @@ fn want_sets(held: &Held, d: &Decision, now: Ts) -> Sets<BoxState> {
     };
     let after = raised.unwrap_or(held.wanted.as_ref());
     let fulfils = match d.lifecycle_input {
-        Some(BoxLifecycleInput::Close { .. } | BoxLifecycleInput::Rejected { .. }) => {
-            Some(WantedKind::Close)
-        }
+        _ if closes(d) => Some(WantedKind::Close),
         Some(BoxLifecycleInput::Suspend { .. }) => Some(WantedKind::Suspend),
         Some(BoxLifecycleInput::Sleep { .. }) => Some(WantedKind::Sleep),
         _ => None,
@@ -76,7 +88,7 @@ fn wanted_columns(w: Option<&Wanted>, now: Ts) -> Sets<BoxState> {
 fn effect_sets(held: &Held, change: EffectChange, now: Ts) -> Result<Sets<BoxState>, StoreError> {
     let (effect, attempt) = match (change, held.effect) {
         (EffectChange::Keep, _) => return Ok(Vec::new()),
-        (EffectChange::Begin(e), None) => (Some(e), 1),
+        (EffectChange::Begin(e), None) | (EffectChange::Next(e), _) => (Some(e), 1),
         (EffectChange::Begin(e), Some((on, _))) => {
             return Err(StoreError::Invalid(format!(
                 "cannot begin {} while {} is in flight",

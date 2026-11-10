@@ -1,7 +1,7 @@
 //! Recording a failed acquire.
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, IntentChange};
+use moor_core::domain::decision::{Decision, EffectChange};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::driver::{AcquireReq, DriverError, Released};
 use moor_core::{BoxHandle, BoxId, ErrorKind, Warning};
@@ -14,7 +14,7 @@ use crate::ops::common::view::box_view;
 use crate::store::Store;
 
 /// Records an acquire a forced close stopped, naming what it may have made for that close to
-/// release, and the error that ends the start. The close's intent stays.
+/// release, and the error that ends the start. The close's wanted close stays.
 pub(super) fn forced_out(
     store: &Store,
     (id, inc): (BoxId, HandsInc),
@@ -60,7 +60,7 @@ pub(super) fn failed(
                 attempted: Some(attempted.clone()),
             },
         )
-        .intent(IntentChange::Clear);
+        .effect(EffectChange::End);
     if let Err(write) = store.apply(lost) {
         return write.into();
     }

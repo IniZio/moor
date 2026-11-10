@@ -11,7 +11,7 @@ use std::time::Duration;
 use moor_core::activity::AgentState;
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::Intent;
+use moor_core::domain::decision::Effect;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
@@ -98,7 +98,7 @@ fn no_agent_yet(row: &BoxRow) -> bool {
         row.lifecycle,
         BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp
     );
-    unready || row.intent == Some(Intent::Launching)
+    unready || row.effect == Some(Effect::Launch)
 }
 
 /// Why the Box can never go idle, as the error that ends the wait: its agent failed to launch,

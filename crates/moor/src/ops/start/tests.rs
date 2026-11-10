@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Field, HandsFields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, Field, HandsFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
@@ -206,11 +206,11 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
 }
 
 #[test]
-fn happy_path_calls_seams_in_order_and_clears_intent() {
+fn happy_path_calls_seams_in_order_and_ends_the_effect() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &agentless_req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    assert!(row.unwrap().unwrap().intent.is_none());
+    assert!(row.unwrap().unwrap().effect.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
 }
 
@@ -235,7 +235,7 @@ fn acquire_failure_keeps_a_failed_box_row() {
             .unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(row.hands.unwrap().state, HandsState::Gone);
-    assert!(row.intent.is_none());
+    assert!(row.effect.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "release box-1"]);
 }
 
@@ -498,7 +498,7 @@ fn stuck_provisioning(w: &World) {
                 ..HandsFields::default()
             },
         )
-        .intent(IntentChange::Set(Intent::Provisioning));
+        .effect(EffectChange::Next(Effect::Acquire));
     w.cx.store().unwrap().apply(stuck).unwrap();
 }
 

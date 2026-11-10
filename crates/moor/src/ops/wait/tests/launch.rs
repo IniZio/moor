@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::activity::{AgentState, STARTUP_GRACE};
 use moor_core::config::Flags;
-use moor_core::domain::decision::{Decision, Intent, IntentChange, NewBox, SpecFields};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, NewBox, SpecFields};
 use moor_core::domain::inbox::InboxKind;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::EngineError;
@@ -60,7 +60,7 @@ fn a_failed_launch_fails_the_wait() {
     let id = set_up(&cx, &Flags::default());
     launch_after_retry(&cx, cx.store().unwrap(), id).unwrap();
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.intent, None, "the failed launch ended the launch");
+    assert_eq!(row.effect, None, "the failed launch ended the launch");
     let e = run(&cx, &req(None, Some(5))).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("no tab"), "{}", e.error);
@@ -160,10 +160,10 @@ fn a_box_left_launching_with_no_machine_ends_the_launch_after_a_restart() {
     let cx = launch_cx(dir.path(), FakeEngine::new());
     let store = cx.store().unwrap();
     let id = super::add(&cx);
-    let launching = Decision::new(id).intent(IntentChange::Set(Intent::Launching));
+    let launching = Decision::new(id).effect(EffectChange::Next(Effect::Launch));
     store.apply(launching).unwrap();
     resume_setup(&cx, store, id).unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn an_agentless_start_of_a_box_left_launching_ends_the_launch() {
     let start = agentless_start();
     crate::ops::start::run(&cx, &start).unwrap();
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.intent, None);
+    assert_eq!(row.effect, None);
     let v = run(&cx, &req(None, Some(5))).unwrap();
     assert!(!v.timed_out);
 }
@@ -243,7 +243,7 @@ fn a_launch_that_fails_after_a_restart_ends_the_launch_and_fails_the_wait() {
     let id = set_up(&cx, &Flags::default());
     let store = cx.store().unwrap();
     resume_setup(&cx, store, id).unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
     let e = run(&cx, &req(None, Some(5))).unwrap_err();
     assert!(e.error.to_string().contains("no tab"), "{}", e.error);
 }
@@ -257,7 +257,7 @@ fn a_seeded_launch_that_fails_ends_the_launch() {
     let row = store.box_row(id).unwrap().unwrap();
     let view = crate::ops::start::begin_seeded(&cx, store, &row, "go".into()).unwrap();
     assert!(!view.launched);
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn a_relaunch_after_a_retry_that_errors_ends_the_launch() {
     launch_after_retry(&cx, store, id).unwrap_err();
     let back = Table::rename().table(gone, Sessions::Table).take();
     db.schema(&back).unwrap();
-    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().effect, None);
 }
 
 #[test]

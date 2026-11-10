@@ -1,14 +1,14 @@
 //! Agent launch rows.
 
-use moor_core::domain::decision::{Intent, IntentChange};
+use moor_core::domain::decision::Effect;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
 
 use moor_schema::tables::{BoxState, Launches, Sessions};
-use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
+use sea_query::{Expr, ExprTrait as _, Func, Order, Query, Value};
 
-use super::apply::{insert_event, intent_sets};
+use super::apply::insert_event;
 use super::select::{newest_session, state_update};
 use super::{load_box, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
@@ -147,7 +147,7 @@ impl Store {
             .is_some())
     }
 
-    /// Ends a launching intent on `box_id`, whatever came of its launch step; any other intent
+    /// Ends the launch in flight on `box_id`, whatever came of its launch step; any other effect
     /// stays.
     ///
     /// # Errors
@@ -364,16 +364,18 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
     })
 }
 
-/// Ends a launching intent on `box_id` inside the caller's write. Any other intent is left, so a
-/// run that began meanwhile keeps its own.
+/// Ends the launch in flight on `box_id` inside the caller's write. Any other effect is left, so
+/// a run that began meanwhile keeps its own.
 fn end_launching(tx: &dyn db::Db, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
-    let mut launched = state_update(box_id)
-        .and_where(Expr::col(BoxState::IntentKind).eq(Intent::Launching.kind()))
-        .take();
-    for (col, v) in intent_sets(IntentChange::Clear, now) {
-        launched.value(col, Expr::val(v));
-    }
-    tx.run(&mut launched)?;
+    tx.run(
+        state_update(box_id)
+            .value(BoxState::Effect, Value::String(None))
+            .value(BoxState::EffectAttempt, Value::BigInt(None))
+            .value(BoxState::EffectRun, Value::BigInt(None))
+            .value(BoxState::EffectAt, Value::BigInt(None))
+            .value(BoxState::UpdatedAt, now.as_millis())
+            .and_where(Expr::col(BoxState::Effect).eq(Effect::Launch.as_str())),
+    )?;
     Ok(())
 }
 

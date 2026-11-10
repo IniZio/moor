@@ -16,7 +16,7 @@ use super::{
 use crate::store::db::{self, Db, DbExt as _};
 
 /// The Box reads' columns where `filter` holds, in `order` by id, every row mapped.
-fn query_boxes(
+pub(super) fn query_boxes(
     conn: &dyn Db,
     filter: Expr,
     order: Order,
