@@ -466,3 +466,75 @@ fn serve_with_a_valid_nodes_config_listens() {
     let _ = child.wait();
     assert!(listening, "the controller never reported listening");
 }
+
+/// The pid of the process listening on the Unix socket `socket`.
+fn listener_pid(socket: &Path) -> i32 {
+    let conn = UnixStream::connect(socket).unwrap();
+    #[cfg(target_os = "linux")]
+    let pid = nix::sys::socket::getsockopt(&conn, nix::sys::socket::sockopt::PeerCredentials)
+        .unwrap()
+        .pid();
+    #[cfg(target_os = "macos")]
+    let pid = nix::sys::socket::getsockopt(&conn, nix::sys::socket::sockopt::LocalPeerPid).unwrap();
+    pid
+}
+
+/// What `ps` reports in `column` for `pid`; empty once it is gone.
+fn ps(pid: i32, column: &str) -> String {
+    let out = Command::new("ps")
+        .args(["-o", &format!("{column}="), "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A `moor proxy serve-egress` a controller this test started has spawned, killed by its exact
+/// pid on drop when it still runs for this test's state dir.
+struct Forwarder {
+    pid: i32,
+    state: String,
+}
+
+impl Forwarder {
+    fn running(&self) -> bool {
+        let args = ps(self.pid, "args");
+        args.contains("serve-egress") && args.contains(&self.state)
+    }
+}
+
+impl Drop for Forwarder {
+    fn drop(&mut self) {
+        if let Some(pid) = rustix::process::Pid::from_raw(self.pid).filter(|_| self.running()) {
+            let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
+        }
+    }
+}
+
+#[test]
+fn the_egress_forwarder_exits_with_its_controller() {
+    let sandbox = Sandbox::new();
+    let mut controller = Controller::start(&sandbox);
+    let state = sandbox.root.join("state");
+    let forwarder = Forwarder {
+        pid: listener_pid(&state.join("egress/egress.sock")),
+        state: state.display().to_string(),
+    };
+    assert!(forwarder.running(), "{}", ps(forwarder.pid, "args"));
+    assert_eq!(
+        ps(forwarder.pid, "ppid"),
+        controller.child.id().to_string(),
+        "the controller started it"
+    );
+    controller.child.kill().unwrap();
+    controller.child.wait().unwrap();
+    // 100 polls of 100ms bound the wait at about ten seconds.
+    let gone = (0..100).any(|_| {
+        std::thread::sleep(Duration::from_millis(100));
+        !forwarder.running()
+    });
+    assert!(
+        gone,
+        "serve-egress (pid {}) outlived its controller",
+        forwarder.pid
+    );
+}
