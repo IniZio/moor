@@ -153,3 +153,36 @@ fn a_relaunch_on_new_hands_saves_nothing_over_the_session() {
     );
     assert_eq!(first_digest(&w, id), None);
 }
+
+#[test]
+fn a_relaunch_of_a_launch_another_op_replaced_launches_nothing_and_ends_nothing() {
+    use crate::ops::start::relaunch::{relaunch, Ended};
+    let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
+    let store = w.cx.store().unwrap();
+    let old = store.live_launch(id).unwrap().unwrap();
+    let end = crate::store::LaunchEnd {
+        session: Some("relaunch"),
+        ..crate::store::LaunchEnd::default()
+    };
+    store.end_launch(id, old.id, &end).unwrap();
+    let session = store.open_session(id).unwrap();
+    store.start_session(session.id).unwrap();
+    let new = store.begin_launch(id, "p-1").unwrap();
+    let launches = engine.launches().len();
+    let row = store.box_row(id).unwrap().unwrap();
+    let flags = moor_core::config::Flags::default();
+    let settings = || crate::ops::common::facts::settings_of(&w.cx, &row, &flags);
+
+    let got = relaunch(
+        &w.cx,
+        store,
+        &asked(false),
+        (&old, &Ended::Gone),
+        None,
+        &settings,
+    );
+
+    assert!(got.as_ref().is_ok_and(Option::is_none), "{got:?}");
+    assert_eq!(engine.launches().len(), launches);
+    assert_eq!(store.live_launch(id).unwrap().map(|l| l.id), Some(new));
+}

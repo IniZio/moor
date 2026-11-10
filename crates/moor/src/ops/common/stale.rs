@@ -3,10 +3,11 @@
 use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_core::Warning;
+use moor_core::{BoxId, LaunchId, Warning};
 
 use crate::cx::Cx;
-use crate::store::StoreError;
+use crate::error::CommandError;
+use crate::store::{LaunchEnd, Store, StoreError};
 
 /// The controller's log, shared through the env so a dropped write reaches it as well as the caller.
 pub(crate) struct ControllerLog(Arc<Mutex<dyn Write + Send>>);
@@ -45,5 +46,41 @@ pub(crate) fn unless_stale<T>(
             Ok(None)
         }
         Err(e) => Err(e),
+    }
+}
+
+/// What ending a launch read earlier came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Ending {
+    /// It is ended now, with its Session when `end` asked for that.
+    Ended,
+    /// Another op began a newer launch since the read; nothing was written.
+    Replaced,
+}
+
+/// Ends `launch` of Box `id` as `end` says. A launch that ended meanwhile with no newer one
+/// counts as ended, its Session ended too when asked; only a newer launch replaced it.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn end_read_launch(
+    cx: &Cx,
+    store: &Store,
+    (id, launch): (BoxId, LaunchId),
+    end: &LaunchEnd<'_>,
+) -> Result<Ending, CommandError> {
+    match store.end_launch(id, launch, end) {
+        Ok(()) => Ok(Ending::Ended),
+        Err(e @ StoreError::Stale { .. }) => {
+            if store.live_launch(id)?.is_some() {
+                unless_stale(cx, Err::<(), _>(e))?;
+                return Ok(Ending::Replaced);
+            }
+            if let Some(cause) = end.session {
+                store.end_current_session(id, cause, end.exit)?;
+            }
+            Ok(Ending::Ended)
+        }
+        Err(e) => Err(e.into()),
     }
 }
