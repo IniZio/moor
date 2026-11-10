@@ -37,8 +37,10 @@ Boxes slice                kernel ceiling = host memory − reserve
 - **Every Box is alike.** A Box kept for months and a Box for one task follow
   the same rules. A workflow's previous Box closes when its next run starts.
 - **Count is not a resource.** No rule counts Boxes.
-- **Every node with an agent reports.** That includes a shared node and a node
-  on an external runtime. No node with a host admits by count.
+- **Every node with a host runs the agent.** That includes a shared node and
+  the controller's own host, where `moor up` starts the agent. The agent is
+  the one source of the report and the one holder of the ceiling. The
+  controller never drives a provider on a host directly.
 - **A node with no host** is a cloud provider. moor has no host to protect
   there. A start the provider refuses waits and says why.
 
@@ -207,6 +209,7 @@ the risk that choice carries.
 | Memory and disk | Suspension writes a snapshot and never checks disk. | Relieving memory can fill the disk. |
 | Memory lines | Admission and relief use separate constants. A start is charged 2 GiB whatever it will use. | Heavy Boxes are admitted together, then suspended. |
 | Box count | Controller `max_boxes`, agent pool limit, and a `moor up` formula. An asleep Box holds a slot in each. | A sleeping Box blocks a start though it holds no memory. |
+| Node with no agent | The controller drives the provider on a host directly. No report exists. | Admission by count only. Three 16 GiB Boxes would start on a 30 GiB host. |
 | CPU | Reported for display. | No rule. |
 | Host | Each VM scope has its own limit. Nothing limits all Boxes together. | A host ran out of memory twice on 2026-11-01. |
 | Relief | Fired on a real node. One working Box was suspended four times in 25 minutes on 2026-11-08, and it finished its work. | Work survives. The admit and relieve lines sit too close. |
@@ -222,7 +225,7 @@ Each step ends in a check on a real node.
 | 2 | Disk account in the report. Floor includes suspend room. Reclaim runs on every report. | Fill the disk with saved setups. Free disk returns above the floor with no start refused. |
 | 3 | Caches join the reclaim order. Delete the cache budget flag and the runner's own floor. | Fill the disk with caches. Oldest caches go, open Boxes keep theirs. |
 | 4 | Drop snapshots of long-asleep Boxes. | A Box asleep with a dropped snapshot wakes with its session restored. |
-| 5 | Delete Box count limits. Every node with an agent admits on its report. | Twenty asleep Boxes on one node. A new start is admitted on memory alone. |
+| 5 | `moor up` starts the agent. A config node with a host and no agent is refused at load. Delete Box count limits. | Twenty asleep Boxes on one node. A new start is admitted on memory alone. |
 | 6 | One set of memory lines. Need learned per repo. | Three heavy Boxes start together. They run one after another. None is suspended while working. |
 | 7 | CPU gate, if step 0 shows the need. | Starts wait under CPU pressure and begin when it clears. |
 | 8 | The charter's proof. | One Box per project kept for a week with short-lived Boxes on top. All bars met. |
@@ -239,6 +242,7 @@ from [Box hands](box-hands.md).
   and needs no code path of its own. The node's refusal is a check, with no
   rules of its own to drift.
 - **Only the controller suspends.** Choosing a Box to suspend needs to know which is idle, and only the controller knows. With the controller away, Boxes above the ceiling slow down. If step 1 shows a VM ending in that case, the controller will send its suspend order ahead and the node will use it while the controller is silent.
+- **Agent on every host, not a second reader.** A controller that read its own host would be a second path for the report and the ceiling.
 - **No disk I/O limit.** A user service cannot set one without root.
 - **No Box classes.** Persistent and short-lived Boxes differ only in when a
   person closes them.
