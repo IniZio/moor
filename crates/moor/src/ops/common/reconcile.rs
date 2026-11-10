@@ -132,10 +132,10 @@ fn reconcile_provider(
             let Ok(asked) = cx.driver().list_handles(&handles) else {
                 return;
             };
-            for why in &asked.unanswered {
+            for line in &asked.said {
                 cx.warn(Warning {
-                    code: "reconcile_skipped".to_owned(),
-                    message: format!("{why}; its boxes' states left as they were"),
+                    code: "pool_host_list".to_owned(),
+                    message: line.clone(),
                 });
             }
             for d in reconcile_answered(facts, &asked) {

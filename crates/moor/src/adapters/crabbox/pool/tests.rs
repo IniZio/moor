@@ -260,7 +260,7 @@ fn a_handle_without_a_well_formed_machine_and_slug_is_refused_unasked() {
 }
 
 #[test]
-fn a_host_lists_its_stopped_leases_asleep_and_answers_for_the_ones_it_lacks() {
+fn a_host_lists_its_stopped_and_paused_leases_asleep_and_answers_for_the_ones_it_lacks() {
     let (host, cb) = rig();
     let lease = |slug: &str, state: &str| Lease {
         slug: slug.to_owned(),
@@ -272,21 +272,26 @@ fn a_host_lists_its_stopped_leases_asleep_and_answers_for_the_ones_it_lacks() {
             leases: vec![
                 lease("moor-1a2b3c4d-9101", "stopped"),
                 lease("moor-1a2b3c4d-9102", "ready"),
+                lease("moor-1a2b3c4d-9104", "paused"),
             ],
         }),
     );
     let running = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9102");
     let unknown = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9103");
+    let paused = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9104");
     let asked = cb
-        .list_handles(&[handle(), running.clone(), unknown.clone()])
+        .list_handles(&[handle(), running.clone(), unknown.clone(), paused.clone()])
         .unwrap();
-    assert_eq!(asked.answered, [handle(), running.clone(), unknown]);
+    assert_eq!(
+        asked.answered,
+        [handle(), running.clone(), unknown, paused.clone()]
+    );
     let got: Vec<_> = asked
         .listed
         .iter()
         .map(|l| (l.handle.clone(), l.asleep))
         .collect();
-    assert_eq!(got, [(handle(), true), (running, false)]);
+    assert_eq!(got, [(handle(), true), (running, false), (paused, true)]);
     assert_eq!(host.verbs(), [Verb::List]);
 }
 
@@ -297,7 +302,7 @@ fn an_unreachable_host_answers_for_none_of_its_leases() {
     let asked = cb.list_handles(&[handle()]).unwrap();
     assert!(asked.answered.is_empty() && asked.listed.is_empty());
     assert_eq!(
-        asked.unanswered,
+        asked.said,
         ["pool host 42 did not list its leases: not linked"]
     );
 }

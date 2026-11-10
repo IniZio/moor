@@ -50,7 +50,7 @@ use caps::{class_args, size_of};
 use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
 use errors::{map_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};
-pub(crate) use pool::{PoolHosts, DIAL_WITHIN};
+pub(crate) use pool::{HostLists, PoolHosts, DIAL_WITHIN};
 
 /// Env key only the external provider reads; other providers keep crabbox's own work root.
 const WORK_ROOT_KEY: &str = "CRABBOX_EXTERNAL_WORK_ROOT";
@@ -89,6 +89,8 @@ pub(crate) struct Crabbox {
     checkpoint_dir: Option<PathBuf>,
     /// How pool hosts are reached; none when this controller reaches none.
     pool_hosts: Option<Arc<dyn PoolHosts>>,
+    /// The pool hosts' lists in flight and which hosts last went unanswered; may be shared.
+    host_lists: Arc<pool::HostLists>,
     /// Keeps a test driver's state dir alive.
     #[cfg(test)]
     scratch: Option<Arc<tempfile::TempDir>>,
@@ -112,6 +114,7 @@ impl Crabbox {
             leases: None,
             checkpoint_dir: None,
             pool_hosts: None,
+            host_lists: Arc::default(),
             #[cfg(test)]
             scratch: None,
         }
@@ -225,10 +228,7 @@ impl Driver for Crabbox {
     }
 
     fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
-        if !handles.iter().any(pool::is_pool) {
-            return Err(DriverError::Unsupported("only a pool host lists by handle"));
-        }
-        Ok(pool::list_handles(self, handles, pool::LIST_WITHIN))
+        pool::list_handles(self, handles, pool::LIST_WITHIN)
     }
 
     /// Refused: only crabbox's warmup reports where a Box's workdir is, and moor never

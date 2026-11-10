@@ -18,7 +18,7 @@ use moor_core::{ErrorKind, Warning};
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
-use crate::adapters::crabbox::Crabbox;
+use crate::adapters::crabbox::{Crabbox, HostLists};
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
@@ -184,6 +184,9 @@ pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
 /// request and tick, so the answer is kept for the whole process: crabbox is asked once.
 static NO_PROBE: LazyLock<Arc<OnceLock<bool>>> = LazyLock::new(Arc::default);
 
+/// The pool hosts' lists for the whole process, as the controller wires a driver per tick.
+static HOST_LISTS: LazyLock<Arc<HostLists>> = LazyLock::new(Arc::default);
+
 /// Real adapters from the environment, not yet assembled into a context, and the warning
 /// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
 fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
@@ -210,7 +213,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     .with_state_dir(state_dir.clone(), sockets)
     .with_checkpoint_dir(env.xdg("XDG_CACHE_HOME", ".cache", ""))
     .with_pool_hosts(links.clone().map(|l| l as _))
-    .sharing_no_probe(Arc::clone(&NO_PROBE));
+    .sharing_no_probe(Arc::clone(&NO_PROBE))
+    .sharing_host_lists(Arc::clone(&HOST_LISTS));
     let link_warning = crabbox.link_warning();
     let driver: Arc<dyn Driver> = Arc::new(crabbox);
     let engine = BoxAgent::new(Arc::clone(&driver), Arc::new(Claude));

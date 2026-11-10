@@ -146,7 +146,7 @@ fn only_a_holder_that_answered_can_find_its_handle_missing() {
     let asked = HandlesListing {
         answered: vec![BoxHandle::new("h1/a"), BoxHandle::new("h1/b")],
         listed: vec![listed("h1/a", false)],
-        unanswered: vec!["h2 did not answer".to_owned()],
+        said: vec!["h2 did not answer".to_owned()],
     };
     let out = reconcile_answered(&rows, &asked);
     let gone: Vec<_> = out
@@ -178,7 +178,7 @@ fn an_answered_handle_listed_asleep_sleeps_and_is_not_gone() {
     let asked = HandlesListing {
         answered: vec![BoxHandle::new("h1/a"), BoxHandle::new("h1/b")],
         listed: vec![listed("h1/a", true), listed("h1/b", true)],
-        unanswered: Vec::new(),
+        said: Vec::new(),
     };
     let out = reconcile_answered(&rows, &asked);
     let inputs: Vec<_> = out.iter().map(|d| d.input_to_hands().cloned()).collect();
