@@ -1,8 +1,9 @@
 //! Spots a credential rule's account being rate limited or rejected, and recovering.
 //!
-//! Only the rule name and the status are read. Each status is reported once per
-//! rule until a 2xx on a request that carried the rule's credential shows the
-//! upstream answering again.
+//! The rule name and the status are read, and for a 401 or 403 from the GitHub
+//! API the repo the path names. Each status is reported once per rule until a
+//! 2xx on a request that carried the rule's credential shows the upstream
+//! answering again.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
@@ -11,7 +12,10 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use moor_core::domain::event::Event;
 use nono::undo::NetworkAuditEvent;
 
+use moor_core::seam::forge::ForgeRepo;
+
 use super::{bare_host, rule, EgressSink};
+use crate::proxy::nono::GITHUB_API_HOST;
 
 /// Statuses already reported for each rule since its last 2xx.
 #[derive(Default)]
@@ -21,6 +25,9 @@ pub(crate) struct Limits {
     /// 401s and 403s that say nothing about the credential nono injected, and
     /// not yet audited.
     excused: Mutex<Notes>,
+    /// The Box's repos; a 401 or 403 from another repo says nothing about the
+    /// credential.
+    repos: Vec<ForgeRepo>,
 }
 
 /// Counts of noted answers by lower-case host and status.
@@ -56,6 +63,30 @@ fn take_one(noted: &mut Noted, key: &(String, u16)) -> bool {
 }
 
 impl Limits {
+    /// Adds `repos` to the Box's repos.
+    pub(super) fn add_repos(&mut self, repos: impl IntoIterator<Item = ForgeRepo>) {
+        self.repos.extend(repos);
+    }
+
+    /// Whether `event` is a GitHub API request for a repo outside the Box's repos.
+    fn outside_repos(&self, event: &NetworkAuditEvent) -> bool {
+        if !bare_host(&event.target).eq_ignore_ascii_case(GITHUB_API_HOST) {
+            return false;
+        }
+        let path = event.path.as_deref().unwrap_or_default();
+        let path = path.split(['?', '#']).next().unwrap_or_default();
+        let mut segments = path.split('/').filter(|s| !s.is_empty());
+        let (Some("repos"), Some(owner), Some(name)) =
+            (segments.next(), segments.next(), segments.next())
+        else {
+            return false;
+        };
+        !self
+            .repos
+            .iter()
+            .any(|r| r.owner.eq_ignore_ascii_case(owner) && r.name.eq_ignore_ascii_case(name))
+    }
+
     /// Notes that the next audited `status` from `host` says nothing about the
     /// credential.
     pub(super) fn excuse(&self, host: &str, status: u16) {
@@ -92,7 +123,9 @@ impl Limits {
         let credentialed = event.managed_credential_active != Some(false);
         let counts = match status {
             429 => true,
-            401 | 403 => credentialed && !self.take_excused(event, status),
+            401 | 403 => {
+                credentialed && !self.take_excused(event, status) && !self.outside_repos(event)
+            }
             200..=299 => credentialed,
             _ => false,
         };
