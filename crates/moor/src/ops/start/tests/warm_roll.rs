@@ -2,8 +2,11 @@
 //! made a line fail is retired once a cold machine shows the disk was the cause.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use std::time::Duration;
+
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::LayerKey;
+use moor_core::seam::clock::Clock as _;
 use moor_core::{BoxId, BoxReq, StartReq};
 
 use super::warm::{events, row};
@@ -62,6 +65,36 @@ fn a_quick_rerun_of_lines_that_all_have_checkpoints_saves_nothing() {
     let s = Scratch::new();
     s.start("a", QUICK);
     let before = saved(&s);
+    s.commit("other", "y\n");
+    s.start("b", QUICK);
+    assert_eq!(saved(&s), before);
+}
+
+fn hours(n: u64) -> Duration {
+    Duration::from_secs(n * 60 * 60)
+}
+
+#[test]
+fn a_quick_rerun_over_a_day_old_disk_is_saved_and_the_next_box_stands_on_its_commit() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(25));
+    let second = s.commit("other", "y\n");
+    s.start("b", QUICK);
+    assert!(saved(&s) > before, "the rerun is saved");
+    let (c, _) = s.start("c", QUICK);
+    assert!(rerun_from(&s, c).is_null(), "the disk is at its commit");
+    assert_eq!(setup_calls_on(&s.w, c), (0, 0));
+    assert_eq!(git(&s.tree(c), &["rev-parse", "HEAD"]), second);
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_under_a_day_old_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(23));
     s.commit("other", "y\n");
     s.start("b", QUICK);
     assert_eq!(saved(&s), before);

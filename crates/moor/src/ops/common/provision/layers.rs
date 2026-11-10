@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::hands::HandsInc;
-use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
+use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey, ROLL_AFTER_MS};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, ProviderId};
@@ -48,6 +48,8 @@ struct RollFrom {
     depth: u32,
     /// When its chain was set up from scratch.
     root_at: Ts,
+    /// When the checkpoint it forked was saved.
+    saved_at: Ts,
 }
 
 /// A Box's setup layers: their keys, where their checkpoints live and how far its disk is.
@@ -99,6 +101,7 @@ impl Layered {
         self.roll = Some(RollFrom {
             depth: kept.depth,
             root_at: kept.chain_at,
+            saved_at: kept.created_at,
         });
     }
 
@@ -123,6 +126,12 @@ impl Layered {
     /// Whether a save of this rerun may replace the layers it forked.
     pub(super) const fn may_roll(&self) -> bool {
         self.reruns() && self.roll.is_some()
+    }
+
+    /// Whether the checkpoint this rerun forked was saved [`ROLL_AFTER_MS`] or more before `now`.
+    pub(super) fn forked_long_ago(&self, now: Ts) -> bool {
+        self.roll
+            .is_some_and(|r| now.as_millis() - r.saved_at.as_millis() >= ROLL_AFTER_MS)
     }
 
     /// Whether the last line's layer is kept, for this Box's lines as they are now.

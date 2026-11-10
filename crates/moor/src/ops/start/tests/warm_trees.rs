@@ -61,7 +61,16 @@ impl Scratch {
     }
 
     /// Moves the world's clock `secs` during every exec that mentions `needle`.
-    pub(super) fn slow_on(mut self, needle: &str, secs: u64) -> Self {
+    pub(super) fn slow_on(self, needle: &str, secs: u64) -> Self {
+        let (scratch, clock) = self.clocked();
+        scratch.w.driver.on_exec_of(needle, move || {
+            clock.sleep(Duration::from_secs(secs));
+        });
+        scratch
+    }
+
+    /// The scratch with a clock the test moves.
+    pub(super) fn clocked(mut self) -> (Self, Arc<FakeClock>) {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         self.w.cx = Cx::fake_with_clock(
             self.dir.path().join("state").as_path(),
@@ -71,10 +80,7 @@ impl Scratch {
             clock.clone(),
         )
         .with_forge(self.w.forge.clone());
-        self.w.driver.on_exec_of(needle, move || {
-            clock.sleep(Duration::from_secs(secs));
-        });
-        self
+        (self, clock)
     }
 
     pub(super) fn on(driver: FakeDriver) -> Self {

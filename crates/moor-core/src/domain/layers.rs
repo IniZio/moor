@@ -15,6 +15,11 @@ pub const CHAIN_MAX_AGE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// parent on the disk.
 pub const CHAIN_MAX_DEPTH: u32 = 8;
 
+/// How old a forked checkpoint gets, in milliseconds, before any rerun over it is saved.
+///
+/// A day keeps the rolls it causes under [`CHAIN_MAX_DEPTH`] for the whole of [`CHAIN_MAX_AGE_MS`].
+pub const ROLL_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
+
 /// A line that runs longer than this, in milliseconds, is checkpointed after it ends.
 pub const SLOW_LINE_MS: u64 = 20_000;
 

@@ -33,16 +33,17 @@ pub(super) fn steps_after_lines(
     let at = (target.handle, target.provider);
     let rolling = on_fork.layered.filter(|l| at_base && l.may_roll());
     let slow = run.ms().is_some_and(|ms| ms > SLOW_LINE_MS);
+    let due = slow || rolling.is_some_and(|l| l.forked_long_ago(store.now()));
     let holds_steps = on_fork.layered.is_some_and(Layered::finished);
     if holds_steps && agent_install::present(cx, at, id, cfg, proxy) {
         refresh_login(cx, at.0);
-        if let Some(l) = rolling.filter(|_| slow) {
+        if let Some(l) = rolling.filter(|_| due) {
             roll_forward(cx, store, on_fork, l, l.above());
         }
         return Ok((DotfilesRun::Skipped, Ok(())));
     }
     // A disk that holds the steps above its top line can never be saved as that line.
-    if let Some(l) = rolling.filter(|l| !holds_steps && (slow || !l.top_kept(store))) {
+    if let Some(l) = rolling.filter(|l| !holds_steps && (due || !l.top_kept(store))) {
         roll_forward(cx, store, on_fork, l, l.top());
     }
     let began = cx.clock().instant();
