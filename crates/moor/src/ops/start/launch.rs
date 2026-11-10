@@ -130,6 +130,17 @@ pub(crate) fn begin_seeded(
     row: &BoxRow,
     seed: String,
 ) -> Result<AgentLaunchView, CommandError> {
+    let out = seeded(cx, store, row, seed);
+    launch_over(store, row.id, out)
+}
+
+/// [`begin_seeded`] up to the launch, leaving any launching intent in place.
+fn seeded(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    seed: String,
+) -> Result<AgentLaunchView, CommandError> {
     let mut working = row.clone();
     working.lifecycle = BoxLifecycle::Ready;
     working.session = SessionState::Working;
