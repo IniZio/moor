@@ -102,24 +102,26 @@ fn the_gh_issue_view_response_shows_only_box_repo_headlines() {
         &RepoRef::new("IniZio", "moor"),
     );
     assert_eq!(verdict, Verdict::Allow);
-    let mut resp = json!({"data": {"repository": {"issue": {
+    let resp = json!({"data": {"repository": {"issue": {
         "title": "own", "state": "OPEN",
         "parent": linked("iniZio/MOOR"),
         "subIssues": {"nodes": [linked("IniZio/lib"), linked("victim/secrets")]},
         "blockedBy": {"nodes": [linked("victim/secrets")]},
         "blocking": {"nodes": [{"title": "t", "state": "OPEN"}]},
     }}}});
-    paths.blank(
-        &mut resp,
-        &[
-            RepoRef::new("IniZio", "moor"),
-            RepoRef::new("IniZio", "lib"),
-        ],
-    );
+    let blanked = paths
+        .blank(
+            resp.to_string().as_bytes(),
+            &[
+                RepoRef::new("IniZio", "moor"),
+                RepoRef::new("IniZio", "lib"),
+            ],
+        )
+        .unwrap();
     let blank =
         |repo: &str| json!({"title": null, "state": null, "repository": {"nameWithOwner": repo}});
     assert_eq!(
-        resp,
+        serde_json::from_slice::<serde_json::Value>(&blanked).unwrap(),
         json!({"data": {"repository": {"issue": {
             "title": "own", "state": "OPEN",
             "parent": linked("iniZio/MOOR"),
@@ -128,6 +130,26 @@ fn the_gh_issue_view_response_shows_only_box_repo_headlines() {
             "blocking": {"nodes": [{"title": null, "state": null}]},
         }}}})
     );
+}
+
+#[test]
+fn the_response_check_copies_unchecked_values_as_sent() {
+    let (_, paths) = judge_linked(
+        &body(
+            ISSUE_VIEW,
+            &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
+        ),
+        &RepoRef::new("IniZio", "moor"),
+    );
+    let resp = r#"{ "data" : {"repository": {"hasIssuesEnabled" : true, "issue": {"body": "a\u0041 1.50",
+        "reactionGroups": [ 1.50 , 2e3 ], "parent": {"title": "x", "state": "OPEN", "repository": {"nameWithOwner": "victim/secrets"}},
+        "subIssues": {"totalCount" : 0 , "nodes": [ ]}}}}, "extensions" : {"cost" : 1.0}}"#;
+    let blanked = paths
+        .blank(resp.as_bytes(), &[RepoRef::new("IniZio", "moor")])
+        .unwrap();
+    let want = r#"{"data":{"repository":{"hasIssuesEnabled":true,"issue":{"body":"a\u0041 1.50","reactionGroups":[ 1.50 , 2e3 ],"parent":{"title":null,"state":null,"repository":{"nameWithOwner":"victim/secrets"}},"subIssues":{"totalCount":0,"nodes":[]}}}},"extensions":{"cost" : 1.0}}"#;
+    assert_eq!(String::from_utf8(blanked).unwrap(), want);
+    assert!(paths.blank(br#"{"data": {"repository": "#, &[]).is_err());
 }
 
 #[test]

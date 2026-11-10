@@ -198,3 +198,72 @@ fn a_second_checked_response_waits_while_the_first_is_in_flight() {
     assert_eq!(second.join().unwrap().status(), 200);
     assert_eq!(arrived.load(Ordering::SeqCst), 2);
 }
+
+/// Counts the heap of the whole test process. Each nextest test runs in its own process.
+#[global_allocator]
+static HEAP: peak_alloc::PeakAlloc = peak_alloc::PeakAlloc;
+
+/// A response body of exactly `size` bytes, made of many small JSON objects: half are
+/// sub-issues, on a linked-issue path, and half are labels, off it. Its parent is in
+/// another repo, with the title `hidden parent`.
+fn small_objects_of(size: usize) -> String {
+    let head = r#"{"data":{"repository":{"issue":{"parent":{"number":7,"title":"hidden parent","state":"OPEN","repository":{"nameWithOwner":"victim/secrets"}},"subIssues":{"nodes":["#;
+    let (mid, open, close) = (r#"]},"labels":{"nodes":["#, r#"]},"pad":""#, r#""}}}}"#);
+    let frame = head.len() + mid.len() + open.len() + close.len();
+    let list = |item: &str| vec![item; (size - frame) / 2 / (item.len() + 1)].join(",");
+    let (subs, labels) = (list(r#"{"number":1}"#), list(r#"{"a":1}"#));
+    let pad = "x".repeat(size - frame - subs.len() - labels.len());
+    let body = format!("{head}{subs}{mid}{labels}{open}{pad}{close}");
+    assert_eq!(body.len(), size);
+    body
+}
+
+#[test]
+fn a_checked_response_of_small_objects_takes_about_twice_its_size() {
+    let reply = json_reply("200 OK", &small_objects_of(CAP));
+    let sent = reply.len();
+    let reply = Mutex::new(Some(reply));
+    let rig = rig_for(
+        Arc::new(move |_| {
+            reply
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+                .unwrap_or_default()
+        }),
+        Guard::default(),
+        vec![box_repo()],
+    );
+    let mut client = rig.client();
+    HEAP.reset_peak_usage();
+    let before = HEAP.current_usage();
+    client.send(&ask(ISSUE)).unwrap();
+    let mut head = String::new();
+    while !head.ends_with("\r\n\r\n") {
+        assert_ne!(client.io.read_line(&mut head).unwrap(), 0, "{head}");
+    }
+    assert!(head.starts_with("HTTP/1.1 200 "), "{head}");
+    let (mut first, mut chunk, mut len) = (Vec::new(), vec![0; 64 * 1024], 0);
+    loop {
+        let n = client.io.read(&mut chunk).unwrap();
+        if first.is_empty() {
+            first.extend(chunk.iter().take(n));
+        }
+        len += n;
+        if n == 0 || head.contains(&format!("content-length: {len}\r\n")) {
+            break;
+        }
+    }
+    // The upstream frees the reply, counted in `before`, while the filter reads it, so
+    // the filter held at most the growth plus the reply.
+    let taken = HEAP.peak_usage() - before + sent;
+    let text = String::from_utf8_lossy(&first).into_owned();
+    assert!(
+        text.contains(r#""title":null"#) && !text.contains("hidden"),
+        "{text}"
+    );
+    assert!(
+        taken < CAP * 5 / 2,
+        "a checked {CAP}-byte response of small objects took up to {taken} bytes"
+    );
+}
