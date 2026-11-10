@@ -63,6 +63,8 @@ impl<T> Sourced<T> {
 pub struct Flags {
     /// `--model`.
     pub model: Option<String>,
+    /// `--no-agent`.
+    pub no_agent: bool,
 }
 
 /// One secret of the Box's user that the Box uses, and where it is named.
@@ -111,6 +113,8 @@ pub struct BoxSettings {
     pub install_agent: bool,
     /// Whether a Box may start from a checkpoint saved at another commit: repo only, on by default.
     pub across_commits: bool,
+    /// Whether the command launches the Box's agent once setup ends: off only for `--no-agent`.
+    pub launch_agent: bool,
 }
 
 /// Builds the sorted credential plan from box credentials and MCP refs.
@@ -185,6 +189,7 @@ impl BoxSettings {
             },
             install_agent: user.agent.install.unwrap_or(true),
             across_commits: r.checkpoint.across_commits,
+            launch_agent: !flags.no_agent,
         }
     }
 }

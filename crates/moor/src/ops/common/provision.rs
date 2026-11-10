@@ -32,7 +32,7 @@ use self::failed::{failed, forced_out};
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 pub(crate) use self::outcome::Provisioned;
-use self::outcome::{dotfiles_noted, setup_ended, step_outcome};
+use self::outcome::{dotfiles_noted, intent_after, setup_ended, step_outcome};
 use self::progress::{acquire_timed, adopt_timed, goes_on_after};
 use self::rerun::start_ready;
 pub(crate) use self::retry::resume_setup;
@@ -54,12 +54,14 @@ pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
 /// Returns what ran, or `None` when nothing was provisioned. The caller holds the Box's `turn`,
 /// and the row is read again under it.
 ///
-/// Settings come from the `.moor.yaml` stored when the Box started. Nothing is copied into a
-/// ready Box, and its setup never runs again; a failed or interrupted setup is only warned about.
+/// Settings come from the `.moor.yaml` stored when the Box started, with `flags` over them.
+/// Nothing is copied into a ready Box, and its setup never runs again; a failed or interrupted
+/// setup is only warned about.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
+    flags: &Flags,
     _turn: &Turn<'_>,
 ) -> Result<Option<Provisioned>, CommandError> {
     let row = reread(store, row.id)?;
@@ -69,7 +71,7 @@ pub(crate) fn reprovision(
     }
     let entry = entry_for(&row);
     if kept_box_retry(&row) {
-        let cfg = settings_of(cx, &row, &Flags::default())?;
+        let cfg = settings_of(cx, &row, flags)?;
         return retry_in_box(cx, store, &row, &cfg).map(Some);
     }
     let Some(entry) = entry else {
@@ -78,7 +80,7 @@ pub(crate) fn reprovision(
         }
         return Ok(None);
     };
-    let cfg = settings_of(cx, &row, &Flags::default())?;
+    let cfg = settings_of(cx, &row, flags)?;
     provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
@@ -313,6 +315,7 @@ fn run_and_record(
     let install_failed = installed.is_err();
     let outcome = step_outcome(&run, installed);
     let failed_at = stamped_when_failed(cx, &outcome);
+    let intent = intent_after(advance, &outcome, cfg);
     let done = setup_ended(done, advance, outcome)
         .setup_why(why::setup_why(store, id, &run))
         .set(Fields {
@@ -320,7 +323,7 @@ fn run_and_record(
             steps_pending_at: Field::Clear,
             ..Fields::default()
         })
-        .intent(IntentChange::Clear);
+        .intent(intent);
     store.apply(done)?;
     Ok(Provisioned {
         setup: run,

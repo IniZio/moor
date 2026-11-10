@@ -7,7 +7,8 @@ use crate::request::WaitFor;
 /// What `wait` can observe about a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaitFacts {
-    /// The Box is still being admitted or set up, so it has no agent yet.
+    /// The Box has no agent at work yet: it is being checked or set up, waits for room or was
+    /// suspended mid-work, or its agent is still to launch.
     pub setting_up: bool,
     /// An agent is currently working.
     pub agent_active: bool,

@@ -1,14 +1,15 @@
 //! Agent launch rows.
 
+use moor_core::domain::decision::{Intent, IntentChange};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
 
-use moor_schema::tables::{Launches, Sessions};
+use moor_schema::tables::{BoxState, Launches, Sessions};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
-use super::apply::insert_event;
-use super::select::newest_session;
+use super::apply::{insert_event, intent_sets};
+use super::select::{newest_session, state_update};
 use super::{load_box, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
 
@@ -146,8 +147,8 @@ impl Store {
             .is_some())
     }
 
-    /// Record the start of a launch on `box_id` and its `SessionStarted` event; box state is
-    /// not touched.
+    /// Record the start of a launch on `box_id` and its `SessionStarted` event, ending a
+    /// launching intent in the same write; the rest of the box state is not touched.
     pub(crate) fn begin_launch(
         &self,
         box_id: BoxId,
@@ -217,6 +218,7 @@ impl Store {
         if let Some(text) = argv {
             super::inbox::send_with_launch(&tx, box_id, (id, session_ref), text, now)?;
         }
+        end_launching(&tx, box_id, now)?;
         tx.commit()?;
         drop(conn);
         Ok(id)
@@ -344,6 +346,18 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
         registered_agent_session: r.get(7)?,
         session: r.get(8)?,
     })
+}
+
+/// Ends a launching intent on `box_id`, once a launch is recorded, inside the caller's write.
+fn end_launching(tx: &dyn db::Db, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
+    let mut launched = state_update(box_id)
+        .and_where(Expr::col(BoxState::IntentKind).eq(Intent::Launching.kind()))
+        .take();
+    for (col, v) in intent_sets(IntentChange::Clear, now) {
+        launched.value(col, Expr::val(v));
+    }
+    tx.run(&mut launched)?;
+    Ok(())
 }
 
 mod end;

@@ -472,7 +472,14 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         ["acquire", "peek_file box-1", "acquire", "peek_file box-2"]
     );
     let turn = w.cx.turn(stale.id, Cmd::Start).unwrap();
-    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, &turn).unwrap();
+    let run = crate::ops::common::provision::reprovision(
+        &w.cx,
+        store,
+        &stale,
+        &moor_core::config::Flags::default(),
+        &turn,
+    )
+    .unwrap();
     assert!(run.is_none());
     assert_eq!(
         w.driver.calls(),
