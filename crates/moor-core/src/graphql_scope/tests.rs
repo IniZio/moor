@@ -8,6 +8,7 @@ use super::{judge, NodeId, RepoRef, Verdict};
 
 mod box_files;
 mod extra;
+mod gh_issue_view;
 mod gh_pr_edit_attach;
 mod gh_repo;
 mod redact;
