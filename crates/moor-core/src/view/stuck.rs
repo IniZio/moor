@@ -24,8 +24,6 @@ const CLEARS: [&str; 9] = [
 /// an older stuck event still uncleared can show again.
 #[must_use]
 pub fn stuck_of(events: &[Happened]) -> Option<StuckView> {
-    // Uncleared stuck events, oldest first. Only aborts can be cleared out of order,
-    // so a newer stuck event of any other kind drops everything before it.
     let mut open: Vec<&Happened> = Vec::new();
     for e in events {
         let kind = e.kind.as_str();
