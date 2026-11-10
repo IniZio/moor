@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn asserted_kinds_are_the_frozen_twenty() {
+    let mut got = ASSERTED_KINDS.to_vec();
+    got.sort_unstable();
+    let mut want = PINNED_KINDS.to_vec();
+    want.sort_unstable();
+    assert_eq!(got, want);
+    assert_eq!(ASSERTED_KINDS, PINNED_KINDS);
+}
+
+#[test]
 fn kind_equals_serde_tag_and_payload_has_no_kind() {
     for e in all_events() {
         let v = serde_json::to_value(&e).unwrap();

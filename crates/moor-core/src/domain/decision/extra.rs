@@ -173,6 +173,16 @@ pub enum ExtraEvent {
         /// What the provider said.
         error: String,
     },
+    /// The fork of a setup checkpoint found it never finished, so it was retired and the Box tries
+    /// the layer below.
+    CheckpointUnfinished {
+        /// Setup lines the checkpoint held.
+        layer: u32,
+        /// The provider's checkpoint id.
+        checkpoint: String,
+        /// What the provider said.
+        error: String,
+    },
     /// The Box started without cache volumes although its plan would have kept some.
     CacheCold {
         /// Why, as a snake-case name.

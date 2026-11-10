@@ -380,17 +380,12 @@ fn all_events() -> Vec<Event> {
             }),
             error: s("e"),
         }),
+        Event::Timing(TimingEvent::CheckpointUnfinished {
+            layer: 2,
+            checkpoint: s("ckpt-2"),
+            error: s("checkpoint ckpt-2 was never finished; delete it"),
+        }),
     ]
-}
-
-#[test]
-fn asserted_kinds_are_the_frozen_twenty() {
-    let mut got = ASSERTED_KINDS.to_vec();
-    got.sort_unstable();
-    let mut want = PINNED_KINDS.to_vec();
-    want.sort_unstable();
-    assert_eq!(got, want);
-    assert_eq!(ASSERTED_KINDS, PINNED_KINDS);
 }
 
 /// Position of an event in `all_events()`; the exhaustive match fails to compile on a new variant.
@@ -497,6 +492,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Inbox(InboxEvent::SteerCut { .. }) => 93,
         Event::Inbox(InboxEvent::SteersDropped { .. }) => 94,
         Event::Close(CloseEvent::CloseRefused { .. }) => 95,
+        Event::Timing(TimingEvent::CheckpointUnfinished { .. }) => 96,
     }
 }
 
@@ -504,7 +500,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 96);
+    assert_eq!(all.len(), 97);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

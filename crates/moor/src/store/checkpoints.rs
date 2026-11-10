@@ -1,13 +1,15 @@
 //! Setup checkpoints: the provider checkpoint that holds each setup layer, by layer key.
 
+use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::layers::LayerKey;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Checkpoint;
 use moor_core::user::UserId;
-use moor_core::{BoxPath, ProviderId};
+use moor_core::{BoxId, BoxPath, ProviderId};
 use moor_schema::tables::SetupCheckpoints as Checkpoints;
 use sea_query::{Expr, ExprTrait as _, Query, Value};
 
+use super::apply::apply_in;
 use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
@@ -231,13 +233,19 @@ impl Store {
         Ok(())
     }
 
-    /// Retires checkpoint `checkpoint` under `provider`, which no Box can start from.
+    /// Retires checkpoint `checkpoint` under `provider`, which no Box can start from, and writes
+    /// `told` on Box `id` that found it so, in one transaction.
     pub(crate) fn retire_checkpoint(
         &self,
+        (id, told): (BoxId, ExtraEvent),
         provider: &ProviderId,
         checkpoint: &str,
     ) -> Result<(), StoreError> {
-        self.writer().run(
+        self.check_write(id);
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        tx.run(
             Query::update()
                 .table(Checkpoints::Table)
                 .value(Checkpoints::Evicting, RETIRED)
@@ -245,6 +253,9 @@ impl Store {
                 .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
                 .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
+        apply_in(&tx, now, Decision::new(id).event(told))?;
+        tx.commit()?;
+        drop(conn);
         Ok(())
     }
 

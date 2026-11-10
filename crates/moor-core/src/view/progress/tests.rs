@@ -288,3 +288,16 @@ fn a_warm_start_at_another_commit_says_its_lines_run_and_a_failed_one_is_named()
     );
     assert!(latest(&[rerun]).unwrap().contains("dist/"));
 }
+
+#[test]
+fn an_unfinished_checkpoint_says_the_layer_below_is_tried() {
+    let retired = event(
+        "checkpoint_unfinished",
+        json!({"layer": 2, "checkpoint": "ckpt-2", "error": "never finished"}),
+        0,
+    );
+    assert_eq!(
+        latest(&[retired]).unwrap(),
+        "setup checkpoint 2 was never finished: never finished; trying the layer below"
+    );
+}

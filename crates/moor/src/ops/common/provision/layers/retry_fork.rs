@@ -59,7 +59,12 @@ pub(in super::super) fn resume(
         }
         Err(e) => {
             if matches!(e, DriverError::UnfinishedCheckpoint { .. }) {
-                store.retire_checkpoint(&layered.home, &saved.checkpoint)?;
+                let told = ExtraEvent::CheckpointUnfinished {
+                    layer: u32::try_from(layer).unwrap_or(u32::MAX),
+                    checkpoint: saved.checkpoint.clone(),
+                    error: e.to_string(),
+                };
+                store.retire_checkpoint((row.id, told), &layered.home, &saved.checkpoint)?;
             }
             cx.warn(Warning {
                 code: "checkpoint_failed".to_owned(),

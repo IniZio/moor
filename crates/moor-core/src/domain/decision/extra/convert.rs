@@ -103,6 +103,15 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })
             }
+            ExtraEvent::CheckpointUnfinished {
+                layer,
+                checkpoint,
+                error,
+            } => Self::Timing(TimingEvent::CheckpointUnfinished {
+                layer,
+                checkpoint,
+                error,
+            }),
             ExtraEvent::CacheCold { reason, detail } => {
                 Self::Timing(TimingEvent::CacheCold { reason, detail })
             }
