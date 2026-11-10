@@ -291,7 +291,7 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
                     message: format!("could not resume Box {}: {}", row.id.get(), e.error),
                 });
             }
-            autosleep::run(cx, store, row.id, autosleep::AgentRead::of(&reading));
+            autosleep::run_after_read(cx, store, row.id, &reading);
         }
         Err(e) => cx.warn(Warning {
             code: "settle_failed".to_owned(),
