@@ -5,6 +5,7 @@
 
 mod egress;
 mod framing;
+mod linked;
 mod scope;
 
 use std::io::{self, BufRead, BufReader, Read, Write};

@@ -19,6 +19,7 @@ use lookup::NodeCache;
 use repo_ids::RepoIds;
 use upstream::Upstream;
 
+mod check;
 mod gate;
 pub(crate) mod http;
 pub(crate) mod lookup;

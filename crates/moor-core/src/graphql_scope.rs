@@ -5,10 +5,14 @@
 //! listed for the kind of object it is selected on, so account data and other repos stay out of
 //! reach. The document is parsed strictly. Root fields are judged by their real names, never by alias or
 //! operation name, and fragments are expanded before judging.
+//!
+//! One thing the request cannot tell is the repo of an issue linked to a Box repo issue, so
+//! the check also returns where those issues sit in the response, for [`Linked::blank`].
 
 use serde_json::{Map, Value as Json};
 
 mod lex;
+mod linked;
 mod parse;
 mod policy;
 mod schema;
@@ -16,6 +20,8 @@ mod strict;
 
 #[cfg(test)]
 mod tests;
+
+pub use linked::Linked;
 
 /// Largest request body that is parsed, in bytes.
 const MAX_BODY: usize = 64 * 1024;
@@ -133,15 +139,23 @@ pub enum Verdict {
 /// Judges a GraphQL request body against the Box repo.
 #[must_use]
 pub fn judge(body: &[u8], repo: &RepoRef) -> Verdict {
+    judge_linked(body, repo).0
+}
+
+/// Judges a GraphQL request body against the Box repo, and returns the linked issues
+/// whose headline the response check blanks; see [`Linked::blank`].
+#[must_use]
+pub fn judge_linked(body: &[u8], repo: &RepoRef) -> (Verdict, Linked) {
     match scope(body, repo) {
-        Ok(ids) if ids.is_empty() => Verdict::Allow,
-        Ok(ids) => Verdict::NeedsNodeCheck(ids),
-        Err(reason) => Verdict::Deny(reason),
+        Ok((ids, linked)) if ids.is_empty() => (Verdict::Allow, linked),
+        Ok((ids, linked)) => (Verdict::NeedsNodeCheck(ids), linked),
+        Err(reason) => (Verdict::Deny(reason), Linked::default()),
     }
 }
 
-/// Parses and checks the request, returning the node IDs that still need a check.
-fn scope(body: &[u8], repo: &RepoRef) -> Result<Vec<NodeId>, Reason> {
+/// Parses and checks the request, returning the node IDs that still need a check and the
+/// linked issues it reads.
+fn scope(body: &[u8], repo: &RepoRef) -> Result<(Vec<NodeId>, Linked), Reason> {
     if body.len() > MAX_BODY {
         return Err(Reason::new("request body over 64 KiB"));
     }

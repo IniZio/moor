@@ -5,9 +5,10 @@ use serde_json::{Map, Value as Json};
 use super::parse::{Doc, Field, Kind, Op, Sel, Value, MAX_DEPTH};
 use super::schema::{self, Next};
 
+mod paths;
 mod query;
 mod roots;
-use super::{NodeId, Reason, RepoRef};
+use super::{Linked, NodeId, Reason, RepoRef};
 
 /// Most selections visited while expanding fragments.
 const MAX_VISITS: usize = 5_000;
@@ -23,12 +24,13 @@ const MUTATIONS: &[(&str, &[&str])] = &[
     ("convertPullRequestToDraft", &["pullRequestId"]),
 ];
 
-/// Checks the only operation of a document and returns the node IDs that need a check.
+/// Checks the only operation of a document and returns the node IDs that need a check and
+/// the linked issues it reads.
 pub(super) fn run(
     doc: &Doc,
     vars: &Map<String, Json>,
     repo: &RepoRef,
-) -> Result<Vec<NodeId>, Reason> {
+) -> Result<(Vec<NodeId>, Linked), Reason> {
     let op = match doc.ops.as_slice() {
         [op] => op,
         [] => return Err(Reason::new("no operation")),
@@ -45,9 +47,11 @@ pub(super) fn run(
         visits: 0,
         pr_only: false,
         ids: Vec::new(),
+        path: Vec::new(),
+        linked: Linked::default(),
     };
     policy.root()?;
-    Ok(policy.ids)
+    Ok((policy.ids, policy.linked))
 }
 
 /// State of one check.
@@ -66,6 +70,10 @@ struct Policy<'a> {
     pr_only: bool,
     /// Node IDs collected, without repeats.
     ids: Vec<NodeId>,
+    /// Response keys from `data` to the selection being checked.
+    path: Vec<&'a str>,
+    /// Response paths of the linked issues selected.
+    linked: Linked,
 }
 
 /// Builds the refusal for a field.
@@ -226,10 +234,12 @@ impl<'a> Policy<'a> {
             if field.name == "__typename" {
                 continue;
             }
+            self.path.push(field.key());
             match op.kind {
                 Kind::Mutation => self.mutation(field)?,
                 _ => self.query(field)?,
             }
+            self.path.pop();
         }
         Ok(())
     }
@@ -314,6 +324,7 @@ impl<'a> Policy<'a> {
         depth: usize,
     ) -> Result<(), Reason> {
         let shape = schema::shape(ctx).ok_or_else(|| Reason::new(format!("no context `{ctx}`")))?;
+        self.mark_linked(fields, ctx)?;
         for field in fields.iter().copied() {
             let name = field.name.as_str();
             if name == "__typename" || shape.leaves.contains(&name) {
@@ -323,8 +334,12 @@ impl<'a> Policy<'a> {
                 continue;
             }
             match shape.links.iter().find(|(n, _)| *n == name) {
-                Some((_, Next::Ctx(next))) => self.nested(&field.sel, next, depth + 1)?,
-                Some((_, Next::Conn(next))) => self.connection(&field.sel, next, depth + 1)?,
+                Some((_, Next::Ctx(next))) => {
+                    self.under(field, |p| p.nested(&field.sel, next, depth + 1))?;
+                }
+                Some((_, Next::Conn(next))) => {
+                    self.under(field, |p| p.connection(&field.sel, next, depth + 1))?;
+                }
                 None => return Err(Reason::new(format!("field `{ctx}.{name}` is not allowed"))),
             }
         }
@@ -335,8 +350,8 @@ impl<'a> Policy<'a> {
     fn connection(&mut self, sel: &'a [Sel], ctx: &str, depth: usize) -> Result<(), Reason> {
         for field in self.fields(sel, depth)? {
             match field.name.as_str() {
-                "nodes" => self.nested(&field.sel, ctx, depth + 1)?,
-                "edges" => self.edges(&field.sel, ctx, depth + 1)?,
+                "nodes" => self.under(field, |p| p.nested(&field.sel, ctx, depth + 1))?,
+                "edges" => self.under(field, |p| p.edges(&field.sel, ctx, depth + 1))?,
                 "pageInfo" => self.leaves(&field.sel, schema::PAGE_INFO, depth + 1)?,
                 "totalCount" | "issueCount" | "__typename" if field.sel.is_empty() => {}
                 other => {
@@ -353,7 +368,7 @@ impl<'a> Policy<'a> {
     fn edges(&mut self, sel: &'a [Sel], ctx: &str, depth: usize) -> Result<(), Reason> {
         for field in self.fields(sel, depth)? {
             match field.name.as_str() {
-                "node" => self.nested(&field.sel, ctx, depth + 1)?,
+                "node" => self.under(field, |p| p.nested(&field.sel, ctx, depth + 1))?,
                 "cursor" | "__typename" if field.sel.is_empty() => {}
                 other => return Err(Reason::new(format!("edge field `{other}` is not allowed"))),
             }

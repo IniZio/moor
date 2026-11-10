@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use rustls::{ServerConnection, StreamOwned};
 
+use super::check::{checked, unencoded, Relay};
 use super::gate::{gate, without_credential, Gate};
 use super::http::{
     copy_body, read_head, read_response_head, request_framing, response_framing, wants_close,
@@ -168,37 +169,56 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
     }
     match classify(&head.target) {
         Route::Passthrough => match request_framing(&head) {
-            Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), false),
+            Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), Relay::Plain),
             Err(_) => bad(client, 400, "moor: malformed request"),
         },
         Route::RepoId(canonical) => repo_id(shared, client, up, &head, &canonical),
-        Route::Graphql if head.target != "/graphql" => {
-            let reason = "query string or non-canonical path on /graphql is not allowed";
-            refuse(
+        Route::Graphql => graphql(shared, client, up, &head),
+    }
+}
+
+/// Handles a request to the GraphQL path.
+fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Flow {
+    if head.target != "/graphql" {
+        let reason = "query string or non-canonical path on /graphql is not allowed";
+        return refuse(
+            shared,
+            client,
+            &head.method,
+            403,
+            &format!("moor: {reason}"),
+        );
+    }
+    match gate(shared, head, client) {
+        Gate::Forward(body, linked) if linked.is_empty() => {
+            forward(shared, client, up, head, &Payload::Raw(&body), Relay::Plain)
+        }
+        Gate::Forward(body, linked) => {
+            let asked = unencoded(head);
+            let relay = Relay::Checked(&linked);
+            forward(shared, client, up, &asked, &Payload::Raw(&body), relay)
+        }
+        Gate::Anonymous(body, reason) => {
+            // The one place a request leaves without its credential. GitHub
+            // answers the placeholder with 401, which clients read as a bad
+            // token. No `Authorization` gets 403, which they read as a rate limit.
+            shared.withhold(&head.method, "/graphql", &reason);
+            let bare = without_credential(
+                head,
+                &shared.credential_headers,
+                shared.placeholder.as_deref(),
+            );
+            forward(
                 shared,
                 client,
-                &head.method,
-                403,
-                &format!("moor: {reason}"),
+                up,
+                &bare,
+                &Payload::Raw(&body),
+                Relay::Anonymous,
             )
         }
-        Route::Graphql => match gate(shared, &head, client) {
-            Gate::Forward(body) => forward(shared, client, up, &head, &Payload::Raw(&body), false),
-            Gate::Anonymous(body, reason) => {
-                // The one place a request leaves without its credential. GitHub
-                // answers the placeholder with 401, which clients read as a bad
-                // token. No `Authorization` gets 403, which they read as a rate limit.
-                shared.withhold(&head.method, "/graphql", &reason);
-                let bare = without_credential(
-                    &head,
-                    &shared.credential_headers,
-                    shared.placeholder.as_deref(),
-                );
-                forward(shared, client, up, &bare, &Payload::Raw(&body), true)
-            }
-            Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),
-            Gate::Abort => Flow::Close,
-        },
+        Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),
+        Gate::Abort => Flow::Close,
     }
 }
 
@@ -215,7 +235,7 @@ fn repo_id(
     };
     match gate_id(shared, head, canonical) {
         IdGate::Unchanged | IdGate::Forward => {
-            forward(shared, client, up, head, &Payload::Stream(f), false)
+            forward(shared, client, up, head, &Payload::Stream(f), Relay::Plain)
         }
         IdGate::Anonymous(reason) => {
             shared.withhold(&head.method, &head.target, reason);
@@ -224,7 +244,14 @@ fn repo_id(
                 &shared.credential_headers,
                 shared.placeholder.as_deref(),
             );
-            forward(shared, client, up, &bare, &Payload::Stream(f), true)
+            forward(
+                shared,
+                client,
+                up,
+                &bare,
+                &Payload::Stream(f),
+                Relay::Anonymous,
+            )
         }
     }
 }
@@ -267,7 +294,7 @@ fn forward(
     up: &mut Up,
     head: &Head,
     payload: &Payload<'_>,
-    anonymous: bool,
+    how: Relay<'_>,
 ) -> Flow {
     if up.is_none() {
         *up = shared.upstream.connect().ok().map(BufReader::new);
@@ -280,7 +307,7 @@ fn forward(
         return unavailable(client);
     }
     let mut sent = false;
-    let flow = relay(shared, conn, client, head, &mut sent, anonymous);
+    let flow = relay(shared, conn, client, head, &mut sent, how);
     if flow == Flow::Close {
         *up = None;
     }
@@ -319,7 +346,7 @@ fn relay(
     client: &mut Client,
     head: &Head,
     sent: &mut bool,
-    anonymous: bool,
+    how: Relay<'_>,
 ) -> Flow {
     let resp = loop {
         let Ok(resp) = read_response_head(conn) else {
@@ -335,17 +362,26 @@ fn relay(
         }
         break resp;
     };
-    if anonymous && matches!(resp.status, 401 | 403) {
+    if matches!(how, Relay::Anonymous) && matches!(resp.status, 401 | 403) {
         shared.excuse(resp.status);
     }
     *sent = true;
     let Ok(framing) = response_framing(&resp, &head.method) else {
         return Flow::Close;
     };
-    let out = client.get_mut();
-    if out.write_all(&resp.raw).is_err() || copy_body(conn, out, &framing).is_err() {
-        return Flow::Close;
+    if let Relay::Checked(linked) = how {
+        match checked(&resp, &framing, conn, linked, &shared.repos) {
+            Ok(whole) if client.get_mut().write_all(&whole).is_ok() => {}
+            Ok(_) => return Flow::Close,
+            Err(msg) => return bad(client, 502, &msg),
+        }
+    } else {
+        let out = client.get_mut();
+        if out.write_all(&resp.raw).is_err() || copy_body(conn, out, &framing).is_err() {
+            return Flow::Close;
+        }
     }
+    let out = client.get_mut();
     if out.flush().is_err()
         || resp.status == 101
         || framing == Framing::UntilClose
