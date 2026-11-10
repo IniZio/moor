@@ -37,12 +37,18 @@ fn parse_rejects_garbage() {
 
 #[test]
 fn system_clock_pinned_base_advances() {
+    let probe = SystemClock::real();
+    let before = probe.instant();
     let env = Env::from_pairs([(TEST_NOW_VAR, "1760000000000")]);
     let c = SystemClock::from_env(&env).unwrap();
     let a = c.now().as_millis();
-    assert!((BASE..BASE + 3000).contains(&a), "{a}");
+    let spent = i64::try_from(probe.instant().duration_since(before).as_millis()).unwrap();
+    assert!((BASE..=BASE + spent).contains(&a), "{a} after {spent}ms");
     c.sleep(Duration::from_millis(20));
-    assert!(c.now().as_millis() >= a + 20);
+    let b = c.now().as_millis();
+    assert!(b >= a + 20, "{a} then {b}");
+    let spent = i64::try_from(probe.instant().duration_since(before).as_millis()).unwrap();
+    assert!(b <= BASE + spent, "{b} after {spent}ms");
 }
 
 #[test]
