@@ -43,12 +43,12 @@ use moor_core::seam::driver::{
     DriverError, ExecOutcome, ExecSpec, Followed, Forked, HandlesListing, Launched, LocalTunnel,
     PausePublish, Released, RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
-use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
 
 use caps::{class_args, size_of};
 use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
-use errors::{log_error, Op};
+use errors::Op;
 use handle::{handle_of, slug, split_handle, static_env, target_args};
 pub(crate) use pool::{HostLists, PoolHosts, DIAL_WITHIN};
 
@@ -91,6 +91,8 @@ pub(crate) struct Crabbox {
     pool_hosts: Option<Arc<dyn PoolHosts>>,
     /// The pool hosts' lists in flight and which hosts last went unanswered; may be shared.
     host_lists: Arc<pool::HostLists>,
+    /// Where a failed acquire, release or checkpoint writes its stderr: moor's own stderr.
+    failure_log: Arc<Mutex<dyn std::io::Write + Send>>,
     /// Keeps a test driver's state dir alive.
     #[cfg(test)]
     scratch: Option<Arc<tempfile::TempDir>>,
@@ -115,6 +117,7 @@ impl Crabbox {
             checkpoint_dir: None,
             pool_hosts: None,
             host_lists: Arc::default(),
+            failure_log: Arc::new(Mutex::new(std::io::stderr())),
             #[cfg(test)]
             scratch: None,
         }
@@ -145,16 +148,6 @@ impl Crabbox {
         version::check(&out.stdout)?;
         let _ = self.version_ok.set(());
         Ok(())
-    }
-
-    /// Runs one crabbox call, mapping failure through `op`.
-    fn call(
-        &self,
-        op: Op,
-        provider: Option<&str>,
-        spec: &ProcSpec,
-    ) -> Result<ProcOutput, DriverError> {
-        self.proc.run(spec).map_err(|e| log_error(op, provider, &e))
     }
 
     /// Asks for the relative work root [`WORK_ROOT`], which crabbox joins to the lease's login home.

@@ -70,6 +70,12 @@ impl Crabbox {
         self
     }
 
+    /// Writes failed calls' stderr to `log` instead of moor's stderr.
+    pub(crate) fn with_failure_log(mut self, log: Arc<std::sync::Mutex<Vec<u8>>>) -> Self {
+        self.failure_log = log;
+        self
+    }
+
     /// Runs lease calls from dirs under a fresh temporary state dir.
     pub(crate) fn with_scratch_leases(mut self) -> Self {
         let dir = Arc::new(tempfile::tempdir().expect("temp state dir"));
@@ -377,6 +383,39 @@ fn release_other_failure_is_error() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], fail(1, "boom"));
     assert!(c.release(&BoxHandle::new("sprites/x")).is_err());
+}
+
+/// What a failed call wrote to its driver's failure log.
+fn logged(log: &std::sync::Mutex<Vec<u8>>) -> String {
+    String::from_utf8(log.lock().unwrap().clone()).unwrap()
+}
+
+#[test]
+fn a_failed_acquire_or_release_logs_its_cause() {
+    let cause = "error: acquire external box: ssh not ready after";
+    let stderr = format!("{cause} 10m0s\ncache group dca413249465dec0: discarded\n");
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (p, c) = fixture();
+    let c = c.with_failure_log(log.clone());
+    p.on(Tool::Crabbox, &["warmup"], fail(1, &stderr));
+    p.on(Tool::Crabbox, &["stop"], fail(1, &stderr));
+    assert!(c.acquire(&req("external", None)).is_err());
+    let text = logged(&log);
+    assert!(
+        text.contains(&format!(
+            "box acquire failed on provider external (exit 1), crabbox said: {cause}"
+        )),
+        "{text}"
+    );
+    log.lock().unwrap().clear();
+    assert!(c.release(&BoxHandle::new("external/x")).is_err());
+    let text = logged(&log);
+    assert!(
+        text.contains(&format!(
+            "box release failed on provider external (exit 1), crabbox said: {cause}"
+        )),
+        "{text}"
+    );
 }
 
 #[test]

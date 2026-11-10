@@ -3,14 +3,15 @@
 //! crabbox never prints JSON errors: the message is free text on stderr and
 //! the exit code is coarse. Raw text is read for classification; only the
 //! generic acquire, release, checkpoint and provider lookup failures carry a short stderr
-//! tail. A failed acquire, release or checkpoint also writes all of its stderr to moor's own.
+//! tail. A failed acquire, release or checkpoint also logs the plain words of each stderr line
+//! moor kept, which is the last 2 KiB.
 
 use std::fmt::Write as _;
-use std::io::Write as _;
 
 use moor_core::seam::driver::{DriverError, TunnelFailure};
-use moor_core::seam::proc::ProcError;
+use moor_core::seam::proc::{ProcError, ProcOutput, ProcSpec};
 
+use super::Crabbox;
 use crate::adapters::proc::plain::last_sentence;
 
 /// The crabbox operation that failed.
@@ -209,7 +210,7 @@ pub(super) fn is_tunnel_claim_race(e: &DriverError) -> bool {
 
 /// Longest stderr tail, in characters, appended to a summary.
 const TAIL_MAX: usize = 300;
-/// Longest cause line, in characters, kept ahead of the tail of a long stderr.
+/// Longest cause line, in characters, kept ahead of cleanup chatter in a long stderr.
 const CAUSE_MAX: usize = 150;
 /// Starts of the lines crabbox prints while it cleans up, after the cause of a failure.
 const CHATTER: [&str; 2] = ["warn:", "cache group"];
@@ -230,10 +231,7 @@ fn stderr_suffix(op: Op, stderr: &str) -> String {
     }
 }
 
-/// `stderr` as one line: trimmed non-empty lines joined by `; `, at most `TAIL_MAX` characters.
-///
-/// Longer text keeps its first line that is not cleanup chatter, which names the cause, and
-/// as much of the end after it as fits.
+/// `stderr` as one line of at most `TAIL_MAX` characters that keeps the last line not cleanup chatter.
 pub(super) fn one_line(stderr: &str) -> String {
     let lines: Vec<&str> = stderr
         .lines()
@@ -244,20 +242,29 @@ pub(super) fn one_line(stderr: &str) -> String {
     if joined.chars().count() <= TAIL_MAX {
         return joined;
     }
-    let Some(at) = lines.iter().position(|l| !is_chatter(l)) else {
+    let Some(at) = lines.iter().rposition(|l| !is_chatter(l)) else {
         return keep_end(&joined, TAIL_MAX);
     };
-    let (Some(first), Some(after)) = (lines.get(at), lines.get(at + 1..)) else {
+    let (Some(cause), Some(before), Some(after)) =
+        (lines.get(at), lines.get(..at), lines.get(at + 1..))
+    else {
         return keep_end(&joined, TAIL_MAX);
     };
-    let lead = if at == 0 { "" } else { "…" };
-    let cause = keep_start(first, CAUSE_MAX);
-    let rest = after.join("; ");
-    if rest.is_empty() {
-        return format!("{lead}{cause}");
+    let cause_max = if after.is_empty() {
+        TAIL_MAX
+    } else {
+        CAUSE_MAX
+    };
+    let mut out = keep_end(cause, cause_max);
+    if !after.is_empty() {
+        let room = TAIL_MAX - out.chars().count() - "; ".len();
+        out = format!("{out}; {}", keep_end(&after.join("; "), room));
     }
-    let room = TAIL_MAX - lead.chars().count() - cause.chars().count() - "; ".len();
-    format!("{lead}{cause}; {}", keep_end(&rest, room))
+    let room = TAIL_MAX.saturating_sub(out.chars().count() + "; ".len());
+    if !before.is_empty() && room > 0 {
+        out = format!("{}; {out}", keep_end(&before.join("; "), room));
+    }
+    out
 }
 
 /// Whether `line` is crabbox cleaning up rather than saying what failed.
@@ -276,18 +283,7 @@ fn keep_end(text: &str, max: usize) -> String {
     format!("…{}", tail.trim_start())
 }
 
-/// `text`, cut from the back to at most `max` characters with a trailing `…`.
-fn keep_start(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_owned();
-    }
-    let head: String = text.chars().take(max - 1).collect();
-    format!("{}…", head.trim_end())
-}
-
-/// What a failed acquire, release or checkpoint printed, for the log, or `None`.
-///
-/// The summary keeps one line of it; the log keeps every line moor caught.
+/// The plain words of each stderr line a failed acquire, release or checkpoint left, for the log.
 pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Option<String> {
     if !matches!(op, Op::Acquire | Op::Release | Op::Checkpoint) {
         return None;
@@ -298,11 +294,7 @@ pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Op
     else {
         return None;
     };
-    let lines: Vec<&str> = stderr_tail
-        .lines()
-        .map(str::trim_end)
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let lines: Vec<String> = stderr_tail.lines().filter_map(last_sentence).collect();
     if lines.is_empty() {
         return None;
     }
@@ -318,12 +310,40 @@ pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Op
     Some(record)
 }
 
-/// Writes what a failed `op` printed to moor's stderr, the controller log, then maps it.
-pub(super) fn log_error(op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
+/// Writes what a failed `op` printed to `log`, then maps it.
+fn log_error(
+    op: Op,
+    provider: Option<&str>,
+    e: &ProcError,
+    log: &mut dyn std::io::Write,
+) -> DriverError {
     if let Some(record) = stderr_record(op, provider, e) {
-        drop(std::io::stderr().lock().write_all(record.as_bytes()));
+        drop(log.write_all(record.as_bytes()));
     }
     map_error(op, provider, e)
+}
+
+impl Crabbox {
+    /// Runs one crabbox call, mapping failure through `op`.
+    pub(super) fn call(
+        &self,
+        op: Op,
+        provider: Option<&str>,
+        spec: &ProcSpec,
+    ) -> Result<ProcOutput, DriverError> {
+        self.proc
+            .run(spec)
+            .map_err(|e| self.failed(op, provider, &e))
+    }
+
+    /// Maps a failed run of `op`, writing what it printed to the failure log.
+    pub(super) fn failed(&self, op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
+        let mut log = self
+            .failure_log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        log_error(op, provider, e, &mut *log)
+    }
 }
 
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.

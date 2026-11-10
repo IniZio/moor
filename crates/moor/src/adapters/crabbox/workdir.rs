@@ -4,7 +4,7 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
 use moor_core::seam::proc::ProcSpec;
 
-use super::errors::{log_error, unreadable, Op};
+use super::errors::{unreadable, Op};
 use super::progress::Watch;
 use super::{cache, class_args, handle_of, parse, slug, split_handle, Crabbox, ACQUIRE_DEADLINE};
 
@@ -54,7 +54,7 @@ pub(super) fn warm_up(
     let out = cb
         .proc
         .run_watched(spec, &mut |line| watch.see(line, note))
-        .map_err(|e| watch.explain(log_error(Op::Acquire, Some(provider), &e)))?;
+        .map_err(|e| watch.explain(cb.failed(Op::Acquire, Some(provider), &e)))?;
     let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
     if let Some(root) = warm.workroot.as_deref().filter(|r| !r.starts_with('/')) {
         return Err(DriverError::Failed {
