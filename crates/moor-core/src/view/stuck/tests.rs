@@ -202,8 +202,17 @@ fn details_name_the_fields_each_kind_carries() {
     );
     assert_eq!(
         detail("egress_aborted", json!({"host": "x.example", "rule": null})),
-        "handshake to x.example aborted"
+        "handshake to x.example aborted; is the Box clock behind?"
     );
+}
+
+#[test]
+fn an_aborted_handshake_points_to_clock_skew() {
+    for payload in [json!({"host": "x.example", "rule": null}), json!({})] {
+        let view =
+            stuck_of(&[at("egress_aborted", payload, "2026-01-01T00:00:00Z")]).expect("stuck");
+        assert!(view.detail.contains("clock"), "{}", view.detail);
+    }
 }
 
 #[test]

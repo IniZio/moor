@@ -106,12 +106,18 @@ fn detail(kind: &str, p: &Value) -> String {
         }),
         _ => None,
     };
-    said.or_else(|| {
-        text(p, "error")
-            .or_else(|| text(p, "reason"))
-            .map(str::to_owned)
-    })
-    .unwrap_or_else(|| kind.replace('_', " "))
+    let line = said
+        .or_else(|| {
+            text(p, "error")
+                .or_else(|| text(p, "reason"))
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| kind.replace('_', " "));
+    if kind == "egress_aborted" {
+        format!("{line}; is the Box clock behind?")
+    } else {
+        line
+    }
 }
 
 #[cfg(test)]
