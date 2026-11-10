@@ -133,3 +133,19 @@ fn stopping_the_agent_of_an_asleep_box_does_not_reach_for_the_guest() {
     stop_agent(&cx, cx.store().unwrap(), &row(&cx, id), None).unwrap();
     assert!(engine.asked().is_empty());
 }
+
+#[test]
+fn stopping_an_agent_whose_launch_another_op_ended_meanwhile_counts_as_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = attached_box(&cx);
+    let store = cx.store().unwrap().clone();
+    let launch = store.live_launch(id).unwrap().unwrap().id;
+    engine.on_stop(move || store.end_launch_with(launch, None, None).unwrap());
+
+    let stopped = stop_agent(&cx, cx.store().unwrap(), &row(&cx, id), None);
+
+    assert!(stopped.is_ok(), "{stopped:?}");
+    assert!(cx.store().unwrap().live_launch(id).unwrap().is_none());
+}
