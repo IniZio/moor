@@ -153,16 +153,21 @@ impl Store {
         box_id: BoxId,
         session_ref: &str,
     ) -> Result<LaunchId, StoreError> {
-        self.begin_launch_with(box_id, session_ref, None)
+        self.begin_launch_with(box_id, session_ref, None, None)
     }
 
     /// [`Store::begin_launch`] for an agent launched on `argv` as its first prompt: the oldest
     /// queued prompt row holding that text is sent to the new launch in the same transaction.
+    ///
+    /// Each inbox row an older launch had, or may have had, is cut in the same transaction: a
+    /// row confirmed by `restored`, when the conversation was restored from an archive taken
+    /// then, is in it and deleted, and any other becomes a note naming it to the new agent.
     pub(crate) fn begin_launch_with(
         &self,
         box_id: BoxId,
         session_ref: &str,
         argv: Option<&str>,
+        restored: Option<Ts>,
     ) -> Result<LaunchId, StoreError> {
         self.check_write(box_id);
         let now = self.now();
@@ -214,6 +219,7 @@ impl Store {
             session: session_ref.to_owned(),
         };
         insert_event(&tx, box_id, &started, now)?;
+        super::inbox::name_cut(&tx, box_id, id, restored, now)?;
         if let Some(text) = argv {
             super::inbox::send_with_launch(&tx, box_id, (id, session_ref), text, now)?;
         }

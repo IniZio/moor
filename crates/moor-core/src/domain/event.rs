@@ -377,6 +377,9 @@ pub enum Event {
     /// What new hands got back of the agent's conversation.
     #[serde(untagged)]
     Restore(RestoreEvent),
+    /// Steers a new launch cut, or a close dropped.
+    #[serde(untagged)]
+    Inbox(InboxEvent),
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),

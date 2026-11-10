@@ -4,7 +4,7 @@
 //! table, and only them. Only the Box's owner, holding its turn, updates or deletes
 //! rows, so senders never wait on a Box that is busy or asleep.
 
-use moor_core::domain::event::{Event, TurnOutcome};
+use moor_core::domain::event::{Event, InboxEvent, TurnOutcome};
 use moor_core::domain::inbox::{Delivery, DeliveryColumns, InboxId, InboxKind, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
@@ -134,7 +134,8 @@ impl Store {
         self.move_delivery(box_id, id, Delivery::refused)
     }
 
-    /// Deletes row `id` unless it was sent: the send it was queued for was refused or failed.
+    /// Deletes row `id` while no send of it has begun: the steer it was queued for was refused.
+    /// A row in doubt stays, since the agent may have it, and is sent at most once more.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
@@ -144,7 +145,7 @@ impl Store {
             Query::delete()
                 .from_table(BoxInbox::Table)
                 .cond_where(one(box_id, id))
-                .and_where(Expr::col(BoxInbox::SentAt).is_null()),
+                .and_where(Expr::col(BoxInbox::Launch).is_null()),
         )?;
         Ok(())
     }
@@ -214,38 +215,38 @@ impl Store {
         Ok(true)
     }
 
-    /// Box `box_id`'s rows sent, or in doubt, to a launch older than `live`, oldest first: the
-    /// turns a lost VM or a dead agent cut. `live` is the Box's newest launch that has not ended.
+    /// Deletes every row of Box `box_id`, as its close does, and records `steers_dropped` for
+    /// the steers and prompts among them never confirmed sent, in the same transaction.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
-    #[cfg_attr(not(test), expect(dead_code, reason = "a new launch reads it"))]
-    pub(crate) fn cut(&self, box_id: BoxId, live: LaunchId) -> Result<Vec<InboxRow>, StoreError> {
-        let q = select(box_id)
-            .and_where(Expr::col(BoxInbox::Launch).is_not_null())
-            .and_where(Expr::col(BoxInbox::Launch).lt(live.get()))
-            .take();
-        rows(&self.reader()?, q)
-    }
-
-    /// Deletes every row of Box `box_id`, as its close does, and returns them oldest first.
-    ///
-    /// # Errors
-    /// Returns [`StoreError`] when the database fails or a row is corrupt.
-    #[cfg_attr(not(test), expect(dead_code, reason = "close drops the inbox with it"))]
-    pub(crate) fn drop_all(&self, box_id: BoxId) -> Result<Vec<InboxRow>, StoreError> {
+    pub(crate) fn drop_all(&self, box_id: BoxId) -> Result<(), StoreError> {
         self.check_write(box_id);
+        let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
-        let dropped = rows(&tx, select(box_id))?;
+        let dropped: Vec<i64> = rows(&tx, select(box_id))?
+            .into_iter()
+            .filter(|r| matches!(r.kind, InboxKind::Steer | InboxKind::Prompt))
+            .filter(|r| !matches!(r.delivery, Delivery::Sent { .. }))
+            .map(|r| r.id.get())
+            .collect();
         tx.run(
             Query::delete()
                 .from_table(BoxInbox::Table)
                 .and_where(Expr::col(BoxInbox::Box).eq(box_id.get())),
         )?;
+        if !dropped.is_empty() {
+            insert_event(
+                &tx,
+                box_id,
+                &Event::Inbox(InboxEvent::SteersDropped { inbox: dropped }),
+                now,
+            )?;
+        }
         tx.commit()?;
         drop(conn);
-        Ok(dropped)
+        Ok(())
     }
 
     /// Moves row `id`'s delivery by `step` in one transaction, under the Box's turn.
@@ -374,8 +375,10 @@ fn inbox_row(r: &Row<'_>) -> Result<InboxRow, StoreError> {
     })
 }
 
+mod cut;
 mod queue;
 
+pub(super) use cut::name_cut;
 pub(super) use queue::send_with_launch;
 use queue::steered_by;
 

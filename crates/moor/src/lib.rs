@@ -14,6 +14,7 @@ mod cx;
 pub mod doctor;
 pub mod env;
 pub mod error;
+mod failpoint;
 mod front_dir;
 mod keys;
 mod ledger_dir;

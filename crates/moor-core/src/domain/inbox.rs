@@ -83,6 +83,19 @@ pub enum QueueCause {
     Busy,
 }
 
+/// The note that tells a new agent of `text`, sent to the launch before it, which ended before
+/// the turn `text` started did. It is never sent again, since that turn may have pushed or
+/// commented already.
+#[must_use]
+pub fn cut_note(text: &str) -> String {
+    let quoted: Vec<String> = text.lines().map(|l| format!("> {l}")).collect();
+    format!(
+        "Your session ended before you finished the message below, so it was not sent again. \
+         It may have partly run: check what it already did before you continue it.\n\n{}",
+        quoted.join("\n")
+    )
+}
+
 /// Where the agent's terminal was when a row's send was confirmed, so the turn it started can be
 /// told apart from the one before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

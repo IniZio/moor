@@ -260,6 +260,23 @@ fn turn_done_kind_and_payload() {
     }
 }
 
+/// A steer cut by a new launch names the row and who sent it; a close names the rows it dropped.
+#[test]
+fn inbox_loss_events_name_their_rows() {
+    let cut = Event::Inbox(InboxEvent::SteerCut {
+        inbox: 4,
+        sender: s("steer"),
+    });
+    assert_eq!(cut.kind(), "steer_cut");
+    assert_eq!(
+        cut.payload(),
+        serde_json::json!({"inbox":4,"sender":"steer"})
+    );
+    let dropped = Event::Inbox(InboxEvent::SteersDropped { inbox: vec![4, 5] });
+    assert_eq!(dropped.kind(), "steers_dropped");
+    assert_eq!(dropped.payload(), serde_json::json!({"inbox":[4,5]}));
+}
+
 /// `SessionEnded` names itself and carries the documented payload.
 #[test]
 fn session_ended_kind_and_payload() {
