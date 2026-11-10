@@ -208,7 +208,7 @@ fn attach(
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
     let turn = cx.turn(row.id, Cmd::Start)?;
-    queue_prompt(store, row.id, req.prompt.as_deref())?;
+    queue_prompt(store, row.id, launch::first_prompt(req).text())?;
     let row = &reread(store, row.id)?;
     let flags = Flags {
         model: req.model.clone(),
@@ -234,8 +234,8 @@ fn attach(
     Ok(v)
 }
 
-/// Wakes Box `id` and launches its agent as `req` asks; `None` when the Box waits for room, and
-/// launches once it has it. Any other end ends the launch step.
+/// Wakes Box `id` and launches its agent as `req` asks; `None` when the Box waits for room, whose
+/// promotion launches it later. Every end ends the launch step.
 fn wake_and_launch(
     cx: &Cx,
     store: &Store,
@@ -246,6 +246,7 @@ fn wake_and_launch(
 ) -> Result<Option<AgentLaunchView>, CommandError> {
     let woken = asleep::wake(cx, store, req, id);
     if matches!(woken, Ok(asleep::Woken::Queued)) {
+        store.end_launching(id)?;
         return Ok(None);
     }
     let out = woken.and_then(|_| {

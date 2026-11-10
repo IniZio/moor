@@ -18,9 +18,9 @@ use crate::store::Launch;
 use crate::store::{InboxRow, Store, StoreError};
 
 impl Store {
-    /// Whether `launch` of Box `box_id` began on a first prompt whose turn has not ended. That
-    /// prompt is the one row sent in the write that recorded the launch, so it was sent at the
-    /// launch's start.
+    /// Whether `launch` of Box `box_id` began on a first prompt that is still in the inbox, which
+    /// answering its turn removes. That prompt is the one row sent in the write that recorded the
+    /// launch, so it was sent at the launch's start.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.

@@ -10,6 +10,8 @@ use moor_core::domain::inbox::InboxKind;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxId, BoxName, ErrorKind, StartReq};
+use moor_schema::tables::Sessions;
+use sea_query::{Alias, Table};
 
 use super::{agent_cx, ready, req, set_up, SESSION};
 use crate::cx::Cx;
@@ -18,6 +20,7 @@ use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::launch_after_retry;
 use crate::ops::wait::run;
+use crate::store::db::testing::open_conn;
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
 
@@ -104,8 +107,15 @@ fn a_fresh_agent_reads_starting_until_the_startup_grace_ends() {
     let (cx, _) = agent_cx(dir.path(), fresh);
     let id = prompted_live(&cx, Some("ship it"), true);
     assert_eq!(state(&cx, id), AgentState::Starting);
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out, "the first prompt's turn has not shown yet");
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
     assert_eq!(state(&cx, id), AgentState::Idle);
+    let v = run(&cx, &req(None, Some(5))).unwrap();
+    assert!(
+        !v.timed_out,
+        "an agent idle at turn 0 past the grace never took its prompt"
+    );
 }
 
 /// What one read of Box `id`'s agent finds it doing.
@@ -248,4 +258,36 @@ fn a_seeded_launch_that_fails_ends_the_launch() {
     let view = crate::ops::start::begin_seeded(&cx, store, &row, "go".into()).unwrap();
     assert!(!view.launched);
     assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+}
+
+#[test]
+fn a_relaunch_after_a_retry_that_errors_ends_the_launch() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = launch_cx(dir.path(), FakeEngine::new());
+    let id = set_up(&cx, &Flags::default());
+    let store = cx.store().unwrap();
+    let db = open_conn(&dir.path().join("moor.db"));
+    let gone = Alias::new("sessions_gone");
+    let hide = Table::rename().table(Sessions::Table, gone.clone()).take();
+    db.schema(&hide).unwrap();
+    launch_after_retry(&cx, store, id).unwrap_err();
+    let back = Table::rename().table(gone, Sessions::Table).take();
+    db.schema(&back).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
+}
+
+#[test]
+fn an_issue_given_to_a_box_with_no_agent_is_its_launch_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
+    let cx = launch_cx(dir.path(), FakeEngine::new().probes(LAUNCHED, fresh));
+    crate::ops::start::run(&cx, &agentless_start()).unwrap();
+    let start = StartReq {
+        issue: Some("#7".into()),
+        no_agent: false,
+        ..agentless_start()
+    };
+    crate::ops::start::run(&cx, &start).unwrap();
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out, "the issue's turn has not shown yet");
 }
