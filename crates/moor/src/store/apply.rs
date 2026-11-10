@@ -12,6 +12,7 @@ use sea_query::{Expr, ExprTrait as _, Query, Value};
 
 mod sql;
 mod steps;
+mod wanted;
 
 pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
@@ -104,6 +105,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         existing,
         parts,
         from,
+        held,
     } = step_box(tx, now, &d)?;
     let inc = fence(id, existing.as_ref(), &d)?;
     if let Some(launch) = d.launch {
@@ -114,7 +116,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         to: is_quiet(parts),
     };
     let box_step = step_driver(tx, now, (id, inc), existing.as_ref(), &d)?;
-    write_box_row(tx, id, now, &d, &quiet, parts)?;
+    write_box_row(tx, (id, &held), now, &d, &quiet, parts)?;
     write_box(tx, id, now, (&d, inc), box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
@@ -187,10 +189,11 @@ fn step_driver(
     Ok(Some(Step { from: None, to }))
 }
 
-/// Write box state, fields and intent.
+/// Write box state, fields, intent, wanted action and effect; `held` is what the Box wanted and
+/// had in flight before.
 fn write_box_row(
     tx: &Tx<'_>,
-    id: BoxId,
+    (id, held): (BoxId, &wanted::Held),
     now: Ts,
     d: &Decision,
     step: &Step<bool>,
@@ -212,6 +215,7 @@ fn write_box_row(
         }
     }
     sets.extend(intent_sets(d.intent, now));
+    sets.extend(wanted::sets(held, d, now)?);
     sets.push((BoxState::UpdatedAt, now.as_millis().into()));
     update(tx, &mut state_update(id), &sets)?;
     let newest = Query::select()

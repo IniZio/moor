@@ -24,7 +24,7 @@ const BOX_COLS: [Boxes; 12] = [
     Boxes::OtherRepos,
 ];
 /// The `box_state` columns a Box read takes next.
-const STATE_COLS: [BoxState; 11] = [
+const STATE_COLS: [BoxState; 18] = [
     BoxState::Prompt,
     BoxState::State,
     BoxState::StateReason,
@@ -36,6 +36,13 @@ const STATE_COLS: [BoxState; 11] = [
     BoxState::IdleSince,
     BoxState::LaunchFailure,
     BoxState::StepsPendingAt,
+    BoxState::Wanted,
+    BoxState::WantedForce,
+    BoxState::WantedReason,
+    BoxState::Effect,
+    BoxState::EffectAttempt,
+    BoxState::EffectRun,
+    BoxState::EffectAt,
 ];
 /// The newest Session's columns a Box read takes next.
 const SESSION_COLS: [Sessions; 2] = [Sessions::AgentSessionId, Sessions::State];

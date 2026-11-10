@@ -49,7 +49,8 @@ tables! {
         CreatedAt, NodeLabels, OtherRepos }
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
-        ResumeFirstAt, UpdatedAt, ArchiveDue }
+        ResumeFirstAt, UpdatedAt, ArchiveDue, Wanted, WantedForce, WantedReason, WantedAt, Effect,
+        EffectAttempt, EffectRun, EffectAt, OwedNote, RelaunchCappedAt }
     BoxHands { Box, Inc, Provider, Handle, AttemptedHandle, State, StateAt, Workdir, Egress,
         SleepReason, Cpus, MemMib, SuspendAhead, SuspendDirty, SuspendCheckedAt, SuspendPublish,
         CreatedAt, EndedAt }
@@ -57,7 +58,8 @@ tables! {
         EndedAt, ParentSession, Workdir, User, HostKey, ArchiveKey, ArchiveInc,
         ArchiveAt }
     Launches { Id, Box, SessionRef, StartedAt, EndedAt, Exit, TranscriptDigest,
-        RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt, SaidAt }
+        RegisteredAgentSession, Session, Holder, AgentReadAt, AskedAt, SaidAt, Cause, HandsInc,
+        StalledAt, UnreachableSince, ExitSaveAt }
     BoxInbox { Id, Box, Kind, Text, Sender, CreatedAt, Attempts, Launch, SentAt, TurnBefore,
         StatusBefore }
     BoxRefs { Id, Box, Kind, Value }
@@ -66,7 +68,7 @@ tables! {
     Reports { Id, Box, Session, Kind, Version, Path, Title, CreatedAt }
     Proxy { Box, BoxPort, EgressPort, Pid, Handle, Ready, LeaseOwner, LeaseHeartbeat, BootId,
         UpdatedAt, KeyHash, Ledger, Spec, CaCert, CaKey, TokenHash, TokenDelivered,
-        ForwardPort, Inc }
+        ForwardPort, Inc, RestartedAt }
     BoxLease { Id, Box, Kind, Key, State, Booted, Pgid, Sid, RootPid, RootStart, SizeAtRelease,
         CreatedAt, UpdatedAt }
     Artifacts { Id, Box, Session, Name, Version, Kind, ContentType, Size, Sha256, Path, CreatedAt }

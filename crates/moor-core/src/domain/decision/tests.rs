@@ -215,3 +215,39 @@ fn intent_samples_cover_every_variant_with_unique_kinds() {
     kinds.dedup();
     assert_eq!(kinds.len(), all.len());
 }
+
+/// A close outranks a suspend, which outranks a sleep; a raise of equal rank is absorbed.
+#[test]
+fn wanted_actions_rank_close_over_suspend_over_sleep() {
+    use super::Wanted;
+    let close = Wanted::Close {
+        force: false,
+        reason: None,
+    };
+    let suspend = Wanted::Suspend {
+        reason: "memory".to_owned(),
+    };
+    assert!(close.outranks(Some(&suspend)) && suspend.outranks(Some(&Wanted::Sleep)));
+    assert!(!suspend.outranks(Some(&close)) && !Wanted::Sleep.outranks(Some(&Wanted::Sleep)));
+    assert!(Wanted::Sleep.outranks(None));
+}
+
+/// Every effect reads back from the columns it is stored in, and only a run is reported at a
+/// restart rather than run again.
+#[test]
+fn effects_round_trip_and_only_a_run_is_reported_at_restart() {
+    use super::{Effect, Restart};
+    let run = Effect::Run { run: RunId::new(3) };
+    for e in [
+        Effect::Acquire,
+        Effect::Setup,
+        Effect::Launch,
+        run,
+        Effect::Release,
+    ] {
+        assert_eq!(Effect::from_columns(e.as_str(), e.run()), Some(e));
+        let report = matches!(e, Effect::Run { .. });
+        assert_eq!(e.on_restart() == Restart::Report, report);
+    }
+    assert_eq!(Effect::from_columns("run", None), None);
+}

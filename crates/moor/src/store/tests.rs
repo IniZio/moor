@@ -32,6 +32,7 @@ mod repos;
 mod rollback_pid;
 mod sleep_reason;
 mod vm_fence;
+mod wanted_effect;
 
 use super::apply::Applied;
 use super::box_node::live_on_node_in;

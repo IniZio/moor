@@ -1,6 +1,7 @@
 //! The single value a store writer applies: inputs, field changes, intent and events.
 
 mod extra;
+mod wanted;
 
 use super::box_state::BoxLifecycleInput;
 use super::cache_save::CacheSave;
@@ -11,6 +12,7 @@ use crate::name::{ForgeRepo, GitAuthor};
 use crate::user::UserId;
 
 pub use extra::ExtraEvent;
+pub use wanted::{Effect, EffectChange, Restart, WantChange, Wanted, WantedKind};
 
 /// A change to one optional column.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -208,6 +210,10 @@ pub struct Decision {
     pub launch: Option<LaunchId>,
     /// Intent change.
     pub intent: IntentChange,
+    /// What moor wants the Box to end as.
+    pub wanted: WantChange,
+    /// The external step in flight.
+    pub effect: EffectChange,
     /// Caller-supplied events appended after the derived ones. Derived state
     /// events cannot be passed here; see [`ExtraEvent`].
     pub events: Vec<ExtraEvent>,
@@ -246,6 +252,8 @@ impl Decision {
             hands: None,
             launch: None,
             intent: IntentChange::Keep,
+            wanted: WantChange::Keep,
+            effect: EffectChange::Keep,
             events: Vec::new(),
             parent_session: None,
             requester: None,
