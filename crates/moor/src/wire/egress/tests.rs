@@ -3,7 +3,7 @@
 use std::io::{Read as _, Write as _};
 use std::os::unix::fs::PermissionsExt as _;
 
-use super::{keep, key, prepare_egress, KEY_FILE};
+use super::{key, prepare_egress, probe, replace, KEY_FILE};
 use crate::env::{Env, EGRESS_KEY};
 
 #[test]
@@ -71,7 +71,7 @@ fn answer_ready_as() {
 }
 
 #[test]
-fn a_proxy_under_another_key_is_stopped_and_one_under_the_same_key_kept() {
+fn whatever_answers_is_stopped_even_under_the_same_key() {
     if std::env::var_os(READY_AS).is_some() {
         return;
     }
@@ -91,10 +91,10 @@ fn a_proxy_under_another_key_is_stopped_and_one_under_the_same_key_kept() {
         std::os::unix::net::UnixStream::connect(&socket).is_ok()
     });
     assert!(listening, "the stand-in Proxy listens");
-    assert_eq!(keep(&socket, 7), Ok(true), "the same key is kept");
-    assert!(child.try_wait().unwrap().is_none());
-    assert_eq!(keep(&socket, 8), Ok(false), "another key is replaced");
+    assert_eq!(probe(&socket), Some(7), "it answers under the key");
+    assert_eq!(replace(&socket), Ok(()));
     let status = child.wait().unwrap();
     assert!(!status.success(), "it was stopped: {status}");
-    assert_eq!(keep(&socket, 8), Ok(false), "nothing listens now");
+    assert_eq!(probe(&socket), None, "nothing listens now");
+    assert_eq!(replace(&socket), Ok(()), "nothing to stop");
 }

@@ -479,6 +479,20 @@ fn listener_pid(socket: &Path) -> i32 {
     pid
 }
 
+/// Whether whatever listens on the Unix socket `socket` answers `/ready` with 200.
+fn answers_ready(socket: &Path) -> bool {
+    let Ok(mut conn) = UnixStream::connect(socket) else {
+        return false;
+    };
+    conn.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut answer = String::new();
+    conn.write_all(b"GET /ready HTTP/1.1\r\nHost: egress\r\n\r\n")
+        .and_then(|()| std::io::Read::read_to_string(&mut conn, &mut answer).map(drop))
+        .is_ok()
+        && answer.starts_with("HTTP/1.1 200")
+}
+
 /// What `ps` reports in `column` for `pid`; empty once it is gone.
 fn ps(pid: i32, column: &str) -> String {
     let out = Command::new("ps")
@@ -525,6 +539,11 @@ fn the_egress_forwarder_exits_with_its_controller() {
         controller.child.id().to_string(),
         "the controller started it"
     );
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(
+        answers_ready(&state.join("egress/egress.sock")),
+        "the forwarder stopped while its controller runs"
+    );
     controller.child.kill().unwrap();
     controller.child.wait().unwrap();
     // 100 polls of 100ms bound the wait at about ten seconds.
@@ -536,5 +555,34 @@ fn the_egress_forwarder_exits_with_its_controller() {
         gone,
         "serve-egress (pid {}) outlived its controller",
         forwarder.pid
+    );
+}
+
+#[test]
+fn a_controller_restarted_at_once_runs_its_own_egress_forwarder() {
+    let sandbox = Sandbox::new();
+    let state = sandbox.root.join("state");
+    let socket = state.join("egress/egress.sock");
+    let mut first = Controller::start(&sandbox);
+    let _old = Forwarder {
+        pid: listener_pid(&socket),
+        state: state.display().to_string(),
+    };
+    first.child.kill().unwrap();
+    first.child.wait().unwrap();
+    let second = Controller::start(&sandbox);
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(
+        UnixStream::connect(&socket).is_ok(),
+        "nothing listens on the egress socket after the restart"
+    );
+    let new = Forwarder {
+        pid: listener_pid(&socket),
+        state: state.display().to_string(),
+    };
+    assert_eq!(
+        ps(new.pid, "ppid"),
+        second.child.id().to_string(),
+        "the restarted controller started the forwarder"
     );
 }
