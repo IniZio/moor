@@ -221,10 +221,6 @@ fn attach(
             },
         )
     };
-    let recreated = matches!(
-        row.hands.as_ref().map(|b| b.state),
-        Some(HandsState::Failed | HandsState::Gone)
-    );
     if asleep::wake(cx, store, req, row.id)? == asleep::Woken::Queued {
         return Ok(queued_view(cx, &reread(store, row.id)?, true));
     }
@@ -232,7 +228,7 @@ fn attach(
         reopen::ended_session(store, row.id, req.parent.map(SessionId::get))?;
     }
     asleep::wake_idle(store, row.id)?;
-    let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
+    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
     drop(turn);
     let agent = watch::run(cx, store, row.id, agent);
     let _turn = cx.turn(row.id, Cmd::Steer)?;
