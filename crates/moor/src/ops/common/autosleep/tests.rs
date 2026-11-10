@@ -428,3 +428,31 @@ fn the_awake_cap_on_a_provider_that_saves_sends_denied() {
     assert_eq!(states(&f).0, BoxLifecycle::Asleep);
     assert_eq!(f.driver.pause_publishes(), [PausePublish::Denied]);
 }
+
+#[test]
+fn the_awake_cap_does_not_quiet_a_box_relaunched_since_its_agent_was_read() {
+    let f = working_with(FakeDriver::new());
+    let store = f.cx.store().unwrap();
+    let read = store.begin_launch(f.id, "agent-1").unwrap();
+    let mut reading = crate::ops::common::activity::Reading::new(
+        None,
+        crate::ops::common::activity::PaneLiveness::Live,
+        true,
+        false,
+    );
+    reading.launch = Some(read);
+    let end = crate::store::LaunchEnd {
+        session: Some("relaunch"),
+        ..crate::store::LaunchEnd::default()
+    };
+    store.end_launch(f.id, read, &end).unwrap();
+    let session = store.open_session(f.id).unwrap();
+    store.start_session(session.id).unwrap();
+    store.begin_launch(f.id, "agent-1").unwrap();
+    pass(&f, Duration::from_mins(120));
+
+    super::run_after_read(&f.cx, store, f.id, &reading);
+
+    assert_eq!(sleep_calls(&f), 0);
+    assert_eq!(states(&f).1, SessionState::Working);
+}
