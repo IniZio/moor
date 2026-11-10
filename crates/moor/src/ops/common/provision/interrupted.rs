@@ -73,9 +73,12 @@ pub(crate) fn settle(cx: &Cx, store: &Store, id: BoxId) -> Result<Then, CommandE
     }
 }
 
-/// Ends the run a restart cut, as interrupted, when its row is still open, and its effect.
+/// Ends the run a restart cut, as interrupted, when its row is still open, and its effect. A run
+/// someone still follows is left with its effect.
 fn report_run(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    store.in_flight_run(row.id)?;
+    if store.in_flight_run(row.id)?.is_some() {
+        return Ok(());
+    }
     if matches!(
         store.box_row(row.id)?.and_then(|r| r.effect),
         Some(Effect::Run { .. })
@@ -184,7 +187,11 @@ fn cut_acquire(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Then, CommandErro
             store.apply(lost)?;
             Ok(Then::Rest)
         }
-        _ => Ok(Then::Rest),
+        // Hands that came up, or none, leave nothing of the acquire to settle.
+        _ => {
+            store.apply(Decision::new(row.id).effect(EffectChange::End))?;
+            Ok(Then::Rest)
+        }
     }
 }
 

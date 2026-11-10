@@ -47,17 +47,17 @@ const STATE: &str = "SELECT CAST(box AS TEXT) || '|' || COALESCE(wanted, '-') ||
     || COALESCE(CAST(wanted_force AS TEXT), '-') || '|' || COALESCE(CAST(wanted_at AS TEXT), '-') \
     || '|' || COALESCE(effect, '-') || '|' || COALESCE(CAST(effect_attempt AS TEXT), '-') || '|' \
     || COALESCE(CAST(effect_run AS TEXT), '-') || '|' || COALESCE(CAST(effect_at AS TEXT), '-') \
-    FROM box_state ORDER BY box";
+    || '|' || COALESCE(intent_kind, '-') FROM box_state ORDER BY box";
 
 fn expected() -> Vec<&'static str> {
     vec![
-        "1|-|-|-|acquire|2|-|100",
-        "2|-|-|-|setup|1|-|200",
-        "3|-|-|-|run|1|7|300",
-        "4|close|1|400|-|-|-|-",
-        "5|-|-|-|launch|1|-|500",
-        "6|-|-|-|-|-|-|-",
-        "7|-|-|-|acquire|1|-|700",
+        "1|-|-|-|acquire|2|-|100|-",
+        "2|-|-|-|setup|1|-|200|-",
+        "3|-|-|-|run|1|7|300|-",
+        "4|close|1|400|-|-|-|-|-",
+        "5|-|-|-|launch|1|-|500|-",
+        "6|-|-|-|-|-|-|-|-",
+        "7|-|-|-|acquire|1|-|700|-",
     ]
 }
 

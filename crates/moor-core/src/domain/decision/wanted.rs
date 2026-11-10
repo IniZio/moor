@@ -193,12 +193,14 @@ pub enum EffectChange {
     /// Begin this effect; the Box must have none in flight.
     Begin(Effect),
     /// The effect in flight, if any, ended, and this one begins: a start's acquire hands over to
-    /// its setup, and a launch replaces a run it outlived.
+    /// its setup. A run in flight is never replaced, as only a restart may end it unfinished.
     Next(Effect),
     /// Try the effect in flight once more.
     Again,
     /// The effect in flight ended.
     End,
+    /// The effect in flight ended when it is one of this kind; another stays.
+    Finish(Effect),
 }
 
 impl super::Decision {

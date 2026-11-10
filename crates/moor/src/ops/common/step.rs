@@ -14,8 +14,8 @@ use crate::store::Store;
 /// returns. `f` says whether the step succeeded.
 ///
 /// A launch is also the Box's effect in flight from its start event to its end event, so a
-/// restart that cuts it launches again unless the agent lives. A failed write is warned, not
-/// returned.
+/// restart that cuts it launches again unless the agent lives. A run already in flight keeps the
+/// slot, and the launch's end leaves it. A failed write is warned, not returned.
 pub(crate) fn timed<T>(
     cx: &Cx,
     store: &Store,
@@ -43,7 +43,7 @@ pub(crate) fn timed<T>(
         cx,
         store,
         end.effect(if launch {
-            EffectChange::End
+            EffectChange::Finish(Effect::Launch)
         } else {
             EffectChange::Keep
         }),
