@@ -80,10 +80,12 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         .wanted
         .as_ref()
         .filter(|w| w.kind() == WantedKind::Close);
-    if wanted.is_some() || row.effect == Some(Effect::Release) {
+    let releasing = row.effect == Some(Effect::Release);
+    if wanted.is_some() || releasing {
+        // The check for unsaved work gates beginning a release; one under way cannot be undone.
         let req = CloseReq {
             target: BoxTarget::Name(row.name.clone()),
-            force: wanted.is_none_or(Wanted::force),
+            force: releasing || wanted.is_none_or(Wanted::force),
         };
         let reason = wanted.and_then(Wanted::reason).map(str::to_owned);
         return close::run_with_reason(cx, &req, reason).map(drop);

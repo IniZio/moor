@@ -2,7 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, Effect, EffectChange, WantChange, Wanted};
-use moor_core::domain::hands::HandsState;
+use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::response::CloseRefusal;
 use moor_core::seam::driver::DriverError;
 use moor_core::{ErrorDetail, ErrorKind};
@@ -34,18 +34,65 @@ fn wanted_pass(f: &Fx) {
     crate::ops::wanted_pass(&f.cx, f.cx.store().unwrap(), &|| false).unwrap();
 }
 
-#[test]
-fn an_unforced_close_a_restart_cut_mid_release_is_still_refused_for_unsaved_work() {
-    let f = fx_box(FakeDriver::new(), Some("ahead=1 dirty=0"));
+/// Box `f` as a restart finds it after cutting an unforced close mid-release.
+fn cut_mid_release(f: &Fx) {
     let store = f.cx.store().unwrap();
     let cut = Decision::new(f.id)
         .want(WantChange::Raise(UNFORCED))
         .effect(EffectChange::Next(Effect::Release));
     store.apply(cut).unwrap();
     assert_eq!(fail_interrupted(&f.cx, store).unwrap(), [f.id]);
+}
+
+fn assert_closed_once(f: &Fx) {
+    let r = row(f);
+    assert_eq!(r.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(r.effect, None);
+    assert_eq!(r.wanted, None);
+    assert_eq!(releases(f), 1);
+}
+
+#[test]
+fn an_unforced_close_a_restart_cut_mid_release_finishes_though_the_box_cannot_be_read() {
+    let f = fx_box(FakeDriver::new(), None);
+    cut_mid_release(&f);
+    resume_setup(&f.cx, f.cx.store().unwrap(), f.id).unwrap();
+    assert_closed_once(&f);
+}
+
+#[test]
+fn an_unforced_close_a_restart_cut_mid_release_finishes_without_checking_for_unsaved_work() {
+    let f = fx_box(FakeDriver::new(), Some("ahead=1 dirty=0"));
+    cut_mid_release(&f);
+    resume_setup(&f.cx, f.cx.store().unwrap(), f.id).unwrap();
+    assert_closed_once(&f);
+}
+
+#[test]
+fn an_unforced_close_a_restart_cut_mid_release_finishes_once_its_machine_is_gone() {
+    let f = fx_box(FakeDriver::new(), None);
+    let gone = Decision::new(f.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
+    f.cx.store().unwrap().apply(gone).unwrap();
+    cut_mid_release(&f);
+    resume_setup(&f.cx, f.cx.store().unwrap(), f.id).unwrap();
+    let r = row(&f);
+    assert_eq!(r.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(r.effect, None);
+    assert_eq!(r.wanted, None);
+}
+
+#[test]
+fn an_unforced_close_a_restart_cut_before_its_release_is_still_refused_for_unsaved_work() {
+    let f = fx_box(FakeDriver::new(), Some("ahead=1 dirty=0"));
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).want(WantChange::Raise(UNFORCED)))
+        .unwrap();
+    assert_eq!(fail_interrupted(&f.cx, store).unwrap(), [f.id]);
     let e = resume_setup(&f.cx, store, f.id).unwrap_err();
     assert!(unsaved(&e), "{}", e.error);
     assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
+    assert_eq!(row(&f).wanted, None);
     assert_eq!(releases(&f), 0);
 }
 
