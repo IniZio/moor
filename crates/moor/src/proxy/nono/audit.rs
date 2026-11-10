@@ -2,7 +2,8 @@
 //!
 //! Only the method, the rule name (or host), the status and the denial category leave this module.
 //! Headers and bodies in the audit are never read. The path is read only to
-//! build a withheld-credential template; it is never stored or logged.
+//! build a withheld-credential template and to tell whether a rejection came
+//! from a repo outside the Box's; it is never stored or logged.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
@@ -101,13 +102,23 @@ impl Withheld {
                     .or_insert_with(|| rule.name.clone());
             }
         }
+        let mut limits = Limits::default();
+        limits.add_repos(repo.clone());
         Self {
             hosts,
             repo,
             seen: Mutex::default(),
-            limits: Limits::default(),
+            limits,
             aborted: Mutex::default(),
         }
+    }
+
+    /// Adds `repos`, the Box's repos after its own, so their answers count
+    /// toward the credential's limits too.
+    #[must_use]
+    pub(crate) fn with_other_repos(mut self, repos: &[ForgeRepo]) -> Self {
+        self.limits.add_repos(repos.iter().cloned());
+        self
     }
 
     /// Reports `event` to `sink` once per `(rule, method, shape, reason)` when it is a
