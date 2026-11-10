@@ -4,7 +4,7 @@ use std::time::Duration;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{ProcError, Tool};
 
-use super::{is_claim_race, map_error, transport_loss, Op};
+use super::{is_claim_race, map_error, stderr_record, transport_loss, Op};
 
 fn nz(code: i32, stderr: &str) -> ProcError {
     ProcError::NonZero {
@@ -131,10 +131,60 @@ fn long_stderr_is_capped_keeping_the_end() {
     let text = format!("{}\nthe real cause", "a".repeat(1000));
     let summary = map_error(Op::Acquire, Some("aws"), &nz(1, &text)).to_string();
     let tail = summary
-        .strip_prefix("box acquire failed on provider aws (exit 1): …")
+        .strip_prefix("box acquire failed on provider aws (exit 1): ")
         .expect("prefix");
-    assert!(tail.chars().count() <= 299, "{summary}");
+    assert!(tail.chars().count() <= 300, "{summary}");
     assert!(tail.ends_with("; the real cause"), "{summary}");
+}
+
+/// crabbox prints its cause first and its teardown warnings after it.
+const CAUSE_THEN_TEARDOWN: &str = "\
+warn: lease claim kept from an earlier run
+error: acquire external box: ssh not ready after 10m0s; gave up waiting for the guest to boot in time
+warn: vm.shutdown: cloud-hypervisor vm.shutdown: HTTP 500: Error from API: API request send error: sending on a closed channel
+cache group dca413249465dec0: discarded
+cache group dca413249465dec0x: discarded
+cache group dca413249465dec0w: discarded
+cache group 61cf59cb8c4a79fda: discarded
+";
+
+#[test]
+fn long_stderr_keeps_the_cause_ahead_of_teardown_chatter() {
+    let summary = map_error(Op::Acquire, Some("external"), &nz(1, CAUSE_THEN_TEARDOWN)).to_string();
+    let tail = summary
+        .strip_prefix("box acquire failed on provider external (exit 1): ")
+        .expect("prefix");
+    assert!(tail.chars().count() <= 300, "{summary}");
+    assert!(
+        tail.contains("error: acquire external box: ssh not ready after 10m0s"),
+        "{summary}"
+    );
+    assert!(
+        tail.ends_with("cache group 61cf59cb8c4a79fda: discarded"),
+        "{summary}"
+    );
+}
+
+#[test]
+fn a_failed_acquire_release_or_checkpoint_records_all_its_stderr() {
+    for op in [Op::Acquire, Op::Release, Op::Checkpoint] {
+        let record =
+            stderr_record(op, Some("external"), &nz(1, CAUSE_THEN_TEARDOWN)).expect("a record");
+        for line in CAUSE_THEN_TEARDOWN.lines() {
+            assert!(record.contains(line), "{op:?} lost {line:?}: {record}");
+        }
+        assert!(record.contains("exit 1"), "{record}");
+    }
+}
+
+#[test]
+fn other_failures_record_no_stderr() {
+    assert_eq!(stderr_record(Op::List, None, &nz(1, "boom")), None);
+    assert_eq!(stderr_record(Op::Acquire, None, &nz(1, " \n")), None);
+    assert_eq!(
+        stderr_record(Op::Acquire, None, &ProcError::Interrupted),
+        None
+    );
 }
 
 #[test]
