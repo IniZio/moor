@@ -141,7 +141,7 @@ fn promote_one(
         }
     };
     let row = reread(store, id)?;
-    if row.lifecycle != BoxLifecycle::Pending || row.intent.is_some() {
+    if row.lifecycle != BoxLifecycle::Pending || row.effect.is_some() {
         return Ok(Promotion::Skipped);
     }
     let asleep = row

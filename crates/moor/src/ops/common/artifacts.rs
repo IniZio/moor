@@ -64,7 +64,7 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
             .hands
             .as_ref()
             .is_some_and(|b| b.state == HandsState::Ready && b.handle.is_some());
-        if !ready || row.intent.is_some() {
+        if !ready || row.effect.is_some() {
             continue;
         }
         let cursor = match store.newest_turn_event(id) {

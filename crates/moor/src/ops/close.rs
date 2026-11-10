@@ -5,7 +5,7 @@ use moor_core::decide::close::{
 };
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, ExtraEvent, WantChange, Wanted, WantedKind};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
@@ -135,21 +135,24 @@ fn close_with(
 ///
 /// The stopped start records its setup as failed before it lets go. One that has not stopped
 /// after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still acquiring its
-/// machine has that boot cancelled, and the close is recorded first so a restart honours it.
+/// machine has that boot cancelled, and the close is wanted first so a restart honours it.
 fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Option<Turn<'a>>, CommandError> {
     if cx.owners().holds(row.id) {
         return Ok(None);
     }
     let name = row.name.as_str();
-    let starting = matches!(row.intent, Some(Intent::Setup | Intent::Provisioning));
-    let acquiring = matches!(row.intent, Some(Intent::Provisioning));
+    let starting = matches!(row.effect, Some(Effect::Setup | Effect::Acquire));
+    let acquiring = row.effect == Some(Effect::Acquire);
     let store = cx.store()?;
     let deadline = cx.clock().instant() + QUEUE_WAIT;
     let cmd = Cmd::Close { force };
     let stop = || {
         if acquiring {
-            let closing = Intent::Closing;
-            store.apply(Decision::new(row.id).intent(IntentChange::Set(closing)))?;
+            let closing = Wanted::Close {
+                force: true,
+                reason: None,
+            };
+            store.apply(Decision::new(row.id).want(WantChange::Raise(closing)))?;
         }
         cancel_boot(cx, store, row)
     };
@@ -162,8 +165,9 @@ fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Option<Turn<'a>>, C
             "`moor close {name} --force` interrupts the start and closes the Box"
         ))),
         Err(e) if e.kind == ErrorKind::Refused && force && starting => {
-            if let (true, Some(start)) = (acquiring, row.intent) {
-                store.apply(Decision::new(row.id).intent(IntentChange::Set(start)))?;
+            if acquiring {
+                let done = WantChange::Done(WantedKind::Close);
+                store.apply(Decision::new(row.id).want(done))?;
             }
             Err(CommandError::new(
                 ErrorKind::Refused,

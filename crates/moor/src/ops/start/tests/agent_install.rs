@@ -474,6 +474,18 @@ fn a_launch_that_never_reached_the_box_is_launched_with_its_prompt() {
 }
 
 #[test]
+fn a_launch_cut_with_its_events_deleted_still_resumes() {
+    let (w, engine) = launch_cut(&prompt_req());
+    engine.set_probes("moor-1", agent::gone());
+    let store = w.cx.store().unwrap();
+    store.forget_events(BoxId::new(1));
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 2);
+    assert!(store.live_launch(BoxId::new(1)).unwrap().is_some());
+}
+
+#[test]
 fn a_box_that_cannot_say_whether_its_agent_runs_launches_nothing() {
     let (w, engine) = launch_cut(&prompt_req());
     engine.set_probes("moor-1", Probe::TimedOut);

@@ -54,7 +54,7 @@ pub(super) fn step(
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
     };
-    if row.intent.is_some() {
+    if row.effect.is_some() {
         return Ok(());
     }
     let quiet = input == SessionInput::AgentQuiet;

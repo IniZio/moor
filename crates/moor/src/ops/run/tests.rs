@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{
-    Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+    Decision, Effect, EffectChange, Field, HandsFields, NewBox, SpecFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -453,7 +453,7 @@ fn dead_provisioning_is_refused_with_a_close_hint() {
     let f = bare();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning)))
+        .apply(Decision::new(f.id).effect(EffectChange::Next(Effect::Acquire)))
         .unwrap();
     f.cx.clock().sleep(Duration::from_secs(121));
     let e = run(&f.cx, &req(&["true"])).unwrap_err();
@@ -468,7 +468,7 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
     let f = bare();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning)))
+        .apply(Decision::new(f.id).effect(EffectChange::Next(Effect::Acquire)))
         .unwrap();
     f.cx.clock().sleep(Duration::from_secs(121));
     let row = store.box_row(f.id).unwrap().unwrap();

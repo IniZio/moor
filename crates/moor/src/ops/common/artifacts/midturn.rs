@@ -32,9 +32,9 @@ type Key = (PathBuf, BoxId);
 
 /// Collects each working Box not collected in the last [`INTERVAL`]; never errors.
 ///
-/// Boxes whose lock an operation holds or that have an intent are skipped. A file is stored once
-/// two passes saw it with the same size and hash, so one still being written is never stored half
-/// done. The turn-end collect still runs separately.
+/// Boxes whose lock an operation holds or that have an effect in flight are skipped. A file is
+/// stored once two passes saw it with the same size and hash, so one still being written is never
+/// stored half done. The turn-end collect still runs separately.
 pub(crate) fn collect_working(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
     let Ok(state_dir) = cx.state_dir() else {
         return;

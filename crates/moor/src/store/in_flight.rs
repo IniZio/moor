@@ -1,12 +1,29 @@
 //! The wanted action and the effect in flight, as a Box read row holds them.
 
-use moor_core::domain::decision::{Effect, Intent, Wanted};
+use moor_core::domain::decision::{Effect, Wanted, WantedKind};
 use moor_core::RunId;
 use moor_schema::tables::BoxState;
+use sea_query::{Expr, ExprTrait as _, Order};
 
 use super::db::Row;
+use super::reads::{query_boxes, SHUT};
 use super::select::state_at;
-use super::StoreError;
+use super::{BoxRow, Store, StoreError};
+
+impl Store {
+    /// The open Boxes a process that stopped left something in flight on: an effect, or a close
+    /// it wanted. Only a close outlives a restart; a wanted sleep or suspend is remade from what
+    /// holds then.
+    pub(crate) fn in_flight_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
+        let col = |c| Expr::col((BoxState::Table, c));
+        let in_flight = col(BoxState::State).is_not_in(SHUT).and(
+            col(BoxState::Effect)
+                .is_not_null()
+                .or(col(BoxState::Wanted).eq(WantedKind::Close.as_str())),
+        );
+        query_boxes(&self.reader()?, in_flight, Order::Asc, None)
+    }
+}
 
 /// The wanted action a Box read row holds.
 pub(super) fn wanted_from(row: &Row<'_>) -> Result<Option<Wanted>, StoreError> {
@@ -33,26 +50,4 @@ pub(super) fn effect_from(row: &Row<'_>) -> Result<Option<Effect>, StoreError> {
     Effect::from_columns(&kind, run)
         .map(Some)
         .ok_or_else(|| StoreError::Corrupt(format!("effect `{kind}`")))
-}
-
-/// Rebuild the intent from its kind and run columns.
-pub(super) fn intent_from(
-    kind: Option<String>,
-    run: Option<i64>,
-) -> Result<Option<Intent>, StoreError> {
-    let Some(kind) = kind else { return Ok(None) };
-    match kind.as_str() {
-        "provisioning" => Ok(Some(Intent::Provisioning)),
-        "setup" => Ok(Some(Intent::Setup)),
-        "closing" => Ok(Some(Intent::Closing)),
-        "launching" => Ok(Some(Intent::Launching)),
-        "running" => {
-            let run =
-                run.ok_or_else(|| StoreError::Corrupt("running intent without run".into()))?;
-            Ok(Some(Intent::Running {
-                run: RunId::new(run),
-            }))
-        }
-        other => Err(StoreError::Corrupt(format!("intent kind `{other}`"))),
-    }
 }

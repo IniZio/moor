@@ -1,6 +1,6 @@
 //! Recording a freshly acquired Box.
 
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, HandsFields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent, Field, HandsFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::driver::Acquired;
 use moor_core::BoxId;
@@ -22,7 +22,7 @@ fn record_disk_lost(store: &Store, before: &BoxRow) -> Result<(), CommandError> 
     Ok(())
 }
 
-/// Records the machine acquired for hands `inc` under the setup intent; `replacing` is what it held before, when a
+/// Records the machine acquired for hands `inc`, and the setup that follows as the effect in flight; `replacing` is what it held before, when a
 /// working Box lost its machine.
 pub(super) fn record_acquired(
     store: &Store,
@@ -48,7 +48,7 @@ pub(super) fn record_acquired(
                 ..HandsFields::default()
             },
         )
-        .intent(IntentChange::Set(Intent::Setup));
+        .effect(EffectChange::Next(Effect::Setup));
     store.apply(acquired)?;
     Ok(())
 }

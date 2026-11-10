@@ -4,7 +4,7 @@ use moor_core::activity::{Life, Probe, Term};
 use moor_core::box_key::BoxKey;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, Wanted, WantedKind};
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -49,11 +49,11 @@ pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
     kept_box(row).is_some()
 }
 
-/// Runs the clone, setup and dotfiles in the kept Box under the setup intent, then marks it ready.
+/// Runs the clone, setup and dotfiles in the kept Box as the setup effect, then marks it ready.
 ///
 /// The caller holds the Box's turn and passes the row read under it. No Box is acquired. The
-/// intent is cleared on success and by the failure record, so a crash mid-run leaves it for
-/// dead-owner recovery.
+/// effect ends on success and with the failure record, so a crash mid-run leaves it for the next
+/// process to settle.
 pub(super) fn retry_in_box(
     cx: &Cx,
     store: &Store,
@@ -62,31 +62,40 @@ pub(super) fn retry_in_box(
 ) -> Result<Provisioned, CommandError> {
     let begin = Decision::new(row.id)
         .lifecycle(BoxLifecycleInput::Retry)
-        .intent(IntentChange::Set(Intent::Setup));
+        .effect(EffectChange::Next(Effect::Setup));
     store.apply(begin)?;
     set_up_in_machine(cx, store, row, cfg, Fork::New)
 }
 
 /// Picks up the start a controller restart cut off in Box `id`, which [`super::interrupted::settle`]
 /// let go on, and launches its agent as the start would have. An acquire runs again. Each setup
-/// script that ran or is running is attached to rather than run again. A close a forced close
-/// recorded is honoured. All of it runs under the Box's Resume turn, the caller's when it holds one.
+/// script that ran or is running is attached to rather than run again. A wanted close, or a
+/// release it cut, is finished. All of it runs under the Box's Resume turn, the caller's when it
+/// holds one.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let _turn = cx.turn_unless_held(id, Cmd::Resume)?;
     layers::release_left(cx, store, id)?;
     let row = super::reread(store, id)?;
-    if row.intent == Some(Intent::Closing) {
+    let wanted = row
+        .wanted
+        .as_ref()
+        .filter(|w| w.kind() == WantedKind::Close);
+    if wanted.is_some() || row.effect == Some(Effect::Release) {
         let req = CloseReq {
             target: BoxTarget::Name(row.name),
-            force: true,
+            force: wanted.is_none_or(Wanted::force),
         };
         return close::run(cx, &req).map(drop);
     }
-    let launching = row.intent == Some(Intent::Launching);
-    if launching || (row.intent.is_none() && launch_was_cut(store, &row)?) {
-        return finish_launch(cx, store, &row);
+    if row.effect == Some(Effect::Launch) {
+        if launch_was_cut(store, &row)? {
+            return finish_launch(cx, store, &row);
+        }
+        // A launch with no ready machine or waiting agent has nothing left to start.
+        store.end_launching(row.id)?;
+        return Ok(());
     }
-    let acquiring = row.intent == Some(Intent::Provisioning);
+    let acquiring = row.effect == Some(Effect::Acquire);
     if acquiring && row.lifecycle != BoxLifecycle::SettingUp {
         return release_cut(cx, store, &row);
     }
@@ -98,9 +107,9 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
         let goes_on = row.hands.as_ref().map(|b| b.state) == Some(HandsState::Starting);
         let entry = if goes_on { Entry::Adopt } else { Entry::Again };
         super::provision(cx, store, id, entry, &cfg)?
-    } else if row.intent == Some(Intent::Setup) && row.steps_pending_at.is_some() {
+    } else if row.effect == Some(Effect::Setup) && row.steps_pending_at.is_some() {
         finish_cut_steps(cx, store, &row)?
-    } else if row.intent == Some(Intent::Setup) {
+    } else if row.effect == Some(Effect::Setup) {
         follow_setup(cx, store, &row)?
     } else {
         return Ok(());
@@ -113,9 +122,16 @@ pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), Comm
 
 /// Ends the launch a restart cut off in `row`. An agent already in the Box is attached to, as a
 /// second launch would replace it and start its work over. A Box with no ready machine has no
-/// agent to launch, so its launch ends; a Box that cannot say launches nothing, and the next
-/// process asks again.
+/// agent to launch, so its launch ends. A Box that cannot say launches nothing, and the launch
+/// stays in flight for the next process to ask again.
 fn finish_launch(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    launch_or_attach(cx, store, row)?;
+    store.end_launching(row.id)?;
+    Ok(())
+}
+
+/// Attaches to the agent the cut launch of `row` left running, or launches it.
+fn launch_or_attach(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some((handle, workdir)) = machine(row) else {
         store.end_launching(row.id)?;
         return Ok(());
@@ -158,7 +174,7 @@ fn release_cut(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError>
     if let Some(handle) = planned_root(store, row.id)? {
         release_warned(cx, store, row, &handle);
     }
-    store.apply(Decision::new(row.id).intent(IntentChange::Clear))?;
+    store.apply(Decision::new(row.id).effect(EffectChange::End))?;
     Ok(())
 }
 
@@ -172,7 +188,7 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
     let fork = cut_fork(cx, store, row)?;
     match set_up_in_machine(cx, store, row, &cfg, fork) {
         Ok(done) => Ok(done),
-        // The intent stays, so the next process claims this setup again.
+        // The effect stays, so the next process claims this setup again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
         Err(e) => {
             let why = format!(
@@ -190,7 +206,7 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
 fn finish_cut_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, CommandError> {
     match finish_steps(cx, store, row, true) {
         Ok(done) => Ok(done),
-        // The intent stays, so the next process claims these steps again.
+        // The effect stays, so the next process claims these steps again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
         Err(e) => {
             let why = format!(

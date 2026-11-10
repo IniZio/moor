@@ -304,3 +304,33 @@ fn a_wanted_suspend_keeps_its_reason_and_time_and_an_ended_effect_its_time_clear
 
     assert_eq!(stamps(&store, id).2, None);
 }
+
+impl Store {
+    /// Deletes every event of Box `id`, and the webhook deliveries queued for them, so a test
+    /// proves a decision reads no history.
+    pub(crate) fn forget_events(&self, id: BoxId) {
+        use moor_schema::tables::{Events, WebhookDeliveries};
+        use sea_query::{Expr, ExprTrait as _, Query};
+
+        use crate::store::db::DbExt as _;
+        let of_box = Query::select()
+            .column(Events::Id)
+            .from(Events::Table)
+            .and_where(Expr::col(Events::Box).eq(id.get()))
+            .take();
+        let conn = self.writer();
+        conn.run(
+            Query::delete()
+                .from_table(WebhookDeliveries::Table)
+                .and_where(Expr::col(WebhookDeliveries::Event).in_subquery(of_box)),
+        )
+        .unwrap();
+        conn.run(
+            Query::delete()
+                .from_table(Events::Table)
+                .and_where(Expr::col(Events::Box).eq(id.get())),
+        )
+        .unwrap();
+        drop(conn);
+    }
+}

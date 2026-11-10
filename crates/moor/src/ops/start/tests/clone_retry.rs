@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use moor_core::domain::decision::Intent;
+use moor_core::domain::decision::Effect;
 use moor_core::domain::hands::HandsState;
 use moor_core::{BoxId, ErrorKind, StartReq};
 
@@ -127,7 +127,7 @@ fn start_after_a_failed_clone_retries_in_the_same_box_and_launches() {
     assert_eq!(engine.launches().len(), 1);
     let row = row(&w);
     assert!(working(&row));
-    assert!(row.intent.is_none());
+    assert!(row.effect.is_none());
     assert!(kinds(&w, row.id).contains(&"setup_finished".to_owned()));
 }
 
@@ -141,7 +141,7 @@ fn a_retry_that_fails_to_clone_again_keeps_the_box_and_stays_setup_failed() {
     assert!(engine.launches().is_empty());
     let row = row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
-    assert!(row.intent.is_none() && row.setup_failed_at.is_some());
+    assert!(row.effect.is_none() && row.setup_failed_at.is_some());
     assert_eq!(box_state(&w), Some(HandsState::Ready));
     let calls = w.driver.calls();
     assert_eq!(calls.iter().filter(|c| *c == "acquire").count(), 1);
@@ -149,7 +149,7 @@ fn a_retry_that_fails_to_clone_again_keeps_the_box_and_stays_setup_failed() {
 }
 
 #[test]
-fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
+fn a_retry_in_the_kept_box_holds_the_setup_effect_while_it_runs() {
     let (w, _) = world_with_setup([Ok(exit(1))]);
     start(&w).unwrap_err();
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -157,11 +157,11 @@ fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
         let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
-        sink.lock().unwrap().push(row.intent);
+        sink.lock().unwrap().push(row.effect);
     });
     start(&w).unwrap();
-    assert_eq!(seen.lock().unwrap().first(), Some(&Some(Intent::Setup)));
-    assert!(row(&w).intent.is_none());
+    assert_eq!(seen.lock().unwrap().first(), Some(&Some(Effect::Setup)));
+    assert!(row(&w).effect.is_none());
 }
 
 #[test]

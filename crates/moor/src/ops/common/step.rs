@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent};
 use moor_core::domain::event::PostCloneStep;
 use moor_core::seam::driver::DriverError;
 use moor_core::{BoxId, Warning};
@@ -13,7 +13,9 @@ use crate::store::Store;
 /// Runs `f`, recording a start event before and an end event with the time it took as soon as it
 /// returns. `f` says whether the step succeeded.
 ///
-/// A failed write is warned, not returned: these events only report progress.
+/// A launch is also the Box's effect in flight from its start event to its end event, so a
+/// restart that cuts it launches again unless the agent lives. A failed write is warned, not
+/// returned.
 pub(crate) fn timed<T>(
     cx: &Cx,
     store: &Store,
@@ -21,12 +23,31 @@ pub(crate) fn timed<T>(
     step: PostCloneStep,
     f: impl FnOnce() -> (T, bool),
 ) -> T {
-    record(cx, store, id, ExtraEvent::StepStarted { step });
+    let launch = step == PostCloneStep::Launch;
+    let begin = Decision::new(id).event(ExtraEvent::StepStarted { step });
+    record(
+        cx,
+        store,
+        begin.effect(if launch {
+            EffectChange::Next(Effect::Launch)
+        } else {
+            EffectChange::Keep
+        }),
+    );
     let started = cx.clock().instant();
     let (out, ok) = f();
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
-    record(cx, store, id, ExtraEvent::StepFinished { step, ms, ok });
+    let end = Decision::new(id).event(ExtraEvent::StepFinished { step, ms, ok });
+    record(
+        cx,
+        store,
+        end.effect(if launch {
+            EffectChange::End
+        } else {
+            EffectChange::Keep
+        }),
+    );
     out
 }
 
@@ -45,10 +66,10 @@ pub(crate) fn timed_result<T, E>(
     })
 }
 
-/// Writes `event` for Box `id`.
-fn record(cx: &Cx, store: &Store, id: BoxId, event: ExtraEvent) {
-    if let Err(e) = try_record(store, id, event) {
-        warn_unrecorded(cx, &e);
+/// Applies `d`, warning when it cannot.
+fn record(cx: &Cx, store: &Store, d: Decision) {
+    if let Err(e) = store.apply(d) {
+        warn_unrecorded(cx, &e.to_string());
     }
 }
 

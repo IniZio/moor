@@ -2,7 +2,7 @@
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent, Field, Fields};
 use moor_core::domain::layers::WarmDisk;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::WorkTreeView;
@@ -75,17 +75,17 @@ pub(super) fn step_outcome(run: &SetupRun, installed: Result<(), String>) -> Set
     }
 }
 
-/// The intent the write that ends setup leaves: a Box this moves to working whose agent the
-/// command launches is launching until a session or a failed launch is recorded.
-pub(super) fn intent_after(
+/// The effect the write that ends setup leaves: a Box this moves to working whose agent the
+/// command launches has its launch in flight until a session or a failed launch is recorded.
+pub(super) fn effect_after(
     advance: bool,
     outcome: &SetupOutcome,
     cfg: &BoxSettings,
-) -> IntentChange {
+) -> EffectChange {
     if advance && *outcome == SetupOutcome::Ok && cfg.launch_agent {
-        IntentChange::Set(Intent::Launching)
+        EffectChange::Next(Effect::Launch)
     } else {
-        IntentChange::Clear
+        EffectChange::End
     }
 }
 
@@ -131,7 +131,7 @@ pub(super) fn clone_failed(
             setup_failed_at: Field::Set(cx.clock().now().as_millis()),
             ..Fields::default()
         })
-        .intent(IntentChange::Clear);
+        .effect(EffectChange::End);
     if let Err(write) = store.apply(done) {
         return write.into();
     }
