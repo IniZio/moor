@@ -453,3 +453,80 @@ fn asleep_since_stays_when_a_waiting_box_is_only_given_a_reason() {
     tick(&w, hv, with_free(1024), 0, 0);
     assert_eq!(at(&w), before);
 }
+
+/// Parks Box `id` as a suspend for memory does, under the Suspend turn.
+fn suspended_for_memory(w: &World, id: BoxId) {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::decision::{WantChange, Wanted, WantedKind};
+    use moor_core::domain::hands::HandsInput;
+    let _suspend = w.cx.turn(id, crate::cx::owners::Cmd::Suspend).unwrap();
+    let wanted = Wanted::Suspend {
+        reason: "memory".to_owned(),
+    };
+    apply(w, Decision::new(id).want(WantChange::Raise(wanted)));
+    apply(
+        w,
+        Decision::new(id)
+            .lifecycle(BoxLifecycleInput::Sleep {
+                auto: true,
+                reason: Some("memory".to_owned()),
+            })
+            .want(WantChange::Done(WantedKind::Suspend))
+            .hands_input(HandsInc::FIRST, HandsInput::Sleep),
+    );
+}
+
+fn wanted_kind(w: &World, id: BoxId) -> Option<moor_core::domain::decision::WantedKind> {
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    row.wanted.map(|w| w.kind())
+}
+
+#[test]
+fn a_close_after_a_suspend_parked_the_box_ends_closed() {
+    use moor_core::domain::box_state::BoxLifecycle::{Asleep, Closed};
+    use moor_core::domain::decision::{Wanted, WantedKind};
+    let (w, hv) = live_world(32_768);
+    let shut = started(&w, "shut");
+    guest_memory(&w, shut, CEILING);
+    idle(&w, shut);
+    super::stored_check::holds(&w, shut, "ahead=0 dirty=0");
+    let store = w.cx.store().unwrap();
+    let name = store.box_row(shut).unwrap().unwrap().name;
+    suspended_for_memory(&w, shut);
+    assert_eq!(wanted_kind(&w, shut), None, "the park ended the suspend");
+    let other = started(&w, "other");
+    idle(&w, other);
+    tick(&w, hv, with_free(8192), 0, 0);
+    let req = CloseReq {
+        target: name.into(),
+        force: false,
+    };
+    let refused = close::run(&w.cx, &req).unwrap_err();
+    let detail = refused
+        .detail
+        .as_deref()
+        .map(|d| serde_json::to_value(d).unwrap());
+    assert_eq!(
+        detail.and_then(|d| d.get("refusal").cloned()),
+        Some(serde_json::json!("waiting_for_room")),
+        "{}",
+        refused.error
+    );
+    assert_eq!(wanted_kind(&w, shut), Some(WantedKind::Close));
+    let parked = crate::ops::common::wanted::parking(store, shut, Wanted::Sleep, || Ok(()));
+    assert!(
+        parked.unwrap().is_none(),
+        "a park went ahead of a wanted close"
+    );
+    assert_eq!(
+        wanted_kind(&w, shut),
+        Some(WantedKind::Close),
+        "a park cleared the wanted close"
+    );
+    put_to_sleep(&w, other);
+    assert_eq!(lifecycle(&w, other), Asleep);
+    tick(&w, hv, 32_768, 0, 0);
+    crate::ops::wanted_pass(&w.cx, store, &|| false).unwrap();
+    assert_eq!(lifecycle(&w, shut), Closed);
+    assert_eq!(wanted_kind(&w, shut), None);
+}
