@@ -1,6 +1,6 @@
 //! The inbox row a steer waits in from just before its send until its turn ends.
 
-use moor_core::domain::inbox::{InboxId, InboxKind};
+use moor_core::domain::inbox::{Delivery, InboxId, InboxKind};
 use moor_core::seam::engine::{SessionRef, Steer, SteerOutcome};
 use moor_core::BoxId;
 
@@ -80,6 +80,23 @@ impl Slot {
             store.refuse(target.0, row)?;
         }
         Ok((outcome, row))
+    }
+
+    /// The row, when a send of it began and was never confirmed, with whether it holds a text the
+    /// inbox may send once more rather than a key for a screen gone by.
+    pub(super) fn in_doubt(
+        &self,
+        store: &Store,
+        id: BoxId,
+    ) -> Result<Option<(InboxId, bool)>, CommandError> {
+        let Some((row, kind, _)) = &self.row else {
+            return Ok(None);
+        };
+        let doubt = store.unsent(id)?.into_iter().find(|r| r.id == *row);
+        let text = matches!(kind, InboxKind::Steer | InboxKind::Prompt | InboxKind::Note);
+        Ok(doubt
+            .filter(|r| matches!(r.delivery, Delivery::InDoubt { .. }))
+            .map(|r| (r.id, text)))
     }
 
     /// Deletes the row unless a send of it began: a steer refused leaves nothing queued, and one

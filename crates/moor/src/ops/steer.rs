@@ -54,6 +54,10 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let mut slot = Slot::new(InboxKind::Steer);
     let sent = steer_awake(cx, store, req, target, &mut slot);
     slot.withdraw(store, target.0)?;
+    // A choice, interrupt or `/exit` sent later would act on a screen nobody sees by then.
+    if let (Err(_), Some((row, _))) = (&sent, slot.in_doubt(store, target.0)?) {
+        store.unconfirmed(target.0, row)?;
+    }
     sent
 }
 

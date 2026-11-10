@@ -77,6 +77,16 @@ pub(super) fn steer(
         Ok(None) => Ok(queued(QueueCause::Relaunching)),
         Err(e) => {
             slot.withdraw(store, id)?;
+            if slot.in_doubt(store, id)?.is_some_and(|(_, text)| text) {
+                cx.warn(Warning {
+                    code: "steer_in_doubt".to_owned(),
+                    message: format!(
+                        "{}; moor sends it once more when the agent is ready",
+                        e.error
+                    ),
+                });
+                return Ok(queued(QueueCause::Busy));
+            }
             Err(e)
         }
     }

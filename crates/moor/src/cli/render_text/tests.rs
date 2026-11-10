@@ -218,9 +218,9 @@ fn steer_prints_one_line() {
 
 #[test]
 fn a_queued_steer_prints_queued_with_its_cause() {
-    let v = json!({"box": "t1", "sent": "hi", "delivery": "queued", "cause": "asleep"});
+    let v = json!({"box": "t1", "delivery": "queued", "cause": "waiting_for_room"});
     let (out, _) = render(&Response::ok("steer", Some(v)), false);
-    assert_eq!(out, "queued for t1 (asleep)\n");
+    assert_eq!(out, "queued for t1 (waiting for room)\n");
 }
 
 #[test]
