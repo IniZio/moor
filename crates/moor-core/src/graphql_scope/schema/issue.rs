@@ -5,8 +5,6 @@ use super::Shape;
 
 /// Issue contexts.
 pub(super) const SHAPES: &[Shape] = &[
-    // `issueOrPullRequest` reads its result as an issue or a pull request, so this holds the
-    // fields gh selects on either type.
     Shape {
         name: "boxissue",
         leaves: &[
