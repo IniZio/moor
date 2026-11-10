@@ -337,3 +337,29 @@ fn the_relaunch_guard_fires_with_the_box_events_deleted() {
     );
     assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
 }
+
+#[test]
+fn a_steer_relaunch_a_restart_cut_mid_launch_launches_once_after_the_restart() {
+    use crate::ops::common::provision::interrupted::fail_interrupted;
+    use crate::ops::common::provision::resume_setup;
+    let engine = FakeEngine::new().on_launch(|| {
+        std::panic::resume_unwind(Box::new("process died mid-launch"));
+    });
+    let f = resumable(engine.probes("agent-1", agent::gone()));
+    queued(&f, "hi", QueueCause::Relaunching);
+    let cut = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pass(&f)));
+    assert!(cut.is_err());
+    assert!(f.engine.launches().is_empty());
+    let store = f.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&f.cx, store).unwrap(), [f.id]);
+    let cut_at = store.events(f.id, 200).unwrap().last().unwrap().id;
+    resume_setup(&f.cx, store, f.id).unwrap();
+    let started: Vec<_> = store
+        .events(f.id, 200)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.id > cut_at && e.kind == "session_started")
+        .collect();
+    assert_eq!(started.len(), 1, "{started:?}");
+    assert_eq!(store.box_row(f.id).unwrap().unwrap().effect, None);
+}

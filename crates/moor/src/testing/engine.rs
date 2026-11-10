@@ -41,6 +41,7 @@ struct State {
     on_steer: Option<Arc<dyn Fn() + Send + Sync>>,
     on_stop: Option<Box<dyn FnOnce() + Send>>,
     on_probe: Option<Box<dyn FnOnce() + Send>>,
+    on_launch: Option<Box<dyn FnOnce() + Send>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
     profile_install: Option<String>,
@@ -107,6 +108,12 @@ impl FakeEngine {
     /// The next probe of `session` fails once.
     pub(crate) fn fail_probe(self, session: &str) -> Self {
         self.st().fail_probe.insert(session.to_owned());
+        self
+    }
+
+    /// The next launch runs `f` before anything else.
+    pub(crate) fn on_launch(self, f: impl FnOnce() + Send + 'static) -> Self {
+        self.st().on_launch = Some(Box::new(f));
         self
     }
 
@@ -217,6 +224,10 @@ impl Engine for FakeEngine {
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
+        let hook = self.st().on_launch.take();
+        if let Some(f) = hook {
+            f();
+        }
         self.note_resume(req);
         self.scripted_launch(req)
     }
