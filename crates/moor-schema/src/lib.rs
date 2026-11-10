@@ -15,6 +15,7 @@ mod checkpoint_base;
 mod checkpoint_depth;
 mod checkpoint_stale;
 mod drop_panes;
+mod effect_backfill;
 mod egress_token;
 mod forward_port;
 mod hands_ended;
@@ -161,6 +162,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V75__wanted_effect",
         write: wanted_effect::write,
+    },
+    Step {
+        name: "V76__effect_backfill",
+        write: effect_backfill::write,
     },
 ];
 

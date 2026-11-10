@@ -12,6 +12,7 @@ use crate::STEPS;
 mod box_hands;
 mod box_inbox;
 mod box_state;
+mod effect_backfill;
 mod hands_ended;
 mod inbox_prompts;
 mod insertion_order;

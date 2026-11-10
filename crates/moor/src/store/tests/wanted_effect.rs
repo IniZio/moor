@@ -305,6 +305,55 @@ fn a_wanted_suspend_keeps_its_reason_and_time_and_an_ended_effect_its_time_clear
     assert_eq!(stamps(&store, id).2, None);
 }
 
+/// Starts a run on Box `id`, as `moor run` does, and lets its claim go.
+fn run_on(store: &Store, id: BoxId) -> RunId {
+    let (run, _claim) = store
+        .begin_run(crate::store::NewRun {
+            box_id: id,
+            argv: vec!["make".to_owned()],
+            record: None,
+            sha: None,
+            pid: 1,
+        })
+        .unwrap();
+    run
+}
+
+#[test]
+fn a_launch_wins_the_one_effect_slot_over_a_run_whichever_starts_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    let launch = || Decision::new(id).effect(EffectChange::Next(Effect::Launch));
+    store.apply(launch()).unwrap();
+
+    let during = run_on(&store, id);
+    assert_eq!(
+        effect(&store, id).0,
+        Some(Effect::Launch),
+        "a run never displaces a launch"
+    );
+    store
+        .finish_run(during, crate::store::RunOutcome::ended(Some(0), false))
+        .unwrap();
+    assert_eq!(effect(&store, id).0, Some(Effect::Launch));
+
+    store
+        .apply(Decision::new(id).effect(EffectChange::End))
+        .unwrap();
+    let before = run_on(&store, id);
+    assert_eq!(effect(&store, id).0, Some(Effect::Run { run: before }));
+    store.apply(launch()).unwrap();
+    store
+        .finish_run(before, crate::store::RunOutcome::ended(Some(0), false))
+        .unwrap();
+    assert_eq!(
+        effect(&store, id).0,
+        Some(Effect::Launch),
+        "the run's end leaves the launch"
+    );
+}
+
 impl Store {
     /// Deletes every event of Box `id`, and the webhook deliveries queued for them, so a test
     /// proves a decision reads no history.
