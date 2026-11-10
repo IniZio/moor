@@ -251,5 +251,8 @@ pub(super) fn hands_from_row(row: &Row<'_>) -> Result<Option<HandsRow>, StoreErr
         sleep_reason: row.get(const { hands_at(BoxHands::SleepReason) })?,
         delivered: delivered_from_row(row)?,
         updated_at: Ts::from_millis(row.get(const { hands_at(BoxHands::StateAt) })?),
+        woke_at: row
+            .get::<_, Option<i64>>(const { hands_at(BoxHands::WokeAt) })?
+            .map(Ts::from_millis),
     }))
 }

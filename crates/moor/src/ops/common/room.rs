@@ -11,7 +11,7 @@ use moor_core::domain::cache_save::CacheSaveDenied;
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, HandsFields, WantChange, Wanted, WantedKind,
 };
-use moor_core::domain::hands::HandsInput;
+use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::{PausePublish, SleepOutcome};
@@ -86,11 +86,13 @@ pub(super) fn helps(node: &Node, short: Shortfall) -> bool {
         && node.max_boxes.is_none_or(|max| node.used < max)
 }
 
-/// When Box `id` last resumed, unix seconds.
+/// When Box `id`'s hands last woke, unix seconds, while they are up.
 fn resumed_at(store: &Store, id: BoxId) -> Result<Option<i64>, CommandError> {
-    Ok(store
-        .last_event_of(id, "woke")?
-        .map(|ev| ev.ts.as_millis() / 1000))
+    let hands = store.box_row(id)?.and_then(|r| r.hands);
+    Ok(hands
+        .filter(|h| h.state == HandsState::Ready)
+        .and_then(|h| h.woke_at)
+        .map(|at| at.as_millis() / 1000))
 }
 
 /// A Box on a node as the suspend choice sees it. An Idle Box whose agent cannot be read may have

@@ -16,6 +16,7 @@ mod effect_backfill;
 mod hands_ended;
 mod inbox_prompts;
 mod insertion_order;
+mod launch_facts;
 mod launch_fence;
 mod postgres;
 mod session_archive;
