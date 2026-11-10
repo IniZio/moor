@@ -137,6 +137,29 @@ The ceiling protects the host from Boxes. It does not limit other work on the
 host. [Add your machine](../add-machine.md) will say how to cap builds on a
 machine that is also a node.
 
+## With Box hands
+
+[Box hands](box-hands.md) owns how a decision becomes an action. This spec owns
+the decisions.
+
+- **Decisions raise a wanted action.** Relief and last resort record a wanted
+  suspend on the Box. The Box's owner parks it. Nothing here parks a Box
+  directly.
+- **Close wins.** A wanted close beats a wanted suspend. A workflow's previous
+  Box closes this way, so a racing suspend still ends in a closed Box.
+- **A restart decides again.** A wanted suspend does not survive a controller
+  restart. The next report decides it again.
+- **One cause for waiting.** A Box refused by the controller or by the node
+  waits with the cause `waiting_for_room` and the resource, memory or disk. A
+  queued steer shows the same cause.
+- **A dropped snapshot is a cut turn.** The wake gets new hands on the kept
+  disk and restores the session. A turn in flight is reported by the cut-steer
+  event of Box hands step 5 and never replayed. This spec adds no second notice.
+- **A Box suspended at work keeps its snapshot.** Reclaim never drops it, so
+  its turn continues on resume.
+- **Need reads every incarnation.** The memory a repo's Boxes held is the most
+  over all hands of those Boxes on the node.
+
 ## Seen elsewhere
 
 | Practice | Source | Use here |
