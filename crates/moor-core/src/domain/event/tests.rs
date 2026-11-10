@@ -362,6 +362,7 @@ fn all_events() -> Vec<Event> {
             inbox: 9,
             text: s("go"),
         },
+        Event::WantedDropped,
     ]
 }
 
@@ -474,6 +475,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Restore(RestoreEvent::SessionRestored { .. }) => 88,
         Event::Restore(RestoreEvent::SessionLost { .. }) => 89,
         Event::SteerUnconfirmed { .. } => 90,
+        Event::WantedDropped => 91,
     }
 }
 
@@ -481,7 +483,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 91);
+    assert_eq!(all.len(), 92);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

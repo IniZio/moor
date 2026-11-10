@@ -1,5 +1,7 @@
 //! What a close checks a Box for: work that exists only there.
 
+use std::cell::Cell;
+
 use moor_core::decide::close::{needs_box_check, BoxCheck};
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::driver::DriverError;
@@ -25,12 +27,13 @@ pub(super) enum Wake {
 /// `row` is reloaded when the wake changed it, so teardown sees a Ready Box. An asleep Box whose
 /// check before it was suspended still stands is answered from that when it held work, or when
 /// it held none and does not fit to wake. Any other Box that cannot be woken or read gives
-/// [`BoxCheck::Unknown`], which the gate refuses.
+/// [`BoxCheck::Unknown`], which the gate refuses; `waits` is set when what stopped the wake was
+/// room on its node, which a later close can find.
 pub(super) fn box_check(
     cx: &Cx,
     store: &Store,
     row: &mut BoxRow,
-    (force, wake): (bool, Wake),
+    (force, wake, waits): (bool, Wake, &Cell<bool>),
 ) -> Result<BoxCheck, CommandError> {
     // --force discards Box work, so the Box is neither woken nor probed.
     if force || !needs_box_check(row.lifecycle, row.session) {
@@ -79,6 +82,7 @@ pub(super) fn box_check(
         }
         Err(e) if e.kind == ErrorKind::Refused && stored.is_some() => return Ok(BoxCheck::Clean),
         Err(e) => {
+            waits.set(e.kind == ErrorKind::Refused);
             return Ok(BoxCheck::Unknown(format!(
                 "could not wake the Box: {}",
                 e.error

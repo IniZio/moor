@@ -15,6 +15,8 @@ pub enum ExtraEvent {
     DiskLost,
     /// A close deleted the Box without waking it, so its caches were not saved.
     CachesNotSaved,
+    /// A restart dropped the sleep or suspend moor wanted; its passes decide it again from now.
+    WantedDropped,
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.
