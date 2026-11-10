@@ -185,7 +185,10 @@ fn a_steer_whose_send_failed_stays_in_doubt_and_is_sent_once_more() {
     }));
     let f = fx_with(engine, true);
     reports_idle(&f, "agent-1");
-    run(&f.cx, &text("hi")).unwrap_err();
+    let v = run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(v.delivery, Delivery::Queued(QueueCause::Busy));
+    let warned: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(warned, ["steer_in_doubt"]);
     let store = f.cx.store().unwrap();
     let row = store.unsent(f.id).unwrap();
     assert!(
