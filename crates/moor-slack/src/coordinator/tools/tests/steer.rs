@@ -15,13 +15,15 @@ fn a_queued_steer_says_it_is_queued_and_why() {
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
     let controller = Controller::new();
-    let value = json!({"box": ONE, "delivery": "queued", "cause": "waiting_for_room"});
+    let value = json!({"box": ONE, "delivery": "queued", "cause": "waiting_for_room", "resource": "memory"});
     let reply = controller.run_with(&db, &steer(ONE, "go on"), &mut |r| {
         Ok(Response::ok(r.cmd(), Some(value.clone())))
     });
     assert_eq!(
         reply,
-        Reply::done(format!("Queued for Box `{ONE}` (waiting for room)."))
+        Reply::done(format!(
+            "Queued for Box `{ONE}` (waiting for room: memory)."
+        ))
     );
 }
 
