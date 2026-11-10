@@ -59,7 +59,8 @@ pub(super) fn release(
         cx.warn(w);
     }
     if !verdict.closes {
-        store.apply(Decision::new(row.id).effect(EffectChange::End))?;
+        let ended = EffectChange::Finish(Effect::Release);
+        store.apply(Decision::new(row.id).effect(ended))?;
         let why = cause.map_or_else(
             || "the Box could not be released".to_owned(),
             |e| e.to_string(),
