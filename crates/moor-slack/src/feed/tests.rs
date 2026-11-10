@@ -94,6 +94,38 @@ fn a_finished_turn_and_a_close_are_owed_lines_until_posted() {
     assert!(fold.closed.contains(&ID));
 }
 
+#[test]
+fn a_close_moor_gave_up_is_owed_a_line_that_says_why_and_that_the_box_sleeps_again() {
+    let Watched::Item(WatchItem::Event(mut e)) = event(4, Some(ID), "close_refused") else {
+        unreachable!()
+    };
+    e.payload = json!({"reason": {"refusal": "unsaved", "branch": "b", "ahead": 2, "dirty": 1},
+        "error": "the Box holds work", "slept": true});
+    let mut fold = Fold::default();
+    fold.take(Watched::Item(WatchItem::Event(e.clone())));
+    assert_eq!(fold.given_up.get(&ID), Some(&vec![(4, e.payload.clone())]));
+    let name = BoxName::parse_allow_bare("slack-1-1").unwrap();
+    assert_eq!(
+        close_given_up(&name, &e.payload),
+        "Box `slack-1-1` is still open: it holds work that is not saved anywhere (2 unpushed \
+         commits and 1 uncommitted file), so its close was not finished. Nothing is lost unless \
+         you confirm. If you still want it closed, say so in this thread. It is asleep again."
+    );
+    let unchecked = json!({"reason": {"refusal": "unchecked", "reason": "no shell"},
+        "error": "x", "slept": false});
+    let line = close_given_up(&name, &unchecked);
+    assert!(line.contains("could not check it"), "{line}");
+    assert!(
+        !line.contains("no shell") && !line.contains("asleep"),
+        "{line}"
+    );
+    let failed = close_given_up(
+        &name,
+        &json!({"reason": null, "error": "x", "slept": false}),
+    );
+    assert!(failed.contains("could not be finished"), "{failed}");
+}
+
 fn said(cursor: i64, text: &str) -> Watched {
     let Watched::Item(WatchItem::Event(mut e)) = event(cursor, Some(ID), "agent_said") else {
         unreachable!()

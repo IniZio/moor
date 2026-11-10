@@ -118,6 +118,8 @@ pub(crate) enum BoxEvent {
     },
     /// The controller refused a close for another reason.
     CloseRefused,
+    /// moor gave up a close it was waiting to finish, so the Box stays open.
+    CloseGivenUp,
     /// The Box's agent session ended without a clean exit.
     Stopped(Stop),
 }
@@ -176,6 +178,7 @@ impl BoxEvent {
             Self::SessionLost => "session_lost",
             Self::Unsaved { .. } => "unsaved",
             Self::CloseRefused => "close_refused",
+            Self::CloseGivenUp => "close_given_up",
             Self::Stopped(_) => "stopped",
         }
     }
@@ -194,6 +197,11 @@ impl BoxEvent {
             }
             Self::Stopped(stop) => return format!("[moor] {}", stop.line(name)),
             Self::CloseRefused => "was not closed; the thread was told why",
+            Self::CloseGivenUp => {
+                "was not closed: moor gave up a close it was waiting to finish, and the thread \
+                 was told why. Call close_box with discard only after the person who asked for \
+                 the Box confirms in the thread"
+            }
             Self::Started => "started",
             Self::NotStarted => "could not start",
             Self::Finished => "finished its turn",
@@ -255,6 +263,33 @@ pub(crate) fn finished(name: &BoxName) -> String {
 /// The line the front posts when a Box closes without a `close_box`.
 pub(crate) fn closed(name: &BoxName) -> String {
     format!("Box `{}` closed.", name.as_str())
+}
+
+/// The line the front posts when moor gives up a close it was waiting to finish, from the
+/// `close_refused` event's `payload`. It carries no text from a Box or the controller.
+pub(crate) fn close_given_up(name: &BoxName, payload: &Value) -> String {
+    let reason = payload.get("reason");
+    let field = |key: &str| reason.and_then(|r| r.get(key));
+    let count = |key: &str| {
+        let n = field(key).and_then(Value::as_u64).unwrap_or(0);
+        u32::try_from(n).unwrap_or(u32::MAX)
+    };
+    let why = match field("refusal").and_then(Value::as_str) {
+        Some("unsaved") => format!(
+            "it holds work that is not saved anywhere ({}), so its close was not finished. \
+             Nothing is lost unless you confirm. If you still want it closed, say so in this \
+             thread.",
+            unsaved_work(count("ahead"), count("dirty"))
+        ),
+        Some("unchecked") => "I could not check it for work that is not saved anywhere, so its \
+             close was not finished. If you want it closed anyway, ask me to close it and \
+             discard its work."
+            .to_owned(),
+        _ => "its close could not be finished. Reply here and ask me to close it again.".to_owned(),
+    };
+    let slept = payload.get("slept").and_then(Value::as_bool) == Some(true);
+    let asleep = if slept { " It is asleep again." } else { "" };
+    format!("Box `{}` is still open: {why}{asleep}", name.as_str())
 }
 
 /// The positive number a message consists of, ignoring user mentions.

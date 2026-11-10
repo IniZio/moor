@@ -15,6 +15,15 @@ pub enum ExtraEvent {
     DiskLost,
     /// A close deleted the Box without waking it, so its caches were not saved.
     CachesNotSaved,
+    /// The wanted pass gave up a close moor still wanted, so the Box stays open.
+    CloseRefused {
+        /// Why, when the close was refused; none when it failed some other way.
+        reason: Option<crate::response::CloseRefusal>,
+        /// The failure, in moor's words.
+        error: String,
+        /// True when the pass put the Box, which the close woke, back to sleep.
+        slept: bool,
+    },
     /// A restart dropped the sleep or suspend moor wanted; its passes decide it again from now.
     WantedDropped,
     /// A command run finished.

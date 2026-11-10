@@ -2,7 +2,8 @@
 
 use super::ExtraEvent;
 use crate::domain::event::{
-    AccessEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent, WorkflowEvent,
+    AccessEvent, CloseEvent, Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent,
+    WorkflowEvent,
 };
 
 impl TryFrom<Event> for ExtraEvent {
@@ -14,7 +15,16 @@ impl TryFrom<Event> for ExtraEvent {
         match e {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::DiskLost => Ok(Self::DiskLost),
-            Event::CachesNotSaved => Ok(Self::CachesNotSaved),
+            Event::Close(CloseEvent::CachesNotSaved) => Ok(Self::CachesNotSaved),
+            Event::Close(CloseEvent::CloseRefused {
+                reason,
+                error,
+                slept,
+            }) => Ok(Self::CloseRefused {
+                reason,
+                error,
+                slept,
+            }),
             Event::WantedDropped => Ok(Self::WantedDropped),
             Event::Ran {
                 run,

@@ -26,6 +26,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |
+| `close_refused` | | moor gave up a close it was waiting to finish, so the Box stays open. `data.reason` is the refusal, such as `{"refusal": "unsaved", "branch", "ahead", "dirty"}` or `{"refusal": "unchecked", "reason"}`, or null when the close failed another way. `data.error` says why in words. `data.slept` is true when moor put the Box, which the close woke, back to sleep. |
 | `caches_not_saved` | | A close deleted an asleep Box whose caches were not saved. |
 | `exec_ran` | | `exec_in_box` or `moor exec` ran a command. |
 

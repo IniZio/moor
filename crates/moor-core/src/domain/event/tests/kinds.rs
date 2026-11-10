@@ -351,3 +351,26 @@ fn box_failure_events_carry_handle() {
         }]
     );
 }
+
+/// A close the wanted pass gave up carries its refusal as the close returns it; a stored
+/// `caches_not_saved` row reads back as before.
+#[test]
+fn close_events_carry_their_refusal_and_read_back_from_their_json() {
+    let refused = Event::Close(CloseEvent::CloseRefused {
+        reason: Some(crate::response::CloseRefusal::Unchecked {
+            reason: s("no shell"),
+        }),
+        error: s("could not check"),
+        slept: false,
+    });
+    let json = serde_json::json!({"kind": "close_refused",
+        "reason": {"refusal": "unchecked", "reason": "no shell"},
+        "error": "could not check", "slept": false});
+    assert_eq!(serde_json::to_value(&refused).unwrap(), json);
+    assert_eq!(serde_json::from_value::<Event>(json).unwrap(), refused);
+    let caches = serde_json::json!({"kind": "caches_not_saved"});
+    assert_eq!(
+        serde_json::from_value::<Event>(caches).unwrap(),
+        Event::Close(CloseEvent::CachesNotSaved)
+    );
+}
