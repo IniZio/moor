@@ -3,9 +3,10 @@
 //! Its key lives in the state dir, made on the first start. The `moor proxy serve-egress` process
 //! listens on the state dir's egress socket in a process group of its own, and reads a pipe the
 //! controller holds open for as long as it runs: when the controller exits, normally or by any
-//! signal, the pipe closes and the Proxy drains and exits. A controller that finds it answering
-//! under the same key keeps it, and replaces one under another key or one that does not answer.
-//! It never gets the database URL. It reads the store through the ledger.
+//! signal, the pipe closes and the Proxy drains and exits. A controller never keeps a Proxy it did
+//! not start: whatever answers on the socket, even one still draining after the last controller
+//! exited, is stopped first, and the controller starts its own. It never gets the database URL.
+//! It reads the store through the ledger.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read as _, Write as _};
@@ -57,10 +58,8 @@ pub(crate) fn prepare_egress(env: Env) -> Result<Env, String> {
         }
     };
     if let Some(socket) = route.socket() {
-        let want = key_id(env.get(EGRESS_KEY).unwrap_or_default().as_bytes());
-        if !keep(socket, want)? {
-            start(&env, &state, socket)?;
-        }
+        replace(socket)?;
+        start(&env, &state, socket)?;
     }
     Ok(env)
 }
@@ -105,45 +104,24 @@ fn key(state: &Path) -> Result<String, String> {
     }
 }
 
-/// What listens on the Proxy's socket.
-#[derive(Debug, PartialEq, Eq)]
-enum Probe {
-    /// Nothing.
-    Absent,
-    /// A process, with the key it named when it answered ready; `None` when it did not.
-    Answers(Option<i64>),
-}
-
-/// Asks whatever listens on `socket` whether it is ready, and under which key.
-fn probe(socket: &Path) -> Probe {
-    let Ok(mut conn) = UnixStream::connect(socket) else {
-        return Probe::Absent;
-    };
+/// The key id whatever listens on `socket` names when it answers ready; `None` when nothing
+/// does.
+fn probe(socket: &Path) -> Option<i64> {
+    let mut conn = UnixStream::connect(socket).ok()?;
     let _ = conn.set_read_timeout(Some(PROBE_WAIT));
     let mut answer = String::new();
     let asked = conn
         .write_all(b"GET /ready HTTP/1.1\r\nHost: egress\r\n\r\n")
         .and_then(|()| conn.read_to_string(&mut answer).map(drop));
-    let id = asked
+    asked
         .ok()
         .filter(|()| answer.starts_with("HTTP/1.1 200"))
         .and_then(|()| answer.split_once("\r\n\r\n"))
-        .and_then(|(_, body)| body.trim().parse().ok());
-    Probe::Answers(id)
+        .and_then(|(_, body)| body.trim().parse().ok())
 }
 
-/// Whether a Proxy under the key `want` answers on `socket`; one under another key, or one that
-/// does not answer, is stopped first.
-fn keep(socket: &Path, want: i64) -> Result<bool, String> {
-    match probe(socket) {
-        Probe::Absent => Ok(false),
-        Probe::Answers(Some(id)) if id == want => Ok(true),
-        Probe::Answers(_) => replace(socket).map(|()| false),
-    }
-}
-
-/// Stops the process listening on `socket`, found by the socket's peer credentials, and waits
-/// for it to stop listening; it drains its open tunnels on its own.
+/// Stops the process listening on `socket`, if any, found by the socket's peer credentials, and
+/// waits for it to stop listening; it drains its open tunnels on its own.
 fn replace(socket: &Path) -> Result<(), String> {
     let failed = |e: &dyn std::fmt::Display| {
         format!(
@@ -151,12 +129,18 @@ fn replace(socket: &Path) -> Result<(), String> {
             socket.display()
         )
     };
-    let conn = UnixStream::connect(socket).map_err(|e| failed(&e))?;
+    let Ok(conn) = UnixStream::connect(socket) else {
+        return Ok(());
+    };
     let pid = peer_pid(&conn).map_err(|e| failed(&e))?;
     drop(conn);
     let pid = rustix::process::Pid::from_raw(pid)
         .ok_or_else(|| failed(&"its pid is not in this pid namespace"))?;
-    rustix::process::kill_process(pid, rustix::process::Signal::TERM).map_err(|e| failed(&e))?;
+    match rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
+        // It exited on its own since it answered.
+        Ok(()) | Err(rustix::io::Errno::SRCH) => {}
+        Err(e) => return Err(failed(&e)),
+    }
     for _ in 0..START_WAIT.as_millis() / POLL.as_millis() {
         if UnixStream::connect(socket).is_err() {
             return Ok(());
@@ -243,7 +227,7 @@ fn wait_ready(
         });
     };
     for _ in 0..START_WAIT.as_millis() / POLL.as_millis() {
-        if probe(socket) == Probe::Answers(Some(want)) {
+        if probe(socket) == Some(want) {
             reap(child);
             return Ok(());
         }

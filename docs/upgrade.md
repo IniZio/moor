@@ -37,7 +37,11 @@ does not kill the controller mid-drain. `moor up` writes 660 seconds.
 
 Boxes reach GitHub and Anthropic through one shared egress Proxy, `moor proxy
 serve-egress`, which the controller starts. It drains and exits when the
-controller exits, and the new controller starts it again on the new build.
+controller exits. The new controller stops any egress Proxy it finds still
+running and starts its own on the new build. Egress pauses during a restart.
+From the moment the old controller exits until the new egress Proxy is ready,
+new egress connections are refused. Tunnels already open drain for up to 300
+seconds.
 
 While the controller is away, the gate holds `/mcp` requests and dials again.
 When the hold runs out, it answers `503` with `Retry-After: 5`.
