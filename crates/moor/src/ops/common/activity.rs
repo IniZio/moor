@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::reconcile;
-use crate::ops::common::stale::unless_stale;
+use crate::ops::common::stale::{end_read_launch, unless_stale};
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
@@ -172,7 +172,7 @@ pub(crate) fn read(
     let asleep = row.asleep();
     let probe = probe(cx, &sref, asleep, deadline);
     let seen = probe.note().and_then(|n| n.session_id.as_deref());
-    note_agent_session(store, row, seen)?;
+    note_agent_session(cx, store, (row, session.id), seen)?;
     let agent_session = seen
         .map(str::to_owned)
         .or_else(|| row.agent_session_id.clone());
@@ -231,8 +231,14 @@ fn first_run(cx: &Cx, tail: Option<&str>) -> Option<&'static str> {
         .map(|m| m.prompt.name())
 }
 
-/// Keep the agent's own session id on the Box; written only when it changed.
-fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result<(), CommandError> {
+/// Keep the agent's own session id on the Box; written only when it changed, and only while
+/// `launch`, which reported it, is still live.
+fn note_agent_session(
+    cx: &Cx,
+    store: &Store,
+    (row, launch): (&BoxRow, LaunchId),
+    seen: Option<&str>,
+) -> Result<(), CommandError> {
     let Some(id) = seen.filter(|id| row.agent_session_id.as_deref() != Some(id)) else {
         return Ok(());
     };
@@ -240,8 +246,7 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
         agent_session_id: Field::Set(id.to_owned()),
         ..Fields::default()
     };
-    store.apply(Decision::new(row.id).set(set))?;
-    Ok(())
+    apply_read(cx, store, Decision::new(row.id).launch(launch).set(set))
 }
 
 /// Move the Box's state to match `reading`, save the archive a turn end made due, save the
@@ -304,7 +309,7 @@ fn end_exited_launch(
         session: Some("exited"),
         ..LaunchEnd::default()
     };
-    unless_stale(cx, store.end_launch(row.id, probed, &end))?;
+    end_read_launch(cx, store, (row.id, probed), &end)?;
     Ok(())
 }
 
