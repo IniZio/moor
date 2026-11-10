@@ -50,6 +50,8 @@ pub(crate) struct NonoSpec<'a> {
 
 /// The host whose TLS the filter terminates and whose GraphQL it judges.
 pub(crate) const GITHUB_API_HOST: &str = "api.github.com";
+/// The GitHub git host.
+pub(crate) const GITHUB_HOST: &str = "github.com";
 
 /// The external proxy that receives all of nono's egress.
 pub(crate) struct Chain<'a> {
