@@ -35,10 +35,9 @@ default:
 Keep `TimeoutStopSec` in `moor.service` above `drain_timeout_secs`, so systemd
 does not kill the controller mid-drain. `moor up` writes 660 seconds.
 
-Boxes reach GitHub and Anthropic through one shared egress Proxy, which keeps
-running across a controller restart. A controller that finds it running keeps
-it. To run a new build of it, stop the old `moor proxy serve-egress` process by
-hand before you restart the controller.
+Boxes reach GitHub and Anthropic through one shared egress Proxy, `moor proxy
+serve-egress`, which the controller starts. It drains and exits when the
+controller exits, and the new controller starts it again on the new build.
 
 While the controller is away, the gate holds `/mcp` requests and dials again.
 When the hold runs out, it answers `503` with `Retry-After: 5`.

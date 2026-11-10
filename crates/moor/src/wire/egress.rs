@@ -1,8 +1,9 @@
 //! The shared egress Proxy a controller runs itself when `MOOR_EGRESS_URL` names none.
 //!
 //! Its key lives in the state dir, made on the first start. The `moor proxy serve-egress` process
-//! listens on the state dir's egress socket in a process group of its own, so it outlives the
-//! controller: a controller restart leaves the Proxy alone. A controller that finds it answering
+//! listens on the state dir's egress socket in a process group of its own, and reads a pipe the
+//! controller holds open for as long as it runs: when the controller exits, normally or by any
+//! signal, the pipe closes and the Proxy drains and exits. A controller that finds it answering
 //! under the same key keeps it, and replaces one under another key or one that does not answer.
 //! It never gets the database URL. It reads the store through the ledger.
 
@@ -179,7 +180,8 @@ fn peer_pid(conn: &UnixStream) -> std::io::Result<i32> {
     Ok(getsockopt(conn, LocalPeerPid)?)
 }
 
-/// Starts the Proxy on `socket` in a process group of its own and waits for it to answer.
+/// Starts the Proxy on `socket` in a process group of its own, tied to this process by its
+/// stdin, and waits for it to answer.
 fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
     let log_path = state.join(LOG_FILE);
     if let Some(dir) = log_path.parent() {
@@ -203,28 +205,48 @@ fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
     cmd.args(["proxy", "serve-egress", "--state-dir"])
         .arg(state)
         .arg("--listen")
-        .arg(socket);
+        .arg(socket)
+        .arg("--until-stdin-closes");
     let service = load_user(env).ok().and_then(|c| c.machines.service);
     if let Some(service) = service {
         cmd.arg("--machine-service")
             .arg(format!("{}={}", service.host, service.upstream));
     }
-    let mut child = cmd
+    let child = cmd
         .env_remove(DATABASE_URL)
         .env_remove(BLOBS_ACCESS_KEY_ID)
         .env_remove(BLOBS_SECRET_ACCESS_KEY)
         .env_remove(DATABASE_READERS)
         .env(EGRESS_KEY, env.get(EGRESS_KEY).unwrap_or_default())
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(log)
         .stderr(err)
         .process_group(0)
         .spawn()
         .map_err(|e| format!("cannot start the shared egress Proxy: {e}"))?;
     let want = key_id(env.get(EGRESS_KEY).unwrap_or_default().as_bytes());
+    wait_ready(child, socket, want, &log_path)
+}
+
+/// Waits for the started Proxy `child` to answer on `socket` under the key `want`.
+fn wait_ready(
+    mut child: std::process::Child,
+    socket: &Path,
+    want: i64,
+    log_path: &Path,
+) -> Result<(), String> {
+    // Held by the thread that reaps the Proxy, so the pipe closes only when this process ends;
+    // `Child::wait` would close it first.
+    let tie = child.stdin.take();
+    let reap = move |mut child: std::process::Child| {
+        std::thread::spawn(move || {
+            let _tie = tie;
+            drop(child.wait());
+        });
+    };
     for _ in 0..START_WAIT.as_millis() / POLL.as_millis() {
         if probe(socket) == Probe::Answers(Some(want)) {
-            std::thread::spawn(move || drop(child.wait()));
+            reap(child);
             return Ok(());
         }
         if let Ok(Some(status)) = child.try_wait() {
@@ -235,7 +257,7 @@ fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
         }
         std::thread::sleep(POLL);
     }
-    std::thread::spawn(move || drop(child.wait()));
+    reap(child);
     Err(format!(
         "the shared egress Proxy did not answer in {}s; see {}",
         START_WAIT.as_secs(),

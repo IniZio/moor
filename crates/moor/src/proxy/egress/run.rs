@@ -3,11 +3,14 @@
 //! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
 //! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--ledger-cert PEM`, `--ledger-key PEM`,
 //! `--machine-service HOST=ADDR`, `--grace SECS`,
-//! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N` and `--warm-every SECS`, and the ledger key in
+//! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N`, `--warm-every SECS` and
+//! `--until-stdin-closes`, and the ledger key in
 //! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
 //! through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
 //! `--ledger-ca`, presenting the client certificate `--ledger-cert` with its key `--ledger-key`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
-//! or SIGINT, or once its Unix socket is removed or replaced, it drains, then exits.
+//! or SIGINT, once its Unix socket is removed or replaced, or, with `--until-stdin-closes`, once
+//! its stdin closes, it drains, then exits. The controller that starts it holds the other end of
+//! that stdin, so the Proxy stops with the controller however the controller ends.
 
 use std::ffi::OsString;
 use std::io::Write as _;
@@ -64,6 +67,8 @@ pub(crate) struct Args {
     pub(crate) tunnels: usize,
     /// Pause between passes that ready every awake Box; none readies each on first use only.
     pub(crate) warm_every: Option<Duration>,
+    /// Whether to stop once stdin closes.
+    pub(crate) until_stdin_closes: bool,
 }
 
 impl Args {
@@ -83,9 +88,14 @@ impl Args {
             lookup_rate: 200.0,
             tunnels: 64,
             warm_every: None,
+            until_stdin_closes: false,
         };
         let mut words = words.iter().map(|w| w.to_string_lossy().into_owned());
         while let Some(flag) = words.next() {
+            if flag == "--until-stdin-closes" {
+                args.until_stdin_closes = true;
+                continue;
+            }
             let value = words
                 .next()
                 .ok_or_else(|| format!("{flag} needs a value"))?;
@@ -146,10 +156,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         .map(|k| Zeroizing::new(k.to_owned()))
         .ok_or("MOOR_EGRESS_KEY is required")?;
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::from_env(&env).map_err(|e| e.to_string())?);
-    let stop = Arc::new(AtomicBool::new(false));
-    for sig in [SIGTERM, SIGINT] {
-        signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
-    }
+    let stop = stop_flag(args.until_stdin_closes)?;
     let server = Server::start(Config {
         listen,
         ledger,
@@ -182,6 +189,27 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let left = server.drain(args.grace);
     say(format_args!("drained; {left} tunnels were still open"));
     Ok(0)
+}
+
+/// A flag raised on SIGTERM or SIGINT and, when `until_stdin_closes`, once stdin reaches its
+/// end or fails.
+fn stop_flag(until_stdin_closes: bool) -> Result<Arc<AtomicBool>, String> {
+    let stop = Arc::new(AtomicBool::new(false));
+    for sig in [SIGTERM, SIGINT] {
+        signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
+    }
+    if until_stdin_closes {
+        let stop = Arc::clone(&stop);
+        std::thread::Builder::new()
+            .name("moor-egress-stdin".to_owned())
+            .spawn(move || {
+                drop(std::io::copy(&mut std::io::stdin(), &mut std::io::sink()));
+                say(format_args!("stdin closed"));
+                stop.store(true, Ordering::Release);
+            })
+            .map_err(|e| format!("cannot watch stdin: {e}"))?;
+    }
+    Ok(stop)
 }
 
 /// `route` with the key `MOOR_MACHINE_SERVICE_KEY` holds, which it sends the service.
