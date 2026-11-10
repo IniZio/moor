@@ -6,7 +6,7 @@ use super::progress::Happened;
 use super::StuckView;
 
 /// Kinds after which an earlier stuck event no longer counts.
-const CLEARS: [&str; 10] = [
+const CLEARS: [&str; 9] = [
     "agent_resumed",
     "turn_done",
     "idled",
@@ -16,26 +16,49 @@ const CLEARS: [&str; 10] = [
     "closed",
     "agent_link_restored",
     "proxy_credential_recovered",
-    "egress_recovered",
 ];
 
 /// The newest stuck event that nothing since has cleared, `events` oldest first.
+///
+/// An `egress_recovered` clears only the `egress_aborted` events for its own host, so
+/// an older stuck event still uncleared can show again.
 #[must_use]
 pub fn stuck_of(events: &[Happened]) -> Option<StuckView> {
-    let mut stuck = None;
+    // Uncleared stuck events, oldest first. Only aborts can be cleared out of order,
+    // so a newer stuck event of any other kind drops everything before it.
+    let mut open: Vec<&Happened> = Vec::new();
     for e in events {
         let kind = e.kind.as_str();
         if CLEARS.contains(&kind) {
-            stuck = None;
-        } else if let Some(name) = signal(kind) {
-            stuck = Some(StuckView {
-                kind: name.to_owned(),
-                since: e.ts.clone(),
-                detail: detail(kind, &e.payload),
+            open.clear();
+        } else if kind == "egress_recovered" {
+            let host = text(&e.payload, "host").map(bare_host);
+            open.retain(|o| {
+                o.kind != "egress_aborted" || text(&o.payload, "host").map(bare_host) != host
             });
+        } else if signal(kind).is_some() {
+            if kind != "egress_aborted" {
+                open.clear();
+            }
+            open.push(e);
         }
     }
-    stuck
+    let e = open.last()?;
+    let kind = e.kind.as_str();
+    Some(StuckView {
+        kind: signal(kind)?.to_owned(),
+        since: e.ts.clone(),
+        detail: detail(kind, &e.payload),
+    })
+}
+
+/// `host` lower-cased and without a trailing `:port`.
+fn bare_host(host: &str) -> String {
+    let name = match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    };
+    name.to_ascii_lowercase()
 }
 
 /// The stuck name an event kind goes by, when it signals a stuck Box.

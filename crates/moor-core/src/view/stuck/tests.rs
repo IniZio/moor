@@ -110,7 +110,6 @@ fn every_clearing_kind_clears() {
         "closed",
         "agent_link_restored",
         "proxy_credential_recovered",
-        "egress_recovered",
     ] {
         let events = [
             at(
@@ -229,6 +228,62 @@ fn a_recovered_handshake_clears_an_aborted_one() {
             json!({"host": "x.example", "rule": null}),
             "2026-01-01T00:05:00Z",
         ),
+    ];
+    assert_eq!(stuck_of(&events), None);
+}
+
+fn aborted(host: &str, ts: &str) -> Happened {
+    at("egress_aborted", json!({"host": host, "rule": null}), ts)
+}
+
+fn recovered(host: &str, ts: &str) -> Happened {
+    at("egress_recovered", json!({"host": host, "rule": null}), ts)
+}
+
+#[test]
+fn a_recovery_of_one_host_leaves_another_hosts_abort_stuck() {
+    let events = [
+        aborted("x.example", "2026-01-01T00:00:00Z"),
+        aborted("y.example", "2026-01-01T00:01:00Z"),
+        recovered("x.example", "2026-01-01T00:02:00Z"),
+    ];
+    let view = stuck_of(&events).expect("stuck");
+    assert_eq!(view.kind, "egress_aborted");
+    assert_eq!(view.since, "2026-01-01T00:01:00Z");
+    assert!(view.detail.contains("y.example"), "{}", view.detail);
+}
+
+#[test]
+fn a_recovery_does_not_hide_a_newer_refusal() {
+    let events = [
+        aborted("x.example", "2026-01-01T00:00:00Z"),
+        at(
+            "egress_refused",
+            json!({"host": "z.example", "rule": null}),
+            "2026-01-01T00:01:00Z",
+        ),
+        recovered("x.example", "2026-01-01T00:02:00Z"),
+    ];
+    let view = stuck_of(&events).expect("stuck");
+    assert_eq!(view.kind, "egress_refused");
+    assert_eq!(view.since, "2026-01-01T00:01:00Z");
+}
+
+#[test]
+fn a_recovery_clears_an_abort_of_the_same_host_in_another_spelling() {
+    let events = [
+        aborted("X.example:443", "2026-01-01T00:00:00Z"),
+        recovered("x.example", "2026-01-01T00:01:00Z"),
+    ];
+    assert_eq!(stuck_of(&events), None);
+}
+
+#[test]
+fn a_recovery_clears_every_abort_of_its_host() {
+    let events = [
+        aborted("x.example", "2026-01-01T00:00:00Z"),
+        aborted("x.example", "2026-01-01T00:01:00Z"),
+        recovered("x.example", "2026-01-01T00:02:00Z"),
     ];
     assert_eq!(stuck_of(&events), None);
 }
