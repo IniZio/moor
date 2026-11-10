@@ -99,6 +99,22 @@ impl Slot {
             .map(|r| (r.id, text)))
     }
 
+    /// Ends a steer sent only now, such as a choice, interrupt or `/exit`: withdraws its row, and
+    /// when the steer `failed` with the row in doubt, reports and deletes it, since sent later it
+    /// would act on a screen nobody sees by then.
+    pub(super) fn give_up(
+        &self,
+        store: &Store,
+        id: BoxId,
+        failed: bool,
+    ) -> Result<(), CommandError> {
+        self.withdraw(store, id)?;
+        if let Some((row, _)) = self.in_doubt(store, id)?.filter(|_| failed) {
+            store.unconfirmed(id, row)?;
+        }
+        Ok(())
+    }
+
     /// Deletes the row unless a send of it began: a steer refused leaves nothing queued, and one
     /// whose send failed or went unconfirmed stays in doubt, to be sent at most once more.
     pub(super) fn withdraw(&self, store: &Store, id: BoxId) -> Result<(), CommandError> {
