@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::link::Fate;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::reconcile;
-use crate::ops::common::stale::{end_read_launch, unless_stale};
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
@@ -292,8 +292,8 @@ pub(crate) fn settle(
 }
 
 /// Ends launch `probed` of an agent that ended with `exit`, and its Session, once its transcript
-/// is saved. A launch another op replaced since the read is left alone, and while another
-/// operation holds the Box's turn nothing is ended, so the save is retried first.
+/// is saved. A launch no longer live, replaced or ended by new hands, is left alone with its
+/// Session, and while another operation holds the turn nothing is ended, so the save is retried.
 fn end_exited_launch(
     cx: &Cx,
     store: &Store,
@@ -309,7 +309,7 @@ fn end_exited_launch(
         session: Some("exited"),
         ..LaunchEnd::default()
     };
-    end_read_launch(cx, store, (row.id, probed), &end)?;
+    unless_stale(cx, store.end_launch(row.id, probed, &end))?;
     Ok(())
 }
 

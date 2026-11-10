@@ -15,7 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::provision::reread;
-use crate::ops::common::stale::{end_read_launch, Ending};
+use crate::ops::common::stale::unless_stale;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
@@ -186,7 +186,7 @@ pub(super) fn relaunch(
         digest,
         session: Some("relaunch"),
     };
-    if end_read_launch(cx, store, (id, old.id), &end)? == Ending::Replaced {
+    if unless_stale(cx, store.end_launch(id, old.id, &end))?.is_none() {
         return Ok(None);
     }
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;

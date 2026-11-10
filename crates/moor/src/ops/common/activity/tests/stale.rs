@@ -4,6 +4,8 @@
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::hands::{HandsInc, HandsInput};
+use moor_core::domain::session_state::SessionState;
 use moor_core::{BoxId, LaunchId};
 
 use super::{cx, is_working, row, run_once, seen, working_box, SESSION};
@@ -124,4 +126,23 @@ fn a_read_of_launch_n_does_not_store_its_agent_session_over_n_plus_one() {
     run_once(&cx, id);
 
     assert_eq!(row(&cx, id).agent_session_id.as_deref(), Some("agent-new"));
+}
+
+#[test]
+fn an_exit_read_settled_after_new_hands_ended_its_launch_keeps_the_session_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, exited(Some(1))));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let reading = run_once(&cx, id);
+    let store = cx.store().unwrap();
+    let lost = Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
+    store.apply(lost).unwrap();
+    let again = Decision::new(id).hands_input(HandsInc::new(2), HandsInput::Requested);
+    store.apply(again).unwrap();
+
+    settle(&cx, store, &row(&cx, id), &reading).unwrap();
+
+    assert_ne!(row(&cx, id).session, SessionState::Ended);
+    assert_eq!(count(&cx, id, "session_ended"), 0);
 }
