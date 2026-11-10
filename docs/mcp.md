@@ -72,6 +72,8 @@ names the issuer and the scopes.
 `credential_withheld`, `proxy_credential_failed`, `agent_rate_limited`,
 `agent_unreachable`, or `agent_link_lost`. `stalled` means the agent reported
 busy and wrote nothing for ten minutes. The next sign of progress clears it.
+The `egress_aborted` detail asks whether the Box clock is behind, because a
+guest clock behind the host makes the Proxy's certificates not yet valid.
 
 ### `inspect_box`
 
