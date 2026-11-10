@@ -72,9 +72,8 @@ fn files(dir: &Path, cert: &str) -> TlsPki {
     }
 }
 
-/// A listener demanding a client certificate the ledger CA signed. It takes one connection,
-/// answers its hello, and returns how the handshake went.
-fn listener(dir: &Path) -> (u16, JoinHandle<Result<(), String>>) {
+/// The controller's side: its certificate, demanding a client certificate the ledger CA signed.
+fn server_config(dir: &Path) -> ServerConfig {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let mut roots = RootCertStore::empty();
     roots
@@ -86,12 +85,18 @@ fn listener(dir: &Path) -> (u16, JoinHandle<Result<(), String>>) {
             .unwrap();
     let chain = vec![CertificateDer::from_pem_file(dir.join("controller.pem")).unwrap()];
     let key = PrivateKeyDer::from_pem_file(dir.join("controller.key")).unwrap();
-    let config = ServerConfig::builder_with_provider(provider)
+    ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_client_cert_verifier(verifier)
         .with_single_cert(chain, key)
-        .unwrap();
+        .unwrap()
+}
+
+/// A listener demanding a client certificate the ledger CA signed. It takes one connection,
+/// answers its hello, and returns how the handshake went.
+fn listener(dir: &Path) -> (u16, JoinHandle<Result<(), String>>) {
+    let config = server_config(dir);
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = tcp.local_addr().unwrap().port();
     let served = std::thread::spawn(move || {
@@ -187,3 +192,5 @@ fn a_client_key_that_does_not_fit_its_certificate_is_refused_before_any_dial() {
     let why = client_config(&mismatched).expect_err("a mismatched key was taken");
     assert!(why.contains("does not fit"), "{why}");
 }
+
+mod bridge;

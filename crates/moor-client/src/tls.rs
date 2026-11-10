@@ -9,6 +9,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::ops::DerefMut;
+use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -297,23 +298,21 @@ where
 }
 
 /// Waits until the peer's socket or the near end has something to read, of those still open.
+///
+/// A side that has ended stays out of the poll: poll(2) reports a hangup on any fd it is given,
+/// whatever it was asked, so an ended side would wake it at once, forever.
 fn ready(
     peer: &TcpStream,
     far: &UnixStream,
     on_peer: bool,
     on_near: bool,
 ) -> io::Result<(bool, bool)> {
-    let flags = |on: bool| {
-        if on {
-            PollFlags::IN
-        } else {
-            PollFlags::empty()
-        }
-    };
-    let mut fds = [
-        PollFd::new(peer, flags(on_peer)),
-        PollFd::new(far, flags(on_near)),
-    ];
+    let open = [(peer.as_fd(), on_peer), (far.as_fd(), on_near)];
+    let mut fds: Vec<PollFd<'_>> = open
+        .iter()
+        .filter(|(_, on)| *on)
+        .map(|(fd, _)| PollFd::from_borrowed_fd(*fd, PollFlags::IN))
+        .collect();
     loop {
         match poll(&mut fds, None) {
             Ok(_) => break,
@@ -321,9 +320,10 @@ fn ready(
             Err(e) => return Err(e.into()),
         }
     }
-    let up = |fd: &PollFd<'_>, on: bool| on && !fd.revents().is_empty();
-    let [peer, far] = &fds;
-    Ok((up(peer, on_peer), up(far, on_near)))
+    let mut woke = fds.iter().map(|fd| !fd.revents().is_empty());
+    let peer_ready = on_peer && woke.next().unwrap_or(false);
+    let near_ready = on_near && woke.next().unwrap_or(false);
+    Ok((peer_ready, near_ready))
 }
 
 #[cfg(test)]
