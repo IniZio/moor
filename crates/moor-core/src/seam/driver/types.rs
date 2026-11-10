@@ -60,8 +60,8 @@ pub struct HandlesListing {
     pub answered: Vec<BoxHandle>,
     /// Those of `answered` their holder still holds.
     pub listed: Vec<BoxListing>,
-    /// Why each holder that said nothing did not answer, one line per holder.
-    pub unanswered: Vec<String>,
+    /// Each holder that stopped or started answering since it was last asked, one line each.
+    pub said: Vec<String>,
 }
 
 /// Whether a sleep may save the Box's caches; a Box suspended at work could hold torn files.

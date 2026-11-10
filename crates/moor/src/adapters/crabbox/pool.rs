@@ -20,6 +20,7 @@ mod lost;
 mod power;
 pub(super) use power::{sleep, wake};
 mod list;
+pub(crate) use list::HostLists;
 pub(in crate::adapters::crabbox) use list::{list, list_handles, LIST_WITHIN};
 
 /// How the controller reaches pool hosts: by enrolled machine id, through the runner's links
@@ -144,6 +145,13 @@ impl Crabbox {
     /// Reaches pool hosts through `hosts`; none refuses every pool Box.
     pub(crate) fn with_pool_hosts(mut self, hosts: Option<std::sync::Arc<dyn PoolHosts>>) -> Self {
         self.pool_hosts = hosts;
+        self
+    }
+
+    /// Keeps the pool hosts' lists in `lists`, so every driver sharing it asks a host at most
+    /// once at a time and reports a host going quiet once.
+    pub(crate) fn sharing_host_lists(mut self, lists: std::sync::Arc<HostLists>) -> Self {
+        self.host_lists = lists;
         self
     }
 

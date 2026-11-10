@@ -2,7 +2,7 @@
 //! deadline.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,14 +11,25 @@ use moor_core::name::BoxHandle;
 
 use super::PoolHosts;
 use crate::adapters::crabbox::pool::list_handles;
+use crate::adapters::crabbox::pool::HostLists;
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::ScriptedProc;
 
 /// How a host answers a list: after a delay, with its leases or a failure.
 type Reply = (Duration, Result<Vec<&'static str>, &'static str>);
 
-/// Hosts by machine id, each answering a list as scripted.
-struct Hosts(BTreeMap<i64, Reply>);
+/// Hosts by machine id, each answering a list as scripted now; each ask is counted.
+#[derive(Default)]
+struct Hosts {
+    replies: Mutex<BTreeMap<i64, Reply>>,
+    asks: Mutex<Vec<i64>>,
+}
+
+impl Hosts {
+    fn set(&self, machine: i64, reply: Reply) {
+        self.replies.lock().unwrap().insert(machine, reply);
+    }
+}
 
 impl PoolHosts for Hosts {
     fn lease(
@@ -30,7 +41,14 @@ impl PoolHosts for Hosts {
         _boot: &Boot,
     ) -> Result<Answer, String> {
         assert_eq!(verb, Verb::List);
-        let (delay, reply) = self.0.get(&machine_id).cloned().unwrap();
+        self.asks.lock().unwrap().push(machine_id);
+        let (delay, reply) = self
+            .replies
+            .lock()
+            .unwrap()
+            .get(&machine_id)
+            .cloned()
+            .unwrap();
         thread::sleep(delay);
         let leases = reply.map_err(str::to_owned)?;
         Ok(Answer::Leases {
@@ -49,9 +67,19 @@ impl PoolHosts for Hosts {
     }
 }
 
+/// A driver per pass, as the controller wires one per tick, over `hosts` and `lists`.
+fn driver(hosts: &Arc<Hosts>, lists: &Arc<HostLists>) -> Crabbox {
+    Crabbox::fake(Arc::new(ScriptedProc::new()))
+        .with_pool_hosts(Some(Arc::clone(hosts) as Arc<dyn PoolHosts>))
+        .sharing_host_lists(Arc::clone(lists))
+}
+
 fn pool(hosts: impl IntoIterator<Item = (i64, Reply)>) -> Crabbox {
-    let hosts = Arc::new(Hosts(hosts.into_iter().collect()));
-    Crabbox::fake(Arc::new(ScriptedProc::new())).with_pool_hosts(Some(hosts as Arc<dyn PoolHosts>))
+    let fake = Arc::new(Hosts::default());
+    for (machine, reply) in hosts {
+        fake.set(machine, reply);
+    }
+    driver(&fake, &Arc::default())
 }
 
 fn on(machine: i64, id: u32) -> BoxHandle {
@@ -70,12 +98,13 @@ fn a_host_that_answers_speaks_for_its_own_leases_and_an_away_one_for_none() {
         &cb,
         &[on(1, 11), on(1, 12), on(2, 21)],
         Duration::from_secs(5),
-    );
+    )
+    .unwrap();
     assert_eq!(asked.answered, [on(1, 11), on(1, 12)]);
     let listed: Vec<_> = asked.listed.iter().map(|l| l.handle.clone()).collect();
     assert_eq!(listed, [on(1, 11)]);
     assert_eq!(
-        asked.unanswered,
+        asked.said,
         ["pool host 2 did not list its leases: machine 2 is offline: its link closed"]
     );
 }
@@ -100,7 +129,8 @@ fn hosts_are_asked_at_once_and_a_late_one_is_left_unknown_at_the_deadline() {
         &cb,
         &[on(1, 11), on(2, 21), on(3, 31)],
         Duration::from_secs(1),
-    );
+    )
+    .unwrap();
     let took = started.elapsed();
     assert!(
         took >= Duration::from_secs(1) && took < Duration::from_secs(3),
@@ -108,7 +138,80 @@ fn hosts_are_asked_at_once_and_a_late_one_is_left_unknown_at_the_deadline() {
     );
     assert_eq!(asked.answered, [on(1, 11), on(3, 31)]);
     assert_eq!(
-        asked.unanswered,
+        asked.said,
         ["pool host 2 did not list its leases within 1s"]
+    );
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "measures the wall time a listing takes against real host delays"
+)]
+fn the_deadline_counts_from_the_ask_not_from_each_answer() {
+    let cb = pool([
+        (1, (Duration::from_millis(400), Ok(vec![]))),
+        (2, (Duration::from_millis(800), Ok(vec![]))),
+        (3, (Duration::from_millis(1400), Ok(vec![]))),
+    ]);
+    let started = Instant::now();
+    let asked = list_handles(
+        &cb,
+        &[on(1, 11), on(2, 21), on(3, 31)],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let took = started.elapsed();
+    assert_eq!(asked.answered, [on(1, 11), on(2, 21)]);
+    assert!(took < Duration::from_millis(1300), "{took:?}");
+}
+
+#[test]
+fn a_host_still_answering_its_last_list_is_not_asked_again() {
+    let hosts = Arc::new(Hosts::default());
+    hosts.set(1, (Duration::from_secs(3600), Ok(vec![])));
+    hosts.set(2, (NOW, Ok(vec![])));
+    let lists = Arc::new(HostLists::default());
+    for _ in 0..4 {
+        let asked = list_handles(
+            &driver(&hosts, &lists),
+            &[on(1, 11), on(2, 21)],
+            Duration::from_millis(100),
+        )
+        .unwrap();
+        assert_eq!(asked.answered, [on(2, 21)]);
+    }
+    let asks = hosts.asks.lock().unwrap().clone();
+    assert_eq!(asks.iter().filter(|m| **m == 1).count(), 1, "{asks:?}");
+    assert_eq!(asks.iter().filter(|m| **m == 2).count(), 4, "{asks:?}");
+}
+
+#[test]
+fn a_host_that_stays_away_is_reported_once_and_again_when_it_answers() {
+    let hosts = Arc::new(Hosts::default());
+    hosts.set(1, (NOW, Err("machine 1 is not linked")));
+    let lists = Arc::new(HostLists::default());
+    let pass = || {
+        list_handles(
+            &driver(&hosts, &lists),
+            &[on(1, 11)],
+            Duration::from_secs(5),
+        )
+        .unwrap()
+        .said
+    };
+    assert_eq!(
+        pass(),
+        ["pool host 1 did not list its leases: machine 1 is not linked"]
+    );
+    assert!(pass().is_empty());
+    assert!(pass().is_empty());
+    hosts.set(1, (NOW, Ok(vec!["moor-1a2b3c4d-11"])));
+    assert_eq!(pass(), ["pool host 1 lists its leases again"]);
+    assert!(pass().is_empty());
+    hosts.set(1, (NOW, Err("machine 1 is not linked")));
+    assert_eq!(
+        pass(),
+        ["pool host 1 did not list its leases: machine 1 is not linked"]
     );
 }

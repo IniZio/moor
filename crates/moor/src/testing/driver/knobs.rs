@@ -123,7 +123,7 @@ impl FakeDriver {
         Ok(HandlesListing {
             answered,
             listed,
-            unanswered: away
+            said: away
                 .iter()
                 .map(|h| format!("the host of {} did not answer", h.as_str()))
                 .collect(),
