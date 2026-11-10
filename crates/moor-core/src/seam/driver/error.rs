@@ -40,6 +40,11 @@ pub enum DriverError {
         /// Last lines crabbox or ssh wrote to stderr, as one line.
         stderr_tail: String,
     },
+    /// The checkpoint asked for was never finished, so no Box can start from it while it stays.
+    UnfinishedCheckpoint {
+        /// What the provider said.
+        summary: String,
+    },
     /// Any other failure, summarised by the adapter.
     Failed {
         /// Moor-worded summary.

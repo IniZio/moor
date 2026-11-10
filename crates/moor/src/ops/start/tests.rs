@@ -91,6 +91,7 @@ mod warm_profile;
 mod warm_roll;
 mod warm_saved;
 mod warm_trees;
+mod warm_unfinished;
 mod workdir;
 
 /// A world of fakes plus the context over them.

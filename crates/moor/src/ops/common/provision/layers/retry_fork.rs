@@ -58,6 +58,9 @@ pub(in super::super) fn resume(
             (forked.handle, told)
         }
         Err(e) => {
+            if matches!(e, DriverError::UnfinishedCheckpoint { .. }) {
+                store.retire_checkpoint(&layered.home, &saved.checkpoint)?;
+            }
             cx.warn(Warning {
                 code: "checkpoint_failed".to_owned(),
                 message: format!(

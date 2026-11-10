@@ -375,6 +375,20 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
     }
 }
 
+/// Words the provider prints when a fork finds its checkpoint was never finished.
+const UNFINISHED: &str = "was never finished";
+
+/// `e` as [`DriverError::UnfinishedCheckpoint`] when a failed fork says its checkpoint was never
+/// finished; crabbox has no other way to say so.
+pub(super) fn unfinished_fork(e: DriverError) -> DriverError {
+    match e {
+        DriverError::Failed { summary } if summary.to_lowercase().contains(UNFINISHED) => {
+            DriverError::UnfinishedCheckpoint { summary }
+        }
+        e => e,
+    }
+}
+
 /// Error for output moor cannot read.
 pub(super) fn unreadable(what: &str) -> DriverError {
     DriverError::Failed {

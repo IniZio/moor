@@ -78,9 +78,9 @@ fn chain_expired(
 }
 
 /// Starts Box `id` on a fork of the deepest layer kept with a place. At the Box's base only the
-/// lines above it run, and at another commit every line runs. None when no layer is kept, or when
-/// the fork fails: that is recorded and warned about, and the Box is acquired and set up from
-/// scratch.
+/// lines above it run, and at another commit every line runs. A layer whose checkpoint was never
+/// finished is retired and the next one down is tried. None when no layer is kept, or when the
+/// fork fails: that is recorded and warned about, and the Box is acquired and set up from scratch.
 pub(in super::super) fn warm(
     cx: &Cx,
     store: &Store,
@@ -113,18 +113,7 @@ pub(in super::super) fn warm(
         Err(e @ DriverError::Transport { .. }) if goes_on_after(cx, req, &e) => {
             return Ok(Some(Err(e)))
         }
-        Err(e) => {
-            let error = e.to_string();
-            cx.warn(Warning {
-                code: "checkpoint_failed".to_owned(),
-                message: format!(
-                    "could not start from setup layer {layer}: {error}; setup runs from its start"
-                ),
-            });
-            let failed = ExtraEvent::WarmStartFailed { layer: at, error };
-            store.apply(Decision::new(id).event(failed))?;
-            return Ok(None);
-        }
+        Err(e) => return fork_failed(cx, store, (id, req), layered, (layer, &kept), &e),
     };
     let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
     let rerun_from = stand_on_fork(layered, layer, &place, &kept);
@@ -143,6 +132,40 @@ pub(in super::super) fn warm(
         handle: forked.handle,
         workdir: place.workdir,
     })))
+}
+
+/// After the fork of `kept`, layer `layer`, failed with `e`: a checkpoint never finished is retired
+/// and Box `id` starts warm from a layer below it; any other failure is recorded and warned about,
+/// and the Box is set up from scratch.
+fn fork_failed(
+    cx: &Cx,
+    store: &Store,
+    (id, req): (BoxId, &AcquireReq),
+    layered: &mut Layered,
+    (layer, kept): (usize, &CheckpointRow),
+    e: &DriverError,
+) -> Result<Option<Result<Acquired, DriverError>>, CommandError> {
+    let error = e.to_string();
+    if matches!(e, DriverError::UnfinishedCheckpoint { .. }) {
+        store.retire_checkpoint(&layered.home, &kept.checkpoint)?;
+        cx.warn(Warning {
+            code: "checkpoint_unfinished".to_owned(),
+            message: format!(
+                "setup layer {layer} cannot be started from: {error}; trying the layer below"
+            ),
+        });
+        return warm(cx, store, id, req, layered);
+    }
+    cx.warn(Warning {
+        code: "checkpoint_failed".to_owned(),
+        message: format!(
+            "could not start from setup layer {layer}: {error}; setup runs from its start"
+        ),
+    });
+    let layer = u32::try_from(layer).unwrap_or(u32::MAX);
+    let failed = ExtraEvent::WarmStartFailed { layer, error };
+    store.apply(Decision::new(id).event(failed))?;
+    Ok(None)
 }
 
 /// Forks `checkpoint` for Box `id`; a fork cut off by a lost link goes on at its host and is taken

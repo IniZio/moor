@@ -181,6 +181,24 @@ fn a_fork_under_another_slug_or_a_failed_one_releases_what_it_started() {
 }
 
 #[test]
+fn a_fork_of_a_checkpoint_never_finished_says_so_and_another_failure_does_not() {
+    let unfinished = Reply::Fail {
+        code: 1,
+        stdout: String::new(),
+        stderr: "error: checkpoint chk_b2bc was never finished; delete it\n".to_owned(),
+    };
+    let (_, c) = driver("fork", unfinished);
+    let got = c.fork("chk_b2bc", &req("local", None)).unwrap_err();
+    assert!(
+        matches!(&got, DriverError::UnfinishedCheckpoint { summary } if summary.contains("chk_b2bc")),
+        "{got:?}"
+    );
+    let (_, c) = driver("fork", fail());
+    let got = c.fork("cp-9", &req("local", None)).unwrap_err();
+    assert!(matches!(got, DriverError::Failed { .. }), "{got:?}");
+}
+
+#[test]
 fn a_delete_names_the_checkpoint() {
     let (p, c) = driver(
         "delete",
