@@ -56,6 +56,8 @@ mod inbox;
 pub(crate) use inbox::InboxRow;
 mod in_flight;
 mod init;
+mod launch_facts;
+pub(crate) use launch_facts::OwedNote;
 pub(crate) mod lease;
 mod open;
 pub(crate) use open::Database;
@@ -270,20 +272,14 @@ impl Store {
         )
     }
 
-    /// When Box `id`'s machine last came up, by acquire or wake.
+    /// When Box `id`'s machine last came up, by acquire or wake: when its hands became Ready,
+    /// while they are.
     pub(crate) fn awake_since(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
-        let ts = self
-            .reader()?
-            .row(
-                Query::select()
-                    .expr(Expr::col(Events::Ts).max())
-                    .from(Events::Table)
-                    .and_where(Expr::col(Events::Box).eq(id.get()))
-                    .and_where(Expr::col(Events::Kind).eq("box_ready")),
-                |r| r.get::<_, Option<i64>>(0),
-            )?
-            .map(Ts::from_millis);
-        Ok(ts)
+        let row = self.box_row(id)?;
+        let hands = row.and_then(|r| r.hands);
+        Ok(hands
+            .filter(|h| h.state == HandsState::Ready)
+            .map(|h| h.updated_at))
     }
 
     /// A read-only connection; never blocks on the writer.

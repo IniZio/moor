@@ -163,10 +163,11 @@ fn the_relaunch_waits_out_a_recent_tunnel_restart() {
         box_port: 40123,
         reason: "tunnel exited".into(),
     };
-    w.cx.store()
-        .unwrap()
-        .apply(Decision::new(id).event(restart))
+    let store = w.cx.store().unwrap();
+    store
+        .reserve(id, &crate::testing::rng::FakeRng::default())
         .unwrap();
+    store.apply(Decision::new(id).event(restart)).unwrap();
     w.cx.clock().sleep(Duration::from_secs(2));
     let before = w.cx.clock().now().as_millis();
     revive(&w, id);
@@ -282,7 +283,8 @@ pub(super) fn woken_after_suspend(w: &World, id: BoxId, reason: &str) {
         )
         .unwrap();
     let at = w.cx.clock().now().as_millis() / 1000;
-    store.set_resume_first(id, Some(at)).unwrap();
+    let stopped = reason == moor_core::decide::reconcile::STOPPED_REASON;
+    store.owe_suspended(id, at, stopped).unwrap();
     w.cx.clock().sleep(Duration::from_secs(10));
     let row = store.box_row(id).unwrap().unwrap();
     wake_and_revive(&w.cx, store, &row).unwrap();
@@ -466,4 +468,21 @@ fn a_start_that_replaces_a_lost_machine_records_the_disk_and_tells_the_agent() {
     run(&w.cx, &super::req("demo")).unwrap();
     assert!(store.newest_event_of(id, "disk_lost").unwrap().is_some());
     assert_eq!(notes(&engine), [LOST_NOTE]);
+}
+
+#[test]
+fn a_lost_disk_is_told_once_with_the_box_events_deleted() {
+    let (w, engine, id) = unanswered();
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    w.driver.forget(&row.hands.unwrap().handle.unwrap());
+    crate::ops::common::reconcile::run(&w.cx);
+    gone(&engine);
+    let forgets = store.clone();
+    engine.on_probe(move || forgets.forget_events(id));
+    run(&w.cx, &super::req("demo")).unwrap();
+    assert_eq!(notes(&engine), [LOST_NOTE]);
+    engine.set_probes("p-2", agent::gone());
+    revive(&w, id);
+    assert_eq!(notes(&engine), [LOST_NOTE], "told once");
 }

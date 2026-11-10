@@ -1,6 +1,6 @@
 //! The only writer of box/box state and events: `Store::apply` plus run records.
 
-use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxTarget, Decision, Field, HandsFields};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
@@ -10,6 +10,7 @@ use moor_core::BoxId;
 use moor_schema::tables::{BoxHands, BoxState, Events, Sessions};
 use sea_query::{Expr, ExprTrait as _, Query, Value};
 
+mod facts;
 mod sql;
 mod steps;
 mod wanted;
@@ -200,6 +201,9 @@ fn write_box_row(
     (lifecycle, session_state): Parts,
 ) -> Result<(), StoreError> {
     let mut sets = box_field_sets(&d.set);
+    if let (Some(cause), Field::Keep) = (failed_setup(d), &d.set.state_reason) {
+        sets.push((BoxState::StateReason, cause.into()));
+    }
     let mut session = session_field_sets(&d.set);
     let stepped = d.lifecycle_input.is_some() || d.session_input.is_some();
     if stepped {
@@ -242,6 +246,18 @@ fn write_box_row(
         super::users::machine::release_in(tx, id, now)?;
     }
     Ok(())
+}
+
+/// The cause a setup failure `d` records names the step or line that failed, which is why the Box
+/// waits for a retry, so it becomes the reason on the Box's state unless `d` sets one.
+fn failed_setup(d: &Decision) -> Option<String> {
+    match &d.lifecycle_input {
+        Some(
+            BoxLifecycleInput::SetupFailed { cause, .. }
+            | BoxLifecycleInput::WorkingSetupFailed { cause },
+        ) => Some(cause.clone()),
+        _ => None,
+    }
 }
 
 /// A Ready Box whose primary Session is idle or ended.
@@ -357,6 +373,7 @@ pub(super) fn insert_event(tx: &Tx<'_>, id: BoxId, e: &Event, now: Ts) -> Result
             .returning_col(Events::Id),
         |r| r.get(0),
     )?;
+    facts::follow(tx, id, e, now)?;
     super::webhook_outbox::enqueue(tx, id, event, e.kind())?;
     Ok(event)
 }
