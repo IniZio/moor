@@ -6,6 +6,7 @@ use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::session_state::SessionState;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, ErrorDetail, ErrorKind, StartReq};
@@ -30,12 +31,6 @@ const RELAUNCH_CAP: usize = 3;
 
 /// The window `RELAUNCH_CAP` counts over.
 const RELAUNCH_WINDOW: Duration = Duration::from_mins(10);
-
-/// Recent events searched for relaunches.
-const CAP_EVENTS: usize = 100;
-
-/// Recent events searched for a tunnel restart.
-const TUNNEL_EVENTS: usize = 50;
 
 /// What a wake found of the agent of a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,12 +226,11 @@ fn relaunch_after_retry(
 /// Only the first refusal after a relaunch is recorded as `relaunch_capped`. An explicit
 /// `moor start --resume` is not an automatic relaunch and never meets the cap.
 fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
-    let events = store.events(row.id, CAP_EVENTS)?;
-    let recent = recent_relaunches(cx, &events);
+    let recent = recent_relaunches(cx, store, row.id)?;
     if recent < RELAUNCH_CAP {
         return Ok(());
     }
-    note_capped(store, row.id, &events, recent)?;
+    note_capped(store, row.id, recent)?;
     let name = row.name.as_str();
     Err(CommandError::new(
         ErrorKind::Refused,
@@ -254,28 +248,17 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
 /// # Errors
 /// A store failure.
 pub(crate) fn capped(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
-    let events = store.events(id, CAP_EVENTS)?;
-    let recent = recent_relaunches(cx, &events);
+    let recent = recent_relaunches(cx, store, id)?;
     if recent < RELAUNCH_CAP {
         return Ok(false);
     }
-    note_capped(store, id, &events, recent)?;
+    note_capped(store, id, recent)?;
     Ok(true)
 }
 
 /// Records `relaunch_capped` for `recent` relaunches unless it is on record since the last one.
-fn note_capped(
-    store: &Store,
-    id: BoxId,
-    events: &[crate::store::EventRow],
-    recent: usize,
-) -> Result<(), CommandError> {
-    let recorded = events
-        .iter()
-        .rev()
-        .find(|e| matches!(e.kind.as_str(), "relaunched" | "relaunch_capped"))
-        .is_some_and(|e| e.kind == "relaunch_capped");
-    if !recorded {
+fn note_capped(store: &Store, id: BoxId, recent: usize) -> Result<(), CommandError> {
+    if store.relaunch_capped_at(id)?.is_none() {
         let event = ExtraEvent::RelaunchCapped {
             count: recent,
             window_secs: RELAUNCH_WINDOW.as_secs(),
@@ -285,18 +268,11 @@ fn note_capped(
     Ok(())
 }
 
-/// The automatic relaunches among `events` within `RELAUNCH_WINDOW`.
-fn recent_relaunches(cx: &Cx, events: &[crate::store::EventRow]) -> usize {
-    let now = cx.clock().now().as_millis();
+/// The launches of Box `id` within `RELAUNCH_WINDOW` that moor made on its own.
+fn recent_relaunches(cx: &Cx, store: &Store, id: BoxId) -> Result<usize, CommandError> {
     let window = i64::try_from(RELAUNCH_WINDOW.as_millis()).unwrap_or(i64::MAX);
-    events
-        .iter()
-        .filter(|e| {
-            e.kind == "relaunched"
-                && e.payload.get("cause").is_some_and(|c| !c.is_null())
-                && now.saturating_sub(e.ts.as_millis()) < window
-        })
-        .count()
+    let since = Ts::from_millis(cx.clock().now().as_millis().saturating_sub(window));
+    Ok(store.caused_launches_since(id, since)?)
 }
 
 /// Whether `row` holds a prompt or an agent session to start again.
@@ -336,11 +312,7 @@ fn await_tunnel(cx: &Cx, store: &Store, id: BoxId) {
 fn restarted_within(cx: &Cx, store: &Store, id: BoxId, window: Duration) -> bool {
     let now = cx.clock().now().as_millis();
     let window = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
-    store.events(id, TUNNEL_EVENTS).is_ok_and(|events| {
-        events
-            .iter()
-            .rev()
-            .find(|e| e.kind == "tunnel_restarted")
-            .is_some_and(|e| now.saturating_sub(e.ts.as_millis()) < window)
-    })
+    store
+        .tunnel_restarted_at(id)
+        .is_ok_and(|at| at.is_some_and(|at| now.saturating_sub(at.as_millis()) < window))
 }

@@ -1,11 +1,13 @@
 //! Ending a launch, and refusing writes made from a reading of one that is no longer live.
 
+use moor_core::domain::decision::Effect;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, LaunchId};
-use moor_schema::tables::Launches;
-use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
+use moor_schema::tables::{BoxState, Launches};
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement, Value};
 
 use crate::store::db::{Db, DbExt as _, OptionalExtension, Tx};
+use crate::store::select::state_update;
 use crate::store::sessions::end_current;
 use crate::store::{Fence, Store, StoreError};
 
@@ -123,6 +125,21 @@ pub(in crate::store) fn end_live_launches(
             .value(Launches::EndedAt, now.as_millis())
             .and_where(Expr::col(Launches::Box).eq(box_id.get()))
             .and_where(Expr::col(Launches::EndedAt).is_null()),
+    )?;
+    Ok(())
+}
+
+/// Ends the launch in flight on `box_id` inside the caller's write. Any other effect is left, so
+/// a run that began meanwhile keeps its own.
+pub(super) fn end_launching(tx: &dyn Db, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
+    tx.run(
+        state_update(box_id)
+            .value(BoxState::Effect, Value::String(None))
+            .value(BoxState::EffectAttempt, Value::BigInt(None))
+            .value(BoxState::EffectRun, Value::BigInt(None))
+            .value(BoxState::EffectAt, Value::BigInt(None))
+            .value(BoxState::UpdatedAt, now.as_millis())
+            .and_where(Expr::col(BoxState::Effect).eq(Effect::Launch.as_str())),
     )?;
     Ok(())
 }

@@ -22,7 +22,7 @@ use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume_gate::{room_to_wake, Turn};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::ops::start::{revive_after_wake, AfterWake};
-use crate::store::{BoxRow, Store};
+use crate::store::{BoxRow, OwedNote, Store};
 
 /// Wake the Box and its machine when either is Asleep, leaving the Proxy tunnel parked.
 ///
@@ -99,12 +99,13 @@ fn tell_after_suspend(
         }
         AfterWake::Unknown => return Ok(()),
     };
-    let woke = store.newest_event_of(row.id, "woke")?;
-    let up_at = woke.map_or_else(|| now(cx), |ev| ev.ts.as_millis() / 1000);
+    let woke = store.awake_since(row.id)?;
+    let up_at = woke.map_or_else(|| now(cx), |at| at.as_millis() / 1000);
     let secs = up_at.saturating_sub(at).max(0);
-    let stopped = store.newest_event_of(row.id, "asleep")?.is_some_and(|ev| {
-        ev.payload.get("reason").and_then(|r| r.as_str()) == Some(STOPPED_REASON)
-    });
+    let stopped = matches!(
+        store.owed_note(row.id)?,
+        Some(OwedNote::Suspended { stopped: true, .. })
+    );
     let why = if stopped {
         format!("This Box was down for {secs}s: {STOPPED_REASON}.")
     } else {

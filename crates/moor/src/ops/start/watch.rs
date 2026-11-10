@@ -19,7 +19,7 @@ use crate::ops::common::provision::reread;
 use crate::ops::common::stale::unless_stale;
 use crate::ops::common::view::rfc3339;
 use crate::ops::common::wake::tell_relaunched;
-use crate::store::{LaunchEnd, Store};
+use crate::store::{LaunchEnd, OwedNote, Store};
 
 /// Time between two reads of the pane while watching.
 const PROMPT_POLL: Duration = Duration::from_millis(500);
@@ -30,18 +30,11 @@ const PROMPT_LINES: usize = 40;
 /// Deadline of one pane read while watching.
 const PROMPT_READ: Duration = Duration::from_secs(5);
 
-/// Recent events searched for a lost disk.
-const LOST_DISK_EVENTS: usize = 100;
-
-/// Tells the agent just launched, if it is the first since its Box's disk was lost, what is gone.
-/// Best effort: the owner already has the `disk_lost` event.
+/// Tells the agent just launched, if it is the first since its Box's disk was lost, what is gone,
+/// and drops the note so no later launch on these hands hears it. Best effort: the owner already
+/// has the `disk_lost` event.
 fn tell_of_lost_disk(cx: &Cx, store: &Store, id: BoxId) {
-    let first = store.events(id, LOST_DISK_EVENTS).is_ok_and(|events| {
-        let after = events.iter().rev().take_while(|e| e.kind != "disk_lost");
-        let launches = after.filter(|e| e.kind == "session_started").count();
-        launches == 1 && events.iter().any(|e| e.kind == "disk_lost")
-    });
-    if !first {
+    if !matches!(store.owed_note(id), Ok(Some(OwedNote::DiskLost))) {
         return;
     }
     let told = reread(store, id).and_then(|row| {
@@ -50,7 +43,8 @@ fn tell_of_lost_disk(cx: &Cx, store: &Store, id: BoxId) {
                     there before you carry on.";
         crate::ops::steer::tell(cx, store, &row, text.to_owned())
     });
-    if let Err(e) = told {
+    let dropped = store.drop_owed_note(id).map_err(CommandError::from);
+    if let Err(e) = told.and(dropped) {
         cx.warn(Warning {
             code: "note_failed".to_owned(),
             message: format!("cannot tell the agent its disk was lost: {}", e.error),
