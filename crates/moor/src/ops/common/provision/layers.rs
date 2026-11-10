@@ -131,8 +131,9 @@ impl Layered {
     /// Whether a save of this rerun is due at `now`, its tree `behind` changed paths past the
     /// commit of the checkpoint it forked, by [`roll_due`].
     pub(super) fn roll_due(&self, now: Ts, behind: Option<u64>) -> bool {
-        let age = self.roll.map(|r| now.as_millis() - r.saved_at.as_millis());
-        age.is_some_and(|a| roll_due(a, behind))
+        let since = |t: Ts| now.as_millis() - t.as_millis();
+        self.roll
+            .is_some_and(|r| roll_due(since(r.saved_at), behind, r.depth, since(r.root_at)))
     }
 
     /// The commits the clone's probe counts changed paths from: the oldest one the disk's ignored

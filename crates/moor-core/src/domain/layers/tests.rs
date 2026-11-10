@@ -291,3 +291,35 @@ fn a_chain_goes_on_until_its_age_or_depth_limit() {
     let deep = chain_past_limits(0, CHAIN_MAX_DEPTH).unwrap();
     assert!(deep.contains("8 times"), "{deep}");
 }
+
+#[test]
+fn distance_rolls_are_paced_so_the_chain_outlives_its_7_days() {
+    use super::{chain_past_limits, roll_due, CHAIN_MAX_AGE_MS};
+    const HOUR: i64 = 60 * 60 * 1000;
+    let (mut depth, mut saved_at, mut rolls) = (0, 0, vec![]);
+    let mut now = HOUR;
+    while now < CHAIN_MAX_AGE_MS {
+        assert_eq!(chain_past_limits(now, depth), None, "at {} h", now / HOUR);
+        if roll_due(now - saved_at, Some(100), depth, now) {
+            depth += 1;
+            saved_at = now;
+            rolls.push(now / HOUR);
+        }
+        now += HOUR;
+    }
+    assert_eq!(rolls, [1, 24, 48, 72, 96, 120, 144]);
+}
+
+#[test]
+fn a_roll_is_due_by_age_whatever_the_pace_and_by_distance_only_within_it() {
+    use super::{roll_due, ROLL_AFTER_MS, ROLL_AFTER_PATHS};
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+    let far = Some(ROLL_AFTER_PATHS);
+    assert!(roll_due(0, far, 0, 0), "the first roll needs no wait");
+    assert!(!roll_due(0, Some(ROLL_AFTER_PATHS - 1), 0, 0));
+    assert!(!roll_due(0, None, 0, 0));
+    assert!(!roll_due(0, far, 1, DAY - 1));
+    assert!(roll_due(0, far, 1, DAY));
+    assert!(!roll_due(0, far, 7, 7 * DAY - 1));
+    assert!(roll_due(ROLL_AFTER_MS, None, 7, 0));
+}

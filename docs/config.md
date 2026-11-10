@@ -230,13 +230,16 @@ files, keeps ignored ones, and runs every line again. The chain rolls forward to
 that commit when any of these holds:
 
 - the rerun took over 20 seconds;
+- the layer it forked is a day old;
 - 50 or more tracked paths changed between the commit of the layer it forked
-  and the Box's commit;
-- the layer it forked is a day old.
+  and the Box's commit, and the chain is paced for it: it rolled forward fewer
+  times than 1 plus one per full day of its age.
 
 The paths are counted from the forked layer's own commit, so after a roll the
-next count starts from the rolled commit. A chain lives 7 days and rolls forward
-8 times at most. The next Box after that sets up from scratch and starts a new
+next count starts from the rolled commit. The pace lets a busy repo roll on its
+first rerun far behind, then about once a day. A chain lives 7 days and rolls
+forward 8 times at most, so the age and path rules alone never end it before
+its 7 days. The next Box after that sets up from scratch and starts a new
 chain. These thresholds are fixed; no setting changes them. `moor start --cold`
 skips the chain.
 
