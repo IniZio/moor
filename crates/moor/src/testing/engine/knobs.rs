@@ -39,4 +39,9 @@ impl FakeEngine {
     pub(crate) fn on_steer(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_steer = Some(Arc::new(f));
     }
+
+    /// Runs `f` once, inside the next stop.
+    pub(crate) fn on_stop(&self, f: impl FnOnce() + Send + 'static) {
+        self.st().on_stop = Some(Box::new(f));
+    }
 }

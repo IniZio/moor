@@ -39,6 +39,7 @@ struct State {
     fail_transcript: Option<EngineError>,
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     on_steer: Option<Arc<dyn Fn() + Send + Sync>>,
+    on_stop: Option<Box<dyn FnOnce() + Send>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
     profile_install: Option<String>,
@@ -256,7 +257,14 @@ impl Engine for FakeEngine {
     }
 
     fn stop(&self, _s: &SessionRef) -> Result<(), EngineError> {
-        self.st().asked.push("stop");
+        let hook = {
+            let mut st = self.st();
+            st.asked.push("stop");
+            st.on_stop.take()
+        };
+        if let Some(f) = hook {
+            f();
+        }
         Ok(())
     }
 
