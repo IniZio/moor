@@ -320,38 +320,82 @@ fn run_on(store: &Store, id: BoxId) -> RunId {
 }
 
 #[test]
-fn a_launch_wins_the_one_effect_slot_over_a_run_whichever_starts_first() {
+fn a_run_in_flight_keeps_the_slot_through_a_launch() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready_box(&store);
-    let launch = || Decision::new(id).effect(EffectChange::Next(Effect::Launch));
-    store.apply(launch()).unwrap();
-
-    let during = run_on(&store, id);
-    assert_eq!(
-        effect(&store, id).0,
-        Some(Effect::Launch),
-        "a run never displaces a launch"
-    );
-    store
-        .finish_run(during, crate::store::RunOutcome::ended(Some(0), false))
-        .unwrap();
-    assert_eq!(effect(&store, id).0, Some(Effect::Launch));
+    let run = run_on(&store, id);
 
     store
-        .apply(Decision::new(id).effect(EffectChange::End))
-        .unwrap();
-    let before = run_on(&store, id);
-    assert_eq!(effect(&store, id).0, Some(Effect::Run { run: before }));
-    store.apply(launch()).unwrap();
-    store
-        .finish_run(before, crate::store::RunOutcome::ended(Some(0), false))
+        .apply(Decision::new(id).effect(EffectChange::Next(Effect::Launch)))
         .unwrap();
     assert_eq!(
         effect(&store, id).0,
-        Some(Effect::Launch),
-        "the run's end leaves the launch"
+        Some(Effect::Run { run }),
+        "never replaced"
     );
+    store
+        .apply(Decision::new(id).effect(EffectChange::Finish(Effect::Launch)))
+        .unwrap();
+    assert_eq!(
+        effect(&store, id).0,
+        Some(Effect::Run { run }),
+        "the launch's end leaves it"
+    );
+}
+
+#[test]
+fn a_run_begun_over_a_setup_or_launch_leaves_that_effect_and_its_end_too() {
+    for on in [Effect::Setup, Effect::Launch] {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _clock) = open(dir.path());
+        let id = ready_box(&store);
+        store
+            .apply(Decision::new(id).effect(EffectChange::Next(on)))
+            .unwrap();
+
+        let run = run_on(&store, id);
+        assert_eq!(effect(&store, id).0, Some(on));
+        store
+            .finish_run(run, crate::store::RunOutcome::ended(Some(0), false))
+            .unwrap();
+        assert_eq!(effect(&store, id).0, Some(on));
+        store
+            .apply(Decision::new(id).effect(EffectChange::Finish(on)))
+            .unwrap();
+        assert_eq!(effect(&store, id).0, None);
+    }
+}
+
+#[test]
+fn a_close_or_a_rejection_ends_the_effect_in_flight() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    store
+        .apply(Decision::new(id).effect(EffectChange::Next(Effect::Setup)))
+        .unwrap();
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
+                .session(SessionInput::End),
+        )
+        .unwrap();
+    assert_eq!(effect(&store, id), (None, 0));
+
+    let other = super::new_box(&store, "r");
+    store
+        .apply(Decision::new(other).effect(EffectChange::Next(Effect::Acquire)))
+        .unwrap();
+    step(
+        &store,
+        other,
+        BoxLifecycleInput::Rejected {
+            reason: "no".to_owned(),
+        },
+    );
+    assert_eq!(effect(&store, other), (None, 0));
 }
 
 impl Store {

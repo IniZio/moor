@@ -1,6 +1,6 @@
 //! Fill the effect in flight and the wanted close of each open Box from the intent the binary
-//! before this one wrote, as the first binary to read them starts. A closed or rejected Box has
-//! nothing in flight, so an intent left on one is dropped.
+//! before this one wrote, as the first binary to read them starts, then clear every intent. A
+//! closed or rejected Box has nothing in flight, so an intent left on one is dropped.
 
 use moor_migrate::Script;
 
@@ -52,4 +52,9 @@ pub(super) fn write(s: &mut Script) {
         "UPDATE \"box_state\" SET \"wanted\" = 'close', \"wanted_force\" = 1, \
          \"wanted_at\" = \"intent_at\" WHERE {open} AND \"intent_kind\" = 'closing'"
     ));
+    // A binary that still reads intents, rolled back to, must find none left from before.
+    s.raw(
+        "UPDATE \"box_state\" SET \"intent_kind\" = NULL, \"intent_pid\" = NULL, \
+         \"intent_run\" = NULL, \"intent_at\" = NULL WHERE \"intent_kind\" IS NOT NULL",
+    );
 }

@@ -19,10 +19,15 @@ use crate::testing::driver::FakeDriver;
 /// A Ready Box whose setup a start is running: the setup effect is in flight and the start holds
 /// the Box's turn until the returned hold drops, with `cancel` as its stop flag.
 fn in_setup(cancel: &Cancel) -> (Fx, Held) {
+    in_effect(cancel, Effect::Setup)
+}
+
+/// A Ready Box with `effect` in flight for a start that holds its turn, as [`in_setup`].
+fn in_effect(cancel: &Cancel, effect: Effect) -> (Fx, Held) {
     let f = fx_with(FakeDriver::new());
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).effect(EffectChange::Next(Effect::Setup)))
+        .apply(Decision::new(f.id).effect(EffectChange::Next(effect)))
         .unwrap();
     let held =
         f.cx.owners_arc()
@@ -59,8 +64,16 @@ fn a_plain_close_during_setup_is_refused_and_names_force() {
 
 #[test]
 fn a_forced_close_whose_start_does_not_stop_leaves_the_box_alone() {
+    for effect in [Effect::Setup, Effect::Acquire] {
+        forced_close_refused(effect);
+    }
+}
+
+/// A forced close of a start with `effect` in flight that does not stop is refused, and leaves
+/// the Box as it was, wanting nothing.
+fn forced_close_refused(effect: Effect) {
     let cancel = Cancel::default();
-    let (f, _held) = in_setup(&cancel);
+    let (f, _held) = in_effect(&cancel, effect);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let (dir, driver, proc, at) = (
         f.dir.path().to_owned(),
@@ -90,4 +103,6 @@ fn a_forced_close_whose_start_does_not_stop_leaves_the_box_alone() {
     assert!(cancel.is_cancelled());
     assert_eq!(lifecycle(&f), BoxLifecycle::Ready);
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release ")));
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
+    assert_eq!((row.wanted, row.effect), (None, Some(effect)));
 }

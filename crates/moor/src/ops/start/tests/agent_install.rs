@@ -486,6 +486,19 @@ fn a_launch_cut_with_its_events_deleted_still_resumes() {
 }
 
 #[test]
+fn a_box_with_no_launch_in_flight_is_never_launched_again_by_a_resume() {
+    use moor_core::domain::decision::{Decision, EffectChange};
+    let (w, engine) = launch_cut(&prompt_req());
+    engine.set_probes("moor-1", agent::gone());
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(BoxId::new(1)).effect(EffectChange::End))
+        .unwrap();
+    crate::ops::common::provision::resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    assert_eq!(engine.launches().len(), 1, "no second agent");
+}
+
+#[test]
 fn a_box_that_cannot_say_whether_its_agent_runs_launches_nothing() {
     let (w, engine) = launch_cut(&prompt_req());
     engine.set_probes("moor-1", Probe::TimedOut);
