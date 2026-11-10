@@ -194,6 +194,7 @@ fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Fl
             forward(shared, client, up, head, &Payload::Raw(&body), Relay::Plain)
         }
         Gate::Forward(body, linked) => {
+            let _turn = shared.checking.take();
             let asked = unencoded(head);
             let relay = Relay::Checked(&linked);
             forward(shared, client, up, &asked, &Payload::Raw(&body), relay)
@@ -371,7 +372,12 @@ fn relay(
     };
     if let Relay::Checked(linked) = how {
         match checked(&resp, &framing, conn, linked, &shared.repos) {
-            Ok(whole) if client.get_mut().write_all(&whole).is_ok() => {}
+            Ok((head, body))
+                if client
+                    .get_mut()
+                    .write_all(&head)
+                    .and_then(|()| client.get_mut().write_all(&body))
+                    .is_ok() => {}
             Ok(_) => return Flow::Close,
             Err(msg) => return bad(client, 502, &msg),
         }
