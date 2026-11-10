@@ -1,7 +1,8 @@
 //! Spots a credential rule's account being rate limited or rejected, and recovering.
 //!
-//! The rule name and the status are read, and for a 401 or 403 from the GitHub
-//! API the repo the path names. Each status is reported once per rule until a
+//! The rule name and the status are read, and for a 403 from GitHub the repo
+//! the path names: a 403 on a repo outside the Box's says nothing about the
+//! credential, while a 401 always does. Each status is reported once per rule until a
 //! 2xx on a request that carried the rule's credential shows the upstream
 //! answering again.
 
@@ -10,12 +11,11 @@ use std::mem;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::domain::event::Event;
+use moor_core::seam::forge::ForgeRepo;
 use nono::undo::NetworkAuditEvent;
 
-use moor_core::seam::forge::ForgeRepo;
-
 use super::{bare_host, rule, EgressSink};
-use crate::proxy::nono::GITHUB_API_HOST;
+use crate::proxy::nono::{GITHUB_API_HOST, GITHUB_HOST};
 
 /// Statuses already reported for each rule since its last 2xx.
 #[derive(Default)]
@@ -25,8 +25,7 @@ pub(crate) struct Limits {
     /// 401s and 403s that say nothing about the credential nono injected, and
     /// not yet audited.
     excused: Mutex<Notes>,
-    /// The Box's repos; a 401 or 403 from another repo says nothing about the
-    /// credential.
+    /// The Box's repos.
     repos: Vec<ForgeRepo>,
 }
 
@@ -63,23 +62,34 @@ fn take_one(noted: &mut Noted, key: &(String, u16)) -> bool {
 }
 
 impl Limits {
-    /// Adds `repos` to the Box's repos.
-    pub(super) fn add_repos(&mut self, repos: impl IntoIterator<Item = ForgeRepo>) {
-        self.repos.extend(repos);
+    /// Nothing open or excused yet.
+    pub(super) fn new(repos: Vec<ForgeRepo>) -> Self {
+        Self {
+            repos,
+            ..Self::default()
+        }
     }
 
-    /// Whether `event` is a GitHub API request for a repo outside the Box's repos.
+    /// Whether `event` names a GitHub repo, by API or git path, that `repos` lacks.
     fn outside_repos(&self, event: &NetworkAuditEvent) -> bool {
-        if !bare_host(&event.target).eq_ignore_ascii_case(GITHUB_API_HOST) {
+        let host = bare_host(&event.target);
+        let api = host.eq_ignore_ascii_case(GITHUB_API_HOST);
+        if !api && !host.eq_ignore_ascii_case(GITHUB_HOST) {
             return false;
         }
         let path = event.path.as_deref().unwrap_or_default();
         let path = path.split(['?', '#']).next().unwrap_or_default();
         let mut segments = path.split('/').filter(|s| !s.is_empty());
-        let (Some("repos"), Some(owner), Some(name)) =
-            (segments.next(), segments.next(), segments.next())
-        else {
+        if api && segments.next() != Some("repos") {
             return false;
+        }
+        let (Some(owner), Some(name)) = (segments.next(), segments.next()) else {
+            return false;
+        };
+        let name = match name.rsplit_once('.') {
+            _ if api => name,
+            Some((bare, ext)) if ext.eq_ignore_ascii_case("git") => bare,
+            _ => return false,
         };
         !self
             .repos
@@ -124,7 +134,9 @@ impl Limits {
         let counts = match status {
             429 => true,
             401 | 403 => {
-                credentialed && !self.take_excused(event, status) && !self.outside_repos(event)
+                credentialed
+                    && !self.take_excused(event, status)
+                    && !(status == 403 && self.outside_repos(event))
             }
             200..=299 => credentialed,
             _ => false,

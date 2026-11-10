@@ -8,6 +8,7 @@ use std::sync::Arc;
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::clock::Clock;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, Secret};
 
@@ -57,11 +58,16 @@ pub(crate) struct Engine {
 /// Loads the Box CA, opens the log and starts the filter and the proxy.
 pub(crate) fn engine(parts: &Parts<'_>, box_id: BoxId, spec: &ProxySpec) -> Result<Engine, String> {
     let ca = box_ca(parts, box_id)?;
-    let withheld =
-        Withheld::new(&spec.rules, spec.box_repo.clone()).with_other_repos(&spec.other_repos);
+    let repos: Vec<ForgeRepo> = spec
+        .box_repo
+        .iter()
+        .chain(&spec.other_repos)
+        .cloned()
+        .collect();
+    let withheld = Withheld::new(&spec.rules, spec.box_repo.clone(), repos.clone());
     let capture = Arc::new(MoorCapture::new(sources_for(&spec.rules, parts.secrets)));
     let internal = internal_token()?;
-    let graphql = start_filter(parts, spec, &ca)?;
+    let graphql = start_filter(parts, spec, &repos, &ca)?;
     let ca_pem = ca::cert_path(parts.state_dir, box_id);
     let cfg = build_config(&NonoSpec {
         rules: &spec.rules,
@@ -193,6 +199,7 @@ pub(crate) fn github_placeholder(rules: &[ResolvedRule]) -> Option<String> {
 fn start_filter(
     parts: &Parts<'_>,
     spec: &ProxySpec,
+    repos: &[ForgeRepo],
     ca: &ca::BoxCa,
 ) -> Result<Option<GraphqlFilter>, String> {
     let github = spec.rules.iter().find(|r| lists_host(r, GITHUB_API_HOST));
@@ -205,10 +212,8 @@ fn start_filter(
     let ephemeral = ca.ephemeral().map_err(|err| fail(&err))?;
     GraphqlFilter::start(FilterSpec {
         ca: ephemeral,
-        repos: spec
-            .box_repo
+        repos: repos
             .iter()
-            .chain(&spec.other_repos)
             .map(|r| RepoRef::new(&r.owner, &r.name))
             .collect(),
         host: GITHUB_API_HOST.to_owned(),

@@ -79,7 +79,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     }
     .map(|r| r.status().as_u16());
     assert_eq!(status.ok(), Some(200), "{method} {path}");
-    let (withheld, sink) = (Withheld::new(&rules, None), Recorder::default());
+    let (withheld, sink) = (Withheld::new(&rules, None, Vec::new()), Recorder::default());
     for _ in 0..100 {
         audit::apply(&proxy.drain_audit(), &withheld, &sink);
         if sink
