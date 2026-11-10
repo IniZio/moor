@@ -187,6 +187,7 @@ success, else `{kind, message, hints, context}`.
 | `--labels a,b` | none | Labels a Box can ask for. |
 | `--runtime PROVIDER` | crabbox's provider | Offer Boxes through this crabbox provider. |
 | `--max-boxes N` | 4 | The most Boxes held at once. |
+| `--reserve-mib MIB` | 4096 plus a tenth of the host's memory | Memory kept for the host. Sizes the Boxes slice. |
 | `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |
 | `--crabbox PATH` | `crabbox` | The crabbox program. |
 

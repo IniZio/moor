@@ -32,8 +32,11 @@ more Box when all of these hold:
 - PSI `some avg10` is under 10, or the host has no PSI.
 
 The reserve is 4096 MiB plus a tenth of the host's memory, and
-`moor-machine-agent run --reserve-mib` changes it. A node whose agent reports
-no memory admits by Box count alone. A shared node always does.
+`--reserve-mib` on `moor-machine-agent up` changes it. The agent applies the
+reserve to its own Boxes slice and reports it with every memory report. The
+controller admits against the reported value. It uses the 4096 MiB plus a tenth
+only for an agent that reports none. A node whose agent reports no memory
+admits by Box count alone. A shared node always does.
 
 ## Waiting and making room
 
