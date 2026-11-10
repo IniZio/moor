@@ -93,7 +93,6 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
             exit: code,
             ..LaunchEnd::default()
         };
-        // A launch another op replaced while the pane was polled failed no launch now.
         if unless_stale(cx, store.end_launch(id, session, &end))?.is_none() {
             return Ok(());
         }
