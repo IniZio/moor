@@ -193,4 +193,5 @@ fn a_client_key_that_does_not_fit_its_certificate_is_refused_before_any_dial() {
     assert!(why.contains("does not fit"), "{why}");
 }
 
+#[cfg(target_os = "linux")]
 mod bridge;
