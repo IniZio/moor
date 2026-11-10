@@ -12,6 +12,7 @@ pub(crate) mod controller;
 mod real;
 pub(crate) mod slack_fake;
 
+use std::fmt::Write as _;
 use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
@@ -182,7 +183,11 @@ impl Rig {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        panic!("no post reads {text:?}: {:?}", self.slack.posts());
+        panic!(
+            "no post reads {text:?}: {:?}\n{}",
+            self.slack.posts(),
+            self.diagnostics()
+        );
     }
 
     /// Polls `slack.db` until `n` coordinator turns have their line posted; fails after ten
@@ -474,6 +479,23 @@ impl Rig {
             std::thread::sleep(Duration::from_millis(20));
         }
         panic!("stderr never showed {text:?}: {}", self.stderr());
+    }
+
+    /// The daemon's stderr and each fake `claude` run's tool server output, for a failed wait.
+    fn diagnostics(&self) -> String {
+        let mut out = format!("daemon stderr:\n{}", self.stderr());
+        let bin = self.path("claude-bin");
+        for n in 0.. {
+            let run = bin.join(format!("run-{n}"));
+            if !run.is_dir() {
+                break;
+            }
+            for file in ["mcp", "mcp-err"] {
+                let text = std::fs::read_to_string(run.join(file)).unwrap_or_default();
+                let _ = write!(out, "\nrun-{n}/{file}:\n{text}");
+            }
+        }
+        out
     }
 
     /// Everything the daemon wrote to stderr so far.
