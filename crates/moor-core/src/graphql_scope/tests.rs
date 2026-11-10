@@ -17,7 +17,7 @@ fn repo() -> RepoRef {
     RepoRef::new("IniZio", "moor")
 }
 
-fn body(query: &str, vars: &Value) -> Vec<u8> {
+pub(super) fn body(query: &str, vars: &Value) -> Vec<u8> {
     serde_json::to_vec(&json!({ "query": query, "variables": vars })).unwrap()
 }
 

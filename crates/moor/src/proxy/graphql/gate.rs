@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 
-use moor_core::graphql_scope::{judge, NodeId, RepoRef, Verdict};
+use moor_core::graphql_scope::{judge_linked, Linked, NodeId, RepoRef, Verdict};
 
 use super::http::{
     read_body, read_response_head, request_framing, response_framing, Head, HttpError,
@@ -17,8 +17,9 @@ const MAX_LOOKUP: usize = 1024 * 1024;
 
 /// What to do with a GraphQL request.
 pub(super) enum Gate {
-    /// Forward the request head and these exact body bytes.
-    Forward(Vec<u8>),
+    /// Forward the request head and these exact body bytes, then blank the linked issues
+    /// in the response that are outside the Box repos.
+    Forward(Vec<u8>, Linked),
     /// Forward the request with the placeholder in place of its credential,
     /// with these exact body bytes. The request is outside the Box repos or
     /// could not be judged, for the reason given.
@@ -48,11 +49,11 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         }
         Err(_) => return Gate::Abort,
     };
-    let in_scope = |repo: &RepoRef| match judge(&body.decoded, repo) {
-        Verdict::Allow => Ok(()),
-        Verdict::Deny(reason) => Err(reason.redacted()),
-        Verdict::NeedsNodeCheck(ids) => match nodes_listed(shared, head, &ids) {
-            Some(true) => Ok(()),
+    let in_scope = |repo: &RepoRef| match judge_linked(&body.decoded, repo) {
+        (Verdict::Allow, linked) => Ok(linked),
+        (Verdict::Deny(reason), _) => Err(reason.redacted()),
+        (Verdict::NeedsNodeCheck(ids), linked) => match nodes_listed(shared, head, &ids) {
+            Some(true) => Ok(linked),
             Some(false) => Err("a node id is outside the Box repos".to_owned()),
             None => Err("node id lookup failed".to_owned()),
         },
@@ -60,7 +61,7 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
     let mut why = None;
     for repo in &shared.repos {
         match in_scope(repo) {
-            Ok(()) => return Gate::Forward(body.raw),
+            Ok(linked) => return Gate::Forward(body.raw, linked),
             Err(reason) => {
                 why.get_or_insert(reason);
             }

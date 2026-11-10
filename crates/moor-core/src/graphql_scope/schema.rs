@@ -45,6 +45,14 @@ pub(super) const PAGE_INFO: &[&str] =
 
 /// Context of the Box repo and of objects found by ID.
 pub(super) const REPO: &str = "repo";
+
+/// Context of an issue linked to a Box repo issue, which may be in any repo.
+pub(super) const LINKED: &str = "linkedissue";
+
+/// Contexts whose fields may not be aliased, so the linked-issue response check finds
+/// each field under its own name.
+pub(super) const UNALIASED: &[&str] = &[LINKED, "reponame"];
+
 /// Context of a mutation payload.
 pub(super) const PAYLOAD: &str = "payload";
 /// All contexts.
