@@ -134,6 +134,10 @@ fn reload(store: &Store, (id, name): (BoxId, &str)) -> Result<BoxRow, CommandErr
 }
 
 /// What one try at the send came to.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one lives at a time, moved straight out of the match"
+)]
 enum Attempt {
     /// The agent took the steer.
     Sent(SteerValue),

@@ -24,28 +24,19 @@ pub(super) const fn box_facts(row: &BoxRow) -> RunBoxFacts {
 }
 
 /// Why no agent will run in `row`, naming the Box and its recorded failure: the launch failure,
-/// else the line of its latest `setup_failed` event, else the reason on its state.
-pub(super) fn broken_detail(store: &Store, row: &BoxRow) -> Result<String, StoreError> {
-    let cause = match store.last_event_of(row.id, "setup_failed")? {
-        Some(e) => e
-            .payload
-            .get("line")
-            .and_then(|c| c.as_str())
-            .map(str::to_owned),
-        None => None,
-    };
+/// else the reason on its state, which a failed setup sets to the line that failed.
+pub(super) fn broken_detail(row: &BoxRow) -> String {
     let why = row
         .launch_failure
         .as_ref()
         .map(LaunchFailure::text)
-        .or(cause)
         .or_else(|| row.state_reason.clone())
         .unwrap_or_else(|| "no reason recorded".to_owned());
-    Ok(format!(
+    format!(
         "Box {} is {} and no agent can run until it is retried: {why}",
         row.name.as_str(),
         row.lifecycle.as_str()
-    ))
+    )
 }
 
 /// Settles each started run of `w` whose Box is over: finished, or refused when no agent can
@@ -64,7 +55,7 @@ pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), St
             }
             RunVerdict::Broken => {
                 if let Some(row) = &row {
-                    store.refuse_run(key, (&broken_detail(store, row)?, false))?;
+                    store.refuse_run(key, (&broken_detail(row), false))?;
                 }
             }
         }

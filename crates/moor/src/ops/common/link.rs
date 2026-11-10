@@ -5,7 +5,6 @@ use std::time::Duration;
 use moor_core::activity::{Life, Probe, Term};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::proc::Deadline;
-use moor_core::BoxId;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -18,8 +17,6 @@ const TRIES: u32 = 4;
 const TRY_DEADLINE: Duration = Duration::from_secs(20);
 /// How long a Box may stay unreachable, over later tries, before its agent counts as ended.
 const UNREACHABLE_FOR: Duration = Duration::from_secs(300);
-/// Recent events searched for when the Box first went unreachable.
-const RECENT_EVENTS: usize = 200;
 
 /// What became of a session's agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +72,7 @@ pub(crate) fn recover(
             Probe::TimedOut => {
                 attempt += 1;
                 if attempt == TRIES {
-                    let since = unreachable_since(store, row.id, launch)?;
+                    let since = unreachable_since(store, launch)?;
                     let event = ExtraEvent::AgentUnreachable {
                         attempts: TRIES,
                         error: "the agent could not be read".to_owned(),
@@ -96,18 +93,9 @@ pub(crate) fn recover(
 
 /// When, in ms, the Box of `launch` first failed to answer since the launch began or its link
 /// was last restored; none when it has answered every time.
-fn unreachable_since(
-    store: &Store,
-    id: BoxId,
-    launch: &Launch,
-) -> Result<Option<i64>, CommandError> {
-    let started = launch.started_at.as_millis();
-    Ok(store
-        .events(id, RECENT_EVENTS)?
-        .iter()
-        .rev()
-        .take_while(|e| e.kind != "agent_link_restored" && e.ts.as_millis() >= started)
-        .filter(|e| e.kind == "agent_unreachable")
-        .last()
-        .map(|e| e.ts.as_millis()))
+fn unreachable_since(store: &Store, launch: &Launch) -> Result<Option<i64>, CommandError> {
+    let read = store.launch(launch.id)?;
+    Ok(read
+        .and_then(|l| l.unreachable_since)
+        .map(moor_core::seam::clock::Ts::as_millis))
 }
