@@ -229,3 +229,31 @@ fn other_text_to_a_question_is_refused_even_behind_queued_rows() {
         ["one"]
     );
 }
+
+#[test]
+fn a_pass_send_that_failed_stays_in_doubt_and_a_new_launch_names_it() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::Failed {
+        step: "type",
+        message: "pane busy".into(),
+    }));
+    let f = fx_with(engine, true);
+    queue(&f, "deploy");
+    reports_idle(&f, "agent-1");
+    pass(&f);
+    let store = f.cx.store().unwrap();
+    let rows = store.unsent(f.id).unwrap();
+    assert!(
+        matches!(
+            rows.first().map(|r| r.delivery),
+            Some(Row::InDoubt { attempts: 1, .. })
+        ),
+        "{rows:?}"
+    );
+    let old = store.live_launch(f.id).unwrap().unwrap();
+    store.end_launch_with(old.id, None, None).unwrap();
+    store.begin_launch(f.id, "agent-2").unwrap();
+    reports_idle(&f, "agent-2");
+    pass(&f);
+    assert_eq!(texts(&f), ["deploy".to_owned(), cut_note("deploy")]);
+    assert!(store.newest_event_of(f.id, "steer_cut").unwrap().is_some());
+}

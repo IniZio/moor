@@ -233,18 +233,6 @@ impl Delivery {
         }
     }
 
-    /// The agent the send began to was gone: the row waits for another launch, and the send
-    /// still counts, so no row is ever sent more than [`MAX_SENDS`] times.
-    ///
-    /// # Errors
-    /// [`Illegal`] unless the row is in doubt.
-    pub fn rollback(self) -> Result<Self, Illegal> {
-        match self {
-            Self::InDoubt { attempts, .. } => Ok(Self::Queued { attempts }),
-            Self::Queued { .. } | Self::Sent { .. } => Err(self.illegal("rollback")),
-        }
-    }
-
     /// The agent's terminal was gone or had ended before any key was typed: undo the mark, so
     /// the refused send counts against no limit.
     ///
