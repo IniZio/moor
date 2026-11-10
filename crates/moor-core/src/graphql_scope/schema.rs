@@ -16,6 +16,7 @@ pub(super) enum Next {
 
 use Next::{Conn as N, Ctx as C};
 
+mod issue;
 mod pr;
 
 /// One context: its scalar fields and its links.
@@ -35,7 +36,7 @@ pub(super) fn shape(name: &str) -> Option<&'static Shape> {
 
 /// Returns every context.
 pub(super) fn all() -> impl Iterator<Item = &'static Shape> {
-    SHAPES.iter().chain(pr::SHAPES)
+    SHAPES.iter().chain(pr::SHAPES).chain(issue::SHAPES)
 }
 
 /// Fields admitted inside a connection's `pageInfo`.
@@ -107,6 +108,8 @@ pub(super) const SHAPES: &[Shape] = &[
             ("issueTemplates", C("template")),
             ("mergeQueue", C("mqentry")),
             ("issues", N("listissue")),
+            ("issue", C("boxissue")),
+            ("issueOrPullRequest", C("boxissue")),
         ],
     },
     Shape {
