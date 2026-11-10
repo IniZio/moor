@@ -29,7 +29,7 @@ pub(crate) trait EgressSink {
     /// Records that a client hung up on an intercepted handshake to `host` without an alert.
     fn aborted(&self, host: &str, rule: Option<&str>);
     /// Records that a request to `host`, whose handshake was aborted earlier, was allowed.
-    fn recovered(&self, _host: &str, _rule: Option<&str>) {}
+    fn recovered(&self, host: &str, rule: Option<&str>);
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without

@@ -236,3 +236,43 @@ fn an_allowed_request_after_an_aborted_handshake_records_its_recovery_once() {
         "{rows:?}"
     );
 }
+
+#[test]
+fn a_recovery_matches_its_abort_whatever_the_case_or_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
+    let sink = BoxSink {
+        log: &log,
+        ledger: &ledger,
+    };
+    let withheld = Withheld::default();
+    let aborted = event(
+        "deny",
+        &json!({
+            "denial_category": "intercept_handshake_failed",
+            "route_id": "claude__0",
+            "target": "X.test:443",
+            "reason": "tls handshake failed: tls handshake eof",
+        }),
+    );
+    let allowed = event(
+        "allow",
+        &json!({"route_id": "claude__0", "target": "x.test", "method": "GET", "status": 200}),
+    );
+    apply(&[aborted], &withheld, &sink);
+    apply(&[allowed], &withheld, &sink);
+
+    let recovered: Vec<_> = store
+        .events(box_id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.kind == "egress_recovered")
+        .map(|r| r.payload)
+        .collect();
+    assert_eq!(
+        recovered,
+        [json!({"host": "x.test", "rule": "claude"})],
+        "{recovered:?}"
+    );
+}
