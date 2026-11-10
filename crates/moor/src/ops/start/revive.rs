@@ -194,6 +194,16 @@ pub(crate) fn launch_after_retry(
     store: &Store,
     id: BoxId,
 ) -> Result<AgentLaunchView, CommandError> {
+    let out = relaunch_after_retry(cx, store, id);
+    launch::launch_over(store, id, out)
+}
+
+/// [`launch_after_retry`], leaving any launching intent in place.
+fn relaunch_after_retry(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+) -> Result<AgentLaunchView, CommandError> {
     reopen::ended_session(store, id, None)?;
     let row = reread(store, id)?;
     let req = StartReq {

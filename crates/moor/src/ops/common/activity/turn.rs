@@ -1,9 +1,9 @@
 //! The `turn_done` event: the agent finished the turn a sent inbox row started.
 
-use moor_core::activity::{stalled_for, Activity, AgentState, Source, Status};
+use moor_core::activity::{stalled_for, Activity, AgentState, Source, Status, STARTUP_GRACE};
 use moor_core::decide::turn::{turn_done, SteerMark, TermTurn, TurnFacts, TurnSignal};
 use moor_core::domain::event::TurnOutcome;
-use moor_core::domain::inbox::Delivery;
+use moor_core::domain::inbox::{Delivery, SendMark};
 use moor_core::seam::clock::Ts;
 
 use super::{PaneLiveness, Reading};
@@ -81,7 +81,24 @@ fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
     };
     turn_done(&facts)
         .map(|(_, outcome)| outcome)
+        .or_else(|| never_taken(reading, mark, Ts::from_millis(at), now))
         .or_else(|| never_began(reading, Ts::from_millis(at), now))
+}
+
+/// Ends a first prompt the agent never took up: sent before any turn ended, with the agent still
+/// idle at turn 0 once [`STARTUP_GRACE`] has passed since `sent`, as its activity then reads.
+fn never_taken(reading: &Reading, mark: SendMark, sent: Ts, now: Ts) -> Option<TurnOutcome> {
+    let first = mark.turn_before == Some(0) && mark.status_before.is_none();
+    let idle = matches!(
+        reading.activity,
+        Some(Activity {
+            state: AgentState::Idle,
+            source: Source::Status,
+        })
+    );
+    let fresh = reading.term.as_ref().is_some_and(|t| t.turn == 0);
+    let past = now.as_millis() >= sent.saturating_add(STARTUP_GRACE).as_millis();
+    (first && idle && fresh && past).then_some(TurnOutcome::Idle)
 }
 
 /// Ends a row whose turn never showed: its text never reached the agent as a prompt. An agent
