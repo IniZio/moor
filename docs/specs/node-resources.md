@@ -168,7 +168,7 @@ Each step ends in a check on a real node.
 | Step | Change | Check |
 | --- | --- | --- |
 | 0 | Record which cgroup VMs sit in today. Run busy Boxes until relief fires and read which line fired. | Recorded cgroup path and event |
-| 1 | Boxes slice with its ceiling, one reserve, node refusal. | Boxes asked for more than the host has. Host memory stays above the reserve. No process outside the slice ends. The agent keeps reporting. |
+| 1 | Boxes slice with its ceiling, one reserve, node refusal. | Boxes asked for more than the host has. Host memory stays above the reserve. No process outside the slice ends. The agent keeps reporting. Repeat with the controller disconnected and record whether any VM ends. |
 | 2 | Disk account in the report. Floor includes suspend room. Reclaim runs on every report. | Fill the disk with saved setups. Free disk returns above the floor with no start refused. |
 | 3 | Caches join the reclaim order. Delete the cache budget flag and the runner's own floor. | Fill the disk with caches. Oldest caches go, open Boxes keep theirs. |
 | 4 | Drop snapshots of long-asleep Boxes. | A Box asleep with a dropped snapshot wakes with its session restored. |
@@ -188,6 +188,7 @@ from [Box hands](box-hands.md).
 - **Kernel ceiling, not a node-side policy.** It holds without the controller
   and needs no code path of its own. The node's refusal is a check, with no
   rules of its own to drift.
+- **Only the controller suspends.** Choosing a Box to suspend needs to know which is idle, and only the controller knows. With the controller away, Boxes above the ceiling slow down. If step 1 shows a VM ending in that case, the controller will send its suspend order ahead and the node will use it while the controller is silent.
 - **No disk I/O limit.** A user service cannot set one without root.
 - **No Box classes.** Persistent and short-lived Boxes differ only in when a
   person closes them.
