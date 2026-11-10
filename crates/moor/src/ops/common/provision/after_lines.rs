@@ -5,7 +5,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::layers::SLOW_LINE_MS;
 use moor_core::{BoxHandle, BoxId, Warning};
 
-use super::clone::SetupProxy;
+use super::clone::{Cloned, SetupProxy};
 use super::layers::{after_finishing, roll_forward, Layered};
 use super::outcome::dotfiles_warned;
 use super::SetupTarget;
@@ -23,7 +23,7 @@ pub(super) fn steps_after_lines(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-    (on_fork, target, at_base): (&SetupTarget<'_>, &SetupTarget<'_>, bool),
+    (on_fork, target, cloned): (&SetupTarget<'_>, &SetupTarget<'_>, &Cloned),
     (cfg, proxy): (&BoxSettings, &SetupProxy),
     run: &SetupRun,
 ) -> Result<(DotfilesRun, Result<(), String>), CommandError> {
@@ -31,9 +31,9 @@ pub(super) fn steps_after_lines(
         return Ok((DotfilesRun::Skipped, Ok(())));
     }
     let at = (target.handle, target.provider);
-    let rolling = on_fork.layered.filter(|l| at_base && l.may_roll());
+    let rolling = on_fork.layered.filter(|l| cloned.at_base && l.may_roll());
     let slow = run.ms().is_some_and(|ms| ms > SLOW_LINE_MS);
-    let due = slow || rolling.is_some_and(|l| l.forked_long_ago(store.now()));
+    let due = slow || rolling.is_some_and(|l| l.roll_due(store.now(), cloned.behind));
     let holds_steps = on_fork.layered.is_some_and(Layered::finished);
     if holds_steps && agent_install::present(cx, at, id, cfg, proxy) {
         refresh_login(cx, at.0);

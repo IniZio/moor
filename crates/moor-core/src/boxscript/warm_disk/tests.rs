@@ -1,6 +1,6 @@
 //! The script run under `sh` with real git, in a partial clone with build outputs left behind.
 
-use super::{head_at, parse, script, tree_at};
+use super::{behind, head_at, parse, script, tree_at};
 use crate::testgit::Origin;
 
 const LIMIT: usize = 3;
@@ -20,7 +20,7 @@ fn tree() -> (Origin, String) {
 
 /// The script's parsed output at the tree's HEAD, against `commit`.
 fn seen(o: &Origin, commit: &str) -> (Option<u64>, Vec<String>) {
-    let out = o.sh(&o.tree(), &script(commit, LIMIT), &[]);
+    let out = o.sh(&o.tree(), &script(commit, None, LIMIT), &[]);
     assert!(out.status.success(), "{out:?}");
     parse(&String::from_utf8(out.stdout).unwrap())
 }
@@ -35,6 +35,27 @@ fn it_counts_the_tracked_paths_changed_since_the_disk_s_commit() {
     o.git(&t, &["add", "."]);
     o.git(&t, &["commit", "-qm", "two"]);
     assert_eq!(seen(&o, &first).0, Some(2));
+}
+
+#[test]
+fn given_the_disk_s_own_commit_it_also_counts_the_paths_changed_since_that_one() {
+    let (o, first) = tree();
+    let t = o.tree();
+    std::fs::write(t.join("x.txt"), "x").unwrap();
+    o.git(&t, &["add", "."]);
+    o.git(&t, &["commit", "-qm", "one"]);
+    let own = o.git(&t, &["rev-parse", "HEAD"]);
+    std::fs::write(t.join("y.txt"), "y").unwrap();
+    std::fs::write(t.join("z.txt"), "z").unwrap();
+    o.git(&t, &["add", "."]);
+    o.git(&t, &["commit", "-qm", "two"]);
+    let out = o.sh(&t, &script(&first, Some(&own), LIMIT), &[]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!((parse(&text).0, behind(&text)), (Some(3), Some(2)));
+    assert_eq!(
+        behind(&String::from_utf8(o.sh(&t, &script(&first, None, LIMIT), &[]).stdout).unwrap()),
+        None
+    );
 }
 
 #[test]

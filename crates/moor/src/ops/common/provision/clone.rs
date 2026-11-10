@@ -50,6 +50,8 @@ pub(super) struct Cloned {
     pub(super) went_cold: bool,
     /// On a forked disk, how many tracked paths changed since its commit, and its ignored paths.
     pub(super) disk: (Option<u64>, Vec<String>),
+    /// On a rerun a save may roll forward, how many tracked paths changed since its disk's commit.
+    pub(super) behind: Option<u64>,
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -92,9 +94,9 @@ impl Plan {
 /// the Proxy env and sets the Box's git identity in the same exec.
 ///
 /// Returns the clone's milliseconds, none when the Box has no GitHub repo to clone, and the CPUs
-/// and memory the same exec read. github.com is
-/// reached only through the Proxy, which places the credential, so the clone never starts before
-/// the Proxy is ready. A failed clone aborts provisioning and stops a Proxy this call started.
+/// and memory the same exec read. github.com is reached only through the Proxy, which places the
+/// credential, so the clone never starts before the Proxy is ready. A failed clone aborts
+/// provisioning and stops a Proxy this call started.
 pub(super) fn clone_with_proxy(
     cx: &Cx,
     store: &Store,
@@ -125,9 +127,7 @@ pub(super) fn clone_with_proxy(
         })
         .transpose();
     let mut job = Job::new(id, target, plan.as_ref(), kept.restore_script());
-    job.disk = target
-        .layered
-        .and_then(|l| l.stale_from().or_else(|| l.forked_commit()));
+    job.disk = target.layered.and_then(Layered::probe);
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
@@ -197,8 +197,8 @@ struct Job<'a> {
     identity: Option<Identity>,
     /// What makes the Box's restored cache volumes safe, run before anything else.
     restore: Option<String>,
-    /// The commit a forked disk holds, which the tree is compared with after the clone.
-    disk: Option<&'a str>,
+    /// The commits the tree is compared with after the clone, as [`Layered::probe`] gives them.
+    disk: Option<(&'a str, Option<&'a str>)>,
 }
 
 impl<'a> Job<'a> {
@@ -260,8 +260,8 @@ fn clone(
         script.push_str(&plan.refresh_text());
         script.push_str(&clone_script(&plan.checkout()));
         // One past what is named, so the note can say there are more.
-        let probe = job.disk.map(|c| warm_disk::script(c, IGNORED_NAMED + 1));
-        script.push_str(&probe.unwrap_or_default());
+        let probe = |(c, r)| warm_disk::script(c, r, IGNORED_NAMED + 1);
+        script.push_str(&job.disk.map(probe).unwrap_or_default());
     }
     let script = resources::after(&script);
     let site = Site {
@@ -354,6 +354,7 @@ fn report(
         at_base: text.is_some_and(at_base),
         went_cold: text.is_some_and(went_cold),
         disk: text.map(warm_disk::parse).unwrap_or_default(),
+        behind: text.and_then(warm_disk::behind),
     }
 }
 

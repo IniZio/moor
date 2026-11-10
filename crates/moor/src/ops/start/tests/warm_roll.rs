@@ -100,6 +100,62 @@ fn a_quick_rerun_over_a_disk_under_a_day_old_saves_nothing() {
     assert_eq!(saved(&s), before);
 }
 
+/// Commits `n` new files under `dir` in the origin; the new commit.
+fn commit_paths(s: &Scratch, dir: &str, n: usize) -> String {
+    std::fs::create_dir_all(s.repo.join(dir)).unwrap();
+    for i in 0..n {
+        std::fs::write(s.repo.join(dir).join(format!("f{i}")), "x\n").unwrap();
+    }
+    git(&s.repo, &["add", "."]);
+    git(&s.repo, &["commit", "-qm", dir]);
+    s.head()
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_100_paths_behind_is_saved_though_only_2_h_old() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(2));
+    let second = commit_paths(&s, "many", 100);
+    s.start("b", QUICK);
+    assert!(saved(&s) > before, "the rerun is saved");
+    let (c, _) = s.start("c", QUICK);
+    assert!(rerun_from(&s, c).is_null(), "the disk is at its commit");
+    assert_eq!(git(&s.tree(c), &["rev-parse", "HEAD"]), second);
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_10_paths_behind_and_2_h_old_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(2));
+    commit_paths(&s, "few", 10);
+    s.start("b", QUICK);
+    assert_eq!(saved(&s), before);
+}
+
+#[test]
+fn after_a_save_the_next_rerun_counts_from_the_saved_commit_and_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    clock.sleep(hours(1));
+    let second = commit_paths(&s, "many", 100);
+    s.start("b", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(1));
+    commit_paths(&s, "few", 10);
+    let (c, _) = s.start("c", QUICK);
+    assert_eq!(rerun_from(&s, c), second.as_str());
+    assert_eq!(
+        events(&s.w, c, "warm_rerun")[0]["changed"],
+        110,
+        "the ignored files still date from the first commit"
+    );
+    assert_eq!(saved(&s), before, "10 paths from the saved commit");
+}
+
 #[test]
 fn a_quick_rerun_with_a_new_line_saves_its_key_so_later_boxes_stop_paying_for_it() {
     let more = "setup: ['echo quick', 'echo new']\n";

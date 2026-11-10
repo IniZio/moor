@@ -305,7 +305,7 @@ fn run_and_record(
         cx,
         store,
         id,
-        (on_fork, target, cloned.at_base),
+        (on_fork, target, &cloned),
         (cfg, &proxy),
         &run,
     )?;

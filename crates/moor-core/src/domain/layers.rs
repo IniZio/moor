@@ -20,6 +20,20 @@ pub const CHAIN_MAX_DEPTH: u32 = 8;
 /// A day keeps the rolls it causes under [`CHAIN_MAX_DEPTH`] for the whole of [`CHAIN_MAX_AGE_MS`].
 pub const ROLL_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
 
+/// How many tracked paths may change between a forked checkpoint's own commit and the Box's
+/// before any rerun over it is saved.
+///
+/// About a busy afternoon of merges: low enough that a day of pushes moves the base several times,
+/// high enough that a rerun a few commits on saves nothing.
+pub const ROLL_AFTER_PATHS: u64 = 50;
+
+/// Whether a rerun over a checkpoint saved `age_ms` ago, whose tree is `behind` changed paths past
+/// that checkpoint's commit, is saved: either reaching its threshold is enough.
+#[must_use]
+pub fn roll_due(age_ms: i64, behind: Option<u64>) -> bool {
+    age_ms >= ROLL_AFTER_MS || behind.is_some_and(|n| n >= ROLL_AFTER_PATHS)
+}
+
 /// A line that runs longer than this, in milliseconds, is checkpointed after it ends.
 pub const SLOW_LINE_MS: u64 = 20_000;
 

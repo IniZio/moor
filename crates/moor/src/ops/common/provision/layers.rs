@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::hands::HandsInc;
-use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey, ROLL_AFTER_MS};
+use moor_core::domain::layers::{chain, checkpoint_after, roll_due, LayerIdentity, LayerKey};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, ProviderId};
@@ -128,10 +128,18 @@ impl Layered {
         self.reruns() && self.roll.is_some()
     }
 
-    /// Whether the checkpoint this rerun forked was saved [`ROLL_AFTER_MS`] or more before `now`.
-    pub(super) fn forked_long_ago(&self, now: Ts) -> bool {
-        self.roll
-            .is_some_and(|r| now.as_millis() - r.saved_at.as_millis() >= ROLL_AFTER_MS)
+    /// Whether a save of this rerun is due at `now`, its tree `behind` changed paths past the
+    /// commit of the checkpoint it forked, by [`roll_due`].
+    pub(super) fn roll_due(&self, now: Ts, behind: Option<u64>) -> bool {
+        let age = self.roll.map(|r| now.as_millis() - r.saved_at.as_millis());
+        age.is_some_and(|a| roll_due(a, behind))
+    }
+
+    /// The commits the clone's probe counts changed paths from: the oldest one the disk's ignored
+    /// files may come from, and, on a rerun a save may roll forward, the commit the disk holds.
+    pub(super) fn probe(&self) -> Option<(&str, Option<&str>)> {
+        let rolls = self.forked_commit().filter(|_| self.may_roll());
+        Some((self.stale_from().or_else(|| self.forked_commit())?, rolls))
     }
 
     /// Whether the last line's layer is kept, for this Box's lines as they are now.
