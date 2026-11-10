@@ -82,6 +82,9 @@ critical ───────────────────────�
   host by itself. The adapter also shrinks guests as host pressure rises. Both
   only give memory back. Neither picks a Box, so neither is a decider.
   Suspension starts when that is not enough.
+- **Reserve** is 4 GiB plus a tenth of host memory, or the node's own setting.
+  A 31 GiB host gives Boxes 77% before they slow and 89% at the backstop.
+  A flat share would leave a small host too little and a large host too much.
 - **Reserve** has one source. The agent applies it to its own ceiling and
   reports it. The controller reads that value.
 
@@ -131,7 +134,7 @@ adapter puts those scopes in. The option becomes required on a node.
 
 - `MemoryHigh` is host memory less the reserve. Above it the kernel slows the
   Boxes and reclaims from them. The host and its other work stay responsive.
-- `MemoryMax` sits above that as a backstop. It is reached only if suspension
+- `MemoryMax` is host memory less half the reserve, as a backstop. It is reached only if suspension
   failed. The kernel then ends one VM. The agent sits outside the slice and
   is never the one ended.
 - `CPUWeight` on the slice is below the default. A busy Box cannot starve the
