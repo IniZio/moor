@@ -20,7 +20,7 @@ use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
-use crate::ops::common::stale::unless_stale;
+use crate::ops::common::stale::{end_read_launch, Ending};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
@@ -181,7 +181,7 @@ impl Gone {
             digest: saved.as_ref().map(|t| t.digest.as_str()),
             session: Some("exited"),
         };
-        Ok(unless_stale(cx, store.end_launch(id, launch.id, &end))?.is_some())
+        Ok(end_read_launch(cx, store, (id, launch.id), &end)? == Ending::Ended)
     }
 }
 

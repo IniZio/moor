@@ -86,7 +86,7 @@ pub(crate) fn revive_after_wake(
 }
 
 /// Starts the agent again, resuming its stored agent session, for a steer that found launch
-/// `gone` exited; none when another op replaced that launch since.
+/// `gone` exited; none when another op began a newer launch since.
 ///
 /// The caller holds the Box's turn and saw the agent gone, so an unreadable pane counts as gone. A
 /// Box that is not Ready, or has nothing to resume, launches nothing.
@@ -103,10 +103,14 @@ pub(crate) fn revive_for_steer(
     if row.lifecycle != BoxLifecycle::Ready {
         return Ok(Some(AgentLaunchView::default()));
     }
-    let ended = gone.map(|s| {
-        let end = ended(cx, &row, s).unwrap_or(Ended::Gone);
-        (s.clone(), end)
-    });
+    // A launch that ended with no newer one launches anew; one a newer launch replaced is left.
+    let ended = match (gone, store.live_launch(id)?) {
+        (Some(s), Some(live)) if live.id == s.id => {
+            Some((s.clone(), ended(cx, &row, s).unwrap_or(Ended::Gone)))
+        }
+        (_, Some(_)) => return Ok(None),
+        (_, None) => None,
+    };
     revive(cx, store, &row, ended.as_ref(), "steer")
 }
 
