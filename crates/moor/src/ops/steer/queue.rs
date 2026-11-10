@@ -157,10 +157,9 @@ pub(crate) fn deliver(
                 store.refuse(id, item.id)?;
                 break;
             }
-            Err(_) => {
-                store.rollback(id, item.id)?;
-                break;
-            }
+            // The keys may have reached the agent, so the row stays in doubt: sent at most once
+            // more to this launch, or named to the next one.
+            Err(_) => break,
         }
     }
     Ok(sent)
