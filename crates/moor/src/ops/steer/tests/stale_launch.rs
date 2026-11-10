@@ -177,3 +177,31 @@ fn watch_records_no_launch_failure_for_a_launch_replaced_while_it_polled() {
         .is_none());
     assert!(store.live_launch(f.id).unwrap().is_some());
 }
+
+#[test]
+fn a_pass_whose_read_launch_ended_with_no_successor_and_cannot_relaunch_reports_its_steer() {
+    let f = fx();
+    f.engine.set_probes("agent-1", agent::exited(Some(1)));
+    queue(&f, "hi");
+    let store = f.cx.store().unwrap().clone();
+    let id = f.id;
+    f.engine.on_probe(move || {
+        let old = store.live_launch(id).unwrap().unwrap();
+        let end = LaunchEnd {
+            exit: Some(1),
+            session: Some("exited"),
+            ..LaunchEnd::default()
+        };
+        store.end_launch(id, old.id, &end).unwrap();
+    });
+
+    pass(&f);
+
+    let store = f.cx.store().unwrap();
+    assert!(
+        store.unsent(f.id).unwrap().is_empty(),
+        "the steer was reported, not kept"
+    );
+    let events = store.events(f.id, 100).unwrap();
+    assert!(events.iter().any(|e| e.kind == "steer_unconfirmed"));
+}
