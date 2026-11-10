@@ -12,7 +12,7 @@ pub use stall::StallEvent;
 pub use workflow::WorkflowEvent;
 
 /// The event kinds the event tests pin. Frozen.
-pub const ASSERTED_KINDS: [&str; 20] = [
+pub const ASSERTED_KINDS: &[&str] = &[
     "started",
     "rejected",
     "pending",
@@ -36,7 +36,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 93] = [
+pub const EVENT_KINDS: &[&str] = &[
     "caches_not_saved",
     "disk_lost",
     "wanted_dropped",

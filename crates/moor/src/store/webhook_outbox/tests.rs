@@ -101,9 +101,9 @@ fn insert(name: &str) -> Decision {
 fn an_event_queues_one_delivery_per_matching_webhook_of_the_box_owner() {
     let w = world();
     let (alice, bob) = (w.user("local:2000"), w.user("local:2001"));
-    let all = w.webhook(alice, &EVENT_KINDS);
+    let all = w.webhook(alice, EVENT_KINDS);
     let _other_kind = w.webhook(alice, &["relaunch_capped"]);
-    let _bobs = w.webhook(bob, &EVENT_KINDS);
+    let _bobs = w.webhook(bob, EVENT_KINDS);
     let events = w.new_box("a", alice);
     assert!(!events.is_empty());
     let want: Vec<(i64, i64)> = events.iter().map(|&e| (all, e)).collect();
@@ -114,7 +114,7 @@ fn an_event_queues_one_delivery_per_matching_webhook_of_the_box_owner() {
 fn a_webhook_waiting_for_setup_queues_nothing_until_it_is_active() {
     let w = world();
     let alice = w.user("local:2000");
-    let id = w.waiting_webhook(alice, &EVENT_KINDS);
+    let id = w.waiting_webhook(alice, EVENT_KINDS);
     assert!(!w.new_box("a", alice).is_empty());
     assert_eq!(w.store.webhook_deliveries().unwrap(), []);
     assert!(w
@@ -133,7 +133,7 @@ fn a_box_without_matching_webhooks_queues_nothing_and_a_failed_apply_leaves_noth
     w.webhook(alice, &["relaunch_capped"]);
     w.new_box("a", alice);
     assert_eq!(w.store.webhook_deliveries().unwrap(), vec![]);
-    w.webhook(alice, &EVENT_KINDS);
+    w.webhook(alice, EVENT_KINDS);
     let illegal = insert("b")
         .requester(alice)
         .hands_input(
@@ -157,7 +157,7 @@ fn a_box_without_matching_webhooks_queues_nothing_and_a_failed_apply_leaves_noth
 fn claims_hand_out_one_delivery_per_webhook_oldest_first_until_the_lease_ends() {
     let w = world();
     let (alice, bob) = (w.user("local:2000"), w.user("local:2001"));
-    let (a, b) = (w.webhook(alice, &EVENT_KINDS), w.webhook(bob, &EVENT_KINDS));
+    let (a, b) = (w.webhook(alice, EVENT_KINDS), w.webhook(bob, EVENT_KINDS));
     let (ea, eb) = (w.new_box("a", alice), w.new_box("b", bob));
     let lease = Duration::from_millis(5_000);
     let first = w.store.claim_webhook_deliveries(10, lease).unwrap();
@@ -194,7 +194,7 @@ fn claims_hand_out_one_delivery_per_webhook_oldest_first_until_the_lease_ends() 
 fn reports_record_health_and_end_the_delivery() {
     let w = world();
     let alice = w.user("local:2000");
-    w.webhook(alice, &EVENT_KINDS);
+    w.webhook(alice, EVENT_KINDS);
     w.new_box("a", alice);
     let lease = Duration::from_millis(1);
     let take = || {
@@ -230,10 +230,7 @@ fn reports_record_health_and_end_the_delivery() {
 fn removing_a_webhook_drops_its_pending_deliveries() {
     let w = world();
     let alice = w.user("local:2000");
-    let (gone, kept) = (
-        w.webhook(alice, &EVENT_KINDS),
-        w.webhook(alice, &EVENT_KINDS),
-    );
+    let (gone, kept) = (w.webhook(alice, EVENT_KINDS), w.webhook(alice, EVENT_KINDS));
     w.new_box("a", alice);
     assert!(w.store.delete_user_webhook(alice, gone).unwrap());
     let left = w.store.webhook_deliveries().unwrap();

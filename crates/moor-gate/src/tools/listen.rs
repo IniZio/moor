@@ -29,7 +29,7 @@ use crate::{rewrite, Person};
 pub(crate) const PREFIX: &str = "moor://box/";
 
 /// Kinds after which a Box's resource reads differently.
-const UPDATED: [&str; 20] = [
+const UPDATED: &[&str] = &[
     "idled",
     "busy",
     "needs_input",
@@ -53,7 +53,7 @@ const UPDATED: [&str; 20] = [
 ];
 
 /// Kinds after which the list of Boxes differs.
-const LISTED: [&str; 3] = ["started", "closed", "box_deleted"];
+const LISTED: &[&str] = &["started", "closed", "box_deleted"];
 
 /// The URI of Box `name`.
 pub(crate) fn uri(name: &str) -> String {

@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 /// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 15] = [
+const WORTH: &[&str] = &[
     "idled",
     "needs_input",
     "agent_stalled",
