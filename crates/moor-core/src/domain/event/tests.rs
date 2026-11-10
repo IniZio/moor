@@ -191,10 +191,10 @@ fn all_events() -> Vec<Event> {
             size: 12,
             sha256: s("ab"),
         },
-        Event::EgressAborted {
+        Event::EgressAborted(EgressHost {
             host: s("h"),
             rule: None,
-        },
+        }),
         Event::Timing(TimingEvent::Cloned { ms: 7 }),
         Event::AgentSaid { text: s("done") },
         Event::LaunchTimedOut { after_secs: 180 },
@@ -363,6 +363,10 @@ fn all_events() -> Vec<Event> {
             text: s("go"),
         },
         Event::WantedDropped,
+        Event::EgressRecovered(EgressHost {
+            host: s("h"),
+            rule: None,
+        }),
     ]
 }
 
@@ -476,6 +480,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Restore(RestoreEvent::SessionLost { .. }) => 89,
         Event::SteerUnconfirmed { .. } => 90,
         Event::WantedDropped => 91,
+        Event::EgressRecovered { .. } => 92,
     }
 }
 
@@ -483,7 +488,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 92);
+    assert_eq!(all.len(), 93);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

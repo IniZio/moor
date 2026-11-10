@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use moor_core::config::proxy::{request_shape, ResolvedRule};
-use moor_core::domain::event::Event;
+use moor_core::domain::event::{EgressHost, Event};
 use moor_core::seam::forge::ForgeRepo;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
@@ -28,6 +28,8 @@ pub(crate) trait EgressSink {
     fn refused(&self, refusal: &Refusal<'_>);
     /// Records that a client hung up on an intercepted handshake to `host` without an alert.
     fn aborted(&self, host: &str, rule: Option<&str>);
+    /// Records that a request to `host`, whose handshake was aborted earlier, was allowed.
+    fn recovered(&self, _host: &str, _rule: Option<&str>) {}
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
@@ -84,6 +86,8 @@ pub(crate) struct Withheld {
     seen: Mutex<Reported>,
     /// Rate limits and rejections reported for this Box.
     limits: Limits,
+    /// Lower-case bare hosts with an aborted handshake and no allowed request since.
+    aborted: Mutex<BTreeSet<String>>,
 }
 
 impl Withheld {
@@ -102,6 +106,7 @@ impl Withheld {
             repo,
             seen: Mutex::default(),
             limits: Limits::default(),
+            aborted: Mutex::default(),
         }
     }
 
@@ -136,6 +141,20 @@ impl Withheld {
     pub(crate) fn note(&self, host: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
         if let Some(rule) = self.hosts.get(&bare_host(host).to_ascii_lowercase()) {
             self.record(host, rule, request, sink);
+        }
+    }
+
+    /// Notes whether `host` has an aborted handshake; true when that changes.
+    fn mark_aborted(&self, host: &str, aborted: bool) -> bool {
+        let host = bare_host(host).to_ascii_lowercase();
+        let mut hosts = self
+            .aborted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if aborted {
+            hosts.insert(host)
+        } else {
+            hosts.remove(&host)
         }
     }
 
@@ -220,10 +239,18 @@ impl EgressSink for BoxSink<'_> {
     }
 
     fn aborted(&self, host: &str, rule: Option<&str>) {
-        let event = Event::EgressAborted {
+        let event = Event::EgressAborted(EgressHost {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
-        };
+        });
+        self.ledger.record_event(&event);
+    }
+
+    fn recovered(&self, host: &str, rule: Option<&str>) {
+        let event = Event::EgressRecovered(EgressHost {
+            host: host.to_owned(),
+            rule: rule.map(str::to_owned),
+        });
         self.ledger.record_event(&event);
     }
 
@@ -262,7 +289,8 @@ impl EgressSink for BoxSink<'_> {
 ///
 /// An allowed request becomes a log line. A denial caused by an unavailable credential
 /// becomes a credential failure, and an intercepted handshake the client hung up on without an
-/// alert becomes an aborted egress; any other denial becomes a refused egress.
+/// alert becomes an aborted egress, and the next allowed request to its host a recovered
+/// egress; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
 /// credential to a credential host is also reported through `withheld`. An
 /// excused answer noted before this drain is matched in it or the next one.
@@ -270,11 +298,13 @@ pub(crate) fn apply(events: &[NetworkAuditEvent], withheld: &Withheld, sink: &dy
     for event in events {
         match event.decision {
             NetworkAuditDecision::Allow => {
-                allow(event, sink);
+                if allow(event, sink) && withheld.mark_aborted(&event.target, false) {
+                    sink.recovered(&event.target, rule(event));
+                }
                 withheld.limits.observe(event, sink);
                 withheld.report(event, sink);
             }
-            NetworkAuditDecision::Deny => deny(event, sink),
+            NetworkAuditDecision::Deny => deny(event, withheld, sink),
             _ => {}
         }
     }
@@ -286,14 +316,14 @@ fn rule(event: &NetworkAuditEvent) -> Option<&str> {
     event.route_id.as_deref().and_then(rule_of_route)
 }
 
-/// Handles an allowed event.
-fn allow(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
+/// Handles an allowed event; true when it was a request rather than bookkeeping.
+fn allow(event: &NetworkAuditEvent, sink: &dyn EgressSink) -> bool {
     // Credential-capture bookkeeping and pre-request policy decisions carry no
     // response; the response event that follows is the request's log line.
     if event.credential_capture_action.is_some()
         || (event.status.is_none() && event.endpoint_policy_action.is_some())
     {
-        return;
+        return false;
     }
     let rule = rule(event);
     sink.allowed(
@@ -301,10 +331,11 @@ fn allow(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
         rule.unwrap_or(&event.target),
         event.status.unwrap_or(0),
     );
+    true
 }
 
-/// Handles a denied event.
-fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
+/// Handles a denied event, noting an aborted handshake's host in `withheld`.
+fn deny(event: &NetworkAuditEvent, withheld: &Withheld, sink: &dyn EgressSink) {
     // A failed capture is bookkeeping: nono then denies the request it served, and that
     // denial is the one record of the failure.
     if event.credential_capture_action.is_some() {
@@ -326,6 +357,7 @@ fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
     };
     if reason.as_deref() == Some(handshake::CLIENT_CLOSED) {
         sink.aborted(&event.target, rule(event));
+        withheld.mark_aborted(&event.target, true);
         return;
     }
     sink.refused(&Refusal {

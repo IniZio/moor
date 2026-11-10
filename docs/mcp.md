@@ -74,6 +74,7 @@ names the issuer and the scopes.
 busy and wrote nothing for ten minutes. The next sign of progress clears it.
 The `egress_aborted` detail asks whether the Box clock is behind, because a
 guest clock behind the host makes the Proxy's certificates not yet valid.
+It clears once the Proxy allows a request to that host again.
 
 ### `inspect_box`
 

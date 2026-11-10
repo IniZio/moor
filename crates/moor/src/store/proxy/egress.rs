@@ -12,7 +12,7 @@ use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{load_box, Store, StoreError};
 
 impl Store {
-    /// Append an `EgressRefused`, `EgressAborted`, `CredentialWithheld`, `ProxyCredentialFailed`,
+    /// Append an `EgressRefused`, `EgressAborted`, `EgressRecovered`, `CredentialWithheld`, `ProxyCredentialFailed`,
     /// `AgentRateLimited`, `ProxyCredentialRejected` or `ProxyCredentialRecovered` event for `box_id`.
     ///
     /// Any other event kind is rejected, and so is a box that does not exist.
@@ -25,6 +25,7 @@ impl Store {
             event,
             Event::EgressRefused { .. }
                 | Event::EgressAborted { .. }
+                | Event::EgressRecovered { .. }
                 | Event::CredentialWithheld { .. }
                 | Event::ProxyCredentialFailed { .. }
                 | Event::AgentRateLimited { .. }

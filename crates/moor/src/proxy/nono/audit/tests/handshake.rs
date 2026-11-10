@@ -184,3 +184,55 @@ fn a_connect_failure_records_a_fixed_word_not_nonos_text() {
         assert_eq!(reason(host), want, "{host}");
     }
 }
+
+#[test]
+fn an_allowed_request_after_an_aborted_handshake_records_its_recovery_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
+    let sink = BoxSink {
+        log: &log,
+        ledger: &ledger,
+    };
+    let withheld = Withheld::default();
+    let aborted = |host: &str| {
+        event(
+            "deny",
+            &json!({
+                "denial_category": "intercept_handshake_failed",
+                "route_id": "claude__0",
+                "target": host,
+                "reason": "tls handshake failed: tls handshake eof",
+            }),
+        )
+    };
+    let allowed = |host: &str| {
+        event(
+            "allow",
+            &json!({"route_id": "claude__0", "target": host, "method": "GET", "status": 200}),
+        )
+    };
+    apply(
+        &[allowed("x.test"), aborted("x.test"), aborted("y.test")],
+        &withheld,
+        &sink,
+    );
+    apply(&[allowed("x.test"), allowed("x.test")], &withheld, &sink);
+
+    let rows: Vec<_> = store
+        .events(box_id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.kind.starts_with("egress_"))
+        .map(|r| (r.kind, r.payload.get("host").cloned()))
+        .collect();
+    let recovered: Vec<_> = rows
+        .iter()
+        .filter(|(k, _)| k == "egress_recovered")
+        .collect();
+    assert_eq!(
+        recovered,
+        [&("egress_recovered".to_owned(), Some(json!("x.test")))],
+        "{rows:?}"
+    );
+}
