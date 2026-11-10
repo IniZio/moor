@@ -379,7 +379,6 @@ fn all_events() -> Vec<Event> {
                 dirty: 1,
             }),
             error: s("e"),
-            slept: true,
         }),
     ]
 }

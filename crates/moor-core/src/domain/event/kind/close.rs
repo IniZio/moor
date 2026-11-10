@@ -16,8 +16,6 @@ pub enum CloseEvent {
         reason: Option<CloseRefusal>,
         /// The failure, in moor's words.
         error: String,
-        /// True when the pass put the Box, which the close woke, back to sleep.
-        slept: bool,
     },
 }
 

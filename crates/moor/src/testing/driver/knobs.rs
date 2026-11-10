@@ -141,6 +141,11 @@ impl FakeDriver {
         self.st().fail_acquire = Some(e);
     }
 
+    /// Fails the next `sleep` once with `e`, on a driver already in use.
+    pub(crate) fn fail_next_sleep(&self, e: DriverError) {
+        self.st().fail_sleep = Some(e);
+    }
+
     /// Ends every `exec` whose argv mentions `needle` with `outcome`, on a driver already in use.
     pub(crate) fn ends_exec_when(&self, needle: &str, outcome: ExecOutcome) {
         self.st().exec_ends.push((needle.to_owned(), outcome));

@@ -93,10 +93,15 @@ pub(super) fn fx_repo(driver: FakeDriver, boxwork: Option<&str>, yaml: Option<&s
 /// Admits Box `t` of repo `o/n` holding `yaml` as its `.moor.yaml`, with a Ready machine
 /// acquired from `driver`.
 fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
+    admit_named(cx, driver, yaml, "t")
+}
+
+/// Like [`admit`], for a Box named `name`.
+fn admit_named(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>, name: &str) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(crate::testing::cx::new_box_of(
-            BoxName::parse_allow_bare("t").unwrap(),
+            BoxName::parse_allow_bare(name).unwrap(),
             crate::testing::cx::box_repo(yaml),
         ))
         .unwrap()
@@ -117,7 +122,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
             pool_machine: None,
             provider,
             box_id: id,
-            name: BoxName::parse_allow_bare("t").unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "n".to_owned(),
             cache: moor_core::cache::CachePlan::none(),

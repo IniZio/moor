@@ -120,6 +120,8 @@ pub(crate) enum BoxEvent {
     CloseRefused,
     /// moor gave up a close it was waiting to finish, so the Box stays open.
     CloseGivenUp,
+    /// moor put the Box back to sleep after giving up a close that woke it.
+    AsleepAgain,
     /// The Box's agent session ended without a clean exit.
     Stopped(Stop),
 }
@@ -179,6 +181,7 @@ impl BoxEvent {
             Self::Unsaved { .. } => "unsaved",
             Self::CloseRefused => "close_refused",
             Self::CloseGivenUp => "close_given_up",
+            Self::AsleepAgain => "asleep_again",
             Self::Stopped(_) => "stopped",
         }
     }
@@ -202,6 +205,7 @@ impl BoxEvent {
                  was told why. Call close_box with discard only after the person who asked for \
                  the Box confirms in the thread"
             }
+            Self::AsleepAgain => "is asleep again after moor gave up its close",
             Self::Started => "started",
             Self::NotStarted => "could not start",
             Self::Finished => "finished its turn",
@@ -266,7 +270,8 @@ pub(crate) fn closed(name: &BoxName) -> String {
 }
 
 /// The line the front posts when moor gives up a close it was waiting to finish, from the
-/// `close_refused` event's `payload`. It carries no text from a Box or the controller.
+/// `close_refused` event's `payload`. It carries no text from a Box or the controller. Whether
+/// the Box sleeps again is a line of its own, from the `asleep` event that follows.
 pub(crate) fn close_given_up(name: &BoxName, payload: &Value) -> String {
     let reason = payload.get("reason");
     let field = |key: &str| reason.and_then(|r| r.get(key));
@@ -287,9 +292,7 @@ pub(crate) fn close_given_up(name: &BoxName, payload: &Value) -> String {
             .to_owned(),
         _ => "its close could not be finished. Reply here and ask me to close it again.".to_owned(),
     };
-    let slept = payload.get("slept").and_then(Value::as_bool) == Some(true);
-    let asleep = if slept { " It is asleep again." } else { "" };
-    format!("Box `{}` is still open: {why}{asleep}", name.as_str())
+    format!("Box `{}` is still open: {why}", name.as_str())
 }
 
 /// The positive number a message consists of, ignoring user mentions.

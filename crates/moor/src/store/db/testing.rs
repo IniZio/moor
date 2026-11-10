@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use moor_core::name::BoxId;
 use moor_core::seam::clock::Clock;
 use postgres::{Client, NoTls};
 
@@ -37,6 +38,25 @@ pub(crate) fn open_conn(path: &Path) -> Conn {
         || Conn::Sqlite(sqlite::Conn::open_file(path).unwrap()),
         |target| Conn::Postgres(Box::new(pg::Conn::connect(&target).unwrap())),
     )
+}
+
+/// Makes the database at `path` refuse, with `why`, every `kind` event of Box `id`, so a write
+/// that records one fails as a full disk would.
+pub(crate) fn refuse_events(path: &Path, id: BoxId, kind: &str, why: &str) {
+    let name = format!("refuse_{kind}_{}", id.get());
+    let when = format!("NEW.kind = '{kind}' AND NEW.\"box\" = {}", id.get());
+    let sql = match open_conn(path) {
+        Conn::Sqlite(_) => format!(
+            "CREATE TRIGGER {name} BEFORE INSERT ON events WHEN {when} \
+             BEGIN SELECT RAISE(ABORT, '{why}'); END;"
+        ),
+        Conn::Postgres(_) => format!(
+            "CREATE FUNCTION {name}() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION '{why}'; END \
+             $$ LANGUAGE plpgsql; CREATE TRIGGER {name} BEFORE INSERT ON events FOR EACH ROW \
+             WHEN ({when}) EXECUTE FUNCTION {name}();"
+        ),
+    };
+    open_conn(path).execute_batch(&sql).unwrap();
 }
 
 /// On Postgres, the database whose search path is the schema standing for `path`.

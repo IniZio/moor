@@ -1,5 +1,6 @@
 //! One plain line in a Box's thread for a launch that failed or timed out, a sleep the timer
-//! forced, an automatic agent relaunch and a relaunch the controller refused. Each ends with
+//! forced, a Box put back to sleep after moor gave up its close, an automatic agent relaunch and
+//! a relaunch the controller refused. Each ends with
 //! how to carry on by replying. The line is keyed by its Box, kind and event cursor in
 //! `slack.db`, so a refold or a restart posts none twice, and the same key queues a fixed
 //! notice for the thread's next turn so the coordinator knows what the line is about.
@@ -21,6 +22,8 @@ pub(super) enum Note {
     LaunchTimedOut(u64),
     /// The sleep timer put the Box to sleep.
     AutoSlept,
+    /// moor put the Box back to sleep after giving up a close that woke it.
+    AsleepAgain,
     /// The agent was started again on its own after it ended.
     Relaunched,
     /// The controller refused another automatic relaunch: relaunches seen, window in seconds.
@@ -60,6 +63,7 @@ impl Note {
             Self::LaunchFailed => BoxEvent::LaunchFailed,
             Self::LaunchTimedOut(_) => BoxEvent::LaunchTimedOut,
             Self::AutoSlept => BoxEvent::AutoSlept,
+            Self::AsleepAgain => BoxEvent::AsleepAgain,
             Self::Relaunched => BoxEvent::Relaunched,
             Self::RelaunchCapped(..) => BoxEvent::RelaunchCapped,
             Self::DiskLost => BoxEvent::DiskLost,
@@ -82,6 +86,7 @@ impl Note {
             Self::AutoSlept => {
                 format!("Box `{name}` went to sleep to save resources. Reply here to wake it.")
             }
+            Self::AsleepAgain => format!("Box `{name}` is asleep again. Reply here to wake it."),
             Self::Relaunched => format!(
                 "Box `{name}`'s agent had ended, so it was started again. If it stalls, reply here and ask me to restart the agent."
             ),
@@ -111,9 +116,17 @@ fn span(secs: u64) -> String {
     }
 }
 
-/// Applies one event of Box `id`: each noteworthy event owes the thread its line.
+/// Applies one event of Box `id`: each noteworthy event owes the thread its line. An asked
+/// sleep owes one only when it is the first sleep after moor gave up a close, before any wake.
 pub(super) fn fold(fold: &mut Fold, id: BoxId, cursor: i64, kind: &str, payload: &Value) {
-    if let Some(note) = Note::of(kind, payload) {
+    let reparked = kind == "asleep" && fold.reparking.remove(&id);
+    match kind {
+        "close_refused" => drop(fold.reparking.insert(id)),
+        "woke" | "closed" => drop(fold.reparking.remove(&id)),
+        _ => {}
+    }
+    let asked = || reparked.then_some(Note::AsleepAgain);
+    if let Some(note) = Note::of(kind, payload).or_else(asked) {
         fold.notes.entry(id).or_default().push((cursor, note));
     }
 }

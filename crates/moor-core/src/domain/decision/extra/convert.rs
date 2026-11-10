@@ -13,15 +13,9 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::DiskLost => Self::DiskLost,
             ExtraEvent::CachesNotSaved => Self::Close(CloseEvent::CachesNotSaved),
-            ExtraEvent::CloseRefused {
-                reason,
-                error,
-                slept,
-            } => Self::Close(CloseEvent::CloseRefused {
-                reason,
-                error,
-                slept,
-            }),
+            ExtraEvent::CloseRefused { reason, error } => {
+                Self::Close(CloseEvent::CloseRefused { reason, error })
+            }
             ExtraEvent::WantedDropped => Self::WantedDropped,
             ExtraEvent::Ran {
                 run,

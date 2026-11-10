@@ -361,11 +361,10 @@ fn close_events_carry_their_refusal_and_read_back_from_their_json() {
             reason: s("no shell"),
         }),
         error: s("could not check"),
-        slept: false,
     });
     let json = serde_json::json!({"kind": "close_refused",
         "reason": {"refusal": "unchecked", "reason": "no shell"},
-        "error": "could not check", "slept": false});
+        "error": "could not check"});
     assert_eq!(serde_json::to_value(&refused).unwrap(), json);
     assert_eq!(serde_json::from_value::<Event>(json).unwrap(), refused);
     let caches = serde_json::json!({"kind": "caches_not_saved"});

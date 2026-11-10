@@ -56,6 +56,8 @@ struct Fold {
     /// Each Box's closes moor gave up, by cursor with the event's payload, whose line is not yet
     /// known to be posted.
     given_up: HashMap<BoxId, Vec<(i64, serde_json::Value)>>,
+    /// Boxes that moor gave up a close of and that have not slept or woken since.
+    reparking: HashSet<BoxId>,
     /// The question each Box waits on.
     asked: HashMap<BoxId, prompts::Asked>,
     /// What happened to each Box that its thread is owed a line for, by cursor.

@@ -305,7 +305,8 @@ fn a_close_with_room_still_wakes_and_closes_the_box() {
 }
 
 #[test]
-fn a_close_that_found_no_room_to_wake_its_box_closes_it_once_there_is_room() {
+fn a_close_that_found_no_room_to_wake_its_box_stays_wanted_silently_and_closes_once_there_is_room()
+{
     use moor_core::domain::box_state::BoxLifecycle::Closed;
     let (w, hv) = live_world(32_768);
     let shut = asleep(&w, "shut", CEILING);
@@ -334,7 +335,23 @@ fn a_close_that_found_no_room_to_wake_its_box_closes_it_once_there_is_room() {
         force: false,
         reason: None,
     };
-    assert_eq!(wanted, Some(unforced), "the close it was, not forced");
+    assert_eq!(
+        wanted,
+        Some(unforced.clone()),
+        "the close it was, not forced"
+    );
+    crate::ops::wanted_pass(&w.cx, store, &|| false).unwrap();
+    let events = store.events(shut, 100).unwrap();
+    assert!(
+        events.iter().all(|e| e.kind != "close_refused"),
+        "a close waiting for room tells no thread: {events:?}"
+    );
+    let wanted = store.box_row(shut).unwrap().unwrap().wanted;
+    assert_eq!(
+        wanted,
+        Some(unforced),
+        "still wanted while there is no room"
+    );
     tick(&w, hv, 32_768, 0, 0);
     crate::ops::wanted_pass(&w.cx, store, &|| false).unwrap();
     assert_eq!(lifecycle(&w, shut), Closed);
