@@ -166,8 +166,9 @@ impl Gone {
         }
     }
 
-    /// Saves the transcript of the gone agent, ends its launch and ends the Session; false when
-    /// another op replaced the launch since it was read, which is left alone.
+    /// Saves the transcript of the gone agent and ends its launch with its Session, or the
+    /// current Session when no launch was read. A launch that ended meanwhile with no successor
+    /// is left as is, its Session too; false when another op replaced it since it was read.
     pub(super) fn finish(&self, cx: &Cx, store: &Store, id: BoxId) -> Result<bool, CommandError> {
         let Some(launch) = &self.launch else {
             store.end_current_session(id, "exited", self.code)?;
