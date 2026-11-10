@@ -33,6 +33,7 @@ mod session_archive;
 mod suspend_check;
 pub mod tables;
 mod vm_inc;
+mod wanted_effect;
 mod warm_starts;
 mod workflow_changes;
 mod workflows;
@@ -156,6 +157,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V74__launch_fence",
         write: launch_fence::write,
+    },
+    Step {
+        name: "V76__wanted_effect",
+        write: wanted_effect::write,
     },
 ];
 

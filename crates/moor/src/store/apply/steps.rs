@@ -13,6 +13,7 @@ use moor_schema::tables::{BoxRefs, BoxState, Boxes, Sessions};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query, Value};
 
 use super::sql::name_taken;
+use super::wanted::Held;
 use crate::store::db::{self, DbExt as _, Tx};
 use crate::store::select::state_update;
 use crate::store::{load_box, sessions::live_parent, HandsRow, StoreError};
@@ -30,6 +31,8 @@ pub(super) struct Stepped {
     pub(super) parts: Parts,
     /// The states before the step; `None` for a fresh Box.
     pub(super) from: Option<Parts>,
+    /// The wanted action and effect the Box held before the step.
+    pub(super) held: Held,
 }
 
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
@@ -60,6 +63,7 @@ pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, St
                 existing: None,
                 parts,
                 from: None,
+                held: Held::default(),
             })
         }
         BoxTarget::Existing(id) => {
@@ -74,11 +78,16 @@ pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, St
             } else {
                 (lifecycle, session)
             };
+            let held = Held {
+                wanted: row.wanted,
+                effect: row.effect.map(|e| (e, row.effect_attempt)),
+            };
             Ok(Stepped {
                 id: *id,
                 existing: row.hands,
                 parts,
                 from: Some((lifecycle, session)),
+                held,
             })
         }
     }

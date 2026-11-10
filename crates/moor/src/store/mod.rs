@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use db::{Conn, DbExt as _, Reader, Readers, Row};
+use in_flight::{effect_from, intent_from, wanted_from};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{BoxRepo, Intent};
+use moor_core::domain::decision::{BoxRepo, Effect, Intent, Wanted};
 use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
@@ -15,7 +16,7 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::shape::Shape;
 use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
-use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 use moor_migrate::Outcome;
 use moor_schema::tables::{BoxState, Boxes, Events, Sessions};
 use repo::repo_from_row;
@@ -53,6 +54,7 @@ pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
 mod inbox;
 pub(crate) use inbox::InboxRow;
+mod in_flight;
 mod init;
 pub(crate) mod lease;
 mod open;
@@ -143,6 +145,14 @@ pub(crate) struct BoxRow {
     pub(crate) intent: Option<Intent>,
     /// When the intent was recorded.
     pub(crate) intent_at: Option<Ts>,
+    /// What moor wants the Box to end as, once it can.
+    pub(crate) wanted: Option<Wanted>,
+    /// The external step in flight.
+    pub(crate) effect: Option<Effect>,
+    /// Which try of the effect in flight this is, from 1; 0 with none in flight.
+    pub(crate) effect_attempt: u32,
+    /// When the effect in flight began, or began again.
+    pub(crate) effect_at: Option<Ts>,
     /// When setup last failed, if it has.
     pub(crate) setup_failed_at: Option<Ts>,
     /// When the steps after the setup lines began, while they have not all run.
@@ -321,24 +331,6 @@ fn to_u32(what: &str, v: i64) -> Result<u32, StoreError> {
     u32::try_from(v).map_err(|_| StoreError::Corrupt(format!("{what} {v} out of range")))
 }
 
-/// Rebuild the intent from its kind and run columns.
-fn intent_from(kind: Option<String>, run: Option<i64>) -> Result<Option<Intent>, StoreError> {
-    let Some(kind) = kind else { return Ok(None) };
-    match kind.as_str() {
-        "provisioning" => Ok(Some(Intent::Provisioning)),
-        "setup" => Ok(Some(Intent::Setup)),
-        "closing" => Ok(Some(Intent::Closing)),
-        "running" => {
-            let run =
-                run.ok_or_else(|| StoreError::Corrupt("running intent without run".into()))?;
-            Ok(Some(Intent::Running {
-                run: RunId::new(run),
-            }))
-        }
-        other => Err(StoreError::Corrupt(format!("intent kind `{other}`"))),
-    }
-}
-
 /// Map a `BOX_SELECT` row to a `BoxRow`.
 fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     use select::{box_at as at, state_at};
@@ -371,6 +363,12 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             row.get(const { state_at(BoxState::IntentRun) })?,
         )?,
         intent_at: ts(const { state_at(BoxState::IntentAt) })?,
+        wanted: wanted_from(row)?,
+        effect: effect_from(row)?,
+        effect_attempt: row
+            .get::<_, Option<i64>>(const { state_at(BoxState::EffectAttempt) })?
+            .map_or(Ok(0), |n| to_u32("effect attempt", n))?,
+        effect_at: ts(const { state_at(BoxState::EffectAt) })?,
         setup_failed_at: ts(const { state_at(BoxState::SetupFailedAt) })?,
         steps_pending_at: ts(const { state_at(BoxState::StepsPendingAt) })?,
         created_at: Ts::from_millis(row.get(const { at(Boxes::CreatedAt) })?),
