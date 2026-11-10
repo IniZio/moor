@@ -159,7 +159,7 @@ pub const STEPS: &[Step] = &[
         write: launch_fence::write,
     },
     Step {
-        name: "V76__wanted_effect",
+        name: "V75__wanted_effect",
         write: wanted_effect::write,
     },
 ];

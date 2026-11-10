@@ -158,3 +158,149 @@ fn again_with_no_effect_in_flight_is_invalid() {
 
     assert!(matches!(got, Err(StoreError::Invalid(_))), "{got:?}");
 }
+
+/// Applies lifecycle input `input` to Box `id`.
+fn step(store: &Store, id: BoxId, input: BoxLifecycleInput) {
+    store.apply(Decision::new(id).lifecycle(input)).unwrap();
+}
+
+fn sleep() -> BoxLifecycleInput {
+    BoxLifecycleInput::Sleep {
+        auto: true,
+        reason: None,
+    }
+}
+
+/// A Ready Box whose agent is quiet, so it may sleep.
+fn quiet_box(store: &Store) -> BoxId {
+    let id = ready_box(store);
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    id
+}
+
+#[test]
+fn a_sleep_never_clears_a_wanted_close() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = quiet_box(&store);
+    want(&store, id, WantChange::Raise(close(false)));
+
+    step(&store, id, sleep());
+
+    assert_eq!(wanted(&store, id), Some(close(false)));
+}
+
+#[test]
+fn a_sleep_clears_a_wanted_sleep() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = quiet_box(&store);
+    want(&store, id, WantChange::Raise(Wanted::Sleep));
+
+    step(&store, id, sleep());
+
+    assert_eq!(wanted(&store, id), None);
+}
+
+#[test]
+fn a_suspend_clears_a_wanted_suspend() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    want(&store, id, WantChange::Raise(suspend()));
+
+    step(
+        &store,
+        id,
+        BoxLifecycleInput::Suspend {
+            reason: "memory".to_owned(),
+        },
+    );
+
+    assert_eq!(wanted(&store, id), None);
+}
+
+#[test]
+fn a_close_clears_a_wanted_suspend() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    want(&store, id, WantChange::Raise(suspend()));
+
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
+                .session(SessionInput::End),
+        )
+        .unwrap();
+
+    assert_eq!(wanted(&store, id), None);
+}
+
+#[test]
+fn a_rejection_clears_a_wanted_close() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = super::new_box(&store, "r");
+    want(&store, id, WantChange::Raise(close(false)));
+
+    step(
+        &store,
+        id,
+        BoxLifecycleInput::Rejected {
+            reason: "no".to_owned(),
+        },
+    );
+
+    assert_eq!(wanted(&store, id), None);
+}
+
+/// The stored wanted reason and time, and the effect time, of Box `id`.
+fn stamps(store: &Store, id: BoxId) -> (Option<String>, Option<i64>, Option<i64>) {
+    use moor_schema::tables::BoxState;
+    use sea_query::{Expr, ExprTrait as _, Query};
+
+    use crate::store::db::DbExt as _;
+    let q = Query::select()
+        .columns([
+            BoxState::WantedReason,
+            BoxState::WantedAt,
+            BoxState::EffectAt,
+        ])
+        .from(BoxState::Table)
+        .and_where(Expr::col(BoxState::Box).eq(id.get()))
+        .take();
+    store
+        .reader()
+        .unwrap()
+        .row(q, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+}
+
+#[test]
+fn a_wanted_suspend_keeps_its_reason_and_time_and_an_ended_effect_its_time_cleared() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    let id = ready_box(&store);
+    let now = {
+        use moor_core::seam::clock::Clock as _;
+        clock.now().as_millis()
+    };
+    want(&store, id, WantChange::Raise(suspend()));
+    store
+        .apply(Decision::new(id).effect(EffectChange::Begin(Effect::Setup)))
+        .unwrap();
+    assert_eq!(
+        stamps(&store, id),
+        (Some("memory".to_owned()), Some(now), Some(now))
+    );
+
+    store
+        .apply(Decision::new(id).effect(EffectChange::End))
+        .unwrap();
+
+    assert_eq!(stamps(&store, id).2, None);
+}
