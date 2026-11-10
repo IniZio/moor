@@ -183,6 +183,15 @@ fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
     if row.lifecycle != BoxLifecycle::Ready {
         return;
     }
+    // The listing was read before this turn: moor may have woken the Box since, and the machine
+    // it shows paused is then one moor resumed, not one that stopped on its own.
+    if let Some(handle) = row.hands.as_ref().and_then(|h| h.handle.clone()) {
+        if let Ok(now) = cx.driver().list_handles(std::slice::from_ref(&handle)) {
+            if !now.iter().any(|l| l.handle == handle && l.asleep) {
+                return;
+            }
+        }
+    }
     let _ = store.set_suspend_check(at, None);
     let _ = store.set_pause_publish(at, PausePublish::Denied);
     if row.session.is_quiet() {
