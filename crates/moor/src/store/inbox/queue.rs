@@ -14,9 +14,30 @@ use crate::store::db::{DbExt as _, Tx};
 use crate::store::event_from_row;
 use crate::store::reads::SHUT;
 use crate::store::select::events_of;
+use crate::store::Launch;
 use crate::store::{InboxRow, Store, StoreError};
 
 impl Store {
+    /// Whether `launch` of Box `box_id` began on a first prompt whose turn has not ended. That
+    /// prompt is the one row sent in the write that recorded the launch, so it was sent at the
+    /// launch's start.
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails or a row is corrupt.
+    pub(crate) fn launched_on_prompt(
+        &self,
+        box_id: BoxId,
+        launch: &Launch,
+    ) -> Result<bool, StoreError> {
+        let q = select(box_id)
+            .and_where(Expr::col(BoxInbox::Kind).eq(InboxKind::Prompt.as_str()))
+            .and_where(Expr::col(BoxInbox::Launch).eq(launch.id.get()))
+            .and_where(Expr::col(BoxInbox::SentAt).eq(launch.started_at.as_millis()))
+            .limit(1)
+            .take();
+        Ok(!rows(&self.reader()?, q)?.is_empty())
+    }
+
     /// Box `box_id`'s rows not yet sent, oldest first: the queue its owner delivers.
     ///
     /// # Errors

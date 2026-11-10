@@ -6,7 +6,7 @@ use moor_core::box_key::BoxKey;
 use moor_core::config::{BoxSettings, Flags, Layer};
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Field, Intent, IntentChange};
+use moor_core::domain::decision::Field;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery, InboxKind};
@@ -46,21 +46,25 @@ pub(super) fn run(
     setup_exit: Option<i32>,
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
-    let view = launch_or_skip(cx, store, req, id, setup_exit, settings)?;
-    end_launching(store, id)?;
-    Ok(view)
+    let out = launch_or_skip(cx, store, req, id, setup_exit, settings);
+    launch_over(store, id, out)
 }
 
-/// Ends a launching intent left on Box `id` once its launch step is over without a session:
-/// skipped, not asked for, or answered by a session that was already there.
+/// `out`, the end of Box `id`'s launch step, once its launching intent has ended. A step that
+/// skipped, found a session already there or failed before one was recorded leaves no agent to
+/// wait for.
 ///
 /// # Errors
-/// A store failure.
-pub(super) fn end_launching(store: &Store, id: BoxId) -> Result<(), CommandError> {
-    if reread(store, id)?.intent == Some(Intent::Launching) {
-        store.apply(Decision::new(id).intent(IntentChange::Clear))?;
-    }
-    Ok(())
+/// `out`'s error, else a store failure.
+pub(super) fn launch_over<T>(
+    store: &Store,
+    id: BoxId,
+    out: Result<T, CommandError>,
+) -> Result<T, CommandError> {
+    let ended = store.end_launching(id);
+    let out = out?;
+    ended?;
+    Ok(out)
 }
 
 /// [`run`] up to the launch, leaving any launching intent in place.
@@ -345,7 +349,7 @@ pub(crate) fn queued_or(
 }
 
 /// The first prompt `req` gives a fresh agent: its prompt, else one naming its Issue.
-fn first_prompt(req: &StartReq) -> LaunchPrompt {
+pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
     match (&req.prompt, &req.issue) {
         (Some(p), _) => LaunchPrompt::Text(p.clone()),
         (None, Some(i)) => LaunchPrompt::Text(format!("Resolve issue {i}.")),

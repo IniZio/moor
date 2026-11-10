@@ -3,15 +3,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::STARTUP_GRACE;
+use moor_core::activity::{AgentState, STARTUP_GRACE};
 use moor_core::config::Flags;
-use moor_core::domain::decision::{Decision, NewBox, SpecFields};
+use moor_core::domain::decision::{Decision, Intent, IntentChange, NewBox, SpecFields};
+use moor_core::domain::inbox::InboxKind;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxId, BoxName, ErrorKind, StartReq};
 
-use super::{agent_cx, live, req, set_up};
+use super::{agent_cx, ready, req, set_up, SESSION};
 use crate::cx::Cx;
+use crate::ops::common::activity;
 use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::launch_after_retry;
@@ -54,13 +56,16 @@ fn a_failed_launch_fails_the_wait() {
     let cx = launch_cx(dir.path(), engine);
     let id = set_up(&cx, &Flags::default());
     launch_after_retry(&cx, cx.store().unwrap(), id).unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
+    assert_eq!(row.intent, None, "the failed launch ended the launch");
     let e = run(&cx, &req(None, Some(5))).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("no tab"), "{}", e.error);
 }
 
-/// Inserts Box `demo` with `prompt`, ready with a launched agent on [`SESSION`].
-fn prompted_live(cx: &Cx, prompt: Option<&str>) -> BoxId {
+/// Inserts Box `demo` with `prompt`, ready with a launched agent on [`SESSION`]. A `carried`
+/// prompt was the launch's first prompt; otherwise the agent resumed and was given none.
+fn prompted_live(cx: &Cx, prompt: Option<&str>, carried: bool) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,
@@ -69,13 +74,17 @@ fn prompted_live(cx: &Cx, prompt: Option<&str>) -> BoxId {
             ..SpecFields::default()
         },
     };
-    let id = cx
-        .store()
-        .unwrap()
-        .apply(Decision::insert(nt))
-        .unwrap()
-        .box_id;
-    live(cx, id)
+    let store = cx.store().unwrap();
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    ready(cx, id);
+    let argv = prompt.filter(|_| carried);
+    if let Some(text) = argv {
+        store
+            .enqueue(id, InboxKind::Prompt, text, "prompt")
+            .unwrap();
+    }
+    store.begin_launch_with(id, SESSION, argv).unwrap();
+    id
 }
 
 #[test]
@@ -83,20 +92,68 @@ fn a_fresh_agent_idle_before_its_first_turn_keeps_idle_waiting() {
     let dir = tempfile::tempdir().unwrap();
     let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
     let (cx, _) = agent_cx(dir.path(), fresh);
-    prompted_live(&cx, Some("ship it"));
+    prompted_live(&cx, Some("ship it"), true);
     let v = run(&cx, &req(None, Some(1))).unwrap();
     assert!(v.timed_out, "the first prompt's turn has not shown yet");
 }
 
 #[test]
-fn a_fresh_agent_idle_past_the_startup_grace_is_idle() {
+fn a_fresh_agent_reads_starting_until_the_startup_grace_ends() {
     let dir = tempfile::tempdir().unwrap();
     let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
     let (cx, _) = agent_cx(dir.path(), fresh);
-    prompted_live(&cx, Some("ship it"));
+    let id = prompted_live(&cx, Some("ship it"), true);
+    assert_eq!(state(&cx, id), AgentState::Starting);
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
+    assert_eq!(state(&cx, id), AgentState::Idle);
+}
+
+/// What one read of Box `id`'s agent finds it doing.
+fn state(cx: &Cx, id: BoxId) -> AgentState {
+    let store = cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    let now = cx.clock().now();
+    let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE).unwrap();
+    reading.activity.unwrap().state
+}
+
+#[test]
+fn a_resumed_agent_idle_before_any_turn_on_a_prompted_box_is_idle_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
+    let (cx, _) = agent_cx(dir.path(), fresh);
+    let id = prompted_live(&cx, Some("ship it"), false);
+    assert_eq!(state(&cx, id), AgentState::Idle);
     let v = run(&cx, &req(None, Some(5))).unwrap();
-    assert!(!v.timed_out);
+    assert!(!v.timed_out, "this launch was given no prompt to take up");
+    assert_eq!(v.waited_ms, 0);
+}
+
+#[test]
+fn a_fresh_agent_started_for_an_issue_keeps_idle_waiting() {
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
+    let cx = launch_cx(dir.path(), FakeEngine::new().probes(LAUNCHED, fresh));
+    let start = StartReq {
+        issue: Some("#7".into()),
+        no_agent: false,
+        ..agentless_start()
+    };
+    crate::ops::start::run(&cx, &start).unwrap();
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out, "the issue's turn has not shown yet");
+}
+
+#[test]
+fn a_box_left_launching_with_no_machine_ends_the_launch_after_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = launch_cx(dir.path(), FakeEngine::new());
+    let store = cx.store().unwrap();
+    let id = super::add(&cx);
+    let launching = Decision::new(id).intent(IntentChange::Set(Intent::Launching));
+    store.apply(launching).unwrap();
+    resume_setup(&cx, store, id).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
 }
 
 #[test]
@@ -104,7 +161,7 @@ fn a_fresh_agent_with_no_prompt_is_idle_at_once() {
     let dir = tempfile::tempdir().unwrap();
     let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
     let (cx, _) = agent_cx(dir.path(), fresh);
-    prompted_live(&cx, None);
+    prompted_live(&cx, None, false);
     let v = run(&cx, &req(None, Some(5))).unwrap();
     assert!(!v.timed_out);
     assert_eq!(v.waited_ms, 0);
@@ -131,7 +188,17 @@ fn an_agentless_start_of_a_box_left_launching_ends_the_launch() {
     let dir = tempfile::tempdir().unwrap();
     let cx = launch_cx(dir.path(), FakeEngine::new());
     let id = set_up(&cx, &Flags::default());
-    let start = StartReq {
+    let start = agentless_start();
+    crate::ops::start::run(&cx, &start).unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
+    assert_eq!(row.intent, None);
+    let v = run(&cx, &req(None, Some(5))).unwrap();
+    assert!(!v.timed_out);
+}
+
+/// An agentless start of Box `demo`.
+fn agentless_start() -> StartReq {
+    StartReq {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         prompt: None,
         issue: None,
@@ -145,10 +212,5 @@ fn an_agentless_start_of_a_box_left_launching_ends_the_launch() {
         parent: None,
         also: None,
         identity: None,
-    };
-    crate::ops::start::run(&cx, &start).unwrap();
-    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.intent, None);
-    let v = run(&cx, &req(None, Some(5))).unwrap();
-    assert!(!v.timed_out);
+    }
 }
