@@ -116,15 +116,6 @@ impl Store {
         Ok((next, event))
     }
 
-    /// Records that the agent the send began to was gone, keeping the send's count.
-    ///
-    /// # Errors
-    /// Returns [`StoreError::Illegal`] unless the row is in doubt, or [`StoreError`] when it is
-    /// gone or the database fails.
-    pub(crate) fn rollback(&self, box_id: BoxId, id: InboxId) -> Result<Delivery, StoreError> {
-        self.move_delivery(box_id, id, Delivery::rollback)
-    }
-
     /// Undoes the mark of a send the agent refused before any key was typed.
     ///
     /// # Errors
