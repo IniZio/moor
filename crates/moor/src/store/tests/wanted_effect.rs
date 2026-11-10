@@ -158,3 +158,33 @@ fn again_with_no_effect_in_flight_is_invalid() {
 
     assert!(matches!(got, Err(StoreError::Invalid(_))), "{got:?}");
 }
+
+impl Store {
+    /// Deletes every event of Box `id`, and the webhook deliveries queued for them, so a test
+    /// proves a decision reads no history.
+    pub(crate) fn forget_events(&self, id: BoxId) {
+        use moor_schema::tables::{Events, WebhookDeliveries};
+        use sea_query::{Expr, ExprTrait as _, Query};
+
+        use crate::store::db::DbExt as _;
+        let of_box = Query::select()
+            .column(Events::Id)
+            .from(Events::Table)
+            .and_where(Expr::col(Events::Box).eq(id.get()))
+            .take();
+        let conn = self.writer();
+        conn.run(
+            Query::delete()
+                .from_table(WebhookDeliveries::Table)
+                .and_where(Expr::col(WebhookDeliveries::Event).in_subquery(of_box)),
+        )
+        .unwrap();
+        conn.run(
+            Query::delete()
+                .from_table(Events::Table)
+                .and_where(Expr::col(Events::Box).eq(id.get())),
+        )
+        .unwrap();
+        drop(conn);
+    }
+}

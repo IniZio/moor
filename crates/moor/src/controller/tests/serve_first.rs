@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{
-    Decision, Field, HandsFields, Intent, IntentChange, NewBox, SpecFields,
+    Decision, Effect, EffectChange, Field, HandsFields, NewBox, SpecFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Ts;
@@ -101,7 +101,7 @@ fn cut_off_start(dir: &tempfile::TempDir) {
         .lifecycle(BoxLifecycleInput::Admitted)
         .hands_input(HandsInc::FIRST, HandsInput::Requested)
         .hands(HandsInc::FIRST, fields)
-        .intent(IntentChange::Set(Intent::Provisioning));
+        .effect(EffectChange::Next(Effect::Acquire));
     store.apply(starting).expect("starting");
     let cut = Decision::new(id).hands_input(
         HandsInc::FIRST,
@@ -113,7 +113,7 @@ fn cut_off_start(dir: &tempfile::TempDir) {
     store.apply(cut).expect("cut");
     let again = Decision::new(id)
         .hands_input(HandsInc::new(2), HandsInput::Requested)
-        .intent(IntentChange::Set(Intent::Provisioning));
+        .effect(EffectChange::Again);
     store.apply(again).expect("again");
 }
 

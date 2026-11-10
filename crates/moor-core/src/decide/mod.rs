@@ -3,9 +3,9 @@
 pub mod capacity;
 pub mod close;
 pub mod disk;
+pub mod effect;
 pub mod gate;
 pub mod inbox;
-pub mod intent;
 pub mod preempt;
 pub mod pressure;
 pub mod reconcile;

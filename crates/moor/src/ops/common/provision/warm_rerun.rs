@@ -2,7 +2,7 @@
 //! that disk, and the one start from scratch it gets when a line fails there.
 
 use moor_core::config::BoxSettings;
-use moor_core::domain::decision::{Decision, ExtraEvent, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent};
 use moor_core::domain::hands::HandsInput;
 use moor_core::domain::layers::WarmDisk;
 use moor_core::{BoxId, Warning};
@@ -135,7 +135,7 @@ pub(super) fn cold_again(
     let inc = reread(store, id)?.acquire_inc();
     let begin = Decision::new(id)
         .hands_input(inc, HandsInput::Requested)
-        .intent(IntentChange::Set(Intent::Provisioning));
+        .effect(EffectChange::Next(Effect::Acquire));
     store.apply(begin)?;
     let row = reread(store, id)?;
     let req = layered.machine_req(cx, store, (&row, inc), cfg)?;

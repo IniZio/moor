@@ -1,4 +1,5 @@
-//! The single value a store writer applies: inputs, field changes, intent and events.
+//! The single value a store writer applies: inputs, field changes, wanted action, effect and
+//! events.
 
 mod extra;
 mod wanted;
@@ -7,7 +8,7 @@ use super::box_state::BoxLifecycleInput;
 use super::cache_save::CacheSave;
 use super::hands::{HandsInc, HandsInput};
 use super::session_state::SessionInput;
-use crate::name::{BoxHandle, BoxId, BoxName, LaunchId, ProviderId, RunId};
+use crate::name::{BoxHandle, BoxId, BoxName, LaunchId, ProviderId};
 use crate::name::{ForgeRepo, GitAuthor};
 use crate::user::UserId;
 
@@ -96,56 +97,6 @@ pub struct SpecFields {
     pub labels: Vec<String>,
 }
 
-/// A recorded in-flight operation, kept so a crash can be recovered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Intent {
-    /// A box is being provisioned.
-    Provisioning,
-    /// A run is executing.
-    Running {
-        /// The run.
-        run: RunId,
-    },
-    /// Box setup is executing.
-    Setup,
-    /// A forced close wants the Box gone, ahead of the start it is stopping; a restart honours it.
-    Closing,
-}
-
-impl Intent {
-    /// Returns the stored kind name.
-    #[must_use]
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::Provisioning => "provisioning",
-            Self::Running { .. } => "running",
-            Self::Setup => "setup",
-            Self::Closing => "closing",
-        }
-    }
-
-    /// Returns the run for a running intent.
-    #[must_use]
-    pub const fn run(&self) -> Option<RunId> {
-        match self {
-            Self::Running { run } => Some(*run),
-            Self::Provisioning | Self::Setup | Self::Closing => None,
-        }
-    }
-}
-
-/// A change to the Box intent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum IntentChange {
-    /// Leave the intent as it is.
-    #[default]
-    Keep,
-    /// Record this intent.
-    Set(Intent),
-    /// Remove the intent.
-    Clear,
-}
-
 /// A Box that does not exist yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewBox {
@@ -208,8 +159,6 @@ pub struct Decision {
     /// The agent launch the deciding op read: the store applies the decision only while that
     /// launch is still the Box's live one.
     pub launch: Option<LaunchId>,
-    /// Intent change.
-    pub intent: IntentChange,
     /// What moor wants the Box to end as.
     pub wanted: WantChange,
     /// The external step in flight.
@@ -251,7 +200,6 @@ impl Decision {
             set: Fields::default(),
             hands: None,
             launch: None,
-            intent: IntentChange::Keep,
             wanted: WantChange::Keep,
             effect: EffectChange::Keep,
             events: Vec::new(),
@@ -334,13 +282,6 @@ impl Decision {
     #[must_use]
     pub fn input_to_hands(&self) -> Option<&HandsInput> {
         self.hands.as_ref().and_then(|w| w.input.as_ref())
-    }
-
-    /// Sets the intent change.
-    #[must_use]
-    pub const fn intent(mut self, c: IntentChange) -> Self {
-        self.intent = c;
-        self
     }
 
     /// Sets the parent Session of the first Session; ignored for an existing box.

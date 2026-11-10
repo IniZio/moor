@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use db::{Conn, DbExt as _, Reader, Readers, Row};
-use in_flight::{effect_from, intent_from, wanted_from};
+use in_flight::{effect_from, wanted_from};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{BoxRepo, Effect, Intent, Wanted};
+use moor_core::domain::decision::{BoxRepo, Effect, Wanted};
 use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
@@ -141,10 +141,6 @@ pub(crate) struct BoxRow {
     pub(crate) session: SessionState,
     /// Reason attached to the state.
     pub(crate) state_reason: Option<String>,
-    /// In-flight operation, if any.
-    pub(crate) intent: Option<Intent>,
-    /// When the intent was recorded.
-    pub(crate) intent_at: Option<Ts>,
     /// What moor wants the Box to end as, once it can.
     pub(crate) wanted: Option<Wanted>,
     /// The external step in flight.
@@ -358,11 +354,6 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         lifecycle,
         session,
         state_reason: row.get(const { state_at(BoxState::StateReason) })?,
-        intent: intent_from(
-            row.get(const { state_at(BoxState::IntentKind) })?,
-            row.get(const { state_at(BoxState::IntentRun) })?,
-        )?,
-        intent_at: ts(const { state_at(BoxState::IntentAt) })?,
         wanted: wanted_from(row)?,
         effect: effect_from(row)?,
         effect_attempt: row
