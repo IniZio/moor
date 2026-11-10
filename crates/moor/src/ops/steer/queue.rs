@@ -85,7 +85,10 @@ pub(super) fn steer(
                         e.error
                     ),
                 });
-                return Ok(queued(QueueCause::Busy));
+                return Ok(SteerValue {
+                    delivery: Delivery::InDoubt,
+                    ..queued(QueueCause::Busy)
+                });
             }
             Err(e)
         }

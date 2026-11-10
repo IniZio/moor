@@ -207,6 +207,13 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         interrupt: false,
     });
     let (outcome, reply) = match (scope.call)(request) {
+        Ok(r) if in_doubt(&r) => {
+            let said = format!(
+                "Box `{name}` may have it already, so do not send it again. moor sends it once \
+                 more or tells the agent it was cut."
+            );
+            (format!("in doubt for Box `{name}`"), Reply::done(said))
+        }
         Ok(r) if r.class == ExitClass::Ok => queued_cause(&r).map_or_else(
             || {
                 let said = format!("Sent to Box `{name}`.");
@@ -235,6 +242,12 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         .db
         .end_action(target.turn.id, seq, &outcome, (scope.clock)())?;
     Ok(reply)
+}
+
+/// Whether the steer's send failed after it may have reached the agent.
+fn in_doubt(reply: &Response) -> bool {
+    let value = reply.value.as_ref().and_then(|v| v.get("delivery"));
+    value.and_then(Value::as_str) == Some("in_doubt")
 }
 
 /// Why moor keeps a steer queued rather than sending it now, in words; none when it was sent.
