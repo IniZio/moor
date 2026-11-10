@@ -31,13 +31,12 @@ pub enum Delivery {
     Queued(QueueCause),
 }
 
-/// Why a queued steer waits, in words for a person, from the `cause` and the `resource` waited
-/// for in its reply: `waiting for room: memory`.
+/// Why a queued steer waits, in words for a person, from the `cause` in its reply, so every front
+/// words it the same way.
 #[must_use]
 pub fn queued_words(value: &serde_json::Value) -> String {
-    let field = |k: &str| value.get(k).and_then(serde_json::Value::as_str);
-    let cause = field("cause").unwrap_or("busy").replace('_', " ");
-    field("resource").map_or_else(|| cause.clone(), |r| format!("{cause}: {r}"))
+    let cause = value.get("cause").and_then(serde_json::Value::as_str);
+    cause.unwrap_or("busy").replace('_', " ")
 }
 
 #[cfg(test)]
