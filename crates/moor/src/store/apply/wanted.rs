@@ -1,9 +1,13 @@
 //! The wanted action and the effect in flight: the rules a decision's changes to them follow.
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Effect, EffectChange, WantChange, Wanted, WantedKind};
+use moor_core::domain::decision::{
+    Decision, Effect, EffectChange, Field, WantChange, Wanted, WantedKind,
+};
+use moor_core::domain::hands::HandsInput;
 use moor_core::seam::clock::Ts;
 use moor_schema::tables::BoxState;
+use sea_query::Value;
 
 use super::sql::Sets;
 use crate::store::StoreError;
@@ -41,6 +45,24 @@ const fn closes(d: &Decision) -> bool {
         d.lifecycle_input,
         Some(BoxLifecycleInput::Close { .. } | BoxLifecycleInput::Rejected { .. })
     )
+}
+
+/// Marks a Box parked while its agent worked, `at_work` saying its Session was not quiet before
+/// `d`, and clears the mark on wake: a reclaim of node resources keeps such a Box's memory. A
+/// mark `d` sets itself stands.
+pub(super) fn parked_sets(d: &Decision, at_work: bool, now: Ts) -> Sets<BoxState> {
+    if d.set.parked_at_work != Field::Keep {
+        return Vec::new();
+    }
+    match d.input_to_hands() {
+        Some(HandsInput::Sleep) if at_work => {
+            vec![(BoxState::ParkedAtWork, now.as_millis().into())]
+        }
+        Some(HandsInput::Wake | HandsInput::Acquired { .. }) => {
+            vec![(BoxState::ParkedAtWork, Value::BigInt(None))]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The wanted columns `d` writes, if any.

@@ -116,7 +116,8 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         to: is_quiet(parts),
     };
     let box_step = step_driver(tx, now, (id, inc), existing.as_ref(), &d)?;
-    write_box_row(tx, (id, &held), now, &d, &quiet, parts)?;
+    let at_work = from.is_some_and(|(_, session)| !session.is_quiet());
+    write_box_row(tx, (id, &held, at_work), now, &d, &quiet, parts)?;
     write_box(tx, id, now, (&d, inc), box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
@@ -193,7 +194,7 @@ fn step_driver(
 /// had in flight before.
 fn write_box_row(
     tx: &Tx<'_>,
-    (id, held): (BoxId, &wanted::Held),
+    (id, held, at_work): (BoxId, &wanted::Held, bool),
     now: Ts,
     d: &Decision,
     step: &Step<bool>,
@@ -215,6 +216,7 @@ fn write_box_row(
         }
     }
     sets.extend(wanted::sets(held, d, now)?);
+    sets.extend(wanted::parked_sets(d, at_work, now));
     sets.push((BoxState::UpdatedAt, now.as_millis().into()));
     update(tx, &mut state_update(id), &sets)?;
     let newest = Query::select()
