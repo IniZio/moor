@@ -132,6 +132,25 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
 }
 
 #[test]
+fn a_second_exit_save_of_the_same_launch_saves_nothing() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .then_transcript_text("abc")
+            .then_transcript_text("abcd"),
+    );
+    let f = with_engine(&engine);
+    let store = f.cx.store().unwrap();
+    let sid = store.begin_launch(f.id, "s-1").unwrap();
+    store.set_registered_session(sid, "agent-1").unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
+    let live = store.live_launch(f.id).unwrap().unwrap();
+    save_on_exit(&f.cx, store, &row, live.id).unwrap();
+    save_on_exit(&f.cx, store, &row, live.id).unwrap();
+    assert_eq!(engine.transcripts(), ["s-1"]);
+    assert_eq!(kinds(&f), ["transcript_saved"]);
+}
+
+#[test]
 fn a_close_after_the_transcript_changed_saves_again() {
     let engine = Arc::new(
         FakeEngine::new()
