@@ -3,10 +3,11 @@
 
 use std::cell::Cell;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, WantChange, Wanted, WantedKind};
 use moor_core::response::{CloseRefusal, ErrorDetail};
 use moor_core::view::CloseView;
-use moor_core::{BoxId, BoxTarget, CloseReq, ErrorKind, Warning};
+use moor_core::{BoxId, BoxName, BoxReq, BoxTarget, CloseReq, ErrorKind, Warning};
 
 use crate::cx::owners::Turn;
 use crate::cx::Cx;
@@ -50,7 +51,8 @@ pub(super) fn closing<'a>(
 }
 
 /// Closes each open Box that wants a close and has no op or effect on it, as the close it wanted.
-/// One that still has no room to wake is left for the next pass, and another failure is warned.
+/// One that still has no room to wake is left for the next pass. Any other failure gives the close
+/// up with a warning, and a Box the close woke is put back to sleep.
 ///
 /// # Errors
 /// A store failure listing the Boxes.
@@ -73,17 +75,43 @@ pub(crate) fn pass(
             target: BoxTarget::Name(row.name.clone()),
             force,
         };
-        match cx.for_box(row.user, || super::run_with_reason(cx, &req, reason)) {
-            Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
-                code: "close_failed".to_owned(),
-                message: format!(
-                    "could not finish the close of {}: {}",
-                    row.name.as_str(),
-                    e.error
-                ),
-            }),
-            _ => {}
+        let asleep = row.lifecycle == BoxLifecycle::Asleep;
+        let Err(e) = cx.for_box(row.user, || super::run_with_reason(cx, &req, reason)) else {
+            continue;
+        };
+        if e.kind == ErrorKind::Refused && still_wanted(store, row.id)? {
+            continue;
+        }
+        cx.warn(given_up(&row.name, &e.error));
+        if e.kind == ErrorKind::Refused && asleep {
+            let req = BoxReq {
+                box_name: row.name.clone(),
+            };
+            if let Err(e) = cx.for_box(row.user, || crate::ops::sleep::run(cx, &req)) {
+                cx.warn(Warning {
+                    code: "close_failed".to_owned(),
+                    message: format!(
+                        "{} stays awake after the close that woke it: {}",
+                        row.name.as_str(),
+                        e.error
+                    ),
+                });
+            }
         }
     }
     Ok(())
+}
+
+/// Whether Box `id` still wants a close, as one refused only for want of room does.
+fn still_wanted(store: &Store, id: BoxId) -> Result<bool, CommandError> {
+    let row = store.box_row(id)?;
+    Ok(row.and_then(|r| r.wanted).map(|w| w.kind()) == Some(WantedKind::Close))
+}
+
+/// The warning that the close of `name` was given up, and why.
+fn given_up(name: &BoxName, why: &impl std::fmt::Display) -> Warning {
+    Warning {
+        code: "close_failed".to_owned(),
+        message: format!("could not finish the close of {}: {why}", name.as_str()),
+    }
 }
