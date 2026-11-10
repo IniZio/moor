@@ -40,13 +40,13 @@ pub(super) fn run(
     store: &Store,
     req: &StartReq,
     id: BoxId,
-    setup: (Option<i32>, bool),
+    setup_exit: Option<i32>,
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     if !asks_for_agent(req) {
         return Ok(AgentLaunchView::default());
     }
-    launch_asked(cx, store, req, id, setup, settings)
+    launch_asked(cx, store, req, id, setup_exit, settings)
 }
 
 /// Launches the agent of an attached Box, or relaunches it once its pane has ended.
@@ -58,7 +58,7 @@ pub(super) fn run(
 /// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
 /// since the base commit when an agent is about to launch and the owner has not trusted it.
 ///
-/// `setup_exit` is the setup exit of a Box just provisioned, and whether that Box replaced a lost one.
+/// `setup_exit` is the setup exit of a Box just provisioned.
 ///
 /// `settings` is evaluated once, before anything changes, and holds the config the launch uses.
 fn launch_asked(
@@ -66,7 +66,7 @@ fn launch_asked(
     store: &Store,
     req: &StartReq,
     id: BoxId,
-    (setup_exit, recreated): (Option<i32>, bool),
+    setup_exit: Option<i32>,
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
@@ -87,7 +87,7 @@ fn launch_asked(
     let Some(end) = ended(cx, &row, &old) else {
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
+    relaunch(cx, store, req, (&old, &end), None, settings)
 }
 
 /// Whether a start of an open Box asks for its agent: any start without `--no-agent`.
@@ -137,7 +137,7 @@ pub(super) fn relaunch(
     store: &Store,
     req: &StartReq,
     (old, end): (&Launch, &Ended),
-    (recreated, cause): (bool, Option<&str>),
+    cause: Option<&str>,
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.box_id;
@@ -170,12 +170,9 @@ pub(super) fn relaunch(
         Ended::Gone => None,
         Ended::Exited(code) => *code,
     };
-    // New hands hold none of the session, so a copy from them would replace it with nothing. A
-    // resumed session keeps writing the same file on a disk that survived, so a copy adds nothing.
-    let saved = if recreated {
-        transcript::record_skipped(store, &row, Trigger::Relaunch, "new hands");
-        None
-    } else if launch.resume.is_some() {
+    // A resumed session keeps writing the same file on a disk that survived, so a copy adds
+    // nothing.
+    let saved = if launch.resume.is_some() {
         transcript::record_skipped(store, &row, Trigger::Relaunch, "resumed on the same Box");
         None
     } else {

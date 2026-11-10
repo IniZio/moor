@@ -217,3 +217,25 @@ fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() 
     assert!(text.contains("TOKEN_OF_A"), "{text}");
     assert!(!text.contains("TOKEN_OF_B"), "{text}");
 }
+
+#[test]
+fn a_box_that_failed_setup_on_lost_hands_with_a_live_launch_gets_new_hands_that_end_it() {
+    let (w, engine) = world_with_setup([Ok(exit(1))]);
+    start(&w).unwrap_err();
+    let store = w.cx.store().unwrap();
+    let id = BoxId::new(1);
+    let old = store.begin_launch(id, "agent-1").unwrap();
+    let lost = moor_core::domain::decision::Decision::new(id).hands_input(
+        moor_core::domain::hands::HandsInc::FIRST,
+        moor_core::domain::hands::HandsInput::DriverMissing,
+    );
+    store.apply(lost).unwrap();
+
+    start(&w).unwrap();
+
+    let live = store.live_launch(id).unwrap().map(|l| l.id);
+    assert!(live.is_some_and(|l| l > old), "{live:?}: the new hands ended launch {old:?}");
+    assert_eq!(row(&w).hands.map(|h| h.inc.get()), Some(2));
+    assert!(engine.transcripts().is_empty(), "nothing saved from the lost hands");
+    assert!(!kinds(&w, id).iter().any(|k| k == "transcript_skipped"));
+}
