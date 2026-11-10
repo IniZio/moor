@@ -2,10 +2,12 @@
 
 use super::Event;
 
+mod inbox;
 mod node_disk;
 mod restore;
 mod stall;
 mod workflow;
+pub use inbox::InboxEvent;
 pub use node_disk::NodeDiskEvent;
 pub use restore::RestoreEvent;
 pub use stall::StallEvent;
@@ -106,6 +108,8 @@ pub const EVENT_KINDS: &[&str] = &[
     "node_disk_recovered",
     "turn_done",
     "steer_unconfirmed",
+    "steer_cut",
+    "steers_dropped",
     "artifact_published",
     "machine_attached",
     "machine_left_out",
@@ -205,6 +209,7 @@ impl Event {
             Self::NodeDisk(d) => d.kind(),
             Self::Workflow(w) => w.kind(),
             Self::Restore(r) => r.kind(),
+            Self::Inbox(i) => i.kind(),
             Self::Timing(t) => t.kind(),
         }
     }

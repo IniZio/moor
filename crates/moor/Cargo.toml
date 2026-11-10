@@ -13,6 +13,8 @@ name = "moor"
 path = "src/main.rs"
 
 [features]
+# Aborts at named inbox points when MOOR_FAILPOINT names one; never in a release build.
+failpoints = []
 test-upstream = []
 
 [dependencies]

@@ -83,3 +83,29 @@ fn ending_a_session_records_a_sessions_stopped_event() {
         .collect();
     assert_eq!(stopped, [serde_json::json!({"sessions": ["s-1"]})]);
 }
+
+#[test]
+fn a_close_drops_the_inbox_and_records_the_steers_never_sent() {
+    let f = fx_with(FakeDriver::new());
+    live(&f);
+    let store = f.cx.store().unwrap();
+    let kind = moor_core::domain::inbox::InboxKind::Steer;
+    let row = store.enqueue(f.id, kind, "later", "U1").unwrap();
+    run(&f.cx, &req(false)).unwrap();
+    assert!(store.unsent(f.id).unwrap().is_empty());
+    let dropped = store.newest_event_of(f.id, "steers_dropped").unwrap();
+    assert_eq!(
+        dropped.map(|e| e.payload),
+        Some(serde_json::json!({"inbox": [row.get()]}))
+    );
+}
+
+#[test]
+fn a_refused_close_keeps_the_inbox() {
+    let f = fx_box(FakeDriver::new(), Some("ahead=2 dirty=0"));
+    let store = f.cx.store().unwrap();
+    let kind = moor_core::domain::inbox::InboxKind::Steer;
+    store.enqueue(f.id, kind, "later", "U1").unwrap();
+    run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(store.unsent(f.id).unwrap().len(), 1);
+}

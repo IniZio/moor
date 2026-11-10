@@ -7,6 +7,7 @@ use moor_core::BoxId;
 use super::{is_exit, send};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::failpoint;
 use crate::store::{Launch, Store};
 
 /// The inbox row a steer is sent from, made at its first send.
@@ -71,14 +72,18 @@ impl Slot {
             Steer::Interrupt => InboxKind::Interrupt,
         };
         let row = self.mark(store, target.0, (kind, sent), launch)?;
+        failpoint::hit(failpoint::INBOX_BEFORE_SEND);
         let outcome = send(cx, sref, steer)?;
-        if outcome.is_none() && !is_exit(steer) {
+        if outcome.is_some() {
+            failpoint::hit(failpoint::INBOX_AFTER_SEND);
+        } else if !is_exit(steer) {
             store.refuse(target.0, row)?;
         }
         Ok((outcome, row))
     }
 
-    /// Deletes the row unless it was sent: a steer refused leaves nothing queued.
+    /// Deletes the row unless a send of it began: a steer refused leaves nothing queued, and one
+    /// whose send failed or went unconfirmed stays in doubt, to be sent at most once more.
     pub(super) fn withdraw(&self, store: &Store, id: BoxId) -> Result<(), CommandError> {
         if let Some((row, ..)) = &self.row {
             store.withdraw(id, *row)?;

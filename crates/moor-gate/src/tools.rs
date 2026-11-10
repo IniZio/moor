@@ -117,9 +117,12 @@ impl Tools {
 
     /// Types to a Box's agent.
     #[tool(
-        description = "Send text to a Box's agent, to steer it. When the agent is blocked on a \
-                       question (needs_input), send one of its options, by name or 1-based \
-                       number, to answer it. Needs the moor:write scope."
+        description = "Send text to a Box's agent, to steer it. When the Box is asleep, \
+                       starting, busy or its agent is being relaunched, the text is queued \
+                       (delivery: queued, with a cause) and sent once the agent can take it. \
+                       When the agent is blocked on a question (needs_input), send one of its \
+                       options, by name or 1-based number, to answer it. Needs the moor:write \
+                       scope."
     )]
     async fn send_to_box(
         &self,

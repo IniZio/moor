@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, Effect, EffectChange, Field, Fields};
+use moor_core::domain::event::TurnOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::StartReq;
@@ -64,7 +65,8 @@ fn engine_world(engine: FakeEngine) -> (World, i64, Arc<FakeEngine>) {
     (w, hv, engine)
 }
 
-/// A Box with a live agent session, asleep, then started with `prompt` while short of room.
+/// A Box with a live agent session that finished its first prompt, asleep, then started with
+/// `prompt` while short of room.
 fn queued_with_prompt(engine: FakeEngine, prompt: &str) -> (World, i64, Arc<FakeEngine>, BoxId) {
     let (w, hv, engine) = engine_world(engine);
     let id = BoxId::new(
@@ -73,6 +75,10 @@ fn queued_with_prompt(engine: FakeEngine, prompt: &str) -> (World, i64, Arc<Fake
             .boxed
             .id,
     );
+    let store = w.cx.store().unwrap();
+    for row in store.sent(id).unwrap() {
+        store.answer(id, row.id, TurnOutcome::Idle).unwrap();
+    }
     set_agent_session(&w, id, "agent-1");
     put_to_sleep(&w, id);
     tick(&w, hv, SHORT, 0, 0);

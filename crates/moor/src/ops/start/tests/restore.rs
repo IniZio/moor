@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput};
+use moor_core::domain::inbox::cut_note;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, LaunchReq};
 use moor_core::BoxId;
@@ -117,6 +118,40 @@ fn a_start_after_the_machine_is_lost_restores_the_conversation_before_resuming_i
     assert_eq!(last_launch(&engine).resume.as_deref(), Some(AGENT));
     let told = event(&w, id, "session_restored").expect("the restore is told");
     assert_eq!(told.get("archive_at"), Some(&Value::from(rfc3339(TAKEN))));
+}
+
+/// The text of each inbox row of Box `id`, sent or not, oldest first.
+fn inbox(w: &World, id: BoxId) -> Vec<String> {
+    let store = w.cx.store().unwrap();
+    let mut rows = store.sent(id).unwrap();
+    rows.extend(store.unsent(id).unwrap());
+    rows.sort_by_key(|r| r.id);
+    rows.into_iter().map(|r| r.text).collect()
+}
+
+#[test]
+fn a_restored_conversation_keeps_the_prompt_its_archive_holds_without_naming_it() {
+    let (w, engine, id) = started();
+    archived(&w, id, b"archive of PLUM-42");
+    lose_machine(&w, &engine, id);
+
+    run(&w.cx, &req("demo")).unwrap();
+
+    let rows = inbox(&w, id);
+    assert!(rows.iter().all(|t| !t.contains("PLUM-42")), "{rows:?}");
+    assert_eq!(event(&w, id, "steer_cut"), None);
+}
+
+#[test]
+fn a_conversation_that_could_not_be_restored_has_its_prompt_named_to_the_new_agent() {
+    let (w, engine, id) = started();
+    lose_machine(&w, &engine, id);
+
+    run(&w.cx, &req("demo")).unwrap();
+
+    let rows = inbox(&w, id);
+    assert!(rows.contains(&cut_note("remember PLUM-42")), "{rows:?}");
+    assert!(event(&w, id, "steer_cut").is_some());
 }
 
 #[test]

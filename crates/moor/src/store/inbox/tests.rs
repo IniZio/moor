@@ -207,7 +207,7 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
         .count();
     assert_eq!(done, 1);
     assert_eq!(
-        texts(&store.drop_all(id).unwrap()),
+        texts(&store.unsent(id).unwrap()),
         ["waiting:queued", "doubt:in_doubt", "three:queued"],
         "rows not sent, older or newer, wait for their own send"
     );
@@ -264,52 +264,58 @@ fn a_row_in_doubt_is_sent_once_more_to_its_launch_and_never_a_third_time() {
 }
 
 #[test]
-fn cut_returns_exactly_the_rows_sent_or_in_doubt_on_an_older_launch() {
+fn drop_all_deletes_every_row_of_the_box_and_records_the_steers_never_sent() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let old = launch(&store, id);
-    let sent = store.enqueue(id, InboxKind::Steer, "sent", "u").unwrap();
-    let doubt = store.enqueue(id, InboxKind::Steer, "doubt", "u").unwrap();
-    store.enqueue(id, InboxKind::Steer, "queued", "u").unwrap();
-    let fresh = store.enqueue(id, InboxKind::Steer, "fresh", "u").unwrap();
-    store.mark_sending(id, sent, old).unwrap();
-    store.confirm_sent(id, sent, MARK, &steered(sent)).unwrap();
-    store.mark_sending(id, doubt, old).unwrap();
     let other = new_box(&store, "b");
-    let elsewhere = store.enqueue(other, InboxKind::Steer, "b", "u").unwrap();
-    store
-        .mark_sending(other, elsewhere, launch(&store, other))
+    let s = launch(&store, id);
+    let sent = store.enqueue(id, InboxKind::Steer, "sent", "u").unwrap();
+    store.mark_sending(id, sent, s).unwrap();
+    store.confirm_sent(id, sent, MARK, &steered(sent)).unwrap();
+    let doubt = store.enqueue(id, InboxKind::Steer, "one", "u").unwrap();
+    store.enqueue(id, InboxKind::Note, "two", "moor").unwrap();
+    let prompt = store
+        .enqueue(id, InboxKind::Prompt, "three", "start")
         .unwrap();
-    let new = launch(&store, id);
-    store.mark_sending(id, fresh, new).unwrap();
+    store.enqueue(other, InboxKind::Steer, "kept", "u").unwrap();
+    store.mark_sending(id, doubt, s).unwrap();
+    store.drop_all(id).unwrap();
+    assert_eq!(store.next_for(id).unwrap(), None);
+    assert!(store.sent(id).unwrap().is_empty());
+    assert_eq!(store.next_for(other).unwrap().unwrap().text, "kept");
+    let last = store.events(id, 1).unwrap().pop().unwrap();
+    assert_eq!(last.kind, "steers_dropped");
     assert_eq!(
-        texts(&store.cut(id, new).unwrap()),
-        ["sent:sent", "doubt:in_doubt"]
-    );
-    assert_eq!(
-        store.cut(id, old).unwrap(),
-        [],
-        "nothing is older than the first launch"
+        last.payload,
+        serde_json::json!({"inbox": [doubt.get(), prompt.get()]})
     );
 }
 
 #[test]
-fn drop_all_deletes_and_returns_every_row_of_the_box_only() {
+fn drop_all_of_an_inbox_holding_no_steer_records_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
-    let other = new_box(&store, "b");
-    let row = store.enqueue(id, InboxKind::Steer, "one", "u").unwrap();
     store.enqueue(id, InboxKind::Note, "two", "moor").unwrap();
-    store.enqueue(other, InboxKind::Steer, "kept", "u").unwrap();
-    store.mark_sending(id, row, launch(&store, id)).unwrap();
-    assert_eq!(
-        texts(&store.drop_all(id).unwrap()),
-        ["one:in_doubt", "two:queued"]
-    );
+    let before = store.events(id, 100).unwrap().len();
+    store.drop_all(id).unwrap();
     assert_eq!(store.next_for(id).unwrap(), None);
-    assert_eq!(store.next_for(other).unwrap().unwrap().text, "kept");
+    assert_eq!(store.events(id, 100).unwrap().len(), before);
+}
+
+#[test]
+fn withdraw_deletes_a_queued_row_but_keeps_one_in_doubt() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let s = launch(&store, id);
+    let queued = store.enqueue(id, InboxKind::Steer, "queued", "u").unwrap();
+    let doubt = store.enqueue(id, InboxKind::Steer, "doubt", "u").unwrap();
+    store.mark_sending(id, doubt, s).unwrap();
+    store.withdraw(id, queued).unwrap();
+    store.withdraw(id, doubt).unwrap();
+    assert_eq!(texts(&store.unsent(id).unwrap()), ["doubt:in_doubt"]);
 }
 
 #[test]
@@ -379,7 +385,7 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         .enqueue(id, InboxKind::Prompt, "later", "start")
         .unwrap();
     let s = store
-        .begin_launch_with(id, "agent", Some("fix it"))
+        .begin_launch_with(id, "agent", Some("fix it"), None)
         .unwrap();
     let sent = store.sent(id).unwrap();
     assert_eq!(texts(&sent), ["fix it:sent"]);
@@ -395,11 +401,12 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         Some(&serde_json::json!(prompt.get()))
     );
     store
-        .begin_launch_with(id, "agent", Some("not queued"))
+        .begin_launch_with(id, "agent", Some("not queued"), None)
         .unwrap();
+    let cut = format!("{}:queued", moor_core::domain::inbox::cut_note("fix it"));
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
-        ["ahead:queued", "later:queued"],
+        ["ahead:queued", cut.as_str(), "later:queued"],
         "row {} is left",
         other.get()
     );
@@ -418,3 +425,5 @@ fn a_closed_box_is_not_named_for_delivery() {
     store.apply(close).unwrap();
     assert_eq!(store.boxes_with_unsent().unwrap(), [id]);
 }
+
+mod cut;
