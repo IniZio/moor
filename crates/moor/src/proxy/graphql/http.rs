@@ -345,6 +345,9 @@ pub(crate) fn read_body(
         return Err(HttpError::Malformed);
     }
     let mut decoded = Vec::new();
+    if let Framing::Length(n) = *f {
+        decoded.reserve_exact(usize::try_from(n).ok().filter(|&n| n <= cap).unwrap_or(0));
+    }
     Sink {
         raw,
         decoded: Some((&mut decoded, cap)),

@@ -116,6 +116,7 @@ rcgen = { version = "0.14", default-features = false, features = [
   "pem",
   "ring",
 ] }
+peak_alloc = "0.3"
 
 [lints.rust]
 unsafe_code = "forbid"

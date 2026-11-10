@@ -114,15 +114,16 @@ pub(super) fn checked(
     if encoded {
         return Err(fail("encoded response"));
     }
-    let body = read_body(r, framing, MAX_CHECKED, &mut std::io::sink())
+    let read = read_body(r, framing, MAX_CHECKED, &mut std::io::sink())
         .map_err(|_| fail("unreadable response body"))?;
-    let body = if body.is_empty() {
-        body
+    let body = if read.is_empty() {
+        read
     } else {
-        let mut json = serde_json::from_slice(&body).map_err(|_| fail("response is not json"))?;
-        drop(body);
-        linked.blank(&mut json, repos);
-        serde_json::to_vec(&json).map_err(|_| fail("response is not json"))?
+        let body = linked
+            .blank(&read, repos)
+            .map_err(|_| fail("response is not json"))?;
+        drop(read);
+        body
     };
     let mut out = Vec::with_capacity(resp.raw.len());
     for (i, line) in resp.raw.split_inclusive(|&b| b == b'\n').enumerate() {
