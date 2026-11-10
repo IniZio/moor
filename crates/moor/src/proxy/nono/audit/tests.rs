@@ -361,6 +361,11 @@ fn gh_rule() -> ResolvedRule {
     }
 }
 
+/// The Box repo the tests run on.
+fn widgets() -> ForgeRepo {
+    ForgeRepo::new("acme", "widgets")
+}
+
 /// A passthrough response event for `method` `path` on `host`.
 fn passthrough(host: &str, method: &str, path: &str) -> NetworkAuditEvent {
     event(
@@ -377,7 +382,7 @@ fn passthrough(host: &str, method: &str, path: &str) -> NetworkAuditEvent {
 
 /// Applies `events` against the `gh` rule and returns the sink's calls.
 fn run_withheld(events: &[NetworkAuditEvent]) -> Vec<String> {
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     let sink = Recorder::default();
     apply(events, &watch, &sink);
     sink.calls()
@@ -433,7 +438,7 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
         log: &log,
         ledger: &ledger,
     };
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     apply(
         &[passthrough(
             "api.github.com",
@@ -478,7 +483,7 @@ fn withheld_reports_stop_at_the_cap_with_one_overflow_line() {
     let events: Vec<_> = (0..300)
         .map(|i| passthrough("api.github.com", "GET", &format!("/user/thing{i}")))
         .collect();
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     let sink = Recorder::default();
     apply(&events, &watch, &sink);
     let calls = sink.calls();

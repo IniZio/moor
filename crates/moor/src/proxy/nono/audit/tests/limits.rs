@@ -234,13 +234,16 @@ fn a_2xx_with_unknown_credential_state_recovers() {
     );
 }
 
-/// A credentialed GitHub API answer with `status` to `GET path` on rule `gh`.
 fn github(path: &str, status: u16) -> NetworkAuditEvent {
+    github_on("api.github.com:443", path, status)
+}
+
+fn github_on(target: &str, path: &str, status: u16) -> NetworkAuditEvent {
     event(
         "allow",
         &json!({
             "route_id": "gh__0",
-            "target": "api.github.com:443",
+            "target": target,
             "method": "GET",
             "path": path,
             "status": status,
@@ -249,7 +252,6 @@ fn github(path: &str, status: u16) -> NetworkAuditEvent {
     )
 }
 
-/// The rejection event for `gh` with `status`.
 fn gh_rejected(status: u16) -> Event {
     Event::ProxyCredentialRejected {
         rule: "gh".to_owned(),
@@ -259,11 +261,11 @@ fn gh_rejected(status: u16) -> Event {
 
 #[test]
 fn a_rejection_on_a_repo_outside_the_box_records_nothing() {
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     let sink = LimitSink::default();
     let events = [
         github("/repos/other/thing", 403),
-        github("/repos/other/thing/contents/README.md?ref=main", 401),
+        github("/repos/other/thing/contents/README.md?ref=main", 403),
     ];
     assert!(run_limits(&sink, &events, &watch).is_empty());
     assert_eq!(
@@ -273,19 +275,49 @@ fn a_rejection_on_a_repo_outside_the_box_records_nothing() {
 }
 
 #[test]
-fn a_rejection_on_another_listed_repo_records() {
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")))
-        .with_other_repos(&[ForgeRepo::new("acme", "gears")]);
+fn a_401_on_a_repo_outside_the_box_still_records() {
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     let sink = LimitSink::default();
     assert_eq!(
-        run_limits(&sink, &[github("/repos/acme/gears", 401)], &watch),
+        run_limits(&sink, &[github("/repos/other/thing", 401)], &watch),
         [gh_rejected(401)]
     );
 }
 
 #[test]
+fn a_git_rejection_on_a_repo_outside_the_box_records_nothing() {
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
+    let sink = LimitSink::default();
+    let events = [
+        github_on(
+            "github.com:443",
+            "/other/thing.git/info/refs?service=git-upload-pack",
+            403,
+        ),
+        github_on("github.com:443", "/other/thing.git/git-upload-pack", 403),
+    ];
+    assert!(run_limits(&sink, &events, &watch).is_empty());
+    let own = github_on("github.com:443", "/Acme/Widgets.GIT/info/refs", 403);
+    assert_eq!(run_limits(&sink, &[own], &watch), [gh_rejected(403)]);
+}
+
+#[test]
+fn a_rejection_on_another_listed_repo_records() {
+    let watch = Withheld::new(
+        &[gh_rule()],
+        None,
+        vec![widgets(), ForgeRepo::new("acme", "gears")],
+    );
+    let sink = LimitSink::default();
+    assert_eq!(
+        run_limits(&sink, &[github("/repos/acme/gears", 403)], &watch),
+        [gh_rejected(403)]
+    );
+}
+
+#[test]
 fn a_rejection_outside_any_repo_still_records() {
-    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let watch = Withheld::new(&[gh_rule()], Some(widgets()), vec![widgets()]);
     let sink = LimitSink::default();
     assert_eq!(
         run_limits(&sink, &[github("/user", 401)], &watch),

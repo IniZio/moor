@@ -176,3 +176,34 @@ fn graphql_scope_covers_each_listed_repo_and_no_other() {
     assert_eq!(auth, [true, true, false]);
     a.stop();
 }
+
+#[test]
+fn a_403_on_the_other_listed_repo_records_a_rejected_credential() {
+    let a = also();
+    let status = a
+        .rig
+        .client()
+        .get("https://api.github.com/repos/o/lib")
+        .header("Authorization", "token placeholder-not-real")
+        .header("x-reply-status", "403")
+        .call()
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_eq!(status, 403);
+    let kind = "proxy_credential_rejected";
+    let events = a
+        .rig
+        .run
+        .events_until(kind, |e| e.iter().any(|(k, _)| k == kind));
+    let rejected: Vec<&str> = events
+        .iter()
+        .filter(|(k, _)| k == "proxy_credential_rejected")
+        .map(|(_, p)| p.as_str())
+        .collect();
+    let [one] = rejected.as_slice() else {
+        unreachable!("one rejection expected: {events:?}")
+    };
+    assert!(one.contains("403") && one.contains("github-api"), "{one}");
+    a.stop();
+}
