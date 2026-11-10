@@ -367,6 +367,11 @@ fn all_events() -> Vec<Event> {
             host: s("h"),
             rule: None,
         }),
+        Event::Inbox(InboxEvent::SteerCut {
+            inbox: 9,
+            sender: s("steer"),
+        }),
+        Event::Inbox(InboxEvent::SteersDropped { inbox: vec![9, 10] }),
     ]
 }
 
@@ -481,6 +486,8 @@ const fn event_index(e: &Event) -> usize {
         Event::SteerUnconfirmed { .. } => 90,
         Event::WantedDropped => 91,
         Event::EgressRecovered { .. } => 92,
+        Event::Inbox(InboxEvent::SteerCut { .. }) => 93,
+        Event::Inbox(InboxEvent::SteersDropped { .. }) => 94,
     }
 }
 
@@ -488,7 +495,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 93);
+    assert_eq!(all.len(), 95);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

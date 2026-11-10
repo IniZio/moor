@@ -195,21 +195,21 @@ pub(super) fn begin(
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut launch = launch.clone();
-    restore::before_resume(cx, store, row.id, &mut launch)?;
+    let restored = restore::before_resume(cx, store, row.id, &mut launch)?;
     // The step starts first, so a process cut off from here on is not read as `--no-agent`.
     timed(cx, store, row.id, PostCloneStep::Launch, || {
-        let out = launch_agent(cx, store, row, &launch, cfg);
+        let out = launch_agent(cx, store, row, (&launch, restored), cfg);
         let ok = out.as_ref().is_ok_and(|view| view.launched);
         (out, ok)
     })
 }
 
-/// Opens the agent's Proxy and launches it, recording what came of that.
+/// Opens the agent's Proxy and launches it on a conversation `restored` then, recording the result.
 fn launch_agent(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    launch: &LaunchReq,
+    (launch, restored): (&LaunchReq, Option<moor_core::seam::clock::Ts>),
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
@@ -246,7 +246,7 @@ fn launch_agent(
             for lease in leases {
                 store.hold_lease(lease)?;
             }
-            record_session(store, row, launch, session)
+            record_session(store, row, (launch, restored), session)
         }
         Err(e) => record_failure(cx, store, id, &e),
     }
@@ -277,7 +277,7 @@ fn plan_dirs(
 fn record_session(
     store: &Store,
     row: &BoxRow,
-    launch: &LaunchReq,
+    (launch, restored): (&LaunchReq, Option<moor_core::seam::clock::Ts>),
     session: SessionRef,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
@@ -286,7 +286,7 @@ fn record_session(
     } else {
         session.id
     };
-    store.begin_launch_with(id, &sref, launch.prompt.text())?;
+    store.begin_launch_with(id, &sref, launch.prompt.text(), restored)?;
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }

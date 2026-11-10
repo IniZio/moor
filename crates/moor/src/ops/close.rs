@@ -117,9 +117,7 @@ fn close_held(
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
     let box_deleted = wind_down(cx, store, &row, &plan, req.force, probed_clean)?;
-    if req.force {
-        release_stray(cx, store, &row)?;
-    }
+    leftovers(cx, store, &row, req.force)?;
     drop(turn.take());
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
@@ -150,6 +148,19 @@ fn close_held(
         transcript: saved.map(|t| t.path),
         promoted,
     })
+}
+
+/// Clears what Box `row` leaves once wound down: under `force`, the machine of a retry's fork,
+/// and, once it closed, its inbox, whose queued steers can no longer be sent. The event naming
+/// them tells their senders so.
+fn leftovers(cx: &Cx, store: &Store, row: &BoxRow, force: bool) -> Result<(), CommandError> {
+    if force {
+        release_stray(cx, store, row)?;
+    }
+    if store.box_row(row.id)?.map(|r| r.lifecycle) == Some(BoxLifecycle::Closed) {
+        store.drop_all(row.id)?;
+    }
+    Ok(())
 }
 
 /// Releases the machine a retry's fork made for `row` and never moved it to; the Box's own machine

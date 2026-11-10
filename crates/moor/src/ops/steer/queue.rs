@@ -20,6 +20,7 @@ use super::{bring_back, relaunch, Revived, Slot, STEER_DEADLINE};
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::failpoint;
 use crate::ops::common::activity::{self, session_ref, PaneLiveness, Reading};
 use crate::ops::common::wake::wake_and_revive;
 use crate::ops::start::{capped, revivable};
@@ -58,7 +59,7 @@ pub(super) fn steer(
         }
         return Ok(queued(cause(&unread(&row))));
     }
-    if store.unsent(id)?.first().map(|r| r.id) != Some(inbox) {
+    if store.unsent(id)?.first().map(|r| r.id) != Some(inbox) && !asks(cx, store, &row)? {
         let sent = deliver(cx, store, id)?;
         return Ok(sent.iter().find(|(r, _)| *r == inbox).map_or_else(
             || queued(QueueCause::Busy),
@@ -136,9 +137,11 @@ pub(crate) fn deliver(
             break;
         };
         store.mark_sending(id, item.id, launch.id)?;
+        failpoint::hit(failpoint::INBOX_BEFORE_SEND);
         let steer = Steer::Text(item.text.clone());
         match cx.engine().steer(&sref, &steer, Deadline(STEER_DEADLINE)) {
             Ok(outcome) => {
+                failpoint::hit(failpoint::INBOX_AFTER_SEND);
                 let mark = Mark {
                     turn_before: turn_before(reading.term.as_ref(), &steer),
                     status_before: status_before(reading.term.as_ref()),
@@ -288,7 +291,9 @@ fn move_on(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     }
 }
 
-/// Whether row `item` may not be sent again: out of sends, or in doubt on a launch that ended.
+/// Whether row `item` may not be sent again: a key for a screen gone by, a row out of sends, or
+/// one in doubt on a launch other than `live`. A row in doubt on a launch that ended with no
+/// successor waits, and the next launch names it to its agent.
 fn spent(item: &InboxRow, live: Option<LaunchId>) -> bool {
     let kept = matches!(
         item.kind,
@@ -297,9 +302,25 @@ fn spent(item: &InboxRow, live: Option<LaunchId>) -> bool {
     !kept
         || match item.delivery {
             Row::Queued { attempts } => attempts >= MAX_SENDS,
-            Row::InDoubt { launch, attempts } => attempts >= MAX_SENDS || Some(launch) != live,
+            Row::InDoubt { launch, attempts } => {
+                attempts >= MAX_SENDS || live.is_some_and(|l| l != launch)
+            }
             Row::Sent { .. } => false,
         }
+}
+
+/// Whether the agent of Box `row` waits on a question. A steer then answers it, or is refused
+/// with its options, whether or not rows wait ahead of it: they cannot be sent until it is
+/// answered, and an answer means something only on the screen it was sent to.
+fn asks(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    let reading = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)?;
+    Ok(matches!(
+        reading.activity,
+        Some(Activity {
+            state: AgentState::NeedsInput { .. },
+            ..
+        })
+    ))
 }
 
 /// Whether `reading` shows a live agent that takes a message now.

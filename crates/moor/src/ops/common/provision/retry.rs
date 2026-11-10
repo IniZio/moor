@@ -160,7 +160,7 @@ fn launch_or_attach(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandE
             } else {
                 LaunchPrompt::None
             };
-            store.begin_launch_with(row.id, &session.id, argv.text())?;
+            store.begin_launch_with(row.id, &session.id, argv.text(), None)?;
             Ok(())
         }
         Probe::Read { .. } => launch_after_retry(cx, store, row.id).map(drop),

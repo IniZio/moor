@@ -18,7 +18,8 @@ pub(crate) const LOST_LINE: &str = "This Box lost its machine and your earlier c
      was lost was not sent again.";
 
 /// Makes the Box that `launch` resumes on hold the session it resumes, from the Box's newest
-/// archive when it lacks it. When that fails, `launch` starts a fresh agent told the
+/// archive when it lacks it; when the archive was taken, so the launch knows which sent steers
+/// the restored conversation holds. When that fails, `launch` starts a fresh agent told the
 /// conversation was lost. Either outcome is recorded as an event; a Box that holds the session
 /// is left as it is.
 ///
@@ -29,22 +30,25 @@ pub(super) fn before_resume(
     store: &Store,
     id: BoxId,
     launch: &mut LaunchReq,
-) -> Result<(), CommandError> {
+) -> Result<Option<Ts>, CommandError> {
     let Some(session) = launch.resume.clone() else {
-        return Ok(());
+        return Ok(None);
     };
-    let event = match bring_back(cx, store, id, launch, &session)? {
-        Ok(None) => return Ok(()),
-        Ok(Some(at)) => RestoreEvent::SessionRestored {
-            archive_at: rfc3339(at),
-        },
+    let (event, restored) = match bring_back(cx, store, id, launch, &session)? {
+        Ok(None) => return Ok(None),
+        Ok(Some(at)) => (
+            RestoreEvent::SessionRestored {
+                archive_at: rfc3339(at),
+            },
+            Some(at),
+        ),
         Err(reason) => {
             start_without(launch);
-            RestoreEvent::SessionLost { reason }
+            (RestoreEvent::SessionLost { reason }, None)
         }
     };
     store.apply(Decision::new(id).event(ExtraEvent::Restore(event)))?;
-    Ok(())
+    Ok(restored)
 }
 
 /// When the restored archive was taken; none when the Box already held `session`. The inner

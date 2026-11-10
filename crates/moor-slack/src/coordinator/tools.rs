@@ -190,8 +190,11 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         Err(refusal) => return Ok(refusal),
     };
     let name = target.boxed.box_name.as_str().to_owned();
-    if let Some(refusal) = not_running(&target.boxed, "steer") {
-        return Ok(refusal);
+    // moor queues a steer to a Box still starting and sends it once the agent is up.
+    if target.boxed.state != BoxState::Starting {
+        if let Some(refusal) = not_running(&target.boxed, "steer") {
+            return Ok(refusal);
+        }
     }
     let seq = scope
         .db
@@ -203,9 +206,18 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         interrupt: false,
     });
     let (outcome, reply) = match (scope.call)(request) {
-        Ok(r) if r.class == ExitClass::Ok => (
-            format!("sent to Box `{name}`"),
-            Reply::done(format!("Sent to Box `{name}`.")),
+        Ok(r) if r.class == ExitClass::Ok => queued_cause(&r).map_or_else(
+            || {
+                let said = format!("Sent to Box `{name}`.");
+                (format!("sent to Box `{name}`"), Reply::done(said))
+            },
+            |cause| {
+                let said = format!("Queued for Box `{name}` ({cause}).");
+                (
+                    format!("queued for Box `{name}` ({cause})"),
+                    Reply::done(said),
+                )
+            },
         ),
         Ok(r) => {
             let why = error_text(r);
@@ -222,6 +234,18 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         .db
         .end_action(target.turn.id, seq, &outcome, (scope.clock)())?;
     Ok(reply)
+}
+
+/// Why moor keeps a steer queued rather than sending it now, in words; none when it was sent.
+fn queued_cause(reply: &Response) -> Option<String> {
+    let value = reply.value.as_ref()?;
+    (value.get("delivery")?.as_str()? == "queued").then(|| {
+        value
+            .get("cause")
+            .and_then(Value::as_str)
+            .unwrap_or("busy")
+            .replace('_', " ")
+    })
 }
 
 /// `close_box`: the journal row and the Box marked `closing`, in one transaction. The worker

@@ -151,7 +151,7 @@ pub(in crate::store) fn send_with_launch(
 /// The newest `steered` event of Box `box_id` that sent row `id`.
 ///
 /// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
-pub(super) fn steered_by(
+pub(in crate::store) fn steered_by(
     tx: &Tx<'_>,
     box_id: BoxId,
     id: InboxId,

@@ -2,13 +2,12 @@
 
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput};
-use moor_core::domain::inbox::InboxKind;
-use moor_core::domain::inbox::QueueCause;
+use moor_core::domain::inbox::{cut_note, Delivery as Row, InboxKind, QueueCause};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::{EngineError, Steer};
 use moor_core::view::steer::Delivery;
 
-use super::{blocked, fx, fx_with, hold_lock, put_to_sleep, steered, text, Fx};
+use super::{blocked, fx, fx_with, hold_lock, put_to_sleep, steered, text, which_color, Fx};
 use crate::ops::steer::run;
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
@@ -158,7 +157,7 @@ fn a_row_whose_two_sends_fail_is_reported_and_the_next_is_delivered() {
 }
 
 #[test]
-fn a_row_in_doubt_on_an_agent_that_ended_is_reported_and_not_sent_again() {
+fn a_row_in_doubt_on_an_agent_that_ended_is_named_to_the_next_agent_not_sent_again() {
     let f = fx();
     let store = f.cx.store().unwrap();
     let old = store.live_launch(f.id).unwrap().unwrap();
@@ -171,15 +170,62 @@ fn a_row_in_doubt_on_an_agent_that_ended_is_reported_and_not_sent_again() {
     queue(&f, "next");
     reports_idle(&f, "agent-2");
     pass(&f);
-    assert_eq!(texts(&f), ["next"]);
+    assert_eq!(texts(&f), [cut_note("cut"), "next".to_owned()]);
     let events = store.events(f.id, 100).unwrap();
-    let unconfirmed: Vec<_> = events
-        .into_iter()
-        .filter(|e| e.kind == "steer_unconfirmed")
-        .map(|e| e.payload)
-        .collect();
+    let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
+    assert!(kinds.contains(&"steer_cut"), "{kinds:?}");
+    assert!(!kinds.contains(&"steer_unconfirmed"), "{kinds:?}");
+}
+
+#[test]
+fn a_steer_whose_send_failed_stays_in_doubt_and_is_sent_once_more() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::Failed {
+        step: "type",
+        message: "pane busy".into(),
+    }));
+    let f = fx_with(engine, true);
+    reports_idle(&f, "agent-1");
+    run(&f.cx, &text("hi")).unwrap_err();
+    let store = f.cx.store().unwrap();
+    let row = store.unsent(f.id).unwrap();
+    assert!(
+        matches!(
+            row.first().map(|r| r.delivery),
+            Some(Row::InDoubt { attempts: 1, .. })
+        ),
+        "{row:?}"
+    );
+    pass(&f);
+    assert_eq!(texts(&f), ["hi", "hi"]);
+    pass(&f);
+    assert_eq!(texts(&f), ["hi", "hi"], "never a third time");
+}
+
+#[test]
+fn an_answer_to_the_agents_question_goes_ahead_of_queued_rows() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", which_color()), true);
+    queue(&f, "one");
+    let v = run(&f.cx, &text("blue")).unwrap();
+    assert!(v.steer.is_some());
+    assert_eq!(f.engine.steers(), [("agent-1".to_owned(), Steer::Menu(2))]);
+    let left = f.cx.store().unwrap().unsent(f.id).unwrap();
     assert_eq!(
-        unconfirmed,
-        [serde_json::json!({"inbox": row.get(), "text": "cut"})]
+        left.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}
+
+#[test]
+fn other_text_to_a_question_is_refused_even_behind_queued_rows() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", which_color()), true);
+    queue(&f, "one");
+    let err = run(&f.cx, &text("green")).unwrap_err();
+    assert_eq!(err.kind, moor_core::ErrorKind::Refused);
+    assert!(err.error.to_string().contains("1. red"), "{}", err.error);
+    assert!(f.engine.steers().is_empty());
+    let left = f.cx.store().unwrap().unsent(f.id).unwrap();
+    assert_eq!(
+        left.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+        ["one"]
     );
 }
