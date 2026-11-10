@@ -44,3 +44,19 @@ fn a_launchd_host_gets_no_slice() {
     assert!(!install(&manager, 32_000, 7_296).unwrap());
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn a_launchd_host_tells_the_provider_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Manager::Launchd {
+        dir: dir.path().to_path_buf(),
+        uid: 501,
+    };
+    let config = dir.path().join("config.yaml");
+    let mut said = Vec::new();
+    super::tell_provider(&manager, &config, "external", &mut |l| {
+        said.push(l.to_owned());
+    });
+    assert!(!config.exists());
+    assert!(said.is_empty(), "{said:?}");
+}

@@ -529,3 +529,52 @@ fn up_for_a_machine_that_hosts_no_boxes_writes_no_slice() {
     );
     assert!(!w.units().join("moorboxes.slice").exists());
 }
+
+fn up_external(w: &World) -> Ran {
+    w.agent(&[
+        "up",
+        "--server",
+        &w.gate,
+        "--name",
+        "hv",
+        "--runtime",
+        "external",
+    ])
+}
+
+fn crabbox_config(w: &World) -> PathBuf {
+    w.home.path().join("config/crabbox/config.yaml")
+}
+
+#[test]
+fn up_tells_the_adapter_the_slice_after_writing_it_and_keeps_an_owners_choice() {
+    let w = world();
+    let ran = up_external(&w);
+    assert!(ran.ok, "{}", ran.said);
+    let config = std::fs::read_to_string(crabbox_config(&w)).unwrap();
+    assert!(
+        config.contains("cgroupSlice: \"moorboxes.slice\""),
+        "{config}"
+    );
+    assert!(w.units().join("moorboxes.slice").exists());
+
+    let owner = config.replace("\"moorboxes.slice\"", "mine.slice");
+    std::fs::write(crabbox_config(&w), &owner).unwrap();
+    assert!(up_external(&w).ok);
+    assert_eq!(std::fs::read_to_string(crabbox_config(&w)).unwrap(), owner);
+}
+
+#[test]
+fn up_with_cgroup_off_adds_no_slice_and_says_boxes_have_no_ceiling() {
+    let w = world();
+    let dir = crabbox_config(&w).parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let off = "external:\n  config:\n    cgroup: \"off\"\n";
+    std::fs::write(crabbox_config(&w), off).unwrap();
+    let ran = up_external(&w);
+    assert!(ran.ok, "{}", ran.said);
+    assert!(ran.said.contains("no memory ceiling"), "{}", ran.said);
+    let config = std::fs::read_to_string(crabbox_config(&w)).unwrap();
+    assert!(!config.contains("cgroupSlice"), "{config}");
+}

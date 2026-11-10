@@ -34,8 +34,11 @@ A machine serves in one of two ways:
 4. Wait for `linked: NAME, N Box slots`. `up` has installed a user service
    that keeps the agent running, a systemd user unit on Linux or a launch
    agent on macOS. On Linux it also writes `moorboxes.slice`, a user slice
-   that caps Box memory at the host's memory less the reserve. Rerunning `up`
-   with a new `--reserve-mib` rewrites it.
+   that caps Box memory at the host's memory less the reserve. `up` sets
+   `cgroupSlice` in the crabbox config, so each Box VM runs in that slice. An
+   owner's own `cgroupSlice` stays. With `cgroup: off` in that config, `up`
+   adds nothing and says Boxes have no memory ceiling. Rerunning `up` with a
+   new `--reserve-mib` rewrites the slice.
 
 On Linux, run `loginctl enable-linger` once, so the service keeps running
 after you log out.

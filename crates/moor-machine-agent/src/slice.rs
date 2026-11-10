@@ -1,7 +1,10 @@
 //! The user slice every Box VM runs under, so the kernel holds the Boxes to the host's memory
 //! less the reserve while the agent, outside it, keeps reporting.
 
+use std::path::Path;
+
 use crate::service::Manager;
+use crate::settings::{self, Ensured};
 
 /// The slice's unit name, which the provider is told to put each VM's scope in. It has no hyphen:
 /// systemd would nest `a-b.slice` under `a.slice`, where `CPUWeight` has no sibling to weigh against.
@@ -40,6 +43,28 @@ pub fn install(manager: &Manager, total_mib: u64, reserve_mib: u64) -> Result<bo
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     std::fs::write(&file, text).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
     Ok(true)
+}
+
+/// Tells the provider to put VM scopes in [`SLICE`], saying what changed.
+///
+/// The setting goes in the crabbox config at `config`. Call it after [`install`], so the provider
+/// never names a slice with no unit. A launchd host has no slice to name.
+pub fn tell_provider(manager: &Manager, config: &Path, provider: &str, say: &mut dyn FnMut(&str)) {
+    if !matches!(manager, Manager::Systemd { .. }) {
+        return;
+    }
+    match settings::ensure_slice(config, provider, SLICE) {
+        Ok(Ensured::Added) => say(&format!(
+            "set cgroupSlice to {SLICE} in {}; change it there to use another slice",
+            config.display()
+        )),
+        Ok(Ensured::NoCeiling) => say(&format!(
+            "cgroup is off in {}, so Boxes on this machine run with no memory ceiling; remove it to turn the ceiling on",
+            config.display()
+        )),
+        Ok(Ensured::Kept) => {}
+        Err(e) => say(&format!("cannot set the Boxes slice: {e}")),
+    }
 }
 
 #[cfg(test)]

@@ -33,9 +33,10 @@ more Box when all of these hold:
 
 The reserve is 4096 MiB plus a tenth of the host's memory, and
 `--reserve-mib` on `moor-machine-agent up` changes it. The agent applies the
-reserve to its own Boxes slice and reports it with every memory report. The
-controller admits against the reported value. It uses the 4096 MiB plus a tenth
-only for an agent that reports none. A node whose agent reports no memory
+reserve to the user slice that holds every Box VM and reports it with each
+memory report. The kernel slows the Boxes above that limit, so the host and
+the agent stay responsive. The controller admits against the reported value.
+It uses the 4096 MiB plus a tenth only for an agent that reports none. A node whose agent reports no memory
 admits by Box count alone. A shared node always does.
 
 ## Waiting and making room

@@ -92,7 +92,7 @@ pub fn up(
         None => pair::pair(&server, &ask, dir, say)?,
     };
     let service = service(&ask, crabbox.as_deref(), up.reserve_mib, dir, manager)?;
-    if let (Some(_), Some(total)) = (&ask.provider, host_mem_mib()) {
+    if let (Some(provider), Some(total)) = (&ask.provider, host_mem_mib()) {
         let reserve = up.reserve_mib.unwrap_or_else(|| default_reserve_mib(total));
         if slice::install(manager, total, reserve)? {
             say(&format!(
@@ -101,6 +101,7 @@ pub fn up(
                 reserve
             ));
         }
+        slice::tell_provider(manager, &settings::config_path(&up.home), provider, say);
     }
     let linked = dir.join(linked::FILE);
     manager.install(&service)?;
@@ -189,7 +190,7 @@ pub fn apply_settings(home: &Path, provider: &str, say: &mut dyn FnMut(&str)) {
             "turned on checkpoints in {}; set them to false there to opt out",
             path.display()
         )),
-        Ok(Ensured::Kept) => {}
+        Ok(Ensured::Kept | Ensured::NoCeiling) => {}
         Err(e) => say(&format!("cannot turn on checkpoints: {e}")),
     }
 }
