@@ -9,7 +9,7 @@ mod node_disk;
 mod restore;
 mod stall;
 mod workflow;
-pub use close::CloseEvent;
+pub use close::{CloseEvent, ReleaseEnd};
 pub use inbox::InboxEvent;
 pub use node_disk::NodeDiskEvent;
 pub use restore::RestoreEvent;
@@ -44,6 +44,8 @@ pub const ASSERTED_KINDS: &[&str] = &[
 pub const EVENT_KINDS: &[&str] = &[
     "caches_not_saved",
     "close_refused",
+    "release_started",
+    "release_finished",
     "disk_lost",
     "wanted_dropped",
     "started",

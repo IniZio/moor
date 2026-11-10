@@ -22,6 +22,7 @@ mod leases;
 mod promote;
 mod proxy;
 mod reason;
+mod release;
 mod reports;
 mod restart;
 mod target;

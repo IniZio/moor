@@ -15,6 +15,10 @@ pub enum ExtraEvent {
     DiskLost,
     /// A close deleted the Box without waking it, so its caches were not saved.
     CachesNotSaved,
+    /// A close asked the provider to release the Box.
+    ReleaseStarted,
+    /// The provider answered a close's release.
+    ReleaseFinished(crate::domain::event::ReleaseEnd),
     /// The wanted pass gave up a close moor still wanted, so the Box stays open.
     CloseRefused {
         /// Why, when the close was refused; none when it failed some other way.

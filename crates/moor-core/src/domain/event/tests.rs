@@ -380,6 +380,8 @@ fn all_events() -> Vec<Event> {
             }),
             error: s("e"),
         }),
+        Event::Close(CloseEvent::ReleaseStarted),
+        Event::Close(CloseEvent::ReleaseFinished(ReleaseEnd::default())),
     ]
 }
 
@@ -497,6 +499,8 @@ const fn event_index(e: &Event) -> usize {
         Event::Inbox(InboxEvent::SteerCut { .. }) => 93,
         Event::Inbox(InboxEvent::SteersDropped { .. }) => 94,
         Event::Close(CloseEvent::CloseRefused { .. }) => 95,
+        Event::Close(CloseEvent::ReleaseStarted) => 96,
+        Event::Close(CloseEvent::ReleaseFinished(_)) => 97,
     }
 }
 
@@ -504,7 +508,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 96);
+    assert_eq!(all.len(), 98);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
