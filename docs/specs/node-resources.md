@@ -141,6 +141,21 @@ The ceiling protects the host from Boxes. It does not limit other work on the
 host. [Add your machine](../add-machine.md) will say how to cap builds on a
 machine that is also a node.
 
+## Provider operations
+
+The node agent asks the provider for these. Names are provider-neutral.
+
+| Operation | Returns | Today |
+| --- | --- | --- |
+| Disk usage | Bytes by class, and a row for each item with its size, last use and holder | New. Only free and total disk exist |
+| Delete a saved setup | Done, or refused because another is built on it | Exists |
+| Delete a cache | Done, or refused because an open Box has it attached | New. The provider runs its own cleanup today |
+| Drop a memory snapshot | Done. The Box disk stays | New. A wake with no snapshot already boots from the disk |
+| Slice for VM scopes | Config value | New. Scopes exist |
+
+The provider's own cache cleanup and its budget go once the controller calls
+delete. A wake that booted from the disk reports that it did.
+
 ## With Box hands
 
 [Box hands](box-hands.md) owns how a decision becomes an action. This spec owns
