@@ -23,6 +23,7 @@ mod promote;
 mod proxy;
 mod reason;
 mod reports;
+mod restart;
 mod target;
 mod teardown;
 mod transcript;

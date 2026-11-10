@@ -1,19 +1,21 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box.
 
+use std::cell::Cell;
+
 use moor_core::decide::close::{
     close_gate, close_gate_with_reason, BoxCheck, CloseFacts, ClosePlan, Refusal,
 };
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, Effect, ExtraEvent, WantChange, Wanted, WantedKind};
+use moor_core::domain::decision::{Decision, ExtraEvent, Wanted};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, Warning};
 
-use crate::cx::owners::{Cmd, Turn, INTERRUPT_WAIT};
-use crate::cx::{Cx, QUEUE_WAIT};
+use crate::cx::owners::Turn;
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
@@ -25,6 +27,7 @@ use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::box_view;
 use crate::store::{BoxRow, HandsRow, Store};
+use turn::turn;
 
 /// Closes a Box: gate, transcript save, agent stop, machine teardown and release.
 ///
@@ -59,7 +62,8 @@ pub(crate) fn run_unless_kept(
     close_with(cx, req, None, Some(keep))
 }
 
-/// The close of `req`; see [`run_unless_kept`] for `keep`.
+/// The close of `req`; see [`run_unless_kept`] for `keep`. Once the Box's turn is held and `keep`
+/// lets it go, the close is wanted, so a restart or the wanted pass finishes what this cannot.
 fn close_with(
     cx: &Cx,
     req: &CloseReq,
@@ -71,12 +75,30 @@ fn close_with(
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
     let turn = turn(cx, &first, req.force)?;
-    let mut row = store.box_row(first.id)?.unwrap_or(first);
+    let row = store.box_row(first.id)?.unwrap_or(first);
     if let Some(why) = keep.and_then(|keep| keep(store, &row)) {
         return Err(CommandError::new(ErrorKind::Refused, why));
     }
+    let wanted = Wanted::Close {
+        force: req.force,
+        reason: reason.clone(),
+    };
+    wanted::closing(store, row.id, wanted, turn, |waits, turn| {
+        close_held(cx, store, req, (row, turn), (reason, wake, waits))
+    })
+}
+
+/// [`close_with`] once the close is wanted, under the turn it took, which it lets go once the
+/// Box is released. `waits` is set when the gate refuses only because the Box has no room to wake.
+fn close_held(
+    cx: &Cx,
+    store: &Store,
+    req: &CloseReq,
+    (mut row, turn): (BoxRow, &mut Option<Turn<'_>>),
+    (reason, wake, waits): (Option<String>, check::Wake, &Cell<bool>),
+) -> Result<CloseView, CommandError> {
     with_planned(store, &mut row)?;
-    let box_check = check::box_check(cx, store, &mut row, (req.force, wake))?;
+    let box_check = check::box_check(cx, store, &mut row, (req.force, wake, waits))?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate_with_reason(&facts(&row, box_check), req.force, reason)
         .map_err(|r| refused(&row, r))?;
@@ -98,7 +120,7 @@ fn close_with(
     if req.force {
         release_stray(cx, store, &row)?;
     }
-    drop(turn);
+    drop(turn.take());
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
             code: "proxy_stop_failed".to_owned(),
@@ -130,58 +152,6 @@ fn close_with(
     })
 }
 
-/// Takes the Box's turn, or `None` when this thread holds it already, as a resume honouring a
-/// recorded forced close does; under `force`, a start in flight is stopped and the close goes first.
-///
-/// The stopped start records its setup as failed before it lets go. One that has not stopped
-/// after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still acquiring its
-/// machine has that boot cancelled, and the close is wanted first so a restart honours it.
-fn turn<'a>(cx: &'a Cx, row: &BoxRow, force: bool) -> Result<Option<Turn<'a>>, CommandError> {
-    if cx.owners().holds(row.id) {
-        return Ok(None);
-    }
-    let name = row.name.as_str();
-    let starting = matches!(row.effect, Some(Effect::Setup | Effect::Acquire));
-    let acquiring = row.effect == Some(Effect::Acquire);
-    let store = cx.store()?;
-    let deadline = cx.clock().instant() + QUEUE_WAIT;
-    let cmd = Cmd::Close { force };
-    let stop = || {
-        if acquiring {
-            let closing = Wanted::Close {
-                force: true,
-                reason: None,
-            };
-            store.apply(Decision::new(row.id).want(WantChange::Raise(closing)))?;
-        }
-        cancel_boot(cx, store, row)
-    };
-    match cx
-        .owners()
-        .preempting(row.id, cmd, cx.env().cancel(), deadline, stop)
-    {
-        Ok((turn, _)) => Ok(Some(turn)),
-        Err(e) if e.kind == ErrorKind::Refused && starting && !force => Err(e.with_hint(format!(
-            "`moor close {name} --force` interrupts the start and closes the Box"
-        ))),
-        Err(e) if e.kind == ErrorKind::Refused && force && starting => {
-            if acquiring {
-                let done = WantChange::Done(WantedKind::Close);
-                store.apply(Decision::new(row.id).want(done))?;
-            }
-            Err(CommandError::new(
-                ErrorKind::Refused,
-                format!(
-                    "box busy: the start of {name} did not stop within {}s of the forced close; \
-                     the Box was left as it is",
-                    INTERRUPT_WAIT.as_secs()
-                ),
-            ))
-        }
-        Err(e) => Err(e),
-    }
-}
-
 /// Releases the machine a retry's fork made for `row` and never moved it to; the Box's own machine
 /// is released by the close itself, so it is left out.
 fn release_stray(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
@@ -199,7 +169,7 @@ fn release_stray(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandErro
 }
 
 /// Tells the host of `row` to end the boot it may still run for the start this close stops.
-fn cancel_boot(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+pub(super) fn cancel_boot(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some(handle) = planned_root(store, row.id)? else {
         return Ok(());
     };
@@ -382,6 +352,8 @@ fn wind_down(
 mod check;
 mod release;
 mod teardown;
+mod turn;
+pub(crate) mod wanted;
 
 #[cfg(test)]
 mod tests;

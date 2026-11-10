@@ -127,6 +127,28 @@ impl Moor {
         }
     }
 
+    /// The pass that finishes each close a Box still wants, for the controller to run each tick.
+    pub(crate) fn wanted_pass(
+        env: &Env,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        let env = env.clone();
+        move |draining| match Self::from_env(&env) {
+            Ok(moor) => crate::cx::owners::checked(|| {
+                let mut out = Vec::new();
+                let passed = moor
+                    .cx
+                    .store()
+                    .and_then(|store| ops::wanted_pass(&moor.cx, store, draining));
+                if let Err(e) = passed {
+                    out.push(e.error.to_string());
+                }
+                out.extend(moor.cx.take_warnings().into_iter().map(|w| w.message));
+                out
+            }),
+            Err(e) => vec![e.error.to_string()],
+        }
+    }
+
     /// `env` with the controller's log shared, so a write dropped as stale reaches it.
     pub(crate) fn log_to(env: Env, sink: &Arc<Mutex<dyn Write + Send>>) -> Env {
         env.sharing(ops::common::stale::ControllerLog::new(sink))
@@ -193,10 +215,15 @@ impl Moor {
         out
     }
 
-    /// The open Boxes whose start an earlier process left unfinished, each to resume as its
-    /// owner's first turn; returns what to log and those Boxes.
+    /// The open Boxes an earlier process left something in flight on, each to resume as its
+    /// owner's first turn, once a wanted sleep or suspend it left is dropped; returns what to log
+    /// and those Boxes.
     pub(crate) fn cut_short_starts(&self) -> (Vec<String>, Vec<BoxId>) {
-        match self.cx.store().and_then(interrupted::cut_short) {
+        let found = self.cx.store().and_then(|store| {
+            interrupted::drop_wanted(store)?;
+            interrupted::cut_short(store)
+        });
+        match found {
             Ok(cut) => (Vec::new(), cut),
             Err(e) => (vec![e.error.to_string()], Vec::new()),
         }

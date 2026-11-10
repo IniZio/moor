@@ -359,6 +359,36 @@ fn a_run_a_relaunch_raced_is_still_ended_as_interrupted_after_a_restart() {
     assert_eq!(box_row(&w).effect, None);
 }
 
+#[test]
+fn a_restart_drops_a_wanted_sleep_or_suspend_and_keeps_a_wanted_close() {
+    use moor_core::domain::decision::{Decision, WantChange, Wanted, WantedKind};
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &start_req()).unwrap();
+    let store = w.cx.store().unwrap();
+    let suspend = Wanted::Suspend {
+        reason: "memory".to_owned(),
+    };
+    store
+        .apply(Decision::new(BoxId::new(1)).want(WantChange::Raise(suspend)))
+        .unwrap();
+    crate::ops::common::provision::interrupted::drop_wanted(store).unwrap();
+    assert_eq!(box_row(&w).wanted, None);
+    let kinds: Vec<_> = store.events(BoxId::new(1), 5).unwrap();
+    assert!(kinds.iter().any(|e| e.kind == "wanted_dropped"));
+    let close = Wanted::Close {
+        force: false,
+        reason: None,
+    };
+    store
+        .apply(Decision::new(BoxId::new(1)).want(WantChange::Raise(close)))
+        .unwrap();
+    crate::ops::common::provision::interrupted::drop_wanted(store).unwrap();
+    let kept = box_row(&w).wanted.map(|w| w.kind());
+    assert_eq!(kept, Some(WantedKind::Close));
+    assert_eq!(cut_short_of(&w), [BoxId::new(1)]);
+}
+
 fn cut_short_of(w: &World) -> Vec<BoxId> {
     crate::ops::common::provision::interrupted::cut_short(w.cx.store().unwrap()).unwrap()
 }

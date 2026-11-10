@@ -2,6 +2,7 @@
 
 use moor_core::decide::close::{release_outcome_with_reason, ReleaseResult};
 use moor_core::decide::reconcile::{reconcile, BoxFact};
+use moor_core::domain::decision::{Decision, Effect, EffectChange};
 use moor_core::seam::driver::Released;
 use moor_core::ErrorKind;
 
@@ -28,7 +29,9 @@ pub(super) fn machine_vanished(cx: &Cx, row: &BoxRow) -> bool {
         .is_ok_and(|listing| !reconcile(&[fact], &listing).is_empty())
 }
 
-/// Asks the Driver to release the Box and records the verdict.
+/// Asks the Driver to release the Box and records the verdict. The release is the Box's effect in
+/// flight from just before the Driver is asked, so a restart that cuts it releases again, and a
+/// release that fails ends it with the Box left open.
 ///
 /// Returns whether the Box is now deleted.
 pub(super) fn release(
@@ -43,6 +46,7 @@ pub(super) fn release(
     let Some(handle) = held(b) else {
         return Ok(false);
     };
+    store.apply(Decision::new(row.id).effect(EffectChange::Next(Effect::Release)))?;
     let (result, cause) = match cx.driver().release(handle) {
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),
@@ -55,6 +59,7 @@ pub(super) fn release(
         cx.warn(w);
     }
     if !verdict.closes {
+        store.apply(Decision::new(row.id).effect(EffectChange::End))?;
         let why = cause.map_or_else(
             || "the Box could not be released".to_owned(),
             |e| e.to_string(),
