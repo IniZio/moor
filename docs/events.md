@@ -28,6 +28,8 @@ A webhook that names no events gets the kinds marked with a check.
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |
 | `close_refused` | | moor gave up a close it was waiting to finish, so the Box stays open. `data.reason` is the refusal, such as `{"refusal": "unsaved", "branch", "ahead", "dirty"}` or `{"refusal": "unchecked", "reason"}`, or null when the close failed another way. `data.error` says why in words. The event is written with the give-up itself. When the close woke an asleep Box, moor puts it back to sleep afterwards, and that shows as a later `asleep` event. |
 | `caches_not_saved` | | A close deleted an asleep Box whose caches were not saved. |
+| `release_started` | | A close asked the provider to release the Box's machine. A provider with writable caches saves them now, which can take a minute. |
+| `release_finished` | | The provider answered that release. `data.ms` is how long it took. `data.ok` says whether the machine was released. `data.caches_saved` says whether the caches were saved. It is `false` when the machine was already gone, and null when the provider does not say. |
 | `exec_ran` | | `exec_in_box` or `moor exec` ran a command. |
 
 A webhook keeps the list it was added with. To get a kind added later, remove

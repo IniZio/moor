@@ -156,6 +156,22 @@ fn extra_events_round_trip() {
     }
 }
 
+/// A close's release events survive a trip through `Event` with the same kind.
+#[test]
+fn release_events_round_trip() {
+    let finished = ExtraEvent::ReleaseFinished(crate::domain::event::ReleaseEnd {
+        ms: 3_000,
+        ok: false,
+        caches_saved: Some(false),
+    });
+    for x in [ExtraEvent::ReleaseStarted, finished] {
+        let e = Event::from(x.clone());
+        let kind = e.kind();
+        assert!(kind.starts_with("release_"), "{kind}");
+        assert_eq!(ExtraEvent::try_from(e), Ok(x));
+    }
+}
+
 #[test]
 fn a_cache_emptied_event_round_trips() {
     let x = ExtraEvent::CacheEmptied {

@@ -16,6 +16,8 @@ impl TryFrom<Event> for ExtraEvent {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::DiskLost => Ok(Self::DiskLost),
             Event::Close(CloseEvent::CachesNotSaved) => Ok(Self::CachesNotSaved),
+            Event::Close(CloseEvent::ReleaseStarted) => Ok(Self::ReleaseStarted),
+            Event::Close(CloseEvent::ReleaseFinished(end)) => Ok(Self::ReleaseFinished(end)),
             Event::Close(CloseEvent::CloseRefused { reason, error }) => {
                 Ok(Self::CloseRefused { reason, error })
             }

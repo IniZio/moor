@@ -2,7 +2,8 @@
 
 use moor_core::decide::close::{release_outcome_with_reason, ReleaseResult};
 use moor_core::decide::reconcile::{reconcile, BoxFact};
-use moor_core::domain::decision::{Decision, Effect, EffectChange};
+use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent};
+use moor_core::domain::event::ReleaseEnd;
 use moor_core::seam::driver::Released;
 use moor_core::ErrorKind;
 
@@ -33,6 +34,9 @@ pub(super) fn machine_vanished(cx: &Cx, row: &BoxRow) -> bool {
 /// flight from just before the Driver is asked, so a restart that cuts it releases again, and a
 /// release that fails ends it with the Box left open.
 ///
+/// An event marks the ask and another its time, since a provider may save the Box's caches
+/// meanwhile, which can take a minute.
+///
 /// Returns whether the Box is now deleted.
 pub(super) fn release(
     cx: &Cx,
@@ -46,11 +50,22 @@ pub(super) fn release(
     let Some(handle) = held(b) else {
         return Ok(false);
     };
-    store.apply(Decision::new(row.id).effect(EffectChange::Next(Effect::Release)))?;
-    let (result, cause) = match cx.driver().release(handle) {
-        Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
-        Err(e) => (ReleaseResult::Failed, Some(e)),
+    let begin = Decision::new(row.id).event(ExtraEvent::ReleaseStarted);
+    store.apply(begin.effect(EffectChange::Next(Effect::Release)))?;
+    let started = cx.clock().instant();
+    let released = cx.driver().release(handle);
+    let took = cx.clock().instant().saturating_duration_since(started);
+    let (result, cause, caches_saved) = match released {
+        Ok(Released::Deleted) => (ReleaseResult::Deleted, None, None),
+        Ok(Released::AlreadyGone) => (ReleaseResult::Deleted, None, Some(false)),
+        Err(e) => (ReleaseResult::Failed, Some(e), None),
     };
+    let end = ReleaseEnd {
+        ms: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
+        ok: cause.is_none(),
+        caches_saved,
+    };
+    store.apply(Decision::new(row.id).event(ExtraEvent::ReleaseFinished(end)))?;
     let verdict = release_outcome_with_reason(row.id, (b.inc, b.state), result, reason);
     if let Some(d) = verdict.decision {
         store.apply(d)?;

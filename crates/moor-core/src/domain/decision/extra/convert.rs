@@ -13,6 +13,8 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::DiskLost => Self::DiskLost,
             ExtraEvent::CachesNotSaved => Self::Close(CloseEvent::CachesNotSaved),
+            ExtraEvent::ReleaseStarted => Self::Close(CloseEvent::ReleaseStarted),
+            ExtraEvent::ReleaseFinished(end) => Self::Close(CloseEvent::ReleaseFinished(end)),
             ExtraEvent::CloseRefused { reason, error } => {
                 Self::Close(CloseEvent::CloseRefused { reason, error })
             }
