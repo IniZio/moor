@@ -32,6 +32,8 @@ pub(crate) struct InboxRow {
     pub(crate) created_at: Ts,
     /// How far it got towards the agent.
     pub(crate) delivery: Delivery,
+    /// Sends begun, whatever came of them.
+    pub(crate) sends: u8,
 }
 
 impl Store {
@@ -363,6 +365,7 @@ fn inbox_row(r: &Row<'_>) -> Result<InboxRow, StoreError> {
         delivery: Delivery::parse(cols).ok_or_else(|| {
             StoreError::Corrupt(format!("inbox row {} delivery {cols:?}", id.get()))
         })?,
+        sends: u8::try_from(cols.attempts).unwrap_or(u8::MAX),
     })
 }
 

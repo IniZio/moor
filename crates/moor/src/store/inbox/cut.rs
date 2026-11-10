@@ -49,7 +49,8 @@ pub(in crate::store) fn name_cut(
             )?;
             continue;
         }
-        let text = if row.kind == InboxKind::Note {
+        let note = row.kind == InboxKind::Note;
+        let text = if note {
             row.text
         } else {
             let cut = Event::Inbox(InboxEvent::SteerCut {
@@ -66,7 +67,10 @@ pub(in crate::store) fn name_cut(
                 .value(BoxInbox::Text, text)
                 .cond_where(one(box_id, row.id)),
         )?;
-        let queued = Delivery::Queued { attempts: 0 };
+        // A note cut again keeps its sends, so one that keeps getting cut is reported, not
+        // sent to every launch.
+        let sends = if note { row.sends } else { 0 };
+        let queued = Delivery::Queued { attempts: sends };
         write_delivery(tx, box_id, row.id, queued.columns(0))?;
     }
     Ok(())

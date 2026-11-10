@@ -29,6 +29,9 @@ pub enum Delivery {
     Delivered,
     /// It waits in the Box's inbox for this cause, and moor sends it once the agent can take it.
     Queued(QueueCause),
+    /// Its send failed after it may have reached the agent. moor sends it once more, or names it
+    /// to the next agent, so the sender must not send it again.
+    InDoubt,
 }
 
 /// Why a queued steer waits, in words for a person, from the `cause` in its reply, so every front
