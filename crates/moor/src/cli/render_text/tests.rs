@@ -217,13 +217,6 @@ fn steer_prints_one_line() {
 }
 
 #[test]
-fn a_queued_steer_prints_queued_with_its_cause() {
-    let v = json!({"box": "t1", "delivery": "queued", "cause": "waiting_for_room"});
-    let (out, _) = render(&Response::ok("steer", Some(v)), false);
-    assert_eq!(out, "queued for t1 (waiting for room)\n");
-}
-
-#[test]
 fn end_session_prints_ordinal_id_and_box_kept() {
     let v = json!({"box": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let (out, _) = render(&Response::ok("end-session", Some(v)), false);
@@ -598,3 +591,4 @@ fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
 }
 
 mod hints;
+mod steer;

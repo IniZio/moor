@@ -109,3 +109,24 @@ fn a_launch_after_the_agent_died_names_every_cut_text_and_sends_a_cut_note_as_it
     );
     assert_eq!(texts(&store.unsent(other).unwrap()), ["b:in_doubt"]);
 }
+
+#[test]
+fn a_note_cut_again_keeps_its_sends_so_it_goes_out_twice_at_most() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let mut live = launch(&store, id);
+    let note = store
+        .enqueue(id, InboxKind::Note, "moor says", "moor")
+        .unwrap();
+    for sends in 1..=2 {
+        store.mark_sending(id, note, live).unwrap();
+        store.confirm_sent(id, note, MARK, &steered(note)).unwrap();
+        live = launch(&store, id);
+        assert_eq!(
+            store.next_for(id).unwrap().unwrap().delivery,
+            Delivery::Queued { attempts: sends }
+        );
+    }
+    assert!(store.mark_sending(id, note, live).is_err());
+}

@@ -300,11 +300,12 @@ fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
 /// Formats the `steer` line, or `None` when the Box name is missing or mistyped.
 fn steer_line(value: &Value) -> Option<String> {
     let box_name = value.get("box")?.as_str()?;
-    if value.get("delivery").and_then(Value::as_str) == Some("queued") {
-        let cause = moor_core::view::steer::queued_words(value);
-        return Some(format!("queued for {box_name} ({cause})\n"));
-    }
-    Some(format!("steered {box_name}\n"))
+    let cause = moor_core::view::steer::queued_words(value);
+    Some(match value.get("delivery").and_then(Value::as_str) {
+        Some("queued") => format!("queued for {box_name} ({cause})\n"),
+        Some("in_doubt") => format!("in doubt for {box_name}: do not resend\n"),
+        _ => format!("steered {box_name}\n"),
+    })
 }
 
 /// Formats the `end-session` line, or `None` when a field is missing or mistyped.

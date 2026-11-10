@@ -26,6 +26,25 @@ fn a_queued_steer_says_it_is_queued_and_why() {
 }
 
 #[test]
+fn a_steer_in_doubt_says_not_to_send_it_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    turn_of(&db, "U1", "Ev1");
+    let controller = Controller::new();
+    let value = json!({"box": ONE, "delivery": "in_doubt"});
+    let reply = controller.run_with(&db, &steer(ONE, "go on"), &mut |r| {
+        Ok(Response::ok(r.cmd(), Some(value.clone())))
+    });
+    assert_eq!(
+        reply,
+        Reply::done(format!(
+            "Box `{ONE}` may have it already, so do not send it again. moor sends it once \
+             more or tells the agent it was cut."
+        ))
+    );
+}
+
+#[test]
 fn a_steer_to_a_starting_box_goes_to_moor_to_queue() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(&dir.path().join("slack.db")).unwrap();
