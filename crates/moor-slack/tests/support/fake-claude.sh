@@ -4,12 +4,13 @@ if [ "$1" = "--version" ]; then
   if [ -f "$dir/version" ]; then cat "$dir/version"; else echo "2.1.304 (Claude Code)"; fi
   exit 0
 fi
+out=$(mktemp -d "$dir/own.XXXXXX") || exit 1
 n=0
-until mkdir "$dir/run-$n" 2>/dev/null; do
-  [ -d "$dir/run-$n" ] || exit 1
+until ln -sn "${out##*/}" "$dir/run-$n" 2>/dev/null; do
   n=$((n + 1))
 done
-out="$dir/run-$n"
+echo "$n" > "$out/n"
+echo "$$ $n $PPID $(cut -d' ' -f22 /proc/$$/stat)" >> "$dir/claims"
 echo $$ > "$out/pid"
 for arg in "$@"; do printf '%s\n' "$arg"; done > "$out/argv"
 tr '\0' '\n' < /proc/$$/environ > "$out/env"
@@ -60,14 +61,17 @@ case "$token" in
       prev=$arg
     done
     cmd=$(sed -n 's/^ *"command": "\(.*\)",$/\1/p' "$cfg")
-    sed -n '/"args": \[/,/\]/p' "$cfg" | sed '1d;$d' | sed 's/^ *"\(.*\)",\{0,1\}$/\1/' > "$out/server-args"
+    server_args=$(sed -n '/"args": \[/,/\]/p' "$cfg" | sed '1d;$d' | sed 's/^ *"\(.*\)",\{0,1\}$/\1/')
+    printf '%s\n' "$server_args" > "$out/server-args"
     set --
-    while IFS= read -r a; do set -- "$@" "$a"; done < "$out/server-args"
+    [ -n "$server_args" ] && while IFS= read -r a; do set -- "$@" "$a"; done <<EOF_ARGS
+$server_args
+EOF_ARGS
     calls="$dir/calls-$n"
     [ -f "$calls" ] || calls="$dir/calls"
     hello='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"fake","version":"0"}}}'
     mkfifo "$out/server-in"
-    "$cmd" "$@" < "$out/server-in" > "$out/mcp-list" 2> "$out/mcp-err" &
+    "$cmd" "$@" < "$out/server-in" >> "$out/mcp-list" 2>> "$out/mcp-err" &
     server=$!
     exec 4> "$out/server-in"
     printf '%s\n%s\n' "$hello" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' >&4
@@ -83,7 +87,7 @@ case "$token" in
       echo "$hello"
       echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
       if [ -f "$calls" ]; then cat "$calls"; fi
-    } | "$cmd" "$@" > "$out/mcp" 2>> "$out/mcp-err"
+    } | "$cmd" "$@" >> "$out/mcp" 2>> "$out/mcp-err"
     if [ -f "$dir/hang-after-tools" ]; then sleep 60; fi
     echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
     ;;
