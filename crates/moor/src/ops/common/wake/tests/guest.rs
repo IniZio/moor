@@ -97,3 +97,28 @@ fn a_guest_already_up_costs_one_look() {
         .count();
     assert_eq!(looks, 1 + launch_looks);
 }
+
+#[test]
+fn a_guest_wait_that_can_never_succeed_fails_at_once() {
+    let f = asleep_without_agent();
+    let why = "crabbox refused its external routing directory: \"xdg\"; run `chmod go-w`";
+    f.driver.fail_peek_of(
+        &environ(),
+        DriverError::Misconfigured {
+            summary: why.to_owned(),
+        },
+    );
+    let store = f.cx.store().unwrap();
+    let from = f.cx.clock().now().as_millis();
+    let err = crate::ops::common::wake::await_guest(&f.cx, store, &row(&f)).unwrap_err();
+    assert!(err.error.to_string().contains(why), "{:?}", err.error);
+    assert!(waited(&f, from) < 1_000, "{}", waited(&f, from));
+    let looks = f
+        .driver
+        .peeks()
+        .iter()
+        .filter(|(_, p)| *p == environ())
+        .count();
+    assert_eq!(looks, 1);
+    assert!(!kinds(&f).contains(&"agent_unreachable".to_owned()));
+}
