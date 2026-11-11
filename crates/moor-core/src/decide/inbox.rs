@@ -26,6 +26,8 @@ pub struct Facts {
     pub agent: AgentFact,
     /// Whether moor may not relaunch the agent on its own now.
     pub capped: bool,
+    /// Whether the agent's last launch failed, so no agent runs until a person retries.
+    pub launch_failed: bool,
 }
 
 /// What moor does next for a Box with queued rows.
@@ -49,6 +51,8 @@ pub const fn next(f: &Facts) -> Next {
     match (f.hands, f.lifecycle) {
         // A failed setup waits for a person to retry or close it, its rows kept for that retry.
         (_, BoxLifecycle::SetupFailed) => Next::Hold,
+        // So does a failed launch: waking the Box would start no agent, and it would sleep again.
+        _ if f.launch_failed => Next::Hold,
         (Some(HandsState::Gone), _) => Next::BringBack,
         (_, BoxLifecycle::Asleep) => Next::Wake,
         (Some(HandsState::Ready), BoxLifecycle::Ready) => match f.agent {

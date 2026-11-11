@@ -366,6 +366,7 @@ fn unread(row: &BoxRow) -> Facts {
         hands: row.hands.as_ref().map(|h| h.state),
         agent: AgentFact::NotReady,
         capped: false,
+        launch_failed: row.launch_failure.is_some(),
     }
 }
 

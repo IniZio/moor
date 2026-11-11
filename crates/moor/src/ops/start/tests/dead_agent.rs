@@ -169,3 +169,43 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let events = store.events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "session_failed"));
 }
+
+#[test]
+fn an_asleep_box_whose_launch_failed_is_not_woken_for_its_queued_prompt() {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::decision::Decision;
+    use moor_core::domain::hands::{HandsInc, HandsInput};
+    use moor_core::domain::session_state::SessionInput;
+    use moor_core::seam::engine::EngineError;
+
+    let engine = Arc::new(FakeEngine::new().launch_result(Err(EngineError::Failed {
+        step: "home",
+        message: "machine 1 is not linked".to_owned(),
+    })));
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine);
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    let id = BoxId::new(v.boxed.id);
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::sleep(true))
+                .hands_input(HandsInc::FIRST, HandsInput::Sleep),
+        )
+        .unwrap();
+    let backoff = crate::ops::InboxBackoff::default();
+    crate::ops::inbox_pass(&w.cx, store, &|| false, &backoff).unwrap();
+    assert!(w.driver.calls().iter().all(|c| !c.starts_with("wake ")));
+    let events = store.events(id, 50).unwrap();
+    assert!(events.iter().all(|e| e.kind != "woke"));
+    assert_eq!(
+        store.unsent(id).unwrap().len(),
+        1,
+        "the prompt waits for a retry"
+    );
+}
