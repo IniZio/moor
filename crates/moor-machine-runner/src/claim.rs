@@ -203,7 +203,7 @@ async fn claim(
                 };
                 return Ok((caller, ports));
             }
-            HoldValue::Refused { reason } => return Err(format!("no free slot: {reason}")),
+            HoldValue::Refused { reason } => return Err(reason),
             HoldValue::Released { .. } => return Err("the claim was let go of".to_owned()),
             HoldValue::Waiting { position, reason } => {
                 progress
@@ -215,7 +215,7 @@ async fn claim(
         let left = deadline.saturating_duration_since(tokio::time::Instant::now());
         if left.is_zero() {
             let _ = ask(client, id, HoldOp::Release).await;
-            return Err(format!("no free slot: {reason}"));
+            return Err(reason);
         }
         tokio::time::sleep(left.min(POLL)).await;
     }
