@@ -20,17 +20,22 @@ pub(super) const TOUCH_EVERY: Duration = Duration::from_mins(10);
 
 /// Shell wrapper the Box runs around the command.
 ///
-/// `$1` and `$2` bracket the command's stderr, `$3` tags the line that reports its exit, and
-/// `$4` is the directory to make and enter, or empty for the login directory. The rest is the
-/// command. The env arrives on stdin, goes into a private temp file, is sourced and the file
-/// removed before the command starts; the command reads `/dev/null`. The exit line is how moor
-/// tells the command's own exit 255 from ssh losing the connection.
+/// `$1` and `$2` bracket the command's stderr, `$3` tags the line that reports its exit, `$4`
+/// is the directory to make and enter, or empty for the login directory, and `$5` the deadline
+/// in seconds. The rest is the command. The env arrives on stdin, goes into a private temp file,
+/// is sourced and the file removed before the command starts; the command reads `/dev/null`.
+/// The exit line is how moor tells the command's own exit 255 from ssh losing the connection.
 ///
 /// An EXIT trap holding the file's path also removes it, with an absolute `rm`, since a broken
 /// env stream ends sh mid-source and an env may replace `PATH`. The path goes into the trap and
 /// the positional words, never a variable the env could overwrite. The end marker starts with
 /// a newline so it is a line of its own after stderr with no trailing newline.
-pub(super) const WRAPPER: &str = r#"b=$1 e=$2 x=$3 d=$4; shift 4
+///
+/// sshd does not signal a command when its client goes, so the Box ends it at the deadline
+/// itself: `timeout` runs it in a process group of its own and hangs up the whole group, killing
+/// it 10 s later. The inner sh writes the exit code to fd 3 only when the command ended on its
+/// own, so an empty code means the deadline ended it, reported as `timeout` on the exit line.
+pub(super) const WRAPPER: &str = r#"b=$1 e=$2 x=$3 d=$4 t=$5; shift 5
 f=$(mktemp) || exit 1
 case $f in *"'"*) /bin/rm -f -- "$f"; exit 1;; esac
 trap "/bin/rm -f -- '$f'" EXIT
@@ -38,10 +43,17 @@ set -- "$f" "$@"
 cat >"$1" && . "$1"; r=$?; /bin/rm -f -- "$1"; shift
 test "$r" -eq 0 || { echo "moor: the command env did not load" >&2; exit 1; }
 printf '%s\n' "$b" >&2
-if test -n "$d"; then mkdir -p -- "$d" && cd -- "$d" && "$@"; else "$@"; fi </dev/null
-c=$?
-printf '\n%s\n%s %s\n' "$e" "$x" "$c" >&2
+{ c=$({ if test -n "$d"; then mkdir -p -- "$d" && cd -- "$d" || { echo $? >&3; exit; }; fi
+/usr/bin/timeout -k 10 "$t" /bin/sh -c '"$@" 3>&-; echo $? >&3' sh "$@"
+} 3>&1 >&4 4>&- </dev/null); } 4>&1
+printf '\n%s\n' "$e" >&2
+test -n "$c" || { printf '%s timeout\n' "$x" >&2; exit 124; }
+printf '%s %s\n' "$x" "$c" >&2
 exit "$c""#;
+
+/// How long past its deadline the ssh call of a command may run: the Box's 10 s between hanging
+/// up and killing the command, and the ssh round trip that reports it.
+const GRACE: Duration = Duration::from_secs(30);
 
 /// Runs `spec` in the Box behind `handle`.
 ///
@@ -62,7 +74,7 @@ pub(super) fn run(
         Some(out) => cb.proc.run_streamed(&proc.stderr_gate(gate), out),
         None => cb.proc.run(&proc).map(|_| ()),
     });
-    outcome(cb, handle, result, &exit_tag)
+    outcome(cb, handle, result, &exit_tag, deadline)
 }
 
 /// An ssh call that runs a command inside [`WRAPPER`].
@@ -96,17 +108,19 @@ pub(super) fn wrapped(
     };
     let exit_tag = format!("{token}-exit");
     let cwd = spec.cwd.as_ref().map_or("", |c| c.as_str());
+    let within = (deadline.0.as_secs() + u64::from(deadline.0.subsec_nanos() > 0))
+        .max(1)
+        .to_string();
     let mut remote = format!("sh -c {} sh", quote(WRAPPER));
-    for word in [&gate.begin, &gate.end, &exit_tag, cwd]
+    for word in [&gate.begin, &gate.end, &exit_tag, cwd, &within]
         .into_iter()
         .chain(spec.argv.iter().map(String::as_str))
     {
         remote.push(' ');
         remote.push_str(&quote(word));
     }
-    let within = deadline.0.as_secs() + u64::from(deadline.0.subsec_nanos() > 0);
-    let proc = ProcSpec::new(Tool::Ssh, deadline)
-        .env(super::DIAL_WITHIN, within.max(1).to_string())
+    let proc = ProcSpec::new(Tool::Ssh, Deadline(deadline.0.saturating_add(GRACE)))
+        .env(super::DIAL_WITHIN, within)
         .args(words)
         .arg(remote)
         .stdin(Stdin::Bytes(env));
@@ -177,21 +191,25 @@ pub(super) fn env_file(env: &[(String, String)]) -> Result<Vec<u8>, DriverError>
     Ok(text.into_bytes())
 }
 
-/// How the exec ended, from ssh's result and the exit line tagged `exit_tag`. A failure that is
-/// not the command's own exit goes to [`link::failed`].
+/// How the exec ended, from ssh's result and the exit line tagged `exit_tag`; `deadline` is the
+/// one the wrapper ended the command at. A failure that is not the command's own exit goes to
+/// [`link::failed`].
 pub(super) fn outcome(
     cb: &Crabbox,
     handle: &BoxHandle,
     result: Result<(), ProcError>,
     exit_tag: &str,
+    deadline: Deadline,
 ) -> Result<ExecOutcome, DriverError> {
     let e = match result {
         Ok(()) => return Ok(ExecOutcome::Exited { code: 0 }),
         Err(e) => e,
     };
     if let ProcError::NonZero { stderr_tail, .. } = &e {
-        if let Some(code) = reported_exit(stderr_tail, exit_tag) {
-            return Ok(ExecOutcome::Exited { code });
+        match reported_exit(stderr_tail, exit_tag) {
+            Some(Reported::Exit(code)) => return Ok(ExecOutcome::Exited { code }),
+            Some(Reported::PastDeadline) => return Err(DriverError::Timeout(deadline.0)),
+            None => {}
         }
     }
     link::failed(cb, handle, &e);
@@ -226,14 +244,26 @@ pub(super) fn outcome(
     }
 }
 
-/// The exit code the wrapper reported on its line tagged `exit_tag`, the last such line winning.
-fn reported_exit(stderr: &str, exit_tag: &str) -> Option<i32> {
+/// How the wrapper said the command ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Reported {
+    /// The command exited with this code.
+    Exit(i32),
+    /// The wrapper ended the command at its deadline.
+    PastDeadline,
+}
+
+/// What the wrapper reported on its line tagged `exit_tag`, the last such line winning.
+fn reported_exit(stderr: &str, exit_tag: &str) -> Option<Reported> {
     stderr.lines().rev().find_map(|l| {
-        l.trim_end_matches('\r')
+        match l
+            .trim_end_matches('\r')
             .strip_prefix(exit_tag)?
             .strip_prefix(' ')?
-            .parse()
-            .ok()
+        {
+            "timeout" => Some(Reported::PastDeadline),
+            code => code.parse().ok().map(Reported::Exit),
+        }
     })
 }
 

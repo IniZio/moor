@@ -48,7 +48,7 @@ pub(super) fn launch(
         ProcError::NonZero { stderr_tail, .. } => own_lines(stderr_tail, &exit_tag),
         _ => String::new(),
     };
-    match exec::outcome(cb, handle, Err(e), &exit_tag)? {
+    match exec::outcome(cb, handle, Err(e), &exit_tag, Deadline(SHORT))? {
         ExecOutcome::Exited { code: REFUSED } => Ok(Launched::AlreadyLaunched),
         ExecOutcome::Exited { code } => Err(failed(
             format!("run {run} did not start (exit {code})"),
