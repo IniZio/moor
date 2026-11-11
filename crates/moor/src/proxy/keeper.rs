@@ -11,7 +11,8 @@
 //!
 //! The state lock is held only to read or swap state, never across a call into the Box, so
 //! [`Kept::up`] and [`Kept::park`] answer at once. Calls into the Box take turns on a second
-//! lock, which [`Keepers::end`] waits for: once it returns, the ended keeper opens nothing.
+//! lock, which [`Keepers::end`] waits for while the Box is open: once it returns, the ended
+//! keeper opens nothing.
 
 mod host;
 mod link;
@@ -174,12 +175,14 @@ impl Keepers {
         lock(&self.kept).get(&box_id).cloned()
     }
 
-    /// Ends the Box's keeper, closing its tunnel and forwards once any call it makes into the
-    /// Box returns, so a keeper started after cannot lose its tunnel to this one.
+    /// Ends the Box's keeper, closing its tunnel and forwards. While the Box is open it first
+    /// waits for any call the keeper makes into the Box, so a keeper started after cannot lose
+    /// its tunnel to this one; a closed Box gets no later keeper, so its end does not wait.
     pub(crate) fn end(&self, box_id: BoxId) -> Option<Arc<Kept>> {
         let k = lock(&self.kept).remove(&box_id)?;
         k.stop.store(true, Ordering::Release);
-        let busy = lock(&k.busy);
+        let closed = matches!(view(&k.deps.store, box_id), Ok(Some(v)) if !v.open);
+        let busy = (!closed).then(|| lock(&k.busy));
         let mut inner = k.lock();
         let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
         drop(inner);
@@ -248,7 +251,9 @@ impl Kept {
             self.sleep_machine();
         } else {
             drop(self.tend_tunnel());
-            self.tend_machine(reach);
+            if !self.stopped() {
+                self.tend_machine(reach);
+            }
         }
         drop(busy);
         true
