@@ -141,7 +141,9 @@ impl Moor {
     pub(crate) fn promote_pass(
         env: &Env,
     ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
-        Self::store_pass(env, ops::promote_pass)
+        Self::store_pass(env, |cx, store, draining| {
+            ops::promote_pass(cx, store, draining).map(drop)
+        })
     }
 
     /// Runs `pass` on a fresh [`Moor`] each call; returns its error and warnings to log.

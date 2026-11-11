@@ -20,12 +20,14 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowRe
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::ops::close::run as close;
-use crate::ops::common::promote::PROMOTE_WAIT;
+use crate::ops::common::promote::{pass, Promoting, PROMOTE_WAIT};
 use crate::ops::show;
 use crate::ops::start;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
+
+mod nodes;
 
 const PROVIDER: &str = "local-container";
 const HOLDER_BOX: &str = "box-1";
@@ -225,8 +227,16 @@ fn warning_codes(w: &World) -> Vec<String> {
 
 /// Runs the controller's promotion pass once.
 fn promote_pass(w: &World) {
-    let store = w.cx.store().unwrap();
-    crate::ops::common::promote::pass(&w.cx, store, &|| false).unwrap();
+    for promoting in start_pass(w) {
+        for warning in promoting.join().unwrap() {
+            w.cx.warn(warning);
+        }
+    }
+}
+
+/// Starts the promotion pass once without waiting for the promotions it starts.
+fn start_pass(w: &World) -> Vec<Promoting> {
+    pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap()
 }
 
 /// A Box on the provider's node that holds an acquired machine and is setting up.

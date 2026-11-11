@@ -118,18 +118,6 @@ fn box_head(value: &Value, key: &str) -> Option<(String, String)> {
     Some((format!("{name} (#{id})"), format!("{lifecycle}/{session}")))
 }
 
-/// Writes `started from the queue: a, b` when the `promoted` names are non-empty.
-fn promoted_line(value: &Value, out: &mut String) {
-    let names: Vec<&str> = value
-        .get("promoted")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    if !names.is_empty() {
-        let _ = writeln!(out, "started from the queue: {}", names.join(", "));
-    }
-}
-
 /// Text form of `start`: a status line, how to see a Box that has a machine, then notes.
 fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
     let (head, state) = box_head(value, "box")?;
@@ -158,7 +146,6 @@ fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
     work_tree_line(value, &mut out);
     setup_output(value, &mut out);
     setup_failure_lines(value, &mut out);
-    promoted_line(value, &mut out);
     for w in value
         .get("warnings_inline")
         .and_then(Value::as_array)
@@ -243,7 +230,6 @@ fn close_text(value: &Value) -> Option<String> {
     if let Some(path) = value.get("transcript").and_then(Value::as_str) {
         let _ = writeln!(out, "transcript: {path}");
     }
-    promoted_line(value, &mut out);
     Some(out)
 }
 

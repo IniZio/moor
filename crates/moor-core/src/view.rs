@@ -256,8 +256,6 @@ pub struct StartView {
     /// The node the Box was placed on; absent when none is recorded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
-    /// Names promoted from the queue.
-    pub promoted: Vec<String>,
     /// How the work tree started; absent when the Box keeps none or did not provision this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub work_tree: Option<WorkTreeView>,
@@ -383,8 +381,6 @@ pub struct CloseView {
     pub agent_stopped: bool,
     /// Transcript path.
     pub transcript: Option<String>,
-    /// Names promoted from the queue.
-    pub promoted: Vec<String>,
 }
 
 #[cfg(test)]

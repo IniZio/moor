@@ -112,7 +112,6 @@ fn start_view_keys_match_wire_shape() {
         attached: false,
         queued: false,
         node: None,
-        promoted: vec!["a".into()],
         work_tree: Some(WorkTreeView::ColdAfter { reason: "x".into() }),
         setup: SetupView {
             ran: true,
@@ -135,7 +134,7 @@ fn start_view_keys_match_wire_shape() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "box": box_json(), "attached": false, "queued": false, "promoted": ["a"],
+            "box": box_json(), "attached": false, "queued": false,
             "work_tree": {"state": "cold_after", "reason": "x"},
             "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
@@ -224,12 +223,11 @@ fn close_view_keys_match_wire_shape() {
         box_deleted: true,
         agent_stopped: true,
         transcript: None,
-        promoted: vec![],
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "box": box_json(), "box_deleted": true, "agent_stopped": true, "transcript": null, "promoted": []
+            "box": box_json(), "box_deleted": true, "agent_stopped": true, "transcript": null
         }))
     );
 }

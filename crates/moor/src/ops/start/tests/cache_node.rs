@@ -58,6 +58,7 @@ fn a_personal_node_whose_link_drops_before_the_plan_records_why_the_box_is_cold(
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
     let cfg =
         crate::ops::common::facts::settings_of(&w.cx, &row, &moor_core::config::Flags::default())
             .unwrap();
@@ -111,6 +112,7 @@ fn a_personal_node_saves_at_a_pause_only_when_its_online_agent_reports_it() {
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![offline])).unwrap();
+    w.cx.promoting().wait_idle();
     assert!(!saves(&w));
 }
 
@@ -169,6 +171,7 @@ fn a_box_whose_node_went_offline_is_denied_for_that() {
         .1;
     link.online = false;
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
     assert_eq!(
         decided(&w, Ok(())),
         Some(denied(CacheSaveDenied::MachineOffline))

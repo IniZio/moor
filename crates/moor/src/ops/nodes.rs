@@ -13,7 +13,7 @@ use moor_core::Warning;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::node::{configured, now};
-use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::promote::promote_detached;
 use crate::ops::common::provision::relieve_disk;
 use crate::ops::common::room::on_report;
 
@@ -71,7 +71,12 @@ pub(crate) fn set_links(
             }
             relieve_disk(cx, store, &node, link);
         }
-        promote_waiting(cx, store, &node.name);
+        if let Err(e) = promote_detached(cx, &node.name) {
+            cx.warn(Warning {
+                code: "promote_failed".to_owned(),
+                message: format!("cannot promote waiting Boxes on {}: {}", node.name, e.error),
+            });
+        }
     }
     Ok(MachineLinksValue { links })
 }

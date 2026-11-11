@@ -1,5 +1,6 @@
 //! Starts Boxes pending on a node once it has room for them.
 
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use moor_core::config::{BoxSettings, Flags};
@@ -15,6 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
 use crate::ops::common::resume_gate::{beyond_reach, room_to_wake, Turn};
+use crate::ops::common::stale::ControllerLog;
 use crate::ops::common::wake::{wait_for_room, wake_in_turn};
 use crate::ops::start::{launch_after_retry, revive_after_wake};
 use crate::store::{BoxRow, Store};
@@ -39,26 +41,68 @@ pub(crate) fn promote_waiting(cx: &Cx, store: &Store, node: &NodeName) -> Vec<Bo
     promoted
 }
 
-/// Promotes the Boxes waiting on each node that reports no memory, until `draining`. Room on such
-/// a node is a count in the store, so a slot freed by any close, setup failure or lost machine is
-/// seen here. A node that reports memory is promoted on its own report, which counts what the
-/// last promotion started.
+/// A promotion running on a thread of its own; it answers with the warnings it recorded.
+pub(crate) type Promoting = JoinHandle<Vec<Warning>>;
+
+/// Starts a promotion of each node that reports no memory and has a Box waiting, until
+/// `draining`. Room on such a node is a count in the store, so a slot freed by any close, setup
+/// failure or lost machine is seen here. A node that reports memory is promoted on its own report,
+/// which counts what the last promotion started. Each node promotes on its own thread, so a long
+/// setup on one node holds up no other.
 ///
 /// # Errors
-/// A store failure listing the nodes.
+/// A store failure listing the nodes or their queues.
 pub(crate) fn pass(
     cx: &Cx,
     store: &Store,
     draining: &dyn Fn() -> bool,
-) -> Result<(), CommandError> {
+) -> Result<Vec<Promoting>, CommandError> {
     let (all, _) = crate::ops::common::node::nodes(cx)?;
+    let mut started = Vec::new();
     for node in all.iter().filter(|n| n.memory.is_none()) {
         if draining() {
             break;
         }
-        promote_waiting(cx, store, &node.name);
+        if !store.pending_on(&node.name)?.is_empty() {
+            started.extend(promote_detached(cx, &node.name)?);
+        }
     }
-    Ok(())
+    Ok(started)
+}
+
+/// Starts promoting the Boxes waiting on `node` on a thread of its own, unless a promotion of
+/// `node` already runs; `None` then. The thread writes its warnings to the controller's log.
+///
+/// # Errors
+/// The store cannot be opened for the thread.
+pub(crate) fn promote_detached(
+    cx: &Cx,
+    node: &NodeName,
+) -> Result<Option<Promoting>, CommandError> {
+    let Some(claim) = cx.promoting().claim(node) else {
+        return Ok(None);
+    };
+    let detached = cx.detached()?;
+    let node = node.clone();
+    Ok(Some(thread::spawn(move || {
+        crate::cx::owners::checked(|| {
+            let _claim = claim;
+            match detached.store() {
+                Ok(store) => drop(promote_waiting(&detached, store, &node)),
+                Err(e) => detached.warn(Warning {
+                    code: "promote_failed".to_owned(),
+                    message: format!("cannot promote waiting Boxes: {}", e.error),
+                }),
+            }
+            let warnings = detached.take_warnings();
+            if let Some(log) = detached.env().shared::<ControllerLog>() {
+                for w in &warnings {
+                    log.line(&format!("promote {}: {}", node.as_str(), w.message));
+                }
+            }
+            warnings
+        })
+    })))
 }
 
 /// One promotion pass; `promoted` keeps what was promoted before an error.

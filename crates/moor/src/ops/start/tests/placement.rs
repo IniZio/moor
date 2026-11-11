@@ -53,6 +53,7 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
 }
 
 fn held(v: &StartView) -> &str {
@@ -134,7 +135,10 @@ fn a_freed_slot_starts_the_oldest_pending_box_of_its_node() {
         },
     )
     .unwrap();
-    crate::ops::common::promote::pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    let started = crate::ops::common::promote::pass(&w.cx, w.cx.store().unwrap(), &|| false);
+    for promoting in started.unwrap() {
+        promoting.join().unwrap();
+    }
     let pending = moor_core::domain::box_state::BoxLifecycle::Pending;
     assert_ne!(lifecycle(&w, BoxId::new(older.boxed.id)), pending);
     assert_eq!(lifecycle(&w, BoxId::new(younger.boxed.id)), pending);
@@ -225,6 +229,7 @@ pub(super) fn cached_world(features: &[&str], online: bool) -> World {
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
     w
 }
 
@@ -286,6 +291,7 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
         }),
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
 }
 
 /// Like [`report`] with plenty of memory, plus `free` of `total` GiB of disk.
@@ -314,6 +320,7 @@ fn report_disk(w: &World, hv: i64, disk: Option<(u64, u64)>) {
         }),
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
+    w.cx.promoting().wait_idle();
 }
 
 /// A personal node `hv` that has just reported `available_mib`.
