@@ -230,6 +230,7 @@ mod run_output;
 mod runner_socket;
 mod serve_first;
 mod socket_path_len;
+mod socket_rebind;
 mod users;
 mod webhook_front;
 
