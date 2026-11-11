@@ -37,6 +37,12 @@ fn the_floor_is_a_semantic_version() {
 }
 
 #[test]
+fn the_floor_admits_no_agent_that_refuses_a_later_hands_slug() {
+    let floor = semver::Version::parse(MIN_AGENT_VERSION).unwrap();
+    assert!(floor >= semver::Version::parse("0.3.0-nightly.251").unwrap());
+}
+
+#[test]
 fn nightlies_order_by_their_number_and_below_their_release() {
     let v = |s: &str| semver::Version::parse(s).unwrap();
     assert!(v("0.3.0-nightly.191") > v("0.3.0-nightly.190"));
