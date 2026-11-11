@@ -215,3 +215,15 @@ fn a_host_that_stays_away_is_reported_once_and_again_when_it_answers() {
         ["pool host 1 did not list its leases: machine 1 is not linked"]
     );
 }
+
+#[test]
+fn a_lease_the_host_no_longer_lists_is_answered_and_left_out() {
+    let cb = pool([(1, (NOW, Ok(vec!["moor-d31547ed-125", "moor-d31547ed-122"])))]);
+    let gone = BoxHandle::new("external@engine-03/1/moor-d31547ed-81");
+    let kept = BoxHandle::new("external@engine-03/1/moor-d31547ed-122");
+    let asked = list_handles(&cb, &[gone.clone(), kept.clone()], Duration::from_secs(5)).unwrap();
+    assert_eq!(asked.answered, [gone, kept.clone()]);
+    let listed: Vec<_> = asked.listed.iter().map(|l| l.handle.clone()).collect();
+    assert_eq!(listed, [kept]);
+    assert!(asked.said.is_empty(), "{:?}", asked.said);
+}
