@@ -14,7 +14,6 @@ use std::thread;
 use moor_core::controller::{parse_frame, write_bytes, write_stderr, ClientFrame, BYTES_MAX};
 use moor_core::request::Grant;
 use moor_core::seam::proc::Pipes;
-use moor_core::view::ExecView;
 use moor_core::{ErrorKind, Request, Response};
 
 use super::{Duplex, Peer};
@@ -35,28 +34,38 @@ pub(super) fn piped(
     request: &Request,
     (input, output): Duplex<'_>,
 ) -> Response {
-    let refused = |e: CommandError| e.into_response(request.cmd(), vec![]);
+    match Moor::from_env(env) {
+        Ok(moor) => piped_with(&moor.granted(grant), peer, id, request, (input, output)),
+        Err(e) => answer::<()>(request.cmd(), Err(e)),
+    }
+}
+
+/// [`piped`] on `moor`, which already acts with the caller's grant.
+pub(super) fn piped_with(
+    moor: &Moor,
+    peer: &Peer,
+    id: &str,
+    request: &Request,
+    (input, output): Duplex<'_>,
+) -> Response {
     let Some(hangup) = peer.hangup.as_ref() else {
-        return refused(CommandError::new(
-            ErrorKind::Failed,
-            "this connection cannot stream a command",
-        ));
-    };
-    let moor = match Moor::from_env(env) {
-        Ok(moor) => moor.granted(grant),
-        Err(e) => return refused(e),
+        let why = CommandError::new(ErrorKind::Failed, "this connection cannot stream a command");
+        return answer::<()>(request.cmd(), Err(why));
     };
     let drain = peer.conn.drain();
+    // A forward finishes through a controller roll: the drain's own cap ends what is left.
+    let forwards = matches!(request, Request::Forward(_));
     let link = Link {
         id,
         input,
         output,
         unblock: &|| hangup.stop_reading(),
-        stopping: &|| drain.begun(),
+        stopping: &|| !forwards && drain.begun(),
     };
     let ended = stream(link, |pipes| match request {
-        Request::BoxRsync(req) => moor.box_rsync(req, pipes),
-        Request::Exec(req) => moor.exec(req, pipes),
+        Request::BoxRsync(req) => moor.box_rsync(req, pipes).map(value),
+        Request::Exec(req) => moor.exec(req, pipes).map(value),
+        Request::Forward(req) => moor.forward(req, pipes).map(value),
         other => Err(CommandError::new(
             ErrorKind::Internal,
             format!("{} streams no command", other.cmd()),
@@ -65,8 +74,13 @@ pub(super) fn piped(
     answer(request.cmd(), ended)
 }
 
+/// `view` as a response's `value`.
+fn value(view: impl serde::Serialize) -> serde_json::Value {
+    serde_json::to_value(view).unwrap_or_default()
+}
+
 /// The answer to a `cmd` that ended as `ended`.
-pub(crate) fn answer(cmd: &str, ended: Result<ExecView, CommandError>) -> Response {
+pub(crate) fn answer<T: serde::Serialize>(cmd: &str, ended: Result<T, CommandError>) -> Response {
     match ended {
         Ok(view) => Response::ok(cmd, serde_json::to_value(view).ok()),
         Err(e) => e.into_response(cmd, vec![]),

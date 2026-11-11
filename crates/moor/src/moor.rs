@@ -213,6 +213,19 @@ impl Moor {
         checked(|| ops::exec::run(&self.cx, req, pipes))
     }
 
+    /// Carries one TCP connection to the port `req` names on its Box's loopback, with the
+    /// connection's bytes on `pipes`.
+    ///
+    /// # Errors
+    /// [`CommandError`] when the Box is asleep or closed, or the connection cannot be made.
+    pub fn forward(
+        &self,
+        req: &moor_core::ForwardReq,
+        pipes: moor_core::seam::proc::Pipes<'_>,
+    ) -> Result<moor_core::view::ForwardedView, CommandError> {
+        checked(|| ops::forward::connect(&self.cx, req, pipes))
+    }
+
     /// Runs the machine runner's rsync `req` in its Box with rsync's stdio on `pipes`.
     ///
     /// # Errors

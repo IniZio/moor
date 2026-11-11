@@ -439,6 +439,7 @@ fn a_class_the_host_refuses_fails_the_acquire_with_its_reason() {
     );
 }
 
+mod forward;
 mod fresh_login;
 mod listing;
 mod tunnel;

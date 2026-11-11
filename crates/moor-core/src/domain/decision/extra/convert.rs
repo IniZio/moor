@@ -38,6 +38,7 @@ impl From<ExtraEvent> for Event {
                 exit,
                 timed_out,
             }),
+            ExtraEvent::Access(e) => Self::Access(e),
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
             ExtraEvent::LaunchTimedOut { after_secs } => Self::LaunchTimedOut { after_secs },

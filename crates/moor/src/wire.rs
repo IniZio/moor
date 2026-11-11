@@ -28,6 +28,7 @@ use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
 use crate::cx::in_flight::InFlight;
 use crate::cx::owners::Owners;
+use crate::cx::traffic::Traffic;
 use crate::cx::{Cx, CxParts, MachineLinks};
 use crate::env::{Env, CONTROLLER_ALIVE};
 use crate::error::CommandError;
@@ -87,7 +88,8 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
     Ok(env
         .sharing(store)
         .sharing(Arc::new(Owners::new(clock)))
-        .sharing(Arc::new(InFlight::default())))
+        .sharing(Arc::new(InFlight::default()))
+        .sharing(Arc::new(Traffic::default())))
 }
 
 /// Waits until this controller may run on `env`'s store, which it then may until the process
@@ -217,6 +219,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     .with_state_dir(state_dir.clone(), sockets)
     .with_checkpoint_dir(env.xdg("XDG_CACHE_HOME", ".cache", ""))
     .with_pool_hosts(links.clone().map(|l| l as _))
+    .with_pool_ports(links.clone().map(|l| l as _))
     .sharing_no_probe(Arc::clone(&NO_PROBE))
     .sharing_host_lists(Arc::clone(&HOST_LISTS));
     let link_warning = crabbox.link_warning();

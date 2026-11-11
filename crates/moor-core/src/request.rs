@@ -19,6 +19,8 @@ mod exec;
 pub use exec::ExecReq;
 mod files;
 pub use files::{BoxRsyncReq, CpReq};
+mod forward;
+pub use forward::{ForwardCloseReq, ForwardOpenReq, ForwardReq};
 mod inspect;
 pub use inspect::InspectReq;
 mod host_session;
@@ -110,6 +112,15 @@ pub enum Request {
     /// Run a command in the Box with its stdio streamed both ways over this connection until it
     /// ends. It takes over the connection: the controller socket closes it after the answer.
     Exec(ExecReq),
+    /// Ask to forward a port of the Box to the caller's computer: wake the Box, check that
+    /// something listens, and record the forward.
+    ForwardOpen(ForwardOpenReq),
+    /// Carry one TCP connection to a port on the Box's loopback as raw bytes over this
+    /// connection until either side ends it. It takes over the connection: the controller socket
+    /// closes it after the answer.
+    Forward(ForwardReq),
+    /// Record that the caller ended a port forward, with what it carried.
+    ForwardClose(ForwardCloseReq),
     /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.

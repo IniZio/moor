@@ -9,6 +9,7 @@ use moor_core::user::Viewer;
 
 use super::in_flight::InFlight;
 use super::owners::Owners;
+use super::traffic::Traffic;
 use super::Cx;
 use crate::env::Cancel;
 use crate::error::CommandError;
@@ -43,6 +44,16 @@ impl Cx {
         })
     }
 
+    /// When bytes last moved through each Box's port forwards: one record per controller,
+    /// shared through the env, else this context's own.
+    pub(crate) fn traffic(&self) -> &Arc<Traffic> {
+        self.traffic.get_or_init(|| {
+            self.env
+                .shared::<Arc<Traffic>>()
+                .map_or_else(|| Arc::new(Traffic::default()), Arc::clone)
+        })
+    }
+
     /// A context for work on a thread of its own that outlives this request: the same adapters,
     /// store, owners and promoting nodes, its own warnings, acting as the operator, and stopped
     /// by no request.
@@ -68,6 +79,7 @@ impl Cx {
             store: OnceCell::from(store),
             owners: OnceCell::from(Arc::clone(self.owners_arc())),
             promoting: OnceCell::from(Arc::clone(self.promoting())),
+            traffic: OnceCell::from(Arc::clone(self.traffic())),
             blobs: self
                 .blobs
                 .get()

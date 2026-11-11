@@ -319,6 +319,29 @@ fn access_events_read_back_from_their_json() {
     );
 }
 
+/// The port forward events store the fields their docs name, under their kinds.
+#[test]
+fn port_forward_events_read_back_from_their_json() {
+    let closed = Event::Access(AccessEvent::PortForwardClosed {
+        port: 5177,
+        connections: 2,
+        bytes_in: 9,
+        bytes_out: 412,
+    });
+    let json = serde_json::to_value(&closed).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"kind": "port_forward_closed", "port": 5177, "connections": 2,
+            "bytes_in": 9, "bytes_out": 412})
+    );
+    assert_eq!(serde_json::from_value::<Event>(json).unwrap(), closed);
+    let opened = serde_json::json!({"kind": "port_forward_opened", "port": 80, "local_port": 8080});
+    assert_eq!(
+        serde_json::from_value::<Event>(opened).unwrap().kind(),
+        "port_forward_opened"
+    );
+}
+
 #[test]
 fn box_failure_events_carry_handle() {
     let h = BoxHandle::new("p/x");

@@ -25,6 +25,7 @@ use crate::error::CommandError;
 use crate::store::{Database, Store};
 use in_flight::InFlight;
 use owners::{Cmd, Owners, Turn};
+use traffic::Traffic;
 
 /// How long a user op waits behind the ops queued on its Box before it is refused as busy.
 pub(crate) const QUEUE_WAIT: Duration = Duration::from_secs(120);
@@ -72,6 +73,9 @@ pub(crate) struct Cx {
     owners: OnceCell<Arc<Owners>>,
     /// The nodes with a promotion running: the env's, else this context's own.
     promoting: OnceCell<Arc<InFlight>>,
+    /// When bytes last moved through each Box's port forwards: the env's, else this context's
+    /// own.
+    traffic: OnceCell<Arc<Traffic>>,
     /// Blob store, opened on first use.
     blobs: OnceCell<Arc<dyn Blobs>>,
     /// The controller's vault key file; `None` outside a controller.
@@ -135,6 +139,7 @@ impl Cx {
             store: OnceCell::new(),
             owners: OnceCell::new(),
             promoting: OnceCell::new(),
+            traffic: OnceCell::new(),
             blobs: OnceCell::new(),
             vault_key: None,
             requester: None,
@@ -336,6 +341,11 @@ impl Cx {
         self.clock.as_ref()
     }
 
+    /// The time source, to hand to a thread that outlives the borrow.
+    pub(crate) fn clock_arc(&self) -> Arc<dyn Clock> {
+        Arc::clone(&self.clock)
+    }
+
     /// This context with `config` in place of the current one.
     #[cfg(test)]
     pub(crate) fn with_config(mut self, config: UserConfig) -> Self {
@@ -385,3 +395,4 @@ mod requester;
 mod shared;
 #[cfg(test)]
 mod tests;
+pub(crate) mod traffic;

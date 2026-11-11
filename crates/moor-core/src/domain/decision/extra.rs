@@ -1,6 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
-use crate::domain::event::{CheckedCred, PostCloneStep, ProfileStep, SteerSent};
+use crate::domain::event::{AccessEvent, CheckedCred, PostCloneStep, ProfileStep, SteerSent};
 use crate::name::RunId;
 
 /// An event a caller may pass; every other kind is derived from state steps.
@@ -51,6 +51,8 @@ pub enum ExtraEvent {
         /// True when it ran past its timeout and was killed.
         timed_out: bool,
     },
+    /// A port forward into the Box opened, ended or was refused.
+    Access(AccessEvent),
     /// An agent session started.
     SessionStarted {
         /// The session id.

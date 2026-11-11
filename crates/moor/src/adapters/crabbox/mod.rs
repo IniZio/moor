@@ -50,6 +50,7 @@ use caps::{class_args, size_of};
 use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
 use errors::Op;
 use handle::{handle_of, slug, split_handle, static_env, target_args};
+pub(crate) use pool::forward::PoolPorts;
 pub(crate) use pool::{HostLists, PoolHosts, DIAL_WITHIN};
 
 /// Env key only the external provider reads; other providers keep crabbox's own work root.
@@ -89,6 +90,8 @@ pub(crate) struct Crabbox {
     checkpoint_dir: Option<PathBuf>,
     /// How pool hosts are reached; none when this controller reaches none.
     pool_hosts: Option<Arc<dyn PoolHosts>>,
+    /// How a pool Box's ports are reached; none when this controller reaches none.
+    pool_ports: Option<Arc<dyn PoolPorts>>,
     /// The pool hosts' lists in flight and which hosts last went unanswered; may be shared.
     host_lists: Arc<pool::HostLists>,
     /// Where a failed acquire, release or checkpoint writes its stderr: moor's own stderr.
@@ -116,6 +119,7 @@ impl Crabbox {
             leases: None,
             checkpoint_dir: None,
             pool_hosts: None,
+            pool_ports: None,
             host_lists: Arc::default(),
             failure_log: Arc::new(Mutex::new(std::io::stderr())),
             #[cfg(test)]

@@ -21,6 +21,8 @@ fn no<T>() -> Result<T, DriverError> {
     Err(DriverError::Unsupported("test"))
 }
 
+impl crate::seam::driver::Forwards for Scripted {}
+
 impl Driver for Scripted {
     fn caps(&self, _: &ProviderId) -> Result<DriverCaps, DriverError> {
         no()

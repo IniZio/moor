@@ -83,6 +83,9 @@ fn report(cx: &Cx, slept: Result<(), CommandError>) {
 /// Whether `row` has been Idle, or awake, long enough to sleep.
 fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, CommandError> {
     let config = &cx.config().box_;
+    if cx.traffic().recent(row.id, cx.clock().now()) {
+        return Ok(false);
+    }
     let facts = SleepFacts {
         lifecycle: row.lifecycle,
         session: if agent == AgentRead::Unread {

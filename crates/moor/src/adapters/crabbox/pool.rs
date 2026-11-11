@@ -16,6 +16,7 @@ pub(super) use lost::cancel;
 use lost::{lost_or_failed, undone};
 
 pub(super) mod checkpoints;
+pub(super) mod forward;
 mod lost;
 mod power;
 pub(super) use power::{sleep, wake};
