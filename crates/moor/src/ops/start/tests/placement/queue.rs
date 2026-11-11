@@ -257,6 +257,25 @@ fn a_box_whose_machine_vanished_while_it_waited_gets_a_new_one_only_when_there_i
 }
 
 #[test]
+fn a_waiting_box_whose_machine_vanished_starts_fresh_without_its_old_guest_memory() {
+    let (w, hv) = live_world(32_768);
+    let big = asleep(&w, "big", 23_443);
+    tick(&w, hv, with_free(14 * 1024), 0, 0);
+    assert!(wake_up(&w, big).is_err());
+    assert_eq!(
+        reason(&w, big),
+        "waiting for capacity on hv: 14 GiB free, needs 22.9 GiB"
+    );
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(big).unwrap().unwrap();
+    w.driver.forget(&row.hands.unwrap().handle.unwrap());
+    crate::ops::common::reconcile::run(&w.cx);
+    tick(&w, hv, with_free(14 * 1024), 0, 0);
+    assert_eq!(lifecycle(&w, big), Ready, "{}", reason(&w, big));
+    assert!(store.newest_event_of(big, "disk_lost").unwrap().is_some());
+}
+
+#[test]
 fn a_close_that_cannot_wake_a_box_leaves_it_asleep_and_asks_nothing_of_the_node() {
     use moor_core::domain::box_state::BoxLifecycle::Asleep;
     use moor_core::domain::hands::HandsState;
