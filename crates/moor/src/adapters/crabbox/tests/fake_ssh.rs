@@ -17,7 +17,8 @@ use crate::testing::rng::FakeRng;
 /// ssh session exports the Box's `PATH`, and a `HOME` of `home`. Hands an `ssh -G` read to the real ssh, recording its argv in `opts.<n>`. Records any other
 /// argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command, under sh with
 /// stdin passed through, in a session of its own as sshd starts it, so killing this client
-/// leaves the command running. A `drop` file makes it lose the connection: it exits 255
+/// leaves the command running. A `path` file holds the `PATH` the remote
+/// command gets instead. A `drop` file makes it lose the connection: it exits 255
 /// and prints nothing, as a call does whose shared master lost the network. A `cut` file holding
 /// a byte count makes it lose the connection after that much stdout.
 const FAKE_SSH: &str = r#"#!/bin/sh
@@ -35,7 +36,9 @@ if test -f "$d/cut"; then
   TMPDIR="$d/boxtmp" sh -c "$last" | head -c "$(cat "$d/cut")"
   exit 255
 fi
-TMPDIR="$d/boxtmp" exec setsid -w sh -c "$last"
+p=$PATH
+if test -f "$d/path"; then p=$(cat "$d/path"); fi
+TMPDIR="$d/boxtmp" exec setsid -w env PATH="$p" sh -c "$last"
 "#;
 
 /// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned

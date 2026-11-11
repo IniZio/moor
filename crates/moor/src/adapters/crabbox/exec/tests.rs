@@ -384,6 +384,25 @@ fn a_command_past_its_deadline_ends_with_its_children_before_the_timeout_is_repo
 }
 
 #[test]
+fn a_box_without_timeout_runs_the_command_past_its_deadline_and_says_so() {
+    let lab = lab();
+    let bare = lab.bin().join("bare");
+    fs::create_dir(&bare).unwrap();
+    for tool in ["sh", "mktemp", "cat", "mkdir", "sleep"] {
+        std::os::unix::fs::symlink(Path::new("/bin").join(tool), bare.join(tool)).unwrap();
+    }
+    fs::write(lab.bin().join("path"), bare.to_str().unwrap()).unwrap();
+    let spec = streamed(&lab, "sleep 2; echo done");
+    let got = lab
+        .cb
+        .exec(&handle(), &spec, Deadline(Duration::from_secs(1)));
+    assert_eq!(got, Ok(ExecOutcome::Exited { code: 0 }));
+    let log = fs::read_to_string(lab.log()).unwrap();
+    assert!(log.contains("the Box has no timeout(1)"), "{log}");
+    assert!(log.ends_with("done\n"), "{log}");
+}
+
+#[test]
 fn a_command_that_exits_124_itself_reports_its_exit_and_not_a_timeout() {
     let lab = lab();
     for spec in [sh("exit 124"), streamed(&lab, "exit 124")] {
