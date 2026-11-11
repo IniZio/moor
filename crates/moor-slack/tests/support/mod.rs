@@ -485,6 +485,8 @@ impl Rig {
     fn diagnostics(&self) -> String {
         let mut out = format!("daemon stderr:\n{}", self.stderr());
         let bin = self.path("claude-bin");
+        let claims = std::fs::read_to_string(bin.join("claims")).unwrap_or_default();
+        let _ = write!(out, "\nclaims:\n{claims}");
         for n in 0.. {
             let run = bin.join(format!("run-{n}"));
             if !run.is_dir() {
