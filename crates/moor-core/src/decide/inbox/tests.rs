@@ -6,6 +6,7 @@ fn at(lifecycle: BoxLifecycle, hands: HandsState, agent: AgentFact) -> Facts {
         hands: Some(hands),
         agent,
         capped: false,
+        launch_failed: false,
     }
 }
 
@@ -75,4 +76,17 @@ fn a_box_whose_setup_failed_is_held_for_a_retry_even_with_its_machine_gone() {
         AgentFact::NotReady,
     );
     assert_eq!(next(&f), Next::Hold);
+}
+
+#[test]
+fn a_box_whose_launch_failed_is_held_asleep_or_awake() {
+    for (lifecycle, hands) in [
+        (BoxLifecycle::Asleep, HandsState::Asleep),
+        (BoxLifecycle::Ready, HandsState::Gone),
+        (BoxLifecycle::Ready, HandsState::Ready),
+    ] {
+        let mut f = at(lifecycle, hands, AgentFact::Dead);
+        f.launch_failed = true;
+        assert_eq!(next(&f), Next::Hold, "{lifecycle:?} {hands:?}");
+    }
 }
