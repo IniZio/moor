@@ -41,8 +41,28 @@ fn ahead_of(store: &Store, node: &Node, row: &BoxRow) -> Result<usize, CommandEr
     Ok(resumes)
 }
 
-/// Why asleep `row` does not resume on `node` at `now`; `None` when it may. Every resume is judged
-/// here, promotions and what a person or agent asks for alike.
+/// Why `row` does not leave the queue on `node` at `now`; `None` when it may. Every resume is judged
+/// here, promotions and what a person or agent asks for alike. A Box with no asleep machine left
+/// starts fresh, so it asks only what a new start does.
+fn shortfall(
+    store: &Store,
+    node: &Node,
+    memory: &Memory,
+    row: &BoxRow,
+    now: i64,
+) -> Result<Option<Shortfall>, CommandError> {
+    let asleep = row
+        .hands
+        .as_ref()
+        .is_some_and(|b| b.state == HandsState::Asleep);
+    if asleep {
+        resume_shortfall(store, node, memory, row, now)
+    } else {
+        Ok(memory.shortfall(now))
+    }
+}
+
+/// Why asleep `row` does not resume on `node` at `now`, asking what its snapshot needs.
 fn resume_shortfall(
     store: &Store,
     node: &Node,
@@ -119,7 +139,7 @@ pub(crate) fn room_to_wake(
             )));
         }
     }
-    let Some(short) = resume_shortfall(store, &node, &memory, row, now(cx))? else {
+    let Some(short) = shortfall(store, &node, &memory, row, now(cx))? else {
         return Ok(None);
     };
     if turn != Turn::OnlyIfRoom && !beyond_reach(store, &node, &memory, row)? {
@@ -150,16 +170,7 @@ pub(super) fn demand(
     let Some(head) = head else {
         return Ok(Demand::default());
     };
-    let asleep = head
-        .hands
-        .as_ref()
-        .is_some_and(|b| b.state == HandsState::Asleep);
-    let short = if asleep {
-        resume_shortfall(store, node, memory, &head, now)?
-    } else {
-        memory.shortfall(now)
-    };
-    let short = short.is_some_and(|s| helps(node, s));
+    let short = shortfall(store, node, memory, &head, now)?.is_some_and(|s| helps(node, s));
     Ok(Demand {
         short,
         waiter: short.then(|| head.name.as_str().to_owned()),
