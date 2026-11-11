@@ -19,7 +19,7 @@ use crate::ops::common::wake::{wait_for_room, wake_in_turn};
 use crate::ops::start::{launch_after_retry, revive_after_wake};
 use crate::store::{BoxRow, Store};
 
-/// How long `close` waits for a waiter's turn before skipping that waiter.
+/// How long a promotion waits for a waiter's turn before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
 /// Starts or wakes the Boxes pending on `node`, in queue order, while it has room for them. On a
@@ -37,6 +37,28 @@ pub(crate) fn promote_waiting(cx: &Cx, store: &Store, node: &NodeName) -> Vec<Bo
         });
     }
     promoted
+}
+
+/// Promotes the Boxes waiting on each node that reports no memory, until `draining`. Room on such
+/// a node is a count in the store, so a slot freed by any close, setup failure or lost machine is
+/// seen here. A node that reports memory is promoted on its own report, which counts what the
+/// last promotion started.
+///
+/// # Errors
+/// A store failure listing the nodes.
+pub(crate) fn pass(
+    cx: &Cx,
+    store: &Store,
+    draining: &dyn Fn() -> bool,
+) -> Result<(), CommandError> {
+    let (all, _) = crate::ops::common::node::nodes(cx)?;
+    for node in all.iter().filter(|n| n.memory.is_none()) {
+        if draining() {
+            break;
+        }
+        promote_waiting(cx, store, &node.name);
+    }
+    Ok(())
 }
 
 /// One promotion pass; `promoted` keeps what was promoted before an error.

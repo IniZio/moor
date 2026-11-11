@@ -15,7 +15,6 @@ use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
 
 use crate::cx::owners::Cmd;
@@ -224,14 +223,108 @@ fn warning_codes(w: &World) -> Vec<String> {
     w.cx.take_warnings().into_iter().map(|x| x.code).collect()
 }
 
+/// Runs the controller's promotion pass once.
+fn promote_pass(w: &World) {
+    let store = w.cx.store().unwrap();
+    crate::ops::common::promote::pass(&w.cx, store, &|| false).unwrap();
+}
+
+/// A Box on the provider's node that holds an acquired machine and is setting up.
+fn setting_up_holding(w: &World, name: &str) -> BoxId {
+    let store = w.cx.store().unwrap();
+    let name = BoxName::parse_allow_bare(name).unwrap();
+    let id = store
+        .apply(Decision::insert(NewBox {
+            name: name.clone(),
+            repo: None,
+            spec: SpecFields::default(),
+        }))
+        .unwrap()
+        .box_id;
+    let got = w
+        .driver
+        .acquire(&AcquireReq {
+            pool_machine: None,
+            provider: ProviderId::new(PROVIDER),
+            box_id: id,
+            name,
+            class: None,
+            nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
+        })
+        .unwrap();
+    let fields = HandsFields {
+        provider: Field::Set(ProviderId::new(PROVIDER)),
+        ..HandsFields::default()
+    };
+    let d = Decision::new(id)
+        .lifecycle(BoxLifecycleInput::Admitted)
+        .hands_input(HandsInc::FIRST, HandsInput::Requested)
+        .hands(HandsInc::FIRST, fields);
+    store.apply(d).unwrap();
+    let d =
+        Decision::new(id).hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
+    store.apply(d).unwrap();
+    on_provider_node(&w.cx, id, PROVIDER);
+    id
+}
+
+fn setup_failed() -> BoxLifecycleInput {
+    BoxLifecycleInput::SetupFailed {
+        cause: "clone failed".to_owned(),
+        which: None,
+    }
+}
+
+/// Closes the holder, then runs the promotion pass that fills the slot it freed.
+fn free_slot(w: &World) -> moor_core::view::CloseView {
+    let v = close_holder(w);
+    promote_pass(w);
+    v
+}
+
 #[test]
-fn close_promotes_the_oldest_waiter_of_the_provider() {
+fn close_failed_closes_every_failed_box_without_setting_up_the_waiter() {
+    let w = world(limit(3), FakeDriver::new());
+    let store = w.cx.store().unwrap();
+    let failed = [setting_up_holding(&w, "one"), setting_up_holding(&w, "two")];
+    for id in failed {
+        store
+            .apply(Decision::new(id).lifecycle(setup_failed()))
+            .unwrap();
+    }
+    let waiter = queue(&w, "waiter");
+    let before = acquires(&w);
+    let req = moor_core::request::CloseFailedReq { force: false };
+    let v = crate::ops::close_failed::run(&w.cx, &req).unwrap();
+    assert_eq!(v.closed.len(), 2, "{v:?}");
+    assert_eq!(lifecycle_of(&w, waiter), BoxLifecycle::Pending);
+    assert_eq!(acquires(&w), before);
+    promote_pass(&w);
+    assert!(is_working(&row_of(&w, waiter)));
+}
+
+#[test]
+fn a_waiter_is_promoted_once_the_box_ahead_fails_setup_and_gives_up_its_machine() {
+    let w = world(limit(2), FakeDriver::new());
+    let ahead = setting_up_holding(&w, "ahead");
+    let waiter = queue(&w, "waiter");
+    let gone = Decision::new(ahead)
+        .lifecycle(setup_failed())
+        .hands_input(HandsInc::FIRST, HandsInput::Released);
+    w.cx.store().unwrap().apply(gone).unwrap();
+    promote_pass(&w);
+    assert!(is_working(&row_of(&w, waiter)));
+}
+
+#[test]
+fn a_freed_slot_promotes_the_oldest_waiter_of_the_provider() {
     let w = world(limit(1), FakeDriver::new());
-    queue(&w, "first");
+    let first = queue(&w, "first");
     let second = queue(&w, "second");
-    let v = close_holder(&w);
+    let v = free_slot(&w);
     assert!(v.box_deleted);
-    assert_eq!(v.promoted, ["first"]);
+    assert!(is_working(&row_of(&w, first)));
     assert_eq!(lifecycle_of(&w, second), BoxLifecycle::Pending);
 }
 
@@ -240,7 +333,7 @@ fn a_younger_waiter_stays_queued_when_one_slot_frees() {
     let w = world(limit(1), FakeDriver::new());
     let first = queue(&w, "first");
     let second = queue(&w, "second");
-    close_holder(&w);
+    free_slot(&w);
     assert_ne!(lifecycle_of(&w, first), BoxLifecycle::Pending);
     assert_eq!(lifecycle_of(&w, second), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 1);
@@ -250,7 +343,7 @@ fn a_younger_waiter_stays_queued_when_one_slot_frees() {
 fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
     let w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
-    close_holder(&w);
+    free_slot(&w);
     let seen = kinds(&w, id);
     let at = |k: &str| seen.iter().position(|s| s == k);
     assert!(at("pending") < at("setting_up"), "{seen:?}");
@@ -286,22 +379,20 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
 fn a_waiter_on_a_provider_without_reverse_tunnel_is_not_provisioned() {
     let w = world(limit(1), FakeDriver::new().without_reverse_tunnel_cap());
     let id = waiting_directly(&w, "first");
-    let v = close_holder(&w);
-    assert!(v.promoted.is_empty());
+    free_slot(&w);
     assert_eq!(acquires(&w), 0);
     assert!(!is_working(&row_of(&w, id)));
 }
 
 #[test]
-fn failed_acquire_of_the_promoted_box_does_not_fail_the_close() {
+fn a_failed_acquire_of_the_promoted_box_is_a_warning() {
     let failure = DriverError::Failed {
         summary: "no capacity".into(),
     };
     let w = world_failing(limit(1), FakeDriver::new(), Some(failure));
     let id = queue(&w, "first");
-    let v = close_holder(&w);
+    let v = free_slot(&w);
     assert!(v.box_deleted);
-    assert!(!v.promoted.contains(&"first".to_owned()));
     assert!(warning_codes(&w).contains(&"promote_failed".to_owned()));
     assert!(!is_working(&row_of(&w, id)));
 }
@@ -328,41 +419,19 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
 }
 
 #[test]
-fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
-    let w = world(limit(1), FakeDriver::new());
-    let id = queue(&w, "first");
-    let set = HandsFields {
-        provider: Field::Set(ProviderId::new("other-provider")),
-        ..HandsFields::default()
-    };
-    w.cx.store()
-        .unwrap()
-        .apply(Decision::new(w.holder).hands(HandsInc::FIRST, set))
-        .unwrap();
-    on_provider_node(&w.cx, w.holder, "other-provider");
-    let v = close_holder(&w);
-    assert!(v.box_deleted);
-    assert!(v.promoted.is_empty());
-    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
-    assert_eq!(acquires(&w), 0);
-}
-
-#[test]
 fn nothing_is_promoted_without_a_configured_limit() {
     let w = world(UserConfig::default(), FakeDriver::new());
     let id = waiting_directly(&w, "first");
-    let v = close_holder(&w);
-    assert!(v.promoted.is_empty());
+    free_slot(&w);
     assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 0);
 }
 
 #[test]
-fn close_with_no_waiting_boxes_promotes_nothing() {
+fn a_freed_slot_with_no_waiting_boxes_promotes_nothing() {
     let w = world(limit(1), FakeDriver::new());
-    let v = close_holder(&w);
+    let v = free_slot(&w);
     assert!(v.box_deleted);
-    assert!(v.promoted.is_empty());
     assert_eq!(acquires(&w), 0);
     assert!(warning_codes(&w).is_empty());
 }
@@ -373,12 +442,11 @@ fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
     let id = queue(&w, "first");
     let _held = w.cx.owners_arc().hold(id, Cmd::Wake);
     let from = w.cx.clock().instant();
-    let v = close_holder(&w);
+    let v = free_slot(&w);
     let waited = w.cx.clock().instant() - from;
     assert!(waited >= PROMOTE_WAIT, "{waited:?}");
     assert!(waited < PROMOTE_WAIT * 2, "{waited:?}");
     assert!(v.box_deleted);
-    assert!(v.promoted.is_empty());
     let warnings = w.cx.take_warnings();
     let skipped = warnings.iter().find(|x| x.code == "promote_skipped");
     let message = &skipped.expect("promote_skipped warning").message;
@@ -388,7 +456,7 @@ fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
 }
 
 #[test]
-fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
+fn a_store_read_error_during_promotion_is_a_warning() {
     let w = world(limit(1), FakeDriver::new());
     queue(&w, "first");
     let db = crate::store::db::Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
@@ -407,9 +475,8 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
             ),
     )
     .unwrap();
-    let v = close_holder(&w);
+    let v = free_slot(&w);
     assert!(v.box_deleted);
-    assert!(v.promoted.is_empty());
     assert!(warning_codes(&w).contains(&"promote_failed".to_owned()));
 }
 
@@ -430,7 +497,7 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
             ..start_req("first")
         },
     );
-    close_holder(&w);
+    free_slot(&w);
     assert!(is_working(&row_of(&w, id)));
     let handle = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let handle = handle.hands.unwrap().handle.expect("promoted Box handle");
@@ -449,41 +516,6 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
         })
         .count();
     assert_eq!(ran, 1, "{argvs:?}");
-}
-
-/// The user of local uid 2000, who owns none of the world's Boxes.
-fn bystander(w: &World) -> UserId {
-    w.cx.store()
-        .unwrap()
-        .enroll(&Identity::local(2000), None)
-        .unwrap()
-        .0
-}
-
-#[test]
-fn a_close_names_only_the_promoted_boxes_its_caller_may_see() {
-    let mut w = world(limit(1), FakeDriver::new());
-    let first = queue(&w, "first");
-    let user = bystander(&w);
-    w.cx = w.cx.with_viewer(Viewer::User(user));
-    let v = close_holder(&w);
-    assert!(v.promoted.is_empty(), "{:?}", v.promoted);
-    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::Pending);
-}
-
-#[test]
-fn a_close_hides_the_promote_warning_of_a_box_its_caller_may_not_see() {
-    let mut w = world(limit(1), FakeDriver::new());
-    let id = queue(&w, "first");
-    let _held = w.cx.owners_arc().hold(id, Cmd::Start);
-    let user = bystander(&w);
-    w.cx = w.cx.with_viewer(Viewer::User(user));
-    close_holder(&w);
-    let warnings = w.cx.take_warnings();
-    assert!(
-        !warnings.iter().any(|x| x.message.contains("first")),
-        "{warnings:?}"
-    );
 }
 
 /// Runs the update `q` against the world's store.
@@ -522,48 +554,11 @@ fn skipped_first(w: &World) -> Vec<String> {
 }
 
 #[test]
-fn a_close_hides_the_settings_error_of_a_waiter_its_caller_may_not_see() {
-    let mut w = world(limit(1), FakeDriver::new());
-    queue_unparsable(&w);
-    let user = bystander(&w);
-    w.cx = w.cx.with_viewer(Viewer::User(user));
-    close_holder(&w);
-    assert_eq!(skipped_first(&w), Vec::<String>::new());
-}
-
-#[test]
-fn the_owner_of_a_waiter_sees_its_settings_error() {
-    let mut w = world(limit(1), FakeDriver::new());
+fn a_waiter_whose_settings_no_longer_parse_is_skipped_with_a_warning() {
+    let w = world(limit(1), FakeDriver::new());
     let id = queue_unparsable(&w);
-    let owner = bystander(&w);
-    exec_on(
-        &w,
-        Query::update()
-            .table(Boxes::Table)
-            .value(Boxes::User, owner.get())
-            .and_where(Expr::col(Boxes::Id).eq(id.get())),
-    );
-    w.cx = w.cx.with_viewer(Viewer::User(owner));
-    close_holder(&w);
+    free_slot(&w);
     let skipped = skipped_first(&w);
     assert_eq!(skipped.len(), 1, "{skipped:?}");
-}
-
-#[test]
-fn the_owner_of_a_waiter_sees_its_promote_warning() {
-    let mut w = world(limit(1), FakeDriver::new());
-    let id = queue(&w, "first");
-    let owner = bystander(&w);
-    exec_on(
-        &w,
-        Query::update()
-            .table(Boxes::Table)
-            .value(Boxes::User, owner.get())
-            .and_where(Expr::col(Boxes::Id).eq(id.get())),
-    );
-    let _held = w.cx.owners_arc().hold(id, Cmd::Start);
-    w.cx = w.cx.with_viewer(Viewer::User(owner));
-    close_holder(&w);
-    let skipped = skipped_first(&w);
-    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
 }

@@ -120,6 +120,12 @@ pub(super) fn spawn_wanted(env: &Env, every: Duration, drain: &Arc<Drain>, sink:
     passes(every, drain, sink, Moor::wanted_pass(env));
 }
 
+/// Runs the promotion pass each `every`, on its own thread, since setting up a promoted Box can
+/// take many minutes and must not hold up a close or the other passes.
+pub(super) fn spawn_promote(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
+    passes(every, drain, sink, Moor::promote_pass(env));
+}
+
 /// How often the controller looks for workflow runs to start, finish or expire.
 const WORKFLOW_EVERY: Duration = Duration::from_secs(30);
 

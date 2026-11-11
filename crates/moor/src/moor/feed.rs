@@ -11,11 +11,13 @@ use moor_core::{BoxId, SessionId};
 
 use super::Moor;
 use crate::cx::owners::Cmd;
+use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::ops;
 use crate::ops::common::provision::interrupted;
 use crate::store::reads::NamedEvent;
+use crate::store::Store;
 
 impl Moor {
     /// Stored events with cursor above `after`, oldest first, at most `limit`, as wire frames.
@@ -131,6 +133,22 @@ impl Moor {
     pub(crate) fn wanted_pass(
         env: &Env,
     ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        Self::store_pass(env, ops::wanted_pass)
+    }
+
+    /// The pass that starts the Boxes waiting on a node once it has room, for the controller to
+    /// run each tick.
+    pub(crate) fn promote_pass(
+        env: &Env,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        Self::store_pass(env, ops::promote_pass)
+    }
+
+    /// Runs `pass` on a fresh [`Moor`] each call; returns its error and warnings to log.
+    fn store_pass(
+        env: &Env,
+        pass: StorePass,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
         let env = env.clone();
         move |draining| match Self::from_env(&env) {
             Ok(moor) => crate::cx::owners::checked(|| {
@@ -138,7 +156,7 @@ impl Moor {
                 let passed = moor
                     .cx
                     .store()
-                    .and_then(|store| ops::wanted_pass(&moor.cx, store, draining));
+                    .and_then(|store| pass(&moor.cx, store, draining));
                 if let Err(e) = passed {
                     out.push(e.error.to_string());
                 }
@@ -275,6 +293,9 @@ impl Moor {
         failed.into_iter().chain(warnings).collect()
     }
 }
+
+/// A controller pass over the store that stops once its `draining` says so.
+type StorePass = fn(&Cx, &Store, &dyn Fn() -> bool) -> Result<(), CommandError>;
 
 #[cfg(test)]
 mod tests;
