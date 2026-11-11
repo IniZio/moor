@@ -89,6 +89,9 @@ fn main() -> ExitCode {
             req,
             interactive: i,
         } => return run_exec(&scoped(env, &opts), req, i),
+        Parsed::Forward { opts, spec } => {
+            return moor::client::forward::run(&scoped(env, &opts), &spec)
+        }
         Parsed::LinkDial {
             opts,
             runner,

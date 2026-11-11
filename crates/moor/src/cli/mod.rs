@@ -134,6 +134,13 @@ pub enum Parsed {
         /// Forward stdin even from a terminal.
         interactive: bool,
     },
+    /// Serve a Box's port on this computer's loopback until interrupted.
+    Forward {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The Box and its ports.
+        spec: moor_client::port_forward::Spec,
+    },
     /// Read a secret from stdin and send the request it completes.
     Stdin {
         /// Global options.
@@ -157,6 +164,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::StoreMigrate)) => Parsed::StoreMigrate { opts },
         Ok((opts, Action::StoreCopy { to })) => Parsed::StoreCopy { opts, to },
         Ok((opts, Action::Stdin(then))) => Parsed::Stdin { opts, then },
+        Ok((opts, Action::Forward(spec))) => Parsed::Forward { opts, spec },
         Ok((opts, Action::Exec(req, interactive))) => Parsed::Exec {
             opts,
             req,

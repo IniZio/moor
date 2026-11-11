@@ -14,6 +14,7 @@ use super::GlobalOpts;
 use box_ops::{BoxArg, CloseArgs, CloseFailedArgs, CpArgs};
 use events::EventsArgs;
 use exec::ExecArgs;
+use forward::ForwardArgs;
 use inspect::InspectArgs;
 use node::NodeCmd;
 use session::SessionCmd;
@@ -25,6 +26,7 @@ use wait_events::WaitEventsArgs;
 mod box_ops;
 mod events;
 mod exec;
+mod forward;
 mod inspect;
 mod node;
 #[cfg(test)]
@@ -69,6 +71,8 @@ pub(super) enum Action {
     },
     /// `exec`: run a command with its stdio streamed; the flag forwards a terminal's stdin.
     Exec(moor_core::ExecReq, bool),
+    /// `forward`: serve a Box's port on this computer's loopback until interrupted.
+    Forward(moor_client::port_forward::Spec),
     /// A request that carries a secret read from stdin, never from argv.
     Stdin(super::StdinRequest),
     /// `doctor`: check the setup and print one line per check.
@@ -131,6 +135,8 @@ enum Cmd {
     Run(RunArgs),
     /// Run a command in the Box with stdin, stdout and stderr passed byte for byte.
     Exec(ExecArgs),
+    /// Serve a port of the Box on this computer's `localhost` until Ctrl-C (dev tool).
+    Forward(ForwardArgs),
     /// Wait for a Box state.
     Wait(WaitArgs),
     /// Wait for events from several Boxes.
@@ -189,6 +195,7 @@ impl Cmd {
         match self {
             Self::Start(a) => Action::Request(Request::Start(a.into())),
             Self::Run(a) => Action::Request(Request::Run(a.into())),
+            Self::Forward(a) => Action::Forward(a.into()),
             Self::Exec(a) => {
                 let (req, interactive) = a.into_parts();
                 Action::Exec(req, interactive)

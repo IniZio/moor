@@ -389,3 +389,7 @@ mod secret;
 #[cfg(test)]
 #[path = "conn_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "conn/forward/tests.rs"]
+mod forward_tests;

@@ -127,6 +127,24 @@ fn run_with_trailing_command() {
 }
 
 #[test]
+fn forward_takes_a_box_and_a_port_and_an_optional_local_port() {
+    let spec = |args: &[&str]| match run(args).expect("parses").1 {
+        Action::Forward(spec) => Some((spec.box_name, spec.port, spec.local_port)),
+        _ => None,
+    };
+    assert_eq!(
+        spec(&["forward", "fix-login", "5177"]),
+        Some(("fix-login".to_owned(), 5177, None))
+    );
+    assert_eq!(
+        spec(&["forward", "fix-login", "5177", "--local-port", "8080"]),
+        Some(("fix-login".to_owned(), 5177, Some(8080)))
+    );
+    assert!(run(&["forward", "fix-login"]).is_err());
+    assert!(run(&["forward", "fix-login", "70000"]).is_err());
+}
+
+#[test]
 fn exec_takes_a_trailing_command_and_forwards_a_terminal_only_with_i() {
     let parsed = |args: &[&str]| match run(args).expect("parses").1 {
         Action::Exec(req, interactive) => Some((req.target.to_string(), req.argv, interactive)),
