@@ -288,3 +288,24 @@ fn link_dial_to_a_runner_across_the_network_needs_the_key() {
     let err = String::from_utf8_lossy(&stderr);
     assert!(err.contains("MOOR_MACHINE_SERVICE_KEY"), "{err}");
 }
+
+#[test]
+fn a_list_the_runner_never_answers_fails_at_its_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let sock = runner_dir::of(dir.path());
+    std::fs::create_dir_all(&sock).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(sock.join(broker::SOCKET)).unwrap();
+    let mut runners = runners(dir.path(), None, clock);
+    runners.list_within = Duration::from_millis(200);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        drop(tx.send(runners.lease(1, Verb::List, None, None, &Boot::default())));
+    });
+    let (_held, _) = listener.accept().unwrap();
+    let got = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the list waited on past its deadline");
+    let why = got.unwrap_err();
+    assert!(why.contains("did not answer"), "{why}");
+}

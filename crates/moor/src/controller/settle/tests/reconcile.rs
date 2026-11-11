@@ -184,3 +184,20 @@ fn reconcile_pass_drops_a_verdict_on_hands_replaced_since_its_listing_and_warns(
     assert_eq!(codes, ["stale_hands_write"]);
     assert_eq!(hands_state(dir.path(), &driver, id), HandsState::Starting);
 }
+
+#[test]
+fn reconcile_pass_marks_an_asleep_pool_box_gone_when_its_host_answers_without_its_lease() {
+    use moor_core::domain::hands::HandsState;
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", "s-a");
+    let lease = lease_of(&cx, id);
+    driver.stop_behind(&lease);
+    let moor = Moor::from_cx(cx);
+    moor.reconcile_open(&|| false);
+    assert_eq!(hands_state(dir.path(), &driver, id), HandsState::Asleep);
+    driver.forget(&lease);
+    moor.reconcile_open(&|| false);
+    assert_eq!(hands_state(dir.path(), &driver, id), HandsState::Gone);
+}
