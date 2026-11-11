@@ -4,7 +4,9 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 base="${CARGO_TARGET_DIR:-$root/target}"
-dir="$base/lint-selftest"
+mkdir -p "$base"
+dir="$(mktemp -d "$base/lint-selftest.XXXXXX")"
+trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/src"
 
 {
@@ -297,7 +299,7 @@ RS
 # stack-overlap.sh is excluded: it compares refs and PR heads, never scans working-tree files, and already dies on a bad ref.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 export_dir="$(mktemp -d)"
-trap 'rm -rf "$export_dir"' EXIT
+trap 'rm -rf "$export_dir" "$dir"' EXIT
 mkdir -p "$export_dir/tools" "$export_dir/crates"
 cp -r "$root/tools/lib" "$export_dir/tools/"
 echo 'fn main() {}' > "$export_dir/crates/a.rs"
