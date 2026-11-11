@@ -45,6 +45,11 @@ pub enum DriverError {
         /// What the provider said.
         summary: String,
     },
+    /// A setting or file permission on this host makes the provider refuse; a retry cannot help.
+    Misconfigured {
+        /// What is wrong and how to fix it.
+        summary: String,
+    },
     /// Any other failure, summarised by the adapter.
     Failed {
         /// Moor-worded summary.
