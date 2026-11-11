@@ -3310,6 +3310,7 @@ dependencies = [
  "moor-testkit",
  "serde",
  "serde_json",
+ "signal-hook 0.4.4",
  "tempfile",
  "thiserror 2.0.21",
 ]

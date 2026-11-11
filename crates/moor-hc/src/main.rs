@@ -15,7 +15,7 @@ use moor_hc::error::Error;
 use moor_hc::hc::Cli;
 use moor_hc::service::Service;
 use moor_hc::via::Link;
-use moor_hc::{exec, sync};
+use moor_hc::{exec, forward, sync};
 
 /// The command that signs moor-hc in, named when a sign-in is missing or ended.
 const LOGIN: &str = "moor-hc login";
@@ -68,6 +68,17 @@ enum Cmd {
         #[arg(last = true, required = true)]
         cmd: Vec<String>,
     },
+    /// Serve port PORT of Box NAME on this computer's `localhost` until Ctrl-C, for a browser
+    /// that must reach the Box's web app. Opening it wakes a sleeping Box.
+    Forward {
+        /// The Box.
+        name: String,
+        /// The port in the Box.
+        port: u16,
+        /// The port on this computer; PORT when left out.
+        #[arg(long)]
+        local_port: Option<u16>,
+    },
     /// Print the user service that runs `moor-hc sync`, and how to start it.
     Service,
 }
@@ -114,6 +125,11 @@ fn run(args: &Args) -> Result<(), Error> {
         }
         Cmd::Sync { every, once, hc } => run_sync(args, *every, *once, hc),
         Cmd::Service => print_service(args),
+        Cmd::Forward {
+            name,
+            port,
+            local_port,
+        } => forward::run(&client(&link(args)?), name, *port, *local_port),
         Cmd::Exec { .. } => Err(Error::Usage("exec runs on its own".to_owned())),
     }
 }

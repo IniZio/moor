@@ -63,6 +63,32 @@ send the agent a message. The Box wakes and carries on.
 
 When you no longer need the Box, ask Claude Code to close it.
 
+## 6. Open the Box's web app in your browser
+
+A Box that runs a web app, such as a Compose stack, can be reached from your
+own browser. This matters when you must act in the app yourself, such as
+signing in with a password and a second factor that the agent cannot supply.
+
+```sh
+moor-hc forward fix-login 5177
+```
+
+moor-hc listens on `localhost:5177` on your computer and carries each
+connection to port 5177 in the Box. Open `http://localhost:5177` in your
+browser. The app sees `Host: localhost:5177`, so a sign-in whose only
+registered redirect is `http://localhost:5177` works. Ctrl-C ends the forward.
+
+- Pass `--local-port N` to listen on another port of your computer.
+- Opening the forward wakes a sleeping Box. A browser tab that retries never
+  does, and a forward ends nothing when the Box sleeps: open it again to wake
+  the Box.
+- Traffic in the last 10 minutes keeps the Box awake. An open forward with no
+  traffic does not.
+- Only the Box's own user can forward. The Box must run on a node.
+- On a node whose crabbox-cloudhypervisor adapter is older than v0.2.2, a Box can
+  reach the host's loopback, so other Boxes there can reach a forward's tunnel.
+  Update the adapter to v0.2.2 or later on every node that serves forwards.
+
 ## Next
 
 - [Start and steer Boxes](boxes.md) covers Slack and taking over the agent's
