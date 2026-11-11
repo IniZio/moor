@@ -1,7 +1,7 @@
 //! The machine runner's links broker: a socket on its host, or a hello on its listener, that
 //! reaches the agents linked to the runner.
 //!
-//! Through it the controller asks a pool host for a lease or a dial into a lease's VM, and any
+//! Through it the controller asks a pool host for a lease, a dial into a lease's VM, or a stream to a port in it, and any
 //! agent for its status.
 
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,16 @@ pub enum PoolOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         timeout_secs: Option<u64>,
     },
+    /// [`Op::Port`].
+    Port {
+        /// `moor-<controller>-<id>`.
+        slug: String,
+        /// The port in the VM.
+        port: u16,
+        /// Only ask whether anything listens.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        probe: bool,
+    },
     /// [`Op::Status`].
     Status,
 }
@@ -80,6 +90,7 @@ impl From<PoolOp> for Op {
             },
             PoolOp::Checkpoint { act } => Self::Checkpoint { act },
             PoolOp::Dial { slug, timeout_secs } => Self::Dial { slug, timeout_secs },
+            PoolOp::Port { slug, port, probe } => Self::Port { slug, port, probe },
             PoolOp::Status => Self::Status,
         }
     }
@@ -180,6 +191,40 @@ pub async fn dial(
     match ask(runner, machine_id, op).await? {
         (conn, Reply::Started) => Ok(conn),
         (_, other) => Err(refusal(machine_id, other)),
+    }
+}
+
+/// Asks `runner`'s broker for a stream to `port` on the loopback of lease `slug`'s VM on machine
+/// `machine_id`.
+pub async fn port(runner: &Runner, machine_id: i64, slug: &str, port: u16) -> Result<Conn, String> {
+    let op = PoolOp::Port {
+        slug: slug.to_owned(),
+        port,
+        probe: false,
+    };
+    match ask(runner, machine_id, op).await? {
+        (conn, Reply::Started) => Ok(conn),
+        (_, other) => Err(refusal(machine_id, other)),
+    }
+}
+
+/// Asks machine `machine_id`, through `runner`'s broker, whether anything listens on `port` of
+/// lease `slug`'s VM.
+pub async fn listens(
+    runner: &Runner,
+    machine_id: i64,
+    slug: &str,
+    port: u16,
+) -> Result<bool, String> {
+    let op = PoolOp::Port {
+        slug: slug.to_owned(),
+        port,
+        probe: true,
+    };
+    match ask(runner, machine_id, op).await?.1 {
+        Reply::Reachable => Ok(true),
+        Reply::Unreachable => Ok(false),
+        other => Err(refusal(machine_id, other)),
     }
 }
 

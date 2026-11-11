@@ -43,9 +43,11 @@ pub(crate) async fn send(
         Reply::Sending { bytes } => Ok(Answer::Sending(stream, bytes)),
         Reply::Refused { reason } => Err(format!("machine {machine} refused: {reason}")),
         Reply::Swept(swept) => Ok(Answer::Swept(swept)),
-        Reply::Listening | Reply::Leased(_) | Reply::Status(_) => {
-            Err(format!("machine {machine} answered something else"))
-        }
+        Reply::Listening
+        | Reply::Reachable
+        | Reply::Unreachable
+        | Reply::Leased(_)
+        | Reply::Status(_) => Err(format!("machine {machine} answered something else")),
     }
 }
 

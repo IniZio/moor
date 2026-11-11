@@ -152,6 +152,18 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         timeout_secs: Option<u64>,
     },
+    /// Carry the stream to and from `port` on the loopback of a pool lease's VM, through a
+    /// tunnel the agent keeps; only a pool host serves it. With `probe` set it carries no bytes:
+    /// it answers whether anything listens there.
+    Port {
+        /// `moor-<controller>-<id>`.
+        slug: String,
+        /// The port in the VM.
+        port: u16,
+        /// Only ask whether anything listens.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        probe: bool,
+    },
     /// Remove the folders of every Box not in `keep`, after its `release` hook; a pool host
     /// instead stops the leases of Boxes not in `keep`.
     Sweep {
@@ -178,7 +190,7 @@ pub enum Op {
 pub enum Reply {
     /// The exec or hook ended.
     Ran(Ran),
-    /// The relay runs, or the dial reached the VM; its bytes follow on the stream.
+    /// The relay runs, or the dial or port reached the VM; its bytes follow on the stream.
     Started,
     /// What a lease request came to.
     Leased(lease::Answer),
@@ -189,6 +201,10 @@ pub enum Reply {
         /// Its length.
         bytes: u64,
     },
+    /// Something listens on the probed port of the VM.
+    Reachable,
+    /// Nothing listens on the probed port of the VM.
+    Unreachable,
     /// Every port of the listen is bound; the agent holds them until the stream closes.
     Listening,
     /// The agent's state.

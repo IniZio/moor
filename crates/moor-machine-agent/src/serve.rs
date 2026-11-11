@@ -103,9 +103,10 @@ pub(crate) async fn serve(
 /// Serves `op` when this machine's mode allows it; why it failed.
 async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match (machine.pool.as_ref(), op) {
-        (Some(pool), op @ (Op::Lease { .. } | Op::Checkpoint { .. } | Op::Dial { .. })) => {
-            serve_pool(&machine.home, pool, ch, op).await
-        }
+        (
+            Some(pool),
+            op @ (Op::Lease { .. } | Op::Checkpoint { .. } | Op::Dial { .. } | Op::Port { .. }),
+        ) => serve_pool(&machine.home, pool, ch, op).await,
         (
             None,
             op @ (Op::Exec { .. }
@@ -145,6 +146,9 @@ fn not_served(pool_host: bool, op: &Op) -> String {
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
         op @ (Op::Lease { .. } | Op::Checkpoint { .. }) => pool::lease_op(home, pool, op).await,
+        Op::Port { slug, port, probe } => {
+            return pool::serve_port((home, pool), ch, (&slug, port), probe).await;
+        }
         Op::Dial { slug, timeout_secs } => {
             match pool::dial(home, pool, &slug, timeout_secs.map(Duration::from_secs)).await {
                 Ok(sshd) => {
@@ -257,6 +261,7 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
         | Op::Lease { .. }
         | Op::Checkpoint { .. }
         | Op::Dial { .. }
+        | Op::Port { .. }
         | Op::Status => Err(refused("not a command".to_owned())),
         Op::Listen {
             box_id,

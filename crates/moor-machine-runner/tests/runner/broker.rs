@@ -234,6 +234,52 @@ async fn a_dial_through_the_broker_carries_bytes_both_ways() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_port_through_the_broker_reaches_the_lease_tunnel_and_says_whether_it_listens() {
+    let host = Host::start();
+    let slug = "moor-1a2b3c4d-7";
+    let runner = host.runner();
+    let warmed = broker::lease(
+        &runner,
+        MACHINE_ID,
+        Verb::Warmup,
+        Some(slug),
+        Boot::default(),
+    );
+    assert_eq!(warmed.await, Ok(Answer::Done));
+    // The fake's tunnel listens where this echo server does.
+    let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    std::fs::write(
+        host.home.join("tunnel.port"),
+        echo.local_addr().unwrap().port().to_string(),
+    )
+    .unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut conn, _)) = echo.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 64];
+                while let Ok(n @ 1..) = conn.read(&mut buf).await {
+                    let _ = conn.write_all(&buf[..n]).await;
+                }
+            });
+        }
+    });
+    let mut app = broker::port(&runner, MACHINE_ID, slug, 5177).await.unwrap();
+    app.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+    let mut back = [0u8; 16];
+    tokio::time::timeout(Duration::from_secs(10), app.read_exact(&mut back))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&back, b"GET / HTTP/1.1\r\n");
+    assert_eq!(
+        broker::listens(&runner, MACHINE_ID, slug, 5177).await,
+        Ok(true)
+    );
+    let refused = broker::port(&runner, MACHINE_ID, "not-a-slug", 5177).await;
+    assert!(refused.is_err_and(|e| e.contains("is not a pool lease slug")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_broker_refuses_every_op_but_lease_dial_and_status() {
     let host = Host::start();
     let marker = host.home.join("ran");
