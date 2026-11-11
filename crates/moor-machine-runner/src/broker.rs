@@ -54,7 +54,7 @@ pub async fn serve_broker(listener: UnixListener, agents: Agents, uid: u32) -> i
     }
 }
 
-/// Serves one ask, refused unless `admitted`: the agent's reply, then for a started dial the
+/// Serves one ask, refused unless `admitted`: the agent's reply, then for a started dial or port the
 /// bytes both ways until either side closes.
 pub(crate) async fn carry<S>(mut conn: S, agents: &Agents, admitted: bool)
 where
@@ -90,7 +90,10 @@ pub(crate) const WRONG_KEY: &str = "the machine service key is wrong";
 /// Sends `ask` on its machine's link; the answer, and the stream when a dial started.
 async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link::Channel>) {
     let machine_id = ask.machine_id;
-    let dial = matches!(ask.op, PoolOp::Dial { .. });
+    let dial = matches!(
+        ask.op,
+        PoolOp::Dial { .. } | PoolOp::Port { probe: false, .. }
+    );
     let offline = |reason: String| (Brokered::Offline { machine_id, reason }, None);
     let mut stream = match agents.open(machine_id).await {
         Ok(stream) => stream,

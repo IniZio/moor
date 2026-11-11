@@ -13,6 +13,8 @@ use moor_client::link::{BoxMemory, Offer};
 use moor_core::box_key::parse_pool_slug;
 use tokio::process::Command;
 
+pub use port::kill_all_now as kill_tunnels;
+pub(crate) use port::serve_here as serve_port;
 pub use reach::{carry, dial, splice, Sshd};
 
 mod cache;
@@ -21,6 +23,8 @@ pub(crate) use checkpoint::doctor_failures;
 mod crabbox;
 mod flight;
 mod memory;
+mod pause;
+mod port;
 mod reach;
 mod rows;
 mod sweep;
@@ -30,6 +34,7 @@ pub use checkpoint::checkpoint_op;
 use crabbox::Crabbox;
 use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
+use pause::pause;
 use rows::{held_memory, leases};
 pub(crate) use sweep::sweep;
 use takeover::{adopt, stop_now};
@@ -133,9 +138,11 @@ async fn features(pool: &Pool) -> Vec<String> {
     features
 }
 
-/// Asks every warmup and fork going on to stop, and waits until crabbox has ended them all.
+/// Asks every warmup and fork going on to stop, and every port tunnel, and waits until crabbox
+/// has ended them all.
 pub async fn stop_boots() {
     flight::stop_all().await;
+    port::stop_all().await;
 }
 
 /// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`
@@ -148,6 +155,9 @@ pub async fn lease(
     key: Option<&str>,
     boot: &Boot,
 ) -> Reply {
+    if let (Some(slug), Verb::Warmup | Verb::Adopt | Verb::Resume) = (slug, verb) {
+        port::allow(slug).await;
+    }
     match answer(home, pool, verb, slug, key, boot).await {
         Ok(answer) => Reply::Leased(answer),
         Err(reason) => Reply::Refused { reason },
@@ -240,6 +250,7 @@ async fn act(
         Verb::Stop => {
             // A stop while the VM boots finds no lease yet, and the boot then leaves one behind.
             flight::stop(&box_dir(lease.home, slug)).await;
+            port::stop_lease(slug).await;
             stop_now(lease, slug).await
         }
         Verb::List => return Err("list names no slug".to_owned()),
@@ -250,39 +261,6 @@ async fn act(
             Ok(Answer::Done)
         }
         Err(e) => Err(e),
-    }
-}
-
-/// Pauses the lease with `env` added to crabbox's.
-async fn pause(lease: &Crabbox<'_>, env: &[(&str, String)]) -> Result<Answer, String> {
-    match lease.run_both("pause", &["--id"], CALL, &[0], env).await {
-        Ok((_, said)) => {
-            log_pause(lease.slug.unwrap_or_default(), &said);
-            Ok(Answer::Done)
-        }
-        Err(e) if e.contains("does not support pause") => Ok(Answer::Unsupported),
-        Err(e) => Err(e),
-    }
-}
-
-/// Logs what crabbox `said` while pausing `slug`: only there can a host see whether the caches
-/// were saved. It is another program's output, so only its end is kept and no control character
-/// reaches the log.
-fn log_pause(slug: &str, said: &str) {
-    let mut cut = said.len().saturating_sub(TAIL);
-    while !said.is_char_boundary(cut) {
-        cut += 1;
-    }
-    let mut out = std::io::stderr().lock();
-    for line in said.get(cut..).unwrap_or_default().lines() {
-        let line: String = line
-            .chars()
-            .map(|c| if c.is_control() { ' ' } else { c })
-            .collect();
-        let line = line.trim();
-        if !line.is_empty() {
-            let _ = writeln!(out, "moor-machine-agent: pause {slug}: {line}");
-        }
     }
 }
 

@@ -34,6 +34,7 @@ mod sweep;
 pub mod up;
 mod upgrade;
 
+pub use pool::kill_tunnels;
 pub use stop::{until_stopped, Ended};
 
 /// What the agent keeps after pairing.

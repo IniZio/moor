@@ -64,6 +64,7 @@ async fn install(need: String, version: &str, log: Log<'_>) -> String {
         ));
     };
     let why = busy::when_idle(PATIENCE, stuck, || {
+        crate::pool::kill_tunnels();
         Command::new(&done.exe)
             .args(std::env::args_os().skip(1))
             .env(UPDATED_TO, &done.to)

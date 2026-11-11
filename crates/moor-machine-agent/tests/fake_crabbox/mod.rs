@@ -1,6 +1,7 @@
 //! A crabbox stand-in for a pool host's tests: it logs each call, rejects flags crabbox lacks,
 #![allow(clippy::unwrap_used, reason = "tests")]
-//! and prints words whose proxy command echoes, so a dial gets back what it sends.
+//! prints words whose proxy command echoes, so a dial gets back what it sends, and a tunnel
+//! that listens where the test put `tunnel.port`.
 
 use std::path::{Path, PathBuf};
 
@@ -16,7 +17,7 @@ echo "$1 ${CRABBOX_PAUSE_PUBLISH-unset}" >> "$HOME/publish.log"
 for a in "$@"; do
   case "$a" in
     --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;
-    --provider|--id|--slug|--json|--configured|--name|--mode) ;;
+    --provider|--id|--slug|--json|--configured|--name|--mode|--local-port) ;;
     --*) echo "flag provided but not defined: $a" >&2; exit 2 ;;
   esac
 done
@@ -30,6 +31,7 @@ case "$1" in
     [ -e "$HOME/ssh-fail" ] && { echo "provider exploded" >&2; exit 2; }
     strict=yes; [ -e "$HOME/loose" ] && strict=no
     echo "ssh '-F' '/dev/null' '-o' 'StrictHostKeyChecking=$strict' '-o' 'UserKnownHostsFile=$HOME/kh' '-o' 'ProxyCommand=cat' 'vm@vm7'" ;;
+  tunnel) echo "http://127.0.0.1:$(cat "$HOME/tunnel.port")"; exec sleep 300 ;;
   providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;
   list) cat "$HOME/leases.json" 2>/dev/null || echo '[]' ;;
   doctor) if [ -e "$HOME/doctor-fail" ]; then

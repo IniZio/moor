@@ -232,7 +232,9 @@ fn run_here(
         machine,
         auto_update,
         &|line| say(line),
-    )))?;
+    )));
+    moor_machine_agent::kill_tunnels();
+    let ended = ended?;
     if let Ended::Stopped(signal) = ended {
         say(&format!("stopped by {signal}"));
     }
