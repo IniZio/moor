@@ -147,7 +147,6 @@ fn close_held(
         box_deleted,
         agent_stopped,
         transcript: saved.map(|t| t.path),
-        promoted: Vec::new(),
     })
 }
 

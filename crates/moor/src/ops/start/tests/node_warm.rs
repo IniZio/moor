@@ -64,6 +64,7 @@ fn node(w: &World, warm: Option<WarmStarts>) -> i64 {
         &crate::testing::one_runner(vec![link(machine, warm, 400_000, at)]),
     )
     .unwrap();
+    w.cx.promoting().wait_idle();
     machine
 }
 
@@ -212,6 +213,7 @@ fn a_report_below_the_floor_frees_this_nodes_disk_for_a_box_there_and_no_other_n
     w.driver.set_free_mib(FLOOR_MIB - 1);
     let report = link(machine, Some(WarmStarts::On), FLOOR_MIB - 1, at);
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![report])).unwrap();
+    w.cx.promoting().wait_idle();
     let gone = deleted(&w);
     assert!(!gone.is_empty(), "{:?}", w.driver.calls());
     assert!(!gone.contains(&"theirs".to_owned()), "{gone:?}");
@@ -229,6 +231,7 @@ fn a_report_below_the_floor_frees_disk_for_a_box_waiting_for_it_but_not_for_nobo
     let mut at = w.cx.clock().now().as_millis() + 20_000;
     let low = |at| link(machine, Some(WarmStarts::On), FLOOR_MIB - 1, at);
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![low(at)])).unwrap();
+    w.cx.promoting().wait_idle();
     assert!(deleted(&w).is_empty(), "no Box wants the room");
     let second = start(&w, "second", "def456", LINES);
     assert!(w
@@ -240,6 +243,7 @@ fn a_report_below_the_floor_frees_disk_for_a_box_waiting_for_it_but_not_for_nobo
         .contains(&second));
     at += 20_000;
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![low(at)])).unwrap();
+    w.cx.promoting().wait_idle();
     assert!(!deleted(&w).is_empty(), "{:?}", w.driver.calls());
     assert!(!events(&w, second, "checkpoint_evicted").is_empty());
 }
@@ -254,6 +258,7 @@ fn a_report_above_the_floor_frees_nothing() {
     let at = w.cx.clock().now().as_millis() + 20_000;
     let report = link(machine, Some(WarmStarts::On), FLOOR_MIB + 1, at);
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![report])).unwrap();
+    w.cx.promoting().wait_idle();
     assert!(deleted(&w).is_empty());
 }
 
@@ -271,6 +276,7 @@ fn node_ls_says_on_or_off_with_the_reason() {
     let at = w.cx.clock().now().as_millis() + 20_000;
     let report = link(1, Some(off.clone()), 400_000, at);
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![report])).unwrap();
+    w.cx.promoting().wait_idle();
     let view = nodes::list(&w.cx).unwrap();
     let hv = view.nodes.iter().find(|n| n.name == "hv").unwrap();
     assert_eq!(hv.warm_starts, Some(off));

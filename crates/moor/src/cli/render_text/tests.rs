@@ -381,17 +381,16 @@ fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
 }
 
 #[test]
-fn start_prints_inline_warnings_and_promotions() {
+fn start_prints_inline_warnings() {
     let v = json!({
         "box": lifecycle_box("alpha", "ready", Some("ready")),
-        "promoted": ["beta", "gamma"],
         "warnings_inline": ["agent dispatch failed: no pane"]
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
         "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n\
-         started from the queue: beta, gamma\nwarning: agent dispatch failed: no pane\n"
+         warning: agent dispatch failed: no pane\n"
     );
 }
 
@@ -457,7 +456,7 @@ fn start_shows_a_launch_step_failure_as_a_warning() {
 fn close_prints_name_and_box_outcome() {
     let v = json!({
         "box": lifecycle_box("alpha", "closed", None),
-        "box_deleted": true, "promoted": []
+        "box_deleted": true
     });
     let (out, _) = render(&Response::ok("close", Some(v)), false);
     assert_eq!(out, "closed alpha (#7), box deleted\n");
@@ -467,15 +466,15 @@ fn close_prints_name_and_box_outcome() {
 }
 
 #[test]
-fn close_prints_transcript_and_promotions() {
+fn close_prints_transcript() {
     let v = json!({
         "box": lifecycle_box("alpha", "closed", None),
-        "box_deleted": true, "transcript": "/t/alpha.md", "promoted": ["beta"]
+        "box_deleted": true, "transcript": "/t/alpha.md"
     });
     let (out, _) = render(&Response::ok("close", Some(v)), false);
     assert_eq!(
         out,
-        "closed alpha (#7), box deleted\ntranscript: /t/alpha.md\nstarted from the queue: beta\n"
+        "closed alpha (#7), box deleted\ntranscript: /t/alpha.md\n"
     );
 }
 

@@ -23,6 +23,7 @@ use crate::blobs::{fs::FsBlobs, Blobs};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Database, Store};
+use in_flight::InFlight;
 use owners::{Cmd, Owners, Turn};
 
 /// How long a user op waits behind the ops queued on its Box before it is refused as busy.
@@ -69,6 +70,8 @@ pub(crate) struct Cx {
     store: OnceCell<Store>,
     /// The owners of every Box: the env's, else this context's own.
     owners: OnceCell<Arc<Owners>>,
+    /// The nodes with a promotion running: the env's, else this context's own.
+    promoting: OnceCell<Arc<InFlight>>,
     /// Blob store, opened on first use.
     blobs: OnceCell<Arc<dyn Blobs>>,
     /// The controller's vault key file; `None` outside a controller.
@@ -131,6 +134,7 @@ impl Cx {
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
             owners: OnceCell::new(),
+            promoting: OnceCell::new(),
             blobs: OnceCell::new(),
             vault_key: None,
             requester: None,
@@ -204,25 +208,6 @@ impl Cx {
     /// Box `id`'s turn for `cmd` when nothing is in flight on it; `None` skips a busy Box.
     pub(crate) fn try_turn(&self, id: BoxId, cmd: Cmd) -> Option<Turn<'_>> {
         self.owners().try_turn(id, cmd, self.env.cancel())
-    }
-
-    /// [`Cx::owners`], to share.
-    pub(crate) fn owners_arc(&self) -> &Arc<Owners> {
-        self.owners.get_or_init(|| {
-            self.env.shared::<Arc<Owners>>().map_or_else(
-                || Arc::new(Owners::new(Arc::clone(&self.clock))),
-                Arc::clone,
-            )
-        })
-    }
-
-    /// This context sharing `owners` with the others that use it.
-    #[cfg(test)]
-    pub(crate) fn with_owners(self, owners: Arc<Owners>) -> Self {
-        Self {
-            owners: OnceCell::from(owners),
-            ..self
-        }
     }
 
     /// The blob store the env shares, else the files under the state directory.
@@ -394,7 +379,9 @@ impl Cx {
 }
 
 mod bounded;
+pub(crate) mod in_flight;
 pub(crate) mod owners;
 mod requester;
+mod shared;
 #[cfg(test)]
 mod tests;
