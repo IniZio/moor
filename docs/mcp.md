@@ -5,6 +5,13 @@ in with OAuth, and every call acts as the person who signed in. A person sees
 and changes only their own Boxes. `https://HOST/.well-known/oauth-protected-resource`
 names the issuer and the scopes.
 
+moor does not register clients. The client registers with the sign-in
+provider, so the provider must allow the client's redirect URIs. A
+`dcr: invalid redirect_uri` error comes from the provider's client or dynamic
+registration settings, not from moor. The gate refuses a token whose `aud` is
+not its `--mcp-resource-url`, so the provider must put that URL in the
+token's audience.
+
 ## Scopes
 
 | Scope | Allows |
