@@ -235,6 +235,14 @@ fn a_checked_response_of_small_objects_takes_about_twice_its_size() {
         vec![box_repo()],
     );
     let mut client = rig.client();
+    // Checking 8 MiB takes seconds in an unoptimized build on a busy CI runner; wait as
+    // long as the filter itself does.
+    client
+        .io
+        .get_ref()
+        .sock
+        .set_read_timeout(Some(Duration::from_secs(60)))
+        .unwrap();
     HEAP.reset_peak_usage();
     let before = HEAP.current_usage();
     client.send(&ask(ISSUE)).unwrap();
