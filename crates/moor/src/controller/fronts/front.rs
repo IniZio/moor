@@ -2,7 +2,6 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
 use moor_core::config::FrontEntry;
@@ -12,6 +11,7 @@ use crate::controller::front_proxy::Access;
 use crate::controller::front_shim::refuse_under_tmp;
 use crate::controller::front_shim::SYSTEM;
 use crate::env::Env;
+use crate::front_dir;
 
 /// A front the controller runs.
 pub(in crate::controller) struct Front {
@@ -39,7 +39,6 @@ impl Front {
     /// show the front the controller's state dir, config dir, operator socket or vault key.
     pub(in crate::controller) fn new(
         ns: &str,
-        listener: &UnixListener,
         entry: &FrontEntry,
         env: &Env,
         operator: &Path,
@@ -50,11 +49,10 @@ impl Front {
         Some(
             refuse_read_only(ns, &entry.read_only, env, operator, resolv.as_deref()).and_then(
                 |()| {
-                    let socket = listener
-                        .local_addr()
-                        .ok()
-                        .and_then(|a| a.as_pathname().map(PathBuf::from))
-                        .ok_or_else(|| format!("front {ns}: its socket has no path"))?;
+                    let socket = env
+                        .state_dir()
+                        .map(|dir| front_dir::of(&dir, ns).join(front_dir::FRONT_SOCKET))
+                        .ok_or_else(|| format!("front {ns}: no state dir for its socket"))?;
                     let mut read_only = entry.read_only.clone();
                     let path = std::env::var_os("PATH").unwrap_or_default();
                     if let Some(word) = command.first_mut() {
@@ -246,15 +244,14 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn new_refuses_a_front_whose_program_lies_under_tmp() {
-        let (dir, real) = program_under_tmp();
-        let listener = std::os::unix::net::UnixListener::bind(dir.path().join("s")).unwrap();
+        let (_dir, real) = program_under_tmp();
         let entry = moor_core::config::FrontEntry {
             command: Some(vec![real.display().to_string()]),
             ..Default::default()
         };
         let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);
         let operator = Path::new("/nonexistent/c.sock");
-        let made = super::Front::new("web", &listener, &entry, &env, operator, None).unwrap();
+        let made = super::Front::new("web", &entry, &env, operator, None).unwrap();
         let e = made.err().unwrap();
         assert!(e.starts_with("fronts.web: its program "), "{e}");
     }

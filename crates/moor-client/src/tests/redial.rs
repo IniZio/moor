@@ -90,8 +90,11 @@ fn controller(socket: &Path, delay: Duration, scripts: Vec<Script>) -> Seen {
     std::thread::spawn(move || {
         let listener = bound.unwrap_or_else(|| {
             std::thread::sleep(delay);
-            let _ = std::fs::remove_file(&socket);
-            UnixListener::bind(socket).unwrap()
+            let mut staged = socket.clone().into_os_string();
+            staged.push("~");
+            let listener = UnixListener::bind(&staged).unwrap();
+            std::fs::rename(&staged, &socket).unwrap();
+            listener
         });
         for script in scripts {
             let (stream, _) = listener.accept().unwrap();

@@ -17,6 +17,7 @@ mod progress;
 mod relay;
 mod serving;
 mod settle;
+mod socket_bind;
 mod socket_paths;
 mod watch;
 
@@ -25,7 +26,7 @@ pub use local::watch_local;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
-use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -37,6 +38,7 @@ use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
 use lock::{take_lock, take_socket_lock, LOCK_WAIT};
 use serving::serve_started;
+use socket_bind::bind;
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::vault::{Vault, VAULT_KEY};
@@ -247,9 +249,9 @@ fn front_commands(
 ) -> Result<Vec<fronts::Front>, String> {
     fronts
         .iter()
-        .filter_map(|(ns, listener)| {
+        .filter_map(|(ns, _)| {
             let access = proxy.and_then(|p| p.access(ns));
-            fronts::Front::new(ns, listener, cfg.fronts.get(ns)?, env, socket, access)
+            fronts::Front::new(ns, cfg.fronts.get(ns)?, env, socket, access)
         })
         .collect()
 }
@@ -288,21 +290,6 @@ fn mkdir(dir: &Path) -> std::io::Result<()> {
         .recursive(true)
         .mode(0o700)
         .create(dir)
-}
-
-/// Replaces any stale socket file with a fresh owner-only listener.
-fn bind(socket: &Path) -> std::io::Result<UnixListener> {
-    if let Some(dir) = socket.parent() {
-        mkdir(dir)?;
-    }
-    // The lock proves no live controller owns this path.
-    match fs::remove_file(socket) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
-    let listener = UnixListener::bind(socket)?;
-    fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
-    Ok(listener)
 }
 
 impl Running {
