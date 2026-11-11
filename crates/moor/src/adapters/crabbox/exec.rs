@@ -32,27 +32,32 @@ pub(super) const TOUCH_EVERY: Duration = Duration::from_mins(10);
 /// a newline so it is a line of its own after stderr with no trailing newline.
 ///
 /// sshd does not signal a command when its client goes, so the Box ends it at the deadline
-/// itself: `timeout` runs it in a process group of its own and hangs up the whole group, killing
-/// it 10 s later. The inner sh writes the exit code to fd 3 only when the command ended on its
-/// own, so an empty code means the deadline ended it, reported as `timeout` on the exit line.
+/// itself: `timeout` runs it in a process group of its own, sends TERM to the whole group at the
+/// deadline and KILL 10 s later. `timeout` is found before the env can replace `PATH`; a Box
+/// without it runs the command with no deadline and says so on stderr. The inner sh writes the
+/// exit code to fd 3 only when the command ended on its own, so an empty code means the deadline
+/// ended it, reported as `timeout` on the exit line.
 pub(super) const WRAPPER: &str = r#"b=$1 e=$2 x=$3 d=$4 t=$5; shift 5
 f=$(mktemp) || exit 1
 case $f in *"'"*) /bin/rm -f -- "$f"; exit 1;; esac
 trap "/bin/rm -f -- '$f'" EXIT
-set -- "$f" "$@"
+set -- "$f" "$(command -v timeout)" "$@"
 cat >"$1" && . "$1"; r=$?; /bin/rm -f -- "$1"; shift
 test "$r" -eq 0 || { echo "moor: the command env did not load" >&2; exit 1; }
+k=$1; shift
 printf '%s\n' "$b" >&2
+test -n "$k" || echo "moor: the Box has no timeout(1), so the command runs past its deadline" >&2
 { c=$({ if test -n "$d"; then mkdir -p -- "$d" && cd -- "$d" || { echo $? >&3; exit; }; fi
-/usr/bin/timeout -k 10 "$t" /bin/sh -c '"$@" 3>&-; echo $? >&3' sh "$@"
+if test -n "$k"; then "$k" -k 10 "$t" /bin/sh -c '"$@" 3>&-; echo $? >&3' sh "$@"
+else /bin/sh -c '"$@" 3>&-; echo $? >&3' sh "$@"; fi
 } 3>&1 >&4 4>&- </dev/null); } 4>&1
 printf '\n%s\n' "$e" >&2
 test -n "$c" || { printf '%s timeout\n' "$x" >&2; exit 124; }
 printf '%s %s\n' "$x" "$c" >&2
 exit "$c""#;
 
-/// How long past its deadline the ssh call of a command may run: the Box's 10 s between hanging
-/// up and killing the command, and the ssh round trip that reports it.
+/// How long past its deadline the ssh call of a command may run: the Box's 10 s between TERM
+/// and KILL, and the ssh round trip that reports it.
 const GRACE: Duration = Duration::from_secs(30);
 
 /// Runs `spec` in the Box behind `handle`.
