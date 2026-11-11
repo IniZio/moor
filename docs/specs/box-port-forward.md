@@ -113,7 +113,7 @@ the node can connect to it. passt maps a guest's gateway address to the host's
 loopback unless started with `--no-map-gw`. The adapter passes no such flag. If
 that holds on a node, another Box there can reach the listener too, and
 any other loopback service on the node. This was checked on engine-03 and is
-real. The adapter is being fixed. See the open questions.
+real, and adapter v0.2.2 fixes it. See the open questions.
 
 ## Who may forward
 
@@ -145,7 +145,7 @@ real. The adapter is being fixed. See the open questions.
 | Box sleeps | Cut; the agent stops the lease's tunnels before the pause | Stays | Refused, asleep | `asleep`, as today |
 | Box closes | Cut | The client ends the forward on the refusal | Refused, closed | `closed`, as today |
 | Box gets new hands | Cut | Stays | Reaches the new placement | Nothing |
-| Controller roll | Finish, or cut at the 30 s drain cap; a request in the drain gets `restarting` | Stays | The gate holds, then dials the new controller (controller replicas spec) | Nothing |
+| Controller roll | Finish, or cut at the 30 s drain cap; a request in the drain gets `restarting`. The record of recent traffic that holds autosleep off is per process, so a roll forgets it | Stays | The gate holds, then dials the new controller (controller replicas spec) | Nothing |
 | Runner roll | Finish on the draining runner, or cut at its 30 s budget | Stays | Routed by the link row to the new runner (machine runner rollout spec) | Nothing |
 | Gate roll | Cut | Stays | Another gate replica | Nothing |
 | Agent restart or update | Cut, tunnels end | Stays | New tunnel after relink | Nothing |
@@ -247,7 +247,7 @@ closed.
 
 | Question | State |
 | --- | --- |
-| Can a guest reach the node's loopback through passt's gateway mapping? | Confirmed on engine-03: a Box reached a server bound only to the host's `127.0.0.1` through its gateway `192.168.0.1`. The crabbox-cloudhypervisor adapter is being fixed to stop the mapping, so moor does not work around it. A forward's tunnel listener is safe from other Boxes once a node runs the fixed adapter. |
+| Can a guest reach the node's loopback through passt's gateway mapping? | Confirmed on engine-03: a Box reached a server bound only to the host's `127.0.0.1` through its gateway `192.168.0.1`. It is fixed in crabbox-cloudhypervisor #65, released as v0.2.2 and live on engine-03: a woken Box cannot reach the host's loopback. moor does not work around it. A node on an older adapter still exposes a forward's tunnel listener, and any other loopback service on the node, to its other Boxes. That is a known limit, not checked by the agent; `moor doctor` should say to update the adapter to v0.2.2 or later on every node that serves forwards. |
 
 ## Out of scope
 
