@@ -12,9 +12,13 @@ const SAID_MAX: usize = 4000;
 /// Stands for the characters cut from the middle.
 const ELIDED: &str = "\n…\n";
 
-/// The agent's last message, cut in the middle, when it reports idle and its hooks left one.
+/// The agent's last message, cut in the middle, when it reports idle after a turn of its own and
+/// its hooks left one. Before its terminal has ended a turn, a message in the note was left by an
+/// agent before it.
 pub(super) fn said(activity: &Activity, probe: &Probe) -> Option<String> {
+    let ended_a_turn = probe.term().is_some_and(|t| t.turn > 0);
     if activity.source != Source::Status
+        || !ended_a_turn
         || !matches!(
             activity.state,
             AgentState::Idle | AgentState::Waiting { .. }

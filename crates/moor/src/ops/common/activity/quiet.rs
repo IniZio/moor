@@ -43,13 +43,18 @@ pub(super) fn step(
         .sent(row.id)?
         .iter()
         .any(|r| r.delivery.launch() == reading.launch);
-    let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
+    let ready = row.lifecycle == BoxLifecycle::Ready;
+    let input = match (ready, row.session.is_quiet()) {
         (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
-            SessionInput::AgentQuiet
+            Some(SessionInput::AgentQuiet)
         }
-        (true, true) if reading.shows_work() => SessionInput::AgentBusy,
-        _ => return Ok(()),
+        (true, true) if reading.shows_work() => Some(SessionInput::AgentBusy),
+        _ => None,
     };
+    let says = ready && !turn_open && reading.said.is_some();
+    if input.is_none() && !says {
+        return Ok(());
+    }
     // An op that owns the Box decides where the Box goes; hold its turn across the write.
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(());
@@ -57,8 +62,7 @@ pub(super) fn step(
     if row.effect.is_some() {
         return Ok(());
     }
-    let quiet = input == SessionInput::AgentQuiet;
-    let reply = if quiet {
+    let reply = if says {
         said::reply(store, reading)?
     } else {
         None
@@ -71,6 +75,10 @@ pub(super) fn step(
             return Ok(());
         }
     }
+    let Some(input) = input else {
+        return Ok(());
+    };
+    let quiet = input == SessionInput::AgentQuiet;
     let mut decision = reading.decision(row.id).session(input);
     let timed_out = reading.launch_overdue.filter(|_| quiet);
     if let Some(after_secs) = timed_out {

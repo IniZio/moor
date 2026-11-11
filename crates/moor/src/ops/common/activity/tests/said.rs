@@ -5,10 +5,10 @@ use std::sync::Arc;
 use moor_core::activity::Note;
 use moor_core::BoxId;
 
-use super::{cx, row, run_once, seen, working_box, SESSION};
+use super::{cx, is_working, row, run_once, seen, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
-use crate::testing::agent::{idle, said, with_note};
+use crate::testing::agent::{at_turn, idle, said, with_note};
 use crate::testing::engine::FakeEngine;
 
 fn said_then_idled(cx: &Cx, id: BoxId) -> Vec<(String, serde_json::Value)> {
@@ -76,11 +76,11 @@ fn going_quiet_without_a_said_note_says_nothing() {
 }
 
 #[test]
-fn a_waiting_agent_keeps_the_box_working_and_says_nothing_until_it_idles() {
+fn a_turn_that_leaves_a_background_shell_says_its_reply_once_and_keeps_the_box_working() {
     let dir = tempfile::tempdir().unwrap();
     let note = Note {
-        said: Some("Watching.".to_owned()),
-        background: vec!["gh run watch".to_owned()],
+        said: Some("Done. The log search still runs.".to_owned()),
+        background: vec!["git log -S".to_owned()],
         ..Note::default()
     };
     let probes = with_note(idle(seen()), note);
@@ -89,19 +89,35 @@ fn a_waiting_agent_keeps_the_box_working_and_says_nothing_until_it_idles() {
     let id = working_box(&cx, true);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
-    assert_eq!(said_then_idled(&cx, id), Vec::new());
-    engine.set_probes(SESSION, said("Done.", seen()));
-    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    let text = serde_json::json!({"text": "Done. The log search still runs."});
+    assert_eq!(
+        said_then_idled(&cx, id),
+        vec![("agent_said".to_owned(), text.clone())]
+    );
+    assert!(is_working(&row(&cx, id)));
+    engine.set_probes(SESSION, said("Done. The log search still runs.", seen()));
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     assert_eq!(
         said_then_idled(&cx, id),
         vec![
-            (
-                "agent_said".to_owned(),
-                serde_json::json!({"text": "Done."})
-            ),
+            ("agent_said".to_owned(), text),
             ("idled".to_owned(), serde_json::json!({}))
-        ]
+        ],
+        "the wait ending on the same turn does not say the reply again"
+    );
+}
+
+#[test]
+fn an_agent_idle_before_its_first_turn_does_not_repeat_a_reply_left_from_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let probes = at_turn(said("Old reply.", seen()), 0);
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    assert_eq!(
+        said_then_idled(&cx, id),
+        vec![("idled".to_owned(), serde_json::json!({}))]
     );
 }
 
