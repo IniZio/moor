@@ -451,3 +451,27 @@ fn a_box_with_no_owning_user_records_why_it_is_cold() {
     assert!(plan.is_empty());
     assert_eq!(reasons(&w, &v), ["no_user"]);
 }
+
+#[test]
+fn an_external_provider_without_cache_volumes_names_the_capability_to_declare() {
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    let v = run(&w.cx, &repo_req("demo")).unwrap();
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(BoxId::new(v.boxed.id)).unwrap().unwrap();
+    let cfg =
+        crate::ops::common::facts::settings_of(&w.cx, &row, &moor_core::config::Flags::default())
+            .unwrap();
+    let provider = moor_core::ProviderId::new("external");
+    let caps =
+        w.cx.driver()
+            .caps(&moor_core::ProviderId::new("local-container"))
+            .unwrap();
+    crate::ops::common::cache::for_start(&w.cx, store, &row, &cfg, &provider, caps);
+    let detail = cold_events(&w, &v).last().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(detail.contains("cacheVolumes"), "{detail}");
+    assert!(detail.contains("docs/providers.md"), "{detail}");
+}

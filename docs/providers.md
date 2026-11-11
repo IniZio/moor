@@ -61,7 +61,8 @@ external:
 ```
 
 Only this trusted crabbox config can turn these on. A repo or a flag cannot.
-Without them, every Box starts cold and records a `cache_cold` event.
+Without them, every Box starts cold and records a `cache_cold` event. An external
+node starts cold unless its crabbox config declares these capabilities.
 
 ## Use agent37 instead
 
