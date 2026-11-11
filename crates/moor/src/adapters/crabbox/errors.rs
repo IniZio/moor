@@ -71,13 +71,18 @@ fn has_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
 }
 
+/// Words crabbox prints when a stop has no lease to resolve, so nothing was ever acquired.
+const NO_LEASE: &str = "resolve needs a cloud id or a desired lease";
+
 /// Classifies lowercase stderr of `op` into a typed error, when it names one.
 ///
 /// A provider other than crabbox's own reports a lease it never made or already dropped as
 /// `lease <id> not found` under whatever exit code its command uses, so for a release the words
 /// decide.
 fn classify(op: Op, code: i32, text: &str) -> Option<DriverError> {
-    if matches!(op, Op::Release) && text.contains("lease") && text.contains("not found") {
+    if matches!(op, Op::Release)
+        && ((text.contains("lease") && text.contains("not found")) || text.contains(NO_LEASE))
+    {
         return Some(DriverError::NotFound);
     }
     classify_text(code, text)
@@ -208,13 +213,6 @@ pub(super) fn is_tunnel_claim_race(e: &DriverError) -> bool {
     } if stderr_tail.to_lowercase().contains(CLAIM_RACE))
 }
 
-/// Longest stderr tail, in characters, appended to a summary.
-const TAIL_MAX: usize = 300;
-/// Longest cause line, in characters, kept ahead of cleanup chatter in a long stderr.
-const CAUSE_MAX: usize = 150;
-/// Starts of the lines crabbox prints while it cleans up, after the cause of a failure.
-const CHATTER: [&str; 2] = ["warn:", "cache group"];
-
 /// The stderr tail appended to a summary of `op`, or nothing.
 fn stderr_suffix(op: Op, stderr: &str) -> String {
     if matches!(op, Op::List) {
@@ -231,57 +229,7 @@ fn stderr_suffix(op: Op, stderr: &str) -> String {
     }
 }
 
-/// `stderr` as one line of at most `TAIL_MAX` characters that keeps the last line not cleanup chatter.
-pub(super) fn one_line(stderr: &str) -> String {
-    let lines: Vec<&str> = stderr
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
-    let joined = lines.join("; ");
-    if joined.chars().count() <= TAIL_MAX {
-        return joined;
-    }
-    let Some(at) = lines.iter().rposition(|l| !is_chatter(l)) else {
-        return keep_end(&joined, TAIL_MAX);
-    };
-    let (Some(cause), Some(before), Some(after)) =
-        (lines.get(at), lines.get(..at), lines.get(at + 1..))
-    else {
-        return keep_end(&joined, TAIL_MAX);
-    };
-    let cause_max = if after.is_empty() {
-        TAIL_MAX
-    } else {
-        CAUSE_MAX
-    };
-    let mut out = keep_end(cause, cause_max);
-    if !after.is_empty() {
-        let room = TAIL_MAX - out.chars().count() - "; ".len();
-        out = format!("{out}; {}", keep_end(&after.join("; "), room));
-    }
-    let room = TAIL_MAX.saturating_sub(out.chars().count() + "; ".len());
-    if !before.is_empty() && room > 0 {
-        out = format!("{}; {out}", keep_end(&before.join("; "), room));
-    }
-    out
-}
-
-/// Whether `line` is crabbox cleaning up rather than saying what failed.
-fn is_chatter(line: &str) -> bool {
-    let lower = line.to_lowercase();
-    CHATTER.iter().any(|c| lower.starts_with(c))
-}
-
-/// `text`, cut from the front to at most `max` characters with a leading `…`.
-fn keep_end(text: &str, max: usize) -> String {
-    let count = text.chars().count();
-    if count <= max {
-        return text.to_owned();
-    }
-    let tail: String = text.chars().skip(count - (max - 1)).collect();
-    format!("…{}", tail.trim_start())
-}
+pub(super) use tail::one_line;
 
 /// The plain words of each stderr line a failed acquire, release or checkpoint left, for the log.
 pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Option<String> {
@@ -360,19 +308,42 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
         },
         ProcError::NonZero {
             code, stderr_tail, ..
-        } => classify(op, *code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
-            let tail = stderr_suffix(op, stderr_tail);
-            let summary = match *code {
-                EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
-                EXIT_LOST => format!("{what} failed (box lost during warmup)"),
-                _ => provider.map_or_else(
-                    || format!("{what} failed (crabbox exit {code}){tail}"),
-                    |p| format!("{what} failed on provider {p} (exit {code}){tail}"),
-                ),
-            };
-            DriverError::Failed { summary }
-        }),
+        } => routing_refusal(stderr_tail)
+            .or_else(|| classify(op, *code, &stderr_tail.to_lowercase()))
+            .unwrap_or_else(|| {
+                let tail = stderr_suffix(op, stderr_tail);
+                let summary = match *code {
+                    EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
+                    EXIT_LOST => format!("{what} failed (box lost during warmup)"),
+                    _ => provider.map_or_else(
+                        || format!("{what} failed (crabbox exit {code}){tail}"),
+                        |p| format!("{what} failed on provider {p} (exit {code}){tail}"),
+                    ),
+                };
+                DriverError::Failed { summary }
+            }),
     }
+}
+
+/// The error for crabbox refusing its external routing directory, which no retry changes.
+///
+/// crabbox names only the one path component it refused, so the fix is said for that name.
+fn routing_refusal(stderr: &str) -> Option<DriverError> {
+    let line = stderr
+        .lines()
+        .map(str::trim)
+        .find(|l| l.to_lowercase().contains("external routing directory"))?;
+    let lower = line.to_lowercase();
+    let fix = if lower.contains("must not be writable by group or others") {
+        "run `chmod go-w` on that directory"
+    } else if lower.contains("without symlinks") {
+        "replace the symlink on that path with the real directory"
+    } else {
+        return None;
+    };
+    Some(DriverError::Misconfigured {
+        summary: format!("crabbox refused its external routing directory: {line}; {fix}"),
+    })
 }
 
 /// Words the provider prints when a fork finds its checkpoint was never finished.
@@ -396,5 +367,6 @@ pub(super) fn unreadable(what: &str) -> DriverError {
     }
 }
 
+mod tail;
 #[cfg(test)]
 mod tests;

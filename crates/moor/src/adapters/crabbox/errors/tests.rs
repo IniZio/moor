@@ -350,3 +350,51 @@ fn a_machine_that_is_not_linked_is_a_lost_connection() {
         })
     );
 }
+
+#[test]
+fn a_release_that_resolves_no_lease_finds_nothing_to_release() {
+    let e = nz(
+        1,
+        "external provider command failed: exit status 1: resolve needs a cloud id or a desired lease\n",
+    );
+    assert_eq!(
+        map_error(Op::Release, Some("external"), &e),
+        DriverError::NotFound
+    );
+}
+
+#[test]
+fn only_a_release_reads_an_unresolved_lease_as_gone() {
+    let e = nz(1, "resolve needs a cloud id or a desired lease");
+    assert!(matches!(
+        map_error(Op::Target, None, &e),
+        DriverError::Failed { .. }
+    ));
+}
+
+#[test]
+fn a_refused_routing_directory_is_a_misconfiguration_that_names_the_fix() {
+    let e = nz(
+        1,
+        "read external routing file: external routing directory \"xdg\": must not be writable by group or others\n",
+    );
+    let got = map_error(Op::Target, Some("external"), &e);
+    let DriverError::Misconfigured { summary } = got else {
+        unreachable!("not a misconfiguration: {got:?}");
+    };
+    assert!(summary.contains("\"xdg\""), "{summary}");
+    assert!(summary.contains("chmod go-w"), "{summary}");
+}
+
+#[test]
+fn a_symlink_in_the_routing_path_is_a_misconfiguration() {
+    let e = nz(
+        1,
+        "read external routing file: open external routing directory \"cfg\" without symlinks: too many levels of symbolic links\n",
+    );
+    let got = map_error(Op::Acquire, Some("external"), &e);
+    assert!(
+        matches!(&got, DriverError::Misconfigured { summary } if summary.contains("\"cfg\"")),
+        "{got:?}"
+    );
+}
