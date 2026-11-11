@@ -180,7 +180,13 @@ fn a_wrapper_failure_before_the_command_is_not_its_exit() {
         stderr_tail: "moor: the command env did not load\n".to_owned(),
     };
     let lab = lab();
-    let got = super::outcome(&lab.cb, &handle(), Err(err), "gate-0-exit");
+    let got = super::outcome(
+        &lab.cb,
+        &handle(),
+        Err(err),
+        "gate-0-exit",
+        Deadline(Duration::from_secs(20)),
+    );
     assert!(
         matches!(&got, Err(DriverError::Failed { summary }) if summary.contains("did not load")),
         "{got:?}"
@@ -200,7 +206,7 @@ fn run_wrapper(tmp: &Path, env: &str, argv: &[&str], ended_first: bool) -> (Opti
     use std::process::{Command, Stdio};
     let mut child = moor_testkit::ChildGuard::new(
         Command::new("dash")
-            .args(["-c", super::WRAPPER, "sh", "B", "E", "X", ""])
+            .args(["-c", super::WRAPPER, "sh", "B", "E", "X", "", "60"])
             .args(argv)
             .env("TMPDIR", tmp)
             .stdin(Stdio::piped())
@@ -362,6 +368,30 @@ fn a_timeout_is_a_timeout_and_an_interrupt_or_signal_is_interrupted() {
 }
 
 #[test]
+fn a_command_past_its_deadline_ends_with_its_children_before_the_timeout_is_reported() {
+    let lab = lab();
+    let left = lab.dir.path().join("left");
+    let spec = sh(&format!("(sleep 3; touch {}) & wait", left.display()));
+    let got = lab
+        .cb
+        .exec(&handle(), &spec, Deadline(Duration::from_secs(1)));
+    assert!(matches!(got, Err(DriverError::Timeout(_))), "{got:?}");
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        !left.exists(),
+        "a child of the command outlived the deadline"
+    );
+}
+
+#[test]
+fn a_command_that_exits_124_itself_reports_its_exit_and_not_a_timeout() {
+    let lab = lab();
+    for spec in [sh("exit 124"), streamed(&lab, "exit 124")] {
+        assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 124 }));
+    }
+}
+
+#[test]
 fn a_lost_connection_forgets_the_saved_target_so_the_next_driver_looks_it_up_again() {
     let lab = lab();
     assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
@@ -383,7 +413,10 @@ fn a_lost_connection_forgets_the_saved_target_so_the_next_driver_looks_it_up_aga
 #[test]
 fn the_last_exit_line_wins() {
     let stderr = "gate-0-exit 1\ncommand output\ngate-0-exit 7\n";
-    assert_eq!(super::reported_exit(stderr, "gate-0-exit"), Some(7));
+    assert_eq!(
+        super::reported_exit(stderr, "gate-0-exit"),
+        Some(super::Reported::Exit(7))
+    );
 }
 
 #[test]
