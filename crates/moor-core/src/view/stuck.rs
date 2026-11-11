@@ -20,7 +20,8 @@ const CLEARS: &[&str] = &[
 
 /// The newest stuck event that nothing since has cleared, `events` oldest first.
 ///
-/// An `egress_recovered` clears only the `egress_aborted` events for its own host, so
+/// A finished setup line clears only a withheld credential, which setup downloads
+/// raise while still making progress. An `egress_recovered` clears only the `egress_aborted` events for its own host, so
 /// an older stuck event still uncleared can show again.
 #[must_use]
 pub fn stuck_of(events: &[Happened]) -> Option<StuckView> {
@@ -29,6 +30,8 @@ pub fn stuck_of(events: &[Happened]) -> Option<StuckView> {
         let kind = e.kind.as_str();
         if CLEARS.contains(&kind) {
             open.clear();
+        } else if kind == "setup_line_finished" {
+            open.retain(|o| o.kind != "credential_withheld");
         } else if kind == "egress_recovered" {
             let host = text(&e.payload, "host").map(bare_host);
             open.retain(|o| {

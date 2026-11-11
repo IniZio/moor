@@ -319,3 +319,37 @@ fn a_cold_cache_is_not_stuck() {
     )];
     assert_eq!(stuck_of(&events), None);
 }
+
+#[test]
+fn a_setup_line_finishing_after_a_withheld_credential_clears_it() {
+    let events = [
+        at(
+            "credential_withheld",
+            json!({"host": "github.com"}),
+            "2026-01-01T00:01:00Z",
+        ),
+        at(
+            "setup_line_finished",
+            json!({"ok": true, "index": 11, "total": 15}),
+            "2026-01-01T00:02:00Z",
+        ),
+    ];
+    assert_eq!(stuck_of(&events), None);
+}
+
+#[test]
+fn a_setup_line_finishing_does_not_clear_a_refused_host() {
+    let events = [
+        at(
+            "egress_refused",
+            json!({"host": "api.example.com"}),
+            "2026-01-01T00:01:00Z",
+        ),
+        at(
+            "setup_line_finished",
+            json!({"ok": true}),
+            "2026-01-01T00:02:00Z",
+        ),
+    ];
+    assert_eq!(stuck_of(&events).expect("stuck").kind, "egress_refused");
+}
