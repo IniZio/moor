@@ -29,7 +29,13 @@ pub(crate) struct Runners {
     key: Option<String>,
     /// This moor binary, which `link-dial` runs as.
     moor: PathBuf,
+    /// How long a host has to answer a list of its leases.
+    list_within: Duration,
 }
+
+/// How long a host has to answer a list. Its agent gives `crabbox list` two minutes; past this
+/// the list fails, so the host is asked again on a later pass rather than never.
+const LIST_WITHIN: Duration = Duration::from_mins(3);
 
 impl Runners {
     /// The runners of the controller under `state_dir`, routed by the links `store` records and
@@ -46,6 +52,7 @@ impl Runners {
             clock,
             key: key.map(str::to_owned),
             moor: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moor")),
+            list_within: LIST_WITHIN,
         }
     }
 
@@ -88,6 +95,20 @@ impl Runners {
                 blocking(broker::authorize(&runner, machine_id, slug, key))
             }
             (Verb::Authorize, ..) => Err("an authorize needs a lease and a key".to_owned()),
+            (Verb::List, ..) => {
+                let within = self.list_within;
+                blocking(async move {
+                    let listed = broker::lease(&runner, machine_id, verb, None, Boot::default());
+                    tokio::time::timeout(within, listed)
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(format!(
+                                "machine {machine_id} did not answer a list within {}s",
+                                within.as_secs()
+                            ))
+                        })
+                })
+            }
             _ => blocking(broker::lease(&runner, machine_id, verb, slug, boot.clone())),
         }
     }
