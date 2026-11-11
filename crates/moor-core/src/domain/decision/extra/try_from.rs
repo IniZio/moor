@@ -41,6 +41,11 @@ impl TryFrom<Event> for ExtraEvent {
                 exit,
                 timed_out,
             }),
+            Event::Access(
+                e @ (AccessEvent::PortForwardOpened { .. }
+                | AccessEvent::PortForwardClosed { .. }
+                | AccessEvent::PortForwardRefused { .. }),
+            ) => Ok(Self::Access(e)),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
             Event::LaunchTimedOut { after_secs } => Ok(Self::LaunchTimedOut { after_secs }),

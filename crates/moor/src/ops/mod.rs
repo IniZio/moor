@@ -18,6 +18,7 @@ mod cp;
 mod end_session;
 pub(crate) mod env;
 pub(crate) mod exec;
+pub(crate) mod forward;
 mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
@@ -72,6 +73,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::Attach(_)
         | Request::BoxRsync(_)
         | Request::Exec(_)
+        | Request::Forward(_)
         | Request::As(_)
         | Request::Whoami(_)
         | Request::Enroll(_)
@@ -121,6 +123,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
+        Request::ForwardOpen(r) => to_value(&forward::open(cx, &r)?),
+        Request::ForwardClose(r) => to_value(&forward::close(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),
         Request::Env(r) => to_value(&env::run(cx, &r)?),
         Request::Run(r) => to_value(&run::run(cx, &r)?),
@@ -158,6 +162,10 @@ fn socket_only(req: &Request) -> CommandError {
         Request::BoxRsync(_) => (
             ErrorKind::Refused,
             "box-rsync streams rsync both ways, so only the controller socket serves it",
+        ),
+        Request::Forward(_) => (
+            ErrorKind::Refused,
+            "forward carries a connection both ways, so only the controller socket serves it",
         ),
         Request::As(_) => (
             ErrorKind::Usage,

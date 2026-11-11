@@ -163,6 +163,35 @@ pub(crate) fn dial(
     })
 }
 
+/// A blocking stream to port `port` of lease `slug`'s VM on machine `machine_id` through `runner`.
+///
+/// # Errors
+/// The broker or the agent's failure.
+pub(crate) fn port(
+    runner: &Runner,
+    machine_id: i64,
+    slug: &str,
+    port: u16,
+) -> Result<StdConn, String> {
+    blocking(async {
+        let conn = broker::port(runner, machine_id, slug, port).await?;
+        reach::into_blocking(conn).map_err(|e| e.to_string())
+    })
+}
+
+/// Whether anything listens on port `port` of lease `slug`'s VM on machine `machine_id`.
+///
+/// # Errors
+/// The broker or the agent's failure.
+pub(crate) fn listens(
+    runner: &Runner,
+    machine_id: i64,
+    slug: &str,
+    port: u16,
+) -> Result<bool, String> {
+    blocking(broker::listens(runner, machine_id, slug, port))
+}
+
 /// A blocking connection to `runner` for `service`, its hello sent, given up after `within`.
 ///
 /// # Errors

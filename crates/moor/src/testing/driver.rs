@@ -77,6 +77,7 @@ struct State {
     runs: runs::RunState,
     layers: checkpoints::LayerKnobs,
     trees: Option<trees::Trees>,
+    ports: ports::PortState,
 }
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/repo`
@@ -382,6 +383,7 @@ mod checkpoints;
 mod files;
 mod knobs;
 mod piped;
+mod ports;
 mod runs;
 mod script;
 mod sleeps;

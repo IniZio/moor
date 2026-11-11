@@ -5,10 +5,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
+use moor_client::link::reach::StdConn;
 use moor_client::link::status::Status;
 use moor_core::seam::clock::Clock;
 
-use crate::adapters::crabbox::PoolHosts;
+use crate::adapters::crabbox::{PoolHosts, PoolPorts};
 use crate::cx::MachineLinks;
 use crate::proxy::links::Runners;
 use crate::store::Store;
@@ -42,6 +43,18 @@ impl PoolHosts for Runners {
 
     fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {
         Self::dial_command(self, machine_id, slug)
+    }
+}
+
+impl PoolPorts for Runners {
+    fn port_listens(&self, machine_id: i64, slug: &str, port: u16) -> Result<bool, String> {
+        let runner = self.runner(machine_id)?;
+        crate::proxy::links::listens(&runner, machine_id, slug, port)
+    }
+
+    fn port_conn(&self, machine_id: i64, slug: &str, port: u16) -> Result<StdConn, String> {
+        let runner = self.runner(machine_id)?;
+        crate::proxy::links::port(&runner, machine_id, slug, port)
     }
 }
 

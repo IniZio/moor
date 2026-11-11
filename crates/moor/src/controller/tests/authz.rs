@@ -173,6 +173,11 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
     Names::Box(match kind {
         "start" => json!({"cmd": kind, "name": name}),
         "run" | "exec" => on_box(json!({"argv": ["true"]})),
+        "forward" => on_box(json!({"port": 5177})),
+        "forward-open" => on_box(json!({"port": 5177, "local_port": 5177})),
+        "forward-close" => {
+            on_box(json!({"port": 5177, "connections": 0, "bytes_in": 0, "bytes_out": 0}))
+        }
         "wait" => on_box(json!({"timeout_secs": 0})),
         "wait-events" => json!({"cmd": kind, "boxes": [name], "timeout_secs": 0}),
         "steer" => on_box(json!({"text": "hi"})),
@@ -262,7 +267,7 @@ fn every_request_kind_that_names_a_box_is_refused_for_another_user() {
         unknown.is_empty(),
         "say whether these new request kinds name a Box: {unknown:?}"
     );
-    assert_eq!(checked, 24, "{kinds:?}");
+    assert_eq!(checked, 27, "{kinds:?}");
 }
 
 #[test]

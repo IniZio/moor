@@ -3,6 +3,7 @@
 use super::*;
 use crate::domain::hands::{HandsInput, HandsState};
 use crate::name::BoxHandle;
+use index::event_index;
 
 const PINNED_KINDS: &[&str] = &[
     "started",
@@ -380,6 +381,20 @@ fn all_events() -> Vec<Event> {
             }),
             error: s("e"),
         }),
+        Event::Access(AccessEvent::PortForwardOpened {
+            port: 5177,
+            local_port: 5177,
+        }),
+        Event::Access(AccessEvent::PortForwardClosed {
+            port: 5177,
+            connections: 3,
+            bytes_in: 10,
+            bytes_out: 20,
+        }),
+        Event::Access(AccessEvent::PortForwardRefused {
+            port: 5177,
+            reason: s("nothing listens"),
+        }),
     ]
 }
 
@@ -393,118 +408,11 @@ fn asserted_kinds_are_the_frozen_twenty() {
     assert_eq!(ASSERTED_KINDS, PINNED_KINDS);
 }
 
-/// Position of an event in `all_events()`; the exhaustive match fails to compile on a new variant.
-#[allow(clippy::too_many_lines, reason = "one arm per event variant")]
-const fn event_index(e: &Event) -> usize {
-    match e {
-        Event::Started => 0,
-        Event::Rejected { .. } => 1,
-        Event::Pending { .. } => 2,
-        Event::SettingUp { .. } => 3,
-        Event::Working => 4,
-        Event::SetupFailed { .. } => 5,
-        Event::CredentialFailed { .. } => 6,
-        Event::Idled => 7,
-        Event::Busy => 8,
-        Event::Asleep { .. } => 9,
-        Event::Woke => 10,
-        Event::Closed { .. } => 11,
-        Event::BoxRequested => 12,
-        Event::BoxReady => 13,
-        Event::BoxFailed { .. } => 14,
-        Event::BoxAsleep => 15,
-        Event::BoxGone => 16,
-        Event::BoxDeleted => 17,
-        Event::BoxReleaseFailed { .. } => 18,
-        Event::StaysUp { .. } => 19,
-        Event::Ran { .. } => 20,
-        Event::Access(AccessEvent::Copied { .. }) => 21,
-        Event::SessionStarted { .. } => 22,
-        Event::SessionEnded { .. } => 23,
-        Event::SessionFailed { .. } => 24,
-        Event::Relaunched { .. } => 25,
-        Event::Checked { .. } => 26,
-        Event::RunStarted { .. } => 27,
-        Event::Attached => 28,
-        Event::SessionsStopped { .. } => 29,
-        Event::AgentPromptBlocked { .. } => 30,
-        Event::AgentPromptCheckFailed { .. } => 31,
-        Event::TranscriptSaved { .. } => 32,
-        Event::TranscriptFailed { .. } => 33,
-        Event::TranscriptSkipped { .. } => 34,
-        Event::Steered(_) => 35,
-        Event::ProxyStarted { .. } => 36,
-        Event::TunnelRestarted { .. } => 37,
-        Event::Timing(TimingEvent::SetupFinished { .. }) => 38,
-        Event::EgressRefused { .. } => 39,
-        Event::CredentialWithheld { .. } => 40,
-        Event::ProxyCredentialFailed { .. } => 41,
-        Event::NeedsInput { .. } => 42,
-        Event::AgentRateLimited { .. } => 43,
-        Event::ProxyCredentialRejected { .. } => 44,
-        Event::ProxyCredentialRecovered { .. } => 45,
-        Event::TurnDone { .. } => 46,
-        Event::ArtifactPublished { .. } => 47,
-        Event::EgressAborted { .. } => 48,
-        Event::Timing(TimingEvent::Cloned { .. }) => 49,
-        Event::AgentSaid { .. } => 50,
-        Event::LaunchTimedOut { .. } => 51,
-        Event::RelaunchCapped { .. } => 52,
-        Event::AgentDoing { .. } => 53,
-        Event::AgentLinkLost { .. } => 54,
-        Event::AgentLinkRestored { .. } => 55,
-        Event::AgentUnreachable { .. } => 56,
-        Event::Machine(m) => match m {
-            MachineEvent::MachineAttached { .. } => 57,
-            MachineEvent::MachineLeftOut { .. } => 58,
-            MachineEvent::MachineForwardFailed { .. } => 59,
-            MachineEvent::MachineDetached { .. } => 60,
-            MachineEvent::MachineWaiting { .. } => 61,
-            MachineEvent::MachineRefused { .. } => 62,
-        },
-        Event::BoxProgress { .. } => 63,
-        Event::Profile(p) => match p {
-            ProfileEvent::ProfileResolved { .. } => 64,
-            ProfileEvent::ProfileFailed { .. } => 65,
-        },
-        Event::Timing(TimingEvent::StepStarted { .. }) => 66,
-        Event::Timing(TimingEvent::StepFinished { .. }) => 67,
-        Event::Timing(TimingEvent::SetupLineStarted { .. }) => 68,
-        Event::Timing(TimingEvent::SetupLineFinished { .. }) => 69,
-        Event::Timing(TimingEvent::WarmStarted { .. }) => 70,
-        Event::Timing(TimingEvent::WarmStartFailed { .. }) => 71,
-        Event::Timing(TimingEvent::CheckpointTaken { .. }) => 72,
-        Event::Timing(TimingEvent::CheckpointEvicted { .. }) => 73,
-        Event::Stall(StallEvent::AgentStalled { .. }) => 74,
-        Event::Stall(StallEvent::AgentResumed { .. }) => 75,
-        Event::Timing(TimingEvent::CacheCold { .. }) => 76,
-        Event::NodeDisk(NodeDiskEvent::NodeDiskLow { .. }) => 77,
-        Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered { .. }) => 78,
-        Event::DiskLost => 79,
-        Event::Close(CloseEvent::CachesNotSaved) => 80,
-        Event::Timing(TimingEvent::CacheEmptied { .. }) => 81,
-        Event::Timing(TimingEvent::WarmRerun { .. }) => 82,
-        Event::Timing(TimingEvent::WarmRerunFailed { .. }) => 83,
-        Event::Timing(TimingEvent::ColdAsked) => 84,
-        Event::Stall(StallEvent::PromptNotGiven { .. }) => 85,
-        Event::Access(AccessEvent::ExecRan { .. }) => 86,
-        Event::Workflow(WorkflowEvent::PreviousBoxKept { .. }) => 87,
-        Event::Restore(RestoreEvent::SessionRestored { .. }) => 88,
-        Event::Restore(RestoreEvent::SessionLost { .. }) => 89,
-        Event::SteerUnconfirmed { .. } => 90,
-        Event::WantedDropped => 91,
-        Event::EgressRecovered { .. } => 92,
-        Event::Inbox(InboxEvent::SteerCut { .. }) => 93,
-        Event::Inbox(InboxEvent::SteersDropped { .. }) => 94,
-        Event::Close(CloseEvent::CloseRefused { .. }) => 95,
-    }
-}
-
 /// The samples cover every event variant once and the kinds are unique.
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 96);
+    assert_eq!(all.len(), 99);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -589,6 +497,7 @@ fn box_events_table() {
     );
 }
 
+mod index;
 mod kinds;
 mod proxy;
 mod relaunch;

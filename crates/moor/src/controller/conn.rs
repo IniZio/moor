@@ -128,7 +128,7 @@ fn answer(
     match request {
         Request::ArtifactRead(req) => Some(read_artifact(env, grant, id, &req, out)),
         Request::Attach(req) => Some(attach(env, peer, grant, id, &req, (input, out))),
-        request @ (Request::Exec(_) | Request::BoxRsync(_)) => {
+        request @ (Request::Exec(_) | Request::BoxRsync(_) | Request::Forward(_)) => {
             Some(piped(env, peer, grant, id, &request, (input, out)))
         }
         request => match request.into_user() {
@@ -261,7 +261,7 @@ fn start_watch<W: Write>(
 }
 
 /// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`,
-/// `exec` or `box-rsync` that ran hands the connection to its relay.
+/// `exec`, `box-rsync` or `forward` that ran hands the connection to its relay.
 fn request_reply(
     conn: &Admitted,
     answer: &impl Fn(&str, Request, Duplex<'_>) -> Option<Response>,
@@ -271,7 +271,7 @@ fn request_reply(
 ) -> (ServerFrame, bool) {
     let attach = matches!(
         request,
-        Request::Attach(_) | Request::Exec(_) | Request::BoxRsync(_)
+        Request::Attach(_) | Request::Exec(_) | Request::BoxRsync(_) | Request::Forward(_)
     );
     match conn
         .answering()

@@ -142,6 +142,19 @@ fn a_box_idle_long_enough_sleeps() {
 }
 
 #[test]
+fn a_box_with_forward_traffic_in_the_last_ten_minutes_stays_awake() {
+    let f = idle();
+    pass(&f, LONG);
+    f.cx.traffic().touch(f.id, f.cx.clock().now());
+    pass(&f, Duration::from_mins(9));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 0);
+    pass(&f, Duration::from_mins(2));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 1);
+}
+
+#[test]
 fn a_native_sleep_counts_as_slept() {
     let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::Native));
     pass(&f, LONG);

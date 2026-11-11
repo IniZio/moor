@@ -24,13 +24,13 @@ pub use checkpoint::{Checkpoint, CheckpointDisk, Forked};
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
-pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
+pub use tunnel::{Forwards, LocalTunnel, TunnelFailure, TunnelHandle, NO_PORTS, OLD_AGENT_PORTS};
 pub use types::{
     AcquireReq, Acquired, BoxListing, HandlesListing, PausePublish, Released, SleepOutcome,
 };
 
 /// Boxes, behind whichever provider hub is wired.
-pub trait Driver: Send + Sync {
+pub trait Driver: Send + Sync + Forwards {
     /// Reports what `provider` can do.
     ///
     /// # Errors
