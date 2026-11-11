@@ -13,7 +13,7 @@ pub(super) const VERSION: &str = match STAMPED {
 };
 /// The oldest agent release that speaks this link. Raise it by hand, to the first release that
 /// speaks the new link, only when a change would break an older agent.
-pub(super) const MIN_AGENT_VERSION: &str = "0.3.0-nightly.191";
+pub(super) const MIN_AGENT_VERSION: &str = "0.3.0-nightly.251";
 
 /// The machine, release and offer `hello` names when a runner built as `stamped` lets that
 /// release in past `floor`, or the `update-required` frame naming the runner's own release.
