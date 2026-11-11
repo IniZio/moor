@@ -20,7 +20,6 @@ use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
 use crate::ops::common::boxwork::{self, BoxWork, BOXWORK_DEADLINE};
-use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::provision::planned_root;
 use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
@@ -31,11 +30,11 @@ use turn::turn;
 
 /// Closes a Box: gate, transcript save, agent stop, machine teardown and release.
 ///
-/// The Box's turn is held from the gate to the release and ended before promotion, which takes
-/// the turns of the waiting Boxes.
+/// The Box's turn is held from the gate to the release.
 /// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's keeper stops after the turn ends: the wait can take
-/// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
+/// seconds and a closed Box cannot get a new proxy row. The close starts no waiting Box: the
+/// controller's promotion pass does, so a close never waits out another Box's setup.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     run_with_reason(cx, req, None)
 }
@@ -136,7 +135,6 @@ fn close_held(
             message: format!("{e}; the Box is closed anyway"),
         });
     }
-    let node = store.box_spec(row.id)?.node;
     let closed = store.box_row(row.id)?.unwrap_or(row);
     // A ReleaseFailed machine may still run, and its leases are what a manual release needs.
     if closed.lifecycle == BoxLifecycle::Closed
@@ -144,20 +142,12 @@ fn close_held(
     {
         store.drop_box_leases(closed.id)?;
     }
-    let mut promoted = Vec::new();
-    for name in node.map_or_else(Vec::new, |n| promote_waiting(cx, store, &n)) {
-        if let Some(row) = store.open_box_by_name(&name)? {
-            if cx.viewer().may_act_on(row.user) {
-                promoted.push(name.as_str().to_owned());
-            }
-        }
-    }
     Ok(CloseView {
         boxed: box_view(&closed, cx.config()),
         box_deleted,
         agent_stopped,
         transcript: saved.map(|t| t.path),
-        promoted,
+        promoted: Vec::new(),
     })
 }
 

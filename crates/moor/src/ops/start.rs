@@ -21,7 +21,6 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::facts::{repo_config_of, resolved, settings_of};
 use super::common::node;
-use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry};
 use super::common::provisioning::dead_provisioning;
 use super::common::reconcile;
@@ -120,17 +119,13 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     Ok(v)
 }
 
-/// The view of a start that has run, naming the personal node it started on, once the Boxes
-/// pending on its node have had their turn.
+/// The view of a start that has run, naming the personal node it started on.
 fn settled(
     cx: &Cx,
     store: &Store,
     id: BoxId,
     note: Option<String>,
 ) -> Result<StartView, CommandError> {
-    if let Some(on) = store.box_spec(id)?.node {
-        promote_waiting(cx, store, &on);
-    }
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false);
     if row.lifecycle != BoxLifecycle::Pending {

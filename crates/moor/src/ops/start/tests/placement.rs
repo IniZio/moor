@@ -120,18 +120,13 @@ fn a_start_on_a_full_node_is_pending_there_with_the_reason() {
 }
 
 #[test]
-fn a_close_starts_the_oldest_pending_box_of_its_node_only() {
+fn a_freed_slot_starts_the_oldest_pending_box_of_its_node() {
     let w = world();
     start::run(&w.cx, &req("holder")).unwrap();
     let older = start::run(&w.cx, &req("older")).unwrap();
     let younger = start::run(&w.cx, &req("younger")).unwrap();
-    let other = BoxId::new(start::run(&w.cx, &req("other")).unwrap().boxed.id);
-    w.cx.store()
-        .unwrap()
-        .set_box_node(other, moor_core::name::NodeName::parse("big").ok().as_ref())
-        .unwrap();
     assert!(older.queued && younger.queued);
-    let closed = close::run(
+    close::run(
         &w.cx,
         &CloseReq {
             target: BoxName::parse_allow_bare("holder").unwrap().into(),
@@ -139,7 +134,10 @@ fn a_close_starts_the_oldest_pending_box_of_its_node_only() {
         },
     )
     .unwrap();
-    assert_eq!(closed.promoted, ["older"]);
+    crate::ops::common::promote::pass(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
+    let pending = moor_core::domain::box_state::BoxLifecycle::Pending;
+    assert_ne!(lifecycle(&w, BoxId::new(older.boxed.id)), pending);
+    assert_eq!(lifecycle(&w, BoxId::new(younger.boxed.id)), pending);
 }
 
 #[test]
