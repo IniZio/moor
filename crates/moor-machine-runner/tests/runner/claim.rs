@@ -54,10 +54,7 @@ fn a_claim_on_a_full_machine_without_waiting_is_refused_naming_the_holders() {
     let err = rig
         .call_with("machine_claim", json!({"labels": ["mac"]}), &MISSING)
         .unwrap_err();
-    assert_eq!(
-        err,
-        "no free slot: machine minion is attached to Boxes 3, 4"
-    );
+    assert_eq!(err, "machine minion is attached to Boxes 3, 4");
     assert_eq!(seen(&rig).len(), 1);
 }
 
@@ -85,7 +82,7 @@ fn a_wait_that_runs_out_is_refused_and_releases_the_want() {
     let err = rig
         .call_with("machine_claim", json!({"wait_secs": 1}), &MISSING)
         .unwrap_err();
-    assert_eq!(err, "no free slot: machine minion is attached to Boxes 3");
+    assert_eq!(err, "machine minion is attached to Boxes 3");
     assert_eq!(seen(&rig).last().unwrap()["op"], "release");
 }
 
