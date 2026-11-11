@@ -29,6 +29,9 @@ A webhook that names no events gets the kinds marked with a check.
 | `close_refused` | | moor gave up a close it was waiting to finish, so the Box stays open. `data.reason` is the refusal, such as `{"refusal": "unsaved", "branch", "ahead", "dirty"}` or `{"refusal": "unchecked", "reason"}`, or null when the close failed another way. `data.error` says why in words. The event is written with the give-up itself. When the close woke an asleep Box, moor puts it back to sleep afterwards, and that shows as a later `asleep` event. |
 | `caches_not_saved` | | A close deleted an asleep Box whose caches were not saved. |
 | `exec_ran` | | `exec_in_box` or `moor exec` ran a command. |
+| `port_forward_opened` | | A person forwarded a port of the Box to their computer. `data.port` is the Box's port and `data.local_port` is the one on their computer. |
+| `port_forward_closed` | | The forward ended. `data.connections`, `data.bytes_in` and `data.bytes_out` count what it carried. A forward whose client vanished writes none; the Box's next `asleep` or `closed` marks the end. |
+| `port_forward_refused` | | A forward was refused for a reason other than who asked, such as nothing listening on the port. `data.port` and `data.reason` say which and why. |
 
 A webhook keeps the list it was added with. To get a kind added later, remove
 the webhook and add it again.
