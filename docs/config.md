@@ -212,6 +212,12 @@ Secrets belong to each user, and a host that no rule serves is already direct.
 | `box_credentials` | list | Secrets the user must hold for a start. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
 
+A group that a `setup` line adds to the Box user, such as `usermod -aG docker`,
+does not reach an agent held under `systemd --user`. The user manager keeps the
+groups it started with. End such a setup with
+`sudo -n systemctl restart user@$(id -u).service`, or do not rely on the new
+group.
+
 moor reads the file at the Box's base commit and keeps that copy for the Box's
 life. [Set up a repo](repo.md) shows the keys in use.
 
