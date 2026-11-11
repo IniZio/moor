@@ -1,6 +1,7 @@
 //! The Proxy host the controller runs: each Box's credential traffic goes to the shared egress
 //! Proxy, and the Box's keeper holds the tunnel and machine forwards it needs.
 
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -100,6 +101,14 @@ impl ProxyHost for KeptProxy {
     /// Records `spec`, starts the Box's keeper when it has none, brings its tunnel up and
     /// delivers the Box's forwarder with a token unless it is in place.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
+        if let Some(socket) = self.route.socket() {
+            UnixStream::connect(socket).map_err(|e| {
+                ProxyHostError::Failed(format!(
+                    "the shared egress Proxy is not running on {} ({e}); restarting the controller starts it again",
+                    socket.display()
+                ))
+            })?;
+        }
         let box_id = spec.box_id;
         let row = self.row(box_id)?;
         self.deps
