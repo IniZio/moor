@@ -32,6 +32,7 @@ pub mod forward;
 pub mod link;
 pub mod oidc;
 mod pipe;
+pub mod port_forward;
 mod redial;
 mod remote;
 pub mod session;

@@ -25,6 +25,7 @@ use crate::env::Env;
 use crate::error::CommandError;
 
 mod exec;
+pub mod forward;
 mod interrupt;
 mod redial;
 pub mod remote;
