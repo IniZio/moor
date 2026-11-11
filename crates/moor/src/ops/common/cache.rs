@@ -54,6 +54,12 @@ impl Why {
                 provider.as_str()
             ),
             Self::NoUser => "the Box has no owning user".to_owned(),
+            Self::Provider if provider.as_str() == "external" => {
+                "provider external keeps no cache \
+                volumes: declare external.capabilities.cacheVolumes in the crabbox config (see \
+                docs/providers.md)"
+                    .to_owned()
+            }
             Self::Provider => format!("provider {} keeps no cache volumes", provider.as_str()),
             Self::MachineOffline => {
                 "the machine is not linked and online as the owner's".to_owned()
