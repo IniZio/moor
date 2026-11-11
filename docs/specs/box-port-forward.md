@@ -112,8 +112,8 @@ The tunnel's listener sits on the node's loopback while it runs. Any process on
 the node can connect to it. passt maps a guest's gateway address to the host's
 loopback unless started with `--no-map-gw`. The adapter passes no such flag. If
 that holds on a node, another Box there can reach the listener too, and
-any other loopback service on the node. This must be checked on a node before
-build. See the open questions.
+any other loopback service on the node. This was checked on engine-03 and is
+real. The adapter is being fixed. See the open questions.
 
 ## Who may forward
 
@@ -219,6 +219,12 @@ closed.
 | Same port number by default | The redirect URI names the port. Picking another silently would break the sign-in. |
 | Listener in `moor-client`, entry in `moor-hc` | One implementation for every local front. `moor-hc` is the surface a teammate already runs. |
 | Raw TCP, no HTTP rewriting | The app must see `localhost:<port>`, as the provider redirects there. |
+| A new connection never wakes an asleep Box | Only opening the forward wakes it. A browser tab that retries would otherwise keep the Box awake forever. |
+| Traffic in the last 10 minutes holds autosleep off | A person using the app is using the Box. An open forward with no traffic does not. |
+| No `.moor.yaml` port declaration yet | Name ports in config later, after the first live use. |
+| No controller-side `local_tunnel` fallback for other providers | Nodes only in the first version, until a Box elsewhere needs a forward. |
+| One WebSocket per connection until a page load is measured | Multiplexing waits for a measurement of a real page load through the forward. |
+| Slack-thread sharers get no forwards | Forwards follow whatever later rule lets people write to a Box. |
 
 ## PRs, in order
 
@@ -239,15 +245,9 @@ closed.
 
 ## Open questions
 
-| Question | Recommendation |
+| Question | State |
 | --- | --- |
-| Can a guest reach the node's loopback through passt's gateway mapping? If so, pass `--no-map-gw` in the adapter, or have the agent use an ssh stdio forward (`-W`) that binds no port? | Check on a node first. If it can, pass `--no-map-gw` in the adapter, since the exposure is wider than forwards, and keep `crabbox tunnel`. |
-| Should a new connection wake an asleep Box? | No. Opening the forward wakes it. |
-| Should traffic hold autosleep off? | Yes, while bytes moved in the last 10 minutes. |
-| Should `.moor.yaml` name ports, such as `box.ports: [5177]`, so `moor-hc` offers them? | Later, after the first live use. |
-| Boxes on other providers: the controller-side `local_tunnel` would serve them. In the first version? | No. Nodes only, until a Box elsewhere needs it. |
-| Multiplex connections on one WebSocket? | Not now. Measure a page load through the forward first. |
-| Should people who share a Slack thread forward into its Boxes? | Not now. Forwards follow whatever rule later lets them write to the Box. |
+| Can a guest reach the node's loopback through passt's gateway mapping? | Confirmed on engine-03: a Box reached a server bound only to the host's `127.0.0.1` through its gateway `192.168.0.1`. The crabbox-cloudhypervisor adapter is being fixed to stop the mapping, so moor does not work around it. A forward's tunnel listener is safe from other Boxes once a node runs the fixed adapter. |
 
 ## Out of scope
 
