@@ -1,0 +1,282 @@
+# Warm starts on nodes
+
+This spec is a proposal. A Box on a personal node runs its full setup today. This spec
+makes a later Box on that node start from a kept checkpoint, at any commit.
+
+## The problem
+
+- A pool provider reports `checkpoints: false` in
+  [pool.rs](https://github.com/IniZio/moor/blob/0133f0b3/crates/moor/src/adapters/crabbox/pool.rs#L126-L133).
+  The machine agent has no checkpoint code.
+- Three Boxes on `external@engine-03` recorded no `checkpoint_taken` and no `warm_started`.
+  Their setup took 390 s and 461 s, with a third still running.
+- Their acquire took 42 s, 51 s and 83 s. The documented figures are about 4 s with `bootTemplate` and 41 s without.
+- `crabbox providers describe external --configured --json` on engine-03 lists `capabilities.features` as browser, cache-volume, cleanup, code, crabbox-sync, desktop, pause-resume and ssh.
+  `capabilities.workspace` is empty, so `workspace-checkpoint` and `workspace-fork` are off there (measured).
+- That output is `metadataKind: static` and does not show `bootTemplate`. The acquire times suggest it is off (inferred).
+- A layer key holds the base commit, per
+  [layers.rs](https://github.com/IniZio/moor/blob/0133f0b3/crates/moor-core/src/domain/layers.rs#L51-L66).
+  Each of those Boxes had a different base. Node checkpoints alone would never hit.
+
+## Data
+
+`setup_checkpoints` gains these columns in one forward-only migration:
+
+| Column | Meaning |
+| --- | --- |
+| `machine` | The enrolled machine holding the checkpoint. Null on a provider without a machine. |
+| `base` | The commit the disk holds. It is not part of the key. |
+| `depth` | How many times this chain rolled forward. 0 for a chain set up from scratch. |
+| `current` | 0 once a newer checkpoint replaced this one. Only a parent role keeps it on disk. |
+
+```rust
+struct LayerIdentity {
+    machine: Option<MachineId>, // where it lives
+    provider: ProviderId,       // what runs it
+    user: UserId,               // whose secrets and repo access it holds
+    repo: String,               // OWNER/NAME
+    cache: String,              // CachePlan::identity
+    class: String,              // the fork refuses another size
+    lines: Vec<String>,         // setup lines, chained
+}
+```
+
+- The unique lookup becomes `(machine, provider, layer_key)` where `current = 1`.
+- The controller is implied, since each controller has its own database.
+- Two users may each own a node named `engine-03`, so `external@engine-03` alone is not an owner.
+  Eviction and disk reads therefore go by `machine`.
+- A host may hold checkpoints from two controllers. The host-side name carries
+  `moor-<controller>-`, like a lease slug. A sweep touches only its own controller's names.
+- Existing rows have a null `base` and no matching key. Eviction removes them in time.
+
+## Key
+
+```text
+layer 0 = sha256("clone", user, repo, cache, class)
+layer n = sha256("line", layer n-1, text of line n)
+```
+
+The key holds no commit. Safety comes from this rule instead.
+
+**A Box whose base differs from the checkpoint's `base` reruns every setup line on the new tree.**
+
+- A line that runs sees that commit's files, so no input list can go stale.
+- A line whose guard skips its work does not, as described below.
+- A Box at the checkpoint's own `base` skips lines, as it does today.
+- A line change gives a new key from that line up. A fork from the shared prefix still reruns all lines.
+- Reruns already happen. A retry with no checkpoint runs every line again in the same machine.
+- A Box never saves a checkpoint unless its tree is the base unchanged, as today.
+
+### Options compared
+
+Replay of the last 500 commits of `develop`, about 8.6 days, from `.moor.yaml` and git blobs.
+It counts a miss when a key differs from the previous commit's.
+The other repo with real history here has only the setup line `true`, so it decides nothing.
+
+| Option | Next-commit hit | Stale risk | Author work |
+| --- | --- | --- | --- |
+| Commit in the key, today | 0% | None | None |
+| Declared inputs per line | 92.6% for the top layer, inferred from the row below | Any omitted input gives a stale Box, silently | One list per line |
+| `.moor.yaml` plus tree hashes of named paths | 92.6% measured | Any omitted path gives a stale Box, silently | One list |
+| Commit-free key with all lines rerun, chosen | 99.4% measured | A content-blind guard on repo-derived output gives a stale Box, silently unless the warning is read | Such a guard must check content, or the repo opts out |
+| The same, plus removing ignored files on each new base | 99.4% measured | Only state outside the work tree | None, but every new commit loses ignored build outputs |
+
+Named paths for the replay were [rust-toolchain.toml](https://github.com/IniZio/moor/blob/0133f0b3/rust-toolchain.toml), [Makefile](https://github.com/IniZio/moor/blob/0133f0b3/Makefile) and [box-nested-kvm.sh](https://github.com/IniZio/moor/blob/0133f0b3/tools/box-nested-kvm.sh).
+
+- 34 of 499 commits changed one of them without changing a line.
+  A commit-free key with no rerun would serve 6.8% of commits a possibly stale disk.
+- Only 2 of 17 `Makefile` commits changed a tool pin.
+  Hashing named paths would go cold on the others for nothing.
+- Hashing also needs forge calls before acquire, and a hand-written list that nobody can check.
+
+### What rerunning does not cover
+
+**This option is not safe by construction.** A guard can skip the very line that would see the new commit.
+
+```sh
+[ -f plugin/dist/index.mjs ] || (cd plugin && npm install && npm run build)
+[ -f backend/.env ] || make -C backend setup
+```
+
+`dist/` and `.env` are ignored and derive from tracked files. After a commit changes those files, the rerun skips the line, and the Box serves the old output with no error.
+A scratch repo reproduced this. The output kept the old content after a rerun.
+
+The guards in two real repos, counted by setup line:
+
+| Guard shape | This repo, 7 lines | Another repo, 14 lines | Stale after a commit? |
+| --- | --- | --- | --- |
+| No guard | 3 | 3 | No |
+| Version or stamp in the check | 2 | 2 | No |
+| Installed tool or host state, pinned only in the line's text or not at all | 2 | 6 | No, since a text change gives a new key |
+| Output derived from tracked files | 0 | 3 | **Yes** |
+
+In the other repo, tracked inputs of those 3 lines changed in 28 of its last 499 commits. In the most recent 3 months, 22 of 228 commits did.
+
+The choice stands, with a narrower claim, for these reasons:
+
+- A kept work tree already leaves ignored files in place across commits, as [config.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/config.md#work-tree) documents. So a provider that keeps trees already hands such a guard an old `dist/`, inferred from that document. This option extends the risk to warm starts. It adds no new kind of risk there.
+- Removing ignored files on a new base would fix these guards. It would also drop the `target/` and `build/` directories that a kept tree exists to keep, so it is rejected.
+- Declared inputs fail silently too, and they ask every repo for a list. This asks only the repos with this guard shape to change one line.
+
+What moor does about it:
+
+- A warm fork refreshes the tree exactly as a kept tree does. It resets tracked files, removes untracked files and keeps ignored files.
+- The agent's brief and the start reply name the disk's commit, how many tracked paths changed since, and the ignored top-level paths present. The brief warns that a setup line may have skipped rebuilding them.
+- The docs state the rule. A guard on repo-derived output must check content, such as a stored hash of its sources.
+- `.moor.yaml` gains `checkpoint.across_commits: false`. It puts the base commit back in the key, so that repo keeps today's behaviour.
+- A chain has a maximum age, and `moor start --cold` skips checkpoints.
+
+Two smaller gaps remain. State outside the work tree that derives from tracked files has the same risk, and neither repo has any. A daemon a line started keeps running from the snapshot until its line restarts it.
+
+### Prior art
+
+- [Codespaces prebuilds](https://docs.github.com/en/codespaces/prebuilding-your-codespaces/about-github-codespaces-prebuilds)
+  rerun setup on each push and snapshot the result. That is closest to this rerun rule. moor has no idle builder, so it rolls forward on use.
+- [Cursor background agents](https://docs.cursor.com/background-agent) reuse a disk snapshot for later agents, per their docs.
+- [Turborepo](https://turborepo.dev/docs/crafting-your-repository/configuring-tasks) hashes declared `inputs`.
+  It is the model for the rejected input options. It owns its task graph, and a shell line has no such graph.
+
+## Flow
+
+```mermaid
+flowchart TD
+    A[Start admitted on node] --> B{--cold or chain past its limits?}
+    B -- yes --> C[Warmup and clone]
+    B -- no --> D{Deepest current layer on this machine?}
+    D -- none --> C
+    D -- found --> E[checkpoint-fork over the link]
+    E -- fails --> W1[warm_start_failed, warn] --> C
+    E -- ok --> F{Same base?}
+    F -- yes --> G[Run lines above the layer]
+    F -- no --> H[Refresh the tree as a kept tree does]
+    H --> I[Rerun every line]
+    I -- line fails --> W2[warm_rerun_failed, warn, release fork] --> C
+    I -- ok --> J{Rerun over 20 s and tree at base?}
+    J -- yes --> K[Save, replacing the current layer]
+    J -- no --> L[Agent starts]
+    K --> L
+    G --> L
+    C --> M[Run lines, save layers]
+    M -- line fails --> N[setup_failed]
+    M -- ok --> L
+```
+
+A chain's limits are 7 days from its root and a `depth` of 8. A chain past them goes cold once and starts over.
+So a user, repo and node pair pays one cold start every 7 days at most from age. moor runs no background rebuild.
+The depth limit exists because a checkpoint is a delta over its parent, and the adapter refuses to delete a parent first.
+
+## Machine agent and link
+
+New lease verbs, sent only when the link says the agent has them:
+
+| Verb | Runs | Answers |
+| --- | --- | --- |
+| `checkpoint-create` | `crabbox checkpoint create --mode native` in the lease dir | id, bytes, parent |
+| `checkpoint-fork` | `crabbox checkpoint fork` in a new lease dir, with `Boot` | done, then authorize and info as after a warmup |
+| `checkpoint-delete` | `crabbox checkpoint delete` | done |
+| `disk` | `statvfs` of the checkpoint filesystem | free and total MiB |
+
+- Answers stay data only, and the host still sends no commands. The agent checks every id and name against a strict pattern.
+- `Offer` gains `checkpoints: bool`. Reading `workspace-checkpoint` from `features` is not enough, because an old agent passes that feature on and refuses the verbs.
+- The agent offers it only with both `workspace-checkpoint` and `workspace-fork`, and with a passing `crabbox doctor`.
+- The adapter's `doctor` must fail on stock cloud-hypervisor v52.0. Its guest network is dead after a checkpoint, and `v52.0-moor.1` is needed.
+- `moor node ls` shows warm starts on or off, with the reason. Today nobody can tell from outside.
+- All of this runs as the agent's user. It needs no sudo, no mount and no ssh to the host.
+
+### Settings on the host
+
+Warm starts need `capabilities.checkpoints: true` and `bootTemplate: true` under `external` in the crabbox user config. Both are on by default on a node.
+
+- `moor-machine-agent enroll` writes them, for an agent with `--runtime` naming the `external` provider.
+- Hosts enrolled already never run `enroll` again, so `moor-machine-agent run` applies the same step each time it starts.
+- A released controller lets in only an agent of its own release, per [machines.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/machines.md). So a deploy makes each agent update and restart, and the restart applies the settings. No ssh or manual edit is involved.
+- The step adds only a missing key, and writes the file atomically. A key the owner set stays as set, so `false` is an opt-out, and `moor node ls` shows it as the reason.
+- It changes only the agent's own user config, so it needs no sudo. Nothing else on the host changes.
+- A host with stock cloud-hypervisor still fails `doctor`. Its Boxes start cold, and `moor node ls` names the `v52.0-moor.1` it needs.
+- On a filesystem with no reflink, each VM copies the template disk, which is slower but works, per [providers.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/providers.md).
+- Plain ext4 works. Forks flatten the root and hold delta overlays, so reflink only speeds them up.
+
+## Sharing across users
+
+**No. A checkpoint is never shared across users, on any node.**
+
+- A checkpoint holds disk and memory, so it may hold whatever a user's setup line read or wrote.
+- A personal node has one owner. A shared node keeps per-user chains, enforced by `user` in the key and in the lookup.
+- A fork runs after the start's own repo access check, so a user who lost access gets no fork.
+- The cost is one chain per user. Deltas over one base image keep that small.
+
+## Disk and GC
+
+- The floor stays the node's existing one, 10% of the filesystem and at least 20 GiB. There is no usage budget.
+- The controller holds the rows, so it decides eviction and sends `checkpoint-delete`. The order stays superseded first, then least recently used, leaves only.
+- Replaced rows count as superseded, and a chain's old rows go once nothing depends on them.
+- A start below the floor stays Pending before any eviction can run. So each memory report below the floor evicts one checkpoint, at most one per 30 seconds.
+- A start with nothing left to evict stays Pending with the existing disk reason. A setup below the floor saves no checkpoint and warns `checkpoint_skipped`.
+- A sweep over the link deletes host checkpoints with this controller's name prefix and no row, using the existing keep-list pattern.
+- Pause, fork and delete failures keep their rows and warn, as on a local provider.
+
+## Failure behaviour
+
+Every failure below ends in a working Box or a named error, and none is silent.
+
+| Failure | Box sees | Record |
+| --- | --- | --- |
+| Fork fails, for example on a new hypervisor version | Cold start | `warm_start_failed`, warning `checkpoint_failed` |
+| Line fails on a rerun | Cold start, once | `warm_rerun_failed` with the line and tail |
+| Line also fails cold | `setup_failed` as today | `setup_failed` |
+| Save fails | Setup goes on | `checkpoint_taken` with the error, warning `checkpoint_failed` |
+| Link drops mid fork | Start fails as a lost node does, and `moor retry` applies | Planned lease record |
+| Old agent, or doctor failing | Cold start every time | `moor node ls` says why |
+
+## Expected start time
+
+| Case | Time | Basis |
+| --- | --- | --- |
+| Today on engine-03, start to setup done | 432 to 544 s | Measured. Sum of the 42-83 s acquire and 390-461 s setup ranges. |
+| Fork, local cloud-hypervisor | 16 to 18 s | Measured, adapter PRs #38 and #39. Not on a node. |
+| Same-commit warm start to agent, local | 16 to 50 s | Measured, moor PR #1022 and adapter PR #39. Not on a node. |
+| Copy a 6.1 GiB disk on ext4 with no reflink | 3.2 s, 5.2 s by `qemu-img convert` | Measured on this dev host. |
+| New base in a partial clone, 50 commits later | 1.2 s | Measured on this dev host, against GitHub. |
+| `make setup` version probes when current | 0.15 s | Measured on this dev host. Probes only. |
+| **New commit on a node, to agent** | **30 to 70 s** | **Guess, from the rows above plus link overhead. Assumes setup lines are near no-ops on a warm disk.** |
+| First start, or a chain past its limits | Today's time plus pauses | Measured locally at 255-276 s of pauses in a run over 1100 s. Guess of 30 to 100 s on engine-03. |
+
+A rerun line that does real work adds its own time. A tool pin bump is the common case, and the chain then rolls forward once.
+The acceptance run replaces the guess with a measurement.
+
+## Acceptance test
+
+A script drives moor on a real personal node, as a teammate would. The node's agent runs with no sudo, on ext4, over the link only.
+The owner fills the disk by hand, on a throwaway node.
+
+1. `moor node ls` shows warm starts on.
+2. Box A starts cold at commit X and records `checkpoint_taken` for each kept layer.
+3. Box B starts at commit Y, which changes one unrelated file. It records `warm_started`, reruns all lines, has HEAD at Y with a clean tree, and reaches the agent within 90 s.
+4. A line with no guard copies a tracked file to `~/seen`. Commit Z changes that file with no line change. Box C holds Z's content in `~/seen`.
+5. Commit V makes a tracked script fail its line. Box D warns `warm_rerun_failed`, tries cold, and ends `setup_failed`, naming the line.
+6. `moor start --cold` at Z records no `warm_started`.
+7. A second user on a shared node with the same repo records no `warm_started`.
+8. A line runs `[ -f dist/out ] || cp src dist/out`, with `dist/` ignored, and a commit changes `src`. The next Box holds the old `dist/out`, and its brief and start reply name the disk's commit, the changed path count and `dist/`.
+9. The same line with its guard checking a hash of `src` holds the new content on the next commit.
+10. The same line with `checkpoint.across_commits: false` records no `warm_started` on the next commit, and holds the new content.
+11. With the disk filled past the floor, a start stays Pending, checkpoints get evicted with `checkpoint_evicted`, and the start proceeds.
+12. With a checkpoint directory removed by hand, the next Box warns `checkpoint_failed` and starts cold.
+13. Three Boxes start at once at a new commit, and all three reach the agent with correct trees.
+
+## Plan
+
+Stacked PRs, each about 1000 lines or less, with tests and docs updates in each:
+
+1. The adapter's `doctor` fails the checkpoint check on stock cloud-hypervisor. This goes in the adapter's own repo.
+2. Link verbs, agent support and `Offer.checkpoints`, tested against a fake crabbox. Nothing sends them yet.
+3. Store columns and machine-scoped lookup and eviction. Keys stay as they are.
+4. Node GC, with the `disk` verb, eviction from memory reports and the sweep.
+5. Host settings written by `enroll` and by every `run`, which reaches enrolled hosts at the next deploy. Fake-crabbox tests cover a missing key and an owner's `false`.
+6. Pool driver create, fork and delete, plus `moor node ls`. Same-commit warm starts now work on nodes.
+7. Commit-free key, rerun of all lines, tree refresh, cold retry, the brief and start reply warning, and `checkpoint.across_commits`.
+8. Roll-forward, chain limits and `--cold`, on `moor start`, MCP and Slack `start_box`.
+9. The acceptance script, plus its run recorded in that PR.
+
+## Question for the owner
+
+Should warm starts across commits be on by default, with `checkpoint.across_commits: false` as the opt-out? The recommendation is on. The other choice is opt-in per repo. That is safe for existing guards, but a repo gets no hit on a moving main until its author asks.
