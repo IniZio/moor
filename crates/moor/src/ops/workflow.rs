@@ -323,7 +323,6 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
         cold: false,
         resume: false,
         repo: Some(job.repo.clone()),
-        // The controller's own `box.also` is not the owner's choice, so it never applies.
         also: Some(job.also.clone()),
         parent: None,
         identity: None,
