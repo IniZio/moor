@@ -10,6 +10,7 @@ use moor_client::link::lease::{Boot, Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::service::Manager;
+use moor_machine_agent::slice;
 use moor_machine_agent::up::{self, down, Runtime, Up};
 use moor_machine_agent::{run_with, state_dir, until_stopped, update, Ended, Machine, Pool};
 
@@ -100,6 +101,9 @@ struct UpFlags {
     /// The most Boxes this machine holds at once; memory may allow fewer.
     #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..))]
     max_boxes: u16,
+    /// Keep this many MiB of memory for the host; Boxes get the rest. Default: 4096 plus a tenth.
+    #[arg(long, value_name = "MIB", conflicts_with = "allow_exec")]
+    reserve_mib: Option<u64>,
     /// The crabbox program.
     #[arg(long, default_value = "crabbox")]
     crabbox: PathBuf,
@@ -118,6 +122,7 @@ fn up_here(flags: UpFlags) -> ExitCode {
         name: flags.name.unwrap_or_else(host_name),
         labels: flags.labels,
         max_boxes: flags.max_boxes,
+        reserve_mib: flags.reserve_mib,
         runtime,
         crabbox: flags.crabbox,
         home: home.clone(),
@@ -220,6 +225,7 @@ fn run_here(
 ) -> Result<(), String> {
     if let Some(provider) = &pool.runtime {
         apply_settings(provider);
+        keep_slice(provider, pool.reserve_mib);
     }
     let machine = Machine {
         pool: pool.pool(cache_gb),
@@ -239,6 +245,23 @@ fn run_here(
         say(&format!("stopped by {signal}"));
     }
     Ok(())
+}
+
+/// Keeps the Boxes slice in place; the agent runs on without it, and says so.
+fn keep_slice(provider: &str, reserve_mib: Option<u64>) {
+    let home = Machine::from_env().home;
+    let kept = slice::ensure(
+        &Manager::here(&home),
+        &home,
+        provider,
+        reserve_mib,
+        &mut |line| say(line),
+    );
+    if let Err(e) = kept {
+        say(&format!(
+            "error: Boxes on this machine run with no memory ceiling: {e}"
+        ));
+    }
 }
 
 /// Adds what warm starts need to the crabbox user config, saying what changed.

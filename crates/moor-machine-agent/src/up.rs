@@ -11,6 +11,7 @@ use crate::pair::{self, Ask};
 use crate::pool::doctor_failures;
 use crate::service::{Manager, Service};
 use crate::settings::{self, Ensured};
+use crate::slice;
 use crate::{read_key, State, KEY};
 
 /// How many seconds `up` waits for the service's first link.
@@ -38,6 +39,8 @@ pub struct Up {
     pub labels: Vec<String>,
     /// How many Boxes may hold the machine at once.
     pub max_boxes: u16,
+    /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
+    pub reserve_mib: Option<u64>,
     /// What the machine offers.
     pub runtime: Runtime,
     /// The crabbox program.
@@ -86,7 +89,10 @@ pub fn up(
         }
         None => pair::pair(&server, &ask, dir, say)?,
     };
-    let service = service(&ask, crabbox.as_deref(), dir, manager)?;
+    let service = service(&ask, crabbox.as_deref(), up.reserve_mib, dir, manager)?;
+    if let Some(provider) = &ask.provider {
+        slice::ensure(manager, &up.home, provider, up.reserve_mib, say)?;
+    }
     let linked = dir.join(linked::FILE);
     manager.install(&service)?;
     if matches!(manager, Manager::Systemd { .. }) && !lingers() {
@@ -174,7 +180,7 @@ pub fn apply_settings(home: &Path, provider: &str, say: &mut dyn FnMut(&str)) {
             "turned on checkpoints in {}; set them to false there to opt out",
             path.display()
         )),
-        Ok(Ensured::Kept) => {}
+        Ok(Ensured::Kept | Ensured::NoCeiling) => {}
         Err(e) => say(&format!("cannot turn on checkpoints: {e}")),
     }
 }
@@ -224,6 +230,7 @@ fn paired(dir: &Path, server: &str) -> Result<Option<State>, String> {
 fn service(
     ask: &Ask,
     crabbox: Option<&Path>,
+    reserve_mib: Option<u64>,
     dir: &Path,
     manager: &Manager,
 ) -> Result<Service, String> {
@@ -246,6 +253,9 @@ fn service(
             crabbox.to_string_lossy().into_owned(),
         ]),
         _ => args.push("--allow-exec".to_owned()),
+    }
+    if let (Some(_), Some(mib)) = (&ask.provider, reserve_mib) {
+        args.extend(["--reserve-mib".to_owned(), mib.to_string()]);
     }
     args.push("--auto-update".to_owned());
     Ok(Service {

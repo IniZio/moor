@@ -33,6 +33,7 @@ fn report(boxes: &[(&str, u64)]) -> Report {
         psi_full_avg10: None,
         disk_free_mib: None,
         disk_total_mib: None,
+        reserve_mib: None,
         boxes: boxes
             .iter()
             .map(|(slug, mib)| BoxMemory {
@@ -114,4 +115,36 @@ async fn a_draining_runner_says_so_with_every_report_after_and_tells_its_agents_
     assert!(sent.draining);
     assert_eq!(sent.runner.as_str(), "/run/runner.sock");
     assert_eq!(sent.links.len(), 1);
+}
+
+fn reserve_after(offered: Option<u64>, reported: Option<u64>) -> Option<u64> {
+    let (links, rx) = links();
+    let offer = Offer {
+        reserve_mib: offered,
+        ..Offer::default()
+    };
+    let (generation, _replaced, _asks) = links.up(
+        5,
+        "1.0.0".to_owned(),
+        offer,
+        tokio::sync::mpsc::channel(1).0,
+    );
+    links.reported(
+        5,
+        generation,
+        &Report {
+            reserve_mib: reported,
+            ..report(&[])
+        },
+    );
+    let got = rx.borrow().links[0].reserve_mib;
+    got
+}
+
+#[test]
+fn the_reserve_a_report_names_replaces_the_offered_one_and_none_keeps_it() {
+    assert_eq!(reserve_after(None, Some(7296)), Some(7296));
+    assert_eq!(reserve_after(Some(2048), Some(7296)), Some(7296));
+    assert_eq!(reserve_after(Some(2048), None), Some(2048));
+    assert_eq!(reserve_after(None, None), None);
 }

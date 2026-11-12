@@ -4,6 +4,11 @@
 //! to make its `doctor` check for a hypervisor that can checkpoint. Each is added once when
 //! missing. A value the owner set stays as set, so `false` is how an owner opts out. The adapter
 //! already builds its boot template unless told not to.
+//!
+//! Each setting is a (section, key, value) entry that `ensure` adds once when missing. The
+//! Boxes slice is one more entry, `config.cgroupSlice`. An owner's slice stays, so an owner can
+//! point Boxes at another slice. With the adapter's `cgroup: off` the slice is not added, since
+//! the adapter rejects the pair.
 
 use std::fs;
 use std::io::Write as _;
@@ -14,8 +19,25 @@ use serde_json::{Map, Value};
 
 /// The crabbox provider whose user config section this concerns.
 const PROVIDER: &str = "external";
-/// The sections of it that take a `checkpoints` key, the last written first in the file.
-const SECTIONS: [&str; 2] = ["config", "capabilities"];
+
+/// One key of the provider's config, added when missing.
+struct Setting<'a> {
+    /// The mapping under the provider that holds it.
+    section: &'a str,
+    /// Its name.
+    key: &'a str,
+    /// What it is set to.
+    value: Value,
+}
+
+/// The checkpoint entries, the last written first in the file.
+fn checkpoints() -> [Setting<'static>; 2] {
+    ["config", "capabilities"].map(|section| Setting {
+        section,
+        key: "checkpoints",
+        value: Value::Bool(true),
+    })
+}
 
 /// What [`ensure`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +46,8 @@ pub enum Ensured {
     Added,
     /// The keys are set already, or the provider has no such setting.
     Kept,
+    /// The owner's config has `cgroup: off`, so Boxes get no memory ceiling and no slice was added.
+    NoCeiling,
 }
 
 /// The crabbox user config under `home`, where crabbox itself looks for it.
@@ -74,6 +98,41 @@ pub fn opted_out(path: &Path, provider: &str) -> Option<&'static str> {
 /// The file cannot be read, parsed or written, or holds something other than a mapping on the
 /// way to the key. The file is then left as it was.
 pub fn ensure(path: &Path, provider: &str) -> Result<Ensured, String> {
+    ensure_with(path, provider, &checkpoints())
+}
+
+/// Adds `external.config.cgroupSlice: slice` to the config at `path` when missing, so the adapter
+/// puts each VM's scope in it. The caller has written the slice's unit first.
+///
+/// # Errors
+/// As [`ensure`].
+pub fn ensure_slice(path: &Path, provider: &str, slice: &str) -> Result<Ensured, String> {
+    if provider == PROVIDER && cgroup_off(path) {
+        return Ok(Ensured::NoCeiling);
+    }
+    let setting = Setting {
+        section: "config",
+        key: "cgroupSlice",
+        value: Value::String(slice.to_owned()),
+    };
+    ensure_with(path, provider, &[setting])
+}
+
+/// Whether the config at `path` turns the adapter's cgroups off, spelled `"off"` or as YAML 1.1's
+/// bare `off`.
+fn cgroup_off(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| parse(&text).ok())
+        .is_some_and(|c| match c.pointer("/external/config/cgroup") {
+            Some(Value::String(mode)) => mode == "off",
+            Some(Value::Bool(on)) => !on,
+            _ => false,
+        })
+}
+
+/// Adds each of `settings` missing from the config at `path`.
+fn ensure_with(path: &Path, provider: &str, settings: &[Setting<'_>]) -> Result<Ensured, String> {
     if provider != PROVIDER {
         return Ok(Ensured::Kept);
     }
@@ -85,11 +144,11 @@ pub fn ensure(path: &Path, provider: &str) -> Result<Ensured, String> {
     let fail = |e: String| format!("{}: {e}", path.display());
     let mut value = parse(&text).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
     let mut out = text.clone();
-    for section in SECTIONS {
-        let Some(want) = with_key(&value, section).map_err(fail)? else {
+    for setting in settings {
+        let Some(want) = with_key(&value, setting).map_err(fail)? else {
             continue;
         };
-        let spliced = splice(&out, section);
+        let spliced = splice(&out, setting);
         out = if parse(&spliced).is_ok_and(|v| v == want) {
             spliced
         } else {
@@ -112,8 +171,9 @@ fn parse(text: &str) -> Result<Value, String> {
         .unwrap_or_else(|| Value::Object(Map::new())))
 }
 
-/// `was` with `section`'s key added; none when it has the key.
-fn with_key(was: &Value, section: &str) -> Result<Option<Value>, String> {
+/// `was` with `setting` added; none when it has the key.
+fn with_key(was: &Value, setting: &Setting<'_>) -> Result<Option<Value>, String> {
+    let section = setting.section;
     let mut want = was.clone();
     let mut at = &mut want;
     for name in [PROVIDER, section] {
@@ -131,16 +191,18 @@ fn with_key(was: &Value, section: &str) -> Result<Option<Value>, String> {
     let Value::Object(keys) = at else {
         return Err(format!("{section} holds a value that is no mapping"));
     };
-    if keys.contains_key("checkpoints") {
+    if keys.contains_key(setting.key) {
         return Ok(None);
     }
-    keys.insert("checkpoints".to_owned(), Value::Bool(true));
+    keys.insert(setting.key.to_owned(), setting.value.clone());
     Ok(Some(want))
 }
 
-/// `text` with `section`'s key written in by line, so its comments and order stay. It covers the shapes
+/// `text` with `setting` written in by line, so its comments and order stay. It covers the shapes
 /// people write; [`ensure`] checks the result means what it should before using it.
-fn splice(text: &str, section_name: &str) -> String {
+fn splice(text: &str, setting: &Setting<'_>) -> String {
+    let section_name = setting.section;
+    let entry = format!("{}: {}", setting.key, setting.value);
     let lines: Vec<&str> = text.lines().collect();
     let Some(section) = lines.iter().position(|l| is_key(l, "external")) else {
         let sep = if text.is_empty() || text.ends_with('\n') {
@@ -148,7 +210,7 @@ fn splice(text: &str, section_name: &str) -> String {
         } else {
             "\n"
         };
-        return format!("{text}{sep}external:\n  {section_name}:\n    checkpoints: true\n");
+        return format!("{text}{sep}external:\n  {section_name}:\n    {entry}\n");
     };
     let end = lines
         .iter()
@@ -165,7 +227,7 @@ fn splice(text: &str, section_name: &str) -> String {
             let indent = indent_of(body).unwrap_or_else(|| "  ".to_owned());
             (
                 section + 1,
-                format!("{indent}{section_name}:\n{indent}  checkpoints: true"),
+                format!("{indent}{section_name}:\n{indent}  {entry}"),
             )
         }
         Some(i) => {
@@ -174,7 +236,7 @@ fn splice(text: &str, section_name: &str) -> String {
                 return replace_line(
                     &lines,
                     section + 1 + i,
-                    &line.replacen('{', "{ checkpoints: true,", 1),
+                    &line.replacen('{', &format!("{{ {entry},"), 1),
                 );
             }
             let below = body.get(i + 1..).unwrap_or_default();
@@ -182,7 +244,7 @@ fn splice(text: &str, section_name: &str) -> String {
             let indent = indent_of(below)
                 .filter(|child| child.len() > own)
                 .unwrap_or_else(|| format!("{}  ", " ".repeat(own)));
-            (section + 2 + i, format!("{indent}checkpoints: true"))
+            (section + 2 + i, format!("{indent}{entry}"))
         }
     };
     let mut out: Vec<&str> = lines.clone();

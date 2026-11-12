@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::process::Command;
 
-use moor_machine_agent::settings::{ensure, opted_out, Ensured};
+use moor_machine_agent::settings::{ensure, ensure_slice, opted_out, Ensured};
 use serde_json::Value;
 
 const ON: &str =
@@ -320,7 +320,12 @@ fn a_run_keeps_an_owners_false() {
         "external:\n  capabilities:\n    checkpoints: false\n  config:\n    checkpoints: false\n";
     std::fs::write(&path, text).unwrap();
     agent(home.path(), &["run", "--runtime", "external"]);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    // A run also adds the Boxes slice; the owner's false stays.
+    let kept = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        kept.replace("    cgroupSlice: \"moorboxes.slice\"\n", ""),
+        text
+    );
 }
 
 #[test]
@@ -333,4 +338,71 @@ fn a_run_with_an_unreadable_config_warns_and_goes_on() {
     let said = String::from_utf8(out.stderr).unwrap();
     assert!(said.contains("cannot parse"), "{said}");
     assert!(said.contains("run moor-machine-agent up first"), "{said}");
+}
+
+fn cgroup_slice(path: &Path) -> Option<Value> {
+    value(path).pointer("/external/config/cgroupSlice").cloned()
+}
+
+#[test]
+fn the_slice_is_added_beside_what_is_there_and_a_second_call_changes_nothing() {
+    for before in [ON, "", "external:\n  config: { cpus: 2 }\n"] {
+        let (_dir, path) = config();
+        std::fs::write(&path, before).unwrap();
+        assert_eq!(
+            ensure_slice(&path, "external", "moorboxes.slice").unwrap(),
+            Ensured::Added,
+            "{before}"
+        );
+        assert_eq!(
+            cgroup_slice(&path),
+            Some(Value::String("moorboxes.slice".to_owned()))
+        );
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            value(&path).pointer("/external/config/cpus"),
+            (before.contains("cpus")).then(|| Value::from(2)).as_ref()
+        );
+        assert_eq!(
+            checkpoints(&path),
+            before.contains("capabilities").then_some(Value::Bool(true))
+        );
+        assert_eq!(
+            ensure_slice(&path, "external", "moorboxes.slice").unwrap(),
+            Ensured::Kept
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+    }
+}
+
+#[test]
+fn an_owners_slice_stays_and_only_the_external_provider_has_one() {
+    let (_dir, path) = config();
+    let mine = "external:\n  config:\n    cgroupSlice: mine.slice\n";
+    std::fs::write(&path, mine).unwrap();
+    assert_eq!(
+        ensure_slice(&path, "external", "moorboxes.slice").unwrap(),
+        Ensured::Kept
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
+    let (_dir, other) = config();
+    assert_eq!(
+        ensure_slice(&other, "cloudhypervisor", "moorboxes.slice").unwrap(),
+        Ensured::Kept
+    );
+    assert!(!other.exists());
+}
+
+#[test]
+fn with_cgroup_off_no_slice_is_added_and_the_file_is_untouched() {
+    for off in ["\"off\"", "off"] {
+        let (_dir, path) = config();
+        let text = format!("external:\n  config:\n    cgroup: {off}\n");
+        std::fs::write(&path, &text).unwrap();
+        assert_eq!(
+            ensure_slice(&path, "external", "moorboxes.slice").unwrap(),
+            Ensured::NoCeiling
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
 }

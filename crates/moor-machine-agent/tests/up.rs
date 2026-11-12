@@ -471,3 +471,110 @@ fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_vms() {
     assert!(unit.contains("\"run\" \"--allow-exec\""), "{unit}");
     assert!(!unit.contains("--runtime"), "{unit}");
 }
+
+fn host_total_mib() -> u64 {
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap();
+    let kib: u64 = info
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))
+        .unwrap()
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .unwrap();
+    kib / 1024
+}
+
+#[test]
+fn up_writes_the_boxes_slice_and_a_new_reserve_rewrites_it() {
+    let w = world();
+    assert!(w.up().ok);
+    let slice = w.units().join("moorboxes.slice");
+    let total = host_total_mib();
+    let default = 4096 + total / 10;
+    let text = std::fs::read_to_string(&slice).unwrap();
+    assert!(
+        text.contains(&format!("MemoryHigh={}M\n", total - default)),
+        "{text}"
+    );
+    assert!(text.contains("CPUWeight=50"), "{text}");
+
+    let again = w.agent(&[
+        "up",
+        "--server",
+        &w.gate,
+        "--name",
+        "hv",
+        "--reserve-mib",
+        "2048",
+    ]);
+    assert!(again.ok, "{}", again.said);
+    let text = std::fs::read_to_string(&slice).unwrap();
+    assert!(
+        text.contains(&format!("MemoryHigh={}M\n", total - 2048)),
+        "{text}"
+    );
+    let unit = std::fs::read_to_string(w.unit()).unwrap();
+    assert!(unit.contains("\"--reserve-mib\" \"2048\""), "{unit}");
+    assert!(w.log("systemctl.log").matches("daemon-reload").count() >= 2);
+}
+
+#[test]
+fn up_for_a_machine_that_hosts_no_boxes_writes_no_slice() {
+    let w = world();
+    assert!(
+        w.agent(&["up", "--server", &w.gate, "--name", "hv", "--allow-exec"])
+            .ok
+    );
+    assert!(!w.units().join("moorboxes.slice").exists());
+}
+
+fn up_external(w: &World) -> Ran {
+    w.agent(&[
+        "up",
+        "--server",
+        &w.gate,
+        "--name",
+        "hv",
+        "--runtime",
+        "external",
+    ])
+}
+
+fn crabbox_config(w: &World) -> PathBuf {
+    w.home.path().join("config/crabbox/config.yaml")
+}
+
+#[test]
+fn up_tells_the_adapter_the_slice_after_writing_it_and_keeps_an_owners_choice() {
+    let w = world();
+    let ran = up_external(&w);
+    assert!(ran.ok, "{}", ran.said);
+    let config = std::fs::read_to_string(crabbox_config(&w)).unwrap();
+    assert!(
+        config.contains("cgroupSlice: \"moorboxes.slice\""),
+        "{config}"
+    );
+    assert!(w.units().join("moorboxes.slice").exists());
+
+    let owner = config.replace("\"moorboxes.slice\"", "mine.slice");
+    std::fs::write(crabbox_config(&w), &owner).unwrap();
+    assert!(up_external(&w).ok);
+    assert_eq!(std::fs::read_to_string(crabbox_config(&w)).unwrap(), owner);
+}
+
+#[test]
+fn up_with_cgroup_off_adds_no_slice_and_says_boxes_have_no_ceiling() {
+    let w = world();
+    let dir = crabbox_config(&w).parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let off = "external:\n  config:\n    cgroup: \"off\"\n";
+    std::fs::write(crabbox_config(&w), off).unwrap();
+    let ran = up_external(&w);
+    assert!(ran.ok, "{}", ran.said);
+    assert!(ran.said.contains("no memory ceiling"), "{}", ran.said);
+    let config = std::fs::read_to_string(crabbox_config(&w)).unwrap();
+    assert!(!config.contains("cgroupSlice"), "{config}");
+}

@@ -355,6 +355,7 @@ impl Links {
                 .filter(|h| h.generation == generation)
             {
                 h.link.mem_mib = Some(report.mem_total_mib);
+                h.link.reserve_mib = report.reserve_mib.or(h.link.reserve_mib);
                 h.link.memory = Some(memory::received(report));
                 h.box_memory = memory::box_memory(machine_id, report);
             }

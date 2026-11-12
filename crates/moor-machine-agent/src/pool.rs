@@ -32,7 +32,7 @@ mod takeover;
 
 pub use checkpoint::checkpoint_op;
 use crabbox::Crabbox;
-use memory::host_mem_mib;
+pub use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
 use pause::pause;
 use rows::{held_memory, leases};
