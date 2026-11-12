@@ -9,21 +9,36 @@ const CHANGED: &str = "moor.warm.changed=";
 /// What the script prints before each ignored path.
 const IGNORED: &str = "moor.warm.ignored=";
 
+/// What the script prints before the changed path count since the commit the disk itself holds.
+const BEHIND: &str = "moor.warm.behind=";
+
 /// POSIX sh, run in the work tree after the clone script.
 ///
 /// It always ends with exit 0, since a count it cannot make costs a line of the note and not
 /// the Box. `git diff --name-only` reads only trees, so a partial clone fetches nothing for it. It
 /// prints at most `limit` ignored paths, leaving out moor's and crabbox's own excluded directories.
+/// Given `rolls`, the commit of a disk a save may roll forward from, it also counts the paths
+/// changed since that commit.
 #[must_use]
-pub fn script(commit: &str, limit: usize) -> String {
-    let (commit, changed, ignored) = (quote(commit), quote(CHANGED), IGNORED);
+pub fn script(commit: &str, rolls: Option<&str>, limit: usize) -> String {
+    let behind = rolls.map(|r| count(r, BEHIND)).unwrap_or_default();
+    format!(
+        r"{}{behind}git ls-files --others --ignored --exclude-standard --directory 2>/dev/null |
+  grep -vxF -e .moor/ -e .crabbox/ -e .crabbox-sealed | head -n {limit} | sed 's|^|{IGNORED}|'
+:
+",
+        count(commit, CHANGED)
+    )
+}
+
+/// POSIX sh that prints `label` and the count of tracked paths changed from `commit` to HEAD, and
+/// nothing when git cannot read `commit`.
+fn count(commit: &str, label: &str) -> String {
+    let (commit, label) = (quote(commit), quote(label));
     format!(
         r#"if moor_names=$(git diff --no-renames --name-only {commit} HEAD -- 2>/dev/null); then
-  printf '%s%s\n' {changed} "$(printf '%s' "$moor_names" | grep -c '')"
+  printf '%s%s\n' {label} "$(printf '%s' "$moor_names" | grep -c '')"
 fi
-git ls-files --others --ignored --exclude-standard --directory 2>/dev/null |
-  grep -vxF -e .moor/ -e .crabbox/ -e .crabbox-sealed | head -n {limit} | sed 's|^|{ignored}|'
-:
 "#
     )
 }
@@ -45,6 +60,15 @@ pub fn tree_at(base: &str) -> String {
         "{} && [ -z \"$(git status --porcelain 2>/dev/null)\" ] && git status --porcelain >/dev/null",
         head_at(base)
     )
+}
+
+/// The changed path count since the disk's own commit the script printed in `output`, when it was
+/// given one and could read it.
+#[must_use]
+pub fn behind(output: &str) -> Option<u64> {
+    output
+        .lines()
+        .find_map(|l| l.trim_end().strip_prefix(BEHIND)?.parse().ok())
 }
 
 /// The changed path count and the ignored paths the script printed in `output`.

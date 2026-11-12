@@ -2,8 +2,11 @@
 //! made a line fail is retired once a cold machine shows the disk was the cause.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use std::time::Duration;
+
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::layers::LayerKey;
+use moor_core::seam::clock::Clock as _;
 use moor_core::{BoxId, BoxReq, StartReq};
 
 use super::warm::{events, row};
@@ -65,6 +68,92 @@ fn a_quick_rerun_of_lines_that_all_have_checkpoints_saves_nothing() {
     s.commit("other", "y\n");
     s.start("b", QUICK);
     assert_eq!(saved(&s), before);
+}
+
+fn hours(n: u64) -> Duration {
+    Duration::from_secs(n * 60 * 60)
+}
+
+#[test]
+fn a_quick_rerun_over_a_day_old_disk_is_saved_and_the_next_box_stands_on_its_commit() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(25));
+    let second = s.commit("other", "y\n");
+    s.start("b", QUICK);
+    assert!(saved(&s) > before, "the rerun is saved");
+    let (c, _) = s.start("c", QUICK);
+    assert!(rerun_from(&s, c).is_null(), "the disk is at its commit");
+    assert_eq!(setup_calls_on(&s.w, c), (0, 0));
+    assert_eq!(git(&s.tree(c), &["rev-parse", "HEAD"]), second);
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_under_a_day_old_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(23));
+    s.commit("other", "y\n");
+    s.start("b", QUICK);
+    assert_eq!(saved(&s), before);
+}
+
+/// Commits `n` new files under `dir` in the origin; the new commit.
+fn commit_paths(s: &Scratch, dir: &str, n: usize) -> String {
+    std::fs::create_dir_all(s.repo.join(dir)).unwrap();
+    for i in 0..n {
+        std::fs::write(s.repo.join(dir).join(format!("f{i}")), "x\n").unwrap();
+    }
+    git(&s.repo, &["add", "."]);
+    git(&s.repo, &["commit", "-qm", dir]);
+    s.head()
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_100_paths_behind_is_saved_though_only_2_h_old() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(2));
+    let second = commit_paths(&s, "many", 100);
+    s.start("b", QUICK);
+    assert!(saved(&s) > before, "the rerun is saved");
+    let (c, _) = s.start("c", QUICK);
+    assert!(rerun_from(&s, c).is_null(), "the disk is at its commit");
+    assert_eq!(git(&s.tree(c), &["rev-parse", "HEAD"]), second);
+}
+
+#[test]
+fn a_quick_rerun_over_a_disk_10_paths_behind_and_2_h_old_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(2));
+    commit_paths(&s, "few", 10);
+    s.start("b", QUICK);
+    assert_eq!(saved(&s), before);
+}
+
+#[test]
+fn after_a_save_the_next_rerun_counts_from_the_saved_commit_and_saves_nothing() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    clock.sleep(hours(1));
+    let second = commit_paths(&s, "many", 100);
+    s.start("b", QUICK);
+    let before = saved(&s);
+    clock.sleep(hours(1));
+    commit_paths(&s, "few", 10);
+    let (c, _) = s.start("c", QUICK);
+    assert_eq!(rerun_from(&s, c), second.as_str());
+    assert_eq!(
+        events(&s.w, c, "warm_rerun")[0]["changed"],
+        110,
+        "the ignored files still date from the first commit"
+    );
+    assert_eq!(saved(&s), before, "10 paths from the saved commit");
 }
 
 #[test]
@@ -407,4 +496,72 @@ fn a_retry_never_forks_a_disk_of_unknown_age() {
     let v = crate::ops::retry::run(&scratch.w.cx, &retry).unwrap();
     assert!(v.setup.ok, "{v:?}");
     assert_eq!(scratch.warm(failed), forks, "the retry forks nothing");
+}
+
+/// Rewrites the same `n` files under `dir` in the origin with `text`; the new commit.
+fn rewrite_paths(s: &Scratch, dir: &str, n: usize, text: &str) -> String {
+    std::fs::create_dir_all(s.repo.join(dir)).unwrap();
+    for i in 0..n {
+        std::fs::write(s.repo.join(dir).join(format!("f{i}")), text).unwrap();
+    }
+    git(&s.repo, &["add", "."]);
+    git(&s.repo, &["commit", "-qm", text.trim()]);
+    s.head()
+}
+
+/// Every 6 h rather than every hour, which runs too long for one test; the pace itself is replayed
+/// hourly in moor-core.
+#[test]
+fn reruns_100_paths_behind_every_6_h_keep_the_chain_warm_for_its_whole_7_days() {
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let mut rolled = vec![];
+    for hour in (6..7 * 24).step_by(6) {
+        clock.sleep(hours(6));
+        rewrite_paths(&s, "many", 100, &format!("{hour}\n"));
+        s.w.cx.take_warnings();
+        let (id, v) = s.start(&format!("b{hour}"), QUICK);
+        assert!(v.setup.ok, "hour {hour}: {v:?}");
+        assert_eq!(s.warm(id), 1, "hour {hour}: no Box sets up from scratch");
+        let warned = s.w.cx.take_warnings();
+        assert!(
+            warned.iter().all(|w| w.code != "checkpoint_chain_expired"),
+            "hour {hour}: {warned:?}"
+        );
+        if !events(&s.w, id, "checkpoint_taken").is_empty() {
+            let depth = kept_last_saved_by(&s, id).depth;
+            assert!(depth <= 1 + hour / 24, "hour {hour}: depth {depth}");
+            rolled.push(hour);
+        }
+    }
+    assert_eq!(rolled, [6, 24, 48, 72, 96, 120, 144], "about once a day");
+}
+
+#[test]
+fn a_rerun_whose_forked_commit_git_cannot_read_saves_nothing_under_a_day_and_starts() {
+    use crate::store::db::DbExt as _;
+    use moor_schema::tables::SetupCheckpoints as Checkpoints;
+    use sea_query::Query;
+
+    let (s, clock) = Scratch::new().clocked();
+    s.start("a", QUICK);
+    let gone = "0123456789abcdef0123456789abcdef01234567";
+    let store = s.w.cx.store().unwrap();
+    let forget = Query::update()
+        .table(Checkpoints::Table)
+        .value(Checkpoints::Base, gone)
+        .take();
+    store.writer().run(forget).unwrap();
+    let before = saved(&s);
+    clock.sleep(hours(2));
+    let second = commit_paths(&s, "many", 100);
+    let (b, v) = s.start("b", QUICK);
+    assert!(v.setup.ok, "{v:?}");
+    assert_eq!(rerun_from(&s, b), gone, "it forked the disk");
+    assert_eq!(git(&s.tree(b), &["rev-parse", "HEAD"]), second);
+    assert_eq!(
+        saved(&s),
+        before,
+        "no count, and the disk is under a day old"
+    );
 }

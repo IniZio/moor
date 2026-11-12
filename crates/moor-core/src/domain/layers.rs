@@ -15,6 +15,33 @@ pub const CHAIN_MAX_AGE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// parent on the disk.
 pub const CHAIN_MAX_DEPTH: u32 = 8;
 
+/// How old a forked checkpoint gets, in milliseconds, before any rerun over it is saved.
+///
+/// Each such roll comes a day after the last save, so a chain rolls forward at most 7 times this
+/// way before [`CHAIN_MAX_AGE_MS`] retires it, under [`CHAIN_MAX_DEPTH`].
+pub const ROLL_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// How many tracked paths may change between a forked checkpoint's own commit and the Box's
+/// before a rerun over it is saved, as [`roll_due`] paces it.
+///
+/// High enough that a rerun a few commits on saves nothing.
+pub const ROLL_AFTER_PATHS: u64 = 50;
+
+/// Whether a rerun over a checkpoint saved `age_ms` ago, at `depth` in a chain set up from scratch
+/// `chain_age_ms` ago, whose tree is `behind` changed paths past that checkpoint's commit, is
+/// saved.
+///
+/// Age alone is enough. Distance is enough only while the chain is shallower than one roll, plus
+/// one per [`CHAIN_MAX_AGE_MS`] / ([`CHAIN_MAX_DEPTH`] - 1) of its age: a day. So a busy repo moves
+/// its base on the first rerun far behind, then about once a day, and its chain reaches depth 7
+/// at most before its age retires it, never [`CHAIN_MAX_DEPTH`].
+#[must_use]
+pub fn roll_due(age_ms: i64, behind: Option<u64>, depth: u32, chain_age_ms: i64) -> bool {
+    let pace = CHAIN_MAX_AGE_MS / i64::from(CHAIN_MAX_DEPTH - 1);
+    let paced = i64::from(depth) < 1 + chain_age_ms / pace;
+    age_ms >= ROLL_AFTER_MS || (paced && behind.is_some_and(|n| n >= ROLL_AFTER_PATHS))
+}
+
 /// A line that runs longer than this, in milliseconds, is checkpointed after it ends.
 pub const SLOW_LINE_MS: u64 = 20_000;
 

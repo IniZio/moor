@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
 use moor_core::domain::hands::HandsInc;
-use moor_core::domain::layers::{chain, checkpoint_after, LayerIdentity, LayerKey};
+use moor_core::domain::layers::{chain, checkpoint_after, roll_due, LayerIdentity, LayerKey};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, ProviderId};
@@ -48,6 +48,8 @@ struct RollFrom {
     depth: u32,
     /// When its chain was set up from scratch.
     root_at: Ts,
+    /// When the checkpoint it forked was saved.
+    saved_at: Ts,
 }
 
 /// A Box's setup layers: their keys, where their checkpoints live and how far its disk is.
@@ -99,6 +101,7 @@ impl Layered {
         self.roll = Some(RollFrom {
             depth: kept.depth,
             root_at: kept.chain_at,
+            saved_at: kept.created_at,
         });
     }
 
@@ -123,6 +126,21 @@ impl Layered {
     /// Whether a save of this rerun may replace the layers it forked.
     pub(super) const fn may_roll(&self) -> bool {
         self.reruns() && self.roll.is_some()
+    }
+
+    /// Whether a save of this rerun is due at `now`, its tree `behind` changed paths past the
+    /// commit of the checkpoint it forked, by [`roll_due`].
+    pub(super) fn roll_due(&self, now: Ts, behind: Option<u64>) -> bool {
+        let since = |t: Ts| now.as_millis() - t.as_millis();
+        self.roll
+            .is_some_and(|r| roll_due(since(r.saved_at), behind, r.depth, since(r.root_at)))
+    }
+
+    /// The commits the clone's probe counts changed paths from: the oldest one the disk's ignored
+    /// files may come from, and, on a rerun a save may roll forward, the commit the disk holds.
+    pub(super) fn probe(&self) -> Option<(&str, Option<&str>)> {
+        let rolls = self.forked_commit().filter(|_| self.may_roll());
+        Some((self.stale_from().or_else(|| self.forked_commit())?, rolls))
     }
 
     /// Whether the last line's layer is kept, for this Box's lines as they are now.
