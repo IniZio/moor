@@ -63,6 +63,17 @@ fn parse_name(name: &str) -> Result<WorkflowName, CommandError> {
     WorkflowName::parse(name).map_err(usage)
 }
 
+/// `field`'s repos, each `OWNER/NAME`.
+fn parse_repos(field: &str, repos: &[String]) -> Result<Vec<ForgeRepo>, CommandError> {
+    repos
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            ForgeRepo::parse(r).map_err(|_| usage(format!("{field}[{i}] must be OWNER/NAME")))
+        })
+        .collect()
+}
+
 /// `workflow-add`: checks every field and says which one is wrong.
 fn add(
     cx: &Cx,
@@ -75,19 +86,14 @@ fn add(
     let floor = cx.env().workflow_min_interval();
     let schedule = WorkflowSchedule::parse_with_min_interval(&req.cron, &req.timezone, floor)
         .map_err(usage)?;
-    let repos = req
-        .repos
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            ForgeRepo::parse(r).map_err(|_| usage(format!("repos[{i}] must be OWNER/NAME")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let repos = parse_repos("repos", &req.repos)?;
+    let also = parse_repos("also", &req.also)?;
     let timeout = req
         .timeout_minutes
         .map_or(Ok(TimeoutMinutes::DEFAULT), TimeoutMinutes::new)
         .map_err(usage)?;
     let mut def = WorkflowDef::new(name.clone(), schedule, repos, &req.prompt, (true, timeout))
+        .and_then(|d| d.with_also(also))
         .map_err(usage)?;
     def.origin = match (origin_front, &req.origin_key) {
         (Some(front), Some(key)) => Some(WorkflowOrigin {
@@ -163,6 +169,7 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
         cron: w.schedule.expr().to_owned(),
         timezone: w.schedule.zone().to_owned(),
         repos: w.repos.iter().map(ToString::to_string).collect(),
+        also: w.also.iter().map(ToString::to_string).collect(),
         prompt: w.prompt.clone(),
         enabled,
         disabled_reason,

@@ -185,6 +185,7 @@ pub(crate) const SPECS: [Spec; 16] = [
                     "cron": {"type": "string", "description": "Five fields: minute, hour, day of month, month, day of week."},
                     "timezone": {"type": "string", "description": "IANA time zone the cron is read in, such as Europe/London."},
                     "repos": {"type": "array", "items": {"type": "string"}, "description": "Each as owner/name; every firing starts one Box in each."},
+                    "also": {"type": "array", "items": {"type": "string"}, "description": "More repos, each as owner/name and each one the starter can push to, that every Box clones beside its own repo so its agent can read and push to them too. None when left out."},
                     "prompt": {"type": "string", "description": "What each Box's agent should do, in plain words."},
                     "timeout_minutes": {"type": "integer", "description": "Minutes the agent may work, counted from when it starts, before the run is stopped, 1 to 720. A run whose agent has not started within an hour of firing is refused and its Box closed, whatever this is."}
                 },
@@ -195,7 +196,7 @@ pub(crate) const SPECS: [Spec; 16] = [
     },
     Spec {
         name: "list_workflows",
-        description: "List the thread starter's workflows: cron, repos, prompt, whether each is enabled and the latest run of each repo. Works only when the thread's starter wrote in this turn.",
+        description: "List the thread starter's workflows: cron, repos, also repos, prompt, whether each is enabled and the latest run of each repo. Works only when the thread's starter wrote in this turn.",
         input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
     },
     Spec {

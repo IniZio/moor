@@ -29,6 +29,9 @@ pub enum WorkflowError {
     /// The same repo is listed twice.
     #[error("repo `{0}` is listed twice")]
     DuplicateRepo(String),
+    /// Two repos one Box would clone share a name, and so a folder.
+    #[error("repos `{0}` and `{1}` are both named {name}: each repo of a Box needs its own name", name = .1.name)]
+    SameName(ForgeRepo, ForgeRepo),
     /// The prompt is empty.
     #[error("a workflow needs a prompt")]
     NoPrompt,
@@ -147,6 +150,9 @@ pub struct WorkflowDef {
     pub schedule: WorkflowSchedule,
     /// The repos it starts a Box in, each firing; never empty, never repeated.
     pub repos: Vec<ForgeRepo>,
+    /// The repos each started Box clones beside its own; none of them shares a name with
+    /// another or with a repo above.
+    pub also: Vec<ForgeRepo>,
     /// The opaque prompt each started Box gets.
     pub prompt: String,
     /// Whether it should fire.
@@ -185,11 +191,32 @@ impl WorkflowDef {
             name,
             schedule,
             repos,
+            also: Vec::new(),
             prompt: prompt.to_owned(),
             enabled,
             timeout,
             origin: None,
         })
+    }
+
+    /// Sets the repos each started Box clones beside its own. Each Box clones every repo into
+    /// a folder of its name, so no two of one firing's repos may share a name.
+    ///
+    /// # Errors
+    /// [`WorkflowError::DuplicateRepo`] or [`WorkflowError::SameName`].
+    pub fn with_also(mut self, also: Vec<ForgeRepo>) -> Result<Self, WorkflowError> {
+        for (i, r) in also.iter().enumerate() {
+            let mut earlier = self.repos.iter().chain(also.iter().take(i));
+            if let Some(prev) = earlier.find(|s| s.name.eq_ignore_ascii_case(&r.name)) {
+                return Err(if prev == r {
+                    WorkflowError::DuplicateRepo(r.to_string())
+                } else {
+                    WorkflowError::SameName(prev.clone(), r.clone())
+                });
+            }
+        }
+        self.also = also;
+        Ok(self)
     }
 }
 
@@ -206,6 +233,8 @@ pub struct Workflow {
     pub schedule: WorkflowSchedule,
     /// The repos it starts a Box in, each firing.
     pub repos: Vec<ForgeRepo>,
+    /// The repos each started Box clones beside its own.
+    pub also: Vec<ForgeRepo>,
     /// The opaque prompt each started Box gets.
     pub prompt: String,
     /// Whether it fires.

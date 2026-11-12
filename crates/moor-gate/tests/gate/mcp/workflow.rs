@@ -12,8 +12,8 @@ fn add_workflow_sends_workflow_add_as_the_token_s_person_and_no_origin() {
         &token,
         "add_workflow",
         json!({"name": "daily-fix", "cron": "0 9 * * *", "timezone": "Europe/London",
-            "repos": ["acme/web", "acme/api"], "prompt": "fix the alerts",
-            "timeout_minutes": 90}),
+            "repos": ["acme/web", "acme/api"], "also": ["acme/lib"],
+            "prompt": "fix the alerts", "timeout_minutes": 90}),
     );
     assert_ne!(result["isError"], true, "{result}");
     assert_eq!(
@@ -21,7 +21,7 @@ fn add_workflow_sends_workflow_add_as_the_token_s_person_and_no_origin() {
         json!({"cmd": "as", "identity": "authgear:alice-sub", "request": {
             "cmd": "workflow-add", "name": "daily-fix", "cron": "0 9 * * *",
             "timezone": "Europe/London", "repos": ["acme/web", "acme/api"],
-            "prompt": "fix the alerts", "timeout_minutes": 90}})
+            "also": ["acme/lib"], "prompt": "fix the alerts", "timeout_minutes": 90}})
     );
 }
 

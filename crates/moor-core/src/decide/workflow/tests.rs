@@ -33,6 +33,7 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         name: WorkflowName::parse("fix").unwrap(),
         schedule: WorkflowSchedule::parse(cron, zone).unwrap(),
         repos: repos.iter().map(|r| repo(r)).collect(),
+        also: Vec::new(),
         prompt: "go".to_owned(),
         state,
         timeout: TimeoutMinutes::DEFAULT,

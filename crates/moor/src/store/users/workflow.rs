@@ -31,6 +31,8 @@ struct WorkflowRow {
     timezone: String,
     /// `repos`, as JSON.
     repos: String,
+    /// `also`, as JSON.
+    also: String,
     /// `prompt`.
     prompt: String,
     /// `enabled_at`.
@@ -50,7 +52,7 @@ struct WorkflowRow {
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 14] = [
+const WORKFLOW_COLS: [Workflows; 15] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -65,6 +67,7 @@ const WORKFLOW_COLS: [Workflows; 14] = [
     Workflows::UpdatedAt,
     Workflows::OriginFront,
     Workflows::OriginKey,
+    Workflows::Also,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -89,6 +92,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         updated_at: r.get(11)?,
         origin_front: r.get(12)?,
         origin_key: r.get(13)?,
+        also: r.get(14)?,
     })
 }
 
@@ -109,6 +113,7 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         )
         .map_err(|e| corrupt("schedule", e))?,
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
+        also: serde_json::from_str(&row.also).map_err(|e| corrupt("also", e))?,
         prompt: row.prompt,
         state: row.enabled_at.map_or(
             WorkflowState::Disabled {
@@ -133,7 +138,7 @@ fn insert_workflow(
     conn: &dyn Db,
     owner: UserId,
     def: &WorkflowDef,
-    repos: String,
+    (repos, also): (String, String),
     now: i64,
 ) -> Result<i64, StoreError> {
     Ok(conn.row(
@@ -145,6 +150,7 @@ fn insert_workflow(
                 Workflows::Cron,
                 Workflows::Timezone,
                 Workflows::Repos,
+                Workflows::Also,
                 Workflows::Prompt,
                 Workflows::EnabledAt,
                 Workflows::TimeoutMinutes,
@@ -159,6 +165,7 @@ fn insert_workflow(
                 def.schedule.expr().into(),
                 def.schedule.zone().into(),
                 repos.into(),
+                also.into(),
                 def.prompt.as_str().into(),
                 def.enabled.then_some(now).into(),
                 i64::from(def.timeout.minutes()).into(),
@@ -184,6 +191,7 @@ impl Store {
     ) -> Result<WorkflowId, StoreError> {
         let now = self.now().as_millis();
         let repos = serde_json::to_string(&def.repos)?;
+        let also = serde_json::to_string(&def.also)?;
         let mut writer = self.writer();
         let tx = writer.immediate()?;
         let found: Option<(i64, Option<i64>, Option<String>)> = tx
@@ -209,6 +217,7 @@ impl Store {
                     .value(Workflows::Cron, def.schedule.expr())
                     .value(Workflows::Timezone, def.schedule.zone())
                     .value(Workflows::Repos, repos)
+                    .value(Workflows::Also, also)
                     .value(Workflows::Prompt, def.prompt.as_str())
                     .value(Workflows::EnabledAt, enabled_at)
                     .value(Workflows::DisabledReason, reason)
@@ -226,7 +235,7 @@ impl Store {
             )?;
             id
         } else {
-            insert_workflow(&tx, owner, def, repos, now)?
+            insert_workflow(&tx, owner, def, (repos, also), now)?
         };
         tx.commit()?;
         drop(writer);

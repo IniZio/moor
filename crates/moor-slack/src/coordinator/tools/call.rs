@@ -82,6 +82,8 @@ pub(crate) enum Call {
         timezone: String,
         /// The repos, each `owner/name`.
         repos: Vec<String>,
+        /// The repos each Box clones beside its own, each `owner/name`.
+        also: Vec<String>,
         /// What each Box's agent does.
         prompt: String,
         /// Minutes a run may take, when given.
@@ -188,6 +190,13 @@ impl Call {
                     })
                     .filter(|r: &Vec<String>| !r.is_empty())
                     .ok_or_else(|| format!("{name} needs a non-empty list `repos`."))?,
+                also: match args.get("also") {
+                    None | Some(Value::Null) => Vec::new(),
+                    Some(v) => v
+                        .as_array()
+                        .and_then(|r| r.iter().map(|x| x.as_str().map(str::to_owned)).collect())
+                        .ok_or_else(|| format!("{name} needs `also` as a list of owner/name."))?,
+                },
                 prompt: text("prompt")?,
                 timeout_minutes: number(name, args, "timeout_minutes").ok(),
             }),

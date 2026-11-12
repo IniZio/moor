@@ -27,6 +27,10 @@ struct AddArgs {
     timezone: String,
     /// The repos, each as `owner/name`, that each firing starts a Box in.
     repos: Vec<String>,
+    /// More repos, each as `owner/name` and each one you can push to, that every Box of the
+    /// workflow clones beside its own repo; none when left out.
+    #[serde(default)]
+    also: Vec<String>,
     /// What each Box's agent is asked to do.
     prompt: String,
     /// Minutes a run may take before it is stopped, 1 to 720; 180 when left out.
@@ -63,7 +67,7 @@ impl Tools {
     /// Adds or replaces a workflow.
     #[tool(
         description = "Add a workflow: on its cron, moor starts a Box in each of the repos with \
-                       your prompt. Every run acts as you, with your credentials, and its agent \
+                       your prompt, cloning the `also` repos beside it. Every run acts as you, with your credentials, and its agent \
                        may push branches and open pull requests in those repos; it cannot merge \
                        them. A run is skipped while the previous run for that repo is unfinished, \
                        and a run past timeout_minutes is stopped. Three failed runs in a row for \
@@ -82,6 +86,7 @@ impl Tools {
             cron: args.cron,
             timezone: args.timezone,
             repos: args.repos,
+            also: args.also,
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
             origin_key: None,
@@ -91,7 +96,7 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron, time zone, repos, prompt, timeout, whether each \
+        description = "List your workflows: cron, time zone, repos, also repos, prompt, timeout, whether each \
                        is enabled, why it was disabled if the controller disabled it, its next \
                        due time and the latest run of each repo with its outcome and Box. Needs \
                        the moor:read scope."

@@ -58,6 +58,7 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
         cron: "0 9 * * *".to_owned(),
         timezone: "UTC".to_owned(),
         repos: vec!["o/n".to_owned()],
+        also: Vec::new(),
         prompt: "p".to_owned(),
         timeout_minutes: None,
         origin_key: Some("k".to_owned()),

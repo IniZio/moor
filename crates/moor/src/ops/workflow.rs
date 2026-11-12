@@ -38,6 +38,8 @@ pub(crate) struct StartJob {
     pub(crate) identity: Identity,
     /// The repo.
     pub(crate) repo: ForgeRepo,
+    /// The repos the Box clones beside `repo`.
+    pub(crate) also: Vec<ForgeRepo>,
     /// The due time the claim answers.
     pub(crate) due_at: Ts,
     /// The Box to start.
@@ -249,6 +251,7 @@ fn claim(
             owner: w.owner,
             identity,
             repo: repo.clone(),
+            also: w.also.clone(),
             due_at,
             name,
             prompt: w.prompt.clone(),
@@ -320,7 +323,8 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
         cold: false,
         resume: false,
         repo: Some(job.repo.clone()),
-        also: None,
+        // The controller's own `box.also` is not the owner's choice, so it never applies.
+        also: Some(job.also.clone()),
         parent: None,
         identity: None,
     };

@@ -29,12 +29,30 @@ pub(super) fn run(scope: &mut Scope<'_>, call: &Call) -> rusqlite::Result<Reply>
             "Only <@{by}> can use workflows in this thread, and <@{by}> wrote nothing in this turn."
         )));
     }
-    let request = match call {
+    let Some(request) = request(call, &origin_key(scope.channel, scope.thread_ts)) else {
+        return Ok(Reply::refused("Not a workflow tool."));
+    };
+    Ok(match (scope.call)(request) {
+        Ok(r) if r.class == ExitClass::Ok => {
+            if matches!(call, Call::AddWorkflow { .. }) {
+                db.follow_workflows(&by)?;
+            }
+            Reply::done(r.value.map_or_else(|| "done".to_owned(), |v| v.to_string()))
+        }
+        Ok(r) => Reply::refused(format!("The controller refused: {}", error_text(r))),
+        Err(e) => Reply::refused(format!("The controller did not answer: {e}")),
+    })
+}
+
+/// The request a workflow `call` sends, its runs keyed by `origin`; `None` for another call.
+fn request(call: &Call, origin: &str) -> Option<Request> {
+    Some(match call {
         Call::AddWorkflow {
             name,
             cron,
             timezone,
             repos,
+            also,
             prompt,
             timeout_minutes,
         } => Request::WorkflowAdd(WorkflowAddReq {
@@ -43,9 +61,10 @@ pub(super) fn run(scope: &mut Scope<'_>, call: &Call) -> rusqlite::Result<Reply>
             cron: cron.clone(),
             timezone: timezone.clone(),
             repos: repos.clone(),
+            also: also.clone(),
             prompt: prompt.clone(),
             timeout_minutes: *timeout_minutes,
-            origin_key: Some(origin_key(scope.channel, scope.thread_ts)),
+            origin_key: Some(origin.to_owned()),
         }),
         Call::ListWorkflows => Request::WorkflowList(AsReq { identity: None }),
         Call::RemoveWorkflow { name } => Request::WorkflowRemove(WorkflowRemoveReq {
@@ -64,16 +83,6 @@ pub(super) fn run(scope: &mut Scope<'_>, call: &Call) -> rusqlite::Result<Reply>
             after: *after,
             limit: *limit,
         }),
-        _ => return Ok(Reply::refused("Not a workflow tool.")),
-    };
-    Ok(match (scope.call)(request) {
-        Ok(r) if r.class == ExitClass::Ok => {
-            if matches!(call, Call::AddWorkflow { .. }) {
-                db.follow_workflows(&by)?;
-            }
-            Reply::done(r.value.map_or_else(|| "done".to_owned(), |v| v.to_string()))
-        }
-        Ok(r) => Reply::refused(format!("The controller refused: {}", error_text(r))),
-        Err(e) => Reply::refused(format!("The controller did not answer: {e}")),
+        _ => return None,
     })
 }

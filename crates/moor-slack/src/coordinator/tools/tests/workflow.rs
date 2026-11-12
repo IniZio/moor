@@ -24,7 +24,8 @@ fn add() -> Call {
     Call::parse(
         "add_workflow",
         &json!({"name": "sec", "cron": "0 9 * * *", "timezone": "Asia/Hong_Kong",
-            "repos": ["acme/api", "acme/web"], "prompt": "fix security alerts"}),
+            "repos": ["acme/api", "acme/web"], "also": ["acme/lib"],
+            "prompt": "fix security alerts"}),
     )
     .unwrap()
 }
@@ -52,11 +53,30 @@ fn adding_a_workflow_names_this_thread_as_its_origin() {
     };
     assert_eq!(req.origin_key.as_deref(), Some("C1/1.0"));
     assert_eq!((req.identity.is_none(), req.repos.len()), (true, 2));
+    assert_eq!(req.also, ["acme/lib"]);
     assert_eq!(
         db.workflow_owners().unwrap(),
         ["U1"],
         "the reporter follows the starter now"
     );
+}
+
+#[test]
+fn also_is_optional_and_must_be_a_list_of_names() {
+    let args = |also: serde_json::Value| {
+        let mut a = json!({"name": "sec", "cron": "0 9 * * *", "timezone": "UTC",
+            "repos": ["acme/api"], "prompt": "go"});
+        if !also.is_null() {
+            a["also"] = also;
+        }
+        Call::parse("add_workflow", &a)
+    };
+    let Ok(Call::AddWorkflow { also, .. }) = args(serde_json::Value::Null) else {
+        panic!("a workflow without also parses")
+    };
+    assert!(also.is_empty());
+    assert!(args(json!("acme/lib")).is_err());
+    assert!(args(json!([1])).is_err());
 }
 
 #[test]
