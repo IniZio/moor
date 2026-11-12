@@ -19,6 +19,10 @@ The agent calls `add_workflow` with these values:
 - `cron`, five fields. `0 9 * * 1-5` is 9:00 on weekdays.
 - `timezone`, an IANA name such as `Europe/London`.
 - `repos`, one or more `owner/name`. Each firing starts one Box per repo.
+- `also`, optional, more `owner/name` repos that every Box clones beside its
+  own, so its agent can read and push to them too. Each must be a repo you can
+  push to, and no two repos of one Box may share a name. None by default: the
+  controller's `box.also` never applies to a workflow.
 - `prompt`, what each Box's agent is asked to do.
 - `timeout_minutes`, optional, 180 by default.
 

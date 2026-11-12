@@ -24,6 +24,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         cron: cron.to_owned(),
         timezone: tz.to_owned(),
         repos: vec!["o/n".to_owned()],
+        also: Vec::new(),
         prompt: "fix what is broken".to_owned(),
         timeout_minutes: None,
         origin_key: None,
@@ -81,7 +82,45 @@ fn an_added_workflow_is_listed_with_its_next_due_time() {
         (json!("daily"), json!(true), json!(180))
     );
     assert_eq!(w["next_due"], 9 * 3_600_000);
+    assert_eq!(w["also"], json!([]));
     assert_eq!(w["last_runs"], json!([]));
+}
+
+#[test]
+fn the_repos_a_workflow_clones_beside_each_box_are_stored_and_listed() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    let mut req = add_req("daily", "0 9 * * *", "UTC");
+    req.also = vec!["o/lib".to_owned(), "p/deploy".to_owned()];
+    ok(&f, &who, add(req.clone(), None));
+    let listed = ok(&f, &who, cmd(WorkflowCmd::List));
+    assert_eq!(listed["workflows"][0]["also"], json!(["o/lib", "p/deploy"]));
+
+    req.also = vec!["o/lib".to_owned()];
+    ok(&f, &who, add(req, None));
+    let listed = ok(&f, &who, cmd(WorkflowCmd::List));
+    assert_eq!(
+        listed["workflows"][0]["also"],
+        json!(["o/lib"]),
+        "adding the name again replaces the list"
+    );
+}
+
+#[test]
+fn an_also_repo_that_would_share_a_folder_is_refused() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    let try_add = |also: &[&str]| {
+        let mut req = add_req("daily", "0 9 * * *", "UTC");
+        req.also = also.iter().map(|s| (*s).to_owned()).collect();
+        refusal(&f, &who, add(req, None))
+    };
+    assert!(try_add(&["o/lib", "nope"]).contains("also[1]"));
+    assert!(try_add(&["o/n"]).contains("o/n"));
+    let clash = try_add(&["p/N"]);
+    assert!(clash.contains("o/n") && clash.contains("p/N"), "{clash}");
+    let listed = ok(&f, &who, cmd(WorkflowCmd::List));
+    assert_eq!(listed["workflows"], json!([]), "nothing was stored");
 }
 
 #[test]

@@ -44,6 +44,9 @@ pub struct WorkflowView {
     pub timezone: String,
     /// Its repos.
     pub repos: Vec<String>,
+    /// The repos each of its Boxes clones beside its own.
+    #[serde(default)]
+    pub also: Vec<String>,
     /// Its prompt.
     pub prompt: String,
     /// Whether it fires.

@@ -104,6 +104,40 @@ fn a_definition_needs_repos_and_a_prompt() {
 }
 
 #[test]
+fn also_repos_each_need_a_name_no_other_repo_of_the_box_has() {
+    let def = || {
+        WorkflowDef::new(
+            WorkflowName::parse("fix").unwrap(),
+            schedule(),
+            vec![repo("o/app"), repo("o/web")],
+            "go",
+            (true, TimeoutMinutes::DEFAULT),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        def()
+            .with_also(vec![repo("o/lib"), repo("p/deploy")])
+            .unwrap()
+            .also,
+        vec![repo("o/lib"), repo("p/deploy")]
+    );
+    assert_eq!(def().also, vec![]);
+    assert_eq!(
+        def().with_also(vec![repo("o/lib"), repo("o/lib")]),
+        Err(WorkflowError::DuplicateRepo("o/lib".to_owned()))
+    );
+    assert_eq!(
+        def().with_also(vec![repo("o/web")]),
+        Err(WorkflowError::DuplicateRepo("o/web".to_owned()))
+    );
+    assert_eq!(
+        def().with_also(vec![repo("p/App")]),
+        Err(WorkflowError::SameName(repo("o/app"), repo("p/App")))
+    );
+}
+
+#[test]
 fn a_timeout_is_one_to_720_minutes_and_defaults_to_three_hours() {
     assert_eq!(TimeoutMinutes::default().minutes(), 180);
     assert_eq!(TimeoutMinutes::new(1).unwrap().minutes(), 1);

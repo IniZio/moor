@@ -20,6 +20,10 @@ pub struct WorkflowAddReq {
     pub timezone: String,
     /// The repos, each `OWNER/NAME`, that each firing starts a Box in.
     pub repos: Vec<String>,
+    /// The repos, each `OWNER/NAME`, that each started Box clones beside its own; none when
+    /// absent. The controller's own `box.also` never applies to a workflow.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<String>,
     /// What each Box's agent is asked to do.
     pub prompt: String,
     /// Minutes a run may take before it is stopped; the default when absent.

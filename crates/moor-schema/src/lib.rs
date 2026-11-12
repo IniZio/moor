@@ -37,6 +37,7 @@ pub mod tables;
 mod vm_inc;
 mod wanted_effect;
 mod warm_starts;
+mod workflow_also;
 mod workflow_changes;
 mod workflows;
 
@@ -171,6 +172,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V77__launch_facts",
         write: launch_facts::write,
+    },
+    Step {
+        name: "V78__workflow_also",
+        write: workflow_also::write,
     },
 ];
 
