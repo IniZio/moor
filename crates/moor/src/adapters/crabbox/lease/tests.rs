@@ -103,7 +103,7 @@ const CALLS: [(&str, Call); 12] = [
         drop(c.batch(&handle(), &[], &steps, Deadline(Duration::from_secs(1))));
     }),
     ("sleep", |c| {
-        drop(c.sleep(&handle(), moor_core::seam::driver::PausePublish::Denied));
+        drop(c.sleep(&handle()));
     }),
     ("wake", |c| drop(c.wake(&handle()))),
 ];

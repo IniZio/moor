@@ -62,12 +62,12 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
-    let Some(parked) = sleep_parked(cx, store, row, &handle, settled(cx, store, row)?)? else {
+    let Some(slept) = sleep_parked(cx, store, row, &handle, settled(cx, store, row)?)? else {
         return Err(refuse(
             "the Box's machine was replaced while it was asked to sleep".into(),
         ));
     };
-    match parked.outcome {
+    match slept {
         SleepOutcome::Slept | SleepOutcome::Native => {
             let fields = HandsFields {
                 sleep_reason: Field::Clear,
@@ -79,7 +79,6 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
                         auto: false,
                         reason: None,
                     })
-                    .cache_save(parked.cache_save)
                     .hands_input(row.hands_inc(), HandsInput::Sleep)
                     .hands(row.hands_inc(), fields),
             )?;

@@ -106,8 +106,7 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
     );
     let handle = BoxHandle::new("sprites/moor-t7-ab12cd");
     c.acquire(&req("sprites", None)).unwrap();
-    c.sleep(&handle, moor_core::seam::driver::PausePublish::Denied)
-        .unwrap();
+    c.sleep(&handle).unwrap();
     c.wake(&handle).unwrap();
     let _ = c.exec(&handle, &true_cmd(), Deadline(Duration::from_secs(5)));
     let _tunnel = c

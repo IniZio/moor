@@ -44,8 +44,6 @@ const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
 const SSH: &str = "ssh";
 /// Feature token: the provider keeps cache volumes across Boxes.
 const CACHE_VOLUME: &str = "cache-volume";
-/// Feature token: a pause can save the lease's cache volumes.
-const CACHE_SAVE_ON_PAUSE: &str = "cache-save-on-pause";
 
 /// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
@@ -62,7 +60,6 @@ fn derive(entry: &Entry) -> DriverCaps {
         reverse_tunnel: entry.has(SSH),
         has_workdir: true,
         cache_volumes: entry.has(CACHE_VOLUME),
-        cache_save_on_pause: entry.has(CACHE_SAVE_ON_PAUSE),
     }
 }
 
