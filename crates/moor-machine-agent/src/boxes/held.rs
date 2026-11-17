@@ -30,7 +30,7 @@ pub(crate) struct Held {
     /// What it was opened from.
     pub(crate) spec: Spec,
     /// The environment the controller last gave it.
-    pub(crate) env: Env,
+    pub(crate) box_env: Env,
     /// It grows whenever the work place's processes were lost: the first open, and every wake.
     pub(crate) generation: u32,
     /// Whether the work place has a baseline.
@@ -46,7 +46,7 @@ impl Held {
         Self {
             want: Want::Awake,
             spec,
-            env: Env::default(),
+            box_env: Env::default(),
             generation: 0,
             sealed: false,
             broken: None,

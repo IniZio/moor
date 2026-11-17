@@ -24,7 +24,7 @@ struct Fake {
     /// Whether its work place is down while the agent place runs.
     work_down: bool,
     /// What `apply_env` last gave it.
-    env: Env,
+    box_env: Env,
     /// Whether it was sealed.
     sealed: bool,
 }
@@ -114,7 +114,7 @@ impl BoxProvider for FakeProvider {
     }
 
     async fn apply_env(&self, slug: &Slug, env: &Env) -> Result<(), ProvideError> {
-        self.with(slug, |fake| fake.env = env.clone())
+        self.with(slug, |fake| fake.box_env = env.clone())
     }
 
     async fn observe(&self) -> Result<Vec<Observed>, ProvideError> {
@@ -143,7 +143,7 @@ impl BoxProvider for FakeProvider {
                     .join(format!("{}-home", place.as_str())),
             )
             .env("MOOR_PLACE", place.as_str())
-            .envs(fake.env.vars)
+            .envs(fake.box_env.vars)
             .arg("-c");
         if place == Place::Work && fake.work_down {
             // The carrier of a place that is down says so as every provider does: exit 75.
