@@ -74,7 +74,7 @@ fn latest_of(r: &Rig, id: WorkflowId, repo: &ForgeRepo) -> WorkflowRun {
 fn claim_only(r: &Rig) -> Vec<StartJob> {
     r.advance_to(CLAIMED);
     let jobs = RefCell::new(Vec::new());
-    tick(&r.cx, &|j| jobs.borrow_mut().push(j), &|| false);
+    tick(&r.cx, (&|j| jobs.borrow_mut().push(j), &|_| {}), &|| false);
     jobs.into_inner()
 }
 

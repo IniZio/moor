@@ -28,6 +28,17 @@ impl FakeDriver {
                 return Err(DriverError::NotFound);
             }
         }
+        {
+            let mut s = self.st();
+            let line = spec.argv.join(" ");
+            if let Some(e) = s.exec_err(&line) {
+                return Err(e);
+            }
+            let ends = s.exec_ends.iter().find(|(n, _)| line.contains(n.as_str()));
+            if let Some(out) = ends.map(|(_, out)| *out).or_else(|| s.end_once(&line)) {
+                return Ok(out);
+            }
+        }
         let argv = match spec.argv.as_slice() {
             [sh, c, _prelude, name, rest @ ..] if sh == "sh" && c == "-c" && name == "sh" => rest,
             all => all,

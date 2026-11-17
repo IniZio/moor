@@ -105,11 +105,12 @@ impl Tools {
                        the run; every other step needs an `ok` edge to a step id, and every step \
                        must lead on to a deliver step. A `fail` edge goes to the step to run \
                        when a step cannot be done; without one the run fails. Give a work step \
-                       that loops back `max_tries`, 1 to 5. `check` steps (moor runs a command \
-                       and reads its exit code) and `approve` steps (the owner says yes or no) \
-                       are in the schema but moor does not run them yet, so they are refused. \
-                       Use a check step later for anything a command can decide, and an approve \
-                       step before anything risky the prompt names. When you change an \
+                       that loops back `max_tries`, 1 to 5. A `check` step is run by moor in the \
+                       Box, not by the agent: exit 0 follows `ok`, any other exit follows \
+                       `fail`, and the command may run twice if a connection drops, so it must \
+                       be safe to repeat. Use a check step for anything a command can decide. \
+                       `approve` steps (the owner says yes or no) are in the schema but moor \
+                       does not run them yet, so they are refused. When you change an \
                        existing workflow, read its plan with list_workflows and keep the ids of \
                        the steps that did not change, so run history stays attached to them. \
                        Leave `made_from` out of a plan you wrote for the prompt you send; \

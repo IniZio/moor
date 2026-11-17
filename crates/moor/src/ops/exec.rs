@@ -121,7 +121,8 @@ fn within(
             exit: None,
             timed_out: late(),
         }),
-        Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
+        // The driver's own error stays the source, so a caller can tell a cut link from the rest.
+        Err(e) => Err(CommandError::new(ErrorKind::Failed, e)),
     }
 }
 

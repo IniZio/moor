@@ -23,6 +23,33 @@ pub enum HistoryEntry {
         /// The try they were sent for.
         try_n: u8,
     },
+    /// The agent stopped without the step being done, and was sent the step again. A step gets
+    /// one reminder per try.
+    Reminded {
+        /// The step.
+        step: StepId,
+        /// The try.
+        try_n: u8,
+    },
+    /// The controller ran a check and it ended with an exit code.
+    Checked {
+        /// The step.
+        step: StepId,
+        /// The try.
+        try_n: u8,
+        /// The exit code; 0 passes. A check stopped at its deadline records -1.
+        exit: i32,
+        /// The last 4 KiB of the check's output.
+        tail: String,
+    },
+    /// A check's exec stream was cut before it ended. That is no result, so the check runs again
+    /// on the next tick.
+    CheckLost {
+        /// The step.
+        step: StepId,
+        /// The try.
+        try_n: u8,
+    },
     /// The step was entered more often than its `max_tries` and followed its fail edge.
     Exhausted {
         /// The step.

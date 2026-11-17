@@ -17,7 +17,8 @@ pub struct RunBoxFacts {
     pub lifecycle: BoxLifecycle,
     /// The state of the primary Session. An agent waiting on background work is still Working.
     pub session: SessionState,
-    /// When the Box last became Idle; none while it is not.
+    /// When the agent last went quiet; none while it is not. For an asleep Box, when its agent
+    /// went quiet before the sleep.
     pub idle_since: Option<Ts>,
     /// Whether the last agent launch failed and no later launch succeeded.
     pub launch_failed: bool,
