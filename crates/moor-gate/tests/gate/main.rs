@@ -488,6 +488,7 @@ mod listen;
 mod login;
 mod mcp;
 mod pair;
+mod repos;
 mod secrets;
 mod setup;
 

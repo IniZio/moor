@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
 
 use moor_core::response::{ErrorDetail, ErrorKind, ErrorView, Response};
@@ -13,6 +13,7 @@ use moor_testkit::oidc::{now, Issuer};
 use serde_json::{json, Value};
 
 use super::login::get;
+use super::repos::{self, Configs};
 use super::CLIENT_ID;
 
 /// Each enrolled identity's secrets, by name.
@@ -24,6 +25,8 @@ pub(super) struct World {
     /// Every request the controller got, `secret-set` values redacted.
     pub(super) seen: Arc<Mutex<Vec<Value>>>,
     pub(super) vault: Arc<Mutex<Vault>>,
+    /// The repo configs the controller holds.
+    pub(super) configs: Arc<Mutex<Configs>>,
     _dir: tempfile::TempDir,
 }
 
@@ -42,7 +45,13 @@ fn err(message: &str, detail: Option<ErrorDetail>) -> Response {
 }
 
 /// What the controller answers `inner` from `who`; `first` is what a new user starts with.
-fn answer(vault: &mut Vault, first: &[(&str, &str)], who: &str, inner: &Value) -> Response {
+fn answer(
+    state: (&mut Vault, &mut Configs),
+    first: &[(&str, &str)],
+    who: &str,
+    inner: &Value,
+) -> Response {
+    let (vault, configs) = state;
     match inner["cmd"].as_str().unwrap_or_default() {
         "enroll" => {
             vault.entry(who.to_owned()).or_insert_with(|| {
@@ -70,7 +79,7 @@ fn answer(vault: &mut Vault, first: &[(&str, &str)], who: &str, inner: &Value) -
         }
         "node-list" => Response::ok("x", Some(nodes())),
         "start-needs" | "start" => needs(vault, who, inner),
-        _ => Response::ok("x", None),
+        cmd => repos::answer(configs, cmd, who, inner),
     }
 }
 
@@ -105,6 +114,39 @@ fn needs(vault: &Vault, who: &str, inner: &Value) -> Response {
     refused
 }
 
+/// What one controller connection shares: the requests seen, the vault and the repo configs.
+type Kept = (
+    Arc<Mutex<Vec<Value>>>,
+    Arc<Mutex<Vault>>,
+    Arc<Mutex<Configs>>,
+);
+
+/// Answers the requests on `stream` until it closes.
+fn serve(stream: &UnixStream, first: &[(&str, &str)], kept: &Kept) {
+    let (seen, vault, configs) = kept;
+    let mut reply = stream.try_clone().unwrap();
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        let frame: Value = serde_json::from_str(&line).unwrap();
+        if frame["frame"] == "hello" {
+            writeln!(reply, "{line}").unwrap();
+            continue;
+        }
+        let who = frame["request"]["identity"].as_str().unwrap_or_default();
+        let inner = &frame["request"]["request"];
+        let mut logged = inner.clone();
+        if logged["cmd"] == "secret-set" {
+            logged["value"] = json!("<redacted>");
+        }
+        seen.lock()
+            .unwrap()
+            .push(json!({"who": who, "request": logged}));
+        let state = (&mut *vault.lock().unwrap(), &mut *configs.lock().unwrap());
+        let envelope = answer(state, first, who, inner);
+        let out = json!({"frame": "response", "id": frame["id"], "envelope": envelope});
+        writeln!(reply, "{out}").unwrap();
+    }
+}
+
 /// A gate with `/mcp`, with browser sign-in when `login` is set; each new user starts with
 /// the secrets in `first`.
 pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)]) -> World {
@@ -112,34 +154,12 @@ pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)])
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
     let listener = UnixListener::bind(&socket).unwrap();
-    let (seen, vault) = (Arc::default(), Arc::default());
-    let (kept, kept_vault): (Arc<Mutex<Vec<Value>>>, Arc<Mutex<Vault>>) =
-        (Arc::clone(&seen), Arc::clone(&vault));
+    let (seen, vault, configs) = (Arc::default(), Arc::default(), Arc::default());
+    let kept = (Arc::clone(&seen), Arc::clone(&vault), Arc::clone(&configs));
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            let (seen, vault) = (kept.clone(), kept_vault.clone());
-            std::thread::spawn(move || {
-                let mut reply = stream.try_clone().unwrap();
-                for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                    let frame: Value = serde_json::from_str(&line).unwrap();
-                    if frame["frame"] == "hello" {
-                        writeln!(reply, "{line}").unwrap();
-                        continue;
-                    }
-                    let who = frame["request"]["identity"].as_str().unwrap_or_default();
-                    let inner = &frame["request"]["request"];
-                    let mut logged = inner.clone();
-                    if logged["cmd"] == "secret-set" {
-                        logged["value"] = json!("<redacted>");
-                    }
-                    seen.lock()
-                        .unwrap()
-                        .push(json!({"who": who, "request": logged}));
-                    let envelope = answer(&mut vault.lock().unwrap(), first, who, inner);
-                    let out = json!({"frame": "response", "id": frame["id"], "envelope": envelope});
-                    writeln!(reply, "{out}").unwrap();
-                }
-            });
+            let kept = kept.clone();
+            std::thread::spawn(move || serve(&stream, first, &kept));
         }
     });
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -163,6 +183,7 @@ pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)])
         issuer,
         seen,
         vault,
+        configs,
         _dir: dir,
     }
 }
