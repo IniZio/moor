@@ -130,51 +130,6 @@ pub enum ExtraEvent {
         /// Whether the line exited 0.
         ok: bool,
     },
-    /// The Box started on a fork of the deepest setup checkpoint an earlier Box saved.
-    WarmStarted {
-        /// Setup lines the checkpoint already holds; 0 is the clone alone.
-        layer: u32,
-        /// How many lines the repo declares.
-        layers: u32,
-        /// What the clone and those lines took the Box that saved them, less the fork.
-        saved_ms: u64,
-        /// Time the fork took, in milliseconds.
-        fork_ms: u64,
-        /// What the provider reports the fork spent that time on.
-        steps: Vec<crate::domain::event::ProviderStep>,
-        /// The commit the checkpoint's disk holds, when it is not the Box's base, so every line
-        /// runs again; none when the Box stands on those lines.
-        rerun_from: Option<String>,
-        /// Whether the checkpoint also holds the agent install and the profile, so they do not run.
-        finished: bool,
-    },
-    /// The Box reran its setup lines over a checkpoint of another commit.
-    WarmRerun {
-        /// The commit the checkpoint's disk holds.
-        commit: String,
-        /// How many tracked paths differ from that commit; none when git could not tell.
-        changed: Option<u64>,
-        /// The ignored paths that came with the disk.
-        ignored: Vec<String>,
-        /// Whether the setup lines did not run again, as on a fork of the Box's own commit.
-        lines_kept: bool,
-    },
-    /// A line failed on a rerun over a checkpoint, so the Box is set up from scratch once.
-    WarmRerunFailed {
-        /// The line that failed.
-        line: String,
-        /// The last lines of its log.
-        tail: String,
-    },
-    /// The start asked for no setup kept from earlier Boxes.
-    ColdAsked,
-    /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
-    WarmStartFailed {
-        /// Setup lines the checkpoint held.
-        layer: u32,
-        /// What the provider said.
-        error: String,
-    },
     /// The Box started without cache volumes although its plan would have kept some.
     CacheCold {
         /// Why, as a snake-case name.
@@ -188,34 +143,6 @@ pub enum ExtraEvent {
         volume: String,
         /// Why, as the step printed it.
         reason: String,
-    },
-    /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
-    CheckpointTaken {
-        /// Setup lines the checkpoint holds; 0 is the clone alone.
-        layer: u32,
-        /// The layer's key.
-        key: String,
-        /// The provider's checkpoint id; none when the attempt failed.
-        checkpoint: Option<String>,
-        /// Time the Box was paused for it, in milliseconds.
-        duration_ms: u64,
-        /// What the provider said when the attempt failed.
-        error: Option<String>,
-    },
-    /// A setup checkpoint was deleted to keep the provider's disk above its floor.
-    CheckpointEvicted {
-        /// The provider's checkpoint id.
-        checkpoint: String,
-        /// The repo whose setup it held, `OWNER/NAME`.
-        repo: String,
-        /// Its size on the host, when known.
-        bytes: Option<u64>,
-        /// Why it went before others: `superseded` or `least_recently_used`.
-        reason: String,
-        /// Free disk when it was picked, in MiB.
-        free_mib: u64,
-        /// The free disk the floor asks for, in MiB.
-        needs_mib: u64,
     },
     /// The repo was cloned in the Box.
     Cloned {

@@ -22,8 +22,6 @@ use signal::Signals;
 pub(crate) enum Reply {
     /// Exit 0 with this stdout.
     Ok(String),
-    /// Exit 0 with this stdout and stderr.
-    OkSaying { stdout: String, stderr: String },
     /// Exit 0 with these raw stdout bytes; `run` decodes them lossily.
     Bytes(Vec<u8>),
     /// Exit 0 with stdout produced lazily by this reader, never held whole by `run_reading`.
@@ -272,8 +270,7 @@ impl Proc for ScriptedProc {
                     Reply::Bytes(b) => Some(b.clone()),
                     Reply::Ok(s) => Some(s.clone().into_bytes()),
                     Reply::Reader(open) => Some(reply::drain(*open)),
-                    Reply::OkSaying { .. }
-                    | Reply::Fail { .. }
+                    Reply::Fail { .. }
                     | Reply::Timeout
                     | Reply::Signalled(_)
                     | Reply::Interrupted

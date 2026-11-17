@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, CheckpointDisk, Driver,
-    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, Forked, HandlesListing, PausePublish,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver,
+    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, HandlesListing, PausePublish,
     Released, RunEnd, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
@@ -75,7 +75,7 @@ struct State {
     sleep_kind: Option<SleepKind>,
     cache: knobs::CacheState,
     runs: runs::RunState,
-    layers: checkpoints::LayerKnobs,
+    exec_knobs: hooks::ExecKnobs,
     trees: Option<trees::Trees>,
     ports: ports::PortState,
 }
@@ -219,13 +219,11 @@ impl Driver for FakeDriver {
             write_log(spec, scripted)?;
             return Ok(out);
         }
-        let scripted_result = !knobs::is_head_check(spec);
-        let out = (scripted_result.then(|| s.exec_results.pop_front()))
-            .flatten()
+        let out = s
+            .exec_results
+            .pop_front()
             .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
-        let passed = matches!(out, Ok(ExecOutcome::Exited { code: 0 }));
-        let text = scripted.or_else(|| passed.then(|| knobs::clone_default(spec)).flatten());
-        write_log(spec, text)?;
+        write_log(spec, scripted)?;
         let hook = s.after_exec.clone();
         drop(s);
         if let Some(hook) = hook {
@@ -330,22 +328,6 @@ impl Driver for FakeDriver {
         self.run_stream(handle, dir, names, sink)
     }
 
-    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
-        self.checkpointed(handle, name)
-    }
-
-    fn delete_checkpoint(&self, _: &ProviderId, id: &str) -> Result<(), DriverError> {
-        self.deleted(id)
-    }
-
-    fn checkpoint_disk(&self, _: &ProviderId) -> Result<Option<CheckpointDisk>, DriverError> {
-        Ok(self.disk())
-    }
-
-    fn fork(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
-        self.forked(id, req)
-    }
-
     fn launch_run(&self, h: &BoxHandle, run: i64, spec: &ExecSpec) -> runs::Launch {
         self.local_launch(h, run, spec)
     }
@@ -379,8 +361,8 @@ impl Driver for FakeDriver {
 }
 
 mod acquire;
-mod checkpoints;
 mod files;
+mod hooks;
 mod knobs;
 mod piped;
 mod ports;

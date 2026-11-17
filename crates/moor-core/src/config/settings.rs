@@ -111,8 +111,6 @@ pub struct BoxSettings {
     pub cache: CacheLayers,
     /// Whether moor installs the agent on a Box that lacks it: user config only, on by default.
     pub install_agent: bool,
-    /// Whether a Box may start from a checkpoint saved at another commit: repo only, on by default.
-    pub across_commits: bool,
     /// Whether the command launches the Box's agent once setup ends: off only for `--no-agent`.
     pub launch_agent: bool,
 }
@@ -188,7 +186,6 @@ impl BoxSettings {
                 agent: None,
             },
             install_agent: user.agent.install.unwrap_or(true),
-            across_commits: r.checkpoint.across_commits,
             launch_agent: !flags.no_agent,
         }
     }

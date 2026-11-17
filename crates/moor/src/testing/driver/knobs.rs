@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use moor_core::box_key::PoolSeat;
-use moor_core::boxscript::clone::AT_BASE;
 use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{
     BoxListing, DriverError, ExecOutcome, ExecSpec, HandlesListing, PausePublish,
@@ -27,28 +26,13 @@ impl State {
     }
 }
 
-/// What a passing clone exec prints when none is scripted: a fresh Box's tree is the base.
-pub(super) fn clone_default(spec: &ExecSpec) -> Option<String> {
-    spec.argv
-        .iter()
-        .any(|a| a.contains(AT_BASE))
-        .then(|| format!("{AT_BASE}\n"))
-}
-
-/// Whether `spec` is the check of HEAD before a save, which passes unless a test ends it by its
-/// text, so a test that scripts its setup's execs need not count it.
-pub(super) fn is_head_check(spec: &ExecSpec) -> bool {
-    spec.argv.join(" ").contains("moor_head=$(git")
-}
-
 /// Whether the `sh -c` script of `spec` reads the Box's `.moor/artifacts` directory.
 fn is_artifact_index(spec: &ExecSpec) -> bool {
     matches!(spec.argv.as_slice(), [sh, c, script, ..]
         if sh == "sh" && c == "-c" && script.contains(".moor/artifacts"))
 }
 
-/// The fake's cache volume capability and the plans, nonces and classes `acquire` and `fork`
-/// received.
+/// The fake's cache volume capability and the plans, nonces and classes `acquire` received.
 #[derive(Default)]
 pub(super) struct CacheState {
     /// Whether the caps report saving caches at a pause.
@@ -59,13 +43,11 @@ pub(super) struct CacheState {
     pub(super) on: bool,
     /// The plan of every `acquire`, in call order.
     pub(super) plans: Vec<CachePlan>,
-    /// The plan of every `fork`, in call order.
-    pub(super) forks: Vec<CachePlan>,
     /// The nonce of every `acquire`, in call order.
     pub(super) nonces: Vec<String>,
     /// The pool seat of every `acquire`, in call order.
     pub(super) seats: Vec<Option<PoolSeat>>,
-    /// The class of every `acquire` and `fork`, in call order.
+    /// The class of every `acquire`, in call order.
     pub(super) classes: Vec<Option<String>>,
 }
 
@@ -219,11 +201,6 @@ impl FakeDriver {
         self.st().cache.plans.clone()
     }
 
-    /// The cache plan of every `fork` so far, in call order.
-    pub(crate) fn forked_plans(&self) -> Vec<CachePlan> {
-        self.st().cache.forks.clone()
-    }
-
     /// The nonce of every `acquire` so far, in call order.
     pub(crate) fn acquired_nonces(&self) -> Vec<String> {
         self.st().cache.nonces.clone()
@@ -234,7 +211,7 @@ impl FakeDriver {
         self.st().cache.seats.clone()
     }
 
-    /// The class asked for by every `acquire` and `fork` so far, in call order.
+    /// The class asked for by every `acquire` so far, in call order.
     pub(crate) fn asked_classes(&self) -> Vec<Option<String>> {
         self.st().cache.classes.clone()
     }

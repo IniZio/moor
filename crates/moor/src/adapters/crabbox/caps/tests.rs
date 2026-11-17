@@ -54,7 +54,6 @@ fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
         has_workdir: true,
         cache_volumes: false,
         cache_save_on_pause: false,
-        checkpoints: false,
     }
 }
 
@@ -163,22 +162,6 @@ fn cache_volumes_come_only_from_the_cache_volume_feature() {
         &ProviderId::new("external"),
     );
     assert!(!off.unwrap().cache_volumes);
-}
-
-#[test]
-fn checkpoints_need_both_the_checkpoint_and_fork_tokens() {
-    let id = ProviderId::new("external");
-    let with = |extra: &[&'static str]| {
-        let mut features = EXTERNAL_BASE.to_vec();
-        features.extend_from_slice(extra);
-        caps_from(&external_json(&features, &["cleanup"]), &id)
-            .unwrap()
-            .checkpoints
-    };
-    assert!(with(&["workspace-checkpoint", "workspace-fork"]));
-    assert!(!with(&["workspace-checkpoint"]));
-    assert!(!with(&["workspace-fork"]));
-    assert!(!with(&[]));
 }
 
 fn driver() -> (Arc<ScriptedProc>, Crabbox) {

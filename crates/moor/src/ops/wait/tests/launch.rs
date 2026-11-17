@@ -216,7 +216,6 @@ fn agentless_start() -> StartReq {
         model: None,
         node: None,
         no_agent: true,
-        cold: false,
         resume: false,
         repo: None,
         parent: None,

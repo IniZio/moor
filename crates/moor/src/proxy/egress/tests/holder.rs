@@ -152,7 +152,6 @@ fn link(machine_id: i64) -> MachineLink {
         cpus: None,
         reserve_mib: None,
         memory: None,
-        warm_starts: None,
     }
 }
 

@@ -3,15 +3,14 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{at_base, clone_script, Checkout, CloneStep};
-use moor_core::boxscript::refresh::{outcome, refresh_with, went_cold, Work};
-use moor_core::boxscript::{resources, warm_disk};
+use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::refresh::{outcome, refresh_script};
+use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsInc;
-use moor_core::domain::layers::IGNORED_NAMED;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -20,7 +19,6 @@ use moor_core::shape::Shape;
 use moor_core::view::WorkTreeView;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
-use super::layers::Layered;
 use super::others::{clone_others, warn_left_out};
 use super::outcome::clone_failed;
 use super::SetupTarget;
@@ -43,13 +41,6 @@ pub(super) struct Cloned {
     pub(super) delivered: Option<Shape>,
     /// How the kept work tree started; none when the Box keeps none or already refreshed it.
     pub(super) work_tree: Option<WorkTreeView>,
-    /// Whether the work tree is the base commit with no changes.
-    pub(super) at_base: bool,
-    /// Whether this Box's tree fell back to a fresh clone, on this attempt or an earlier one, which
-    /// lost whatever the disk's setup lines made in it.
-    pub(super) went_cold: bool,
-    /// On a forked disk, how many tracked paths changed since its commit, and its ignored paths.
-    pub(super) disk: (Option<u64>, Vec<String>),
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -66,8 +57,6 @@ struct Plan {
     /// The Box's key when its work tree may hold another Box's files, which is refreshed once per
     /// Box before the clone.
     refresh: Option<String>,
-    /// What that refresh does with what the tree holds.
-    work: Work,
 }
 
 impl Plan {
@@ -83,7 +72,7 @@ impl Plan {
     /// The refresh to run before the clone, if any.
     fn refresh_text(&self) -> String {
         let key = self.refresh.as_deref();
-        let text = key.map(|k| refresh_with(&self.checkout(), k, self.work));
+        let text = key.map(|k| refresh_script(&self.checkout(), k));
         text.unwrap_or_default()
     }
 }
@@ -124,10 +113,7 @@ pub(super) fn clone_with_proxy(
             })
         })
         .transpose();
-    let mut job = Job::new(id, target, plan.as_ref(), kept.restore_script());
-    job.disk = target
-        .layered
-        .and_then(|l| l.stale_from().or_else(|| l.forked_commit()));
+    let job = Job::new(id, target, plan.as_ref(), kept.restore_script());
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
@@ -168,14 +154,7 @@ pub(super) fn clone_with_proxy(
 fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
-    let forked = target.layered.and_then(Layered::forked_commit).is_some();
-    let own_commit = target.layered.is_some_and(Layered::holds_own_commit);
-    let work = if own_commit {
-        Work::Keep
-    } else {
-        Work::Discard
-    };
-    let refresh = (kept.work_tree().is_some() || forked).then(|| target.handle.as_str().to_owned());
+    let refresh = kept.work_tree().is_some().then(|| target.handle.as_str().to_owned());
     Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
@@ -183,7 +162,6 @@ fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Opti
             .branch
             .unwrap_or_else(|| box_key::branch(row.id, &row.name)),
         refresh,
-        work,
     })
 }
 
@@ -197,8 +175,6 @@ struct Job<'a> {
     identity: Option<Identity>,
     /// What makes the Box's restored cache volumes safe, run before anything else.
     restore: Option<String>,
-    /// The commit a forked disk holds, which the tree is compared with after the clone.
-    disk: Option<&'a str>,
 }
 
 impl<'a> Job<'a> {
@@ -221,7 +197,6 @@ impl<'a> Job<'a> {
             plan,
             identity,
             restore,
-            disk: None,
         }
     }
 }
@@ -259,9 +234,6 @@ fn clone(
     if let Some(plan) = plan {
         script.push_str(&plan.refresh_text());
         script.push_str(&clone_script(&plan.checkout()));
-        // One past what is named, so the note can say there are more.
-        let probe = job.disk.map(|c| warm_disk::script(c, IGNORED_NAMED + 1));
-        script.push_str(&probe.unwrap_or_default());
     }
     let script = resources::after(&script);
     let site = Site {
@@ -351,9 +323,6 @@ fn report(
         ms: plan.map(|_| ms),
         delivered: text.and_then(resources::parse),
         work_tree: tree,
-        at_base: text.is_some_and(at_base),
-        went_cold: text.is_some_and(went_cold),
-        disk: text.map(warm_disk::parse).unwrap_or_default(),
     }
 }
 

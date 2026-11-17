@@ -69,75 +69,12 @@ impl From<ExtraEvent> for Event {
                 ms,
                 ok,
             }),
-            ExtraEvent::WarmStarted {
-                layer,
-                layers,
-                saved_ms,
-                fork_ms,
-                steps,
-                rerun_from,
-                finished,
-            } => Self::Timing(TimingEvent::WarmStarted {
-                layer,
-                layers,
-                saved_ms,
-                fork_ms,
-                steps,
-                rerun_from,
-                finished,
-            }),
-            ExtraEvent::WarmRerun {
-                commit,
-                changed,
-                ignored,
-                lines_kept,
-            } => Self::Timing(TimingEvent::WarmRerun {
-                commit,
-                changed,
-                ignored,
-                lines_kept,
-            }),
-            ExtraEvent::WarmRerunFailed { line, tail } => {
-                Self::Timing(TimingEvent::WarmRerunFailed { line, tail })
-            }
-            ExtraEvent::ColdAsked => Self::Timing(TimingEvent::ColdAsked),
-            ExtraEvent::WarmStartFailed { layer, error } => {
-                Self::Timing(TimingEvent::WarmStartFailed { layer, error })
-            }
             ExtraEvent::CacheCold { reason, detail } => {
                 Self::Timing(TimingEvent::CacheCold { reason, detail })
             }
             ExtraEvent::CacheEmptied { volume, reason } => {
                 Self::Timing(TimingEvent::CacheEmptied { volume, reason })
             }
-            ExtraEvent::CheckpointTaken {
-                layer,
-                key,
-                checkpoint,
-                duration_ms,
-                error,
-            } => Self::Timing(TimingEvent::CheckpointTaken {
-                layer,
-                key,
-                checkpoint,
-                duration_ms,
-                error,
-            }),
-            ExtraEvent::CheckpointEvicted {
-                checkpoint,
-                repo,
-                bytes,
-                reason,
-                free_mib,
-                needs_mib,
-            } => Self::Timing(TimingEvent::CheckpointEvicted {
-                checkpoint,
-                repo,
-                bytes,
-                reason,
-                free_mib,
-                needs_mib,
-            }),
             ExtraEvent::ProfileResolved {
                 repo,
                 sha,

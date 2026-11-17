@@ -558,4 +558,3 @@ fn a_worktrees_dir_swapped_for_a_symlink_leaves_its_target_alone() {
     assert!(!o.tree().join(".git/worktrees").exists());
 }
 
-mod keeping_work;

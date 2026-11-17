@@ -97,7 +97,6 @@ impl Rig {
             cpus: None,
             reserve_mib: None,
             memory: None,
-            warm_starts: None,
         };
         let runner = RunnerAddr::new(runner);
         self.store

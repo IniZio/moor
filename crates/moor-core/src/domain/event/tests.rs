@@ -276,34 +276,6 @@ fn all_events() -> Vec<Event> {
             ms: 12_000,
             ok: true,
         }),
-        Event::Timing(TimingEvent::WarmStarted {
-            layer: 2,
-            layers: 5,
-            saved_ms: 400_000,
-            fork_ms: 9_000,
-            steps: vec![super::ProviderStep::parse("timing root-flatten ms=7 bytes=9").unwrap()],
-            rerun_from: Some(s("abc")),
-            finished: true,
-        }),
-        Event::Timing(TimingEvent::WarmStartFailed {
-            layer: 2,
-            error: s("snapshot missing"),
-        }),
-        Event::Timing(TimingEvent::CheckpointTaken {
-            layer: 2,
-            key: s("k2"),
-            checkpoint: Some(s("ckpt-1")),
-            duration_ms: 31_000,
-            error: None,
-        }),
-        Event::Timing(TimingEvent::CheckpointEvicted {
-            checkpoint: s("ckpt-1"),
-            repo: s("o/n"),
-            bytes: Some(4096),
-            reason: s("superseded"),
-            free_mib: 1024,
-            needs_mib: 20_480,
-        }),
         Event::Stall(StallEvent::AgentStalled {
             doing: Some("Bash cargo test".to_owned()),
             quiet_secs: 700,
@@ -329,17 +301,6 @@ fn all_events() -> Vec<Event> {
             volume: s("docker"),
             reason: s("blob abc does not match its hash"),
         }),
-        Event::Timing(TimingEvent::WarmRerun {
-            commit: s("abc"),
-            changed: Some(3),
-            ignored: vec![s("dist/")],
-            lines_kept: true,
-        }),
-        Event::Timing(TimingEvent::WarmRerunFailed {
-            line: s("make"),
-            tail: s("boom"),
-        }),
-        Event::Timing(TimingEvent::ColdAsked),
         Event::Stall(StallEvent::PromptNotGiven {
             attempt: 1,
             error: s("e"),

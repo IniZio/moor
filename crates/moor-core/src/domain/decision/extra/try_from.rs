@@ -76,75 +76,12 @@ impl TryFrom<Event> for ExtraEvent {
                 ms,
                 ok,
             }),
-            Event::Timing(TimingEvent::WarmStarted {
-                layer,
-                layers,
-                saved_ms,
-                fork_ms,
-                steps,
-                rerun_from,
-                finished,
-            }) => Ok(Self::WarmStarted {
-                layer,
-                layers,
-                saved_ms,
-                fork_ms,
-                steps,
-                rerun_from,
-                finished,
-            }),
-            Event::Timing(TimingEvent::WarmRerun {
-                commit,
-                changed,
-                ignored,
-                lines_kept,
-            }) => Ok(Self::WarmRerun {
-                commit,
-                changed,
-                ignored,
-                lines_kept,
-            }),
-            Event::Timing(TimingEvent::WarmRerunFailed { line, tail }) => {
-                Ok(Self::WarmRerunFailed { line, tail })
-            }
-            Event::Timing(TimingEvent::ColdAsked) => Ok(Self::ColdAsked),
-            Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
-                Ok(Self::WarmStartFailed { layer, error })
-            }
             Event::Timing(TimingEvent::CacheCold { reason, detail }) => {
                 Ok(Self::CacheCold { reason, detail })
             }
             Event::Timing(TimingEvent::CacheEmptied { volume, reason }) => {
                 Ok(Self::CacheEmptied { volume, reason })
             }
-            Event::Timing(TimingEvent::CheckpointTaken {
-                layer,
-                key,
-                checkpoint,
-                duration_ms,
-                error,
-            }) => Ok(Self::CheckpointTaken {
-                layer,
-                key,
-                checkpoint,
-                duration_ms,
-                error,
-            }),
-            Event::Timing(TimingEvent::CheckpointEvicted {
-                checkpoint,
-                repo,
-                bytes,
-                reason,
-                free_mib,
-                needs_mib,
-            }) => Ok(Self::CheckpointEvicted {
-                checkpoint,
-                repo,
-                bytes,
-                reason,
-                free_mib,
-                needs_mib,
-            }),
             Event::Profile(ProfileEvent::ProfileResolved {
                 repo,
                 sha,

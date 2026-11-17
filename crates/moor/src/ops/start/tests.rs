@@ -30,7 +30,6 @@ mod clone_retry;
 mod clone_timing;
 mod dead_agent;
 mod dotfiles;
-mod evict;
 mod exited_start;
 mod forced_close;
 mod fresh_guest;
@@ -46,7 +45,6 @@ mod lost_machine;
 mod machine;
 mod named_node;
 mod new_hands;
-mod node_warm;
 mod others;
 mod parent;
 mod placement;
@@ -78,20 +76,13 @@ mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod setup_why;
+mod events;
 mod size;
 mod state;
 mod step_timing;
 mod transcript;
 mod user_mcp;
 mod vrace;
-mod warm;
-mod warm_commits;
-mod warm_limits;
-mod warm_profile;
-mod warm_roll;
-mod warm_saved;
-mod warm_trees;
-mod warm_unfinished;
 mod workdir;
 
 /// A world of fakes plus the context over them.
@@ -165,7 +156,6 @@ fn req(name: &str) -> StartReq {
         model: None,
         node: None,
         no_agent: false,
-        cold: false,
         resume: false,
         repo: None,
         parent: None,
@@ -178,7 +168,6 @@ fn req(name: &str) -> StartReq {
 fn agentless_req(name: &str) -> StartReq {
     StartReq {
         no_agent: true,
-        cold: false,
         ..req(name)
     }
 }

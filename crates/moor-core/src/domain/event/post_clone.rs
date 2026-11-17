@@ -2,8 +2,6 @@
 
 use serde::Serialize;
 
-mod provider_step;
-pub use provider_step::{ProviderStep, StepName, MAX_STEPS};
 
 /// A step after the clone whose time the Box's events tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -77,55 +75,6 @@ pub enum TimingEvent {
         /// Whether the line exited 0.
         ok: bool,
     },
-    /// The Box started on a fork of the deepest setup checkpoint an earlier Box saved.
-    WarmStarted {
-        /// Setup lines the checkpoint already holds; 0 is the clone alone.
-        layer: u32,
-        /// How many lines the repo declares.
-        layers: u32,
-        /// What the clone and those lines took the Box that saved them, less the fork.
-        saved_ms: u64,
-        /// Time the fork took, in milliseconds.
-        fork_ms: u64,
-        /// What the provider reports the fork spent that time on.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        steps: Vec<ProviderStep>,
-        /// The commit the checkpoint's disk holds, when it is not the Box's base, so every line
-        /// runs again; none when the Box stands on those lines.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        rerun_from: Option<String>,
-        /// Whether the checkpoint also holds the agent install and the profile, so they do not run.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        finished: bool,
-    },
-    /// The Box reran its setup lines over a checkpoint of another commit.
-    WarmRerun {
-        /// The commit the checkpoint's disk holds.
-        commit: String,
-        /// How many tracked paths differ from that commit; none when git could not tell.
-        changed: Option<u64>,
-        /// The ignored paths that came with the disk.
-        ignored: Vec<String>,
-        /// Whether the setup lines did not run again, as on a fork of the Box's own commit.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        lines_kept: bool,
-    },
-    /// A line failed on a rerun over a checkpoint, so the Box is set up from scratch once.
-    WarmRerunFailed {
-        /// The line that failed.
-        line: String,
-        /// The last lines of its log.
-        tail: String,
-    },
-    /// The start asked for no setup kept from earlier Boxes.
-    ColdAsked,
-    /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
-    WarmStartFailed {
-        /// Setup lines the checkpoint held.
-        layer: u32,
-        /// What the provider said.
-        error: String,
-    },
     /// The Box started without cache volumes although its plan would have kept some.
     CacheCold {
         /// Why, as a snake-case name such as `switched_off` or `machine_offline`.
@@ -140,34 +89,6 @@ pub enum TimingEvent {
         /// Why, as the step printed it.
         reason: String,
     },
-    /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
-    CheckpointTaken {
-        /// Setup lines the checkpoint holds; 0 is the clone alone.
-        layer: u32,
-        /// The layer's key.
-        key: String,
-        /// The provider's checkpoint id; none when the attempt failed.
-        checkpoint: Option<String>,
-        /// Time the Box was paused for it, in milliseconds.
-        duration_ms: u64,
-        /// What the provider said when the attempt failed.
-        error: Option<String>,
-    },
-    /// A setup checkpoint was deleted to keep the provider's disk above its floor.
-    CheckpointEvicted {
-        /// The provider's checkpoint id.
-        checkpoint: String,
-        /// The repo whose setup it held, `OWNER/NAME`.
-        repo: String,
-        /// Its size on the host, when known.
-        bytes: Option<u64>,
-        /// Why it went before others: `superseded` or `least_recently_used`.
-        reason: String,
-        /// Free disk when it was picked, in MiB.
-        free_mib: u64,
-        /// The free disk the floor asks for, in MiB.
-        needs_mib: u64,
-    },
 }
 
 impl TimingEvent {
@@ -181,15 +102,8 @@ impl TimingEvent {
             Self::StepFinished { .. } => "step_finished",
             Self::SetupLineStarted { .. } => "setup_line_started",
             Self::SetupLineFinished { .. } => "setup_line_finished",
-            Self::WarmStarted { .. } => "warm_started",
-            Self::WarmRerun { .. } => "warm_rerun",
-            Self::WarmRerunFailed { .. } => "warm_rerun_failed",
-            Self::ColdAsked => "cold_asked",
-            Self::WarmStartFailed { .. } => "warm_start_failed",
             Self::CacheCold { .. } => "cache_cold",
             Self::CacheEmptied { .. } => "cache_emptied",
-            Self::CheckpointTaken { .. } => "checkpoint_taken",
-            Self::CheckpointEvicted { .. } => "checkpoint_evicted",
         }
     }
 }

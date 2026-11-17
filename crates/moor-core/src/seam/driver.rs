@@ -10,7 +10,6 @@ use crate::seam::proc::{Deadline, Pipes};
 
 mod batch;
 mod caps;
-mod checkpoint;
 mod display;
 mod error;
 mod exec;
@@ -20,7 +19,6 @@ mod types;
 
 pub use batch::{run_each, BoxStep, StepDone};
 pub use caps::{DriverCaps, SleepKind};
-pub use checkpoint::{Checkpoint, CheckpointDisk, Forked};
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
@@ -343,46 +341,6 @@ pub trait Driver: Send + Sync + Forwards {
     /// # Errors
     /// Returns a [`DriverError`] when the resume fails.
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
-
-    /// Saves the Box's memory and disk as a checkpoint named `name`; the Box keeps running.
-    ///
-    /// # Errors
-    /// [`DriverError::Unsupported`] without the capability, another [`DriverError`] on failure.
-    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
-        let _ = (handle, name);
-        Err(DriverError::Unsupported("checkpoints"))
-    }
-
-    /// Starts a Box for `req` from checkpoint `id`, under [`Driver::planned_handle`]'s handle;
-    /// its disk, and so its workdir, is the checkpointed Box's.
-    ///
-    /// # Errors
-    /// As [`Driver::checkpoint`].
-    fn fork(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
-        let _ = (id, req);
-        Err(DriverError::Unsupported("checkpoints"))
-    }
-
-    /// Deletes checkpoint `id`, recorded under `home`, and what the provider keeps of it.
-    ///
-    /// # Errors
-    /// As [`Driver::checkpoint`].
-    fn delete_checkpoint(&self, home: &ProviderId, id: &str) -> Result<(), DriverError> {
-        let _ = (home, id);
-        Err(DriverError::Unsupported("checkpoints"))
-    }
-
-    /// The disk holding checkpoints recorded under `provider`; none when the provider cannot say.
-    ///
-    /// # Errors
-    /// A [`DriverError`] when the provider cannot be asked.
-    fn checkpoint_disk(
-        &self,
-        provider: &ProviderId,
-    ) -> Result<Option<CheckpointDisk>, DriverError> {
-        let _ = provider;
-        Ok(None)
-    }
 
     /// Tells the provider the Box is in real use, so it does not expire the Box as idle.
     /// Reads that only look at a Box never call this. A provider without idle expiry ignores it.

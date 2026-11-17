@@ -5,48 +5,19 @@ use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::seam::clock::Ts;
 use moor_core::shape::Shape;
 use moor_core::{BoxHandle, BoxId, ProviderId};
-use moor_schema::tables::{BoxHands, BoxLease, Boxes};
+use moor_schema::tables::{BoxHands, Boxes};
 use sea_query::{
     Cond, Condition, Expr, ExprTrait as _, InsertStatement, Order, Query, SelectStatement,
     UpdateStatement,
 };
 
-use super::apply::apply_in;
 use super::init::parsed_opt;
-use super::lease::{LeaseId, LeaseState};
 use super::select::hands_at;
 use super::Fence;
 use super::{to_u32, BoxRow, HandsRow, Store, StoreError};
 use crate::store::db::{self, Db, DbExt as _, Row};
 
 impl Store {
-    /// Applies `moves`, each to Box `id`, and holds lease `hold`, in one transaction: a Box moving
-    /// to new hands ends the old ones, gets the new ones and holds their machine, or none of it.
-    pub(crate) fn move_hands(
-        &self,
-        id: BoxId,
-        moves: Vec<Decision>,
-        hold: LeaseId,
-    ) -> Result<(), StoreError> {
-        self.check_write(id);
-        let now = self.now();
-        let mut conn = self.writer();
-        let tx = conn.immediate()?;
-        for d in moves {
-            apply_in(&tx, now, d)?;
-        }
-        tx.run(
-            Query::update()
-                .table(BoxLease::Table)
-                .value(BoxLease::State, LeaseState::Held.as_str())
-                .value(BoxLease::UpdatedAt, now.as_millis())
-                .and_where(Expr::col(BoxLease::Id).eq(hold.0)),
-        )?;
-        tx.commit()?;
-        drop(conn);
-        Ok(())
-    }
-
     /// The hands Box `id` left whose machine no release has ended yet: replaced hands that ended
     /// Gone with a handle, oldest first.
     pub(crate) fn hands_left(&self, id: BoxId) -> Result<Vec<(HandsInc, BoxHandle)>, StoreError> {

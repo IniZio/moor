@@ -6,9 +6,8 @@ use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
-use moor_core::domain::layers::LayerKey;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, BoxId, ProviderId, SteerReq};
+use moor_core::{BoxHandle, BoxId, SteerReq};
 
 use super::placement::{cached_world, planned_volumes};
 use super::relaunch::{gone, started};
@@ -82,8 +81,8 @@ fn a_start_after_lost_hands_acquires_new_hands_under_their_own_slug() {
     assert_eq!(slugs, [first.clone(), format!("{first}-h2")]);
 }
 
-/// Writes a Proxy spec and a layer pin about Box `id`'s hands `inc`, as that machine's setup does.
-fn write_vm_facts(store: &Store, id: BoxId, inc: HandsInc) -> [Result<(), StoreError>; 2] {
+/// Writes a Proxy spec about Box `id`'s hands `inc`, as that machine's setup does.
+fn write_vm_facts(store: &Store, id: BoxId, inc: HandsInc) -> Result<(), StoreError> {
     let spec = ProxySpec {
         box_id: id,
         box_handle: Some(BoxHandle::new(format!("box-{}", inc.get()))),
@@ -93,12 +92,7 @@ fn write_vm_facts(store: &Store, id: BoxId, inc: HandsInc) -> [Result<(), StoreE
         user: REQUESTER_USER,
         hands_inc: Some(inc.get()),
     };
-    let key = LayerKey::restore(inc.get().to_string().repeat(64)).unwrap();
-    let home = ProviderId::new("fake");
-    [
-        store.set_proxy_spec(id, &spec),
-        store.pin_checkpoint((id, Some(inc)), &home, &key, 1),
-    ]
+    store.set_proxy_spec(id, &spec)
 }
 
 #[test]
@@ -109,19 +103,16 @@ fn the_new_hands_write_over_facts_the_lost_ones_left_and_late_ones_are_refused()
     let store = w.cx.store().unwrap();
     store.reserve(id, &FakeRng::default()).unwrap();
     let old = HandsInc::FIRST;
-    assert!(write_vm_facts(store, id, old).iter().all(Result::is_ok));
+    write_vm_facts(store, id, old).unwrap();
     lose_hands(&w, id);
 
     run(&w.cx, &agentless_req("demo")).unwrap();
 
     let new = store.box_row(id).unwrap().unwrap().hands_inc();
     assert_eq!(new, HandsInc::new(2));
-    for wrote in write_vm_facts(store, id, new) {
-        wrote.unwrap();
-    }
-    for late in write_vm_facts(store, id, old) {
-        assert!(matches!(late, Err(StoreError::Stale { .. })), "{late:?}");
-    }
+    write_vm_facts(store, id, new).unwrap();
+    let late = write_vm_facts(store, id, old);
+    assert!(matches!(late, Err(StoreError::Stale { .. })), "{late:?}");
     let spec = store.proxy_spec(id).unwrap().unwrap();
     assert_eq!(spec.hands_inc, Some(2), "the late spec changed nothing");
     assert!(matches!(

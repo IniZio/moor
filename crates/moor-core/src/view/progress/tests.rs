@@ -207,25 +207,6 @@ fn the_whole_start_steps_read_as_plain_words() {
 }
 
 #[test]
-fn a_checkpoint_says_how_long_it_paused_the_box_or_why_it_failed() {
-    let ok = event(
-        "checkpoint_taken",
-        json!({"layer": 2, "duration_ms": 31_000, "error": null}),
-        0,
-    );
-    assert_eq!(latest(&[ok]).unwrap(), "took setup checkpoint 2 in 31s");
-    let bad = event(
-        "checkpoint_taken",
-        json!({"layer": 0, "duration_ms": 4_000, "error": "disk full"}),
-        0,
-    );
-    assert_eq!(
-        latest(&[bad]).unwrap(),
-        "setup checkpoint 0 failed after 4s: disk full"
-    );
-}
-
-#[test]
 fn an_emptied_cache_reads_as_a_step_and_is_not_a_failure() {
     let events = [
         event("started", json!({}), 0),
@@ -268,23 +249,3 @@ fn a_cold_cache_reads_as_a_step_and_is_not_a_failure() {
     );
 }
 
-#[test]
-fn a_warm_start_at_another_commit_says_its_lines_run_and_a_failed_one_is_named() {
-    let at = event(
-        "warm_started",
-        json!({"layer": 2, "layers": 3, "saved_ms": 9000, "fork_ms": 1, "rerun_from": "abc"}),
-        0,
-    );
-    assert_eq!(
-        latest(&[at]).unwrap(),
-        "started from setup checkpoint 2/3 of another commit, running its lines"
-    );
-    let failed = event("warm_rerun_failed", json!({"line": "make", "tail": ""}), 0);
-    assert!(latest(&[failed]).unwrap().contains("make"));
-    let rerun = event(
-        "warm_rerun",
-        json!({"commit": "abc", "changed": 1, "ignored": ["dist/"]}),
-        0,
-    );
-    assert!(latest(&[rerun]).unwrap().contains("dist/"));
-}

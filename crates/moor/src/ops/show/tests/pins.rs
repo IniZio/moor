@@ -77,7 +77,6 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
         model: None,
         node: None,
         no_agent: false,
-        cold: false,
         resume: false,
         repo: None,
         parent: None,

@@ -206,8 +206,8 @@ fn the_stderr_record_drops_words_that_can_carry_a_secret() {
 }
 
 #[test]
-fn a_failed_acquire_release_or_checkpoint_records_each_stderr_line() {
-    for op in [Op::Acquire, Op::Release, Op::Checkpoint] {
+fn a_failed_acquire_or_release_records_each_stderr_line() {
+    for op in [Op::Acquire, Op::Release] {
         let record =
             stderr_record(op, Some("external"), &nz(1, CAUSE_THEN_TEARDOWN)).expect("a record");
         assert_eq!(

@@ -19,9 +19,6 @@ struct Entry {
     /// Lifecycle capability names.
     #[serde(default)]
     lifecycle: Vec<String>,
-    /// Where the provider runs, such as `local-vm` or `direct-cloud`.
-    #[serde(default)]
-    category: String,
 }
 
 impl Entry {
@@ -49,10 +46,6 @@ const SSH: &str = "ssh";
 const CACHE_VOLUME: &str = "cache-volume";
 /// Feature token: a pause can save the lease's cache volumes.
 const CACHE_SAVE_ON_PAUSE: &str = "cache-save-on-pause";
-/// Feature token: the provider saves checkpoints of a lease.
-const CHECKPOINT: &str = "workspace-checkpoint";
-/// Feature token: the provider forks new leases from a checkpoint.
-const FORK: &str = "workspace-fork";
 
 /// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
@@ -70,7 +63,6 @@ fn derive(entry: &Entry) -> DriverCaps {
         has_workdir: true,
         cache_volumes: entry.has(CACHE_VOLUME),
         cache_save_on_pause: entry.has(CACHE_SAVE_ON_PAUSE),
-        checkpoints: entry.has(CHECKPOINT) && entry.has(FORK),
     }
 }
 
@@ -85,25 +77,6 @@ pub(super) fn caps_from(providers_json: &str, id: &ProviderId) -> Result<DriverC
         .find(|e| e.answers_to(id.as_str()))
         .map(derive)
         .ok_or_else(|| DriverError::UnknownProvider(id.as_str().to_owned()))
-}
-
-/// Categories of providers that run on crabbox's own host, so keep checkpoints on its disk.
-/// An external provider is a program on this host, such as `crabbox-cloudhypervisor`.
-const ON_THIS_HOST: [&str; 5] = [
-    "local-runtime",
-    "local-vm",
-    "local-sandbox",
-    "self-hosted-virtualization",
-    "external-provider",
-];
-
-/// Whether `id` runs on crabbox's own host, read from the providers JSON; false when unknown.
-pub(super) fn on_this_host(providers_json: &str, id: &ProviderId) -> bool {
-    let entries: Vec<Entry> = serde_json::from_str(providers_json).unwrap_or_default();
-    entries
-        .iter()
-        .find(|e| e.answers_to(id.as_str()))
-        .is_some_and(|e| ON_THIS_HOST.contains(&e.category.as_str()))
 }
 
 /// Maps a moor size to crabbox's machine class.

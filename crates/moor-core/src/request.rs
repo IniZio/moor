@@ -29,7 +29,7 @@ mod machine;
 pub use machine::{
     BoxHostMemory, BoxStage, HoldOp, HoldValue, MachineBox, MachineBoxOp, MachineBoxReq,
     MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq, MachineRemoveReq,
-    MachineStatusReq, MemoryReport, RunnerAddr, WarmStarts,
+    MachineStatusReq, MemoryReport, RunnerAddr,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -235,9 +235,6 @@ pub struct StartReq {
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,
-    /// Set the Box up from scratch, past any setup kept from earlier Boxes.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub cold: bool,
     /// Resume the agent's stored session instead of starting a fresh one.
     #[serde(default)]
     pub resume: bool,
