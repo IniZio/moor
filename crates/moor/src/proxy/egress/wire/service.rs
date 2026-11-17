@@ -1,7 +1,5 @@
 //! A tunnel to a host the Proxy serves: one plain request, stripped of the `X-Moor-*` headers the
-//! Box sent and stamped with the Proxy's own, sent to the service's upstream. The upstream's name
-//! is looked up on each connection and dialled only when every address it has is loopback or
-//! private, so no config or DNS answer can send a Box's identity off to a public address.
+//! Box sent and stamped with the Proxy's own, sent to the service's upstream if it is private.
 //!
 //! A request for the machine service goes to the runner that holds the Box's machine's link when
 //! the ledger names one. A holder that cannot be dialled, or that answers 421 because the link
@@ -217,29 +215,20 @@ async fn try_holder(upstream: &mut TcpStream, request: &[u8], body: &[u8]) -> Tr
 /// the Proxy back to the ledger once. Why the Box gets a 502 when none answers.
 async fn reach(service: &ServedRoute, route: &Route) -> Result<Reached, &'static str> {
     let ledger = &route.served.ledger;
-    if service.served != Served::Machine {
-        let own = vec![("X-Moor-Box", ledger.box_id().get().to_string())];
-        return Ok(Reached {
-            stream: dial_upstream(&service.upstream).await?,
-            addr: service.upstream.clone(),
-            own: Some(own),
-            holder: false,
-        });
-    }
-    let hold = tokio::task::block_in_place(|| hold_or_missing(ledger));
-    let Some(addr) = holder(service, &hold) else {
-        return Ok(Reached {
-            stream: dial_upstream(&service.upstream).await?,
-            addr: service.upstream.clone(),
-            own: hold_headers(&hold),
-            holder: false,
-        });
+    let hold = (service.served == Served::Machine)
+        .then(|| tokio::task::block_in_place(|| hold_or_missing(ledger)));
+    let own = hold.as_ref().map_or_else(
+        || Some(vec![("X-Moor-Box", ledger.box_id().get().to_string())]),
+        hold_headers,
+    );
+    let Some(addr) = hold.as_ref().and_then(|h| holder(service, h)) else {
+        return upstream(service, own).await;
     };
     match dial(&addr).await {
         Some(stream) => Ok(Reached {
             stream,
             addr,
-            own: hold_headers(&hold),
+            own,
             holder: true,
         }),
         None => reask(service, route, &addr).await,
@@ -259,18 +248,25 @@ async fn reask(
         hold_or_missing(ledger)
     });
     let own = hold_headers(&hold);
-    let addr = holder(service, &hold).filter(|addr| addr != failed);
-    let Some(addr) = addr else {
-        return Ok(Reached {
-            stream: dial_upstream(&service.upstream).await?,
-            addr: service.upstream.clone(),
-            own,
-            holder: false,
-        });
+    let Some(addr) = holder(service, &hold).filter(|addr| addr != failed) else {
+        return upstream(service, own).await;
     };
     Ok(Reached {
         stream: dial(&addr).await.ok_or(NOT_ANSWERING)?,
         addr,
+        own,
+        holder: false,
+    })
+}
+
+/// The service's own upstream, reached for a request that carries `own`.
+async fn upstream(
+    service: &ServedRoute,
+    own: Option<Vec<(&'static str, String)>>,
+) -> Result<Reached, &'static str> {
+    Ok(Reached {
+        stream: dial_upstream(&service.upstream).await?,
+        addr: service.upstream.clone(),
         own,
         holder: false,
     })
