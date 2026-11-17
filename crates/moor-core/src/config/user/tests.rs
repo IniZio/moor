@@ -92,10 +92,10 @@ fn a_single_node_parses_as_the_default() {
 #[test]
 fn box_and_tools_parse() {
     let c = ok("box: {size: large, sleep_after: 30m}\n\
-         tools: {crabbox: /opt/crabbox, git: git2}\n");
+         tools: {ssh: /opt/ssh, git: git2}\n");
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
-    assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
+    assert_eq!(c.tools.ssh, Some(PathBuf::from("/opt/ssh")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
     assert_eq!(c.tools.herdr, None);
 }
@@ -106,7 +106,6 @@ fn accepted_docs() {
         "box: {size: small}",
         "box: {size: xlarge}\nnodes: {x: {runtime: custom-provider}}",
         "drivers: {crabbox: {strip_env: [A]}}",
-        "drivers: {crabbox: {lookup_timeout_secs: 30}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
@@ -245,10 +244,6 @@ fn zero_counts_are_rejected_by_type() {
             "nodes: {c: {runtime: x, max_boxes: 0}}",
             "nodes.c.max_boxes",
         ),
-        (
-            "drivers: {c: {lookup_timeout_secs: 0}}",
-            "drivers.c.lookup_timeout_secs",
-        ),
     ] {
         let e = err(doc);
         assert_eq!(e.path, path, "{doc}: {e}");
@@ -275,13 +270,6 @@ fn strip_env_rejects_bad_names() {
             "{doc}: {e}"
         );
     }
-}
-
-#[test]
-fn lookup_timeout_secs_parses() {
-    let c = ok("drivers: {crabbox: {lookup_timeout_secs: 30}}");
-    let timeout = c.drivers.get("crabbox").and_then(|d| d.lookup_timeout_secs);
-    assert_eq!(timeout, NonZeroU32::new(30));
 }
 
 #[test]

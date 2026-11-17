@@ -1,7 +1,5 @@
 //! The `drivers.<name>:` section.
 
-use std::num::NonZeroU32;
-
 use serde::Deserialize;
 
 use crate::config::{check, ConfigError};
@@ -18,9 +16,6 @@ pub struct DriverConfig {
         reason = "outer Some means the key was present, even when null"
     )]
     pub max_boxes: Option<Option<serde_json::Value>>,
-    /// Seconds allowed to look up a Box's ssh target (at least 1); 5 by default,
-    /// 20 for the `external` provider.
-    pub lookup_timeout_secs: Option<NonZeroU32>,
     /// Environment variable names the provider's platform puts in the Box.
     /// moor removes them from every Box exec: setup, teardown, `moor run` and the agent.
     pub strip_env: Vec<String>,

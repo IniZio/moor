@@ -8,8 +8,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ToolsConfig {
-    /// `crabbox` program.
-    pub crabbox: Option<PathBuf>,
     /// `herdr` program.
     pub herdr: Option<PathBuf>,
     /// `claude` program.
