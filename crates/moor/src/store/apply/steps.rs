@@ -2,7 +2,6 @@
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, StepError};
 use moor_core::domain::box_steps;
-use moor_core::domain::cache_save::CacheSave;
 use moor_core::domain::decision::{BoxTarget, Decision, NewBox};
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -235,16 +234,6 @@ fn box_columns(
         (Boxes::User, requester.map(UserId::get).into()),
         (Boxes::CreatedAt, now.as_millis().into()),
     ])
-}
-
-/// `events` with an `asleep` event saying what its sleep decided about the caches.
-pub(super) fn with_cache_save(mut events: Vec<Event>, save: Option<CacheSave>) -> Vec<Event> {
-    for e in &mut events {
-        if let Event::Asleep { cache_save, .. } = e {
-            *cache_save = save;
-        }
-    }
-    events
 }
 
 /// `events` with a `setup_failed` event saying why its line failed.

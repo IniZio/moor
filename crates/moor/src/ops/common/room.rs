@@ -7,20 +7,18 @@ use moor_core::decide::pressure::{
 };
 use moor_core::decide::schedule::{Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::cache_save::CacheSaveDenied;
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, HandsFields, WantChange, Wanted, WantedKind,
 };
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::name::{BoxHandle, BoxId};
-use moor_core::seam::driver::{PausePublish, SleepOutcome};
+use moor_core::seam::driver::SleepOutcome;
 
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{ready_handle, settled, sleep_handle, sleep_parked};
-use crate::ops::common::cache::save_decision;
 use crate::ops::common::node::now;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::common::reconcile;
@@ -140,10 +138,10 @@ fn suspend_idle(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool,
         return Ok(false);
     };
     let settled = settled(cx, store, &row)?;
-    let (slept, cache_save) = match sleep_parked(cx, store, &row, &handle, settled) {
+    let slept = match sleep_parked(cx, store, &row, &handle, settled) {
         Ok(None) => return Ok(false),
-        Ok(Some(parked)) => (Ok(parked.outcome), parked.cache_save),
-        Err(e) => (Err(e.error.to_string()), None),
+        Ok(Some(outcome)) => Ok(outcome),
+        Err(e) => Err(e.error.to_string()),
     };
     if let Some(error) = why_not_slept(slept) {
         tell_suspend_failed(cx, store, id, reason, &error)?;
@@ -156,7 +154,6 @@ fn suspend_idle(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool,
                 reason: Some(reason.to_owned()),
             })
             .want(WantChange::Done(WantedKind::Suspend))
-            .cache_save(cache_save)
             .hands_input(row.hands_inc(), HandsInput::Sleep)
             .set(Fields {
                 state_reason: Field::Set(reason.to_owned()),
@@ -280,12 +277,6 @@ fn suspend_running(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
             .lifecycle(BoxLifecycleInput::Suspend {
                 reason: reason.to_owned(),
             })
-            .cache_save(save_decision(
-                cx,
-                store,
-                &row,
-                Err(CacheSaveDenied::LastResort),
-            ))
             .hands_input(row.hands_inc(), HandsInput::Sleep)
             .set(Fields {
                 state_reason: Field::Set(reason.to_owned()),
@@ -302,22 +293,21 @@ fn suspend_running(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     Ok(unless_stale(cx, slept)?.is_some())
 }
 
-/// Parks `row`'s tunnel and asks the Driver to suspend the Box, saving nothing; none when its
-/// hands were replaced first.
+/// Parks `row`'s tunnel and asks the Driver to suspend the Box; none when its hands were replaced
+/// first.
 fn park_and_suspend(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     handle: &BoxHandle,
 ) -> Result<Option<Result<SleepOutcome, String>>, CommandError> {
+    // Parking takes the Proxy away, and the check runs in the Box.
     let at = (row.id, row.hands_inc());
-    if unless_stale(cx, store.set_pause_publish(at, PausePublish::Denied))?.is_none() {
+    if !suspend_check::record(cx, store, at, settled(cx, store, row)?)? {
         return Ok(None);
     }
-    // Parking takes the Proxy away, and the check runs in the Box.
-    suspend_check::record(cx, store, at, settled(cx, store, row)?.is_ok());
     park_tunnel(cx, row.id)?;
-    let slept = cx.driver().sleep(handle, PausePublish::Denied);
+    let slept = cx.driver().sleep(handle);
     Ok(Some(slept.map_err(|e| e.to_string())))
 }
 

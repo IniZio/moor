@@ -3,7 +3,6 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::PausePublish;
 use moor_core::{BoxHandle, BoxId};
 use moor_schema::tables::BoxHands;
 use sea_query::{Expr, ExprTrait as _, Query};
@@ -181,22 +180,14 @@ fn pressure_writes_for_replaced_hands_are_refused_and_change_nothing() {
     };
 
     let check = store.set_suspend_check((id, OLD), Some(clean));
-    let publish = store.set_pause_publish((id, OLD), PausePublish::Allowed);
+    let none = store.set_suspend_check((id, OLD), None);
 
     assert!(matches!(check, Err(StoreError::Stale { .. })), "{check:?}");
-    assert!(
-        matches!(publish, Err(StoreError::Stale { .. })),
-        "{publish:?}"
-    );
+    assert!(matches!(none, Err(StoreError::Stale { .. })), "{none:?}");
     assert_eq!(store.suspend_check(id).unwrap(), None);
-    assert_eq!(store.pause_publish(id).unwrap(), PausePublish::Denied);
 
     store.set_suspend_check((id, NEW), Some(clean)).unwrap();
-    store
-        .set_pause_publish((id, NEW), PausePublish::Allowed)
-        .unwrap();
     assert_eq!(store.suspend_check(id).unwrap(), Some(clean));
-    assert_eq!(store.pause_publish(id).unwrap(), PausePublish::Allowed);
 }
 
 #[test]

@@ -394,8 +394,7 @@ fn golden_box_events_name_the_state_left() {
         ),
         vec![Event::Asleep {
             auto: true,
-            reason: None,
-            cache_save: None
+            reason: None
         }]
     );
     assert_eq!(
@@ -409,8 +408,7 @@ fn golden_box_events_name_the_state_left() {
         ),
         vec![Event::Asleep {
             auto: false,
-            reason: None,
-            cache_save: None
+            reason: None
         }]
     );
     assert_eq!(

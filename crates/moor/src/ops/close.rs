@@ -9,7 +9,6 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Wanted};
 use moor_core::domain::hands::{HandsInput, HandsState};
-use moor_core::seam::driver::PausePublish;
 use moor_core::seam::proc::Deadline;
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, Warning};
@@ -117,10 +116,7 @@ fn close_held(
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Asleep);
     // A forced close reads nothing in the Box, so it has no answer; its caches go with it all the same.
-    if unwoken
-        && (probed_clean || req.force)
-        && store.pause_publish(row.id)? != PausePublish::Allowed
-    {
+    if unwoken && (probed_clean || req.force) {
         store.apply(Decision::new(row.id).event(ExtraEvent::CachesNotSaved))?;
     }
     let saved = save_transcript(cx, store, &row)?;

@@ -56,7 +56,6 @@ fn all_events() -> Vec<Event> {
         Event::Asleep {
             auto: true,
             reason: None,
-            cache_save: None,
         },
         Event::Woke,
         Event::Closed {

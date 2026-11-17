@@ -17,7 +17,7 @@ mod wanted;
 
 pub(super) use self::sql::update;
 use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
-use self::steps::{step_box, with_cache_save, with_setup_why, Parts};
+use self::steps::{step_box, with_setup_why, Parts};
 use super::agent::{end_live_launches, fence_launch};
 use super::box_node::live_on_node_in;
 use super::hands::{fence, new_hands, update_hands};
@@ -126,10 +126,7 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError>
         (None, Some(s)) => session_events(s),
         (None, None) => Vec::new(),
     };
-    let stepped = with_setup_why(
-        with_cache_save(stepped, d.cache_save),
-        d.setup_why.as_deref(),
-    );
+    let stepped = with_setup_why(stepped, d.setup_why.as_deref());
     for e in &stepped {
         ids.push(insert_event(tx, id, e, now)?);
     }
@@ -320,7 +317,6 @@ fn write_box(
                 BoxHands::SuspendAhead,
                 BoxHands::SuspendDirty,
                 BoxHands::SuspendCheckedAt,
-                BoxHands::SuspendPublish,
             ] {
                 sets.push((column, None::<i64>.into()));
             }

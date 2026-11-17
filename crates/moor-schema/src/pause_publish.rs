@@ -5,7 +5,8 @@ use moor_migrate::Script;
 
 use crate::int;
 
-/// Add the `suspend_publish` column.
+/// Add the `suspend_publish` column. Nothing reads or writes it since caches stopped being saved
+/// at pause. It stays for a controller one release older, and a later migration drops it.
 pub(super) fn write(s: &mut Script) {
     s.schema(
         &Table::alter()
