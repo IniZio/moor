@@ -38,6 +38,10 @@ impl RepoOverride {
     /// [`ConfigError`] (with `file` set) for what [`parse_repo`] refuses.
     pub fn parse(file: &str, text: &str) -> Result<Self, ConfigError> {
         let config = parse_repo(file, text)?;
+        #[allow(
+            clippy::zero_sized_map_values,
+            reason = "the parser reads a map, and only its keys matter"
+        )]
         let named: BTreeMap<String, IgnoredAny> = parse_strict(file, text)?;
         Ok(Self {
             config,
@@ -67,42 +71,34 @@ impl RepoOverride {
             machine,
             node,
         } = self.config.clone();
-        let named = |key: &str| self.set.contains(key);
         let mut out = base;
-        if named("brief") {
-            out.brief = brief;
-        }
-        if named("setup") {
-            out.setup = setup;
-        }
-        if named("teardown") {
-            out.teardown = teardown;
-        }
-        if named("env") {
-            out.env.extend(env);
-        }
-        if named("compose") {
-            out.compose = compose;
-        }
-        if named("box") {
-            out.box_ = box_;
-        }
-        if named("box_credentials") {
-            out.box_credentials = box_credentials;
-        }
-        if named("cache") {
-            out.cache = cache;
-        }
-        if named("checkpoint") {
-            out.checkpoint = checkpoint;
-        }
-        if named("machine") {
-            out.machine = machine;
-        }
-        if named("node") {
-            out.node = node;
-        }
+        self.replace("brief", brief, &mut out.brief);
+        self.replace("setup", setup, &mut out.setup);
+        self.replace("teardown", teardown, &mut out.teardown);
+        self.merge("env", env, &mut out.env);
+        self.replace("compose", compose, &mut out.compose);
+        self.replace("box", box_, &mut out.box_);
+        self.replace("box_credentials", box_credentials, &mut out.box_credentials);
+        self.replace("cache", cache, &mut out.cache);
+        self.replace("checkpoint", checkpoint, &mut out.checkpoint);
+        self.replace("machine", machine, &mut out.machine);
+        self.replace("node", node, &mut out.node);
         out
+    }
+
+    /// Adds the entries of `more` to `slot`, each winning over the entry of its name, when the
+    /// text named `key`.
+    fn merge<V>(&self, key: &str, more: BTreeMap<String, V>, slot: &mut BTreeMap<String, V>) {
+        if self.set.contains(key) {
+            slot.extend(more);
+        }
+    }
+
+    /// Puts `value` in `slot` when the text named `key`.
+    fn replace<T>(&self, key: &str, value: T, slot: &mut T) {
+        if self.set.contains(key) {
+            *slot = value;
+        }
     }
 }
 
