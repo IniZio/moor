@@ -105,3 +105,26 @@ fn the_launch_script_of_a_box_with_plugins_installs_none() {
     let installs = crate::adapters::box_agent::profile_writer::install_script(&manifest).unwrap();
     assert!(installs.contains("plugin install 'p@m'"), "{installs}");
 }
+
+#[test]
+fn the_path_and_profile_env_are_left_for_the_other_place_but_the_proxy_env_is_not() {
+    let script = launched(|| LaunchReq {
+        profile: Some(parse("claude:\n  env: {BUN_OPTIONS: \"--x\"}\n").unwrap()),
+        ..req_with_proxy()
+    });
+    let line = script
+        .lines()
+        .find(|l| l.ends_with("> '/run/moor/agent.env' 2>/dev/null || true"))
+        .expect(&script);
+    assert!(
+        line.starts_with("[ -d '/run/moor' ] && printf '%s\\n' "),
+        "{line}"
+    );
+    assert!(
+        line.contains(&moor_core::boxscript::quote(AGENT_PATH_LINE)),
+        "{line}"
+    );
+    assert!(line.contains("export BUN_OPTIONS="), "{line}");
+    assert!(!line.contains("PROXY"), "{line}");
+    assert!(at(&script, "HTTPS_PROXY") < at(&script, line), "{script}");
+}

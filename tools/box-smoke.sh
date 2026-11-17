@@ -140,6 +140,11 @@ check "a Bash-tool line leaves its cwd where Claude reads it in the agent place"
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"
 
+shell 'mkdir -p "$HOME/boxsmoke-bin" && printf "#!/bin/sh\necho tool-ran\n" > "$HOME/boxsmoke-bin/boxsmoke-tool" && chmod +x "$HOME/boxsmoke-bin/boxsmoke-tool"'
+in_agent sh -c "printf '%s\n' 'export PATH=\"\$HOME/boxsmoke-bin:\$PATH\"' > /run/moor/agent.env"
+tool_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-2.sh 2>/dev/null || true && cd /home/agent/moor && boxsmoke-tool && pwd -P >| /tmp/claude-bs02-cwd"
+check "a dir the agent's PATH gains under HOME is on PATH for a Bash-tool line" "tool-ran" "$(in_agent box-shell "$tool_line" 2>&1)"
+
 in_agent sh -c "echo 'moor: smoke note one' >> /run/moor/notes"
 first=$(shell true 2>&1)
 second=$(shell true 2>&1)

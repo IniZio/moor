@@ -8,6 +8,11 @@ use moor_core::seam::proc::Tool;
 use super::super::profile_writer::FAILURES_FILE;
 use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE};
 
+/// The directory both places of a Docker Box share.
+const SHARED_ENV_DIR: &str = "/run/moor";
+/// The file in [`SHARED_ENV_DIR`] that `box-shell` sources before a Bash-tool line.
+const SHARED_ENV_FILE: &str = "agent.env";
+
 /// The line that removes the temp dirs of the Box's earlier launches, all but `tmp`: the agent
 /// is exec'd, so no exit trap removes its own.
 fn remove_earlier(tmp: &BoxPath) -> String {
@@ -38,21 +43,29 @@ pub(super) fn script(
     argv: &[String],
     (proxy, env): (&[String], &[String]),
 ) -> Result<String, NameError> {
-    script_stripping(paths, ctx, hooks, preseed, (argv, &[]), (proxy, env, &[]))
+    script_stripping(
+        paths,
+        ctx,
+        hooks,
+        preseed,
+        (argv, &[]),
+        (proxy, env, &[], &[]),
+    )
 }
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
 /// names are unset before anything else runs, and the `env` exports run
 /// just before the profile `writers`, which run last before the agent, with the agent on `PATH`
-/// and the Proxy reachable.
+/// and the Proxy reachable. The `PATH` line and the `shared` lines are also left in
+/// [`SHARED_ENV_FILE`] for the Box's other place, so its Bash-tool lines get what the agent has.
 pub(super) fn script_stripping(
     (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     (argv, writers): (&[String], &[BoxSetup]),
-    (proxy, env, strip_env): (&[String], &[String], &[String]),
+    (proxy, env, strip_env, shared): (&[String], &[String], &[String], &[String]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -89,6 +102,13 @@ pub(super) fn script_stripping(
     lines.insert(at + 1, remove);
     lines.extend(proxy.iter().cloned());
     lines.extend(env.iter().cloned());
+    let shared = std::iter::once(AGENT_PATH_LINE.to_owned()).chain(shared.iter().cloned());
+    let shared = shared.map(|l| quote(&l)).collect::<Vec<_>>().join(" ");
+    lines.push(format!(
+        "[ -d {run} ] && printf '%s\\n' {shared} > {file} 2>/dev/null || true",
+        run = quote(SHARED_ENV_DIR),
+        file = quote(&format!("{SHARED_ENV_DIR}/{SHARED_ENV_FILE}")),
+    ));
     if !writers.is_empty() {
         // Each writer rewrites the failures file, so each one's lines are kept as it ends.
         let failures = BoxPath::under(workdir, FAILURES_FILE)?;
