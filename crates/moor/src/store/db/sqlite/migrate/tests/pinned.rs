@@ -3,7 +3,7 @@
 use moor_migrate::Backend;
 
 /// Each `SQLite` migration's version and checksum.
-const SQLITE: [(i32, u64); 38] = [
+const SQLITE: &[(i32, u64)] = &[
     (45, 1_311_846_121_584_832_248),
     (46, 858_562_308_596_054_046),
     (47, 14_823_850_939_632_049_515),
@@ -45,7 +45,7 @@ const SQLITE: [(i32, u64); 38] = [
 ];
 
 /// Each Postgres migration's version and checksum.
-const POSTGRES: [(i32, u64); 38] = [
+const POSTGRES: &[(i32, u64)] = &[
     (45, 3_089_193_402_876_792_007),
     (46, 2_751_851_257_713_979_344),
     (47, 31_985_148_182_827_830),
