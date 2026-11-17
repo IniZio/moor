@@ -1,5 +1,5 @@
-//! `moor up` and `moor down` against a fake crabbox and a fake `systemctl` that runs the
-//! rendered service's `ExecStart` as a real controller.
+//! `moor up` and `moor down` against a fake `systemctl` that runs the rendered service's
+//! `ExecStart` as a real controller.
 
 use std::fs;
 use std::io::Write;
@@ -9,16 +9,6 @@ use std::process::{Command, Stdio};
 use moor_testkit::{write_executable, ChildGuard};
 
 use super::{fresh_dir, Dir, Run};
-
-/// A crabbox whose `doctor` selects `external` and passes.
-const READY: &str = r#"case "$*" in
-  "--version") echo "crabbox 0.79.1-moor.9" ;;
-  "doctor --json") echo '{"ok":true,"provider":"external","checks":[]}' ;;
-  "doctor --provider external --json") echo '{"ok":true,"provider":"external","checks":[{"status":"ok","check":"kvm"}]}' ;;
-  "providers --json --configured") echo '[]' ;;
-  *) echo "fake crabbox: $*" >&2; exit 2 ;;
-esac
-"#;
 
 /// A `systemctl --user` that logs each call and runs `moor.service`'s `ExecStart` itself.
 const SYSTEMCTL: &str = r#"dir=$(dirname "$0")
@@ -58,11 +48,8 @@ struct Host {
 }
 
 impl Host {
-    fn new(crabbox: Option<&str>) -> Self {
+    fn new() -> Self {
         let bin = fresh_dir("up-bin");
-        if let Some(body) = crabbox {
-            write_executable(&bin.join("crabbox"), format!("#!/bin/sh\n{body}")).unwrap();
-        }
         write_executable(&bin.join("systemctl"), format!("#!/bin/sh\n{SYSTEMCTL}")).unwrap();
         write_executable(&bin.join("moor-egress-forward"), "#!/bin/sh\nexit 0\n").unwrap();
         Self {
@@ -152,8 +139,8 @@ impl Drop for Host {
 
 /// A host after one `up` that read both secrets from stdin.
 fn converged() -> (Host, Run) {
-    let host = Host::new(Some(READY));
-    let first = host.moor(&["up", "--max-boxes", "2"], "sk-claude\ngh-token\n");
+    let host = Host::new();
+    let first = host.moor(&["up"], "sk-claude\ngh-token\n");
     (host, first)
 }
 
@@ -165,15 +152,6 @@ const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.
 fn up_converges_a_fresh_host() {
     let (host, first) = converged();
     let config = host.home.join(".config/moor/config.yaml");
-    let log = fs::read_to_string(host.bin.join("controller.log"));
-    assert!(
-        first
-            .stdout
-            .contains("ok    provider    external, ready per crabbox doctor\n"),
-        "{first:?}\ncontroller log: {log:?}"
-    );
-    let node = format!("{}: node local (external, max 2 Boxes)", config.display());
-    assert!(first.stdout.contains(&node), "{first:?}");
     assert!(
         first
             .stdout
@@ -240,25 +218,21 @@ fn down_removes_the_units_and_keeps_config_and_state() {
 
 #[test]
 fn up_keeps_a_user_config_and_adds_what_it_lacks() {
-    let host = Host::new(Some(READY));
+    let host = Host::new();
     let config = host.home.join(".config/moor/config.yaml");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     fs::write(&config, "# mine\nbox:\n  sleep_after: 30m\n").unwrap();
-    let r = host.moor(&["up"], "a\nb\n");
+    host.moor(&["up"], "a\nb\n");
     let text = fs::read_to_string(&config).unwrap();
     assert!(
         text.starts_with("# mine\nbox:\n  sleep_after: 30m\ncontroller:\n"),
         "{text}"
     );
-    assert!(
-        text.contains("nodes:\n  local:\n    runtime: external\n"),
-        "{text}\n{r:?}"
-    );
 }
 
 #[test]
 fn up_without_secret_input_names_where_each_comes_from() {
-    let host = Host::new(Some(READY));
+    let host = Host::new();
     let r = host.moor(&["up"], "");
     assert_eq!(r.code, 1, "{r:?}");
     assert!(
@@ -270,61 +244,9 @@ fn up_without_secret_input_names_where_each_comes_from() {
     );
 }
 
-/// `up` that stops before writing anything, with what it printed.
-fn refused(crabbox: Option<&str>) -> (Run, Host) {
-    let host = Host::new(crabbox);
-    let r = host.moor(&["up"], "");
-    assert_eq!(r.code, 1, "{r:?}");
-    assert!(
-        host.written().iter().all(|(_, t)| t.is_empty()),
-        "wrote before the provider was ready"
-    );
-    assert_eq!(host.systemctl_log(), "");
-    (r, host)
-}
-
-#[test]
-fn up_without_crabbox_says_to_install_it() {
-    let (r, _host) = refused(None);
-    assert_eq!(
-        r.stdout,
-        "fail  provider    crabbox is not on PATH; fix: install a -moor build of IniZio/crabbox on PATH (docs/providers.md)\n"
-    );
-}
-
-#[test]
-fn up_with_no_selected_provider_prints_the_commands_that_install_one() {
-    let (r, _host) = refused(Some(r#"echo '{"ok":true,"provider":"","checks":[]}'"#));
-    assert!(
-        r.stdout
-            .starts_with("fail  provider    crabbox selects no provider; fix: "),
-        "{r:?}"
-    );
-    assert!(
-        r.stdout.ends_with(
-            "  curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/download/v0.2.1/install.sh | sh\n  crabbox-cloudhypervisor install\n"
-        ),
-        "{r:?}"
-    );
-}
-
-#[test]
-fn up_with_a_provider_that_is_not_ready_names_crabbox_doctor() {
-    let (r, _host) = refused(Some(
-        r#"case "$*" in
-  "doctor --json") echo '{"ok":true,"provider":"external","checks":[]}' ;;
-  *) echo '{"ok":false,"provider":"external","checks":[{"status":"failed","check":"kvm","details":{"hint":"join_kvm_group"}}]}'; exit 1 ;;
-esac"#,
-    ));
-    assert_eq!(
-        r.stdout,
-        "fail  provider    external: kvm (join_kvm_group); fix: run `crabbox doctor --provider external` and fix what it reports\n"
-    );
-}
-
 #[test]
 fn down_without_a_service_changes_nothing() {
-    let host = Host::new(Some(READY));
+    let host = Host::new();
     let r = host.moor(&["down"], "");
     assert_eq!(
         (r.code, r.stdout.as_str()),

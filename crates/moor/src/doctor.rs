@@ -1,43 +1,29 @@
 //! `moor doctor`: one line per first-run check, each with the fix beside it.
 //!
-//! The checks only read. They reuse the client's dial, the config loader, the crabbox adapter
-//! and the memory rules of the scheduler, so the doctor and a real start agree.
+//! The checks only read. They reuse the client's dial, the config loader and the memory rules
+//! of the scheduler, so the doctor and a real start agree.
 
 mod gate;
 mod host;
 mod nodes;
-mod provider;
 mod render;
 mod setup;
 #[cfg(test)]
 mod tests;
 mod user;
 
-use std::sync::Arc;
-
 use moor_core::config::UserConfig;
 use moor_core::name::ForgeRepo;
-use moor_core::seam::driver::Driver;
-use moor_core::seam::proc::Proc;
 use moor_core::{Request, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::adapters::clock::SystemClock;
-use crate::adapters::crabbox::Crabbox;
-use crate::adapters::proc::SystemProc;
-use crate::adapters::rng::SystemRng;
 use crate::cli::{GlobalOpts, Output};
 use crate::client::{self, ClientError, Target};
 use crate::config_load::load_user;
 use crate::env::Env;
-use crate::wire::tool_paths;
 
 pub(crate) use render::line;
-
-/// Where the crabbox install steps are.
-pub(crate) const CRABBOX_INSTALL: &str =
-    "install a -moor build of IniZio/crabbox on PATH (docs/providers.md)";
 
 /// Whether a check passed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -134,10 +120,6 @@ pub(crate) struct Inputs<'a> {
     pub target: Option<&'a Target>,
     /// Asks the controller; only called when `target` is set.
     pub ask: Ask<'a>,
-    /// Runs crabbox and herdr.
-    pub proc: &'a dyn Proc,
-    /// The crabbox adapter.
-    pub driver: &'a dyn Driver,
     /// Status of a GET, or why it failed.
     pub get: &'a dyn Fn(&str) -> Result<u16, String>,
     /// The gate's public URL, when known.
@@ -183,14 +165,9 @@ fn problem_of(resp: &Response) -> Problem {
 /// Every check, in the order of the setup guide.
 pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
     let read = nodes::read(i);
-    let mut out = vec![
-        setup::config(i),
-        setup::controller(i),
-        provider::check(i, &read),
-    ];
-    out.extend(provider::controller(i));
+    let mut out = vec![setup::config(i), setup::controller(i)];
     out.extend(host::checks(i));
-    out.push(nodes::check(i, &read));
+    out.push(nodes::check(&read));
     out.extend(user::checks(i));
     out.extend(gate::check(i));
     out
@@ -204,9 +181,6 @@ pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
         Err(e) => (UserConfig::default(), Some(e.error.to_string())),
     };
     let target = client::configured_target(env);
-    let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
-    let clock = SystemClock::from_env(env).unwrap_or_else(|_| SystemClock::real());
-    let driver = Crabbox::new(Arc::clone(&proc), Arc::new(clock), Arc::new(SystemRng));
     let ask = |req: Request| {
         target.as_ref().map_or_else(
             || Err(ClientError::Usage("no controller is set".to_owned())),
@@ -224,8 +198,6 @@ pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
         config_error: config_error.as_deref(),
         target: target.as_ref(),
         ask: &ask,
-        proc: proc.as_ref(),
-        driver: &driver,
         get: &get,
         public_url,
         repo,

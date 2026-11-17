@@ -1,7 +1,6 @@
 //! The two config files `up` converges: the controller's and the user's, one fixed path each.
 
 use std::fs;
-use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 use moor_core::config::{parse_controller, parse_user};
@@ -12,9 +11,6 @@ use crate::env::Env;
 
 /// The name of the node `up` makes.
 pub(crate) const NODE: &str = "local";
-
-/// Memory one Box is counted at, and memory kept for the host, in MiB.
-const MIB_PER_BOX: u64 = 4096;
 
 /// Where everything `up` writes lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,47 +82,17 @@ pub(crate) fn controller(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// The local node `up` adds.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Node {
-    /// The crabbox provider.
-    pub runtime: String,
-    /// The cap on live Boxes.
-    pub max_boxes: NonZeroU32,
-    /// Whether `--max-boxes` named the cap.
-    pub asked: bool,
-}
-
-/// One Box per [`MIB_PER_BOX`] of memory beyond as much again for the host, and at least one.
-pub(crate) fn max_boxes(mem_total_mib: u64) -> NonZeroU32 {
-    let n = mem_total_mib.saturating_sub(MIB_PER_BOX) / MIB_PER_BOX;
-    NonZeroU32::new(u32::try_from(n).unwrap_or(u32::MAX)).unwrap_or(NonZeroU32::MIN)
-}
-
-/// `MemTotal` from this host's `/proc/meminfo`, in MiB.
-pub(crate) fn host_mem_mib() -> Option<u64> {
-    let info = fs::read_to_string("/proc/meminfo").ok()?;
-    let kib: u64 = info
-        .lines()
-        .find_map(|l| l.strip_prefix("MemTotal:"))?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()?;
-    Some(kib / 1024)
-}
-
-/// The user config text after `up`: `existing` with a `controller` and a `nodes` section added
-/// where it has none, or `None` when it needs no change.
+/// The user config text after `up`: `existing` with a `controller` section added where it has
+/// none, or `None` when it needs no change.
 ///
 /// # Errors
-/// A config that names another controller, or whose node differs from what `--max-boxes` asks.
+/// A config that names another controller, or that still holds the `local` node an earlier
+/// `moor up` wrote, which the Docker node of the same name replaces.
 pub(crate) fn converge_user(
     env: &Env,
     file: &str,
     existing: Option<&str>,
     socket: &Path,
-    node: &Node,
 ) -> Result<Option<String>, Check> {
     let text = existing.unwrap_or_default();
     let config = parse_user(file, text)
@@ -149,22 +115,12 @@ pub(crate) fn converge_user(
             ))
         }
     }
-    match config.nodes.get(NODE) {
-        Some(have) if node.asked && have.max_boxes != Some(node.max_boxes) => {
-            return Err(Check::fail(
-                "config",
-                format!("{file} already has node {NODE}"),
-                format!("set nodes.{NODE}.max_boxes to {} there", node.max_boxes),
-            ))
-        }
-        None if config.nodes.is_empty() && !has_key("nodes") => section(
-            &mut out,
-            &format!(
-                "nodes:\n  {NODE}:\n    runtime: {}\n    max_boxes: {}\n",
-                node.runtime, node.max_boxes
-            ),
-        ),
-        _ => {}
+    if config.nodes.contains_key(NODE) {
+        return Err(Check::fail(
+            "config",
+            format!("{file} still has the node {NODE} an earlier moor up wrote"),
+            format!("delete nodes.{NODE} from {file}; moor up adds the Docker node of that name"),
+        ));
     }
     Ok((existing != Some(out.as_str())).then_some(out))
 }
@@ -177,30 +133,17 @@ fn section(out: &mut String, block: &str) {
     out.push_str(block);
 }
 
-/// Adds the controller and the local node to the user config, keeping what it already says.
-pub(crate) fn user(env: &Env, layout: &Layout, node: &Node) -> Result<Check, Check> {
+/// Adds the controller to the user config, keeping what it already says.
+pub(crate) fn user(env: &Env, layout: &Layout) -> Result<Check, Check> {
     let path = &layout.user_config;
     let file = path.display().to_string();
     let existing = fs::read_to_string(path).ok();
-    if let Some(text) = converge_user(env, &file, existing.as_deref(), &layout.socket, node)? {
+    if let Some(text) = converge_user(env, &file, existing.as_deref(), &layout.socket)? {
         write(path, &text)?;
     }
-    let text = fs::read_to_string(path).unwrap_or_default();
-    let config = parse_user(&file, &text)
-        .map_err(|e| Check::fail("config", e.to_string(), format!("fix {file}")))?;
-    let nodes: Vec<String> = config
-        .nodes
-        .iter()
-        .map(|(name, n)| {
-            let cap = n
-                .max_boxes
-                .map_or_else(|| "no cap".to_owned(), |m| format!("max {m} Boxes"));
-            format!("{name} ({}, {cap})", n.runtime)
-        })
-        .collect();
     Ok(Check::ok(
         "config",
-        format!("{file}: node {}", nodes.join(", ")),
+        format!("{file}: controller socket {}", layout.socket.display()),
     ))
 }
 

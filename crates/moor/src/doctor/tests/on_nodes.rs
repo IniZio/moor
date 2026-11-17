@@ -44,15 +44,19 @@ fn listing(nodes: Vec<NodeView>) -> Rig {
 }
 
 fn check_of(rig: &Rig) -> Check {
-    rig.with(|i| nodes::check(i, &nodes::read(i)))
+    rig.with(|i| nodes::check(&nodes::read(i)))
 }
 
 #[test]
-fn fails_with_no_node_and_points_at_the_setup_step() {
+fn fails_with_no_node_and_names_the_commands_that_add_one() {
     let c = check_of(&Rig::new());
     assert_eq!(c.status, Status::Fail);
     assert_eq!(c.detail, "no node configured");
-    assert!(c.fix.contains("/nonexistent/moor.yaml") && c.fix.contains("docs/run.md step 3"));
+    assert!(
+        c.fix.contains("moor up") && c.fix.contains("moor node add"),
+        "{}",
+        c.fix
+    );
 }
 
 #[test]

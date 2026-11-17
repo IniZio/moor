@@ -4,7 +4,6 @@
 //! Every step checks before it acts, so a rerun changes nothing and prints the same lines.
 
 mod files;
-mod provider;
 mod secrets;
 mod service;
 #[cfg(test)]
@@ -19,15 +18,12 @@ use moor_core::request::EnrollReq;
 use moor_core::view::user::EnrollValue;
 use moor_core::Request;
 
-use crate::adapters::proc::SystemProc;
 use crate::cli::GlobalOpts;
 use crate::client::{self, ClientError, Target};
-use crate::config_load::load_user;
 use crate::doctor::{answer, line, Check, Status};
 use crate::env::Env;
-use crate::wire::tool_paths;
 
-use files::{Layout, Node};
+use files::Layout;
 
 /// Pause between looks at the controller socket after the service starts.
 const SOCKET_POLL: Duration = Duration::from_millis(100);
@@ -42,22 +38,14 @@ const NEXT: &str = "moor start hello --repo OWNER/NAME --prompt \"Say hello and 
 pub fn up(
     env: &Env,
     opts: &GlobalOpts,
-    max_boxes: Option<NonZeroU32>,
+    _max_boxes: Option<NonZeroU32>,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
     prompt: &mut dyn Write,
 ) -> u8 {
-    match steps(env, max_boxes, input, out, prompt) {
-        Ok(()) => {}
-        Err(failed) => {
-            let _ = out.write_all(line(&failed).as_bytes());
-            if failed.name == "provider" && failed.fix.ends_with("run:") {
-                for cmd in provider::INSTALL_PROVIDER {
-                    let _ = writeln!(out, "  {cmd}");
-                }
-            }
-            return 1;
-        }
+    if let Err(failed) = steps(env, input, out, prompt) {
+        let _ = out.write_all(line(&failed).as_bytes());
+        return 1;
     }
     let report = crate::doctor::run(env, opts, None);
     let _ = out.write_all(report.stdout.as_bytes());
@@ -70,7 +58,6 @@ pub fn up(
 /// Each step of `up` in order; the first that fails stops the rest.
 fn steps(
     env: &Env,
-    max_boxes: Option<NonZeroU32>,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
     prompt: &mut dyn Write,
@@ -86,18 +73,8 @@ fn steps(
             "",
         )
     })?;
-    let proc = SystemProc::new(env, &tool_paths(&load_user(env).unwrap_or_default()));
-    let (runtime, ready) = provider::selected(&proc, &layout.state_dir)?;
-    say(&ready);
-    let node = Node {
-        runtime,
-        max_boxes: max_boxes
-            .or_else(|| files::host_mem_mib().map(files::max_boxes))
-            .unwrap_or(NonZeroU32::MIN),
-        asked: max_boxes.is_some(),
-    };
     say(&files::controller(&layout)?);
-    say(&files::user(env, &layout, &node)?);
+    say(&files::user(env, &layout)?);
     let dir = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
     say(&service::install(&dir, &service::Unit::new(env, &layout)?)?);

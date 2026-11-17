@@ -1,32 +1,16 @@
 //! Shared fakes and the report-level tests.
 
-use std::sync::Arc;
-
 use moor_core::config::{parse_user, UserConfig};
-use moor_core::seam::clock::Ts;
-use moor_core::seam::proc::Tool;
 use moor_core::{ExitClass, Request, Response};
 use serde_json::{json, Value};
 
 use super::*;
 use crate::cli::GlobalOpts;
-use crate::testing::clock::FakeClock;
-use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::rng::FakeRng;
 
 mod on_host;
 mod on_nodes;
-mod on_provider;
-mod on_ready;
 mod on_setup;
 mod on_user;
-
-/// Crabbox as a `-moor` build that moor accepts.
-pub(super) const CRABBOX: &str = "crabbox 0.79.1-moor.6\n";
-
-/// `crabbox providers --json --configured` for one provider.
-pub(super) const PROVIDERS: &str =
-    r#"[{"provider":"cloudhypervisor","features":["pause-resume","cache-volume","ssh"]}]"#;
 
 /// An envelope that answered `cmd` with `value`.
 #[expect(
@@ -50,29 +34,20 @@ pub(super) struct Rig {
     pub config_error: Option<String>,
     pub target: Option<Target>,
     pub script: Script,
-    pub proc: Arc<ScriptedProc>,
     pub public_url: Option<String>,
     pub repo: Option<moor_core::name::ForgeRepo>,
     pub get: Get,
 }
 
 impl Rig {
-    /// A host with a working crabbox and no controller.
+    /// A host with no controller.
     pub(super) fn new() -> Self {
-        let proc = Arc::new(ScriptedProc::new());
-        proc.on(Tool::Crabbox, &["--version"], Reply::Ok(CRABBOX.to_owned()));
-        proc.on(
-            Tool::Crabbox,
-            &["providers"],
-            Reply::Ok(PROVIDERS.to_owned()),
-        );
         Self {
             env: Env::from_pairs([("MOOR_CONFIG", "/nonexistent/moor.yaml")]),
             config: UserConfig::default(),
             config_error: None,
             target: None,
             script: Box::new(|req| Err(ClientError::Usage(format!("unscripted {}", req.cmd())))),
-            proc,
             public_url: None,
             repo: None,
             get: Box::new(|_| Err("unscripted".to_owned())),
@@ -94,20 +69,12 @@ impl Rig {
 
     /// Runs `f` on the inputs of this rig.
     pub(super) fn with<T>(&self, f: impl FnOnce(&Inputs<'_>) -> T) -> T {
-        let proc: Arc<dyn Proc> = Arc::clone(&self.proc) as Arc<dyn Proc>;
-        let driver = Crabbox::new(
-            Arc::clone(&proc),
-            Arc::new(FakeClock::new(Ts::from_millis(0))),
-            Arc::new(FakeRng::default()),
-        );
         f(&Inputs {
             env: &self.env,
             config: &self.config,
             config_error: self.config_error.as_deref(),
             target: self.target.as_ref(),
             ask: &*self.script,
-            proc: proc.as_ref(),
-            driver: &driver,
             get: &*self.get,
             public_url: self.public_url.as_deref(),
             repo: self.repo.clone(),
@@ -130,18 +97,7 @@ fn checks_run_in_the_order_of_the_setup_guide() {
     }));
     let report = rig.report();
     let names: Vec<_> = report.iter().map(|c| c.name).collect();
-    assert_eq!(
-        names,
-        [
-            "config",
-            "controller",
-            "provider",
-            "crabbox",
-            "egress",
-            "nodes",
-            "user"
-        ]
-    );
+    assert_eq!(names, ["config", "controller", "egress", "nodes", "user"]);
 }
 
 #[test]
