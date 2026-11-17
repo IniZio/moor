@@ -45,9 +45,11 @@ token's audience.
 | `set_workflow_enabled` | `name`, `enabled` |
 | `get_repo_config` | `repo` |
 | `set_repo_config` | `repo`, `text`; optional `expected_revision` |
+| `get_node_settings` | `name` |
+| `set_node_settings` | `name`; optional `max_boxes`, `no_cap`, `labels`, `expected_revision` |
 
 - `list_nodes` gives each node's name, scope, runtime, online state, Boxes,
-  `max_boxes`, and free memory. Its `start` field
+  `max_boxes` when it caps them, and free memory. Its `start` field
   names the node a start with no `node` would use.
 - `start_box` takes repos as `owner/name`. It refuses before it creates
   anything when you lack a secret, and links the account page. It
