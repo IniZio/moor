@@ -319,7 +319,8 @@ fn acquires(w: &World) -> usize {
 /// A working Box whose machine is lost; the relaunch sets up on a new machine from scratch and
 /// fails `run-two`.
 fn relaunch_failing_a_line() -> (World, Arc<FakeEngine>, BoxId) {
-    let (w, engine) = yaml_world_with_engine(TWO_LINES, FakeDriver::new());
+    let driver = FakeDriver::new().copy_text("moor setup: $ prep-one\nmoor setup: $ run-two\n");
+    let (w, engine) = yaml_world_with_engine(TWO_LINES, driver);
     let id = started_with(&w, Some("fix it"));
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     w.cx.store()
