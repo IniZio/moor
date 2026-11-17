@@ -173,8 +173,8 @@ fn serve_boxes(listen: &str, controller: &Client) -> Result<(), String> {
     if listen == "off" {
         return Ok(());
     }
-    let listener =
-        TcpListener::bind(listen).map_err(|e| format!("cannot listen on {listen} for Boxes: {e}"))?;
+    let listener = TcpListener::bind(listen)
+        .map_err(|e| format!("cannot listen on {listen} for Boxes: {e}"))?;
     let boxes = Boxes::new(controller.clone())?;
     std::thread::spawn(move || {
         if let Err(e) = boxes.serve(listener) {

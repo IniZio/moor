@@ -1,7 +1,9 @@
 //! The code gate: what a step's report must show before the run moves on.
 
 use crate::artifact::ArtifactFile;
-use crate::workflow::{EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX, NOTE_MAX};
+use crate::workflow::{
+    EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX, NOTE_MAX,
+};
 
 /// Whether `report` of `step` passes, given `index`, the top-level regular files of the Box's
 /// artifacts folder. The refusal lists every problem at once, so the agent fixes them in one go.
@@ -15,7 +17,11 @@ use crate::workflow::{EvidenceName, Step, StepKind, StepReport, StepResult, EVID
 /// # Errors
 /// What is missing, too small or too large, one line each. A step that moor runs itself has no
 /// report to pass, and is refused as such.
-pub fn code_gate(step: &Step, report: &StepReport, index: &[ArtifactFile]) -> Result<(), Vec<String>> {
+pub fn code_gate(
+    step: &Step,
+    report: &StepReport,
+    index: &[ArtifactFile],
+) -> Result<(), Vec<String>> {
     let mut problems = Vec::new();
     if report.note.len() > NOTE_MAX {
         problems.push(format!(
@@ -38,9 +44,8 @@ pub fn code_gate(step: &Step, report: &StepReport, index: &[ArtifactFile]) -> Re
         }
         (StepKind::Deliver { .. }, StepResult::Ok) => {
             if !said_why {
-                problems.push(
-                    "a deliver report needs a note: it becomes the run's result".to_owned(),
-                );
+                problems
+                    .push("a deliver report needs a note: it becomes the run's result".to_owned());
             }
         }
         (StepKind::Work { evidence, .. }, StepResult::Ok) => {
@@ -60,7 +65,10 @@ pub fn code_gate(step: &Step, report: &StepReport, index: &[ArtifactFile]) -> Re
 fn evidence_problems(name: &EvidenceName, index: &[ArtifactFile]) -> Vec<String> {
     let text = name.as_str();
     let matching: Vec<&ArtifactFile> = match text.strip_suffix('*') {
-        Some(prefix) => index.iter().filter(|f| f.name.starts_with(prefix)).collect(),
+        Some(prefix) => index
+            .iter()
+            .filter(|f| f.name.starts_with(prefix))
+            .collect(),
         None => index.iter().filter(|f| f.name == text).collect(),
     };
     if matching.is_empty() {

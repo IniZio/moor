@@ -54,11 +54,14 @@ impl Rig {
         id
     }
 
-    /// The agent goes idle, long enough to count as done, and the tick passes once.
-    fn idle_then_pass(&self, id: WorkflowId) -> Vec<String> {
+    /// The agent reports the step it is at as done, goes idle, and stays idle long enough for a
+    /// check to run. Nothing ticks.
+    fn report_and_idle(&self, id: WorkflowId) -> Vec<String> {
+        let told = self.report_current(id);
+        assert!(!told.error, "{told:?}");
         self.quiet_after_work(id);
         self.pause(3 * 60_000);
-        self.pass()
+        Vec::new()
     }
 
     /// The history lines of the newest run.
@@ -85,9 +88,9 @@ fn cut() -> DriverError {
 fn first_line(tune: impl FnOnce(FakeDriver) -> FakeDriver) -> serde_json::Value {
     let r = rig_driving(UserConfig::default(), tune);
     let id = r.started(plan_of(&[audit(), gate("echo probe", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
-    r.lines(id)[3].clone()
+    r.lines(id)[4].clone()
 }
 
 #[test]
@@ -138,7 +141,7 @@ fn an_interrupted_command_with_no_deadline_fails_the_check_and_is_not_lost() {
 fn a_tick_that_read_history_before_a_finished_check_does_not_run_it_again() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     let first = RefCell::new(Vec::new());
     tick(
         &r.cx,
@@ -164,13 +167,16 @@ fn a_tick_that_read_history_before_a_finished_check_does_not_run_it_again() {
 fn a_check_that_exits_zero_runs_in_the_work_place_and_the_run_goes_on() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("echo all good", 1, None), ship()]));
-    assert!(r.idle_then_pass(id).is_empty());
+    assert!(r.report_and_idle(id).is_empty());
     assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered"]);
+    assert_eq!(r.kinds(id), ["queued", "entered", "reported", "entered"]);
 
     assert!(r.pass().is_empty());
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "checked"]);
-    let checked = r.lines(id)[3].clone();
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "reported", "entered", "checked"]
+    );
+    let checked = r.lines(id)[4].clone();
     assert_eq!(checked["exit"], 0);
     assert!(checked["tail"].as_str().unwrap().contains("all good"));
     let driver = &r.driver;
@@ -181,7 +187,7 @@ fn a_check_that_exits_zero_runs_in_the_work_place_and_the_run_goes_on() {
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
     assert_eq!(
         r.kinds(id),
-        ["queued", "entered", "entered", "checked", "entered", "sent"]
+        ["queued", "entered", "reported", "entered", "checked", "entered", "sent"]
     );
 }
 
@@ -189,7 +195,7 @@ fn a_check_that_exits_zero_runs_in_the_work_place_and_the_run_goes_on() {
 fn a_check_does_not_run_while_the_agent_works() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
     r.cx.store()
         .unwrap()
@@ -197,7 +203,7 @@ fn a_check_does_not_run_while_the_agent_works() {
         .unwrap();
     r.pause(10 * 60_000);
     r.pass();
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered"]);
+    assert_eq!(r.kinds(id), ["queued", "entered", "reported", "entered"]);
 }
 
 #[test]
@@ -208,7 +214,7 @@ fn a_check_that_exits_non_zero_fails_the_run_when_it_has_no_fail_edge() {
         gate("echo broken; exit 3", 1, None),
         ship(),
     ]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     let RunState::Done(RunEnd::Ended {
@@ -220,7 +226,7 @@ fn a_check_that_exits_non_zero_fails_the_run_when_it_has_no_fail_edge() {
     };
     assert_eq!(at.as_str(), "gate");
     assert!(reason.contains("exited 3"), "{reason}");
-    let tail = r.lines(id)[3]["tail"].as_str().unwrap().to_owned();
+    let tail = r.lines(id)[4]["tail"].as_str().unwrap().to_owned();
     assert!(tail.contains("broken"), "{tail}");
 }
 
@@ -237,15 +243,15 @@ fn a_fix_and_check_loop_runs_out_of_tries_and_the_run_fails() {
     ]);
     let r = rig();
     let id = r.started(plan);
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("fix".to_owned(), 1));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("fix".to_owned(), 2));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     let RunState::Done(RunEnd::Ended {
@@ -271,14 +277,24 @@ fn a_lost_stream_is_no_result_and_the_next_tick_runs_the_check_again() {
         d.exec_fails_once_when("lost-once", cut())
     });
     let id = r.started(plan_of(&[audit(), gate("echo lost-once", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "check_lost"]);
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "reported", "entered", "check_lost"]
+    );
     assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
     r.pass();
     assert_eq!(
         r.kinds(id),
-        ["queued", "entered", "entered", "check_lost", "checked"]
+        [
+            "queued",
+            "entered",
+            "reported",
+            "entered",
+            "check_lost",
+            "checked"
+        ]
     );
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
@@ -294,7 +310,7 @@ fn two_lost_streams_in_one_try_follow_fail() {
         gate("echo lost-always", 1, None),
         ship(),
     ]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
@@ -313,6 +329,7 @@ fn two_lost_streams_in_one_try_follow_fail() {
         [
             "queued",
             "entered",
+            "reported",
             "entered",
             "check_lost",
             "check_lost",
@@ -339,7 +356,7 @@ fn a_checks_deadline_is_the_smaller_of_the_run_remaining_and_thirty_minutes() {
         let id = store.put_workflow(REQUESTER_USER, &def).unwrap();
         r.advance_to(FIRST_DUE + 1_000);
         r.pass();
-        r.idle_then_pass(id);
+        r.report_and_idle(id);
         r.pause(60_000);
         let jobs = RefCell::new(Vec::new());
         tick(
@@ -359,7 +376,7 @@ fn a_checks_deadline_is_the_smaller_of_the_run_remaining_and_thirty_minutes() {
 fn a_check_in_flight_is_not_started_twice() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     let jobs = RefCell::new(Vec::new());
     for _ in 0..2 {
         tick(
@@ -402,14 +419,14 @@ fn an_ended_agent_on_a_work_step_is_sent_the_step_again_and_a_second_end_is_inco
 }
 
 #[test]
-fn a_passing_check_goes_on_to_a_deliver_step_that_delivers_when_the_agent_goes_quiet() {
+fn a_passing_check_goes_on_to_a_deliver_step_that_delivers_on_the_agents_report() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     assert_delivered(&r, id);
 }
 
@@ -437,30 +454,34 @@ fn a_run_in_flight_still_delivers_after_its_workflow_is_disabled() {
         .unwrap()
         .set_workflow_enabled(REQUESTER_USER, &WorkflowName::parse("deps").unwrap(), false)
         .unwrap();
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     assert_delivered(&r, id);
 }
 
 #[test]
-fn a_box_that_falls_asleep_after_its_agent_finished_a_work_step_goes_on() {
+fn a_box_that_falls_asleep_after_its_agent_reported_a_work_step_still_gets_its_check() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    assert!(!r.report_current(id).error);
     r.quiet_after_work(id);
     put_to_sleep(&r, r.latest_box(id));
     r.pause(3 * 60_000);
     r.pass();
-    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "reported", "entered", "checked"]
+    );
 }
 
 #[test]
-fn a_box_that_falls_asleep_after_its_agent_finished_the_deliver_step_delivers() {
+fn a_box_that_falls_asleep_with_no_report_at_the_deliver_step_is_reminded() {
     let r = rig();
     let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.idle_then_pass(id);
+    r.report_and_idle(id);
     r.pass();
     r.pass();
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
@@ -468,5 +489,6 @@ fn a_box_that_falls_asleep_after_its_agent_finished_the_deliver_step_delivers() 
     put_to_sleep(&r, r.latest_box(id));
     r.pause(3 * 60_000);
     r.pass();
-    assert_delivered(&r, id);
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    assert_eq!(r.kinds(id).last().map(String::as_str), Some("reminded"));
 }

@@ -22,9 +22,9 @@ use crate::ops::start;
 use crate::store::{Store, StoreError};
 use advance::finish_runs;
 pub(crate) use check::{run_check, CheckJob};
-pub(crate) use report::run as step_report;
 use facts::history;
 use previous::close_previous;
+pub(crate) use report::run as step_report;
 use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
 
 /// One claimed firing, ready to start a Box.

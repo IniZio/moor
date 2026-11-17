@@ -152,10 +152,9 @@ fn send(controller: &Client, req: StepReportReq) -> Result<StepReportValue, Stri
         .request(ControllerRequest::StepReport(req), |_| {})
         .map_err(|e| down(&e))?;
     if reply.class != ExitClass::Ok {
-        return Err(reply.error.map_or_else(
-            || "moor refused the report".to_owned(),
-            |e| e.message,
-        ));
+        return Err(reply
+            .error
+            .map_or_else(|| "moor refused the report".to_owned(), |e| e.message));
     }
     serde_json::from_value(reply.value.unwrap_or_default())
         .map_err(|e| format!("moor answered in a shape the gate does not know: {e}"))
@@ -181,9 +180,7 @@ impl Boxes {
             .disable_allowed_hosts()
             .with_legacy_session_mode(false)
             .with_json_response(true);
-        let tools = BoxTools {
-            controller,
-        };
+        let tools = BoxTools { controller };
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
             Arc::new(LocalSessionManager::default()),

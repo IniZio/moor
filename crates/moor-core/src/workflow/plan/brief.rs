@@ -131,7 +131,10 @@ impl Plan {
         let ask = match &step.kind {
             StepKind::Work { evidence, .. } => {
                 let names: Vec<&str> = evidence.names().map(super::EvidenceName::as_str).collect();
-                format!("with result ok and the evidence it names ({})", names.join(", "))
+                format!(
+                    "with result ok and the evidence it names ({})",
+                    names.join(", ")
+                )
             }
             _ => "with result ok and a note: the run's result".to_owned(),
         };

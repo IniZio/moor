@@ -263,5 +263,5 @@ mod tests;
 pub use advance::{
     advance, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
 };
-pub use gate::code_gate;
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
+pub use gate::code_gate;

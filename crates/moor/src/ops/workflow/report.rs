@@ -3,13 +3,13 @@
 //! The reply always says what to do next. A report that passes the code gate moves the run on in
 //! one compare-and-set, with its lines, so a report repeated or raced by a tick applies once.
 
+use moor_core::artifact::ArtifactFile;
 use moor_core::decide::workflow::{code_gate, refusal_move, report_move, Move};
 use moor_core::view::workflow::StepReportValue;
 use moor_core::workflow::{
     HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, StepReport, StepResult,
     Workflow, WorkflowRun,
 };
-use moor_core::artifact::ArtifactFile;
 use moor_core::BoxId;
 
 use super::advance::history_of;
@@ -183,7 +183,13 @@ fn evidence_index(
     if !matches!(current.kind, StepKind::Work { .. }) || report.result != StepResult::Ok {
         return Ok(Ok(Vec::new()));
     }
-    let Some(row) = s.run.state.box_id().map(|id| store.box_row(id)).transpose()?.flatten()
+    let Some(row) = s
+        .run
+        .state
+        .box_id()
+        .map(|id| store.box_row(id))
+        .transpose()?
+        .flatten()
     else {
         return Ok(Err(refused(NO_RUN)));
     };
@@ -228,7 +234,11 @@ fn apply(
     let Some(box_id) = s.run.state.box_id() else {
         return Ok(Some(refused(NO_RUN)));
     };
-    let exhausted = |steps: Vec<StepId>| steps.into_iter().map(|step| HistoryEntry::Exhausted { step });
+    let exhausted = |steps: Vec<StepId>| {
+        steps
+            .into_iter()
+            .map(|step| HistoryEntry::Exhausted { step })
+    };
     match m {
         Move::Enter {
             step,
