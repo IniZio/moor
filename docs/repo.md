@@ -28,13 +28,10 @@ and says which key is wrong. The MCP tools `get_repo_config` and
 
 ## Repos from before the store
 
-moor no longer reads a `.moor.yaml` from the repo. The first time a controller
-starts on a database that held Boxes from before configs lived in the store, it
-copies the config of each repo's newest Box into the store, as edited by
-`import`, and logs the repos it copied. A repo whose text no longer parses is
-left out and named in the log. A repo that was never started on that controller
-has no config until someone sets one. Delete the file from the repo when you
-like.
+moor no longer reads a `.moor.yaml` from the repo. To keep a repo's old setup,
+paste the file's contents into the portal's repo settings, or run
+`moor repo config set OWNER/NAME --file .moor.yaml`, then delete the file from
+the repo.
 
 ## What an edit reaches
 

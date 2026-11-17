@@ -43,8 +43,7 @@ scan=(-rn --include='*.rs' --include='*.sh'
 # rewrite may use it, and it writes no git config.
 hits=$( { grep "${scan[@]}" -wF "${word_args[@]}" crates/ || true
           grep "${scan[@]}" -F "${sub_args[@]}" crates/ || true; } | sort -u |
-  grep -vE '^crates/moor-core/src/boxscript/clone\.rs:[0-9]+:.*-c url\.https://github\.com/\.insteadOf=' |
-  grep -vE '^crates/moor/src/store/repo_import\.rs:[0-9]+:    #\[serde\(rename = "moor_yaml"\)\]$' || true )
+  grep -vE '^crates/moor-core/src/boxscript/clone\.rs:[0-9]+:.*-c url\.https://github\.com/\.insteadOf=' || true )
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"
