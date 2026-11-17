@@ -20,7 +20,7 @@ use moor_core::{BoxId, ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::view::{agent_view, box_view_with_run, hide_unsupported_sleep};
+use crate::ops::common::view::{agent_view, box_view_with_run};
 use crate::ops::common::{activity, reconcile};
 use crate::store::{BoxRow, RunRow, Store};
 
@@ -80,7 +80,6 @@ fn run_polling(cx: &Cx, req: &WaitReq, poll: Duration) -> Result<WaitValue, Comm
         };
         let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
         view.agent = agent_view(&reading);
-        hide_unsupported_sleep(&mut view, cx);
         return Ok(WaitValue {
             boxed: view,
             timed_out: verdict == WaitVerdict::TimedOut,
@@ -186,7 +185,6 @@ fn failed(
     let mut view = box_view_with_run(row, None, cx.config());
     view.agent = agent_view(reading);
     view.attention = attention;
-    hide_unsupported_sleep(&mut view, cx);
     let shown =
         serde_json::to_value(&view).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
     Ok(CommandError::new(ErrorKind::Failed, text.into()).with_value(shown))

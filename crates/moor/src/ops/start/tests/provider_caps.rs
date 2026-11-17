@@ -19,21 +19,6 @@ fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
         .any(|x| x.code == "egress_unenforced"));
 }
 
-#[test]
-fn a_provider_without_reverse_tunnel_is_refused_before_any_acquire() {
-    let config = parse_user("config.yaml", "nodes: {p: {runtime: p}}").unwrap();
-    let w = world_with(FakeDriver::new().without_reverse_tunnel_cap(), config);
-    let e = crate::ops::start::run(&w.cx, &req("demo")).unwrap_err();
-    assert_eq!(e.kind, moor_core::ErrorKind::Refused);
-    let msg = e.error.to_string();
-    assert!(
-        msg.contains("provider p") && msg.contains("reverse_tunnel"),
-        "{msg}"
-    );
-    assert!(e.hints.iter().any(|h| h.contains("reverse tunnel support")));
-    assert!(!w.driver.calls().iter().any(|c| c == "acquire"));
-}
-
 fn launch_strip_env(config_yaml: &str) -> Vec<String> {
     let config = parse_user("config.yaml", config_yaml).unwrap();
     let w = world_with(FakeDriver::new(), config);

@@ -1,7 +1,6 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Provisioning, exec, copy-out, file peek and put, connect argv, reverse tunnel, sleep
-//! and wake. A reverse tunnel is a long-lived child that the caller owns and drops to stop.
+//! Provisioning, exec, copy-out, file peek and put, connect argv, sleep and wake.
 
 use std::path::Path;
 
@@ -13,18 +12,18 @@ mod caps;
 mod display;
 mod error;
 mod exec;
+mod forwards;
 mod place;
 mod run;
-mod tunnel;
 mod types;
 
 pub use batch::{run_each, BoxStep, StepDone};
-pub use caps::{DriverCaps, SleepKind};
+pub use caps::DriverCaps;
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
+pub use forwards::{Forwards, NO_PORTS, OLD_AGENT_PORTS};
 pub use place::Place;
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
-pub use tunnel::{Forwards, LocalTunnel, TunnelFailure, TunnelHandle, NO_PORTS, OLD_AGENT_PORTS};
 pub use types::{AcquireReq, Acquired, BoxListing, HandlesListing, Released, SleepOutcome};
 
 /// Boxes, behind whichever provider hub is wired.
@@ -229,21 +228,6 @@ pub trait Driver: Send + Sync + Forwards {
     /// [`DriverError`] when the target cannot be looked up.
     fn connect_argv(&self, handle: &BoxHandle, place: Place) -> Result<Vec<String>, DriverError>;
 
-    /// Exposes the host Unix socket `socket` inside the Box on loopback `box_port` until the
-    /// returned handle drops. It opens `socket` per Box connection, so it reaches a listener
-    /// bound again at the same path.
-    ///
-    /// # Errors
-    /// Returns [`DriverError::Unsupported`] when the provider has no reverse
-    /// tunnel, [`DriverError::Tunnel`] when the tunnel exits or stalls before it
-    /// is ready, and another [`DriverError`] as for the other calls.
-    fn reverse_tunnel(
-        &self,
-        handle: &BoxHandle,
-        box_port: u16,
-        socket: &Path,
-    ) -> Result<Box<dyn TunnelHandle>, DriverError>;
-
     /// Makes the next call to the Box log in anew when the Box user has joined a group this
     /// login lacks, since a login keeps the groups it connected with. Calls in flight finish on
     /// the old login. A driver whose every call logs in anew has nothing to do.
@@ -253,16 +237,6 @@ pub trait Driver: Send + Sync + Forwards {
     fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         let _ = handle;
         Ok(())
-    }
-
-    /// Forwards a free host loopback port to Box `127.0.0.1:box_port` until the returned
-    /// tunnel drops.
-    ///
-    /// # Errors
-    /// As for [`Driver::reverse_tunnel`].
-    fn local_tunnel(&self, handle: &BoxHandle, box_port: u16) -> Result<LocalTunnel, DriverError> {
-        let _ = (handle, box_port);
-        Err(DriverError::Unsupported("local tunnel"))
     }
 
     /// Runs `steps` in `place` in order in one round trip where the provider can. `connect` is what

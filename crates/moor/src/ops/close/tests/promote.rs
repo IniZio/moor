@@ -388,15 +388,6 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
 }
 
 #[test]
-fn a_waiter_on_a_provider_without_reverse_tunnel_is_not_provisioned() {
-    let w = world(limit(1), FakeDriver::new().without_reverse_tunnel_cap());
-    let id = waiting_directly(&w, "first");
-    free_slot(&w);
-    assert_eq!(acquires(&w), 0);
-    assert!(!is_working(&row_of(&w, id)));
-}
-
-#[test]
 fn a_failed_acquire_of_the_promoted_box_is_a_warning() {
     let failure = DriverError::Failed {
         summary: "no capacity".into(),

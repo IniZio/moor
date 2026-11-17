@@ -13,7 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::{reprovision, Provisioned};
 use crate::ops::common::target::{resolve, Rule};
-use crate::ops::common::view::{box_view, hide_unsupported_sleep};
+use crate::ops::common::view::box_view;
 use crate::ops::start::launch_after_retry;
 use crate::store::BoxRow;
 
@@ -55,8 +55,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
 
 /// The value `start` gives for an existing Box, with what the retry ran.
 fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> StartView {
-    let mut boxed = box_view(row, cx.config());
-    hide_unsupported_sleep(&mut boxed, cx);
+    let boxed = box_view(row, cx.config());
     let failed = p.failed_step();
     StartView {
         attached: true,

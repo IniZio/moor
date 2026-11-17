@@ -2,7 +2,6 @@
 //!
 //! Holds the Box's turn for the call. Works from Idle, or from Working when no run is in flight.
 
-use std::collections::HashMap;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, Wanted};
@@ -15,7 +14,7 @@ use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{refuse, settled, sleep_handle, sleep_parked};
-use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
+use crate::ops::common::view::box_view;
 use crate::store::BoxRow;
 
 /// Run `sleep`.
@@ -46,8 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
             return Err(refuse("a close of the Box waits to finish".into()));
         }
     }
-    let mut boxed = box_view(&reload()?, cx.config()).driver;
-    hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
+    let boxed = box_view(&reload()?, cx.config()).driver;
     Ok(SleepValue {
         box_name: req.box_name.as_str().to_owned(),
         driver: boxed,

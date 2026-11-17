@@ -16,7 +16,7 @@ use crate::cx::owners::Turn;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::cache;
-use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
+use crate::ops::common::facts::{provider_caps, settings_of};
 use crate::ops::common::guest;
 use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
@@ -158,8 +158,7 @@ pub(crate) fn provision(
             Some(held) => held.provider.clone(),
             None => node::runtime_of(cx, store, &started)?,
         };
-        let caps =
-            require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
+        let caps = provider_caps(cx, provider.as_str())?;
         store.apply(requested(&provider))?;
         Bound {
             seat: node::seat_of(cx, store, &reread(store, id)?)?,

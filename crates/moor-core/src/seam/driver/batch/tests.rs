@@ -8,7 +8,7 @@ use std::time::Duration;
 use super::*;
 use crate::name::{BoxPath, ProviderId};
 use crate::seam::driver::{
-    AcquireReq, Acquired, BoxListing, DriverCaps, Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, DriverCaps, Released, SleepOutcome,
 };
 
 struct Scripted {
@@ -92,14 +92,6 @@ impl Driver for Scripted {
         Ok(())
     }
     fn connect_argv(&self, _: &BoxHandle, _: Place) -> Result<Vec<String>, DriverError> {
-        no()
-    }
-    fn reverse_tunnel(
-        &self,
-        _: &BoxHandle,
-        _: u16,
-        _: &Path,
-    ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         no()
     }
     fn sleep(&self, _: &BoxHandle) -> Result<SleepOutcome, DriverError> {
