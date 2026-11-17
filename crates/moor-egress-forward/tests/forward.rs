@@ -358,6 +358,12 @@ async fn a_wss_upstream_is_verified_against_the_given_roots() {
 }
 
 #[test]
+fn a_machines_box_may_dial_its_host_by_the_name_moor_host_over_plain_ws() {
+    let config = r#"{"listen":"127.0.0.1:1","upstream":"ws://moor-host:8443/egress","token":"t"}"#;
+    assert!(Config::parse(config).is_ok());
+}
+
+#[test]
 fn a_config_with_no_token_is_refused() {
     assert!(
         Config::parse(r#"{"listen":"127.0.0.1:1","upstream":"wss://moor.example/egress"}"#)
@@ -391,12 +397,16 @@ fn the_config_names_its_listener_upstream_and_token() {
         ),
         (r#"{"listen":"127.0.0.1:1"}"#, "bad config"),
         (
+            r#"{"listen":"127.0.0.1:1","upstream":"ws://moor-host.example/egress","token":"t"}"#,
+            "only a loopback ws:// address or moor-host may",
+        ),
+        (
             r#"{"listen":"127.0.0.1:1","upstream":"ws://moor.example/egress","token":"t"}"#,
-            "only a loopback ws:// address may",
+            "only a loopback ws:// address or moor-host may",
         ),
         (
             r#"{"listen":"127.0.0.1:1","upstream":"ws://127.0.0.1.evil.example/egress","token":"t"}"#,
-            "only a loopback ws:// address may",
+            "only a loopback ws:// address or moor-host may",
         ),
     ] {
         let err = Config::parse(bad).err().unwrap();
