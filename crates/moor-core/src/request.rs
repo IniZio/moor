@@ -195,7 +195,6 @@ pub enum Request {
     /// Add or replace a shared node's machine, which no user owns; the operator's only.
     NodeAdd(NodeAddReq),
     /// Ask the controller whether each node runtime's provider credentials are in place.
-    ProviderReady(AsReq),
     /// Ask one of the caller's user's machine agents for its status.
     MachineStatus(MachineStatusReq),
     /// List every enrolled machine's key; the operator's only.

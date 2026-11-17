@@ -12,7 +12,7 @@ use std::thread;
 use moor_core::seam::proc::{Output, ProcError, ProcSpec, StderrGate};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use super::grace::{terminate_with, Abort};
+use super::grace::terminate;
 use super::{failure, feed, gone, stdin_for, SystemProc, DRAIN_GRACE, POLL, TAIL};
 use crate::env::Cancel;
 
@@ -297,7 +297,7 @@ impl SystemProc {
         inherit_err: Box<dyn Write + Send>,
     ) -> Result<(), ProcError> {
         let (stdin, payload) = stdin_for(&spec.stdin).map_err(ProcError::Spawn)?;
-        let mut notice = Shared(Arc::new(Mutex::new(inherit_err)));
+        let notice = Shared(Arc::new(Mutex::new(inherit_err)));
         let (stdout, err_sink) = sinks(out, Box::new(notice.clone())).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
         cmd.stdin(stdin).stdout(stdout).stderr(Stdio::piped());
@@ -346,29 +346,20 @@ impl SystemProc {
             }
             Ok(Event::Interrupted) => {
                 interrupted.store(false, Ordering::SeqCst);
-                stop(pid, &rx, spec, &mut notice, interrupted).and(Err(ProcError::Interrupted))
+                stop(pid, &rx, spec).and(Err(ProcError::Interrupted))
             }
-            Err(RecvTimeoutError::Timeout) => {
-                stop(pid, &rx, spec, &mut notice, interrupted).and(Err(ProcError::Timeout {
-                    tool: spec.tool,
-                    after: limit,
-                }))
-            }
+            Err(RecvTimeoutError::Timeout) => stop(pid, &rx, spec).and(Err(ProcError::Timeout {
+                tool: spec.tool,
+                after: limit,
+            })),
             Err(RecvTimeoutError::Disconnected) => Err(ProcError::Spawn(gone())),
         }
     }
 }
 
-/// Terminates the child, letting another interrupt cut a crabbox wait short.
-fn stop(
-    pid: u32,
-    rx: &mpsc::Receiver<super::Waited>,
-    spec: &ProcSpec,
-    notice: &mut Shared,
-    flag: &AtomicBool,
-) -> Result<(), ProcError> {
-    let abort = Abort { flag, notice };
-    terminate_with(pid, rx, spec.tool, spec.deadline.0, Some(abort)).map_err(ProcError::Spawn)
+/// Terminates the child.
+fn stop(pid: u32, rx: &mpsc::Receiver<super::Waited>, spec: &ProcSpec) -> Result<(), ProcError> {
+    terminate(pid, rx, spec.deadline.0).map_err(ProcError::Spawn)
 }
 
 /// What ended the wait.

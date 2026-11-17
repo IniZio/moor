@@ -196,7 +196,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
         | Request::NodeList(_)
-        | Request::ProviderReady(_)
         | Request::MachineStatus(_)
         | Request::As(_)
         | Request::Version {} => None,

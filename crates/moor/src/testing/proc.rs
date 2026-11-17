@@ -38,12 +38,7 @@ pub(crate) enum Reply {
     Signalled(i32),
     /// moor was interrupted.
     Interrupted,
-    /// The reply this function gives for the call's arguments; not for `run_secret`.
-    Computed(ReplyFn),
 }
-
-/// Picks a reply from a call's arguments.
-pub(crate) type ReplyFn = Arc<dyn Fn(&[String]) -> Reply + Send + Sync>;
 
 /// A canned outcome for a long-lived child started with `spawn_child`.
 #[derive(Clone)]
@@ -66,7 +61,6 @@ pub(crate) struct Call {
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
     pub deadline: Deadline,
-    pub stdin: Vec<u8>,
 }
 
 struct Rule {
@@ -194,11 +188,6 @@ impl ScriptedProc {
         self.push_child_rule(tool, prefix, reply, false)
     }
 
-    /// Like [`Self::on_child`], but answers one spawn only; later spawns fall to the next rule.
-    pub(crate) fn once_child(&self, tool: Tool, prefix: &[&str], reply: ChildReply) -> &Self {
-        self.push_child_rule(tool, prefix, reply, true)
-    }
-
     /// The reply of the first child rule matching `tool` and `args`, removing a one-shot rule.
     fn child_reply(&self, tool: Tool, args: &[String]) -> Option<ChildReply> {
         let mut rules = self
@@ -273,8 +262,7 @@ impl Proc for ScriptedProc {
                     Reply::Fail { .. }
                     | Reply::Timeout
                     | Reply::Signalled(_)
-                    | Reply::Interrupted
-                    | Reply::Computed(_) => None,
+                    | Reply::Interrupted => None,
                 })
         });
         bytes

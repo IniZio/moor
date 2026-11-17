@@ -209,39 +209,3 @@ fn ago(since: i64, now: i64) -> String {
         s => format!("{}d", s / 86_400),
     }
 }
-
-/// One provider check that failed, as `provider-ready` shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderCheck {
-    /// The check's name.
-    pub check: String,
-    /// The check's status.
-    pub status: String,
-    /// The short error class crabbox reports, such as `config`, when it does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class: Option<String>,
-    /// The adapter's error text as one clean, bounded line, when crabbox reports it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// What crabbox suggests, when it does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-}
-
-/// Whether one provider's credentials are in place on the controller host.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderReady {
-    /// The provider, a node runtime.
-    pub provider: String,
-    /// Whether every check passed.
-    pub ok: bool,
-    /// The checks that failed.
-    pub failing: Vec<ProviderCheck>,
-}
-
-/// The `provider-ready` value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderReadyValue {
-    /// One entry per distinct node runtime, sorted.
-    pub providers: Vec<ProviderReady>,
-}

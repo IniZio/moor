@@ -437,17 +437,13 @@ fn sigterm_child() {
     };
     let wake = on_sigterm().expect("take SIGTERM");
     let env = Env::from_pairs([("PATH", "/usr/bin:/bin")]);
-    let tools = ToolPaths {
-        crabbox: Some(PathBuf::from("/bin/sh")),
-        ..ToolPaths::default()
-    };
-    let proc = Arc::new(SystemProc::new(&env, &tools));
+    let proc = Arc::new(SystemProc::new(&env, &ToolPaths::default()));
     let cwd = dir.clone();
     let answer: Answer = Arc::new(move |id, _, out, _| {
         let proc = Arc::clone(&proc);
         let cwd = cwd.clone();
         Some(report_while("run", id, WAIT, out, move |_| {
-            let mut spec = ProcSpec::new(Tool::Crabbox, Deadline(WAIT)).args(["-c", SCRIPT]);
+            let mut spec = ProcSpec::new(Tool::Sh, Deadline(WAIT)).args(["-c", SCRIPT]);
             spec.cwd = Some(cwd.clone());
             match proc.run_streamed(&spec, &Output::Log(cwd.join("run.log"))) {
                 Ok(()) => Response::ok("run", None),

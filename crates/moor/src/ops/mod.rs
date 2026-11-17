@@ -28,7 +28,6 @@ pub(crate) mod machine_hold;
 mod node_add;
 mod nodes;
 mod open_session;
-pub(crate) mod provider_ready;
 mod repo_config;
 mod retry;
 mod run;
@@ -121,7 +120,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::MachineBox(r) => to_value(&machine_box::run(cx, r.op)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::NodeAdd(r) => to_value(&node_add::run(cx, &r)?),
-        Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::ForwardOpen(r) => to_value(&forward::open(cx, &r)?),
