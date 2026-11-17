@@ -104,3 +104,37 @@ fn a_home_that_does_not_exist_reports_no_disk() {
     let r = report(&dir, Some(&dir.join("missing"))).unwrap();
     assert_eq!((r.disk_free_mib, r.disk_total_mib), (None, None));
 }
+
+#[tokio::test]
+async fn a_report_lists_the_health_of_the_boxes_a_host_provides() {
+    use moor_client::link::boxes::{BoxAnswer, BoxOp};
+    use moor_client::link::ops::write_line;
+    let dir = scratch("health");
+    fake_proc(&dir, None);
+    let host = crate::Host::named("fake", &dir).unwrap();
+    let (mut ask, serving) = tokio::io::duplex(4096);
+    let open = BoxOp::Open {
+        slug: "moor-1a2b3c4d-417".to_owned(),
+        class: None,
+        cache: None,
+    };
+    write_line(&mut ask, &open).await.unwrap();
+    host.serve(serving).await;
+    while let Ok(said) = read_line::<_, BoxAnswer>(&mut ask).await {
+        assert!(!matches!(said, BoxAnswer::Refused { .. }), "{said:?}");
+    }
+    let (near, mut far) = tokio::io::duplex(4096);
+    let sending = tokio::spawn({
+        let dir = dir.clone();
+        async move { send_reports(near, &dir, None, (None, Some(&host))).await }
+    });
+    let Opened::Report { report } = read_line(&mut far).await.unwrap() else {
+        unreachable!("not a report");
+    };
+    assert_eq!(report.box_health.len(), 1);
+    let health = report.box_health.first().unwrap();
+    assert_eq!(health["slug"], "moor-1a2b3c4d-417");
+    assert_eq!(health["state"], "awake");
+    assert_eq!(health["generation"], 1);
+    sending.abort();
+}

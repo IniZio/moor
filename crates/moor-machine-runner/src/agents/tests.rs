@@ -79,6 +79,37 @@ fn a_report_stores_the_memory_of_each_box_and_a_later_one_without_it_clears_it()
 }
 
 #[test]
+fn a_report_stores_box_health_unparsed_and_a_later_one_without_it_clears_it() {
+    let (links, _rx) = links();
+    let agents = super::Agents {
+        client: moor_client::Client::new(std::path::Path::new("/nonexistent")),
+        links: std::sync::Arc::new(links),
+        routes: std::sync::Arc::default(),
+    };
+    let tell = tokio::sync::mpsc::channel(1).0;
+    let (generation, _replaced, _asks) =
+        agents
+            .links
+            .up(5, "1.0.0".to_owned(), Offer::default(), tell);
+    assert_eq!(agents.box_health(5), None);
+    let mut with = report(&[]);
+    with.box_health =
+        vec![serde_json::json!({"slug": "moor-0badcafe-7", "state": "from-the-future"})];
+    agents.links.reported(5, generation, &with);
+    let kept = agents.box_health(5).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&kept).unwrap(),
+        serde_json::json!([{"slug": "moor-0badcafe-7", "state": "from-the-future"}])
+    );
+    agents.links.reported(5, generation, &report(&[]));
+    assert_eq!(agents.box_health(5), None);
+    agents.links.reported(5, generation, &with);
+    agents.links.down(5, generation);
+    assert_eq!(agents.box_health(5), None);
+    assert_eq!(agents.box_health(6), None);
+}
+
+#[test]
 fn a_machine_that_goes_down_holds_no_box_memory() {
     let (links, rx) = links();
     let (generation, _replaced, _asks) = links.up(

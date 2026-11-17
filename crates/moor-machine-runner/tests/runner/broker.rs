@@ -4,10 +4,14 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use moor_client::link::boxes::{BoxAnswer, BoxOp};
 use moor_client::link::broker::{self, SOCKET};
+use moor_client::link::chan::{read_frame, Exit, Frame};
 use moor_client::link::lease::{Answer, Boot, Verb};
+use moor_client::link::ops::{self, Op};
 use moor_client::link::reach::Runner;
-use moor_machine_agent::{run, Machine, Pool, State};
+use moor_core::box_key::ControllerId;
+use moor_machine_agent::{run_hosting, Machine, Pool, State};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -103,8 +107,43 @@ impl Host {
             allow_exec: false,
             sweep_grace: Duration::ZERO,
         };
+        Self::linked(rig, home, (state_dir, machine, None))
+    }
+
+    /// A machine that provides fake Boxes instead of a pool, linked to the runner of `rig`.
+    fn boxes() -> Self {
+        let mut rig = Rig::start();
+        if let Some(agent) = rig.machine_agent.take() {
+            agent.shutdown_background();
+        }
+        let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+        *rig.link.pubkey.lock().unwrap() = Some(key.public_key().to_openssh().unwrap());
+        let state_dir = rig.dir().join("agent");
+        let home = rig.dir().join("boxes-home");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        enroll(&state_dir, format!("http://127.0.0.1:{}", rig.agents), &key);
+        let host = moor_machine_agent::Host::named("fake", &home).unwrap();
+        let machine = Machine {
+            home: home.clone(),
+            shell: PathBuf::from("/bin/sh"),
+            hooks: rig.dir().join("hooks"),
+            pool: None,
+            allow_exec: false,
+            sweep_grace: Duration::ZERO,
+        };
+        Self::linked(rig, home, (state_dir, machine, Some(host)))
+    }
+
+    /// Runs the agent of `served` and waits for its link to come up.
+    fn linked(
+        rig: Rig,
+        home: PathBuf,
+        served: (PathBuf, Machine, Option<moor_machine_agent::Host>),
+    ) -> Self {
+        let (state_dir, machine, host) = served;
         let agent = tokio::runtime::Runtime::new().unwrap();
-        agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });
+        agent.spawn(async move { run_hosting(&state_dir, machine, host, false, &|_| {}).await });
         let deadline = Instant::now() + Duration::from_secs(15);
         while !rig
             .link
@@ -460,4 +499,88 @@ async fn a_controller_with_the_wrong_key_is_refused_links_and_forwards() {
         }
     );
     assert_eq!(fake_crabbox::calls(&host.home), "");
+}
+
+/// Writes `op` on a Box stream and reads the answer line.
+async fn box_answer(conn: &mut moor_client::link::reach::Conn, op: &BoxOp) -> BoxAnswer {
+    ops::write_line(conn, op).await.unwrap();
+    ops::read_line(conn).await.unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_box_stream_is_spliced_to_an_agent_that_serves_it_unread() {
+    let host = Host::boxes();
+    let slug = "moor-1a2b3c4d-417".to_owned();
+    let open = BoxOp::Open {
+        slug: slug.clone(),
+        class: None,
+        cache: None,
+    };
+    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let mut said = box_answer(&mut conn, &open).await;
+    if matches!(said, BoxAnswer::Note { .. }) {
+        said = ops::read_line(&mut conn).await.unwrap();
+    }
+    assert!(
+        matches!(said, BoxAnswer::Opened { generation: 1, .. }),
+        "{said:?}"
+    );
+    let exec = BoxOp::Exec {
+        slug,
+        place: moor_core::seam::driver::Place::Work,
+        argv: ["sh", "-c", "echo $MOOR_PLACE; exit 4"]
+            .map(str::to_owned)
+            .to_vec(),
+        env: Vec::new(),
+        cwd: None,
+        stdin: false,
+        tty: None,
+    };
+    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    assert_eq!(box_answer(&mut conn, &exec).await, BoxAnswer::Streaming);
+    let mut buf = Vec::new();
+    let mut out = String::new();
+    loop {
+        match read_frame(&mut conn, &mut buf).await.unwrap() {
+            Some(Frame::Out(bytes)) => out.push_str(&String::from_utf8_lossy(bytes)),
+            Some(Frame::Exit(exit)) => {
+                assert_eq!(exit, Exit::Code(4));
+                break;
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(out, "work\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_that_provides_no_boxes_refuses_a_box_stream() {
+    let host = Host::start();
+    let list = BoxOp::List {
+        controller: ControllerId::parse("1a2b3c4d").unwrap(),
+    };
+    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let said = box_answer(&mut conn, &list).await;
+    let BoxAnswer::Refused { reason } = said else {
+        panic!("{said:?}");
+    };
+    assert_eq!(reason, "this machine provides no Boxes");
+    assert_eq!(fake_crabbox::calls(&host.home), "");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_box_stream_cannot_smuggle_any_other_op_past_the_agents_one_request() {
+    let host = Host::boxes();
+    let marker = host.home.join("ran");
+    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let exec = Op::Exec {
+        box_id: 7,
+        env: Vec::new(),
+        script: format!("touch {}", marker.display()),
+        timeout_secs: 5,
+    };
+    ops::write_line(&mut conn, &exec).await.unwrap();
+    let said: BoxAnswer = ops::read_line(&mut conn).await.unwrap();
+    assert!(matches!(said, BoxAnswer::Refused { .. }), "{said:?}");
+    assert!(!marker.exists());
 }

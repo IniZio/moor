@@ -27,6 +27,14 @@ fn centi(psi: f64) -> u32 {
     (psi.clamp(0.0, 100.0) * 100.0).round() as u32
 }
 
+/// The Box health `report` carries as the JSON text it arrived as; none when it carries none.
+pub(super) fn box_health(report: &Report) -> Option<String> {
+    if report.box_health.is_empty() {
+        return None;
+    }
+    serde_json::to_string(&report.box_health).ok()
+}
+
 /// What `report` says its machine's Boxes hold; a slug that is not a pool lease's is dropped.
 pub(super) fn box_memory(machine_id: i64, report: &Report) -> Vec<BoxHostMemory> {
     report
