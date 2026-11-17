@@ -21,6 +21,9 @@ pub struct ProxyAddr {
     pub box_env: Vec<(String, String)>,
     /// The hosts the credential rules serve; every other host is dialed direct.
     pub hosts: Vec<String>,
+    /// Whether each exec's prelude keeps the egress proxy running. It does not when the Box's
+    /// provider keeps it running in the place that owns the network, which every place shares.
+    pub keep_egress: bool,
 }
 
 impl fmt::Debug for ProxyAddr {

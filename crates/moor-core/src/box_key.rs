@@ -90,6 +90,13 @@ fn canonical(text: &str) -> Option<i64> {
     (n.to_string() == text).then_some(n)
 }
 
+/// Whether `handle` is [`BoxKey::machine_handle`] text: a Box a machine's agent provides, which
+/// reaches the Proxy by dialing it, not through a tunnel.
+#[must_use]
+pub fn is_machine_handle(handle: &str) -> bool {
+    parse_machine_handle(handle).is_some()
+}
+
 /// The machine and slug a [`BoxKey::machine_handle`] names; `None` for any other text, so a
 /// handle of another driver is never taken for one.
 #[must_use]

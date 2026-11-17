@@ -354,6 +354,22 @@ pub trait Driver: Send + Sync + Forwards {
     /// Returns a [`DriverError`] when the resume fails.
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
 
+    /// Makes `vars`, and `ca_pem` as a CA both places trust, the environment of every later
+    /// command in the Box, Claude's own included; the new set replaces the old. A provider whose
+    /// commands all run the exec prelude has nothing to do.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the Box cannot take the environment.
+    fn set_env(
+        &self,
+        handle: &BoxHandle,
+        vars: &[(String, String)],
+        ca_pem: Option<&str>,
+    ) -> Result<(), DriverError> {
+        let _ = (handle, vars, ca_pem);
+        Ok(())
+    }
+
     /// Tells the provider the Box is in real use, so it does not expire the Box as idle.
     /// Reads that only look at a Box never call this. A provider without idle expiry ignores it.
     ///

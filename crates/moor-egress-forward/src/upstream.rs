@@ -48,9 +48,9 @@ impl Upstream {
     /// `url` with `bearer`, trusting `roots` for `wss://`.
     fn with_bearer(url: String, bearer: HeaderValue, roots: RootCertStore) -> Result<Self, String> {
         match (url.strip_prefix("ws://"), url.starts_with("wss://")) {
-            (Some(rest), _) if !loopback(rest) => {
+            (Some(rest), _) if !private(rest) => {
                 return Err(format!(
-                    "upstream {url} sends the token in the clear; only a loopback ws:// address may"
+                    "upstream {url} sends the token in the clear; only a loopback ws:// address or moor-host may"
                 ))
             }
             (Some(_), _) | (None, true) => {}
@@ -80,12 +80,18 @@ impl Upstream {
     }
 }
 
-/// Whether the host of `rest`, an address after its scheme, is a loopback name or address.
-fn loopback(rest: &str) -> bool {
+/// The name every Box gives the host of the machine that holds it, reached over a private route.
+const MOOR_HOST: &str = "moor-host";
+
+/// Whether the host of `rest`, an address after its scheme, is a loopback name or address, or
+/// `moor-host`, which a machine's agent maps to its own host for the Boxes it makes.
+fn private(rest: &str) -> bool {
     let authority = rest.split('/').next().unwrap_or_default();
     let host = authority.strip_prefix('[').map_or_else(
         || authority.split(':').next().unwrap_or_default(),
         |v6| v6.split(']').next().unwrap_or_default(),
     );
-    host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    host == "localhost"
+        || host == MOOR_HOST
+        || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }

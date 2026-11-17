@@ -53,6 +53,7 @@ fn ctx<'a>(
             egress_port: 4322,
             ca_pem,
             hosts: &[],
+            keep_egress: true,
         }),
         workdir,
         strip: &[],

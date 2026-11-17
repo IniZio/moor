@@ -7,7 +7,7 @@
 //! detached runs) is composed over exec in [`over_exec`].
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use moor_client::link::boxes::{BoxAnswer, BoxOp, ReportState};
 use moor_client::link::reach::Runner;
@@ -22,6 +22,7 @@ use moor_core::seam::proc::{Deadline, Pipes};
 
 use stream::{ask, blocking, failed, open, unreached};
 
+mod env;
 mod exec;
 mod over_exec;
 mod stream;
@@ -43,6 +44,8 @@ pub struct Machines {
     reach: Arc<dyn Reach>,
     /// This moor binary, which `box-term` runs as.
     moor: PathBuf,
+    /// What [`Driver::set_env`] last sent each Box, by slug, since a send restarts its Docker.
+    env_sent: Mutex<std::collections::HashMap<String, env::SentEnv>>,
 }
 
 impl Machines {
@@ -50,7 +53,11 @@ impl Machines {
     /// binary at `moor`.
     #[must_use]
     pub fn new(reach: Arc<dyn Reach>, moor: PathBuf) -> Self {
-        Self { reach, moor }
+        Self {
+            reach,
+            moor,
+            env_sent: Mutex::default(),
+        }
     }
 
     /// The machine and Box slug `handle` names.
@@ -168,7 +175,9 @@ impl Driver for Machines {
         let op = BoxOp::Close {
             slug: slug.to_owned(),
         };
-        match self.call(machine, &op, &mut |_| {})? {
+        let answer = self.call(machine, &op, &mut |_| {});
+        env::forget_closed(self, slug, &answer);
+        match answer? {
             BoxAnswer::Done => Ok(Released::Deleted),
             BoxAnswer::Gone => Ok(Released::AlreadyGone),
             other => Err(unexpected(&other)),
@@ -361,6 +370,15 @@ impl Driver for Machines {
         grace_secs: u32,
     ) -> Result<Cancelled, DriverError> {
         over_exec::cancel_run(self, handle, run, grace_secs)
+    }
+
+    fn set_env(
+        &self,
+        handle: &BoxHandle,
+        vars: &[(String, String)],
+        ca_pem: Option<&str>,
+    ) -> Result<(), DriverError> {
+        env::send(self, handle, vars, ca_pem)
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {

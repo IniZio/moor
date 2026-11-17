@@ -40,7 +40,7 @@ impl Kept {
         let Some(handle) = inner.handle.clone().filter(|h| self.current(&inner, h)) else {
             return Ok(());
         };
-        if inner.tunnel.as_ref().is_some_and(|t| t.alive()) {
+        if !self.tunnels(Some(&handle)) || inner.tunnel.as_ref().is_some_and(|t| t.alive()) {
             return Ok(());
         }
         let dead = inner.tunnel.take();

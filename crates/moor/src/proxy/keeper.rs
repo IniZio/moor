@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use moor_core::box_key::is_machine_handle;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
 use moor_core::domain::hands::{HandsInc, HandsState};
@@ -267,7 +268,13 @@ impl Kept {
     /// Whether the Box's credential traffic can reach the shared Proxy now.
     pub(crate) fn up(&self) -> bool {
         let inner = self.lock();
-        self.deps.egress.is_none() || inner.tunnel.as_ref().is_some_and(|t| t.alive())
+        !self.tunnels(inner.handle.as_ref()) || inner.tunnel.as_ref().is_some_and(|t| t.alive())
+    }
+
+    /// Whether the Box at `handle` reaches the Proxy over a tunnel this keeper holds. A machine's
+    /// Box dials the Proxy itself, so it has none.
+    pub(super) fn tunnels(&self, handle: Option<&BoxHandle>) -> bool {
+        self.deps.egress.is_some() && !handle.is_some_and(|h| is_machine_handle(h.as_str()))
     }
 
     /// Opens the tunnel now unless it is up or parked; why it is not up after.
@@ -275,8 +282,9 @@ impl Kept {
         let (handle, inc) = view(&self.deps.store, self.box_id)
             .map_err(|e| format!("cannot read the Box: {e}"))?
             .map_or((None, None), |v| (v.handle, v.inc));
+        let tunnels = self.tunnels(handle.as_ref());
         let busy = lock(&self.busy);
-        if self.follow(handle, inc) || self.deps.egress.is_none() || self.stopped() {
+        if self.follow(handle, inc) || !tunnels || self.stopped() {
             return Ok(());
         }
         self.lock().next_open = None;

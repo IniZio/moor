@@ -24,7 +24,8 @@ fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
     assert_eq!(
         route(&[("MOOR_STATE_DIR", "/s")]),
         Ok(EgressRoute::Local {
-            socket: "/s/egress/egress.sock".into()
+            socket: "/s/egress/egress.sock".into(),
+            host: None,
         })
     );
     assert_eq!(
@@ -42,11 +43,18 @@ fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
 fn a_box_dials_its_own_tunnel_port_on_the_local_route_and_only_wss_elsewhere() {
     let local = EgressRoute::Local {
         socket: "/s/egress/egress.sock".into(),
+        host: None,
     };
-    assert_eq!(local.upstream(20555), "ws://127.0.0.1:20555/egress");
+    assert_eq!(
+        local.upstream(None, 20555),
+        Ok("ws://127.0.0.1:20555/egress".to_owned())
+    );
     assert_eq!(local.socket(), Some(Path::new("/s/egress/egress.sock")));
     let direct = EgressRoute::parse("wss://moor.example/egress").unwrap();
-    assert_eq!(direct.upstream(20555), "wss://moor.example/egress");
+    assert_eq!(
+        direct.upstream(None, 20555),
+        Ok("wss://moor.example/egress".to_owned())
+    );
     assert_eq!(direct.socket(), None);
     for bad in [
         "ws://127.0.0.1:8090/egress",
@@ -176,6 +184,51 @@ const KEY: &[u8] = b"egress-key";
 fn tunneled() -> EgressRoute {
     EgressRoute::Local {
         socket: "/s/egress/egress.sock".into(),
+        host: None,
+    }
+}
+
+#[test]
+fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
+    let env = |listen: &str| {
+        EgressRoute::from_env(&Env::from_pairs([
+            ("MOOR_STATE_DIR", "/s"),
+            ("MOOR_EGRESS_LISTEN", listen),
+        ]))
+    };
+    let route = env("172.17.0.1:8443").unwrap();
+    let machine = BoxHandle::new("m3/moor-1a2b3c4d-7".to_owned());
+    let crabbox = BoxHandle::new("crab-1".to_owned());
+    assert_eq!(
+        route.upstream(Some(&machine), 20555),
+        Ok("ws://moor-host:8443/egress".to_owned())
+    );
+    assert_eq!(
+        route.upstream(Some(&crabbox), 20555),
+        Ok("ws://127.0.0.1:20555/egress".to_owned())
+    );
+    let unset = EgressRoute::from_env(&Env::from_pairs([("MOOR_STATE_DIR", "/s")])).unwrap();
+    assert!(unset
+        .upstream(Some(&machine), 20555)
+        .unwrap_err()
+        .contains("MOOR_EGRESS_LISTEN"));
+    for ok in [
+        "127.0.0.1:9",
+        "10.1.2.3:9",
+        "192.168.0.2:9",
+        "100.101.1.1:9",
+        "[fd00::1]:9",
+    ] {
+        assert!(env(ok).is_ok(), "{ok}");
+    }
+    for bad in [
+        "0.0.0.0:8443",
+        "8.8.8.8:8443",
+        "172.17.0.1:0",
+        "172.17.0.1",
+        "[2001:db8::1]:9",
+    ] {
+        assert!(env(bad).is_err(), "{bad}");
     }
 }
 

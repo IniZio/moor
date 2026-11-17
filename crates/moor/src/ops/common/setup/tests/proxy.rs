@@ -36,6 +36,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
     let r = rig(d.path(), FakeDriver::new());
     let proxy = BoxProxy {
         addr: ProxyAddr {
+            keep_egress: true,
             box_port: 4000,
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             box_env: vec![("A".to_owned(), "1".to_owned())],
@@ -97,6 +98,7 @@ fn without_a_proxy_setup_gets_reserved_and_credential_like_repo_env() {
 fn proxy() -> BoxProxy {
     BoxProxy {
         addr: ProxyAddr {
+            keep_egress: true,
             box_port: 4000,
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             box_env: Vec::new(),

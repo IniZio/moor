@@ -8,7 +8,7 @@ use crate::name::BoxPath;
 use crate::seam::agent_adapter::ProxyAddr;
 use crate::seam::proc::Deadline;
 
-pub use egress::{EGRESS_FAILED, FORWARDER};
+pub use egress::{keep_script, proxy_vars, EGRESS_FAILED, FORWARDER};
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
 const PROXY_DIR: &str = "$HOME/.moor-proxy";
@@ -81,6 +81,8 @@ pub struct ProxyCtx<'a> {
     pub ca_pem: &'a str,
     /// The hosts the credential rules serve; only these go through the Proxy.
     pub hosts: &'a [String],
+    /// Whether the prelude keeps the egress proxy running; false when the Box's provider does.
+    pub keep_egress: bool,
 }
 
 impl<'a> ProxyCtx<'a> {
@@ -92,6 +94,7 @@ impl<'a> ProxyCtx<'a> {
             egress_port: addr.egress_port,
             ca_pem: &addr.ca_pem,
             hosts: &addr.hosts,
+            keep_egress: addr.keep_egress,
         }
     }
 }
@@ -290,7 +293,9 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             )
         ),
     ];
-    lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
+    if p.keep_egress {
+        lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
+    }
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",

@@ -1,9 +1,13 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
+use std::time::Duration;
+
+use moor_core::box_key::is_machine_handle;
 use moor_core::config::BoxSettings;
 use moor_core::domain::hands::HandsInc;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_adapter::ProxyAddr;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
@@ -56,23 +60,77 @@ pub(crate) fn proxy(
     };
     let rule_env = box_env(&spec.rules);
     let service = cx.config().machines.service.iter().map(|s| s.host.clone());
-    let hosts = spec
+    let hosts: Vec<String> = spec
         .rules
         .iter()
         .flat_map(|r| r.hosts.clone())
         .chain(service)
         .collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
+    let forward_port = ep
+        .forward_port
+        .ok_or("the Proxy gave the Box no egress forwarder port")?;
+    // A machine's Box has two places that share one network, so one proxy serves both: the
+    // agent place, which owns that network, keeps it running, and no exec's prelude does.
+    let machine = spec
+        .box_handle
+        .as_ref()
+        .filter(|h| is_machine_handle(h.as_str()));
+    if let Some(handle) = machine {
+        keep_egress(cx, handle, (ep.egress_port, forward_port), &hosts)?;
+        let vars = [exec_env::proxy_vars(ep.egress_port), rule_env.clone()].concat();
+        cx.driver()
+            .set_env(handle, &vars, Some(&ep.ca_pem))
+            .map_err(|e| format!("cannot give the Box its Proxy environment: {e}"))?;
+    }
     let addr = ProxyAddr {
-        box_port: ep
-            .forward_port
-            .ok_or("the Proxy gave the Box no egress forwarder port")?,
+        box_port: forward_port,
         egress_port: ep.egress_port,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         hosts,
+        keep_egress: machine.is_none(),
     };
     Ok(BoxProxy { addr, rule_env })
+}
+
+/// Where the agent place leaves what stopped its egress proxy from starting.
+const KEEP_ERR: &str = "/tmp/moor-egress-keep.err";
+/// Time the agent place gets to install and start the egress proxy.
+const KEEP_WITHIN: Duration = Duration::from_secs(120);
+
+/// Starts or keeps the egress forwarder and tinyproxy of a machine's Box in its agent place.
+fn keep_egress(
+    cx: &Cx,
+    handle: &BoxHandle,
+    (egress_port, forward_port): (u16, u16),
+    hosts: &[String],
+) -> Result<(), String> {
+    let script = format!(
+        "( {} ) 2>{KEEP_ERR}",
+        exec_env::keep_script(egress_port, forward_port, hosts)
+    );
+    let spec = ExecSpec::new(Place::Agent, vec!["sh".to_owned(), "-c".to_owned(), script]);
+    let out = cx
+        .driver()
+        .exec(handle, &spec, Deadline(KEEP_WITHIN))
+        .map_err(|e| format!("cannot start the egress proxy in the Box: {e}"))?;
+    if out == (ExecOutcome::Exited { code: 0 }) {
+        return Ok(());
+    }
+    let why = BoxPath::restore(KEEP_ERR)
+        .ok()
+        .and_then(|path| {
+            cx.driver()
+                .peek_file(handle, Place::Agent, &path)
+                .ok()
+                .flatten()
+        })
+        .and_then(|text| text.lines().last().map(str::to_owned))
+        .unwrap_or_default();
+    Err(format!(
+        "the egress proxy could not start in the Box's agent place: {why}"
+    ))
 }
 
 /// The user of Box `box_id` and the rules its Proxy would run.
