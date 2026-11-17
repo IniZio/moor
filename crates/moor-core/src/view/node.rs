@@ -286,3 +286,6 @@ pub struct ProviderReadyValue {
     /// One entry per distinct node runtime, sorted.
     pub providers: Vec<ProviderReady>,
 }
+
+#[cfg(test)]
+mod tests;

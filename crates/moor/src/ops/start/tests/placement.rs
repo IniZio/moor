@@ -23,8 +23,7 @@ fn world() -> World {
     world_with(FakeDriver::new(), parse_user("config.yaml", yaml).unwrap())
 }
 
-/// Enrolls the requester's machine `name` offering `cloudhypervisor`, capped at `max_boxes` as a
-/// person would set it, linked when `online` is set.
+/// Enrolls the requester's machine `name` on `cloudhypervisor`, capped, linked if `online`.
 fn enrolled(w: &World, name: &str, online: Option<bool>, max_boxes: Option<u32>) -> i64 {
     let store = w.cx.store().unwrap();
     let m = EnrolledMachine::parse(name, KEY, &[], 2)
