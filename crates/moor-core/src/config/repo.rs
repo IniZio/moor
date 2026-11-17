@@ -9,8 +9,10 @@ use super::{check, parse_strict, BoxSize, ConfigError};
 use crate::cache::CacheConfig;
 
 pub use machine::RepoMachine;
+pub use overlay::RepoOverride;
 
 mod machine;
+mod overlay;
 
 /// `compose:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
