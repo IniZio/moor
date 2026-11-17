@@ -4,7 +4,7 @@ use std::fs;
 use std::time::Duration;
 
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecSpec};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecSpec, Place};
 use moor_core::seam::proc::Deadline;
 
 use super::fake_ssh::{handle, lab, Lab};
@@ -26,38 +26,38 @@ fn deadline() -> Deadline {
 fn every_box_ssh(lab: &Lab) -> Vec<(&'static str, Result<(), DriverError>)> {
     let h = handle();
     let path = BoxPath::restore("/w/a").unwrap();
-    let spec = ExecSpec {
-        argv: vec!["true".to_owned()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, vec!["true".to_owned()]);
     let batch = |connect: &[String]| {
-        let done = lab
-            .cb
-            .batch(&h, connect, &[BoxStep::Peek(path.clone())], deadline());
+        let done = lab.cb.batch(
+            &h,
+            connect,
+            Place::Work,
+            &[BoxStep::Peek(path.clone())],
+            deadline(),
+        );
         done.into_iter().next().unwrap().map(|_| ())
     };
     let pane = lab
         .cb
-        .connect_argv(&h)
+        .connect_argv(&h, Place::Work)
         .unwrap_or_else(|_| ["ssh", "-t", "u@box"].map(str::to_owned).to_vec());
     let mut sink = |_: &str, _: Option<&mut dyn std::io::Read>| {};
     vec![
         ("exec", lab.cb.exec(&h, &spec, deadline()).map(|_| ())),
         ("batch", batch(&[])),
         ("batch through a pane's argv", batch(&pane)),
-        ("peek", lab.cb.peek_file(&h, &path).map(|_| ())),
-        ("put", lab.cb.put_file(&h, &path, b"x", 0o600)),
+        ("peek", lab.cb.peek_file(&h, Place::Work, &path).map(|_| ())),
+        ("put", lab.cb.put_file(&h, Place::Work, &path, b"x", 0o600)),
         (
             "stream",
             lab.cb
                 .stream_files(&h, &path, &["a".to_owned()], deadline(), &mut sink),
         ),
-        ("connect", lab.cb.connect_argv(&h).map(|_| ())),
+        ("connect", lab.cb.connect_argv(&h, Place::Work).map(|_| ())),
         (
             "copy",
-            lab.cb.copy_out(&h, &path, &lab.dir.path().join("copied")),
+            lab.cb
+                .copy_out(&h, Place::Work, &path, &lab.dir.path().join("copied")),
         ),
     ]
 }

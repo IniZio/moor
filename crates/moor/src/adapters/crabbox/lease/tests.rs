@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
-use moor_core::seam::driver::{AcquireReq, BoxStep, Driver, ExecSpec, Released};
+use moor_core::seam::driver::{AcquireReq, BoxStep, Driver, ExecSpec, Place, Released};
 use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
 
 use super::CEILING;
@@ -64,12 +64,7 @@ fn path() -> BoxPath {
 }
 
 fn exec_spec() -> ExecSpec {
-    ExecSpec {
-        argv: vec!["true".to_owned()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    }
+    ExecSpec::new(Place::Work, vec!["true".to_owned()])
 }
 
 type Call = fn(&Crabbox);
@@ -83,24 +78,34 @@ const CALLS: [(&str, Call); 12] = [
     }),
     ("copy_out", |c| {
         let scratch = c.leases.as_ref().unwrap().with_file_name("copied");
-        drop(c.copy_out(&handle(), &path(), &scratch));
+        drop(c.copy_out(&handle(), Place::Work, &path(), &scratch));
     }),
     ("stream_files", |c| {
         let names = ["f".to_owned()];
         let deadline = Deadline(Duration::from_secs(1));
         drop(c.stream_files(&handle(), &path(), &names, deadline, &mut |_, _| {}));
     }),
-    ("peek_file", |c| drop(c.peek_file(&handle(), &path()))),
-    ("put_file", |c| {
-        drop(c.put_file(&handle(), &path(), b"x", 0o600));
+    ("peek_file", |c| {
+        drop(c.peek_file(&handle(), Place::Work, &path()))
     }),
-    ("connect_argv", |c| drop(c.connect_argv(&handle()))),
+    ("put_file", |c| {
+        drop(c.put_file(&handle(), Place::Work, &path(), b"x", 0o600));
+    }),
+    ("connect_argv", |c| {
+        drop(c.connect_argv(&handle(), Place::Work))
+    }),
     ("reverse_tunnel", |c| {
         drop(c.reverse_tunnel(&handle(), 8080, Path::new("/s")));
     }),
     ("batch", |c| {
         let steps = [BoxStep::Peek(path())];
-        drop(c.batch(&handle(), &[], &steps, Deadline(Duration::from_secs(1))));
+        drop(c.batch(
+            &handle(),
+            &[],
+            Place::Work,
+            &steps,
+            Deadline(Duration::from_secs(1)),
+        ));
     }),
     ("sleep", |c| {
         drop(c.sleep(&handle()));

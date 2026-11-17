@@ -6,7 +6,7 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::{AcquireReq, Driver, Place};
 use moor_core::{AttachReq, BoxId, BoxName, ProviderId};
 
 use super::argv;
@@ -55,7 +55,7 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
         })
         .unwrap();
     let workdir = driver.workdir(&got.handle).unwrap().as_str().to_owned();
-    let connect = driver.connect_argv(&got.handle).unwrap();
+    let connect = driver.connect_argv(&got.handle, Place::Agent).unwrap();
     store
         .apply(
             Decision::new(id)

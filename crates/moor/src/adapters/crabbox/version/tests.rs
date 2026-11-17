@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecSpec};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecSpec, Place};
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::{check, Version};
@@ -131,12 +131,7 @@ fn ops() -> Vec<(&'static str, Op)> {
         ("release", |c| c.release(&handle()).is_err()),
         ("list", |c| c.list(&ProviderId::new("sprites")).is_err()),
         ("exec", |c| {
-            let spec = ExecSpec {
-                argv: vec!["true".to_owned()],
-                env: Vec::new(),
-                cwd: None,
-                output: None,
-            };
+            let spec = ExecSpec::new(Place::Work, vec!["true".to_owned()]);
             c.exec(
                 &handle(),
                 &spec,
@@ -145,13 +140,19 @@ fn ops() -> Vec<(&'static str, Op)> {
             .is_err()
         }),
         ("copy_out", |c| {
-            c.copy_out(&handle(), &path(), Path::new("/o")).is_err()
+            c.copy_out(&handle(), Place::Work, &path(), Path::new("/o"))
+                .is_err()
         }),
-        ("peek_file", |c| c.peek_file(&handle(), &path()).is_err()),
+        ("peek_file", |c| {
+            c.peek_file(&handle(), Place::Work, &path()).is_err()
+        }),
         ("put_file", |c| {
-            c.put_file(&handle(), &path(), b"x", 0o600).is_err()
+            c.put_file(&handle(), Place::Work, &path(), b"x", 0o600)
+                .is_err()
         }),
-        ("connect_argv", |c| c.connect_argv(&handle()).is_err()),
+        ("connect_argv", |c| {
+            c.connect_argv(&handle(), Place::Work).is_err()
+        }),
         ("reverse_tunnel", |c| {
             c.reverse_tunnel(&handle(), 1, Path::new("/s")).is_err()
         }),

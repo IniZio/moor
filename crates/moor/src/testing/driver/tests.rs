@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use moor_core::name::BoxName;
 use moor_core::seam::driver::{
-    AcquireReq, BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
+    AcquireReq, BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Place, Released, SleepOutcome,
     StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
@@ -55,12 +55,9 @@ fn planned_handle_is_the_next_acquired_handle() {
 }
 
 fn spec(argv: &[&str]) -> ExecSpec {
-    ExecSpec {
-        argv: argv.iter().map(|a| (*a).to_owned()).collect(),
-        env: vec![("K".to_owned(), "V".to_owned())],
-        cwd: Some(BoxPath::under("/work", "box-1").unwrap()),
-        output: None,
-    }
+    ExecSpec::new(Place::Work, argv.iter().map(|a| (*a).to_owned()).collect())
+        .env(vec![("K".to_owned(), "V".to_owned())])
+        .cwd(Some(BoxPath::under("/work", "box-1").unwrap()))
 }
 
 const DL: Deadline = Deadline(Duration::from_secs(7));
@@ -138,7 +135,7 @@ fn scripted_interrupted_outcome_is_returned() {
 
 fn copy(fake: &FakeDriver, h: &BoxHandle) -> Result<(), DriverError> {
     let from = BoxPath::under("/work", "out").unwrap();
-    fake.copy_out(h, &from, &PathBuf::from("/dst"))
+    fake.copy_out(h, Place::Work, &from, &PathBuf::from("/dst"))
 }
 
 #[test]
@@ -179,9 +176,12 @@ fn peek_serves_text_per_box_and_records_reads() {
     let b = fake.acquire(&req()).unwrap().handle;
     let path = peeked("s.json");
     let fake = fake.peek_text("box-1", &path, "one");
-    assert_eq!(fake.peek_file(&a, &path), Ok(Some("one".to_owned())));
-    assert_eq!(fake.peek_file(&b, &path), Ok(None));
-    assert_eq!(fake.peek_file(&a, &peeked("other")), Ok(None));
+    assert_eq!(
+        fake.peek_file(&a, Place::Work, &path),
+        Ok(Some("one".to_owned()))
+    );
+    assert_eq!(fake.peek_file(&b, Place::Work, &path), Ok(None));
+    assert_eq!(fake.peek_file(&a, Place::Work, &peeked("other")), Ok(None));
     assert_eq!(fake.peeks().len(), 3);
     assert_eq!(fake.peeks().first(), Some(&(a, path)));
 }
@@ -190,16 +190,16 @@ fn peek_serves_text_per_box_and_records_reads() {
 fn peek_on_unknown_handle_is_not_found_and_scripted_failure_is_one_shot() {
     let fake = FakeDriver::new();
     assert_eq!(
-        fake.peek_file(&BoxHandle::new("box-9"), &peeked("x")),
+        fake.peek_file(&BoxHandle::new("box-9"), Place::Work, &peeked("x")),
         Err(DriverError::NotFound)
     );
     let (fake, h) = fake_with_box();
     let fake = fake.fail_peek(DriverError::Timeout(Duration::from_secs(1)));
     assert_eq!(
-        fake.peek_file(&h, &peeked("x")),
+        fake.peek_file(&h, Place::Work, &peeked("x")),
         Err(DriverError::Timeout(Duration::from_secs(1)))
     );
-    assert_eq!(fake.peek_file(&h, &peeked("x")), Ok(None));
+    assert_eq!(fake.peek_file(&h, Place::Work, &peeked("x")), Ok(None));
 }
 
 #[test]
@@ -219,7 +219,10 @@ fn peek_returns_while_an_exec_on_the_same_box_is_blocked() {
         std::thread::spawn(move || fake.exec(&h, &spec(&["sleep"]), DL))
     };
     entered_rx.recv().unwrap();
-    assert_eq!(fake.peek_file(&h, &path), Ok(Some("live".to_owned())));
+    assert_eq!(
+        fake.peek_file(&h, Place::Work, &path),
+        Ok(Some("live".to_owned()))
+    );
     release_tx.send(()).unwrap();
     assert_eq!(runner.join().unwrap(), Ok(ExecOutcome::Exited { code: 0 }));
 }
@@ -264,10 +267,13 @@ fn put_is_served_back_by_peek_per_box_and_recorded() {
     let (fake, a) = fake_with_box();
     let b = fake.acquire(&req()).unwrap().handle;
     let path = BoxPath::restore("/home/u/.moor-cred-x/brief.md").unwrap();
-    assert_eq!(fake.put_file(&a, &path, b"one", 0o600), Ok(()));
-    assert_eq!(fake.put_file(&a, &path, b"two", 0o600), Ok(()));
-    assert_eq!(fake.peek_file(&a, &path), Ok(Some("two".to_owned())));
-    assert_eq!(fake.peek_file(&b, &path), Ok(None));
+    assert_eq!(fake.put_file(&a, Place::Work, &path, b"one", 0o600), Ok(()));
+    assert_eq!(fake.put_file(&a, Place::Work, &path, b"two", 0o600), Ok(()));
+    assert_eq!(
+        fake.peek_file(&a, Place::Work, &path),
+        Ok(Some("two".to_owned()))
+    );
+    assert_eq!(fake.peek_file(&b, Place::Work, &path), Ok(None));
     assert_eq!(
         fake.puts().first(),
         Some(&(a, path, b"one".to_vec(), 0o600))
@@ -280,19 +286,22 @@ fn put_and_connect_on_unknown_box_are_not_found_and_failures_are_one_shot() {
     let gone = BoxHandle::new("box-9");
     let path = BoxPath::restore("/h/f").unwrap();
     assert_eq!(
-        fake.put_file(&gone, &path, b"x", 0o600),
+        fake.put_file(&gone, Place::Work, &path, b"x", 0o600),
         Err(DriverError::NotFound)
     );
-    assert_eq!(fake.connect_argv(&gone), Err(DriverError::NotFound));
+    assert_eq!(
+        fake.connect_argv(&gone, Place::Work),
+        Err(DriverError::NotFound)
+    );
     let (fake, h) = fake_with_box();
     let fake = fake
         .fail_put(DriverError::Quota("q".into()))
         .fail_connect(DriverError::Quota("q".into()));
-    assert!(fake.put_file(&h, &path, b"x", 0o600).is_err());
-    assert!(fake.put_file(&h, &path, b"x", 0o600).is_ok());
-    assert!(fake.connect_argv(&h).is_err());
+    assert!(fake.put_file(&h, Place::Work, &path, b"x", 0o600).is_err());
+    assert!(fake.put_file(&h, Place::Work, &path, b"x", 0o600).is_ok());
+    assert!(fake.connect_argv(&h, Place::Work).is_err());
     assert_eq!(
-        fake.connect_argv(&h),
+        fake.connect_argv(&h, Place::Work),
         Ok(vec!["ssh".to_owned(), "-t".to_owned(), "box-1".to_owned()])
     );
 }
@@ -338,7 +347,7 @@ fn batch_dispatches_to_own_logs_and_counts_one_top_level_call() {
         BoxStep::Run("true".to_owned()),
     ];
     let connect = vec!["ssh".to_owned()];
-    let done = fake.batch(&h, &connect, &steps, DL);
+    let done = fake.batch(&h, &connect, Place::Work, &steps, DL);
     assert_eq!(done.len(), 3);
     assert_eq!(
         done.last(),
@@ -359,7 +368,7 @@ fn batch_stops_after_a_failed_run() {
     let fake = FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]);
     let h = fake.acquire(&req()).unwrap().handle;
     let steps = [BoxStep::Run("a".to_owned()), BoxStep::Run("b".to_owned())];
-    let done = fake.batch(&h, &[], &steps, DL);
+    let done = fake.batch(&h, &[], Place::Work, &steps, DL);
     assert_eq!(done.len(), 1);
     assert_eq!(fake.execs().len(), 1);
 }

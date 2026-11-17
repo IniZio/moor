@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::Driver;
+use moor_core::seam::driver::{Driver, Place};
 
 use super::fake_ssh::{driver, handle, lab, Lab};
 use crate::adapters::crabbox::link;
@@ -97,7 +97,7 @@ fn a_call_inside_the_idle_window_reuses_the_master_and_one_after_it_reconnects()
     let file = lab.dir.path().join("hook");
     fs::write(&file, "idle").unwrap();
     let path = BoxPath::restore(&file.display().to_string()).unwrap();
-    let read = || cb.peek_file(&handle(), &path);
+    let read = || cb.peek_file(&handle(), Place::Work, &path);
 
     assert_eq!(read(), Ok(Some("idle".to_owned())));
     assert_eq!(connects(&lab), 1);

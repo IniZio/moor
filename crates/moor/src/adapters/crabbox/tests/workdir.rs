@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{Driver, DriverError, ExecSpec};
+use moor_core::seam::driver::{Driver, DriverError, ExecSpec, Place};
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::{fixture, req, Reply};
@@ -67,12 +67,7 @@ fn a_relative_work_root_in_the_ready_line_is_refused_by_name() {
 
 /// `true`, run in the Box with no env, cwd or output file.
 fn true_cmd() -> ExecSpec {
-    ExecSpec {
-        argv: vec!["true".to_owned()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    }
+    ExecSpec::new(Place::Work, vec!["true".to_owned()])
 }
 
 #[test]

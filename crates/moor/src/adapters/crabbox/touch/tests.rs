@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{BoxStep, Driver, DriverError};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, Place};
 use moor_core::seam::proc::{Deadline, Tool};
 use tempfile::TempDir;
 
@@ -93,7 +93,7 @@ fn path() -> BoxPath {
 }
 
 fn peek(d: &Crabbox) -> Result<Option<String>, DriverError> {
-    d.peek_file(&handle(), &path())
+    d.peek_file(&handle(), Place::Work, &path())
 }
 
 #[test]
@@ -103,10 +103,11 @@ fn looking_at_a_box_reuses_its_saved_target_and_never_touches_the_lease() {
     rig.clock.sleep(Duration::from_hours(3));
     let d = rig.driver();
     peek(&d).unwrap();
-    d.connect_argv(&handle()).unwrap();
+    d.connect_argv(&handle(), Place::Work).unwrap();
     let _ = d.batch(
         &handle(),
         &[],
+        Place::Work,
         &[BoxStep::Peek(path())],
         Deadline(Duration::from_secs(5)),
     );
@@ -117,7 +118,8 @@ fn looking_at_a_box_reuses_its_saved_target_and_never_touches_the_lease() {
 fn real_use_sends_one_heartbeat_to_that_lease() {
     let rig = Rig::new();
     let d = rig.driver();
-    d.put_file(&handle(), &path(), b"{}", 0o600).unwrap();
+    d.put_file(&handle(), Place::Work, &path(), b"{}", 0o600)
+        .unwrap();
     d.touch(&handle()).unwrap();
     let beats: Vec<Vec<String>> = rig
         .p

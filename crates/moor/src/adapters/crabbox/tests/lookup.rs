@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Deadline;
 
 use super::fake_ssh::{driver, handle, lab, tools, Lab};
@@ -110,7 +110,7 @@ fn a_running_command_touches_its_lease_every_ten_minutes() {
 fn a_shared_call_keeps_its_master_up_for_ten_minutes() {
     let lab = lab();
     let path = BoxPath::restore(&lab.dir.path().join("absent").display().to_string()).unwrap();
-    assert_eq!(lab.cb.peek_file(&handle(), &path), Ok(None));
+    assert_eq!(lab.cb.peek_file(&handle(), Place::Work, &path), Ok(None));
     let ssh = lab.argvs("ssh");
     let persist = ssh
         .first()
@@ -146,8 +146,9 @@ fn wait_for(what: &str, done: impl Fn() -> bool) {
 fn a_long_command_touches_the_lease_while_it_runs_and_stops_when_it_ends() {
     let lab = touching_lab();
     let release = lab.dir.path().join("release");
-    let spec = ExecSpec {
-        argv: vec![
+    let spec = ExecSpec::new(
+        Place::Work,
+        vec![
             "sh".to_owned(),
             "-c".to_owned(),
             format!(
@@ -155,10 +156,7 @@ fn a_long_command_touches_the_lease_while_it_runs_and_stops_when_it_ends() {
                 release.display()
             ),
         ],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    );
     let (sent, outcome) = mpsc::channel();
     let running = Arc::clone(&lab);
     thread::spawn(move || {

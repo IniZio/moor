@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use moor_core::boxscript::record::MOVED_FILE;
 use moor_core::seam::driver::{
-    Cancelled, Driver, DriverError, ExecSpec, FollowEnd, Followed, Launched, RunEnd, RunOutcome,
+    Cancelled, Driver, DriverError, ExecSpec, FollowEnd, Followed, Launched, Place, RunEnd,
+    RunOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath};
@@ -34,12 +35,11 @@ fn h() -> BoxHandle {
 
 impl Local {
     fn launch(&self, run: i64, script: &str) -> Result<Launched, DriverError> {
-        let spec = ExecSpec {
-            argv: vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
-            env: vec![("WHO".to_owned(), "the run".to_owned())],
-            cwd: None,
-            output: None,
-        };
+        let spec = ExecSpec::new(
+            Place::Work,
+            vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
+        )
+        .env(vec![("WHO".to_owned(), "the run".to_owned())]);
         self.driver.launch_run(&h(), run, &spec)
     }
 

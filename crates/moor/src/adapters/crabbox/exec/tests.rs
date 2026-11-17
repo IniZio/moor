@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::driver::{
+    BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Place, StepDone,
+};
 use moor_core::seam::proc::{Deadline, Output, ProcError, Tool};
 
 use crate::adapters::crabbox::tests::fake_ssh::{driver, handle, lab, tools, Lab};
@@ -25,19 +27,14 @@ impl Lab {
 }
 
 fn sh(script: &str) -> ExecSpec {
-    ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    }
+    ExecSpec::new(
+        Place::Work,
+        vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
+    )
 }
 
 fn streamed(lab: &Lab, script: &str) -> ExecSpec {
-    ExecSpec {
-        output: Some(Output::Log(lab.log())),
-        ..sh(script)
-    }
+    sh(script).output(Some(Output::Log(lab.log())))
 }
 
 #[test]
@@ -159,9 +156,13 @@ fn a_batch_stops_after_a_failing_run() {
         BoxStep::Run("echo one; exit 4".to_owned()),
         BoxStep::Run(format!("touch {}", marker.display())),
     ];
-    let done = lab
-        .cb
-        .batch(&handle(), &[], &steps, Deadline(Duration::from_secs(20)));
+    let done = lab.cb.batch(
+        &handle(),
+        &[],
+        Place::Work,
+        &steps,
+        Deadline(Duration::from_secs(20)),
+    );
     assert_eq!(
         done,
         [Ok(StepDone::Ran {

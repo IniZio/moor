@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{
-    Cancelled, Driver, DriverError, ExecSpec, FollowEnd, Followed, Launched, RunEnd, RunOutcome,
+    Cancelled, Driver, DriverError, ExecSpec, FollowEnd, Followed, Launched, Place, RunEnd,
+    RunOutcome,
 };
 use moor_core::seam::proc::Deadline;
 
@@ -21,12 +22,14 @@ impl Lab {
     }
 
     fn launch(&self, run: i64, script: &str) -> Result<Launched, DriverError> {
-        let spec = ExecSpec {
-            argv: vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
-            env: vec![("TOKEN".to_owned(), SECRET.to_owned())],
-            cwd: Some(BoxPath::restore(self.work().to_str().unwrap()).unwrap()),
-            output: None,
-        };
+        let spec = ExecSpec::new(
+            Place::Work,
+            vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
+        )
+        .env(vec![("TOKEN".to_owned(), SECRET.to_owned())])
+        .cwd(Some(
+            BoxPath::restore(self.work().to_str().unwrap()).unwrap(),
+        ));
         self.cb.launch_run(&handle(), run, &spec)
     }
 

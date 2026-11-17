@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, HandlesListing, Released, RunEnd, SleepKind, SleepOutcome,
-    StepDone,
+    ExecOutcome, ExecSpec, Followed, HandlesListing, Place, Released, RunEnd, SleepKind,
+    SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -50,6 +50,8 @@ struct State {
     exec_stdout: VecDeque<String>,
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
+    /// The place each Box command was given, by the op that took it.
+    placed: Vec<(&'static str, Place)>,
     refreshed_logins: Vec<(BoxHandle, usize)>,
     touches: Vec<BoxHandle>,
     copies: Vec<CopyCall>,
@@ -205,6 +207,7 @@ impl Driver for FakeDriver {
         self.run_exec_hooks(spec);
         let mut s = self.st();
         s.note(format!("exec {}", handle.as_str()));
+        s.placed.push(("exec", spec.place));
         s.execs.push((handle.clone(), spec.clone(), deadline));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
@@ -232,10 +235,17 @@ impl Driver for FakeDriver {
         out
     }
 
-    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        place: Place,
+        from: &BoxPath,
+        to: &Path,
+    ) -> Result<(), DriverError> {
         self.run_copy_out_hook();
         let mut s = self.st();
         s.note(format!("copy_out {}", handle.as_str()));
+        s.placed.push(("copy_out", place));
         s.copies
             .push((handle.clone(), from.clone(), to.to_path_buf()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
@@ -259,9 +269,15 @@ impl Driver for FakeDriver {
             .map_or(Ok(()), |bytes| write_bytes(to, bytes))
     }
 
-    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        place: Place,
+        path: &BoxPath,
+    ) -> Result<Option<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("peek_file {}", handle.as_str()));
+        s.placed.push(("peek_file", place));
         s.peeks.push((handle.clone(), path.clone()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
@@ -275,8 +291,15 @@ impl Driver for FakeDriver {
             .map(|(_, _, text)| text.clone()))
     }
 
-    fn put_file(&self, h: &BoxHandle, p: &BoxPath, b: &[u8], mode: u32) -> Result<(), DriverError> {
-        self.put(h, p, b, mode)
+    fn put_file(
+        &self,
+        h: &BoxHandle,
+        place: Place,
+        p: &BoxPath,
+        b: &[u8],
+        mode: u32,
+    ) -> Result<(), DriverError> {
+        self.put(h, place, p, b, mode)
     }
 
     fn exec_piped(&self, h: &BoxHandle, s: &ExecSpec, p: Pipes) -> piped::Ended {
@@ -295,9 +318,10 @@ impl Driver for FakeDriver {
         Ok(())
     }
 
-    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, handle: &BoxHandle, place: Place) -> Result<Vec<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("connect_argv {}", handle.as_str()));
+        s.placed.push(("connect_argv", place));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
@@ -311,10 +335,12 @@ impl Driver for FakeDriver {
         &self,
         handle: &BoxHandle,
         connect: &[String],
+        place: Place,
         steps: &[BoxStep],
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
-        self.run_batch(handle, connect, steps, deadline)
+        self.st().placed.push(("batch", place));
+        self.run_batch(handle, connect, place, steps, deadline)
     }
 
     fn stream_files(
@@ -365,6 +391,7 @@ mod files;
 mod hooks;
 mod knobs;
 mod piped;
+mod places;
 mod ports;
 mod runs;
 mod script;
