@@ -34,16 +34,8 @@ pub(crate) trait EgressSink {
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
-    /// the credential, with its templated shape when one is sound, and why.
-    fn withheld(
-        &self,
-        host: &str,
-        rule: &str,
-        method: &str,
-        shape: Option<&str>,
-        reason: &str,
-        query: Option<&str>,
-    );
+    /// the credential, with its templated shape when one is sound; `request` says why.
+    fn withheld(&self, host: &str, rule: &str, shape: Option<&str>, request: &WithheldRequest);
     /// Records, once, that further distinct withheld requests are not reported.
     fn withheld_overflow(&self);
     /// The status of the open limit on `rule` recorded earlier, if any.
@@ -75,11 +67,14 @@ const NO_MATCH: &str = "no allow entry matches the request";
 /// Distinct withheld requests reported per Box before reporting stops.
 const MAX_WITHHELD: usize = 256;
 
+/// `(rule, method, shape, reason, query)` of a reported withheld request.
+type ReportedKey = (String, String, Option<String>, String, Option<String>);
+
 /// What has been reported for one Box.
 #[derive(Default)]
 struct Reported {
-    /// `(rule, method, shape, reason)` already reported.
-    keys: BTreeSet<(String, String, Option<String>, String, Option<String>)>,
+    /// Withheld requests already reported.
+    keys: BTreeSet<ReportedKey>,
     /// Whether the overflow line has been written.
     overflowed: bool,
 }
@@ -217,14 +212,7 @@ impl Withheld {
         }
         seen.keys.insert(key);
         drop(seen);
-        sink.withheld(
-            host,
-            rule,
-            method,
-            shape.as_deref(),
-            reason,
-            query.as_deref(),
-        );
+        sink.withheld(host, rule, shape.as_deref(), request);
     }
 }
 
@@ -285,22 +273,14 @@ impl EgressSink for BoxSink<'_> {
         self.ledger.record_event(&event);
     }
 
-    fn withheld(
-        &self,
-        host: &str,
-        rule: &str,
-        method: &str,
-        shape: Option<&str>,
-        reason: &str,
-        query: Option<&str>,
-    ) {
+    fn withheld(&self, host: &str, rule: &str, shape: Option<&str>, request: &WithheldRequest) {
         let event = Event::CredentialWithheld {
             host: host.to_owned(),
             rule: rule.to_owned(),
-            method: method.to_owned(),
+            method: request.method.clone(),
             shape: shape.map(str::to_owned),
-            reason: Some(reason.to_owned()),
-            query: query.map(str::to_owned),
+            reason: Some(request.reason.clone()),
+            query: request.query.clone(),
         };
         self.ledger.record_event(&event);
     }

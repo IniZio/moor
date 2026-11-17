@@ -53,7 +53,7 @@ fn a_refused_search_keeps_its_shape_and_hides_its_values() {
     let long = format!("repo:IniZio/moor {}", "label:x ".repeat(100));
     let capped = refused(&format!("{long} OR")).unwrap_or_default();
     assert!(capped.chars().count() <= 200, "{capped}");
-    match verdict(r#"{ viewer { email } }"#, &json!({})) {
+    match verdict(r"{ viewer { email } }", &json!({})) {
         Verdict::Deny(reason) => assert_eq!(reason.query(), None),
         other => unreachable!("expected deny, got {other:?}"),
     }

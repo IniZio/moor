@@ -82,7 +82,7 @@ fn tokens(query: &str) -> impl Iterator<Item = &str> {
 /// Requires every token to be allowed and the query to name the Box repo exactly once,
 /// outside any group. With `grouped` the query may hold parenthesised groups, with `OR`,
 /// `AND` and `NOT` only inside them, as `gh pr list --search` sends: the Box repo term is
-/// ANDed with every group, so no group widens the search past it. Only advanced search
+/// joined by AND to every group, so no group widens the search past it. Only advanced search
 /// reads groups that way. A refusal carries the query with its values hidden.
 pub(super) fn search_scope(query: &str, repo: &RepoRef, grouped: bool) -> Result<(), Reason> {
     let want = format!("{}/{}", repo.owner, repo.name);

@@ -276,11 +276,10 @@ impl EgressSink for Recorder {
         &self,
         host: &str,
         rule: &str,
-        method: &str,
         _: Option<&str>,
-        _: &str,
-        _: Option<&str>,
+        request: &crate::proxy::graphql::WithheldRequest,
     ) {
+        let method = &request.method;
         self.push(format!("withheld({host}, {rule}, {method})"));
     }
 
