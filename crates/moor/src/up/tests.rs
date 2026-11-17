@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::files::converge_user;
+use super::files::{converge_user, Layout};
+use super::node::{agent_unit, runner_unit, Plan, Ports};
 use super::service::{service_unit, socket_unit, Unit};
 use crate::env::Env;
 
@@ -132,4 +133,71 @@ fn a_percent_in_a_path_is_not_a_systemd_specifier() {
     u.socket = PathBuf::from("/run/100%/controller.sock");
     assert!(service_unit(&u).contains("ExecStart=\"/opt/100%%/moor\""));
     assert!(socket_unit(&u).contains("ListenStream=/run/100%%/controller.sock"));
+}
+
+fn layout() -> Layout {
+    Layout {
+        controller_config: PathBuf::from("/home/ada/.config/moor/controller.yaml"),
+        user_config: PathBuf::from("/home/ada/.config/moor/config.yaml"),
+        state_dir: PathBuf::from("/home/ada/.local/state/moor"),
+        socket: PathBuf::from(SOCK),
+    }
+}
+
+fn plan() -> Plan {
+    Plan {
+        runner: PathBuf::from("/home/ada/.local/bin/moor-machine-runner"),
+        agent: PathBuf::from("/home/ada/.local/bin/moor-machine-agent"),
+        ports: Ports {
+            agents: 20001,
+            listen: 20002,
+            egress: 20003,
+        },
+        egress: "172.17.0.1:20003".parse().unwrap(),
+    }
+}
+
+#[test]
+fn the_runner_takes_agent_links_on_loopback_and_the_controller_on_its_runner_socket() {
+    assert_eq!(
+        runner_unit(&plan(), &layout(), Some("/usr/bin")),
+        "[Unit]
+Description=moor machine runner: takes the local machine agent's link
+Wants=moor.service
+After=moor.service
+
+[Service]
+ExecStart=\"/home/ada/.local/bin/moor-machine-runner\" \"--socket\" \"/home/ada/.local/state/moor/runner/runner.sock\" \"--state-dir\" \"/home/ada/.local/state/moor/machine-runner\" \"--agents\" \"127.0.0.1:20001\" \"--listen\" \"127.0.0.1:20002\"
+Environment=\"PATH=/usr/bin\"
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    );
+}
+
+#[test]
+fn the_agent_runs_under_its_own_home_and_state_and_keeps_the_users_path_to_docker() {
+    let env = Env::from_pairs([
+        ("HOME", "/nonexistent-home"),
+        ("PATH", "/usr/bin"),
+        ("DOCKER_HOST", "unix:///run/user/1000/docker.sock"),
+    ]);
+    let text = agent_unit(&plan(), Path::new("/state/agent-home"), &env);
+    assert!(
+        text.contains("ExecStart=\"/home/ada/.local/bin/moor-machine-agent\" \"run\"\n"),
+        "{text}"
+    );
+    for line in [
+        "Environment=\"HOME=/state/agent-home\"",
+        "Environment=\"XDG_STATE_HOME=/state/agent-home/.local/state\"",
+        "Environment=\"PATH=/usr/bin\"",
+        "Environment=\"DOCKER_HOST=unix:///run/user/1000/docker.sock\"",
+        "After=moor-runner.service",
+    ] {
+        assert!(text.contains(line), "{line} missing from {text}");
+    }
+    assert!(!text.to_lowercase().contains("crabbox"));
 }

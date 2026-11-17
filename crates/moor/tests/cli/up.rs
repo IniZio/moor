@@ -34,10 +34,19 @@ launch() {
 }
 case "$verb" in
   start) case "$*" in *moor.service*) alive || launch ;; esac ;;
-  restart) stop; launch ;;
+  restart) case "$*" in *" moor.service"*) stop; launch ;; esac ;;
   disable) case "$*" in *--now*) stop ;; esac ;;
 esac
 exit 0
+"#;
+
+/// A `docker` that answers `info` and names a bridge on loopback, which the controller can bind.
+const DOCKER: &str = r#"#!/bin/sh
+case "$*" in
+  "info --format {{.ServerVersion}}") echo 27.0.0 ;;
+  "network inspect bridge --format {{(index .IPAM.Config 0).Gateway}}") echo 127.0.0.1 ;;
+  *) echo "fake docker: $*" >&2; exit 2 ;;
+esac
 "#;
 
 /// A temp HOME with fake tools on `PATH`; stops the controller it ran on drop.
@@ -49,7 +58,24 @@ struct Host {
 
 impl Host {
     fn new() -> Self {
+        Self::with_docker(true)
+    }
+
+    /// A host with or without a working `docker`.
+    fn with_docker(works: bool) -> Self {
         let bin = fresh_dir("up-bin");
+        write_executable(
+            &bin.join("docker"),
+            if works {
+                DOCKER
+            } else {
+                "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n"
+            },
+        )
+        .unwrap();
+        for tool in ["moor-machine-runner", "moor-machine-agent"] {
+            write_executable(&bin.join(tool), "#!/bin/sh\nexit 0\n").unwrap();
+        }
         write_executable(&bin.join("systemctl"), format!("#!/bin/sh\n{SYSTEMCTL}")).unwrap();
         write_executable(&bin.join("moor-egress-forward"), "#!/bin/sh\nexit 0\n").unwrap();
         Self {
@@ -70,6 +96,7 @@ impl Host {
             .env_clear()
             .env("PATH", self.path())
             .env("HOME", &self.home)
+            .env("MOOR_UP_LINK_WAIT_SECS", "0")
             .env("MOOR_STATE_DIR", self.state.path())
             .env(
                 "MOOR_EGRESS_FORWARD_BIN",
@@ -110,6 +137,15 @@ impl Host {
             self.home.join(".config/moor/config.yaml"),
             self.units().join("moor.socket"),
             self.units().join("moor.service"),
+            self.units().join("moor-runner.service"),
+            self.units().join("moor-agent.service"),
+            self.state.path().join("up-ports.json"),
+            self.state
+                .path()
+                .join("agent-home/.local/state/moor-machine-agent/state.json"),
+            self.state
+                .path()
+                .join("agent-home/.local/state/moor-machine-agent/id_ed25519.pub"),
         ]
         .into_iter()
         .map(|p| {
@@ -146,37 +182,75 @@ fn converged() -> (Host, Run) {
 
 /// The `systemctl` calls of a first `up`.
 const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service\n\
-                           --user start moor.socket\n--user restart moor.service\n";
+                           --user start moor.socket\n--user restart moor.service\n\
+                           --user daemon-reload\n--user enable moor-runner.service\n\
+                           --user restart moor-runner.service\n\
+                           --user daemon-reload\n--user enable moor-agent.service\n\
+                           --user restart moor-agent.service\n";
 
 #[test]
 fn up_converges_a_fresh_host() {
     let (host, first) = converged();
     let config = host.home.join(".config/moor/config.yaml");
-    assert!(
-        first
-            .stdout
-            .contains("ok    user        enrolled as user 1\n"),
-        "{first:?}"
-    );
-    assert!(
-        first.stdout.contains("ok    secret      claude: set\n"),
-        "{first:?}"
-    );
-    assert!(
-        first.stdout.contains("ok    secret      github: set\n"),
-        "{first:?}"
-    );
+    assert_eq!(first.code, 0, "{first:?}");
+    for line in [
+        "ok    user        enrolled as user 1\n",
+        "ok    secret      claude: set\n",
+        "ok    secret      github: set\n",
+        "ok    docker      Docker 27.0.0 answers\n",
+        "Docker Boxes are privileged containers",
+        "ok    node        local: Docker Boxes by moor-agent.service",
+    ] {
+        assert!(first.stdout.contains(line), "{line}: {first:?}");
+    }
     assert!(first
         .stderr
         .contains("paste what `claude setup-token` prints"));
     assert_eq!(host.systemctl_log(), FIRST_CALLS);
     let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
     assert!(service.contains(&format!("Environment=\"MOOR_CONFIG={}\"", config.display())));
+    assert!(service.contains("Environment=\"MOOR_EGRESS_LISTEN=127.0.0.1:"));
     let secrets = host.moor(&["user", "secret", "ls"], "");
     assert!(
         secrets.stdout.contains("claude") && secrets.stdout.contains("github"),
         "{secrets:?}"
     );
+}
+
+#[test]
+fn up_adds_a_docker_node_whose_agent_links_to_the_runner_on_loopback() {
+    let (host, _) = converged();
+    let agent = fs::read_to_string(host.units().join("moor-agent.service")).unwrap();
+    let home = host.state.path().join("agent-home");
+    assert!(
+        agent.contains(&format!("Environment=\"HOME={}\"", home.display())),
+        "{agent}"
+    );
+    assert!(agent.contains("\" \"run\"\n"), "{agent}");
+    let ports: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(host.state.path().join("up-ports.json")).unwrap())
+            .unwrap();
+    let agents = ports.get("agents").unwrap();
+    let runner = fs::read_to_string(host.units().join("moor-runner.service")).unwrap();
+    assert!(
+        runner.contains(&format!("\"--agents\" \"127.0.0.1:{agents}\"")),
+        "{runner}"
+    );
+    let state =
+        fs::read_to_string(home.join(".local/state/moor-machine-agent/state.json")).unwrap();
+    assert!(
+        state.contains(&format!("http://127.0.0.1:{agents}")),
+        "{state}"
+    );
+    let nodes = host.moor(&["node", "ls"], "");
+    assert!(nodes.stdout.contains("local"), "{nodes:?}");
+    for (path, text) in host.written() {
+        assert!(
+            !text.to_lowercase().contains("crabbox"),
+            "{}",
+            path.display()
+        );
+    }
 }
 
 #[test]
@@ -194,7 +268,9 @@ fn a_rerun_changes_nothing_and_prints_the_same_state() {
     );
     assert_eq!(
         host.systemctl_log().strip_prefix(FIRST_CALLS).unwrap(),
-        "--user enable moor.socket moor.service\n--user start moor.socket\n--user start moor.service\n"
+        "--user enable moor.socket moor.service\n--user start moor.socket\n--user start moor.service\n\
+         --user enable moor-runner.service\n--user start moor-runner.service\n\
+         --user enable moor-agent.service\n--user start moor-agent.service\n"
     );
 }
 
@@ -209,7 +285,11 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     assert!(host.state.path().join("moor.db").exists());
     assert!(host
         .systemctl_log()
-        .ends_with("--user disable --now moor.service moor.socket\n--user daemon-reload\n"));
+        .ends_with(
+            "--user disable --now moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
+        ));
+    assert!(!host.units().join("moor-agent.service").exists());
+    assert!(!host.units().join("moor-runner.service").exists());
     assert_eq!(
         host.moor(&["down"], "").stdout,
         "ok    service     not installed\n"
@@ -252,5 +332,32 @@ fn down_without_a_service_changes_nothing() {
         (r.code, r.stdout.as_str()),
         (0, "ok    service     not installed\n")
     );
+    assert_eq!(host.systemctl_log(), "");
+}
+
+#[test]
+fn up_without_docker_says_what_to_fix_and_writes_nothing() {
+    let host = Host::with_docker(false);
+    let r = host.moor(&["up"], "");
+    assert_eq!(r.code, 1, "{r:?}");
+    assert!(
+        r.stdout.starts_with(
+            "fail  docker      Docker does not work for this user: permission denied; fix: "
+        ),
+        "{r:?}"
+    );
+    assert!(host.written().iter().all(|(_, t)| t.is_empty()));
+    assert_eq!(host.systemctl_log(), "");
+}
+
+#[test]
+fn up_over_the_crabbox_node_of_an_earlier_release_says_to_delete_it() {
+    let host = Host::new();
+    let config = host.home.join(".config/moor/config.yaml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(&config, "nodes:\n  local:\n    runtime: external\n").unwrap();
+    let r = host.moor(&["up"], "");
+    assert_eq!(r.code, 1, "{r:?}");
+    assert!(r.stdout.contains("delete nodes.local from"), "{r:?}");
     assert_eq!(host.systemctl_log(), "");
 }

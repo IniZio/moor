@@ -1,9 +1,11 @@
 //! `moor up` and `moor down`: set one host up as a controller with a local node.
 //!
-//! `up` goes from installed binaries to a running controller, an enrolled user and its secrets.
+//! `up` goes from installed binaries to a running controller, an enrolled user and its secrets,
+//! and a local node whose machine agent makes Docker Boxes.
 //! Every step checks before it acts, so a rerun changes nothing and prints the same lines.
 
 mod files;
+mod node;
 mod secrets;
 mod service;
 #[cfg(test)]
@@ -71,11 +73,14 @@ fn steps(
             "",
         )
     })?;
+    let (plan, found) = node::plan(env, &layout)?;
+    found.iter().for_each(&mut say);
     say(&files::controller(&layout)?);
     say(&files::user(env, &layout)?);
     let dir = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
-    say(&service::install(&dir, &service::Unit::new(env, &layout)?)?);
+    let unit = service::Unit::new(env, &layout, plan.egress)?;
+    say(&service::install(&dir, &unit)?);
     if service::lingers(env) == Some(false) {
         say(&Check::warn(
             "service",
@@ -84,7 +89,7 @@ fn steps(
         ));
     }
     say(&wait_for(&layout)?);
-    let target = Target::Socket(layout.socket);
+    let target = Target::Socket(layout.socket.clone());
     let ask = |req: Request| -> Result<_, ClientError> {
         client::call(env, &target, &req, |_| {}, |_| {})
     };
@@ -103,6 +108,9 @@ fn steps(
     for step in secrets::converge(env, &ask, input, prompt) {
         say(&step?);
     }
+    node::converge(env, &ask, &layout, &plan, &dir)?
+        .iter()
+        .for_each(&mut say);
     Ok(())
 }
 
@@ -124,7 +132,7 @@ fn wait_for(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// Stops the controller and removes its units; config, state and secrets stay.
+/// Stops the controller, the local node's runner and agent, and removes their units; config, state and secrets stay.
 pub fn down(env: &Env, out: &mut dyn Write) -> u8 {
     let result = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", ""))

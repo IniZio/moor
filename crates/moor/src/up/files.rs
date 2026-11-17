@@ -26,6 +26,21 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    /// The `HOME` of the local node's machine agent, under the controller's state.
+    pub(crate) fn agent_home(&self) -> PathBuf {
+        self.state_dir.join("agent-home")
+    }
+
+    /// The machine runner's own state directory.
+    pub(crate) fn runner_state(&self) -> PathBuf {
+        self.state_dir.join("machine-runner")
+    }
+
+    /// The socket the controller takes the machine runner on.
+    pub(crate) fn runner_socket(&self) -> PathBuf {
+        crate::runner_dir::of(&self.state_dir).join(crate::runner_dir::SOCKET)
+    }
+
     /// The paths for `env`, with the socket and state dir an existing controller config sets.
     pub(crate) fn read(env: &Env) -> Result<Self, Check> {
         let no_home = || Check::fail("config", "HOME is unset", "run moor up as a login user");
