@@ -249,8 +249,8 @@ fn a_new_start_that_fails_closes_nothing() {
         .answer(repo(), Err(moor_core::seam::forge::ForgeError::NotVisible));
     next_day(&r);
     assert!(matches!(
-        r.latest(id).outcome,
-        moor_core::workflow::WorkflowOutcome::Refused { .. }
+        r.latest(id).state,
+        moor_core::workflow::RunState::Done(moor_core::workflow::RunEnd::Refused { .. })
     ));
     assert_ne!(lifecycle(&r, first), BoxLifecycle::Closed);
 }
@@ -408,7 +408,7 @@ fn the_same_workflow_on_another_repo_keeps_its_box() {
             .unwrap()
             .first()
             .unwrap()
-            .outcome
+            .state
             .box_id()
             .unwrap()
     };

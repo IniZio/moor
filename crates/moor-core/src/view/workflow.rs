@@ -19,9 +19,20 @@ pub struct LastRunView {
     pub repo: String,
     /// The scheduled time the run answers, in Unix milliseconds.
     pub due_at: i64,
-    /// `starting`, `started`, `finished`, `timed_out`, `skipped_overlap` or `refused`.
+    /// `starting`, `started`, `waiting`, `finished`, `failed`, `incomplete`, `declined`,
+    /// `timed_out`, `skipped_overlap` or `refused`.
     pub outcome: String,
-    /// Why it was refused.
+    /// `queued`, `running`, `waiting` or `done`.
+    #[serde(default)]
+    pub phase: String,
+    /// The step a run in flight is at, or the step a failed, incomplete, declined or timed-out
+    /// run ended at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    /// What a delivered run said it delivered, when it said anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// Why it was refused or failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// The Box it started.
@@ -31,6 +42,18 @@ pub struct LastRunView {
     /// Box of that name need exist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planned_box: Option<String>,
+    /// What happened to the run, oldest line first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<HistoryLineView>,
+}
+
+/// One line of a run's history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryLineView {
+    /// When it was written, in Unix milliseconds.
+    pub at: i64,
+    /// The line, tagged by its `kind`. A kind this build does not know shows as it was stored.
+    pub entry: serde_json::Value,
 }
 
 /// One workflow as `workflow-list` shows it.

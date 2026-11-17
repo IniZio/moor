@@ -6,7 +6,7 @@ use moor_schema::tables::{WorkflowRuns, WorkflowSeq, Workflows};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::corrupt;
-use super::runs::{run_of, RunRow, RUN_COLS};
+use super::row::{read_run, run_of, RunRow, RUN_COLS};
 use crate::store::db::{self, Db, DbExt as _};
 use crate::store::{Store, StoreError};
 
@@ -94,22 +94,13 @@ impl Store {
                 .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), Order::Asc)
                 .limit(limit),
             |r| {
-                let run: RunRow = (
-                    r.get(5)?,
-                    r.get(6)?,
-                    r.get(7)?,
-                    r.get(8)?,
-                    r.get(9)?,
-                    r.get(10)?,
-                    r.get(11)?,
-                );
                 Ok::<_, db::Error>((
                     r.get::<_, i64>(0)?,
                     r.get::<_, i64>(1)?,
                     r.get(2)?,
                     r.get(3)?,
                     r.get(4)?,
-                    run,
+                    read_run(r, 5)?,
                 ))
             },
         )?;
@@ -127,7 +118,7 @@ impl Store {
                 seq,
                 workflow: WorkflowName::parse(&name).map_err(|e| corrupt("name", e))?,
                 origin: front.map(|front| WorkflowOrigin { front, key }),
-                what: ChangeKind::Run(run_of(WorkflowId::new(workflow), run)?),
+                what: ChangeKind::Run(run_of(WorkflowId::new(workflow), &run)?),
             });
         }
         Ok(out)

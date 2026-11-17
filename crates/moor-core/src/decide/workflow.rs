@@ -2,7 +2,9 @@
 
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
-use crate::workflow::{Workflow, WorkflowOutcome, WorkflowRun, WorkflowState, BREAKER_STREAK};
+use crate::workflow::{
+    RunEnd, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState, BREAKER_STREAK,
+};
 
 /// What the store and the Boxes say about one repo of a workflow.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +113,8 @@ pub struct WorkflowExpiry {
     pub due_at: Ts,
     /// The Box to stop.
     pub box_id: BoxId,
+    /// The step the run was at.
+    pub at: StepId,
 }
 
 /// How long a run may take from its claim until its agent has started, queueing and setup
@@ -142,9 +146,9 @@ pub fn workflow_start_overdue(
     open.iter()
         .filter(|run| now.as_millis().saturating_sub(run.recorded_at.as_millis()) >= limit)
         .filter_map(|run| {
-            let (box_id, claimed_only) = match run.outcome {
-                WorkflowOutcome::Starting => (None, true),
-                WorkflowOutcome::Started { box_id } if agent_started(box_id).is_none() => {
+            let (box_id, claimed_only) = match run.state {
+                RunState::Queued => (None, true),
+                RunState::Running { box_id, .. } if agent_started(box_id).is_none() => {
                     (Some(box_id), false)
                 }
                 _ => return None,
@@ -172,15 +176,17 @@ pub fn workflow_expired(
 ) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
     open.iter()
-        .filter_map(|run| match run.outcome {
-            WorkflowOutcome::Started { box_id }
-                if agent_started(box_id)
-                    .is_some_and(|at| now.as_millis().saturating_sub(at.as_millis()) >= limit) =>
+        .filter_map(|run| match &run.state {
+            RunState::Running { box_id, at, .. }
+                if agent_started(*box_id).is_some_and(|began| {
+                    now.as_millis().saturating_sub(began.as_millis()) >= limit
+                }) =>
             {
                 Some(WorkflowExpiry {
                     repo: run.repo.clone(),
                     due_at: run.due_at,
-                    box_id,
+                    box_id: *box_id,
+                    at: at.clone(),
                 })
             }
             _ => None,
@@ -198,12 +204,12 @@ pub struct WorkflowDisable {
 }
 
 /// Whether the workflow should be disabled: some repo's latest [`BREAKER_STREAK`] concluded runs
-/// were all refused or timed out.
+/// were all refused, failed, incomplete or timed out.
 ///
 /// Only runs due since the workflow was last enabled count, so re-enabling restarts the count. A
 /// skipped run neither counts nor resets the streak, and a run still in flight is not concluded,
-/// so it does neither either. A finished run resets it. Nothing retries a failed run; the next
-/// firing is the only retry.
+/// so it does neither either. A delivered run resets it, and a declined one does neither. Nothing
+/// retries a failed run; the next firing is the only retry.
 #[must_use]
 pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<WorkflowDisable> {
     let WorkflowState::Enabled { since } = workflow.state else {
@@ -217,12 +223,19 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
         mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
         let mut streak = 0;
         for run in mine {
-            match run.outcome {
-                WorkflowOutcome::Refused { .. } | WorkflowOutcome::TimedOut { .. } => streak += 1,
-                WorkflowOutcome::Finished { .. } => break,
-                WorkflowOutcome::Starting
-                | WorkflowOutcome::Started { .. }
-                | WorkflowOutcome::SkippedOverlap => {}
+            match &run.state {
+                RunState::Done(RunEnd::Refused { .. }) => streak += 1,
+                RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
+                    RunOutcome::Failed { .. }
+                    | RunOutcome::Incomplete { .. }
+                    | RunOutcome::TimedOut { .. } => streak += 1,
+                    RunOutcome::Delivered { .. } => break,
+                    RunOutcome::Declined { .. } => {}
+                },
+                RunState::Queued
+                | RunState::Running { .. }
+                | RunState::Waiting { .. }
+                | RunState::Done(RunEnd::SkippedOverlap) => {}
             }
         }
         (streak >= BREAKER_STREAK).then(|| WorkflowDisable {

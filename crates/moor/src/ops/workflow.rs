@@ -13,7 +13,9 @@ use moor_core::decide::workflow::{
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
-use moor_core::workflow::{box_name, Workflow, WorkflowId, WorkflowOutcome, WorkflowRun};
+use moor_core::workflow::{
+    box_name, NewRun, RunEnd, RunOutcome, RunState, StepId, Workflow, WorkflowId, WorkflowRun,
+};
 use moor_core::{BoxId, BoxName, StartReq};
 
 use crate::cx::Cx;
@@ -48,6 +50,8 @@ pub(crate) struct StartJob {
     pub(crate) name: BoxName,
     /// What the Box's agent is asked to do.
     pub(crate) prompt: String,
+    /// The step of the workflow's plan the run starts at.
+    pub(crate) first_step: StepId,
 }
 
 impl StartJob {
@@ -110,7 +114,7 @@ fn tick_one(
                     &v.repo,
                     due_at,
                     now,
-                    WorkflowOutcome::SkippedOverlap,
+                    RunState::Done(RunEnd::SkippedOverlap),
                 )?;
             }
             WorkflowVerdict::Start { due_at } => {
@@ -141,7 +145,7 @@ impl History {
                 .real
                 .iter()
                 .find(|r| r.repo == run.repo)
-                .and_then(|r| real_run(&r.outcome))
+                .and_then(|r| real_run(&r.state))
             {
                 Some(Real::Prior(p)) => Some(p),
                 Some(Real::TimedOut(id)) => Some(PriorRun::TimedOut {
@@ -167,14 +171,22 @@ enum Real {
     TimedOut(BoxId),
 }
 
-/// `outcome` as a real attempt; none for a skipped or refused run.
-const fn real_run(outcome: &WorkflowOutcome) -> Option<Real> {
-    match outcome {
-        WorkflowOutcome::Starting => Some(Real::Prior(PriorRun::Starting)),
-        WorkflowOutcome::Started { .. } => Some(Real::Prior(PriorRun::Started)),
-        WorkflowOutcome::Finished { .. } => Some(Real::Prior(PriorRun::Finished)),
-        WorkflowOutcome::TimedOut { box_id, .. } => Some(Real::TimedOut(*box_id)),
-        WorkflowOutcome::SkippedOverlap | WorkflowOutcome::Refused { .. } => None,
+/// `state` as a real attempt; none for a skipped or refused run. A run that waits counts as
+/// started, and every ending but a timeout as finished: only a timeout keeps its Box in the way.
+const fn real_run(state: &RunState) -> Option<Real> {
+    match state {
+        RunState::Queued => Some(Real::Prior(PriorRun::Starting)),
+        RunState::Running { .. } | RunState::Waiting { .. } => Some(Real::Prior(PriorRun::Started)),
+        RunState::Done(RunEnd::Ended {
+            box_id, outcome, ..
+        }) => match outcome {
+            RunOutcome::TimedOut { .. } => Some(Real::TimedOut(*box_id)),
+            RunOutcome::Delivered { .. }
+            | RunOutcome::Failed { .. }
+            | RunOutcome::Incomplete { .. }
+            | RunOutcome::Declined { .. } => Some(Real::Prior(PriorRun::Finished)),
+        },
+        RunState::Done(RunEnd::SkippedOverlap | RunEnd::Refused { .. }) => None,
     }
 }
 
@@ -209,13 +221,13 @@ fn record(
     repo: &ForgeRepo,
     due_at: Ts,
     now: Ts,
-    outcome: WorkflowOutcome,
+    state: RunState,
 ) -> Result<bool, StoreError> {
-    store.record_workflow_run(&WorkflowRun {
+    store.record_workflow_run(&NewRun {
         workflow: w.id,
         repo: repo.clone(),
         due_at,
-        outcome,
+        state,
         recorded_at: now,
     })
 }
@@ -236,7 +248,7 @@ fn claim(
             repo,
             due_at,
             now,
-            WorkflowOutcome::Refused { detail },
+            RunState::Done(RunEnd::Refused { detail }),
         )
         .map(|_| ())
     };
@@ -247,7 +259,7 @@ fn claim(
     let Some(identity) = store.identities(w.owner)?.into_iter().next() else {
         return refuse("the owner has no identity to start a Box as".to_owned());
     };
-    if record(store, w, repo, due_at, now, WorkflowOutcome::Starting)? {
+    if record(store, w, repo, due_at, now, RunState::Queued)? {
         launch(StartJob {
             workflow: w.id,
             owner: w.owner,
@@ -258,6 +270,7 @@ fn claim(
             due_at,
             name,
             prompt: w.prompt.clone(),
+            first_step: w.plan.first().id.clone(),
         });
     }
     Ok(())
@@ -266,22 +279,22 @@ fn claim(
 /// Starts the Box of a claimed firing as the owner `cx` acts for, through the start a person
 /// uses, and settles the claim with its Box or its refusal. Returns what to log.
 pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
-    let outcome = match cx.store() {
+    let state = match cx.store() {
         Ok(store) => start_box(cx, store, job),
-        Err(e) => WorkflowOutcome::Refused {
+        Err(e) => RunState::Done(RunEnd::Refused {
             detail: e.error.to_string(),
-        },
+        }),
     };
     // A start the drain cut may have left its Box going, so the next process settles the claim.
-    if matches!(outcome, WorkflowOutcome::Refused { .. }) && cx.env().draining().is_cancelled() {
+    if matches!(state, RunState::Done(_)) && cx.env().draining().is_cancelled() {
         return cx.take_warnings().into_iter().map(|w| w.message).collect();
     }
     let settled = cx.store().map_err(|e| e.error.to_string()).and_then(|s| {
-        s.resolve_workflow_start(job.key(), &outcome)
+        s.resolve_workflow_start(job.key(), &state, cx.clock().now())
             .map_err(|e| e.to_string())
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
-    if let (Ok(true), WorkflowOutcome::Started { box_id }) = (&settled, &outcome) {
+    if let (Ok(true), RunState::Running { box_id, .. }) = (&settled, &state) {
         if let Ok(store) = cx.store() {
             out.extend(close_previous(cx, store, job, *box_id));
             out.extend(cx.take_warnings().into_iter().map(|w| w.message));
@@ -306,8 +319,8 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
 }
 
 /// Starts the Box, or says why not.
-fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
-    let refused = |detail: String| WorkflowOutcome::Refused { detail };
+fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> RunState {
+    let refused = |detail: String| RunState::Done(RunEnd::Refused { detail });
     match store.open_box_by_name(&job.name) {
         Ok(Some(_)) => {
             return refused(format!("a Box named {} is already open", job.name.as_str()))
@@ -332,8 +345,10 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
         identity: None,
     };
     match start::run(cx, &req) {
-        Ok(view) => WorkflowOutcome::Started {
+        Ok(view) => RunState::Running {
             box_id: BoxId::new(view.boxed.id),
+            at: job.first_step.clone(),
+            try_n: 1,
         },
         Err(e) => refused(e.error.to_string()),
     }
@@ -346,26 +361,29 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
     let Ok(store) = cx.store() else { return out };
     let claims = store.starting_workflow_runs().unwrap_or_default();
     for run in claims {
-        let found = store
-            .workflow_by_id(run.workflow)
-            .ok()
-            .flatten()
+        let workflow = store.workflow_by_id(run.workflow).ok().flatten();
+        let found = workflow
+            .as_ref()
             .and_then(|w| box_name(w.id, w.name.as_str(), &run.repo, run.due_at).ok())
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
         let now = cx.clock().now();
-        let outcome = match found {
-            None => WorkflowOutcome::Refused {
-                detail: "the controller stopped before the Box started".to_owned(),
-            },
-            Some(row) => match run_verdict(Some(&box_facts(&row)), now) {
-                RunVerdict::Broken => WorkflowOutcome::Refused {
+        let state = match (found, workflow) {
+            (Some(row), Some(w)) => match run_verdict(Some(&box_facts(&row)), now) {
+                RunVerdict::Broken => RunState::Done(RunEnd::Refused {
                     detail: broken_detail(&row),
+                }),
+                _ => RunState::Running {
+                    box_id: row.id,
+                    at: w.plan.first().id.clone(),
+                    try_n: 1,
                 },
-                _ => WorkflowOutcome::Started { box_id: row.id },
             },
+            _ => RunState::Done(RunEnd::Refused {
+                detail: "the controller stopped before the Box started".to_owned(),
+            }),
         };
         let key = (run.workflow, &run.repo, run.due_at);
-        if let Err(e) = store.resolve_workflow_start(key, &outcome) {
+        if let Err(e) = store.resolve_workflow_start(key, &state, now) {
             out.push(format!(
                 "could not settle a claimed run of {}: {e}",
                 run.repo

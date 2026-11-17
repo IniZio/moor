@@ -7,12 +7,12 @@ use moor_core::request::{WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::{
-    ChangeView, LastRunView, OriginView, WorkflowChangeValue, WorkflowListValue, WorkflowRunsValue,
-    WorkflowView,
+    ChangeView, HistoryLineView, LastRunView, OriginView, WorkflowChangeValue, WorkflowListValue,
+    WorkflowRunsValue, WorkflowView,
 };
 use moor_core::workflow::{
-    box_name, ChangeKind, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
-    WorkflowOutcome, WorkflowRun, WorkflowSchedule,
+    box_name, ChangeKind, RunEnd, RunOutcome, RunState, TimeoutMinutes, Workflow, WorkflowDef,
+    WorkflowName, WorkflowOrigin, WorkflowRun, WorkflowSchedule,
 };
 use moor_core::ErrorKind;
 
@@ -188,32 +188,52 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
 
 /// `run` as shown, naming its Box.
 fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunView, CommandError> {
-    let (outcome, detail) = match &run.outcome {
-        WorkflowOutcome::Starting => ("starting", None),
-        WorkflowOutcome::Started { .. } => ("started", None),
-        WorkflowOutcome::Finished { .. } => ("finished", None),
-        WorkflowOutcome::TimedOut { .. } => ("timed_out", None),
-        WorkflowOutcome::SkippedOverlap => ("skipped_overlap", None),
-        WorkflowOutcome::Refused { detail } => ("refused", Some(detail.clone())),
+    let (detail, result) = match &run.state {
+        RunState::Done(RunEnd::Refused { detail }) => (Some(detail.clone()), None),
+        RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
+            RunOutcome::Failed { reason, .. } => (Some(reason.clone()), None),
+            RunOutcome::Delivered { result } => {
+                (None, Some(result.clone()).filter(|r| !r.is_empty()))
+            }
+            RunOutcome::Incomplete { .. }
+            | RunOutcome::Declined { .. }
+            | RunOutcome::TimedOut { .. } => (None, None),
+        },
+        RunState::Queued
+        | RunState::Running { .. }
+        | RunState::Waiting { .. }
+        | RunState::Done(RunEnd::SkippedOverlap) => (None, None),
     };
-    let existing = match run.outcome.box_id() {
+    let existing = match run.state.box_id() {
         Some(id) => store.box_row(id)?.map(|r| r.name.as_str().to_owned()),
         None => None,
     };
     let planned_box = matches!(
-        run.outcome,
-        WorkflowOutcome::Starting | WorkflowOutcome::Refused { .. }
+        run.state,
+        RunState::Queued | RunState::Done(RunEnd::Refused { .. })
     )
     .then(|| box_name(run.workflow, workflow, &run.repo, run.due_at).ok())
     .flatten()
     .map(|name| name.as_str().to_owned());
+    let history = store
+        .run_history(run.id)?
+        .into_iter()
+        .map(|line| HistoryLineView {
+            at: line.at.as_millis(),
+            entry: line.entry,
+        })
+        .collect();
     Ok(LastRunView {
         repo: run.repo.to_string(),
         due_at: run.due_at.as_millis(),
-        outcome: outcome.to_owned(),
+        outcome: run.state.tag().to_owned(),
+        phase: run.state.phase().as_str().to_owned(),
+        step: run.state.step().map(ToString::to_string),
+        result,
         detail,
         box_name: existing,
         planned_box,
+        history,
     })
 }
 

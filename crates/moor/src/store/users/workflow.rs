@@ -5,13 +5,15 @@ use std::time::Duration;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::workflow::{
-    TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName, WorkflowOrigin,
+    Plan, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName, WorkflowOrigin,
     WorkflowSchedule, WorkflowState,
 };
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 mod changes;
+mod history;
+mod row;
 mod runs;
 
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension as _};
@@ -51,10 +53,12 @@ struct WorkflowRow {
     origin_key: Option<String>,
     /// `config`.
     config: Option<String>,
+    /// `revision`.
+    revision: i64,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 16] = [
+const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -71,6 +75,7 @@ const WORKFLOW_COLS: [Workflows; 16] = [
     Workflows::OriginKey,
     Workflows::Also,
     Workflows::Config,
+    Workflows::Revision,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -97,6 +102,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         origin_key: r.get(13)?,
         also: r.get(14)?,
         config: r.get(15)?,
+        revision: r.get(16)?,
     })
 }
 
@@ -119,7 +125,7 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
         also: serde_json::from_str(&row.also).map_err(|e| corrupt("also", e))?,
         config: row.config,
-        prompt: row.prompt,
+        prompt: row.prompt.clone(),
         state: row.enabled_at.map_or(
             WorkflowState::Disabled {
                 reason: row.disabled_reason,
@@ -135,6 +141,8 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         }),
         created_at: Ts::from_millis(row.created_at),
         updated_at: Ts::from_millis(row.updated_at),
+        plan: Plan::single(&row.prompt),
+        revision: u64::try_from(row.revision).map_err(|e| corrupt("revision", e))?,
     })
 }
 
@@ -231,6 +239,10 @@ impl Store {
                     .value(Workflows::DisabledReason, reason)
                     .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
                     .value(Workflows::UpdatedAt, now)
+                    .value(
+                        Workflows::Revision,
+                        Expr::col(Workflows::Revision).add(1_i64),
+                    )
                     .value(
                         Workflows::OriginFront,
                         def.origin.as_ref().map(|o| o.front.as_str()),

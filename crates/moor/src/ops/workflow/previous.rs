@@ -64,7 +64,7 @@ pub(super) fn close_previous(
     // The Boxes of the runs between this one and the one being looked at, newest first.
     let mut newer = Vec::new();
     for run in runs.into_iter().filter(|r| r.due_at < job.due_at) {
-        let Some(id) = run.outcome.box_id().filter(|id| *id != new_box) else {
+        let Some(id) = run.state.box_id().filter(|id| *id != new_box) else {
             continue;
         };
         let row = match store.box_row(id) {
