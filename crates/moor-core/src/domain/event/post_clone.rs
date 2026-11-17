@@ -63,6 +63,13 @@ pub enum TimingEvent {
         /// The line, cut to a length a status line can hold.
         line: String,
     },
+    /// The machine's link dropped while a `setup:` line ran, so setup attaches to the run again.
+    SetupReattached {
+        /// Position of the line that was running, counting from 1; 0 before any line began.
+        index: u32,
+        /// What the lost link said.
+        why: String,
+    },
     /// One of the repo's `setup:` lines ended.
     SetupLineFinished {
         /// Position of the line, counting from 1.
@@ -101,6 +108,7 @@ impl TimingEvent {
             Self::StepFinished { .. } => "step_finished",
             Self::SetupLineStarted { .. } => "setup_line_started",
             Self::SetupLineFinished { .. } => "setup_line_finished",
+            Self::SetupReattached { .. } => "setup_reattached",
             Self::CacheCold { .. } => "cache_cold",
             Self::CacheEmptied { .. } => "cache_emptied",
         }
