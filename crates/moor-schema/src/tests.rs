@@ -21,6 +21,7 @@ mod launch_facts;
 mod launch_fence;
 mod postgres;
 mod session_archive;
+mod shared_machines;
 mod sqlite;
 mod vm_inc;
 
