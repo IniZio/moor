@@ -67,14 +67,11 @@ const NO_MATCH: &str = "no allow entry matches the request";
 /// Distinct withheld requests reported per Box before reporting stops.
 const MAX_WITHHELD: usize = 256;
 
-/// `(rule, method, shape, reason, query)` of a reported withheld request.
-type ReportedKey = (String, String, Option<String>, String, Option<String>);
-
 /// What has been reported for one Box.
 #[derive(Default)]
 struct Reported {
-    /// Withheld requests already reported.
-    keys: BTreeSet<ReportedKey>,
+    /// `(rule, shape, request without its path)` already reported.
+    keys: BTreeSet<(String, Option<String>, WithheldRequest)>,
     /// Whether the overflow line has been written.
     overflowed: bool,
 }
@@ -174,14 +171,9 @@ impl Withheld {
         self.limits.excuse(host, status);
     }
 
-    /// Reports one withheld request once per `(rule, method, shape, reason, query)`.
+    /// Reports one withheld request once per rule, shape, and request other than its path.
     fn record(&self, host: &str, rule: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
-        let WithheldRequest {
-            method,
-            path,
-            reason,
-            query,
-        } = request;
+        let (method, path) = (&request.method, &request.path);
         if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
             return;
         }
@@ -189,13 +181,11 @@ impl Withheld {
             .repo
             .as_ref()
             .and_then(|repo| request_shape(method, path, (&repo.owner, &repo.name)));
-        let key = (
-            rule.to_owned(),
-            method.to_owned(),
-            shape.clone(),
-            reason.to_owned(),
-            query.clone(),
-        );
+        let pathless = WithheldRequest {
+            path: String::new(),
+            ..request.clone()
+        };
+        let key = (rule.to_owned(), shape.clone(), pathless);
         let mut seen = self
             .seen
             .lock()

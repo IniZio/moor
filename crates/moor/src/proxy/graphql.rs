@@ -87,7 +87,7 @@ pub(crate) struct Refusal {
 }
 
 /// One request forwarded without its credential. The path only templates the report.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WithheldRequest {
     /// The request method.
     pub(crate) method: String,
@@ -173,12 +173,17 @@ impl Shared {
     }
 
     /// Notes a request forwarded without its credential.
-    pub(super) fn withhold(&self, request: WithheldRequest) {
+    pub(super) fn withhold(&self, method: &str, path: &str, reason: &str, query: Option<String>) {
         let mut q = self.lock_withheld();
         if q.len() >= MAX_REFUSALS {
             q.pop_front();
         }
-        q.push_back(request);
+        q.push_back(WithheldRequest {
+            method: method.to_owned(),
+            path: path.to_owned(),
+            reason: reason.to_owned(),
+            query,
+        });
     }
 
     /// Notes a 401 or 403 answer that says nothing about the credential.
