@@ -34,14 +34,17 @@ fn guest_memory(w: &World, id: BoxId, mib: u64) {
 fn provider_says(w: &World, hv: i64, id: BoxId, mib: u64) {
     let store = w.cx.store().unwrap();
     store
-        .set_box_memory(&[BoxHostMemory {
-            machine_id: hv,
-            controller: store.controller_id().unwrap(),
-            box_id: id,
-            host_memory_mib: 0,
-            resume_memory_mib: Some(mib),
-            inc: None,
-        }])
+        .set_box_memory(
+            &crate::testing::runner(),
+            &[BoxHostMemory {
+                machine_id: hv,
+                controller: store.controller_id().unwrap(),
+                box_id: id,
+                host_memory_mib: 0,
+                resume_memory_mib: Some(mib),
+                inc: None,
+            }],
+        )
         .unwrap();
 }
 
@@ -391,7 +394,9 @@ fn holding(w: &World, hv: i64, boxes: &[(BoxId, u64)]) {
             inc: None,
         })
         .collect();
-    store.set_box_memory(&rows).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &rows)
+        .unwrap();
 }
 
 /// A head too big for `hv`, a small Box behind it, both waiting, and one Box up holding `held`.

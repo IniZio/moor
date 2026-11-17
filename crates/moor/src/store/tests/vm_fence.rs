@@ -126,11 +126,14 @@ fn memory_reported_for_replaced_hands_is_dropped_and_returned_as_stale() {
     };
 
     let stale = store
-        .set_box_memory(&[
-            on(late, 100, Some(OLD)),
-            on(unnamed, 200, None),
-            on(current, 300, Some(NEW)),
-        ])
+        .set_box_memory(
+            &crate::testing::runner(),
+            &[
+                on(late, 100, Some(OLD)),
+                on(unnamed, 200, None),
+                on(current, 300, Some(NEW)),
+            ],
+        )
         .unwrap();
 
     assert!(

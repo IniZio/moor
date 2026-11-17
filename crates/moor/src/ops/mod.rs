@@ -117,7 +117,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             controller: Some(cx.store()?.controller_id()?),
         }),
         Request::MachineLinks(r) => {
-            for stale in cx.store()?.set_box_memory(&r.box_memory)? {
+            for stale in cx.store()?.set_box_memory(&r.runner, &r.box_memory)? {
                 common::stale::unless_stale(cx, Err::<(), _>(stale))?;
             }
             to_value(&nodes::set_links(cx, &r)?)

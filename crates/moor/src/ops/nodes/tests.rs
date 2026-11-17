@@ -167,13 +167,20 @@ fn a_node_shows_the_sum_its_boxes_hold_and_a_later_report_without_one_drops_it()
         .machine_id;
     let store = cx.store().unwrap();
     store
-        .set_box_memory(&[on(&cx, id, 1, 2048), on(&cx, id, 2, 0), on(&cx, id, 3, 512)])
+        .set_box_memory(
+            &crate::testing::runner(),
+            &[on(&cx, id, 1, 2048), on(&cx, id, 2, 0), on(&cx, id, 3, 512)],
+        )
         .unwrap();
     assert_eq!(held(&cx, "mini"), Some(2560));
     assert_eq!(held(&cx, "fast"), None);
-    store.set_box_memory(&[on(&cx, id, 2, 0)]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[on(&cx, id, 2, 0)])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), Some(0));
-    store.set_box_memory(&[]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), None);
 }
 
@@ -183,7 +190,7 @@ fn memory_for_a_machine_that_is_not_enrolled_is_not_kept() {
     let (cx, _, _) = two_users(dir.path());
     cx.store()
         .unwrap()
-        .set_box_memory(&[on(&cx, 999, 1, 100)])
+        .set_box_memory(&crate::testing::runner(), &[on(&cx, 999, 1, 100)])
         .unwrap();
     assert!(cx.store().unwrap().box_memory_totals().unwrap().is_empty());
 }
@@ -197,7 +204,9 @@ fn memory_for_a_box_another_controller_named_is_not_kept() {
     let mut other = on(&cx, id, 1, 4096);
     other.controller = moor_core::box_key::ControllerId::parse("ffffffff").unwrap();
     assert_ne!(other.controller, store.controller_id().unwrap());
-    store.set_box_memory(&[other, on(&cx, id, 2, 512)]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[other, on(&cx, id, 2, 512)])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), Some(512));
 }
 
@@ -253,14 +262,40 @@ fn a_runner_without_a_machines_link_leaves_that_machines_box_memory() {
     report(&cx, "runner-a", vec![a.clone()], Vec::new());
     report(&cx, "runner-b", vec![b.clone()], Vec::new());
 
-    report(&cx, "runner-a", vec![a.clone()], vec![on(&cx, mini, 1, 100)]);
-    report(&cx, "runner-b", vec![b.clone()], vec![on(&cx, rack, 2, 200)]);
-    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (Some(100), Some(200)));
+    report(
+        &cx,
+        "runner-a",
+        vec![a.clone()],
+        vec![on(&cx, mini, 1, 100)],
+    );
+    report(
+        &cx,
+        "runner-b",
+        vec![b.clone()],
+        vec![on(&cx, rack, 2, 200)],
+    );
+    assert_eq!(
+        (held(&cx, "mini"), held(&cx, "rack")),
+        (Some(100), Some(200))
+    );
 
     // Each runner lists only its own machine and reports only its Boxes, again.
-    report(&cx, "runner-a", vec![a.clone()], vec![on(&cx, mini, 1, 100)]);
-    report(&cx, "runner-b", vec![b.clone()], vec![on(&cx, rack, 2, 200)]);
-    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (Some(100), Some(200)));
+    report(
+        &cx,
+        "runner-a",
+        vec![a.clone()],
+        vec![on(&cx, mini, 1, 100)],
+    );
+    report(
+        &cx,
+        "runner-b",
+        vec![b.clone()],
+        vec![on(&cx, rack, 2, 200)],
+    );
+    assert_eq!(
+        (held(&cx, "mini"), held(&cx, "rack")),
+        (Some(100), Some(200))
+    );
 
     // An empty report from one runner drops only the Boxes of its own machines.
     report(&cx, "runner-a", vec![a], Vec::new());

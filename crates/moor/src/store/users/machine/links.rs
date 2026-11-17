@@ -71,17 +71,32 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Replaces the stored per-Box host memory with `boxes`, dropping any for a machine that is not
-    /// enrolled or a Box another controller named; and any for hands the Box has since replaced,
-    /// which it returns as stale writes.
+    /// Replaces the stored per-Box host memory of the machines `runner` holds with `boxes`, which
+    /// leaves the Boxes of a machine another runner holds alone. It drops any for a machine that
+    /// is not enrolled or a Box another controller named; and any for hands the Box has since
+    /// replaced, which it returns as stale writes.
     pub(crate) fn set_box_memory(
         &self,
+        runner: &RunnerAddr,
         boxes: &[BoxHostMemory],
     ) -> Result<Vec<StoreError>, StoreError> {
         let own = self.controller_id()?;
         let mut conn = self.writer();
         let tx = conn.transaction()?;
-        tx.run(Query::delete().from_table(MachineBoxMemory::Table))?;
+        let held_elsewhere = Query::select()
+            .column(MachineLinks::MachineId)
+            .from(MachineLinks::Table)
+            .cond_where(
+                Expr::col(MachineLinks::RunnerAddr)
+                    .ne(runner.as_str())
+                    .and(Expr::col(MachineLinks::RunnerAddr).is_not_null()),
+            )
+            .take();
+        tx.run(
+            Query::delete()
+                .from_table(MachineBoxMemory::Table)
+                .and_where(Expr::col(MachineBoxMemory::MachineId).not_in_subquery(held_elsewhere)),
+        )?;
         let mut stale = Vec::new();
         for b in boxes.iter().filter(|b| b.controller == own) {
             tx.run(
