@@ -1,12 +1,14 @@
 //! The stock `docker` command line, run as a child process.
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::process::{Output, Stdio};
 
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use crate::boxes::provider::ProvideError;
+use crate::boxes::provider::{PlaceState, ProvideError};
+use crate::boxes::Slug;
 
 /// Whether a container is running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,4 +115,34 @@ pub(super) fn failed(out: &Output) -> ProvideError {
     } else {
         format!("docker: {said}")
     })
+}
+
+/// The places of each Box that `docker ps` lists as `slug place state` lines: how the agent place
+/// and the work place stand. A line that is not a Box's is left out.
+pub(super) fn parse_ps(listed: &str) -> BTreeMap<Slug, (PlaceState, PlaceState)> {
+    let mut boxes: BTreeMap<Slug, (PlaceState, PlaceState)> = BTreeMap::new();
+    for line in listed.lines() {
+        let mut words = line.split_whitespace();
+        let (Some(slug), Some(place), Some(state)) = (
+            words.next().and_then(Slug::parse),
+            words.next(),
+            words.next(),
+        ) else {
+            continue;
+        };
+        let up = if state == "running" {
+            PlaceState::Up
+        } else {
+            PlaceState::Down
+        };
+        let places = boxes
+            .entry(slug)
+            .or_insert((PlaceState::Down, PlaceState::Down));
+        match place {
+            "agent" => places.0 = up,
+            "work" => places.1 = up,
+            _ => {}
+        }
+    }
+    boxes
 }

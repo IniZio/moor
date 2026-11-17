@@ -3,6 +3,7 @@
 pub mod box_state;
 pub mod box_steps;
 pub mod decision;
+pub mod egress;
 pub mod event;
 pub mod hands;
 pub mod inbox;

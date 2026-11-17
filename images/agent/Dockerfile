@@ -33,7 +33,7 @@ FROM ${NODE_IMAGE}
 ARG CLAUDE_CODE_VERSION HERDR_CORE_VERSION HERDR_CORE_SHA256_X86_64 HERDR_CORE_SHA256_AARCH64
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git openssh-client socat tinyproxy tini procps util-linux rsync jq \
+      ca-certificates curl git openssh-client socat tinyproxy tini procps util-linux rsync jq nftables \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force \
