@@ -84,10 +84,11 @@ pub enum QueueCause {
     Busy,
 }
 
-/// The note that tells a new agent of `text`, first sent at `sent` to the launch before it,
-/// which ended before the turn `text` started did. It is never sent again, since that turn may
-/// have pushed or commented already. It names when `text` was first sent, as of `now`, so the
-/// agent can tell how old it is.
+/// The note that tells a new agent of `text`, first sent at `sent` to the launch before it.
+///
+/// That launch ended before the turn `text` started did. The text is never sent again, since
+/// that turn may have pushed or commented already. The note names when `text` was first sent,
+/// as of `now`, so the agent can tell how old it is.
 #[must_use]
 pub fn cut_note(text: &str, sent: Ts, now: Ts) -> String {
     let quoted: Vec<String> = text.lines().map(|l| format!("> {l}")).collect();

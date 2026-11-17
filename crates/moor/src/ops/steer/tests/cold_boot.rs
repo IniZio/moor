@@ -123,7 +123,13 @@ fn an_exec_in_an_asleep_box_leaves_its_agent_down_until_a_steer_wakes_it() {
     exec_ls(&f);
     pass(&f);
 
-    assert_eq!(f.driver.execs().len(), 1, "the command ran");
+    let ls = f
+        .driver
+        .execs()
+        .into_iter()
+        .filter(|(_, spec, _)| spec.argv.last().map(String::as_str) == Some("ls"))
+        .count();
+    assert_eq!(ls, 1, "the command ran");
     assert!(f.engine.launches().is_empty(), "no agent was launched");
     assert!(relaunch_events(&f).is_empty());
     assert_eq!(

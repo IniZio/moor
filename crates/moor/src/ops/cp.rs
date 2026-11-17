@@ -1,6 +1,7 @@
 //! `cp`: copy a file or directory out of a Box's machine to the host.
 //!
-//! Holds the Box's turn for the copy and never syncs a checkout.
+//! Holds the Box's turn for the copy and never syncs a checkout. An asleep Box stays Asleep: only
+//! its machine wakes for the copy, and sleeps again after it.
 
 use moor_core::seam::driver::Place;
 use std::fs;
@@ -18,7 +19,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::host_path::absolute;
 use crate::ops::common::provision::recorded_workdir;
-use crate::ops::common::wake::wake_and_revive;
+use crate::ops::common::wake::{rest_machine, wake_to_look};
 use crate::store::BoxRow;
 
 /// Run `cp`.
@@ -40,7 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
             )
         })?
         .id;
-    let _turn = cx.turn(id, Cmd::Copy)?;
+    let turn = cx.turn(id, Cmd::Copy)?;
     let reload = || {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(
@@ -50,18 +51,15 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         })
     };
     let mut row = reload()?;
-    if wake_and_revive(cx, store, &row)? {
+    if wake_to_look(cx, store, &row)? {
         row = reload()?;
     }
-    let handle = usable_handle(&row)?;
-    let from = source(cx, &row, &handle, &req.src)?;
-    let copied = cx.driver().copy_out(&handle, Place::Work, &from, &to);
-    let event = ExtraEvent::Copied {
-        from: from.as_str().to_owned(),
-        to: to.display().to_string(),
-    };
-    store.apply(Decision::new(id).event(event))?;
-    copied?;
+    let copied = copy(cx, &row, &req.src, &to);
+    drop(turn);
+    if row.lifecycle == BoxLifecycle::Asleep {
+        rest_machine(cx, store, id);
+    }
+    let from = copied?;
     let bytes = size(&to);
     Ok(CpValue {
         copied: true,
@@ -74,6 +72,21 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
             to.display()
         ),
     })
+}
+
+/// Copies `src` out of the work place of `row`, whose machine is up, to `to` and records it;
+/// the path copied.
+fn copy(cx: &Cx, row: &BoxRow, src: &str, to: &Path) -> Result<BoxPath, CommandError> {
+    let handle = usable_handle(row)?;
+    let from = source(cx, row, &handle, src)?;
+    let copied = cx.driver().copy_out(&handle, Place::Work, &from, to);
+    let event = ExtraEvent::Copied {
+        from: from.as_str().to_owned(),
+        to: to.display().to_string(),
+    };
+    cx.store()?.apply(Decision::new(row.id).event(event))?;
+    copied?;
+    Ok(from)
 }
 
 /// The handle of the Box's ready machine, or a refusal.

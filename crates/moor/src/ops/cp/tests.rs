@@ -348,15 +348,22 @@ fn box_state(f: &Fx) -> HandsState {
 }
 
 #[test]
-fn asleep_box_is_woken_before_the_copy() {
+fn an_asleep_box_wakes_only_its_machine_for_the_copy() {
     let f = fx();
     sleep(&f);
     run(&f.cx, &req("a", &dest(&f))).unwrap();
     assert_eq!(wake_calls(&f), 1);
     assert_eq!(f.driver.copies().len(), 1);
-    assert_eq!(box_state(&f), HandsState::Ready);
+    assert_eq!(
+        box_state(&f),
+        HandsState::Asleep,
+        "the machine sleeps again"
+    );
     let k = kinds(&f);
-    assert!(k.contains(&"woke".to_owned()));
+    assert!(
+        !k.contains(&"woke".to_owned()),
+        "the Box stays asleep: {k:?}"
+    );
     assert_eq!(copied(&f), 1);
 }
 
