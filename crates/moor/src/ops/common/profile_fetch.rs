@@ -118,9 +118,7 @@ fn fetch_and_setup(
         workdir: None,
     };
     let script = fetch_script(&url, profile.sha.as_str());
-    // The setup script runs in the Work place; Claude's profile writers read the checkout from
-    // the Agent place. On a machine's Box those have a home each, so each gets its own checkout;
-    // elsewhere they are one machine with one home, and one checkout serves both.
+    // A machine's Box has a home per place, and Claude's profile writers read the Agent one.
     let places: &[(Place, &str)] = if is_machine_handle(handle.as_str()) {
         &[(Place::Work, "work"), (Place::Agent, "agent")]
     } else {
