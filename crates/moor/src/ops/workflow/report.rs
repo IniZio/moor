@@ -1,7 +1,8 @@
 //! `step-report`: what the agent in a Box reports for the step its run is at.
 //!
-//! The reply always says what to do next. A report that passes the code gate moves the run on in
-//! one compare-and-set, with its lines, so a report repeated or raced by a tick applies once.
+//! The reply always says what to do next. A report that passes the code gate moves the run on, or
+//! ends it, in one transaction with its lines, compare-and-set on the run's state, step and try,
+//! so a report repeated or raced by a tick applies once.
 
 use moor_core::artifact::ArtifactFile;
 use moor_core::decide::workflow::{code_gate, refusal_move, report_move, Move};
@@ -105,6 +106,8 @@ pub(crate) fn run(
         let Some(s) = standing(store, req.box_id)? else {
             return Ok(refused(NO_RUN));
         };
+        #[cfg(test)]
+        tests_hook::after_standing(cx);
         if let Some(reply) = settle(cx, store, &s, &req.report)? {
             return Ok(reply);
         }
@@ -239,19 +242,16 @@ impl Moving<'_> {
         (self.s.w.id, &self.s.run.repo, self.s.run.due_at)
     }
 
-    /// Appends `lines` with the pointer where it is; false when the run moved under it.
-    fn write(&self, lines: &[HistoryEntry]) -> Result<bool, CommandError> {
+    /// Ends the run with `outcome`, with `lines` written in the same move; false when the run
+    /// moved under it.
+    fn end(&self, lines: &[HistoryEntry], outcome: RunOutcome) -> Result<bool, CommandError> {
         let at = (&self.s.at.0, self.s.at.1);
-        Ok(self
-            .store
-            .step_workflow_run(self.key(), (at, at), (lines, self.now))?)
-    }
-
-    /// Ends the run with `outcome`; false when it moved under it.
-    fn end(&self, outcome: RunOutcome) -> Result<bool, CommandError> {
-        Ok(self
-            .store
-            .end_workflow_run(self.key(), (self.box_id, outcome), self.now)?)
+        Ok(self.store.end_workflow_run(
+            self.key(),
+            at,
+            (self.box_id, outcome),
+            (lines, self.now),
+        )?)
     }
 
     /// Goes on to `step`, for its `try_n`th entry, with `lines` written in the same move; what
@@ -318,7 +318,7 @@ fn apply(
         }
         Move::Delivered => {
             let result = note.trim().to_owned();
-            let done = moving.write(&lines)? && moving.end(RunOutcome::Delivered { result })?;
+            let done = moving.end(&lines, RunOutcome::Delivered { result })?;
             Ok(done.then(|| said("Done.")))
         }
         Move::Fail {
@@ -331,7 +331,7 @@ fn apply(
                 at,
                 reason: reason.clone(),
             };
-            let done = moving.write(&lines)? && moving.end(outcome)?;
+            let done = moving.end(&lines, outcome)?;
             Ok(done.then(|| {
                 said(format!(
                     "The run ended: {reason}. There is nothing more to do."
@@ -341,5 +341,30 @@ fn apply(
         Move::Wait | Move::Remind | Move::RunCheck | Move::Incomplete { .. } => Ok(Some(refused(
             "The run could not move on from this report. Nothing more is recorded.",
         ))),
+    }
+}
+
+/// A test seam between a report's reading of the run and its move.
+#[cfg(test)]
+pub(super) mod tests_hook {
+    use std::cell::RefCell;
+
+    use crate::cx::Cx;
+
+    type Hook = Box<dyn FnOnce(&Cx)>;
+
+    thread_local! {
+        static AFTER_STANDING: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Runs `f` once, after the next reading of a run by a report on this thread.
+    pub(in crate::ops::workflow) fn once_after_standing(f: impl FnOnce(&Cx) + 'static) {
+        AFTER_STANDING.with(|h| *h.borrow_mut() = Some(Box::new(f)));
+    }
+
+    pub(super) fn after_standing(cx: &Cx) {
+        if let Some(f) = AFTER_STANDING.with(|h| h.borrow_mut().take()) {
+            f(cx);
+        }
     }
 }

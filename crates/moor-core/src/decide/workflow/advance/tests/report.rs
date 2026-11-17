@@ -6,7 +6,10 @@ use serde_json::json;
 use super::{id, plan, work};
 use crate::artifact::ArtifactFile;
 use crate::decide::workflow::{code_gate, refusal_move, report_move, Move};
-use crate::workflow::{HistoryEntry, Plan, StepReport, StepResult, EVIDENCE_MAX, NOTE_MAX};
+use crate::workflow::{
+    HistoryEntry, Plan, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX,
+    EVIDENCE_NAME_MAX, NOTE_MAX,
+};
 
 fn entered(step: &str, try_n: u8) -> HistoryEntry {
     HistoryEntry::Entered {
@@ -166,4 +169,17 @@ fn a_deliver_report_needs_a_note_and_a_note_is_capped() {
     let long = "x".repeat(NOTE_MAX + 1);
     let err = gated("end", &say("end", StepResult::Ok, &long), &[]).unwrap_err();
     assert!(err[0].contains("at most 2048"), "{err:?}");
+}
+
+#[test]
+fn a_report_lists_a_bounded_evidence_list() {
+    let mut r = say("a", StepResult::Fail, "no");
+    r.evidence = (0..=EVIDENCE_NAMES_MAX).map(|i| format!("f{i}")).collect();
+    let err = gated("a", &r, &[]).unwrap_err();
+    assert!(err[0].contains("at most 32"), "{err:?}");
+    r.evidence = vec!["x".repeat(EVIDENCE_NAME_MAX + 1)];
+    let err = gated("a", &r, &[]).unwrap_err();
+    assert!(err[0].contains("longer than 128"), "{err:?}");
+    r.evidence = vec!["x".repeat(EVIDENCE_NAME_MAX); EVIDENCE_NAMES_MAX];
+    assert_eq!(gated("a", &r, &[]), Ok(()));
 }

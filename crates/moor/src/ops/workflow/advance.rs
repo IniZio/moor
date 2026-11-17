@@ -168,12 +168,7 @@ impl Quiet<'_> {
                 return Ok(());
             }
         }
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
-        let end = |outcome| {
-            self.store
-                .end_workflow_run(key, (box_id, outcome), self.now)
-                .map(|_| ())
-        };
+        let end = |outcome| self.end(box_id, outcome);
         match m {
             Move::Wait => Ok(()),
             Move::Delivered => end(RunOutcome::Delivered {
@@ -202,6 +197,15 @@ impl Quiet<'_> {
                 exhausted,
             } => self.enter(plan, &history, (step, try_n), exhausted, out),
         }
+    }
+
+    /// Ends the run at the step and try this tick read it at; nothing changes when a report or an
+    /// expiry moved it first.
+    fn end(&self, box_id: BoxId, outcome: RunOutcome) -> Result<(), StoreError> {
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        self.store
+            .end_workflow_run(key, self.at, (box_id, outcome), (&[], self.now))
+            .map(|_| ())
     }
 
     /// Hands the check at the pointer to `checks`, with a deadline of the smaller of the run's

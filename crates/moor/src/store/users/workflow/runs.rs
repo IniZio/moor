@@ -7,7 +7,8 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
+    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, StepId, WorkflowId,
+    WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -105,55 +106,68 @@ impl Store {
     /// Moves the run of `workflow` and `repo` due at `due_at` from the phase `from` to `to` at
     /// `at`, and appends the line for the move, when the run is still in `from`. False, with
     /// nothing changed, otherwise, so whichever of two moves comes first wins.
+    ///
+    /// `guard` also requires a running run to be at exactly that step and try, and `lines` are
+    /// appended before the move's own line, in the same transaction.
     fn move_run(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
         (from, to): (Open, &RunState),
-        at: Ts,
+        (guard, lines, at): (Option<(&StepId, u8)>, &[HistoryEntry], Ts),
     ) -> Result<bool, StoreError> {
         let cols = state_cols(to);
         let entry = HistoryEntry::moving(from.phase(), to);
         self.numbered(|tx, seq| {
-            let changed = tx.run(
-                Query::update()
-                    .table(WorkflowRuns::Table)
-                    .value(WorkflowRuns::Outcome, to.tag())
-                    .value(WorkflowRuns::Box, cols.box_id)
-                    .value(WorkflowRuns::Detail, cols.detail.clone())
-                    .value(WorkflowRuns::EndedAt, cols.ended_at)
-                    .value(WorkflowRuns::Step, cols.step.clone())
-                    .value(WorkflowRuns::TryN, cols.try_n)
-                    .value(WorkflowRuns::WaitingSince, cols.waiting_since)
-                    .value(WorkflowRuns::EndedStep, cols.ended_step.clone())
-                    .value(WorkflowRuns::Seq, seq)
-                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                    .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
-                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(from.outcome())),
-            )?;
+            let mut update = Query::update();
+            update
+                .table(WorkflowRuns::Table)
+                .value(WorkflowRuns::Outcome, to.tag())
+                .value(WorkflowRuns::Box, cols.box_id)
+                .value(WorkflowRuns::Detail, cols.detail.clone())
+                .value(WorkflowRuns::EndedAt, cols.ended_at)
+                .value(WorkflowRuns::Step, cols.step.clone())
+                .value(WorkflowRuns::TryN, cols.try_n)
+                .value(WorkflowRuns::WaitingSince, cols.waiting_since)
+                .value(WorkflowRuns::EndedStep, cols.ended_step.clone())
+                .value(WorkflowRuns::Seq, seq)
+                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                .and_where(Expr::col(WorkflowRuns::Outcome).eq(from.outcome()));
+            if let Some((step, try_n)) = guard {
+                update
+                    .and_where(Expr::col(WorkflowRuns::Step).eq(step.as_str()))
+                    .and_where(Expr::col(WorkflowRuns::TryN).eq(i64::from(try_n)));
+            }
+            let changed = tx.run(&mut update)?;
             if changed == 1 {
                 let id = run_id(tx, (workflow, repo, due_at))?;
+                for line in lines {
+                    append_history(tx, id, at, line)?;
+                }
                 append_history(tx, id, at, &entry)?;
             }
             Ok(changed)
         })
     }
 
-    /// Ends the running run of `workflow` and `repo` due at `due_at` with `outcome`, at `at`.
-    /// False, with nothing changed, when there is no such run or it already ended, so whichever
-    /// of a finish and an expiry comes first wins.
+    /// Ends the run of `workflow` and `repo` due at `due_at` with `outcome`, at `at`, appending
+    /// `lines` first, when it is running at exactly step `on` and try `on.1`. False, with nothing
+    /// changed, when there is no such run, it ended, or it moved to another step or try, so
+    /// whichever of a finish, a report and an expiry comes first wins.
     pub(crate) fn end_workflow_run(
         &self,
         key: (WorkflowId, &ForgeRepo, Ts),
+        on: (&StepId, u8),
         (box_id, outcome): (BoxId, RunOutcome),
-        at: Ts,
+        (lines, at): (&[HistoryEntry], Ts),
     ) -> Result<bool, StoreError> {
         let to = RunState::Done(RunEnd::Ended {
             box_id,
             ended_at: at,
             outcome,
         });
-        self.move_run(key, (Open::Running, &to), at)
+        self.move_run(key, (Open::Running, &to), (Some(on), lines, at))
     }
 
     /// Refuses the run of `workflow` and `repo` due at `due_at` with `detail`, dropping its Box
@@ -174,7 +188,7 @@ impl Store {
         let to = RunState::Done(RunEnd::Refused {
             detail: detail.to_owned(),
         });
-        self.move_run(key, (from, &to), at)
+        self.move_run(key, (from, &to), (None, &[], at))
     }
 
     /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `state`, which is
@@ -185,7 +199,7 @@ impl Store {
         state: &RunState,
         at: Ts,
     ) -> Result<bool, StoreError> {
-        self.move_run(key, (Open::Queued, state), at)
+        self.move_run(key, (Open::Queued, state), (None, &[], at))
     }
 
     /// The runs of `workflow` that are being started, work, or wait: those that have not ended.

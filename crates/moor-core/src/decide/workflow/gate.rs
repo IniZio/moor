@@ -2,13 +2,15 @@
 
 use crate::artifact::ArtifactFile;
 use crate::workflow::{
-    EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX, NOTE_MAX,
+    EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX,
+    EVIDENCE_NAME_MAX, NOTE_MAX,
 };
 
 /// Whether `report` of `step` passes, given `index`, the top-level regular files of the Box's
 /// artifacts folder. The refusal lists every problem at once, so the agent fixes them in one go.
 ///
-/// - A note is at most [`NOTE_MAX`] bytes.
+/// - A note is at most [`NOTE_MAX`] bytes, and a report lists at most [`EVIDENCE_NAMES_MAX`]
+///   names of at most [`EVIDENCE_NAME_MAX`] bytes.
 /// - A report of `fail` passes with a note that is not empty, whatever the step's evidence.
 /// - A work step's report of `ok` passes when each name of its evidence matches a file, flat or
 ///   by `prefix*`, and every file it matches is not empty and at most [`EVIDENCE_MAX`].
@@ -27,6 +29,17 @@ pub fn code_gate(
         problems.push(format!(
             "the note is {} bytes; at most {NOTE_MAX} are kept",
             report.note.len()
+        ));
+    }
+    if report.evidence.len() > EVIDENCE_NAMES_MAX {
+        problems.push(format!(
+            "the report lists {} evidence names; at most {EVIDENCE_NAMES_MAX} are kept",
+            report.evidence.len()
+        ));
+    }
+    if report.evidence.iter().any(|n| n.len() > EVIDENCE_NAME_MAX) {
+        problems.push(format!(
+            "an evidence name is longer than {EVIDENCE_NAME_MAX} bytes"
         ));
     }
     let said_why = !report.note.trim().is_empty();

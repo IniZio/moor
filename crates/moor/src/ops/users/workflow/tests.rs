@@ -10,7 +10,7 @@ use moor_core::name::ForgeRepo;
 use moor_core::request::{UserCmd, WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
-use moor_core::workflow::{NewRun, RunOutcome, RunState, WorkflowId, WorkflowName};
+use moor_core::workflow::{NewRun, Plan, RunOutcome, RunState, WorkflowId, WorkflowName};
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
@@ -316,7 +316,12 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
         result: "opened a pull request".to_owned(),
     };
     store
-        .end_workflow_run(key, (BoxId::new(9), delivered), Ts::from_millis(900))
+        .end_workflow_run(
+            key,
+            (&Plan::single_id(), 1),
+            (BoxId::new(9), delivered),
+            (&[], Ts::from_millis(900)),
+        )
         .unwrap();
     let ended = json!({"at": 900, "entry": {
         "kind": "ended", "phase_before": "running",

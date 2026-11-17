@@ -414,3 +414,82 @@ fn a_workflow_nobody_planned_still_delivers_when_its_agent_goes_quiet() {
         })
     ));
 }
+
+#[test]
+fn a_tick_that_decided_incomplete_before_a_report_moved_the_run_does_not_end_it() {
+    let r = rig();
+    let wid = r.begun(plan_of(&[audit("ship", None), ship()]));
+    r.quiet_after_work(wid);
+    r.pause(3 * 60_000);
+    assert!(r.pass().is_empty());
+    assert_eq!(r.trail(wid), ["queued", "entered", "reminded"]);
+
+    // The agent reports while the next tick sits between its history read and its end.
+    r.quiet_after_work(wid);
+    r.pause(3 * 60_000);
+    r.driver.push_artifact_index(files());
+    let (box_id, told) = (
+        r.latest_box(wid),
+        std::rc::Rc::new(std::cell::RefCell::new(None)),
+    );
+    let sink = told.clone();
+    let _hook = super::super::advance::tests_hook::on_history(move |cx| {
+        let report = ok("audit", "");
+        let got = step_report(cx, &StepReportReq { box_id, report }).unwrap();
+        *sink.borrow_mut() = Some(got);
+    });
+    assert!(r.pass().is_empty());
+
+    let got = told.borrow_mut().take().unwrap();
+    assert!(!got.error, "{got:?}");
+    assert_eq!(step_of(&r.latest(wid).state), ("ship".to_owned(), 1));
+    assert!(matches!(r.latest(wid).state, RunState::Running { .. }));
+    let kinds = r.trail(wid);
+    assert!(!kinds.contains(&"ended".to_owned()), "{kinds:?}");
+}
+
+#[test]
+fn a_tick_that_ends_the_run_between_a_reports_read_and_move_leaves_no_report_behind() {
+    let r = rig();
+    let wid = r.begun(plan_of(&[audit("ship", None), ship()]));
+    r.driver.push_artifact_index(files());
+    assert!(!r.report(wid, ok("audit", "")).error);
+    let before = r.trail(wid);
+
+    let key = {
+        let run = r.latest(wid);
+        (wid, run.repo.clone(), run.due_at)
+    };
+    let box_id = r.latest_box(wid);
+    super::super::report::tests_hook::once_after_standing(move |cx| {
+        let outcome = RunOutcome::Incomplete { at: id("ship") };
+        let ended = cx
+            .store()
+            .unwrap()
+            .end_workflow_run(
+                (key.0, &key.1, key.2),
+                (&id("ship"), 1),
+                (box_id, outcome),
+                (&[], cx.clock().now()),
+            )
+            .unwrap();
+        assert!(ended);
+    });
+    let told = r.report(wid, ok("ship", "opened PR 12"));
+    assert!(told.error, "{told:?}");
+    assert!(told.reply.contains("no running workflow run"), "{told:?}");
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Incomplete { .. },
+        ..
+    }) = r.latest(wid).state
+    else {
+        panic!("{:?}", r.latest(wid).state);
+    };
+    let mut want = before;
+    want.push("ended".to_owned());
+    assert_eq!(
+        r.trail(wid),
+        want,
+        "a report that lost the race left no line"
+    );
+}

@@ -5,6 +5,12 @@ use super::StepId;
 /// The longest note a report may carry, in bytes. A deliver step's note is the run's result.
 pub const NOTE_MAX: usize = 2048;
 
+/// The most evidence names a report may list.
+pub const EVIDENCE_NAMES_MAX: usize = 32;
+
+/// The longest evidence name a report may list, in bytes.
+pub const EVIDENCE_NAME_MAX: usize = 128;
+
 /// The largest evidence file the code gate accepts, in bytes.
 pub const EVIDENCE_MAX: u64 = 25 * 1024 * 1024;
 
@@ -38,7 +44,8 @@ pub struct StepReport {
     pub step: StepId,
     /// How it went.
     pub result: StepResult,
-    /// The artifact names the agent left; the step's evidence is what the gate checks.
+    /// The artifact names the agent left, at most [`EVIDENCE_NAMES_MAX`] of at most
+    /// [`EVIDENCE_NAME_MAX`] bytes; the step's evidence is what the gate checks.
     #[serde(default)]
     pub evidence: Vec<String>,
     /// At most [`NOTE_MAX`] bytes; a deliver step's note is the run's result.

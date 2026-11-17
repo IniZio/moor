@@ -363,6 +363,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
         due_at: ts(DAY0),
         box_id: BoxId::new(7),
         at: step(),
+        try_n: 1,
     };
     assert_eq!(at(DAY0 + 30 * 60_000), std::slice::from_ref(&expiry));
     assert_eq!(at(DAY0 + DAY), [expiry]);
