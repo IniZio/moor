@@ -77,7 +77,7 @@ fn text_that_does_not_parse_is_left_out_and_named() {
     assert_eq!(store.repo_config(&repo("o/bad")).unwrap(), None);
     assert!(store.repo_config(&repo("o/good")).unwrap().is_some());
     assert_eq!(done.skipped.len(), 1);
-    assert_eq!(done.skipped[0].0, repo("o/bad"));
+    assert_eq!(done.skipped.first().map(|s| &s.0), Some(&repo("o/bad")));
 }
 
 #[test]
