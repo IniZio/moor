@@ -6,9 +6,7 @@ use std::process::Stdio;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_client::link::status::{
-    clip, Served, Status, MAX_ERROR, MAX_RECENT,
-};
+use moor_client::link::status::{clip, Served, Status, MAX_ERROR, MAX_RECENT};
 use tokio::process::Command;
 
 use crate::serve::Machine;

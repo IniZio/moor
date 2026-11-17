@@ -285,13 +285,20 @@ fn assert_paired_as_hv(w: &World) {
 
 /// Checks Docker was asked about, no crabbox was, and the service runs Docker Boxes.
 fn assert_service_serves_docker_boxes(w: &World) {
-    assert!(w.log("docker.log").starts_with("info"), "{}", w.log("docker.log"));
+    assert!(
+        w.log("docker.log").starts_with("info"),
+        "{}",
+        w.log("docker.log")
+    );
     let unit = std::fs::read_to_string(w.unit()).unwrap();
     assert!(
         unit.contains("ExecStart=") && unit.contains("\"run\" \"--auto-update\"\n"),
         "{unit}"
     );
-    assert!(!unit.contains("crabbox") && !unit.contains("--runtime"), "{unit}");
+    assert!(
+        !unit.contains("crabbox") && !unit.contains("--runtime"),
+        "{unit}"
+    );
     let calls = w.log("systemctl.log");
     assert!(
         calls.contains("--user enable moor-machine-agent.service"),
@@ -340,7 +347,8 @@ fn up_stops_at_dockers_own_error_before_pairing() {
     let ran = w.up();
     assert!(!ran.ok);
     assert!(
-        ran.said.contains("permission denied while trying to connect"),
+        ran.said
+            .contains("permission denied while trying to connect"),
         "{}",
         ran.said
     );
@@ -399,7 +407,8 @@ fn a_machine_paired_for_another_runtime_pairs_again() {
     let w = world();
     assert!(w.up().ok);
     let state = w.home.path().join("state/moor-machine-agent/state.json");
-    let mut earlier: Value = serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    let mut earlier: Value =
+        serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
     earlier["pool"] = json!("cloudhypervisor");
     std::fs::write(&state, earlier.to_string()).unwrap();
     let again = w.up();

@@ -110,13 +110,13 @@ async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option
             None
         }
         op @ (Op::Exec { .. }
-            | Op::Hook { .. }
-            | Op::Relay { .. }
-            | Op::Sync { .. }
-            | Op::Pull { .. }
-            | Op::Listen { .. }
-            | Op::Sweep { .. }
-            | Op::Remove { .. })
+        | Op::Hook { .. }
+        | Op::Relay { .. }
+        | Op::Sync { .. }
+        | Op::Pull { .. }
+        | Op::Listen { .. }
+        | Op::Sweep { .. }
+        | Op::Remove { .. })
             if machine.allow_exec || !matches!(op, Op::Exec { .. }) =>
         {
             serve_machine(machine, link, ch, op).await
