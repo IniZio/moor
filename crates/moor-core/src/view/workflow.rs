@@ -126,6 +126,17 @@ pub struct WorkflowChangeValue {
     pub plan: Vec<String>,
 }
 
+/// Value of `workflow-answer`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowAnswerValue {
+    /// The workflow's name.
+    pub workflow: String,
+    /// The repo whose run was answered.
+    pub repo: String,
+    /// What the run did next, in one sentence.
+    pub next: String,
+}
+
 /// One entry of the change stream `workflow-runs` returns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

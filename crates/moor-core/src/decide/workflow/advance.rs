@@ -3,7 +3,7 @@
 use super::finished::{RunBoxFacts, QUIET_BEFORE_FINISHED};
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
-use crate::workflow::{HistoryEntry, Plan, StepId, StepKind, StepReport, StepResult};
+use crate::workflow::{Answer, HistoryEntry, Plan, StepId, StepKind, StepReport, StepResult};
 
 /// How many lost exec streams one try of a check may have. The next one follows `fail`.
 pub const CHECK_LOSSES: usize = 2;
@@ -37,6 +37,13 @@ pub enum Move {
         try_n: u8,
         /// Steps passed over for lack of tries, in order.
         exhausted: Vec<StepId>,
+    },
+    /// The run is at an approve step: it waits for the owner's answer.
+    Ask,
+    /// The owner said no at step `at`, which has no `fail` edge.
+    Declined {
+        /// The approve step.
+        at: StepId,
     },
     /// The run goes nowhere: a step is out of tries and has no fail edge, or its fail target is
     /// out too.
@@ -79,7 +86,7 @@ enum Edge {
 /// - A check step runs. Its recorded exit decides: 0 follows `ok`, any other follows `fail`. A
 ///   lost stream is no result, so the check runs again, and the second lost stream in one try
 ///   follows `fail`.
-/// - An approve step waits.
+/// - An approve step asks: the run waits for its owner, who answers with [`answer_move`].
 #[must_use]
 pub fn advance(plan: &Plan, history: &[HistoryEntry], _event: Event) -> Move {
     let Some((pos, at)) = history.iter().enumerate().rev().find_map(|(i, e)| match e {
@@ -137,7 +144,7 @@ pub fn advance(plan: &Plan, history: &[HistoryEntry], _event: Event) -> Move {
                 None => Move::RunCheck,
             }
         }
-        StepKind::Approve { .. } => Move::Wait,
+        StepKind::Approve { .. } => Move::Ask,
     }
 }
 
@@ -159,6 +166,28 @@ pub fn report_move(plan: &Plan, history: &[HistoryEntry], report: &StepReport) -
     match report.result {
         StepResult::Ok => route(plan, at, Edge::Ok, &entered, String::new()),
         StepResult::Fail => failed(plan, at, &entered, reason),
+    }
+}
+
+/// The move after the owner's `answer` at the approve step the run last entered: yes follows the
+/// `ok` edge, no follows the `fail` edge, and a no at a step with none ends the run declined.
+#[must_use]
+pub fn answer_move(plan: &Plan, history: &[HistoryEntry], answer: Answer) -> Move {
+    let Some(at) = history.iter().rev().find_map(|e| match e {
+        HistoryEntry::Entered { step, .. } => Some(step),
+        _ => None,
+    }) else {
+        return Move::Wait;
+    };
+    let entered = |s: &StepId| entered_count(history, s);
+    let no_fail_edge = plan
+        .step(at)
+        .and_then(|s| s.kind.next())
+        .is_some_and(|n| n.fail.is_none());
+    match answer {
+        Answer::Yes => route(plan, at, Edge::Ok, &entered, String::new()),
+        Answer::No if no_fail_edge => Move::Declined { at: at.clone() },
+        Answer::No => route(plan, at, Edge::Fail, &entered, String::new()),
     }
 }
 

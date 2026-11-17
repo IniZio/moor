@@ -275,9 +275,17 @@ impl Moving<'_> {
             });
         }
         let at = (&self.s.at.0, self.s.at.1);
-        let moved =
+        let moved = if matches!(next.kind, StepKind::Approve { .. }) {
+            self.store.wait_workflow_run(
+                self.key(),
+                (at, (&step, try_n)),
+                self.box_id,
+                (&lines, self.now),
+            )?
+        } else {
             self.store
-                .step_workflow_run(self.key(), (at, (&step, try_n)), (&lines, self.now))?;
+                .step_workflow_run(self.key(), (at, (&step, try_n)), (&lines, self.now))?
+        };
         Ok(moved.then(|| said(instructions(next))))
     }
 }
@@ -338,7 +346,12 @@ fn apply(
                 ))
             }))
         }
-        Move::Wait | Move::Remind | Move::RunCheck | Move::Incomplete { .. } => Ok(Some(refused(
+        Move::Wait
+        | Move::Remind
+        | Move::RunCheck
+        | Move::Ask
+        | Move::Declined { .. }
+        | Move::Incomplete { .. } => Ok(Some(refused(
             "The run could not move on from this report. Nothing more is recorded.",
         ))),
     }

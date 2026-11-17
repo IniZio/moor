@@ -35,6 +35,27 @@ impl StepResult {
     }
 }
 
+/// How the owner answers an approve step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Answer {
+    /// Go on along the `ok` edge.
+    Yes,
+    /// Take the `fail` edge, or end the run declined when the step has none.
+    No,
+}
+
+impl Answer {
+    /// The answer as the tool names it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+
 /// What the agent sends with `report_step`. The run and the Box come from the transport, never
 /// from an argument.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

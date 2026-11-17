@@ -3,7 +3,8 @@
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 use crate::workflow::{
-    RunEnd, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState, BREAKER_STREAK,
+    RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
+    BREAKER_STREAK,
 };
 
 /// What the store and the Boxes say about one repo of a workflow.
@@ -167,13 +168,15 @@ pub fn workflow_start_overdue(
 
 /// The runs in `open` that have worked for the workflow's timeout.
 ///
-/// The time counts on the wall clock from when the run's agent first started. A run whose agent
-/// has not started is never expired here; the start limit covers it.
+/// The time counts on the wall clock from when the run's agent first started, less the
+/// milliseconds `waited` says the run spent waiting for answers. A run whose agent has not
+/// started is never expired here; the start limit covers it. A run that waits is never expired
+/// here either: its clock is stopped, and [`workflow_unanswered`] ends it after a week.
 #[must_use]
 pub fn workflow_expired(
     workflow: &Workflow,
     open: &[WorkflowRun],
-    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    (agent_started, waited): (&dyn Fn(BoxId) -> Option<Ts>, &dyn Fn(RunId) -> i64),
     now: Ts,
 ) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
@@ -181,7 +184,8 @@ pub fn workflow_expired(
         .filter_map(|run| match &run.state {
             RunState::Running { box_id, at, try_n }
                 if agent_started(*box_id).is_some_and(|began| {
-                    now.as_millis().saturating_sub(began.as_millis()) >= limit
+                    let spent = now.as_millis().saturating_sub(began.as_millis());
+                    spent >= limit && spent.saturating_sub(waited(run.id)) >= limit
                 }) =>
             {
                 Some(WorkflowExpiry {
@@ -260,11 +264,13 @@ const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict 
 mod advance;
 mod finished;
 mod gate;
+mod wait;
 #[cfg(test)]
 mod tests;
 
 pub use advance::{
-    advance, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
+    advance, answer_move, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
 };
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
 pub use gate::code_gate;
+pub use wait::{waited_millis, workflow_unanswered, Unanswered, WAIT_LIMIT};

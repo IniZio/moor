@@ -1,10 +1,11 @@
 //! Settling the started runs of a workflow from where each stands: a quiet agent at a work step
 //! is sent on to the next step, an ended one is sent its step again once, a check step runs its
-//! command and follows its exit, and a deliver step delivers. A Box that is gone ends the run,
-//! and one no agent can run in refuses it.
+//! command and follows its exit, and a deliver step delivers. An approve step sets the run
+//! waiting for its owner. A Box that is gone ends the run, and one no agent can run in refuses
+//! it.
 
 use moor_core::decide::workflow::{
-    advance, quiet_since, run_verdict, Event, Move, RunBoxFacts, RunVerdict,
+    advance, quiet_since, run_verdict, waited_millis, Event, Move, RunBoxFacts, RunVerdict,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::session_state::SessionState;
@@ -41,6 +42,15 @@ pub(super) fn finish_runs(
             try_n,
         } = run.state
         else {
+            if let RunState::Waiting {
+                box_id,
+                ref at,
+                try_n,
+                ..
+            } = run.state
+            {
+                lose_waiting(store, w, &run, (box_id, at, try_n), now)?;
+            }
             continue;
         };
         let row = store.box_row(box_id)?;
@@ -72,6 +82,25 @@ pub(super) fn finish_runs(
         q.settle(&plan, box_id, (checks, out))?;
     }
     Ok(())
+}
+
+/// Ends the run that waits at `at` as incomplete when its Box is gone or closed: nobody is left
+/// to send the answer to. A Box that sleeps is what a wait wants, so any other Box leaves it be.
+fn lose_waiting(
+    store: &Store,
+    w: &Workflow,
+    run: &WorkflowRun,
+    (box_id, at, try_n): (BoxId, &StepId, u8),
+    now: Ts,
+) -> Result<(), StoreError> {
+    if open(store.box_row(box_id)?.as_ref()).is_some() {
+        return Ok(());
+    }
+    let key = (w.id, &run.repo, run.due_at);
+    let outcome = RunOutcome::Incomplete { at: at.clone() };
+    store
+        .end_waiting_run(key, (at, try_n), (box_id, outcome), (&[], now))
+        .map(|_| ())
 }
 
 /// A check of the run is already running.
@@ -170,7 +199,8 @@ impl Quiet<'_> {
         }
         let end = |outcome| self.end(box_id, outcome);
         match m {
-            Move::Wait => Ok(()),
+            Move::Wait | Move::Declined { .. } => Ok(()),
+            Move::Ask => self.ask(box_id),
             Move::Delivered => end(RunOutcome::Delivered {
                 result: String::new(),
             }),
@@ -208,6 +238,15 @@ impl Quiet<'_> {
             .map(|_| ())
     }
 
+    /// Sets the run, which began at an approve step, waiting for its owner.
+    fn ask(&self, box_id: BoxId) -> Result<(), StoreError> {
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let at = (self.at.0, self.at.1);
+        self.store
+            .wait_workflow_run(key, (at, at), box_id, (&[], self.now))
+            .map(|_| ())
+    }
+
     /// Hands the check at the pointer to `checks`, with a deadline of the smaller of the run's
     /// remaining timeout and [`CHECK_LIMIT`], under the `flight` the tick claimed.
     fn start_check(
@@ -219,8 +258,13 @@ impl Quiet<'_> {
         let Some(StepKind::Check { command, .. }) = plan.step(self.at.0).map(|s| &s.kind) else {
             return Ok(());
         };
+        let waited = waited_millis(&self.store.run_entries(self.run.id)?);
         let spent = self.store.first_launch_at(box_id)?.map_or(0, |began| {
-            self.now.as_millis().saturating_sub(began.as_millis())
+            self.now
+                .as_millis()
+                .saturating_sub(began.as_millis())
+                .saturating_sub(waited)
+                .max(0)
         });
         let left_secs = self.w.timeout.millis().saturating_sub(spent) / 1000;
         let limit = i64::try_from(CHECK_LIMIT.as_secs()).unwrap_or(i64::MAX);
@@ -280,6 +324,14 @@ impl Quiet<'_> {
             step: step.clone(),
             try_n,
         });
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        if matches!(next.kind, StepKind::Approve { .. }) {
+            // The owner is asked, not the agent: the run waits and the Box may sleep.
+            return self
+                .store
+                .wait_workflow_run(key, (self.at, (&step, try_n)), row.id, (&lines, self.now))
+                .map(|_| ());
+        }
         if !matches!(next.kind, StepKind::Check { .. }) {
             // Steer first and record after, so a crash in between sends the step twice and
             // never skips it.
@@ -296,7 +348,6 @@ impl Quiet<'_> {
                 try_n,
             });
         }
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
         self.store
             .step_workflow_run(key, (self.at, (&step, try_n)), (&lines, self.now))
             .map(|_| ())
@@ -337,7 +388,7 @@ impl Quiet<'_> {
 }
 
 /// Steers the agent of `row` with `text`, as its owner does.
-fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
+pub(super) fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
     let req = SteerReq {
         target: BoxTarget::Id(row.id),
         text: Some(text.to_owned()),

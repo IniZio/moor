@@ -1,6 +1,7 @@
 //! One line of a run's history. Rows are only appended.
 
-use super::{RunEnd, RunOutcome, RunPhase, RunState, StepId, StepReport};
+use super::{Answer, RunEnd, RunOutcome, RunPhase, RunState, StepId, StepReport};
+use crate::user::UserId;
 
 /// What happened to a run. The store keeps each line as tagged JSON, so a later kind of line
 /// reads as a plain line to anything that does not know it.
@@ -67,6 +68,22 @@ pub enum HistoryEntry {
         step: StepId,
         /// The try.
         try_n: u8,
+    },
+    /// The owner answered an approve step. The run's wait ends here.
+    Answered {
+        /// The approve step.
+        step: StepId,
+        /// Who answered.
+        by: UserId,
+        /// Yes or no.
+        answer: Answer,
+        /// What the owner said with it, passed on to the agent.
+        note: Option<String>,
+    },
+    /// An approve step got no answer in time, so the run ends declined.
+    Unanswered {
+        /// The approve step.
+        step: StepId,
     },
     /// The step was entered more often than its `max_tries` and followed its fail edge.
     Exhausted {

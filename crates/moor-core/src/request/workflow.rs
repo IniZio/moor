@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{AsReq, Request};
 use crate::user::Identity;
+use crate::workflow::Answer;
 
 /// Arguments of `workflow-add`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +72,24 @@ pub struct WorkflowEnableReq {
     pub enabled: bool,
 }
 
+/// Arguments of `workflow-answer`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowAnswerReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The workflow's name.
+    pub workflow: String,
+    /// The repo, `OWNER/NAME`, whose run waits.
+    pub repo: String,
+    /// Yes or no.
+    pub answer: Answer,
+    /// What the owner adds, passed on to the agent; none when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// Arguments of `workflow-runs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -115,6 +134,17 @@ pub enum WorkflowCmd {
         /// Whether it fires.
         enabled: bool,
     },
+    /// Answer the approve step a run waits at.
+    Answer {
+        /// The workflow's name.
+        workflow: String,
+        /// The repo whose run waits.
+        repo: String,
+        /// Yes or no.
+        answer: Answer,
+        /// What the owner adds.
+        note: Option<String>,
+    },
     /// Read changes to runs after a cursor.
     Runs {
         /// The cursor.
@@ -133,6 +163,7 @@ impl WorkflowCmd {
             Self::List => "workflow-list",
             Self::Remove { .. } => "workflow-remove",
             Self::SetEnabled { .. } => "workflow-set-enabled",
+            Self::Answer { .. } => "workflow-answer",
             Self::Runs { .. } => "workflow-runs",
         }
     }
@@ -158,6 +189,15 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
                 enabled: r.enabled,
             },
         ),
+        Request::WorkflowAnswer(r) => (
+            r.identity,
+            WorkflowCmd::Answer {
+                workflow: r.workflow,
+                repo: r.repo,
+                answer: r.answer,
+                note: r.note,
+            },
+        ),
         Request::WorkflowRuns(r) => (
             r.identity,
             WorkflowCmd::Runs {
@@ -176,6 +216,7 @@ pub(super) const fn own_identity(request: &Request) -> Option<&Identity> {
         | Request::WorkflowList(AsReq { identity })
         | Request::WorkflowRemove(WorkflowRemoveReq { identity, .. })
         | Request::WorkflowSetEnabled(WorkflowEnableReq { identity, .. })
+        | Request::WorkflowAnswer(WorkflowAnswerReq { identity, .. })
         | Request::WorkflowRuns(WorkflowRunsReq { identity, .. }) => identity.as_ref(),
         _ => None,
     }

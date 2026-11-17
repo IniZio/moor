@@ -17,6 +17,7 @@ use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
 use crate::workflow::{Plan, StepId};
 
+mod approve;
 mod check;
 mod report;
 
