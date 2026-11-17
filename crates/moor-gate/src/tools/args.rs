@@ -19,7 +19,7 @@ pub(super) struct StartArgs {
     pub(super) base: Option<String>,
     /// A node `list_nodes` shows you; omit to start on the node `list_nodes` says a start picks.
     pub(super) node: Option<String>,
-    /// A partial repo config, as YAML in the `.moor.yaml` format, laid over the repo's stored
+    /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for this Box only: a key you set wins, `env` merges by name, lists replace.
     pub(super) config: Option<String>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so

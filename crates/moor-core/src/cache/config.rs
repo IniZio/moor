@@ -1,4 +1,4 @@
-//! The `cache:` section, in `.moor.yaml` and in the operator's moor config.
+//! The `cache:` section, in the repo config and in the operator's moor config.
 
 use std::num::NonZeroU32;
 

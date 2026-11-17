@@ -18,7 +18,7 @@ fn repo(owner: &str, name: &str) -> ForgeRepo {
 
 fn layers(repo_yaml: &str, user_yaml: &str) -> CacheLayers {
     CacheLayers {
-        repo: parse_repo(".moor.yaml", repo_yaml).unwrap().cache,
+        repo: parse_repo("repo config", repo_yaml).unwrap().cache,
         operator: parse_user("config.yaml", user_yaml).unwrap().cache,
         ..CacheLayers::default()
     }
@@ -283,7 +283,7 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
             "worktree"
         ]
     );
-    let err = parse_repo(".moor.yaml", "cache: {presets: [dockr]}").unwrap_err();
+    let err = parse_repo("repo config", "cache: {presets: [dockr]}").unwrap_err();
     assert!(err.to_string().contains("cache.presets[0]"), "{err}");
 }
 
@@ -330,7 +330,7 @@ fn duplicate_names_and_overlapping_paths_are_refused() {
             "cache.volumes[0].path",
         ),
     ] {
-        let err = parse_repo(".moor.yaml", yaml).unwrap_err().to_string();
+        let err = parse_repo("repo config", yaml).unwrap_err().to_string();
         assert!(err.contains(key), "{yaml}: {err}");
         let err = parse_user("config.yaml", yaml).unwrap_err().to_string();
         assert!(err.contains(key), "operator {yaml}: {err}");
@@ -349,7 +349,7 @@ fn a_layer_declares_at_most_eight_volumes() {
         .map(|i| format!("{{name: v{i}, path: ~/v{i}}}"))
         .collect();
     let yaml = format!("cache: {{volumes: [{}]}}", vols.join(", "));
-    let err = parse_repo(".moor.yaml", &yaml).unwrap_err().to_string();
+    let err = parse_repo("repo config", &yaml).unwrap_err().to_string();
     assert!(err.contains("at most 8"), "{err}");
 }
 
@@ -360,7 +360,7 @@ fn unknown_cache_keys_are_refused() {
         "cache: {volumes: [{name: a, path: ~/a, scope: user}]}",
         "cache: {volumes: [{name: a, path: ~/a, key: abc}]}",
     ] {
-        assert!(parse_repo(".moor.yaml", yaml).is_err(), "{yaml}");
+        assert!(parse_repo("repo config", yaml).is_err(), "{yaml}");
     }
 }
 

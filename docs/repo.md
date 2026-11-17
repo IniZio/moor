@@ -2,12 +2,11 @@
 
 A repo needs nothing to run in a Box. Give it a config to install
 dependencies, brief the agent, or ask for a bigger machine. This page shows
-the common settings. [Configuration](config.md#mooryaml) lists every key.
+the common settings. [Configuration](config.md#repo-config) lists every key.
 
 moor keeps one config per repo, shared by every Box of the repo. Anyone who
 can push to the repo, and the operator, can edit it. The settings below are
-YAML, as they were in a `.moor.yaml` file, and `moor repo config` reads and
-writes them:
+YAML, and `moor repo config` reads and writes them:
 
 ```sh
 moor repo config get OWNER/NAME > repo.yaml
@@ -27,15 +26,12 @@ read again instead of overwriting. The text must parse, or `set` refuses it
 and says which key is wrong. The MCP tools `get_repo_config` and
 `set_repo_config` do the same.
 
-## Import an existing `.moor.yaml`
+## Repos from before the store
 
-A repo that has no stored config and has a `.moor.yaml` at the Box's base
-commit imports the file when a person who can push to the repo starts a Box.
-The start warns that the file is imported. From then on moor ignores the file.
-It warns on each start whose file differs from the stored config, and names
-the keys. An account that cannot push to the repo does not import: its Box
-uses the file, and nothing is stored. A repo listed beside the first one
-looks up and imports its own config the same way.
+moor no longer reads a `.moor.yaml` from the repo. To keep a repo's old setup,
+paste the file's contents into the portal's repo settings, or run
+`moor repo config set OWNER/NAME --file .moor.yaml`, then delete the file from
+the repo.
 
 ## What an edit reaches
 

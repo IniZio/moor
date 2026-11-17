@@ -144,17 +144,23 @@ pub(crate) fn new_box_of(name: BoxName, repo: BoxRepo) -> Decision {
     .requester(REQUESTER_USER)
 }
 
-/// Repo `o/n` with `moor_yaml` at its base, authored by the test requester's account.
-pub(crate) fn box_repo(moor_yaml: Option<&str>) -> BoxRepo {
+/// Repo `o/n`, authored by the test requester's account.
+pub(crate) fn box_repo() -> BoxRepo {
     BoxRepo {
         repo: ForgeRepo::new("o", "n"),
-        moor_yaml: moor_yaml.map(str::to_owned),
         author: GitAuthor {
             name: "Ann Dev".to_owned(),
             email: "1+ann@users.noreply.github.com".to_owned(),
         },
         others: Vec::new(),
     }
+}
+
+/// Stores `yaml` as `repo`'s config in `store`, as an operator setting it would.
+pub(crate) fn store_config(store: &Store, repo: &ForgeRepo, yaml: &str) {
+    store
+        .set_repo_config(repo, yaml, "operator", None)
+        .expect("store the repo config");
 }
 
 /// The identity a test context's requests act as.

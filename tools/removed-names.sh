@@ -29,6 +29,7 @@ names=(
   'Identity::of(cx' 'Layer::Git' 'proxy::origin'
   DirectHost check_direct direct_hosts RepoProxy WaitingForBox '--pool-max' provider_of
   seal_script seal_caches seal_step cache_seal_failed work_tree_not_kept MOOR_SEAL_BASE OnFail
+  moor_yaml moorYaml
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.

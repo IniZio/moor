@@ -15,7 +15,7 @@ use moor_core::{BoxId, StartReq};
 
 use super::setup::{argvs, script_argv, unwrapped};
 use super::state::WORKING;
-use super::{repo_req, script_base_yaml, world_with, World};
+use super::{repo_req, script_repo, world_with, World};
 use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -61,7 +61,7 @@ fn install_world(
         ..UserConfig::default()
     };
     let mut w = world_with(driver, config);
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     let engine = FakeEngine::new();
     let engine = Arc::new(if install {
         engine.install(installer())
@@ -122,7 +122,7 @@ fn the_install_runs_after_the_dotfiles_so_a_user_who_installs_their_own_agent_wi
         ..UserConfig::default()
     };
     let mut w = world_with(FakeDriver::new(), config);
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     w.proc.on(
         Tool::Sh,
         &["-c", "exec tar -C \"$1\" -czhf - ."],

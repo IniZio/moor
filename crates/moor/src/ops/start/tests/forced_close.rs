@@ -11,7 +11,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
 use super::setup::start_req;
-use super::{script_base_yaml, world, World};
+use super::{script_repo, world, World};
 use crate::cx::Cx;
 use crate::ops::close;
 use crate::ops::common::provision::interrupted::fail_interrupted;
@@ -58,7 +58,7 @@ fn releases(w: &World) -> usize {
 /// to.
 fn forced_mid_acquire(driver: FakeDriver) -> (World, Closed) {
     let mut w = world(driver);
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     let fresh = other_cx(&w);
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
@@ -118,7 +118,7 @@ fn a_forced_close_cancels_a_boot_going_on_at_a_pool_host() {
 #[test]
 fn the_next_process_honours_a_forced_close_a_restart_cut_off() {
     let w = world(FakeDriver::new().cut_acquires_go_on());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     w.driver.notes_while_acquiring(&[], || {
         std::panic::resume_unwind(Box::new("process died mid-acquire"))
     });
@@ -146,7 +146,7 @@ fn the_next_process_honours_a_forced_close_a_restart_cut_off() {
 #[test]
 fn an_unforced_close_during_the_acquire_is_refused_and_the_start_keeps_its_machine() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     let seen = Arc::new(Mutex::new(None));
     let owners = Arc::clone(w.cx.owners_arc());
     let (dir, driver, proc, got) = (

@@ -3,7 +3,7 @@
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::BoxId;
 
-use super::{repo_req, req, script_base_yaml, world};
+use super::{repo_req, req, script_repo, world};
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::store::db::{Conn, DbExt as _};
@@ -77,7 +77,7 @@ fn a_start_shows_the_settle_warning_of_its_callers_own_box() {
 #[test]
 fn each_users_start_reads_the_repo_with_that_users_own_token() {
     let mut w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &repo_req("first")).unwrap();
     let (cx, user) = second_user(w.cx);
     w.cx = cx.with_viewer(Viewer::User(user));

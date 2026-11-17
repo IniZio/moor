@@ -14,7 +14,7 @@ pub(super) struct BriefInput<'a> {
     pub(super) branch: &'a str,
     /// The exit code of a failed setup, if setup failed.
     pub(super) setup_exit: Option<i32>,
-    /// The `brief:` of the repo's `.moor.yaml`.
+    /// The `brief:` of the repo's config.
     pub(super) repo_notes: Option<&'a str>,
     /// The CPUs and memory the Box delivers, when they are recorded.
     pub(super) shape: Option<Shape>,
@@ -96,7 +96,7 @@ fn project_facts(b: &BriefInput, out: &mut String) {
     if let Some(notes) = b.repo_notes {
         _ = write!(
             out,
-            "## This project's Box\n\nFrom the repo's `.moor.yaml`:\n\n{notes}\n\n"
+            "## This project's Box\n\nFrom the repo's config:\n\n{notes}\n\n"
         );
     }
     if let Some(Shape { cpus, mem_mib }) = b.shape {
@@ -248,7 +248,7 @@ mod tests {
         b.repo_notes = Some("Start the emulator:\n  make emu\n");
         let out = render(&b);
         let issue = out.find("Issue: x is broken").unwrap();
-        let heading = "## This project's Box\n\nFrom the repo's `.moor.yaml`:\n\nStart the emulator:\n  make emu\n\n";
+        let heading = "## This project's Box\n\nFrom the repo's config:\n\nStart the emulator:\n  make emu\n\n";
         assert!(out.contains(heading), "{out}");
         let head = out.find(heading).unwrap();
         assert!(issue < head, "{out}");

@@ -16,7 +16,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::repo_config::{RepoConfigRow, Wrote};
 
-/// The most text a repo's config may hold, as much as a `.moor.yaml` read from GitHub.
+/// The most text a repo's config may hold, as much as a repo config may hold.
 const TEXT_CAP: usize = 64 * 1024;
 
 /// What `repo-config-get` and `repo-config-set` check about the caller.

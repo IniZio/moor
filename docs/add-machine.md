@@ -65,7 +65,7 @@ moor-machine-agent up --server https://HOST --name mac --labels macos,ios-sim --
 A Box claims the machine with the `machine_claim` tool, syncs its work tree
 there, and runs commands with `exec`. The agent runs those commands only
 because you passed `--allow-exec`. A repo names the labels it wants in
-[`.moor.yaml`](repo.md#use-a-tool-machine).
+[repo config](repo.md#use-a-tool-machine).
 
 To give each Box its own simulator, build folder, or port, add `prepare`,
 `suspend`, and `release` hooks on the machine.

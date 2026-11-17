@@ -20,8 +20,6 @@ pub struct RepoAt {
 /// The repo files moor reads at a Box's base; `None` where the file is absent.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepoFiles {
-    /// `.moor.yaml`.
-    pub moor_yaml: Option<String>,
     /// `.mcp.json`.
     pub mcp_json: Option<String>,
     /// `.claude/settings.json`.

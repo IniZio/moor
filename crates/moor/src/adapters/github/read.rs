@@ -53,7 +53,6 @@ fragment commit on GitObject {
   __typename
   oid
   ... on Commit {
-    moorYaml: file(path: ".moor.yaml") { ...entry }
     mcpJson: file(path: ".mcp.json") { ...entry }
     claudeSettings: file(path: ".claude/settings.json") { ...entry }
   }
@@ -216,8 +215,6 @@ struct Object {
     oid: Option<String>,
     /// A tag's target.
     target: Option<Box<Self>>,
-    /// `.moor.yaml` at a commit.
-    moor_yaml: Option<Entry>,
     /// `.mcp.json` at a commit.
     mcp_json: Option<Entry>,
     /// `.claude/settings.json` at a commit.
@@ -284,7 +281,6 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
     Ok(RepoAt {
         base: full_sha(commit.oid.as_deref())?,
         files: RepoFiles {
-            moor_yaml: text(commit.moor_yaml, ".moor.yaml", FILE_CAP)?,
             mcp_json: text(commit.mcp_json, ".mcp.json", FILE_CAP)?,
             claude_settings: text(commit.claude_settings, ".claude/settings.json", FILE_CAP)?,
         },

@@ -39,7 +39,7 @@ impl fmt::Display for Dropped {
 /// Both layers' `cache:` sections for one Box.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CacheLayers {
-    /// The repo's `.moor.yaml`.
+    /// The repo's config.
     pub repo: CacheConfig,
     /// The operator's moor config.
     pub operator: CacheConfig,

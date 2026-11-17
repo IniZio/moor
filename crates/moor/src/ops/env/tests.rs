@@ -10,6 +10,7 @@ use moor_core::{EnvReq, ErrorKind};
 
 use super::run;
 use crate::cx::Cx;
+use crate::testing::cx::store_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
@@ -34,14 +35,17 @@ fn on() -> ForgeRepo {
     ForgeRepo::new("o", "n")
 }
 
-/// `env` of `o/n` whose forge answers `at`.
-fn env_of(at: RepoAt) -> (tempfile::TempDir, EnvView) {
+/// `env` of `o/n` whose forge answers `at` and whose stored repo config is `yaml`, if any.
+fn env_of(at: RepoAt, yaml: Option<&str>) -> (tempfile::TempDir, EnvView) {
     let d = tempfile::tempdir().unwrap();
     let cx = cx_over(
         d.path(),
         UserConfig::default(),
         FakeForge::new().with_read(on(), Ok(at)),
     );
+    if let Some(yaml) = yaml {
+        store_config(cx.store().unwrap(), &on(), yaml);
+    }
     let req = EnvReq {
         repo: Some(on()),
         base: None,
@@ -50,17 +54,20 @@ fn env_of(at: RepoAt) -> (tempfile::TempDir, EnvView) {
     (d, v)
 }
 
-/// `env` of `o/n` holding `.moor.yaml` text `yaml` at its base.
+/// `env` of `o/n` whose stored repo config is `yaml`.
 fn env_with(yaml: &str) -> (tempfile::TempDir, EnvView) {
-    env_of(repo_at("abc123", Some(yaml)))
+    env_of(repo_at("abc123"), Some(yaml))
 }
 
 /// `env` of `o/n` holding `files` at its base.
 fn env_files(files: RepoFiles) -> EnvView {
-    env_of(RepoAt {
-        files,
-        ..repo_at("abc123", None)
-    })
+    env_of(
+        RepoAt {
+            files,
+            ..repo_at("abc123")
+        },
+        None,
+    )
     .1
 }
 
@@ -88,7 +95,7 @@ fn no_repo_shows_the_user_layer_and_reads_no_forge() {
 #[test]
 fn a_repo_is_read_at_the_base_with_the_requesters_token() {
     let d = tempfile::tempdir().unwrap();
-    let forge = Arc::new(FakeForge::new().with_read(on(), Ok(repo_at("abc123", None))));
+    let forge = Arc::new(FakeForge::new().with_read(on(), Ok(repo_at("abc123"))));
     let cx = cx(d.path()).with_forge(forge.clone());
     let req = EnvReq {
         repo: Some(on()),
@@ -152,7 +159,6 @@ fn repo_mcp_needs_approval() {
     let v = env_files(RepoFiles {
         mcp_json: Some(r#"{"mcpServers":{"a":{},"b":{}}}"#.into()),
         claude_settings: Some(r#"{"enabledMcpjsonServers":["a"]}"#.into()),
-        moor_yaml: None,
     });
     let bad: Vec<_> = v
         .credentials
@@ -189,7 +195,7 @@ fn identity(v: &EnvView) -> Vec<(&str, &str, Layer)> {
 
 #[test]
 fn identity_rows_come_from_the_forge_account() {
-    let (_d, v) = env_of(repo_at("abc123", None));
+    let (_d, v) = env_of(repo_at("abc123"), None);
     assert_eq!(
         identity(&v),
         [
@@ -285,14 +291,14 @@ fn size_row(v: &EnvView) -> (&str, Layer) {
 }
 
 #[test]
-fn a_repo_without_a_moor_yaml_has_no_size() {
-    let (_d, v) = env_of(repo_at("abc123", None));
+fn a_repo_without_a_config_has_no_size() {
+    let (_d, v) = env_of(repo_at("abc123"), None);
     assert_eq!(v.provider.size, None);
     assert_eq!(size_row(&v), ("unset", Layer::Default));
 }
 
 #[test]
-fn a_size_in_the_moor_yaml_is_reported_from_the_repo_layer() {
+fn a_size_in_the_repo_config_is_reported_from_the_repo_layer() {
     let (_d, v) = env_with("box:\n  size: large\n");
     assert_eq!(size_row(&v), ("large", Layer::Repo));
 }

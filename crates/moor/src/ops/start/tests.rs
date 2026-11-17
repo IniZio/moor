@@ -12,6 +12,7 @@ use moor_core::{BoxId, BoxPath, ErrorDetail, ErrorKind, StartReq};
 use super::run;
 use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
+use crate::testing::cx::store_config;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::{box_name, driver::FakeDriver};
@@ -136,14 +137,18 @@ fn repo() -> ForgeRepo {
     ForgeRepo::new("o", "n")
 }
 
-/// Makes the world's forge answer [`repo`] at [`BASE`] with `.moor.yaml` text `yaml`.
-fn script_base_yaml(w: &World, yaml: Option<&str>) {
-    w.forge.answer(repo(), Ok(repo_at(BASE, yaml)));
+/// Makes the world's forge answer [`repo`] at [`BASE`] and stores `yaml` as its repo config;
+/// `None` leaves the repo with no stored config.
+fn script_repo(w: &World, yaml: Option<&str>) {
+    w.forge.answer(repo(), Ok(repo_at(BASE)));
+    if let Some(yaml) = yaml {
+        store_config(w.cx.store().unwrap(), &repo(), yaml);
+    }
 }
 
-/// Makes the world's forge answer [`repo`] with no `.moor.yaml`, so a start of it clones it.
+/// Makes the world's forge answer [`repo`] with no stored repo config, so a start of it clones it.
 fn on_github(w: World) -> World {
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     w
 }
 
@@ -373,7 +378,7 @@ fn nonces_at_the_same_clock_instant_differ_and_come_from_the_rng() {
 #[test]
 fn unresolved_credential_rejects_before_any_side_effect() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("box_credentials: [missing]\n"));
+    script_repo(&w, Some("box_credentials: [missing]\n"));
     let err = run(&w.cx, &repo_req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(

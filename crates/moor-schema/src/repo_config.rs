@@ -1,4 +1,4 @@
-//! Keep each repo's config in the store, edited there instead of read from `.moor.yaml`.
+//! Keep each repo's config in the store, edited there.
 
 use moor_migrate::sea_query::Table;
 use moor_migrate::Script;

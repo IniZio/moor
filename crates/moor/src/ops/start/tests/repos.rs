@@ -5,28 +5,26 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::BoxId;
 
-use super::{repo_req, script_base_yaml, world, World};
+use super::{repo_req, script_repo, world, World};
 use crate::ops::common::provision::{reprovision, Provisioned};
 use crate::ops::common::setup::SetupRun;
 use crate::ops::start::run;
+use crate::testing::cx::store_config;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
 
-fn listed(owner: &str, name: &str, setup: Option<&str>) -> ListedRepo {
+fn listed(owner: &str, name: &str) -> ListedRepo {
     ListedRepo {
         repo: ForgeRepo::new(owner, name),
-        moor_yaml: setup.map(|line| format!("setup: [{line}]\n")),
     }
 }
 
 fn lib_and_deploy() -> Vec<ListedRepo> {
-    vec![
-        listed("o", "lib", Some("lib-setup")),
-        listed("o", "deploy", Some("deploy-setup")),
-    ]
+    vec![listed("o", "lib"), listed("o", "deploy")]
 }
 
 /// Starts Box 1 of `o/n` with `setup: [n-setup]`, its first acquire failing, lists `others`
-/// after it and provisions it again.
+/// after it and provisions it again. Each listed repo of owner `o` has `setup: [NAME-setup]`
+/// stored as its repo config.
 fn provisioned(driver: FakeDriver, others: Vec<ListedRepo>) -> (World, Provisioned) {
     let (w, done) = reprovisioned(driver, others);
     (w, done.unwrap())
@@ -40,9 +38,14 @@ fn reprovisioned(
         summary: "no machine".into(),
     });
     let w = world(failing);
-    script_base_yaml(&w, Some("setup: [n-setup]\n"));
+    script_repo(&w, Some("setup: [n-setup]\n"));
     run(&w.cx, &repo_req("demo")).unwrap_err();
     let store = w.cx.store().unwrap();
+    for other in &others {
+        if let Some(name) = other.repo.to_string().strip_prefix("o/") {
+            store_config(store, &other.repo, &format!("setup: [{name}-setup]\n"));
+        }
+    }
     store.list_others(BoxId::new(1), others).unwrap();
     let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
     let turn = w.cx.turn(row.id, crate::cx::owners::Cmd::Start).unwrap();
@@ -163,7 +166,7 @@ fn a_box_of_one_repo_clones_and_sets_up_only_its_workdir() {
 
 #[test]
 fn a_listed_repo_whose_tree_is_taken_fails_the_start_naming_both_repos() {
-    let others = vec![listed("o", "lib", None), listed("p", "lib", None)];
+    let others = vec![listed("o", "lib"), listed("p", "lib")];
     let (w, done) = reprovisioned(FakeDriver::new(), others);
     let shown = done.err().unwrap_or_default();
     assert!(

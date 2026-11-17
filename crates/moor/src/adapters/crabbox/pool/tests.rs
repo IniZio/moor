@@ -330,7 +330,7 @@ fn acquire_hands_the_box_cache_to_the_host_warmup_only() {
         name: "r".to_owned(),
     };
     let layers = CacheLayers {
-        repo: parse_repo(".moor.yaml", "cache: {presets: [rust]}")
+        repo: parse_repo("repo config", "cache: {presets: [rust]}")
             .unwrap()
             .cache,
         ..CacheLayers::default()

@@ -44,7 +44,7 @@ pub struct Machines {
     reach: Arc<dyn Reach>,
     /// This moor binary, which `box-term` runs as.
     moor: PathBuf,
-    /// The environment each Box was last given by [`Driver::set_env`], by handle. Setting it
+    /// The environment each Box was last given by [`Driver::set_env`], by slug. Setting it
     /// restarts the work place's Docker, so an unchanged environment is not sent again.
     env_sent: Mutex<HashMap<String, SentEnv>>,
 }

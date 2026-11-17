@@ -200,10 +200,7 @@ fn two_starts_racing_for_one_free_slot_bind_one_and_leave_one_pending() {
 const VOLUMES: &str = "cache: {volumes: [{name: sdk, path: /opt/sdk}]}\n";
 
 pub(super) fn planned_volumes(w: &World) -> Option<usize> {
-    w.forge.answer(
-        super::repo(),
-        Ok(super::repo_at(super::BASE, Some(VOLUMES))),
-    );
+    super::script_repo(w, Some(VOLUMES));
     start::run(&w.cx, &super::repo_req("demo")).unwrap();
     w.driver.acquired_plans().first().map(|p| p.volumes().len())
 }

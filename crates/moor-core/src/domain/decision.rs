@@ -119,8 +119,6 @@ pub struct NewBox {
 pub struct BoxRepo {
     /// The repo on github.com.
     pub repo: ForgeRepo,
-    /// The exact `.moor.yaml` text at the base; `None` when the base has no such file.
-    pub moor_yaml: Option<String>,
     /// The commit identity the clone sets in the Box.
     pub author: GitAuthor,
     /// The repos listed after this one, in the order the person listed them; empty for a
@@ -129,13 +127,11 @@ pub struct BoxRepo {
     pub others: Vec<ListedRepo>,
 }
 
-/// A Box repo other than its primary one, with its config at the base.
+/// A Box repo other than its primary one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListedRepo {
     /// The repo on github.com.
     pub repo: ForgeRepo,
-    /// The exact `.moor.yaml` text at the base; `None` when the base has no such file.
-    pub moor_yaml: Option<String>,
 }
 
 /// The Box a decision applies to.

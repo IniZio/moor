@@ -56,7 +56,7 @@ pub(super) fn run(
 /// cannot both launch.
 ///
 /// # Errors
-/// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
+/// A store failure, a busy Box, a model that cannot be resolved, or a repo config that changed
 /// since the base commit when an agent is about to launch and the owner has not trusted it.
 ///
 /// `setup_exit` is the setup exit of a Box just provisioned.

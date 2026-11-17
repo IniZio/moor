@@ -1,4 +1,4 @@
-//! `machine.sync` in `.moor.yaml` and `machines.sync` in the user config: the rsync patterns a
+//! `machine.sync` in the repo config and `machines.sync` in the user config: the rsync patterns a
 //! sync to a user's machine leaves alone, so what the machine builds for itself survives.
 
 use serde::Deserialize;

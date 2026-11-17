@@ -17,7 +17,7 @@ use crate::testing::proxy_host::FakeProxyHost;
 pub(super) const YAML: &str =
     "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
-/// A Ready Box that probes clean, with `yaml` as the `.moor.yaml` stored for its base.
+/// A Ready Box that probes clean, with `yaml` as the config stored for its repo.
 pub(super) fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
     fx_repo(driver, Some("ahead=0 dirty=0"), Some(yaml))
 }

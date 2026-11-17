@@ -6,13 +6,14 @@ use std::sync::Arc;
 use moor_core::config::Flags;
 use moor_core::domain::decision::Decision;
 use moor_core::request::BoxConfigSetReq;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::BoxName;
 
 use super::{check, set};
 use crate::cx::Cx;
 use crate::ops::common::facts::settings_of;
 use crate::store::BoxRow;
-use crate::testing::cx::{box_repo, new_box_of};
+use crate::testing::cx::{box_repo, new_box_of, store_config};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 
@@ -22,6 +23,11 @@ fn cx(dir: &std::path::Path) -> Cx {
         Arc::new(FakeDriver::new()),
         Arc::new(ScriptedProc::new()),
     )
+}
+
+/// Stores `yaml` as the config of the repo `o/n` every test Box clones.
+fn repo_config(cx: &Cx, yaml: &str) {
+    store_config(cx.store().unwrap(), &ForgeRepo::new("o", "n"), yaml);
 }
 
 fn named(s: &str) -> BoxName {
@@ -61,9 +67,9 @@ fn put(cx: &Cx, name: &str, config: Option<&str>) {
 fn a_box_override_wins_over_the_repo_and_leaves_other_boxes_alone() {
     let d = tempfile::tempdir().unwrap();
     let cx = cx(d.path());
-    let yaml = Some("env: {A: repo}\nsetup: [build]\n");
-    let first = row(&cx, new_box_of(named("a"), box_repo(yaml)));
-    let second = row(&cx, new_box_of(named("b"), box_repo(yaml)));
+    repo_config(&cx, "env: {A: repo}\nsetup: [build]\n");
+    let first = row(&cx, new_box_of(named("a"), box_repo()));
+    let second = row(&cx, new_box_of(named("b"), box_repo()));
     assert_eq!(env_of(&cx, &first), pairs(&[("A", "repo")]));
 
     put(&cx, "a", Some("env: {A: box, B: box}\n"));
@@ -77,10 +83,8 @@ fn a_box_override_wins_over_the_repo_and_leaves_other_boxes_alone() {
 fn a_set_is_hot_and_a_blank_set_removes_the_override() {
     let d = tempfile::tempdir().unwrap();
     let cx = cx(d.path());
-    let first = row(
-        &cx,
-        new_box_of(named("a"), box_repo(Some("env: {A: repo}\n"))),
-    );
+    repo_config(&cx, "env: {A: repo}\n");
+    let first = row(&cx, new_box_of(named("a"), box_repo()));
     put(&cx, "a", Some("env: {B: one}\n"));
     assert_eq!(env_of(&cx, &first), pairs(&[("A", "repo"), ("B", "one")]));
     put(&cx, "a", Some("env: {B: two}\n"));
@@ -96,7 +100,7 @@ fn a_set_is_hot_and_a_blank_set_removes_the_override() {
 fn an_override_applies_where_the_repo_has_no_config() {
     let d = tempfile::tempdir().unwrap();
     let cx = cx(d.path());
-    let first = row(&cx, new_box_of(named("a"), box_repo(None)));
+    let first = row(&cx, new_box_of(named("a"), box_repo()));
     put(&cx, "a", Some("env: {A: box}\nsetup: [x]\n"));
     assert_eq!(env_of(&cx, &first), pairs(&[("A", "box")]));
 }
@@ -105,7 +109,7 @@ fn an_override_applies_where_the_repo_has_no_config() {
 fn an_override_that_does_not_parse_or_is_too_long_is_refused() {
     let d = tempfile::tempdir().unwrap();
     let cx = cx(d.path());
-    let _ = row(&cx, new_box_of(named("a"), box_repo(None)));
+    let _ = row(&cx, new_box_of(named("a"), box_repo()));
     assert!(check(Some("bogus: 1\n")).is_err());
     assert!(check(Some(&"# x\n".repeat(20_000))).is_err());
     assert!(check(Some("env: {A: b}\n")).is_ok());

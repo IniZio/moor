@@ -7,7 +7,7 @@ use moor_core::{BoxHandle, BoxId, StartReq};
 
 use super::relaunch::{gone, session};
 use super::state::WORKING;
-use super::{repo, repo_req, req, script_base_yaml, world, World};
+use super::{repo, repo_req, req, script_repo, world, World};
 use crate::ops::common::proxy::TAIL_LINES;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -131,7 +131,7 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 #[test]
 fn the_spec_carries_the_box_repo_and_resolved_rules() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &prompt_repo_req()).unwrap();
     let spec = spec_of(&fake);
     assert_eq!(spec.box_repo, Some(repo()));
@@ -154,7 +154,7 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
 /// Rule names the proxy gets for a Box of a GitHub repo.
 fn rule_names_with_a_repo() -> Vec<String> {
     let (w, _, fake) = host_world(FakeProxyHost::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &prompt_repo_req()).unwrap();
     spec_of(&fake).rules.into_iter().map(|r| r.name).collect()
 }
@@ -185,13 +185,13 @@ fn without_a_repo_only_the_rules_that_need_no_repo_remain() {
     );
 }
 
-/// Starts `demo` of [`repo`] whose `.moor.yaml` is `yaml`; returns the world and the first
+/// Starts `demo` of [`repo`] whose stored repo config is `yaml`; returns the world and the first
 /// launch's env.
 fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
     let engine = Arc::new(FakeEngine::new());
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     run(&w.cx, &prompt_repo_req()).unwrap();
     let env = engine
         .launches()

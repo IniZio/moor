@@ -71,7 +71,6 @@ fn only_the_committed_claude_settings_approve_a_repo_server() {
     let files = |settings: &str| RepoFiles {
         mcp_json: Some(r#"{"mcpServers":{"a":{}}}"#.into()),
         claude_settings: Some(settings.into()),
-        moor_yaml: None,
     };
     let approved = files(r#"{"enabledMcpjsonServers":["a"]}"#);
     assert!(unresolved(&settings(""), &approved, &held(&[])).is_empty());

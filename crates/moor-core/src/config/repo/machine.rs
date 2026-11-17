@@ -1,4 +1,4 @@
-//! `machine:` in `.moor.yaml`: the labels a user's machine must hold to be attached to the
+//! `machine:` in the repo config: the labels a user's machine must hold to be attached to the
 //! Box, and the Box ports it must reach at the same numbers on its own loopback.
 
 use serde::Deserialize;
