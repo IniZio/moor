@@ -44,7 +44,6 @@ async fn relink_dials_again_at_once_and_the_old_links_exec_still_answers() {
         home: home.path().to_owned(),
         shell: "/bin/sh".into(),
         hooks: home.path().join("hooks"),
-        pool: None,
         allow_exec: true,
         sweep_grace: Duration::ZERO,
     };
@@ -141,7 +140,6 @@ async fn after_relink_refused_dials_retry_every_second_while_the_old_link_is_ope
         home: home.path().to_owned(),
         shell: "/bin/sh".into(),
         hooks: home.path().join("hooks"),
-        pool: None,
         allow_exec: true,
         sweep_grace: Duration::ZERO,
     };

@@ -130,7 +130,7 @@ async fn a_failing_release_hook_keeps_that_box_folders_and_the_sweep_goes_on() {
 async fn a_sweep_is_served_without_allow_exec_and_noted_in_the_status() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     dirs(home.path(), &["moor/3"]);
-    let _agent = linked_as(&w, home.path(), None, false).await;
+    let _agent = linked_as(&w, home.path(), false).await;
     let swept = swept(ask(&w, &json!({"op": "sweep", "keep": []})).await.1);
     assert_eq!(swept.removed, vec![3]);
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -163,7 +163,6 @@ async fn a_sweep_keeps_the_folders_of_a_box_younger_than_its_grace() {
         home: h.to_owned(),
         shell: "/bin/sh".into(),
         hooks: h.join("hooks"),
-        pool: None,
         allow_exec: false,
         sweep_grace: Duration::from_secs(3600),
     };
@@ -182,7 +181,7 @@ async fn a_remove_takes_one_box_folders_without_its_hook_or_allow_exec() {
         &h.join("hooks/release"),
         "#!/bin/sh\ntouch \"$HOME/released\"\n",
     );
-    let _agent = linked_as(&w, h, None, false).await;
+    let _agent = linked_as(&w, h, false).await;
     let swept = swept(ask(&w, &json!({"op": "remove", "box_id": 3})).await.1);
     assert_eq!((swept.removed, swept.errors), (vec![3], vec![]));
     assert!(!h.join("moor/3").exists() && !h.join("moor-state/3").exists());

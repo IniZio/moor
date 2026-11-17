@@ -19,9 +19,9 @@ pub struct Ask {
     pub labels: Vec<String>,
     /// How many Boxes may hold the machine at once.
     pub max_boxes: u16,
-    /// The crabbox provider the machine offers Boxes on; none for a machine that runs `exec`
-    /// scripts instead.
-    pub provider: Option<String>,
+    /// What the machine hosts: `boxes` when it makes Boxes itself; none for a machine that runs
+    /// `exec` scripts instead.
+    pub pool: Option<String>,
 }
 
 /// The gate's answer to a pairing.
@@ -83,7 +83,7 @@ pub fn pair(
         .map_err(|e| format!("cannot encode the public key: {e}"))?;
     let http = Http::new();
     let body = json!({"pubkey": pubkey, "name": ask.name, "labels": ask.labels,
-        "slots": ask.max_boxes, "pool": ask.provider});
+        "slots": ask.max_boxes, "pool": ask.pool});
     let started: Started = http
         .post_json_found(&format!("{server}/machines/pair"), &body)?
         .ok_or_else(|| takes_no_machines(server))?;
@@ -121,6 +121,7 @@ pub fn pair(
         owner,
         name,
         slots: capacity,
+        pool: ask.pool.clone(),
     };
     let text = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
     write_private(&dir.join("state.json"), text.as_bytes())

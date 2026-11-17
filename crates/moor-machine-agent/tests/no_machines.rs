@@ -22,6 +22,7 @@ fn agent_dir(server: &str) -> tempfile::TempDir {
         owner: "ada@example.com".to_owned(),
         name: "minion".to_owned(),
         slots: 1,
+        pool: None,
     };
     std::fs::write(
         dir.path().join("state.json"),

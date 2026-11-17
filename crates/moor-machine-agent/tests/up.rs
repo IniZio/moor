@@ -1,5 +1,5 @@
 //! `up` and `down` as a person runs them: against an in-process gate with browser sign-in in
-//! front of a controller that enrolls every machine as id 7, with stand-ins for crabbox,
+//! front of a controller that enrolls every machine as id 7, with stand-ins for docker,
 //! `systemctl` and `loginctl` on the PATH. The `systemctl` stand-in marks the machine linked
 //! when it starts the service, as the service does once it links.
 #![allow(
@@ -26,18 +26,13 @@ use serde_json::{json, Value};
 
 const CLIENT_ID: &str = "moor-test-client";
 
-const CRABBOX: &str = r#"#!/bin/sh
-echo "$*" >> "$HOME/crabbox.log"
-if [ "$*" = "doctor --json" ]; then
-  provider=cloudhypervisor; [ -e "$HOME/no-provider" ] && provider=""
-  echo "{\"ok\":true,\"provider\":\"$provider\",\"checks\":[]}"
-  exit 0
-fi
-if [ -e "$HOME/doctor-fail" ]; then
-  echo "ok      git      /usr/bin/git"
-  echo "failed  kvm      /dev/kvm is missing; fix: turn on virtualization in the firmware"
+const DOCKER: &str = r#"#!/bin/sh
+echo "$*" >> "$HOME/docker.log"
+if [ -e "$HOME/docker-fail" ]; then
+  echo "permission denied while trying to connect to the Docker daemon socket" >&2
   exit 1
 fi
+echo 27.0.1
 "#;
 
 const SYSTEMCTL: &str = r#"#!/bin/sh
@@ -127,7 +122,7 @@ fn home() -> tempfile::TempDir {
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::create_dir_all(home.path().join("state/moor-machine-agent")).unwrap();
     for (name, body) in [
-        ("crabbox", CRABBOX),
+        ("docker", DOCKER),
         ("systemctl", SYSTEMCTL),
         ("loginctl", LOGINCTL),
     ] {
@@ -269,7 +264,7 @@ fn up_pairs_installs_the_service_and_says_the_machine_is_linked() {
         "moor-machine-agent: linked: hv, 4 Box slots"
     );
     assert_paired_as_hv(&w);
-    assert_service_serves_the_pool(&w);
+    assert_service_serves_docker_boxes(&w);
 }
 
 /// Checks the controller enrolled `hv` once and the agent kept its answer.
@@ -278,7 +273,7 @@ fn assert_paired_as_hv(w: &World) {
     assert_eq!(enrolled.len(), 1);
     assert_eq!(enrolled[0]["name"], "hv");
     assert_eq!(enrolled[0]["capacity"], 4);
-    assert_eq!(enrolled[0]["pool"], "cloudhypervisor");
+    assert_eq!(enrolled[0]["pool"], "boxes");
     let state: Value = serde_json::from_str(
         &std::fs::read_to_string(w.home.path().join("state/moor-machine-agent/state.json"))
             .unwrap(),
@@ -288,16 +283,15 @@ fn assert_paired_as_hv(w: &World) {
     assert_eq!(state["server"], w.gate);
 }
 
-/// Checks crabbox's doctor ran and the service runs and holds a pool of 4.
-fn assert_service_serves_the_pool(w: &World) {
-    assert!(w
-        .log("crabbox.log")
-        .contains("doctor --provider cloudhypervisor"));
+/// Checks Docker was asked about, no crabbox was, and the service runs Docker Boxes.
+fn assert_service_serves_docker_boxes(w: &World) {
+    assert!(w.log("docker.log").starts_with("info"), "{}", w.log("docker.log"));
     let unit = std::fs::read_to_string(w.unit()).unwrap();
     assert!(
-        unit.contains("\"run\" \"--runtime\" \"cloudhypervisor\" \"--max-boxes\" \"4\""),
+        unit.contains("ExecStart=") && unit.contains("\"run\" \"--auto-update\"\n"),
         "{unit}"
     );
+    assert!(!unit.contains("crabbox") && !unit.contains("--runtime"), "{unit}");
     let calls = w.log("systemctl.log");
     assert!(
         calls.contains("--user enable moor-machine-agent.service"),
@@ -330,18 +324,27 @@ fn a_second_up_keeps_the_pairing_and_the_running_service() {
 }
 
 #[test]
-fn up_stops_at_the_providers_own_fix_before_pairing() {
+fn up_says_docker_boxes_are_privileged_before_pairing() {
     let w = world();
-    std::fs::write(w.home.path().join("doctor-fail"), "").unwrap();
+    let ran = w.up();
+    assert!(ran.ok, "{}", ran.said);
+    let privileged = ran.said.find("privileged containers").expect(&ran.said);
+    let pairing = ran.said.find("/pair?code=").expect(&ran.said);
+    assert!(privileged < pairing, "{}", ran.said);
+}
+
+#[test]
+fn up_stops_at_dockers_own_error_before_pairing() {
+    let w = world();
+    std::fs::write(w.home.path().join("docker-fail"), "").unwrap();
     let ran = w.up();
     assert!(!ran.ok);
     assert!(
-        ran.said
-            .contains("failed  kvm      /dev/kvm is missing; fix: turn on virtualization"),
+        ran.said.contains("permission denied while trying to connect"),
         "{}",
         ran.said
     );
-    assert!(!ran.said.contains("ok      git"), "{}", ran.said);
+    assert!(ran.said.contains("docker group"), "{}", ran.said);
     assert!(w.enrolled.lock().unwrap().is_empty());
     assert!(!w.unit().exists());
 }
@@ -364,8 +367,8 @@ fn up_against_a_server_that_takes_no_machines_says_so_before_anything_else() {
     assert!(!ran.ok);
     assert!(ran.said.contains("takes no machines"), "{}", ran.said);
     assert!(
-        w.log("crabbox.log").is_empty(),
-        "no doctor before the server check"
+        w.log("docker.log").is_empty(),
+        "no docker call before the server check"
     );
 }
 
@@ -392,23 +395,19 @@ fn a_mark_left_by_a_service_that_died_is_ignored_and_up_waits_for_a_fresh_link()
 }
 
 #[test]
-fn up_without_a_runtime_takes_the_provider_crabbox_is_configured_with() {
+fn a_machine_paired_for_another_runtime_pairs_again() {
     let w = world();
     assert!(w.up().ok);
-    assert!(w.log("crabbox.log").contains("doctor --json\n"));
-    let unit = std::fs::read_to_string(w.unit()).unwrap();
-    assert!(unit.contains("\"--runtime\" \"cloudhypervisor\""), "{unit}");
-}
-
-#[test]
-fn up_without_a_runtime_when_crabbox_has_none_says_to_pass_one() {
-    let w = world();
-    std::fs::write(w.home.path().join("no-provider"), "").unwrap();
-    let ran = w.up();
-    assert!(!ran.ok);
-    assert!(ran.said.contains("--runtime"), "{}", ran.said);
-    assert!(ran.said.contains("crabbox providers"), "{}", ran.said);
-    assert!(w.enrolled.lock().unwrap().is_empty());
+    let state = w.home.path().join("state/moor-machine-agent/state.json");
+    let mut earlier: Value = serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    earlier["pool"] = json!("cloudhypervisor");
+    std::fs::write(&state, earlier.to_string()).unwrap();
+    let again = w.up();
+    assert!(again.ok, "{}", again.said);
+    assert!(again.said.contains("/pair?code="), "{}", again.said);
+    let enrolled = w.enrolled.lock().unwrap().clone();
+    assert_eq!(enrolled.len(), 2, "enrolled again");
+    assert_eq!(enrolled[1]["pool"], "boxes");
 }
 
 #[test]
@@ -443,7 +442,27 @@ fn the_old_enroll_command_and_slots_flag_are_gone() {
 }
 
 #[test]
-fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_vms() {
+fn image_flags_reach_the_service() {
+    let w = world();
+    let ran = w.agent(&[
+        "up",
+        "--server",
+        &w.gate,
+        "--name",
+        "hv",
+        "--agent-image",
+        "reg/agent:1",
+        "--work-image",
+        "reg/work:1",
+    ]);
+    assert!(ran.ok, "{}", ran.said);
+    let unit = std::fs::read_to_string(w.unit()).unwrap();
+    let args = "\"run\" \"--agent-image\" \"reg/agent:1\" \"--work-image\" \"reg/work:1\" \"--auto-update\"";
+    assert!(unit.contains(args), "{unit}");
+}
+
+#[test]
+fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_boxes() {
     let w = world();
     let ran = w.agent(&[
         "up",
@@ -466,7 +485,7 @@ fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_vms() {
     assert_eq!(enrolled[0]["labels"], json!(["macos", "ios-sim"]));
     assert_eq!(enrolled[0]["capacity"], 2);
     assert!(enrolled[0].get("pool").is_none(), "{}", enrolled[0]);
-    assert!(w.log("crabbox.log").is_empty(), "no provider to check");
+    assert!(w.log("docker.log").is_empty(), "no docker to check");
     let unit = std::fs::read_to_string(w.unit()).unwrap();
     assert!(unit.contains("\"run\" \"--allow-exec\""), "{unit}");
     assert!(!unit.contains("--runtime"), "{unit}");

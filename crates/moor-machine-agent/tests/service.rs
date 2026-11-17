@@ -10,10 +10,10 @@ fn service() -> Service {
         exe: PathBuf::from("/home/ada/.local/bin/moor-machine-agent"),
         args: vec![
             "run".to_owned(),
-            "--runtime".to_owned(),
-            "cloudhypervisor".to_owned(),
-            "--crabbox".to_owned(),
-            "/opt/my tools/crabbox".to_owned(),
+            "--agent-image".to_owned(),
+            "my-image".to_owned(),
+            "--work-image".to_owned(),
+            "/opt/my tools/work".to_owned(),
         ],
         env: vec![
             ("PATH".to_owned(), "/usr/bin:/home/ada/100%".to_owned()),
@@ -37,7 +37,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=\"/home/ada/.local/bin/moor-machine-agent\" \"run\" \"--runtime\" \"cloudhypervisor\" \"--crabbox\" \"/opt/my tools/crabbox\"
+ExecStart=\"/home/ada/.local/bin/moor-machine-agent\" \"run\" \"--agent-image\" \"my-image\" \"--work-image\" \"/opt/my tools/work\"
 Environment=\"PATH=/usr/bin:/home/ada/100%%\"
 Environment=\"XDG_STATE_HOME=/home/ada/.local/state\"
 Restart=always
@@ -66,10 +66,10 @@ fn the_launchd_agent_keeps_the_agent_alive_and_logs_to_the_users_logs() {
   <array>
     <string>/home/ada/.local/bin/moor-machine-agent</string>
     <string>run</string>
-    <string>--runtime</string>
-    <string>cloudhypervisor</string>
-    <string>--crabbox</string>
-    <string>/opt/my tools/crabbox</string>
+    <string>--agent-image</string>
+    <string>my-image</string>
+    <string>--work-image</string>
+    <string>/opt/my tools/work</string>
     <string>&lt;&amp;&gt;</string>
   </array>
   <key>EnvironmentVariables</key>

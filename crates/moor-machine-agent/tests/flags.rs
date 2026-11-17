@@ -16,24 +16,17 @@ fn agent(args: &[&str]) -> (bool, String) {
 }
 
 #[test]
-fn a_cache_cap_needs_a_runtime() {
-    let (ok, err) = agent(&["run", "--cache-gb", "5"]);
-    assert!(!ok);
-    assert!(err.contains("--runtime"), "{err}");
-}
-
-#[test]
-fn a_runtime_host_does_not_run_exec() {
-    let (ok, err) = agent(&["run", "--runtime", "x", "--allow-exec"]);
-    assert!(!ok);
-    assert!(err.contains("--allow-exec"), "{err}");
-}
-
-#[test]
-fn the_old_pool_flags_are_unknown() {
-    for flag in ["--pool", "--pool-max"] {
+fn the_crabbox_flags_are_unknown() {
+    for flag in ["--runtime", "--crabbox", "--cache-gb", "--max-boxes"] {
         let (ok, err) = agent(&["run", flag, "x"]);
         assert!(!ok);
         assert!(err.contains("unexpected argument"), "{flag}: {err}");
     }
+}
+
+#[test]
+fn a_machine_that_runs_exec_provides_no_boxes() {
+    let (ok, err) = agent(&["run", "--boxes", "docker", "--allow-exec"]);
+    assert!(!ok);
+    assert!(err.contains("--allow-exec"), "{err}");
 }

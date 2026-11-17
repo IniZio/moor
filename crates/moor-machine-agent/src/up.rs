@@ -4,12 +4,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use moor_core::config::BOXES_HOST;
 use std::time::Duration;
 
 use crate::linked;
 use crate::pair::{self, Ask};
 use crate::service::{Manager, Service};
-use crate::{read_key, State, KEY};
+use crate::{read_key, Host, State, KEY};
+
+/// The kind of Boxes `up` offers.
+const DOCKER: &str = "docker";
+/// What `up` says about the privileges Docker Boxes take.
+const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's work place runs with \
+    --privileged so Docker works inside it, and a user who can run Docker is root on this host. \
+    Only your own Boxes run here.";
 
 /// How many seconds `up` waits for the service's first link.
 const LINK_WAIT_SECS: u32 = 60;
@@ -17,10 +26,16 @@ const LINK_WAIT_SECS: u32 = 60;
 /// What the machine offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Runtime {
-    /// Boxes through this crabbox provider.
-    Provider(String),
-    /// Boxes through the provider crabbox is configured with.
-    CrabboxDefault,
+    /// Boxes this machine makes itself, of this kind, from these images (the release's own when
+    /// left out).
+    Boxes {
+        /// How the machine makes Boxes; `docker`.
+        kind: String,
+        /// The agent place's image.
+        agent_image: Option<String>,
+        /// The work place's image.
+        work_image: Option<String>,
+    },
     /// No Boxes; it runs the `exec` scripts the server sends.
     Exec,
 }
@@ -38,17 +53,13 @@ pub struct Up {
     pub max_boxes: u16,
     /// What the machine offers.
     pub runtime: Runtime,
-    /// The crabbox program.
-    pub crabbox: PathBuf,
-    /// The person's home, where crabbox's user config is.
-    pub home: PathBuf,
 }
 
 /// Brings this machine to linked with `up.server`, keeping its key and state in `dir` and its
 /// service with `manager`, and telling `say` each step; the last line to show.
 ///
 /// # Errors
-/// The server takes no machines, the provider is not ready, pairing fails, or the service does
+/// The server takes no machines, Docker is not usable, pairing fails, or the service does
 /// not start or link.
 pub fn up(
     up: &Up,
@@ -58,32 +69,31 @@ pub fn up(
 ) -> Result<String, String> {
     let server = origin(&up.server);
     pair::check_server(&server)?;
-    let (provider, crabbox) = match &up.runtime {
-        Runtime::Exec => (None, None),
-        named => {
-            let crabbox = on_path(&up.crabbox)?;
-            let provider = match named {
-                Runtime::Provider(p) => p.clone(),
-                _ => configured_provider(&crabbox)?,
-            };
-            provider_ready(&crabbox, &provider)?;
-            (Some(provider), Some(crabbox))
+    let pool = match &up.runtime {
+        Runtime::Exec => None,
+        Runtime::Boxes { kind, .. } => {
+            Host::named(kind, dir)?;
+            if kind == DOCKER {
+                docker_ready()?;
+                say(PRIVILEGED);
+            }
+            Some(BOXES_HOST.to_owned())
         }
     };
     let ask = Ask {
         name: up.name.clone(),
         labels: up.labels.clone(),
         max_boxes: up.max_boxes,
-        provider,
+        pool,
     };
-    let state = match paired(dir, &server)? {
+    let state = match paired(dir, &server, &ask)? {
         Some(state) => {
             say(&format!("{} is already paired with {server}", state.name));
             state
         }
         None => pair::pair(&server, &ask, dir, say)?,
     };
-    let service = service(&ask, crabbox.as_deref(), dir, manager)?;
+    let service = service(&up.runtime, dir, manager)?;
     let linked = dir.join(linked::FILE);
     manager.install(&service)?;
     if matches!(manager, Manager::Systemd { .. }) && !lingers() {
@@ -128,84 +138,10 @@ fn origin(server: &str) -> String {
     }
 }
 
-/// `program` as a path the service can run without this shell's lookup.
-fn on_path(program: &Path) -> Result<PathBuf, String> {
-    if program.components().count() > 1 {
-        return Ok(program.to_owned());
-    }
-    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-        .map(|dir| dir.join(program))
-        .find(|path| path.is_file())
-        .ok_or_else(|| {
-            format!(
-                "{} is not on PATH; install crabbox and its provider first",
-                program.display()
-            )
-        })
-}
-
-/// The provider crabbox's own config or environment selects.
-fn configured_provider(crabbox: &Path) -> Result<String, String> {
-    let out = Command::new(crabbox)
-        .args(["doctor", "--json"])
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("cannot run {}: {e}", crabbox.display()))?;
-    let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
-    match view.get("provider").and_then(serde_json::Value::as_str) {
-        Some(p) if !p.is_empty() => Ok(p.to_owned()),
-        _ => Err(
-            "crabbox has no provider selected; pass --runtime PROVIDER with one that \
-             `crabbox providers` lists, or set `provider:` in crabbox's config"
-                .to_owned(),
-        ),
-    }
-}
-
-/// Asks crabbox whether `provider` can run Boxes here, showing its own fixes when not.
-fn provider_ready(crabbox: &Path, provider: &str) -> Result<(), String> {
-    let out = Command::new(crabbox)
-        .args(["doctor", "--provider", provider])
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("cannot run {}: {e}", crabbox.display()))?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let (said, err) = (
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    let failed = doctor_failures(&said, &err);
-    let lines = if failed.is_empty() {
-        format!("{}\n{}", said.trim(), err.trim())
-    } else {
-        failed.join("\n")
-    };
-    Err(format!(
-        "crabbox provider {provider} is not ready here:\n{}\nfix the above, then run moor-machine-agent up again",
-        lines.trim()
-    ))
-}
-
-/// What failed in doctor's output, each once: the adapter's own `FAIL` lines, which the provider
-/// check carries among its passing ones, and crabbox's `failed` checks other than that carrier.
-fn doctor_failures<'a>(said: &'a str, err: &'a str) -> Vec<&'a str> {
-    let all = || said.lines().chain(err.lines());
-    let adapter = all().filter(|l| l.starts_with("FAIL "));
-    let carrier = |l: &&str| l.starts_with("failed") && l.contains("external provider command");
-    let crabbox = all().filter(|l| l.starts_with("failed") && !carrier(l));
-    let mut found: Vec<&str> = Vec::new();
-    for line in adapter.chain(crabbox) {
-        if !found.contains(&line) {
-            found.push(line);
-        }
-    }
-    found
-}
-
-/// The state of a pairing with `server` that left its key in `dir`.
-fn paired(dir: &Path, server: &str) -> Result<Option<State>, String> {
+/// The state of a pairing with `server` for `ask` that left its key in `dir`; none when the
+/// machine was paired to offer something else, such as the crabbox pool an earlier release
+/// offered, so that pairing again replaces what the server recorded.
+fn paired(dir: &Path, server: &str, ask: &Ask) -> Result<Option<State>, String> {
     let Ok(text) = fs::read_to_string(dir.join("state.json")) else {
         return Ok(None);
     };
@@ -215,17 +151,12 @@ fn paired(dir: &Path, server: &str) -> Result<Option<State>, String> {
             dir.join("state.json").display()
         )
     })?;
-    Ok((state.server == server && read_key(&dir.join(KEY))?.is_some()).then_some(state))
+    let current = state.server == server && state.pool == ask.pool;
+    Ok((current && read_key(&dir.join(KEY))?.is_some()).then_some(state))
 }
 
-/// The service that runs `run` for `ask` with this executable, serving the pool through
-/// `crabbox` when there is one.
-fn service(
-    ask: &Ask,
-    crabbox: Option<&Path>,
-    dir: &Path,
-    manager: &Manager,
-) -> Result<Service, String> {
+/// The service that runs `run` for `runtime` with this executable.
+fn service(runtime: &Runtime, dir: &Path, manager: &Manager) -> Result<Service, String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot find this program: {e}"))?;
     let state_home = dir.parent().unwrap_or(dir).to_string_lossy().into_owned();
     let path = std::env::var_os("PATH").unwrap_or_default();
@@ -235,16 +166,22 @@ fn service(
         .and_then(Path::parent)
         .map_or_else(PathBuf::new, |lib| lib.join("Logs/moor-machine-agent.log"));
     let mut args = vec!["run".to_owned()];
-    match (&ask.provider, crabbox) {
-        (Some(provider), Some(crabbox)) => args.extend([
-            "--runtime".to_owned(),
-            provider.clone(),
-            "--max-boxes".to_owned(),
-            ask.max_boxes.to_string(),
-            "--crabbox".to_owned(),
-            crabbox.to_string_lossy().into_owned(),
-        ]),
-        _ => args.push("--allow-exec".to_owned()),
+    match runtime {
+        Runtime::Exec => args.push("--allow-exec".to_owned()),
+        Runtime::Boxes {
+            kind,
+            agent_image,
+            work_image,
+        } => {
+            if kind != DOCKER {
+                args.extend(["--boxes".to_owned(), kind.clone()]);
+            }
+            for (flag, image) in [("--agent-image", agent_image), ("--work-image", work_image)] {
+                if let Some(image) = image {
+                    args.extend([flag.to_owned(), image.clone()]);
+                }
+            }
+        }
     }
     args.push("--auto-update".to_owned());
     Ok(Service {
@@ -256,6 +193,25 @@ fn service(
         ],
         log,
     })
+}
+
+/// Checks that this person can run Docker, showing what `docker` said when not.
+fn docker_ready() -> Result<(), String> {
+    let out = Command::new("docker")
+        .args(["info", "--format", "{{.ServerVersion}}"])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| {
+            format!("cannot run docker: {e}; install Docker, then run moor-machine-agent up again")
+        })?;
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "Docker does not work for this user:\n{}\nfix it, such as by adding this user to the \
+         docker group and logging in again, then run moor-machine-agent up again",
+        String::from_utf8_lossy(&out.stderr).trim()
+    ))
 }
 
 /// Whether the person's services outlive their login; unknown counts as yes.
