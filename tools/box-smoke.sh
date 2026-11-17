@@ -132,10 +132,10 @@ check "the work place sees the agent place's files at the same path" "shared" "$
 shell 'echo made > /home/agent/moor/from-work'
 check "the agent place sees the work place's files, owned by uid 1000" "made 1000" "$(in_agent sh -c 'echo "$(cat /home/agent/moor/from-work) $(stat -c %u /home/agent/moor/from-work)"')"
 check "a line runs in the caller's directory" "/home/agent/moor" "$(docker exec -w /home/agent/moor "$agent" box-shell -c pwd 2>&1)"
-claude_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && cd /home/agent/moor && true && pwd -P >| /tmp/claude-bs01-cwd"
-in_agent rm -f /tmp/claude-bs01-cwd
+claude_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && cd /home/agent/moor && true && pwd -P >| /home/agent/.moor-tmp-bs01/claude-bs01-cwd"
+in_agent sh -c "mkdir -p /home/agent/.moor-tmp-bs01 && rm -f /home/agent/.moor-tmp-bs01/claude-bs01-cwd"
 in_agent box-shell "$claude_line" >/dev/null 2>&1
-check "a Bash-tool line leaves its cwd where Claude reads it in the agent place" "/home/agent/moor" "$(in_agent cat /tmp/claude-bs01-cwd 2>&1)"
+check "a Bash-tool line leaves its cwd where Claude reads it in the agent place" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs01/claude-bs01-cwd 2>&1)"
 
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"

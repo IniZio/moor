@@ -19,6 +19,14 @@ esac
 
 line=$(printf '%s' "$line" | sed -E 's#^source [^ ]+/shell-snapshots/[^ ]+ 2>/dev/null \|\| true#true#')
 
+cwdfile=$(printf '%s' "$line" | sed -nE "s#.*pwd -P >\\| '?([^' ]+)'?.*#\\1#p" | head -n 1)
+if [ -n "$cwdfile" ]; then
+  find "$run/tmp" -maxdepth 1 -name 'cwd.*' -mmin +60 -delete 2>/dev/null
+  shared=$run/tmp/cwd.$$
+  : > "$shared" && ln -sfn "$shared" "$cwdfile"
+  line=${line//"$cwdfile"/$shared}
+fi
+
 say_notes() {
   [ -s "$run/notes" ] || return 0
   (
