@@ -8,8 +8,8 @@ use moor_core::workflow::{
     Plan, TimeoutMinutes, Workflow, WorkflowId, WorkflowName, WorkflowOrigin, WorkflowSchedule,
     WorkflowState,
 };
-use moor_schema::tables::Workflows;
-use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
+use moor_schema::tables::{WorkflowRuns, Workflows};
+use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 
 pub(crate) use put::Put;
 
@@ -22,6 +22,7 @@ mod runs;
 
 use crate::store::db::{self, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
+use row::{STARTED, STARTING, WAITING};
 
 /// A `workflows` row as read, before it is parsed.
 struct WorkflowRow {
@@ -200,14 +201,24 @@ impl Store {
         rows.map(|row| workflow_of(row?)).collect()
     }
 
-    /// Every enabled workflow of every owner, by id.
-    pub(crate) fn enabled_workflows(&self) -> Result<Vec<Workflow>, StoreError> {
+    /// Every workflow of every owner the tick has work for, by id: each enabled one, and each
+    /// disabled one with a run still open, which settles though it no longer fires.
+    pub(crate) fn ticked_workflows(&self) -> Result<Vec<Workflow>, StoreError> {
         let reader = self.reader()?;
+        let open = Query::select()
+            .column(WorkflowRuns::Workflow)
+            .from(WorkflowRuns::Table)
+            .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTING, STARTED, WAITING]))
+            .take();
         let rows = reader.rows(
             Query::select()
                 .columns(WORKFLOW_COLS)
                 .from(Workflows::Table)
-                .and_where(Expr::col(Workflows::EnabledAt).is_not_null())
+                .cond_where(
+                    Cond::any()
+                        .add(Expr::col(Workflows::EnabledAt).is_not_null())
+                        .add(Expr::col(Workflows::Id).in_subquery(open)),
+                )
                 .order_by(Workflows::Id, Order::Asc),
             read_workflow,
         )?;

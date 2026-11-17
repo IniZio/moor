@@ -12,7 +12,9 @@ use moor_core::decide::workflow::{
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
-use moor_core::workflow::{box_name, NewRun, Plan, RunEnd, RunState, StepId, Workflow, WorkflowId};
+use moor_core::workflow::{
+    box_name, NewRun, Plan, RunEnd, RunState, StepId, Workflow, WorkflowId, WorkflowState,
+};
 use moor_core::{BoxId, BoxName, StartReq};
 
 use crate::cx::Cx;
@@ -56,8 +58,8 @@ impl StartJob {
     }
 }
 
-/// Runs one pass over every enabled workflow, handing each claimed firing to `launch`, which
-/// must not wait for the start. Returns what to log.
+/// Runs one pass over every workflow that fires or has a run open, handing each claimed firing
+/// to `launch`, which must not wait for the start. Returns what to log.
 pub(crate) fn tick(
     cx: &Cx,
     (launch, checks): (&dyn Fn(StartJob), &dyn Fn(CheckJob)),
@@ -67,7 +69,7 @@ pub(crate) fn tick(
     let workflows = cx
         .store()
         .map_err(|e| e.error.to_string())
-        .and_then(|s| s.enabled_workflows().map_err(|e| e.to_string()));
+        .and_then(|s| s.ticked_workflows().map_err(|e| e.to_string()));
     match workflows {
         Ok(list) => {
             for w in list.iter().take_while(|_| !draining()) {
@@ -81,7 +83,8 @@ pub(crate) fn tick(
     out
 }
 
-/// One workflow's pass: finish, expire, check the breaker, then fire what is due.
+/// One workflow's pass: finish, expire, check the breaker, then fire what is due. A disabled
+/// workflow only settles the runs it has open.
 fn tick_one(
     cx: &Cx,
     w: &Workflow,
@@ -95,6 +98,9 @@ fn tick_one(
     finish_runs(cx, store, w, now, (checks, out))?;
     expire_runs(cx, store, w, now, out)?;
     enforce_start_limit(cx, store, w, now, out)?;
+    if matches!(w.state, WorkflowState::Disabled { .. }) {
+        return Ok(());
+    }
     let history = history(store, w)?;
     if let Some(trip) = workflow_breaker(w, &history.unskipped) {
         if store.disable_workflow(w.id, &trip.reason)? {
@@ -287,18 +293,20 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
         let now = cx.clock().now();
         let state = match (found, workflow) {
-            (Some(row), Some(w)) => match run_verdict(Some(&box_facts(&row)), now) {
-                RunVerdict::Broken => RunState::Done(RunEnd::Refused {
-                    detail: broken_detail(&row),
-                }),
-                _ => RunState::Running {
-                    box_id: row.id,
-                    at: store
-                        .run_plan(run.id, &w.prompt)
-                        .map_or_else(|_| w.plan.first().id.clone(), |p| p.first().id.clone()),
-                    try_n: 1,
-                },
-            },
+            (Some(row), Some(w)) => {
+                match box_facts(store, &row).map(|f| run_verdict(Some(&f), now)) {
+                    Ok(RunVerdict::Broken) => RunState::Done(RunEnd::Refused {
+                        detail: broken_detail(&row),
+                    }),
+                    _ => RunState::Running {
+                        box_id: row.id,
+                        at: store
+                            .run_plan(run.id, &w.prompt)
+                            .map_or_else(|_| w.plan.first().id.clone(), |p| p.first().id.clone()),
+                        try_n: 1,
+                    },
+                }
+            }
             _ => RunState::Done(RunEnd::Refused {
                 detail: "the controller stopped before the Box started".to_owned(),
             }),

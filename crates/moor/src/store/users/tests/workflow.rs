@@ -477,7 +477,7 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
 }
 
 #[test]
-fn enabled_workflows_lists_every_owners_enabled_ones() {
+fn ticked_workflows_lists_every_owners_enabled_ones() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let (alice, bob) = (user(&store, "local:1"), user(&store, "local:2"));
@@ -491,7 +491,7 @@ fn enabled_workflows_lists_every_owners_enabled_ones() {
         .put_workflow(bob, &def("daily", &["b/x"], true))
         .unwrap();
     let ids: Vec<_> = store
-        .enabled_workflows()
+        .ticked_workflows()
         .unwrap()
         .iter()
         .map(|w| w.id)

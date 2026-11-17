@@ -43,7 +43,8 @@ pub(super) fn finish_runs(
             continue;
         };
         let row = store.box_row(box_id)?;
-        let verdict = run_verdict(row.as_ref().map(box_facts).as_ref(), now);
+        let facts = row.as_ref().map(|r| box_facts(store, r)).transpose()?;
+        let verdict = run_verdict(facts.as_ref(), now);
         if verdict == RunVerdict::Broken {
             if let Some(row) = &row {
                 let key = (w.id, &run.repo, run.due_at);
@@ -165,7 +166,9 @@ impl Quiet<'_> {
         let (history, steered) = self.history()?;
         #[cfg(test)]
         tests_hook::after_history(self.cx);
-        let facts = open(self.row).map(box_facts);
+        let facts = open(self.row)
+            .map(|r| box_facts(self.store, r))
+            .transpose()?;
         let event = match &facts {
             Some(f) if f.session == SessionState::Ended => Event::Ended,
             _ => Event::Idle,

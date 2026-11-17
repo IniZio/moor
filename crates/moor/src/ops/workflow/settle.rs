@@ -3,6 +3,7 @@
 use moor_core::decide::workflow::{
     workflow_expired, workflow_start_overdue, RunBoxFacts, START_LIMIT,
 };
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
@@ -14,13 +15,25 @@ use crate::ops::{close, end_session};
 use crate::store::{BoxRow, Store, StoreError};
 
 /// What the tick reads of Box `row` to tell where its run stands.
-pub(super) const fn box_facts(row: &BoxRow) -> RunBoxFacts {
-    RunBoxFacts {
+///
+/// A sleep clears the Box's `idle_since`, so an asleep Box whose agent went quiet before the
+/// sleep reads as idle since its last `idled` event. One put to sleep while its agent worked
+/// has no such time: the cut turn did not finish its step.
+pub(super) fn box_facts(store: &Store, row: &BoxRow) -> Result<RunBoxFacts, StoreError> {
+    let idle_since = if row.lifecycle == BoxLifecycle::Asleep {
+        match row.parked_at_work {
+            Some(_) => None,
+            None => store.newest_event_of(row.id, "idled")?.map(|e| e.ts),
+        }
+    } else {
+        row.idle_since
+    };
+    Ok(RunBoxFacts {
         lifecycle: row.lifecycle,
         session: row.session,
-        idle_since: row.idle_since,
+        idle_since,
         launch_failed: row.launch_failure.is_some(),
-    }
+    })
 }
 
 /// Why no agent will run in `row`, naming the Box and its recorded failure: the launch failure,
