@@ -32,7 +32,7 @@ struct Rig {
     cx: Cx,
     driver: Arc<FakeDriver>,
     forge: Arc<FakeForge>,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 fn rig() -> Rig {
@@ -61,7 +61,7 @@ fn rig_driving(config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) 
         cx,
         driver,
         forge,
-        _dir: dir,
+        dir,
     }
 }
 
@@ -70,26 +70,6 @@ fn repo() -> ForgeRepo {
 }
 
 impl Rig {
-    /// A rig over the same state, driver and forge, as a restarted controller reads them: the
-    /// store and every run in it are the old ones, and the clock is moved to where the old one is.
-    fn restarted(&self) -> Self {
-        let cx = Cx::fake_with(
-            self._dir.path(),
-            self.driver.clone(),
-            Arc::new(ScriptedProc::new()),
-            UserConfig::default(),
-        )
-        .with_forge(self.forge.clone());
-        let again = Self {
-            cx,
-            driver: self.driver.clone(),
-            forge: self.forge.clone(),
-            _dir: tempfile::tempdir().unwrap(),
-        };
-        again.advance_to(self.cx.clock().now().as_millis());
-        again
-    }
-
     /// Makes the forge answer the repo, so a start of it can go ahead.
     fn answer_repo(&self) {
         self.forge.answer(repo(), Ok(repo_at("abc123")));

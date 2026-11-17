@@ -107,9 +107,8 @@ pub fn advance(plan: &Plan, history: &[HistoryEntry], _event: Event) -> Move {
         }
     };
     match &step.kind {
-        StepKind::Work { .. } => unreported(reminded),
         StepKind::Deliver { .. } if plan.is_single() => Move::Delivered,
-        StepKind::Deliver { .. } => unreported(reminded),
+        StepKind::Work { .. } | StepKind::Deliver { .. } => unreported(reminded),
         StepKind::Check { .. } => {
             let lost = this_try
                 .iter()

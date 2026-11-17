@@ -107,10 +107,7 @@ fn main() -> ExitCode {
     let args = Args::parse();
     let controller = match args.client() {
         Ok(controller) => controller,
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let listener = match TcpListener::bind(&args.listen) {
         Ok(listener) => listener,
@@ -120,8 +117,7 @@ fn main() -> ExitCode {
         }
     };
     if let Err(why) = serve_boxes(&args.box_listen, &controller) {
-        moor_gate_log(&why);
-        return ExitCode::FAILURE;
+        return fail(&why);
     }
     let mcp = match args
         .mcp_resource_url
@@ -129,10 +125,7 @@ fn main() -> ExitCode {
         .transpose()
     {
         Ok(mcp) => mcp,
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let sign_in = |url: &str| {
         args.cookie_key
@@ -141,10 +134,7 @@ fn main() -> ExitCode {
     };
     let login = match args.public_url.as_deref().map(sign_in).transpose() {
         Ok(login) => login.map(Arc::new),
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let gate = Arc::new(Gate {
         controller,
@@ -182,6 +172,12 @@ fn serve_boxes(listen: &str, controller: &Client) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+/// Logs `why` and gives the exit code of a gate that cannot run.
+fn fail(why: &str) -> ExitCode {
+    moor_gate_log(why);
+    ExitCode::FAILURE
 }
 
 /// Writes one `moor-gate: <msg>` line to stderr.

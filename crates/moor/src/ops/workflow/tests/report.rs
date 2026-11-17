@@ -16,8 +16,14 @@ use moor_core::BoxId;
 use serde_json::json;
 
 use super::plan::{step_of, PROMPT};
+use std::sync::Arc;
+
+use moor_core::config::UserConfig;
+
 use super::{rig, Rig, FIRST_DUE};
+use crate::cx::Cx;
 use crate::ops::workflow::step_report;
+use crate::testing::proc::ScriptedProc;
 
 /// An index line, as the Box's index script prints it, for a file of `size` bytes.
 fn listing(name: &str, size: u64) -> String {
@@ -72,6 +78,26 @@ fn files() -> String {
 }
 
 impl Rig {
+    /// A rig over the same state, driver and forge, as a restarted controller reads them: the
+    /// store and every run in it are the old ones, and the clock is moved to where the old one is.
+    fn restarted(&self) -> Self {
+        let cx = Cx::fake_with(
+            self.dir.path(),
+            self.driver.clone(),
+            Arc::new(ScriptedProc::new()),
+            UserConfig::default(),
+        )
+        .with_forge(self.forge.clone());
+        let again = Self {
+            cx,
+            driver: self.driver.clone(),
+            forge: self.forge.clone(),
+            dir: tempfile::tempdir().unwrap(),
+        };
+        again.advance_to(self.cx.clock().now().as_millis());
+        again
+    }
+
     /// Starts the run of a planned workflow, its agent working on the first step.
     pub(super) fn begun(&self, plan: Plan) -> WorkflowId {
         self.answer_repo();

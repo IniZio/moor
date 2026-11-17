@@ -64,13 +64,11 @@ pub fn code_gate(
 /// What is wrong with the files `name` asks for.
 fn evidence_problems(name: &EvidenceName, index: &[ArtifactFile]) -> Vec<String> {
     let text = name.as_str();
-    let matching: Vec<&ArtifactFile> = match text.strip_suffix('*') {
-        Some(prefix) => index
-            .iter()
-            .filter(|f| f.name.starts_with(prefix))
-            .collect(),
-        None => index.iter().filter(|f| f.name == text).collect(),
+    let wanted = |f: &&ArtifactFile| {
+        text.strip_suffix('*')
+            .map_or_else(|| f.name == text, |prefix| f.name.starts_with(prefix))
     };
+    let matching: Vec<&ArtifactFile> = index.iter().filter(wanted).collect();
     if matching.is_empty() {
         return vec![format!("no file matches `{text}` in .moor/artifacts/")];
     }

@@ -25,7 +25,7 @@ const ROWS: [(&str, &str, bool); 8] = [
     ),
     ("refused", "Refused: no file matches `a.md`.", true),
     (
-        "nextwork",
+        "nextwrk",
         "That step is done. Do only the next step, then call report_step.",
         false,
     ),

@@ -150,6 +150,17 @@ machines:
     exclude: [android/app/build]
 ```
 
+### `moor_service`
+
+`moor_service` gives every Box an MCP server named `moor`, where its agent calls
+`report_step` for a workflow step. The Proxy routes `host` to the gate's
+Box-facing listener and stamps `X-Moor-Box`; the Box holds no token. `host`
+defaults to `moor.moor.internal`. The key is off when absent.
+
+```yaml
+moor_service: {}
+```
+
 ### `proxy`
 
 `proxy.rules.<name>` defines a Proxy rule. A rule named after a default rule
@@ -316,6 +327,7 @@ fronts:
 | `read_only` | empty | Real paths outside the system directories that the front may read. |
 | `ports` | empty | TCP ports forwarded from the host's `127.0.0.1` to the front. |
 | `webhooks` | `false` | Whether the front delivers users' webhooks. |
+| `step_reports` | `false` | Whether the front reports a workflow step for the agent in a Box. Only a gate behind the Proxy should have it. |
 | `remote.key_file` | none | For a front in another pod, the key its hello presents to `ledger_tls`. |
 
 The gate uses the `authgear` namespace. On Linux, a front the controller runs

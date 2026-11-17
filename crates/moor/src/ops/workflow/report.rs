@@ -5,14 +5,16 @@
 
 use moor_core::artifact::ArtifactFile;
 use moor_core::decide::workflow::{code_gate, refusal_move, report_move, Move};
+use moor_core::name::ForgeRepo;
+use moor_core::seam::clock::Ts;
 use moor_core::view::workflow::StepReportValue;
 use moor_core::workflow::{
     HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, StepReport, StepResult,
-    Workflow, WorkflowRun,
+    Workflow, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 
-use super::advance::history_of;
+use super::facts::history_of;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::artifacts::index_now;
@@ -219,8 +221,76 @@ fn elsewhere(s: &Standing, current: &Step, report: &StepReport) -> StepReportVal
     ))
 }
 
+/// The run a report moves, and the move's key in the store.
+struct Moving<'a> {
+    /// The store.
+    store: &'a Store,
+    /// Where the run stands.
+    s: &'a Standing,
+    /// The Box the run is in.
+    box_id: BoxId,
+    /// Now.
+    now: Ts,
+}
+
+impl Moving<'_> {
+    /// The run's key.
+    const fn key(&self) -> (WorkflowId, &ForgeRepo, Ts) {
+        (self.s.w.id, &self.s.run.repo, self.s.run.due_at)
+    }
+
+    /// Appends `lines` with the pointer where it is; false when the run moved under it.
+    fn write(&self, lines: &[HistoryEntry]) -> Result<bool, CommandError> {
+        let at = (&self.s.at.0, self.s.at.1);
+        Ok(self
+            .store
+            .step_workflow_run(self.key(), (at, at), (lines, self.now))?)
+    }
+
+    /// Ends the run with `outcome`; false when it moved under it.
+    fn end(&self, outcome: RunOutcome) -> Result<bool, CommandError> {
+        Ok(self
+            .store
+            .end_workflow_run(self.key(), (self.box_id, outcome), self.now)?)
+    }
+
+    /// Goes on to `step`, for its `try_n`th entry, with `lines` written in the same move; what
+    /// the agent is told, or none when the run moved under it.
+    fn enter(
+        &self,
+        (step, try_n): (StepId, u8),
+        mut lines: Vec<HistoryEntry>,
+    ) -> Result<Option<StepReportValue>, CommandError> {
+        let Some(next) = self.s.plan.step(&step) else {
+            return Ok(Some(refused("The run's plan has no such step.")));
+        };
+        lines.push(HistoryEntry::Entered {
+            step: step.clone(),
+            try_n,
+        });
+        if matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. }) {
+            lines.push(HistoryEntry::Sent {
+                step: step.clone(),
+                try_n,
+            });
+        }
+        let at = (&self.s.at.0, self.s.at.1);
+        let moved =
+            self.store
+                .step_workflow_run(self.key(), (at, (&step, try_n)), (&lines, self.now))?;
+        Ok(moved.then(|| said(instructions(next))))
+    }
+}
+
+/// The lines for steps a move passed over for lack of tries.
+fn exhausted(steps: Vec<StepId>) -> impl Iterator<Item = HistoryEntry> {
+    steps
+        .into_iter()
+        .map(|step| HistoryEntry::Exhausted { step })
+}
+
 /// Makes `m`, the move a report decided, with `lines` written in the same move. `note` is a
-/// delivered run's result and a failed one's reason. None when the run moved under it.
+/// delivered run's result. None when the run moved under it.
 fn apply(
     cx: &Cx,
     store: &Store,
@@ -228,16 +298,14 @@ fn apply(
     (m, mut lines): (Move, Vec<HistoryEntry>),
     note: &str,
 ) -> Result<Option<StepReportValue>, CommandError> {
-    let now = cx.clock().now();
-    let key = (s.w.id, &s.run.repo, s.run.due_at);
-    let at = (&s.at.0, s.at.1);
     let Some(box_id) = s.run.state.box_id() else {
         return Ok(Some(refused(NO_RUN)));
     };
-    let exhausted = |steps: Vec<StepId>| {
-        steps
-            .into_iter()
-            .map(|step| HistoryEntry::Exhausted { step })
+    let moving = Moving {
+        store,
+        s,
+        box_id,
+        now: cx.clock().now(),
     };
     match m {
         Move::Enter {
@@ -245,56 +313,30 @@ fn apply(
             try_n,
             exhausted: passed,
         } => {
-            let Some(next) = s.plan.step(&step) else {
-                return Ok(Some(refused("The run's plan has no such step.")));
-            };
             lines.extend(exhausted(passed));
-            lines.push(HistoryEntry::Entered {
-                step: step.clone(),
-                try_n,
-            });
-            if matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. }) {
-                lines.push(HistoryEntry::Sent {
-                    step: step.clone(),
-                    try_n,
-                });
-            }
-            if !store.step_workflow_run(key, (at, (&step, try_n)), (&lines, now))? {
-                return Ok(None);
-            }
-            Ok(Some(said(instructions(next))))
+            moving.enter((step, try_n), lines)
         }
         Move::Delivered => {
-            if !store.step_workflow_run(key, (at, at), (&lines, now))? {
-                return Ok(None);
-            }
-            let outcome = RunOutcome::Delivered {
-                result: note.trim().to_owned(),
-            };
-            if !store.end_workflow_run(key, (box_id, outcome), now)? {
-                return Ok(None);
-            }
-            Ok(Some(said("Done.")))
+            let result = note.trim().to_owned();
+            let done = moving.write(&lines)? && moving.end(RunOutcome::Delivered { result })?;
+            Ok(done.then(|| said("Done.")))
         }
         Move::Fail {
-            at: failed,
+            at,
             reason,
             exhausted: passed,
         } => {
             lines.extend(exhausted(passed));
-            if !store.step_workflow_run(key, (at, at), (&lines, now))? {
-                return Ok(None);
-            }
             let outcome = RunOutcome::Failed {
-                at: failed,
+                at,
                 reason: reason.clone(),
             };
-            if !store.end_workflow_run(key, (box_id, outcome), now)? {
-                return Ok(None);
-            }
-            Ok(Some(said(format!(
-                "The run ended: {reason}. There is nothing more to do."
-            ))))
+            let done = moving.write(&lines)? && moving.end(outcome)?;
+            Ok(done.then(|| {
+                said(format!(
+                    "The run ended: {reason}. There is nothing more to do."
+                ))
+            }))
         }
         Move::Wait | Move::Remind | Move::RunCheck | Move::Incomplete { .. } => Ok(Some(refused(
             "The run could not move on from this report. Nothing more is recorded.",

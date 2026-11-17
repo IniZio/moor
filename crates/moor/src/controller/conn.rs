@@ -25,11 +25,13 @@ mod artifact_read;
 mod attach;
 mod exec;
 mod frames;
+mod front;
 
 use artifact_read::read_artifact;
 use attach::attach;
 use exec::piped;
 use frames::{hello_reply, hello_required, stray};
+use front::front_request;
 
 /// Whom one connection speaks for, the vault key its user requests use, and its place in the
 /// drain that ends it.
@@ -108,23 +110,8 @@ fn answer(
     if matches!(request, Request::Version {}) {
         return Some(Moor::version());
     }
-    let runner = matches!(peer.caller, Ok(Caller::Runner));
-    if !runner
-        && matches!(
-            request,
-            Request::WebhookClaim(_) | Request::WebhookReport(_)
-        )
-    {
-        return Some(match Moor::from_env(env) {
-            Ok(moor) => moor.call_webhook_outbox(&peer.caller, &peer.vault, &request),
-            Err(e) => e.into_response(cmd, vec![]),
-        });
-    }
-    if !runner && matches!(request, Request::StepReport(_)) {
-        return Some(match Moor::from_env(env) {
-            Ok(moor) => moor.call_step_report(&peer.caller, &request),
-            Err(e) => e.into_response(cmd, vec![]),
-        });
+    if let Some(done) = front_request(env, peer, &request) {
+        return Some(done);
     }
     let grant =
         match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
