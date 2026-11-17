@@ -325,7 +325,7 @@ fn an_unconfirmed_row_is_deleted_with_its_event() {
 #[test]
 fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _clock) = open(dir.path());
+    let (store, clock) = open(dir.path());
     let id = new_box(&store, "a");
     store.enqueue(id, InboxKind::Steer, "ahead", "u").unwrap();
     let prompt = store
@@ -353,7 +353,10 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
     store
         .begin_launch_with(id, "agent", Some("not queued"), None)
         .unwrap();
-    let cut = format!("{}:queued", moor_core::domain::inbox::cut_note("fix it"));
+    let cut = format!(
+        "{}:queued",
+        moor_core::domain::inbox::cut_note("fix it", clock.now(), clock.now())
+    );
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         ["ahead:queued", cut.as_str(), "later:queued"],

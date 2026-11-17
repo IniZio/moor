@@ -150,7 +150,14 @@ fn a_conversation_that_could_not_be_restored_has_its_prompt_named_to_the_new_age
     run(&w.cx, &req("demo")).unwrap();
 
     let rows = inbox(&w, id);
-    assert!(rows.contains(&cut_note("remember PLUM-42")), "{rows:?}");
+    assert!(
+        rows.contains(&cut_note(
+            "remember PLUM-42",
+            w.cx.clock().now(),
+            w.cx.clock().now()
+        )),
+        "{rows:?}"
+    );
     assert!(event(&w, id, "steer_cut").is_some());
 }
 
