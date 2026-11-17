@@ -6,7 +6,6 @@
 //! `images/README.md` describes. Docker restarts nothing (`--restart no`): this agent is the only
 //! actor that restarts a place.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -17,7 +16,7 @@ use tokio::process::Command;
 use super::provider::{BoxProvider, Env, Notes, Observed, PlaceState, ProvideError, Spec};
 use super::Slug;
 use args::{agent_run, kvm_gid, work_memory_mib, work_run, PLACE_LABEL, SLUG_LABEL, WORKDIR};
-use cli::{Cli, State};
+use cli::{parse_ps, Cli, State};
 use names::Names;
 
 mod args;
@@ -239,36 +238,6 @@ fn env_file(env: &Env) -> String {
         })
 }
 
-/// The places of each Box that `docker ps` lists as `slug place state` lines: how the agent place
-/// and the work place stand. A line that is not a Box's is left out.
-fn parse_ps(listed: &str) -> BTreeMap<Slug, (PlaceState, PlaceState)> {
-    let mut boxes: BTreeMap<Slug, (PlaceState, PlaceState)> = BTreeMap::new();
-    for line in listed.lines() {
-        let mut words = line.split_whitespace();
-        let (Some(slug), Some(place), Some(state)) = (
-            words.next().and_then(Slug::parse),
-            words.next(),
-            words.next(),
-        ) else {
-            continue;
-        };
-        let up = if state == "running" {
-            PlaceState::Up
-        } else {
-            PlaceState::Down
-        };
-        let places = boxes
-            .entry(slug)
-            .or_insert((PlaceState::Down, PlaceState::Down));
-        match place {
-            "agent" => places.0 = up,
-            "work" => places.1 = up,
-            _ => {}
-        }
-    }
-    boxes
-}
-
 impl BoxProvider for Docker {
     fn provides(&self) -> &'static str {
         "docker"
@@ -373,8 +342,7 @@ impl BoxProvider for Docker {
             .keep_only(&listed.keys().cloned().collect::<Vec<_>>());
         for (slug, (agent, work)) in listed {
             let oom_kills = if agent == PlaceState::Up {
-                self.egress
-                    .read_when_due(&slug, &self.settings.agent_image);
+                self.egress.read_when_due(&slug, &self.settings.agent_image);
                 self.oom_kills(&Names::of(&slug)).await
             } else {
                 0
