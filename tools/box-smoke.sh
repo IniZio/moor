@@ -35,8 +35,8 @@ cleanup() {
   docker rm -f "$work" >/dev/null 2>&1
   docker rm -f "$agent" >/dev/null 2>&1
   for v in "${vols[@]}"; do docker volume rm "$v" >/dev/null 2>&1; done
-  docker network rm "$net" >/dev/null 2>&1
   [ -z "$builder" ] || docker buildx rm "$builder" >/dev/null 2>&1
+  docker network rm "$net" >/dev/null 2>&1
   for v in ${built[@]+"${built[@]}"}; do docker rmi "$v" >/dev/null 2>&1; done
 }
 trap cleanup EXIT
