@@ -113,13 +113,6 @@ pub struct Offer {
     /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reserve_mib: Option<u64>,
-    /// Whether it serves checkpoint verbs. An older agent passes the features on and refuses the
-    /// verbs, so the features alone do not say.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub checkpoints: bool,
-    /// Why it does not, in words for its owner.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checkpoints_off: Option<String>,
 }
 
 /// The frames before the socket carries yamux, one JSON text message each.

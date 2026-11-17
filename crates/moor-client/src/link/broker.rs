@@ -45,11 +45,6 @@ pub enum PoolOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         class: Option<String>,
     },
-    /// [`Op::Checkpoint`].
-    Checkpoint {
-        /// What to do.
-        act: lease::CheckpointAct,
-    },
     /// [`Op::Dial`].
     Dial {
         /// `moor-<controller>-<id>`.
@@ -88,7 +83,6 @@ impl From<PoolOp> for Op {
                 cache,
                 class,
             },
-            PoolOp::Checkpoint { act } => Self::Checkpoint { act },
             PoolOp::Dial { slug, timeout_secs } => Self::Dial { slug, timeout_secs },
             PoolOp::Port { slug, port, probe } => Self::Port { slug, port, probe },
             PoolOp::Status => Self::Status,
@@ -159,15 +153,6 @@ pub async fn authorize(
         class: None,
     };
     leased(runner, machine_id, op).await
-}
-
-/// Asks machine `machine_id`, through `runner`'s broker, to act on its checkpoints.
-pub async fn checkpoint(
-    runner: &Runner,
-    machine_id: i64,
-    act: lease::CheckpointAct,
-) -> Result<lease::Answer, String> {
-    leased(runner, machine_id, PoolOp::Checkpoint { act }).await
 }
 
 /// Sends lease `op` to machine `machine_id`; its answer.

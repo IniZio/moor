@@ -18,8 +18,6 @@ pub(crate) use port::serve_here as serve_port;
 pub use reach::{carry, dial, splice, Sshd};
 
 mod cache;
-mod checkpoint;
-pub(crate) use checkpoint::doctor_failures;
 mod crabbox;
 mod flight;
 mod memory;
@@ -30,7 +28,6 @@ mod rows;
 mod sweep;
 mod takeover;
 
-pub use checkpoint::checkpoint_op;
 use crabbox::Crabbox;
 use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
@@ -75,13 +72,10 @@ pub struct Pool {
 pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
     let pool = machine.pool.as_ref()?;
     let features = features(pool).await;
-    let checkpoints_off = checkpoint::off(&machine.home, pool, &features).await;
     Some(Offer {
         max_boxes: pool.max.and_then(|m| u32::try_from(m).ok()),
         cache_gb: pool.cache_gb,
         features,
-        checkpoints: checkpoints_off.is_none(),
-        checkpoints_off,
         mem_mib: host_mem_mib(),
         cpus: std::thread::available_parallelism()
             .ok()
@@ -177,7 +171,6 @@ pub async fn lease_op(home: &Path, pool: &Pool, op: Op) -> Reply {
             let boot = Boot { cache, class };
             lease(home, pool, verb, slug.as_deref(), key.as_deref(), &boot).await
         }
-        Op::Checkpoint { act } => checkpoint_op(home, pool, act).await,
         _ => Reply::Refused {
             reason: "not a lease".to_owned(),
         },

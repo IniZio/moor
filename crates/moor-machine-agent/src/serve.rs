@@ -105,7 +105,7 @@ async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option
     match (machine.pool.as_ref(), op) {
         (
             Some(pool),
-            op @ (Op::Lease { .. } | Op::Checkpoint { .. } | Op::Dial { .. } | Op::Port { .. }),
+            op @ (Op::Lease { .. } | Op::Dial { .. } | Op::Port { .. }),
         ) => serve_pool(&machine.home, pool, ch, op).await,
         (
             None,
@@ -145,7 +145,7 @@ fn not_served(pool_host: bool, op: &Op) -> String {
 /// Serves a lease or a dial for `pool`; why it failed.
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
-        op @ (Op::Lease { .. } | Op::Checkpoint { .. }) => pool::lease_op(home, pool, op).await,
+        op @ Op::Lease { .. } => pool::lease_op(home, pool, op).await,
         Op::Port { slug, port, probe } => {
             return pool::serve_port((home, pool), ch, (&slug, port), probe).await;
         }
@@ -259,7 +259,6 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
         | Op::Sweep { .. }
         | Op::Remove { .. }
         | Op::Lease { .. }
-        | Op::Checkpoint { .. }
         | Op::Dial { .. }
         | Op::Port { .. }
         | Op::Status => Err(refused("not a command".to_owned())),

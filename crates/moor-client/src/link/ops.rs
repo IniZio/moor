@@ -139,11 +139,6 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         class: Option<String>,
     },
-    /// Act on a pool host's checkpoints; only a pool host serves it.
-    Checkpoint {
-        /// What to do.
-        act: lease::CheckpointAct,
-    },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {
         /// `moor-<controller>-<id>`.
