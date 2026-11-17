@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use moor_client::link::boxes::BoxAnswer;
 use moor_client::link::ops::{self, Hook, Op, Reply, MAX_TIMEOUT_SECS};
 use moor_client::link::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -100,9 +101,23 @@ pub(crate) async fn serve(
     recent.record(name, target, failed.as_deref());
 }
 
+/// Serves the Box request the runner spliced onto `ch`, when this machine provides Boxes.
+async fn serve_boxes(host: Option<&crate::Host>, mut ch: Channel) {
+    if let Some(host) = host {
+        return host.serve(ch).await;
+    }
+    let reason = "this machine provides no Boxes".to_owned();
+    let _ = ops::write_line(&mut ch, &BoxAnswer::Refused { reason }).await;
+    let _ = ch.shutdown().await;
+}
+
 /// Serves `op` when this machine's mode allows it; why it failed.
 async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match (machine.pool.as_ref(), op) {
+        (_, Op::Boxes) => {
+            serve_boxes(link.host.as_ref(), ch).await;
+            None
+        }
         (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. } | Op::Port { .. })) => {
             serve_pool(&machine.home, pool, ch, op).await
         }

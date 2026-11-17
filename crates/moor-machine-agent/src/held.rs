@@ -8,7 +8,7 @@ use moor_client::link::{self, Frame};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::{busy, listen, pool, serve, status, Machine, Pool};
+use crate::{busy, listen, pool, serve, status, Host, Machine, Pool};
 
 /// How a held link ended.
 pub(crate) enum Ended {
@@ -22,17 +22,23 @@ pub(crate) enum Ended {
 pub(crate) async fn hold(
     carried: link::Carried,
     machine: &Arc<Machine>,
+    host: Option<&Host>,
     boxes: &Arc<listen::Boxes>,
     recent: &Arc<status::Recent>,
 ) -> Ended {
     let (open, asks) = mpsc::channel(16);
-    let reporting = machine
-        .pool
-        .clone()
-        .map(|pool| tokio::spawn(report_on(open.clone(), machine.home.clone(), pool)));
+    let reporting = (machine.pool.is_some() || host.is_some()).then(|| {
+        let what = Reporting {
+            home: machine.home.clone(),
+            pool: machine.pool.clone(),
+            host: host.cloned(),
+        };
+        tokio::spawn(report_on(open.clone(), what))
+    });
     let streams = listen::Link {
         open,
         boxes: Arc::clone(boxes),
+        host: host.cloned(),
     };
     let (machine, recent) = (Arc::clone(machine), Arc::clone(recent));
     let take = move |ch| {
@@ -92,13 +98,24 @@ async fn relink(mut heard: mpsc::Receiver<Frame>) {
     std::future::pending::<()>().await;
 }
 
+/// What a link's reports are made of.
+struct Reporting {
+    /// The account's home, whose disk the report measures.
+    home: PathBuf,
+    /// The pool whose leases' memory the report lists.
+    pool: Option<Pool>,
+    /// The Boxes whose health the report lists.
+    host: Option<Host>,
+}
+
 /// Opens a stream to the runner on `open` and sends the host's memory reports on it.
-async fn report_on(open: mpsc::Sender<link::Asked>, home: PathBuf, pool: Pool) {
+async fn report_on(open: mpsc::Sender<link::Asked>, what: Reporting) {
     let (ask, opened) = tokio::sync::oneshot::channel();
     if open.send(ask).await.is_err() {
         return;
     }
     if let Ok(Ok(stream)) = opened.await {
-        pool::send_reports(stream, Path::new("/proc"), Some(&home), Some(&pool)).await;
+        let (home, pool, host) = (&what.home, what.pool.as_ref(), what.host.as_ref());
+        pool::send_reports(stream, Path::new("/proc"), Some(home), (pool, host)).await;
     }
 }

@@ -13,10 +13,16 @@ use serde::{Deserialize, Serialize};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 
+pub use crate::boxes::Host;
 pub use crate::pool::Pool;
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 
+#[cfg_attr(
+    not(any(test, feature = "fake-boxes")),
+    expect(dead_code, reason = "no provider is built in without fake-boxes")
+)]
+mod boxes;
 mod busy;
 mod files;
 mod held;
@@ -101,6 +107,21 @@ pub async fn run_with(
     auto_update: bool,
     log: &(dyn Fn(&str) + Sync),
 ) -> Result<(), String> {
+    run_hosting(dir, machine, None, auto_update, log).await
+}
+
+/// As [`run_with`]; with a `host`, the machine also provides Boxes, which it offers and serves
+/// over the Box protocol.
+///
+/// # Errors
+/// As [`run_with`].
+pub async fn run_hosting(
+    dir: &Path,
+    machine: Machine,
+    host: Option<Host>,
+    auto_update: bool,
+    log: &(dyn Fn(&str) + Sync),
+) -> Result<(), String> {
     let machine = Arc::new(machine);
     let path = dir.join("state.json");
     let text = fs::read_to_string(&path).map_err(|e| {
@@ -121,6 +142,7 @@ pub async fn run_with(
         state,
         key,
         linked: dir.join(linked::FILE),
+        host,
     };
     let (tell, offers) = tokio::sync::watch::channel(String::new());
     tokio::select! {
@@ -137,6 +159,8 @@ struct Own {
     key: PrivateKey,
     /// The file kept while a link holds, which `up` waits for.
     linked: PathBuf,
+    /// How the machine provides Boxes, when it does.
+    host: Option<Host>,
 }
 
 /// Holds the link `carried` until it ends, keeping `own.linked` meanwhile.
@@ -152,7 +176,7 @@ async fn hold(
     if let Err(e) = linked::write(&own.linked, &own.state.server) {
         log(&format!("cannot write {}: {e}", own.linked.display()));
     }
-    let ended = held::hold(carried, machine, boxes, recent).await;
+    let ended = held::hold(carried, machine, own.host.as_ref(), boxes, recent).await;
     if matches!(ended, held::Ended::Closed(_)) {
         let _ = fs::remove_file(&own.linked);
     }
@@ -176,7 +200,7 @@ async fn keep_linked(
     let mut relinked: Option<tokio::time::Instant> = None;
     let mut ever_linked = false;
     loop {
-        let (why, handing_over) = match connect(state, &own.key, machine).await {
+        let (why, handing_over) = match connect(own, machine).await {
             Ok((carried, theirs)) => {
                 tell.send_replace(theirs);
                 ever_linked = true;
@@ -249,11 +273,8 @@ pub(crate) fn takes_no_machines(server: &str) -> String {
 
 /// Dials `state`'s server and proves the machine with `key`; the link, once it is up, and the
 /// server's release.
-async fn connect(
-    state: &State,
-    key: &PrivateKey,
-    machine: &Machine,
-) -> Result<(link::Carried, String), Turned> {
+async fn connect(own: &Own, machine: &Machine) -> Result<(link::Carried, String), Turned> {
+    let (state, key) = (&own.state, &own.key);
     let mut ws = link::dial_found(&state.server)
         .await
         .map_err(Turned::Failed)?
@@ -261,7 +282,7 @@ async fn connect(
     let hello = Frame::Hello {
         machine_id: state.machine_id,
         version: VERSION.to_owned(),
-        offer: pool::offer(machine).await.map(Box::new),
+        offer: offered(machine, own.host.as_ref()).await.map(Box::new),
     };
     link::send(&mut ws, &hello).await.map_err(Turned::Failed)?;
     let nonce = match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
@@ -284,6 +305,15 @@ async fn connect(
         Frame::Welcome { version } => Ok((link::carry(ws, link::KEEPALIVE), version)),
         other => Err(turned(other)),
     }
+}
+
+/// What the machine offers: its pool's, with the Boxes its `host` provides.
+async fn offered(machine: &Machine, host: Option<&Host>) -> Option<link::Offer> {
+    let mut offer = pool::offer(machine).await;
+    if let Some(host) = host {
+        offer.get_or_insert_with(link::Offer::default).boxes = Some(host.offer());
+    }
+    offer
 }
 
 /// What the server's `frame` in place of the next handshake step means.
