@@ -33,8 +33,6 @@ moor::adapters::proc	moor::env
 moor::adapters::clock	moor::env
 moor::adapters::rng	
 moor::adapters::git	moor::adapters::proc
-moor::adapters::sockets	
-moor::adapters::crabbox	moor::adapters::proc,moor::adapters::sockets,moor::keys
 moor::adapters::box_agent	
 moor::adapters::machine	moor::env
 moor::adapters::github	moor::adapters::proc

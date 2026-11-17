@@ -21,14 +21,10 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 | `image.repository`, `image.tag` | `ghcr.io/inizio/moor`, the chart's version | The release image. |
 | `controller.nodes` | `{}` | Shared nodes, as `{name: {runtime, labels, max_boxes}}`. Empty runs Boxes only on paired machines. |
 | `controller.defaultNode` | empty | `box.node`. Needed when `nodes` has more than one entry. |
-| `controller.drivers` | `{}` | Per-provider settings, such as `external: {strip_env: [X]}`. |
 | `controller.agentModel` | empty | The model a Box's agent starts with. |
 | `controller.drainTimeoutSecs` | 30 | The controller's drain on stop. The pod's grace is this plus 30 s. |
 | `controller.settleEverySecs` | 5 | Seconds between settle passes. |
 | `controller.extraEnv` | `[]` | Extra environment, as `{name, value}` entries. |
-| `crabbox.config` | none | Secret. The crabbox config, as a map or as text. |
-| `crabbox.sshKey` | empty | Secret. The ssh key the provider account trusts, written to `/var/lib/moor/config/box-ssh-key`. |
-| `crabbox.agent37Token` | empty | Secret. Written to `/var/lib/moor/config/agent37.key`. |
 | `persistence.size`, `persistence.storageClassName` | `10Gi`, the default class | The `moor-state` volume. |
 
 ## Gate

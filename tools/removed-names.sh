@@ -30,6 +30,8 @@ names=(
   DirectHost check_direct direct_hosts RepoProxy WaitingForBox '--pool-max' provider_of
   seal_script seal_caches seal_step cache_seal_failed work_tree_not_kept MOOR_SEAL_BASE OnFail
   moor_yaml moorYaml
+  MOOR_CRABBOX_BIN MOOR_TRACE_CRABBOX link_dial ProviderReady provider_ready
+  PoolHosts PoolPorts HostLists
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.
@@ -66,10 +68,8 @@ fi
 
 texts=()
 for t in crates docs ./*.md; do [ -e "$t" ] && texts+=("${t#./}"); done
-# crabbox's own --no-sync flag is still passed by the crabbox adapter.
 flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' -e '--trust-moor-yaml' \
-  --exclude-dir=target "${texts[@]}" \
-  | grep -v '^crates/moor/src/adapters/crabbox/' || true)
+  --exclude-dir=target "${texts[@]}" || true)
 if [ -n "$flag_hits" ]; then
   echo "removed-names: removed run flags found"
   echo "$flag_hits"

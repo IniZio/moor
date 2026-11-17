@@ -101,8 +101,7 @@ server names by itself and restarts once no Box is starting or stopping.
 
 ## Change what a machine offers
 
-A machine paired for another kind of Box, such as an older crabbox one, pairs
-again the next time you run `up`. Open the link and confirm the code as before.
+A machine paired for another kind of Box pairs again the next time you run `up`. Open the link and confirm the code as before.
 
 ## Remove a machine
 

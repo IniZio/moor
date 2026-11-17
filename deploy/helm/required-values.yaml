@@ -7,5 +7,3 @@ mcp:
   resourceUrl: https://moor.example.com/mcp
 vault:
   key: AGE-SECRET-KEY-EXAMPLE
-crabbox:
-  agent37Token: example-token

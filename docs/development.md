@@ -5,7 +5,7 @@
 | Crate | What it holds |
 | --- | --- |
 | [moor-core](../crates/moor-core) | Types and decision logic with no IO: names, config parsing, the `Request` enum, the `Response` envelope, views, and the `Secret` type. |
-| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for crabbox, herdr, and git, and one module per command in [ops](../crates/moor/src/ops). |
+| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for herdr, and git, and one module per command in [ops](../crates/moor/src/ops). |
 | [moor-migrate](../crates/moor-migrate) | Forward-only schema migrations for the `SQLite` databases, run by [refinery](https://github.com/rust-db/refinery). |
 | [moor-client](../crates/moor-client) | A client for the controller socket that fronts use. |
 | [moor-listen](../crates/moor-listen) | Holds the gate's listen stream open and prints a line per Box event. |
@@ -73,42 +73,11 @@ defaulted columns, and ship a data patch separately from the schema change.
 Migrations run before the new code uses them, and a deploy never moves a
 database back.
 
-## Developing moor inside a moor Box
-
-Running a Box from inside a Box needs `/dev/kvm`, because the inner Box is a
-cloud-hypervisor VM. The node's VM provides it as `root:kvm` with mode `0660`,
-so the Box user must be in the `kvm` group. The moor repo's config, kept in
-[tools/box-config.yaml](../tools/box-config.yaml) to set with `moor repo config
-set IniZio/moor --file tools/box-config.yaml`, sizes the
-Box `large` and runs `tools/box-nested-kvm.sh`, which adds the user to `kvm` and
-installs the pinned `crabbox-cloudhypervisor` release and runs its `install`,
-which fetches `cloud-hypervisor` and `passt` as it does for a user, and builds the pinned `crabbox`, all into the `nested-kvm` cache volume. A Box on a host
-without `/dev/kvm` skips the script. A Box that runs as root skips the group
-change, because root opens `/dev/kvm` without it and the image may have no
-`kvm` group. A new group applies to new logins, so
-start a command that opens `/dev/kvm` in a Box session that already exists with
-`sg kvm -c '<command>'`.
-
-`make nested-e2e` checks the whole path. It builds moor,
-unless `target/debug/moor` is newer than every tracked file, runs a controller
-with one `runtime: external` node that drives `crabbox-cloudhypervisor`
-(2 vCPU, 4 GiB), and starts a Box on `IniZio/moor-nested-check`, a scratch repo
-with no repo config. Start the outer Box with `--also IniZio/moor-nested-check`
-so its Proxy holds credentials for that repo, or set `NESTED_E2E_REPO` to another
-scratch repo you can push to.
-That Box writes NESTED.md and pushes its `moor/<id>-<name>` branch. The script
-reads the branch from `moor show`, fetches it with git and checks NESTED.md. The Box has no `gh`, so the check needs no PR. The
-script records `systemd-detect-virt` from inside the VM, then closes the Box and
-deletes the branch. On exit, success, failure or Ctrl-C, it stops every
-process it started and removes the VM disks. Its logs are in
-`.moor/dev/nested-e2e/out`. GitHub and Claude credentials come from the outer
-Box's Proxy through `HTTPS_PROXY`, so the inner secrets are placeholders.
-
 ## Build and test
 
 `make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. `make setup` also runs [tools/install-tools.sh](../tools/install-tools.sh), which installs the pinned `helm` and `herdr-core` into `~/.cargo/bin`, checking each download's SHA-256. CI calls the same script. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
 
-In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](config.md#cache-volumes), so `make setup` runs once. A crabbox config without the `cache-volume` feature cannot keep that volume, so every Box runs `make setup` again.
+In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](config.md#cache-volumes), so `make setup` runs once.
 
 | Target | What it runs |
 | --- | --- |
@@ -138,9 +107,7 @@ This starts one Box from a git repo on your machine with a CLI you built.
 You need:
 
 - the Rust toolchain that `rust-toolchain.toml` pins
-- crabbox 0.79.1-moor.6 or a newer `-moor` build of
-  [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
-  the `local-container` provider
+- Docker, which `moor up` sets up a local node on
 - a GitHub token, for a repo on GitHub, such as the one `gh auth token` prints
 - a Claude Code token from `claude setup-token`
 

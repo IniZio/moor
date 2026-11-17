@@ -26,32 +26,9 @@ The chart refuses to render while any of these is empty, and names the key.
 | `mcp.resourceUrl` | `https://HOST/mcp`, registered at the issuer with the scopes `moor:read` and `moor:write`. |
 | `gate.ingress.className` | The ingress class for `host`, when `gate.ingress.enabled`. |
 | `vault.key` | The `AGE-SECRET-KEY-` line that `age-keygen` prints. One per install. |
-| `crabbox.agent37Token` | The provider credential, for agent37. |
 
-Keep `vault.key`, the tokens, `crabbox.config`, and `crabbox.sshKey` in a
-values file you encrypt, or pass them from a secret store. The chart puts them
-in the Secret `<release>-secrets`.
-
-`crabbox.config` is the crabbox config for the shared nodes. For agent37:
-
-```yaml
-crabbox:
-  config:
-    external:
-      command: /usr/local/bin/crabbox-agent37
-      capabilities: {idempotentLeaseId: true, pauseResume: true, cacheVolumes: true}
-      connection:
-        ssh:
-          trustProviderOutput: true
-      config:
-        owner: OWNER
-        region: REGION
-        keyFile: /var/lib/moor/config/agent37.key
-        sshKey: /var/lib/moor/config/box-ssh-key
-controller:
-  nodes:
-    cloud: {runtime: external, max_boxes: 5}
-```
+Keep `vault.key` in a values file you encrypt, or pass it from a secret store.
+The chart puts it in the Secret `<release>-secrets`.
 
 ## Install
 
