@@ -23,7 +23,6 @@ fn sample() -> Status {
         os: "linux".into(),
         arch: "x86_64".into(),
         free_disk_gb: Some(40),
-        pool: None,
         recent: Vec::new(),
     }
 }

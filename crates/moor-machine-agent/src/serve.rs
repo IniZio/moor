@@ -232,9 +232,6 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
         | Op::Pull { .. }
         | Op::Sweep { .. }
         | Op::Remove { .. }
-        | Op::Lease { .. }
-        | Op::Dial { .. }
-        | Op::Port { .. }
         | Op::Status
         | Op::Boxes => Err(refused("not a command".to_owned())),
         Op::Listen {

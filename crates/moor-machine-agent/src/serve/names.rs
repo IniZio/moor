@@ -2,7 +2,7 @@
 
 use moor_client::link::ops::Op;
 
-/// The Box id or lease slug `op` names.
+/// The Box id `op` names.
 pub(super) fn target(op: &Op) -> Option<String> {
     match op {
         Op::Exec { box_id, .. }
@@ -12,8 +12,6 @@ pub(super) fn target(op: &Op) -> Option<String> {
         | Op::Pull { box_id, .. }
         | Op::Listen { box_id, .. }
         | Op::Remove { box_id } => Some(box_id.to_string()),
-        Op::Lease { slug, .. } => slug.clone(),
-        Op::Dial { slug, .. } | Op::Port { slug, .. } => Some(slug.clone()),
         Op::Sweep { .. } | Op::Status | Op::Boxes => None,
     }
 }
@@ -27,9 +25,6 @@ pub(super) const fn kind(op: &Op) -> &'static str {
         Op::Sync { .. } => "sync",
         Op::Pull { .. } => "pull",
         Op::Listen { .. } => "listen",
-        Op::Lease { .. } => "lease",
-        Op::Dial { .. } => "dial",
-        Op::Port { .. } => "port",
         Op::Sweep { .. } => "sweep",
         Op::Remove { .. } => "remove",
         Op::Status => "status",

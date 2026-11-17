@@ -1,6 +1,5 @@
-//! The links broker: the controller, and ssh through `moor link-dial`, reach a pool host's
-//! leases, or any agent's status, over the link this runner holds, through a socket only this
-//! user may open.
+//! The links broker: the controller reaches any agent's status and Box requests over the link
+//! this runner holds, through a socket only this user may open.
 
 use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -54,9 +53,8 @@ pub async fn serve_broker(listener: UnixListener, agents: Agents, uid: u32) -> i
     }
 }
 
-/// Serves one ask, refused unless `admitted`: the agent's reply, then for a started dial or port the
-/// bytes both ways until either side closes; a Box request's stream is spliced the same way,
-/// unread.
+/// Serves one ask, refused unless `admitted`: the agent's reply, or a Box request's stream spliced
+/// through, unread, with the bytes carried both ways until either side closes.
 pub(crate) async fn carry<S>(mut conn: S, agents: &Agents, admitted: bool)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -72,7 +70,7 @@ where
         Ok(ask) => relay(agents, ask).await,
         Err(e) => (
             Brokered::Refused {
-                reason: format!("the broker carries one lease, dial or status: {e}"),
+                reason: format!("the broker carries one status or Box request: {e}"),
             },
             None,
         ),
@@ -88,14 +86,9 @@ where
 /// Why a connection whose hello carried another key is refused.
 pub(crate) const WRONG_KEY: &str = "the machine service key is wrong";
 
-/// Sends `ask` on its machine's link; the answer, and the stream when a dial started or a Box
-/// stream is spliced.
+/// Sends `ask` on its machine's link; the answer, and the stream when a Box stream is spliced.
 async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link::Channel>) {
     let machine_id = ask.machine_id;
-    let dial = matches!(
-        ask.op,
-        PoolOp::Dial { .. } | PoolOp::Port { probe: false, .. }
-    );
     let offline = |reason: String| (Brokered::Offline { machine_id, reason }, None);
     let mut stream = match agents.open(machine_id).await {
         Ok(stream) => stream,
@@ -109,10 +102,7 @@ async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link
         return (Brokered::Spliced, Some(stream));
     }
     match ops::read_line::<_, Reply>(&mut stream).await {
-        Ok(reply) => {
-            let started = dial && reply == Reply::Started;
-            (Brokered::Agent { reply }, started.then_some(stream))
-        }
+        Ok(reply) => (Brokered::Agent { reply }, None),
         Err(e) => offline(format!("its link closed: {e}")),
     }
 }

@@ -1,91 +1,19 @@
-//! A pool host's VM leases: what the runner may ask of them and what the host answers.
-//!
-//! An answer is data only. The host never sends ssh words or a command for the runner to run;
-//! it reaches a VM through a dial, which the host carries itself.
+//! The cache volumes a Box's setup mounts.
 
 use serde::{Deserialize, Serialize};
 
-/// What to do with a lease.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Verb {
-    /// Boot the VM, or find it booted.
-    Warmup,
-    /// Take over a warmup or fork whose caller was cut off: wait for one still going, or find
-    /// its VM up, or boot the VM.
-    Adopt,
-    /// End a warmup or fork going on, leaving what it made for a stop; none going on is fine.
-    Cancel,
-    /// How to sign in to the VM and which host keys it shows.
-    Info,
-    /// Pause the VM, keeping its disk and memory.
-    Pause,
-    /// What a controller from before caches stopped being saved at pause asks. It is read and
-    /// served as [`Verb::Pause`], and a controller no longer sends it.
-    PausePublish,
-    /// Resume a paused VM.
-    Resume,
-    /// Delete the VM; one already gone counts as deleted.
-    Stop,
-    /// The pool's leases; it names no slug.
-    List,
-    /// Let a public key sign in to the VM; the request carries the key.
-    Authorize,
-}
-
-/// The host's answer to a lease request.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "answer")]
-pub enum Answer {
-    /// The verb took effect.
-    Done,
-    /// The host's provider cannot do the verb.
-    Unsupported,
-    /// The VM's sign-in.
-    Info {
-        /// The VM's login user.
-        user: String,
-        /// The VM's host public keys, each `type base64`.
-        host_keys: Vec<String>,
-    },
-    /// The pool's `moor-<controller>-<id>` leases.
-    Leases {
-        /// Each lease.
-        leases: Vec<Lease>,
-    },
-}
-
-/// One lease in a list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Lease {
-    /// `moor-<controller>-<id>`.
-    pub slug: String,
-    /// What the provider says of it, such as `running` or `paused`.
-    pub state: String,
-}
-
-/// What a warmup boots its VM with, beyond its slug.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Boot {
-    /// The cache volumes it mounts.
-    pub cache: Option<Cache>,
-    /// crabbox's machine class; none leaves it to the provider.
-    pub class: Option<String>,
-}
-
-/// The cache volumes a warmup mounts, as crabbox reads them from `CRABBOX_CACHE_VOLUMES` and
-/// `CRABBOX_CACHE_SCOPE`.
+/// The cache volumes a Box mounts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cache {
-    /// The volumes, in crabbox's JSON shape.
+    /// The volumes.
     pub volumes: Vec<CacheVolume>,
     /// The Box's scope, 16 lowercase hex digits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
 }
 
-/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group` and `paths`.
+/// One cache volume.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheVolume {
