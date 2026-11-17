@@ -29,7 +29,7 @@ mod machine;
 pub use machine::{
     BoxHostMemory, BoxStage, HoldOp, HoldValue, MachineBox, MachineBoxOp, MachineBoxReq,
     MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq, MachineRemoveReq,
-    MachineStatusReq, MemoryReport, RunnerAddr,
+    MachineStatusReq, MemoryReport, NodeAddReq, RunnerAddr,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -184,6 +184,8 @@ pub enum Request {
     MachineList(AsReq),
     /// List the nodes the caller may start Boxes on; the operator sees every node.
     NodeList(AsReq),
+    /// Add or replace a shared node's machine, which no user owns; the operator's only.
+    NodeAdd(NodeAddReq),
     /// Ask the controller whether each node runtime's provider credentials are in place.
     ProviderReady(AsReq),
     /// Ask one of the caller's user's machine agents for its status.

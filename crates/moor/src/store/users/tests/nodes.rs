@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use moor_core::config::{EnrolledMachine, NodeConfig};
+use moor_core::config::{EnrolledMachine, NodeConfig, BOXES_HOST};
 use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
@@ -12,6 +12,7 @@ use moor_core::name::NodeName;
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
+use moor_core::view::user::SharedMachineKey;
 use moor_core::{BoxId, BoxName, ProviderId};
 
 use crate::store::tests::{new_box, open};
@@ -189,4 +190,66 @@ fn each_owner_on_a_node_is_picked_once_and_a_box_setting_up_is_not() {
         store.one_live_per_owner_on(&node).unwrap(),
         vec![first, bobs]
     );
+}
+
+const OTHER: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMKNmEuquBc3TqUA/DQWHHNt+ujMoN27+qMGjIZmpouo";
+
+#[test]
+fn a_shared_machine_is_a_shared_node_with_its_machine_and_its_key_is_listed_apart() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    alice_with_machines(&store);
+    let local = EnrolledMachine::parse("local", KEY, &[], 1)
+        .unwrap()
+        .with_pool(BOXES_HOST)
+        .unwrap();
+
+    let id = store.enroll_shared_machine(&local).unwrap();
+
+    let nodes = store.nodes(&BTreeMap::new()).unwrap();
+    let node = find(&nodes, "local");
+    assert_eq!((&node.scope, node.machine), (&Scope::Shared, Some(id)));
+    assert_eq!(node.runtime, BOXES_HOST);
+    assert!(matches!(node.online, Online::Offline { .. }));
+    assert_eq!(
+        store.shared_machine_keys().unwrap(),
+        [SharedMachineKey {
+            machine_id: id,
+            name: "local".to_owned(),
+            pubkey: KEY.to_owned(),
+        }]
+    );
+    let owned = store.machine_keys().unwrap();
+    assert!(owned.iter().all(|k| k.machine_id != id));
+    assert_eq!(owned.len(), 3, "alice's machines are listed as before");
+}
+
+#[test]
+fn enrolling_a_shared_machine_again_keeps_its_id_and_replaces_its_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let first = EnrolledMachine::parse("local", KEY, &[], 1).unwrap();
+    let again = EnrolledMachine::parse("local", OTHER, &["a".to_owned()], 1).unwrap();
+    let id = store.enroll_shared_machine(&first).unwrap();
+
+    assert_eq!(store.enroll_shared_machine(&again).unwrap(), id);
+
+    let keys = store.shared_machine_keys().unwrap();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys.first().unwrap().pubkey, OTHER);
+}
+
+#[test]
+fn a_user_machine_of_the_same_name_is_not_a_shared_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = alice_with_machines(&store);
+    let local = EnrolledMachine::parse("local", KEY, &[], 1).unwrap();
+    store.enroll_shared_machine(&local).unwrap();
+
+    assert!(store.user_machine_named("mini").unwrap());
+    assert!(!store.user_machine_named("local").unwrap());
+    let mine = store.user_machines(alice).unwrap();
+    assert!(mine.iter().all(|m| m.name != "local"));
 }

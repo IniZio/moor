@@ -16,6 +16,7 @@ fn node(n: &str, scope: Scope, labels: &[&str]) -> Node {
     Node {
         name: name(n),
         scope,
+        machine: None,
         runtime: "crabbox".to_owned(),
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         max_boxes: None,
@@ -27,15 +28,17 @@ fn node(n: &str, scope: Scope, labels: &[&str]) -> Node {
 }
 
 fn mine(n: &str, machine_id: i64, enrolled_at: i64) -> Node {
-    node(
-        n,
-        Scope::Personal {
-            owner: ME,
-            machine_id,
-            enrolled_at,
-        },
-        &["linux"],
-    )
+    Node {
+        machine: Some(machine_id),
+        ..node(
+            n,
+            Scope::Personal {
+                owner: ME,
+                enrolled_at,
+            },
+            &["linux"],
+        )
+    }
 }
 
 fn ci() -> Node {
@@ -95,12 +98,27 @@ fn first_personal_by_enrolled_at_then_machine_id() {
 }
 
 #[test]
+fn a_shared_node_with_a_machine_binds_to_it_and_is_chosen_only_by_name_or_default() {
+    let shared = Node {
+        machine: Some(12),
+        ..node("local", Scope::Shared, &["linux"])
+    };
+    let nodes = [mine("hv", 7, 100), shared.clone()];
+    assert_eq!(run(&nodes, &spec(&[], None)), bound("hv", Some(7)));
+    assert_eq!(
+        run(&nodes, &spec(&[], Some("local"))),
+        bound("local", Some(12))
+    );
+    let default = schedule(&[shared], ME, Some(&name("local")), &spec(&[], None), NOW);
+    assert_eq!(default, bound("local", Some(12)));
+}
+
+#[test]
 fn other_users_nodes_are_never_chosen() {
     let theirs = node(
         "theirs",
         Scope::Personal {
             owner: YOU,
-            machine_id: 1,
             enrolled_at: 1,
         },
         &["linux"],
@@ -133,7 +151,6 @@ fn another_users_node_reads_as_missing() {
         "theirs",
         Scope::Personal {
             owner: YOU,
-            machine_id: 1,
             enrolled_at: 1,
         },
         &[],
@@ -272,7 +289,6 @@ fn without_a_shared_node_other_users_nodes_do_not_count() {
         "theirs",
         Scope::Personal {
             owner: YOU,
-            machine_id: 3,
             enrolled_at: 1,
         },
         &["linux"],

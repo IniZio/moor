@@ -22,6 +22,7 @@ pub mod link_dial;
 pub mod listen_cmd;
 pub mod mcp_relay;
 mod moor;
+pub mod node_add;
 mod ops;
 mod proxy;
 mod runner_dir;

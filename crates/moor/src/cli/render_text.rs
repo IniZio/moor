@@ -79,6 +79,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
             .ok()
             .map(|view| env_text(&view)),
         "node-list" => node::list_text(value),
+        "node-add" => node::added_text(value),
         "machine-list" => machine::list_text(value),
         "machine-status" => machine::status_text(value),
         "inspect" => inspect::inspect_text(value),

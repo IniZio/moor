@@ -33,7 +33,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "secret-delete" | "mcp-remove" | "machine-remove" | "machine-status" => {
             json!({"cmd": kind, "name": "n"})
         }
-        "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
+        "machine-enroll" | "node-add" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "webhook-add" => json!({"cmd": kind, "url": "https://example.com/h"}),
         "webhook-remove" | "webhook-setup-show" | "webhook-setup-finish" => {
@@ -99,6 +99,21 @@ fn env_is_the_operators_only_and_repos_is_no_command() {
         let got = ask(socket, &json!({"cmd": "repos"}));
         assert_eq!(got["frame"], "error", "{got}");
     }
+}
+
+#[test]
+fn node_add_is_the_operators_only() {
+    const KEY: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+    let world = World::new();
+    let add = json!({"cmd": "node-add", "name": "local", "pubkey": KEY});
+    refused(
+        &ask(&world.herdr(), &acting(A, &add)),
+        "node-add enrolls a shared node for every user, which is operator-only",
+    );
+    let got = ask(&world.served.main, &add);
+    assert_eq!(got["class"], "ok", "{got}");
+    assert_eq!(got["value"]["name"], "local", "{got}");
 }
 
 /// The ids of the Sessions a `sessions` reply lists.

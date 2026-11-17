@@ -241,6 +241,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "proxy-release"
         | "proxy-status"
         | "node-list"
+        | "node-add"
         | "provider-ready" => return Names::Nothing,
         _ => return Names::Unknown,
     })

@@ -26,14 +26,28 @@ pub(super) async fn key_of(client: &Client, machine_id: i64) -> Result<PublicKey
             Err(_) => tokio::time::sleep(KEYS_RETRY).await,
         }
     };
+    enrolled_key(value, machine_id)
+}
+
+/// The key machine `machine_id` is enrolled with in a `machine-keys` answer: a user's machine or
+/// a shared one the operator enrolled.
+fn enrolled_key(value: serde_json::Value, machine_id: i64) -> Result<PublicKey, String> {
     let keys: MachineKeysValue = serde_json::from_value(value)
         .map_err(|e| format!("machine-keys answered something else: {e}"))?;
-    let enrolled = keys
+    let owned = keys
         .machines
         .into_iter()
         .find(|m| m.machine_id == machine_id)
+        .map(|m| m.pubkey);
+    let pubkey = owned
+        .or_else(|| {
+            keys.shared
+                .into_iter()
+                .find(|m| m.machine_id == machine_id)
+                .map(|m| m.pubkey)
+        })
         .ok_or_else(|| format!("machine {machine_id} is not enrolled"))?;
-    PublicKey::from_openssh(&enrolled.pubkey)
+    PublicKey::from_openssh(&pubkey)
         .map_err(|e| format!("machine {machine_id}'s key does not parse: {e}"))
 }
 
@@ -50,3 +64,6 @@ async fn machine_keys(client: &Client) -> Result<serde_json::Value, String> {
         None => Ok(response.value.unwrap_or_default()),
     }
 }
+
+#[cfg(test)]
+mod tests;

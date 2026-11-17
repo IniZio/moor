@@ -112,6 +112,15 @@ pub struct NodeListValue {
     pub start: Option<StartPick>,
 }
 
+/// Value of `node-add`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeAddValue {
+    /// The machine's id, which its agent links in under.
+    pub machine_id: i64,
+    /// The node's name.
+    pub name: String,
+}
+
 impl NodeView {
     /// `used of max` slots, or `used` alone on a node with no limit.
     #[must_use]

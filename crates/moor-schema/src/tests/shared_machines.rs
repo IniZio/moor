@@ -42,7 +42,8 @@ INSERT INTO user_machines_v2 ("user", name, pubkey, capacity, enrolled_at)
 "#;
 
 /// Every machine as `id|user|name|pubkey|labels|capacity|enrolled_at|pool`, `-` for null.
-const MACHINES: &str = "SELECT CAST(machine_id AS TEXT) || '|' || COALESCE(CAST(\"user\" AS TEXT), '-') \
+const MACHINES: &str =
+    "SELECT CAST(machine_id AS TEXT) || '|' || COALESCE(CAST(\"user\" AS TEXT), '-') \
     || '|' || name || '|' || pubkey || '|' || labels || '|' || CAST(capacity AS TEXT) || '|' \
     || CAST(enrolled_at AS TEXT) || '|' || COALESCE(pool_provider, '-') \
     FROM user_machines_v2 ORDER BY machine_id";
@@ -61,10 +62,7 @@ const CHILDREN: [&str; 3] = [
 type Got = (Vec<String>, [Vec<String>; 3], Vec<String>, bool);
 
 fn kept() -> Vec<&'static str> {
-    vec![
-        "2|1|mini|k1|[\"a\"]|2|10|-",
-        "3|2|mini|k2|[]|4|20|crabbox",
-    ]
+    vec!["2|1|mini|k1|[\"a\"]|2|10|-", "3|2|mini|k2|[]|4|20|crabbox"]
 }
 
 fn after() -> Vec<&'static str> {
@@ -103,7 +101,10 @@ fn sqlite_keeps_machines_and_their_children_and_takes_shared_machines() {
     // The children still cascade from the rebuilt table.
     conn.execute_batch("DELETE FROM user_machines_v2 WHERE machine_id = 3;")
         .unwrap();
-    assert_eq!(CHILDREN.map(rows), [vec![], vec![], vec![]] as [Vec<&str>; 3]);
+    assert_eq!(
+        CHILDREN.map(rows),
+        [vec![], vec![], vec![]] as [Vec<&str>; 3]
+    );
 }
 
 #[test]

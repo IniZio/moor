@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use moor_core::config::BOXES_HOST;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 use moor_core::view::node::{ProviderCheck, ProviderReady, ProviderReadyValue};
 use serde_json::Value;
@@ -30,7 +31,11 @@ const MAX_ERROR_LEN: usize = 200;
 /// # Errors
 /// A store failure.
 pub(crate) fn run(cx: &Cx) -> Result<ProviderReadyValue, CommandError> {
-    let runtimes: BTreeSet<String> = all(cx)?.into_iter().map(|n| n.runtime).collect();
+    let runtimes: BTreeSet<String> = all(cx)?
+        .into_iter()
+        .map(|n| n.runtime)
+        .filter(|rt| rt != BOXES_HOST)
+        .collect();
     let providers = runtimes
         .into_iter()
         .map(|provider| {
@@ -55,7 +60,11 @@ pub(crate) fn startup_lines(cx: &Cx) -> Vec<String> {
     if nodes.is_empty() {
         return vec!["no node configured; no Box can start".to_owned()];
     }
-    let runtimes: BTreeSet<&str> = nodes.iter().map(|n| n.runtime.as_str()).collect();
+    let runtimes: BTreeSet<&str> = nodes
+        .iter()
+        .map(|n| n.runtime.as_str())
+        .filter(|rt| *rt != BOXES_HOST)
+        .collect();
     let failing: BTreeMap<&str, Vec<ProviderCheck>> = runtimes
         .into_iter()
         .map(|rt| (rt, doctor(cx, rt)))
@@ -64,6 +73,7 @@ pub(crate) fn startup_lines(cx: &Cx) -> Vec<String> {
         .iter()
         .map(|n| {
             let state = match failing.get(n.runtime.as_str()).map(Vec::as_slice) {
+                None if n.runtime == BOXES_HOST => "its agent provides Boxes".to_owned(),
                 Some([]) | None => "provider ready".to_owned(),
                 Some(checks) => format!(
                     "provider not ready: {}",

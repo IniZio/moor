@@ -99,6 +99,7 @@ fn main() -> ExitCode {
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Up { opts, max_boxes } => return run_up(&scoped(env, &opts), &opts, max_boxes),
         Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
+        Parsed::NodeAdd { opts, add } => run_node_add(env, &opts, &add),
         Parsed::Events {
             opts,
             since,
@@ -249,6 +250,48 @@ fn run_stdin(env: Env, opts: GlobalOpts, then: cli::StdinRequest) -> Output {
     }
     let request = then.request(value);
     run(env, Invocation { opts, request })
+}
+
+/// Runs `moor node add`: makes the agent's key, asks the controller to enroll it as a shared
+/// node, then writes the state the agent links with and says how to run it.
+fn run_node_add(env: Env, opts: &GlobalOpts, add: &moor::node_add::Add) -> Output {
+    let fail = |kind, why: String| {
+        let resp = moor::error::CommandError::new(kind, why).into_response("node-add", vec![]);
+        cli::render(&resp, opts)
+    };
+    if let Err(why) = moor::node_add::runner_url(&add.runner) {
+        return fail(moor::moor_core::ErrorKind::Usage, why);
+    }
+    let req = match moor::node_add::prepare(add) {
+        Ok(req) => req,
+        Err(why) => return fail(moor::moor_core::ErrorKind::Failed, why),
+    };
+    let env = scoped(env, opts);
+    let request = Request::NodeAdd(req);
+    let resp = match moor::client::configured_target(&env) {
+        Some(target) => moor::client::remote::run(&env, &target, &request, opts),
+        None => call(&env, request),
+    };
+    let mut out = cli::render(&resp, opts);
+    if resp.error.is_some() {
+        return out;
+    }
+    let added = resp
+        .value
+        .and_then(|v| serde_json::from_value::<moor::moor_core::view::node::NodeAddValue>(v).ok());
+    let Some(added) = added else {
+        return fail(
+            moor::moor_core::ErrorKind::Failed,
+            "the controller's answer does not name the machine".to_owned(),
+        );
+    };
+    if let Err(why) = moor::node_add::finish(add, &added) {
+        return fail(moor::moor_core::ErrorKind::Failed, why);
+    }
+    if !opts.json {
+        out.stdout.push_str(&moor::node_add::run_lines(add));
+    }
+    out
 }
 
 /// Read a request from stdin and run it; always JSON output.

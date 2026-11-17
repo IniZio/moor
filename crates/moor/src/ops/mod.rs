@@ -24,6 +24,7 @@ pub(crate) mod host_session;
 mod inspect;
 mod machine_box;
 pub(crate) mod machine_hold;
+mod node_add;
 mod nodes;
 mod open_session;
 pub(crate) mod provider_ready;
@@ -106,6 +107,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
+            shared: cx.store()?.shared_machine_keys()?,
             controller: Some(cx.store()?.controller_id()?),
         }),
         Request::MachineLinks(r) => {
@@ -116,6 +118,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         }
         Request::MachineBox(r) => to_value(&machine_box::run(cx, r.op)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
+        Request::NodeAdd(r) => to_value(&node_add::run(cx, &r)?),
         Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
