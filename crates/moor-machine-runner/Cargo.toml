@@ -68,7 +68,9 @@ name = "runner"
 path = "tests/runner/main.rs"
 
 [dev-dependencies]
-moor-machine-agent = { path = "../moor-machine-agent", features = ["fake-boxes"] }
+moor-machine-agent = { path = "../moor-machine-agent", features = [
+  "fake-boxes",
+] }
 moor-testkit = { path = "../moor-testkit" }
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"

@@ -13,8 +13,15 @@ use tokio::process::Command;
 
 /// A pty of `size`: its master, and its slave for the command's stdio.
 pub(super) fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd)> {
-    let flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC;
-    let master = openpt(flags)?;
+    #[cfg(target_os = "linux")]
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC)?;
+    // macOS's posix_openpt takes no O_CLOEXEC, so it is set right after.
+    #[cfg(not(target_os = "linux"))]
+    let master = {
+        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)?;
+        rustix::io::fcntl_setfd(&master, rustix::io::FdFlags::CLOEXEC)?;
+        master
+    };
     grantpt(&master)?;
     unlockpt(&master)?;
     let name = ptsname(&master, Vec::new())?;
