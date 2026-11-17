@@ -2,8 +2,6 @@
 //!
 //! The caller holds the Box's turn and passes a row read after taking it.
 
-use std::collections::HashMap;
-
 use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields};
@@ -20,7 +18,7 @@ use crate::ops::common::node::now;
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume_gate::{room_to_wake, Turn};
-use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
+use crate::ops::common::view::box_view;
 use crate::ops::start::{revive_after_wake, AfterWake};
 use crate::store::{BoxRow, OwedNote, Store};
 
@@ -297,8 +295,7 @@ pub(crate) fn wake_box(
     let woke = wake_and_revive(cx, store, &reload()?)?;
     let row = reload()?;
     held(&row)?;
-    let mut boxed = box_view(&row, cx.config()).driver;
-    hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
+    let boxed = box_view(&row, cx.config()).driver;
     Ok(SleepValue {
         box_name: req.box_name.as_str().to_owned(),
         driver: boxed,

@@ -44,7 +44,7 @@ pub(crate) struct Delivery<'a> {
 /// The Box's Proxy has no forward port, or the token cannot be minted or marked, or the
 /// forwarder cannot be read or written.
 pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, String> {
-    let upstream = to.route.upstream(to.handle, ep.box_port)?;
+    let upstream = to.route.upstream()?;
     if to.key.is_empty() {
         return Err("MOOR_EGRESS_KEY is not set, so no egress token can be minted".to_owned());
     }

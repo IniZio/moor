@@ -76,12 +76,12 @@ impl CloneStep {
 /// has it, else from the base. A URL, base or branch that starts with `-` is refused so git never
 /// reads it as an option.
 ///
-/// crabbox writes `.crabbox/` into the workdir before the script runs, and `git clone` needs an
-/// empty directory, so a workdir with no `.git` is cloned into a temp dir under `.moor/` whose
+/// `git clone` needs an empty directory, so a workdir with no `.git` is cloned into a temp dir
+/// under `.moor/` whose
 /// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
 /// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
-/// and the script stops at the clone step. `.moor/`, `.crabbox/` and an old cache's marker file are
-/// excluded so moor's and crabbox's files never show as changes.
+/// and the script stops at the clone step. `.moor/` is excluded so moor's files never show as
+/// changes.
 ///
 /// Each submodule with no checkout is then fetched on its own, nested ones too. One that fails is
 /// printed after [`SUBMODULE_LEFT_OUT`] and left uninitialised for a rerun to retry, and never stops
@@ -129,7 +129,7 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   fi
 fi
 moor_submodules ''
-for p in .moor/ .crabbox/ /.crabbox-sealed; do
+for p in .moor/; do
   grep -qxF -- "$p" .git/info/exclude 2>/dev/null || printf '%s\n' "$p" >> .git/info/exclude
 done
 :

@@ -65,7 +65,7 @@ moor_tree_refresh() {{
   [ -e .git ] || {{ moor_tree_cold; return 0; }}
   [ "$(git rev-parse --git-dir 2>/dev/null)" = .git ] || {{ moor_tree_cold 'not a git repo'; return 0; }}
   [ "$(git config --get remote.origin.url)" = {url} ] || {{ moor_tree_cold 'origin is another repo'; return 0; }}
-  rm -rf -- .moor .crabbox .crabbox-sealed .git/index.lock .git/HEAD.lock
+  rm -rf -- .moor .git/index.lock .git/HEAD.lock
   for op in rebase merge cherry-pick revert am; do git "$op" --abort >/dev/null 2>&1 || :; done
   git bisect reset >/dev/null 2>&1 || :
   rm -rf -- .git/rebase-merge .git/rebase-apply

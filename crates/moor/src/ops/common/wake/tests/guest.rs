@@ -101,7 +101,7 @@ fn a_guest_already_up_costs_one_look() {
 #[test]
 fn a_guest_wait_that_can_never_succeed_fails_at_once() {
     let f = asleep_without_agent();
-    let why = "crabbox refused its external routing directory: \"xdg\"; run `chmod go-w`";
+    let why = "docker refused its routing directory: \"xdg\"; run `chmod go-w`";
     f.driver.fail_peek_of(
         &environ(),
         DriverError::Misconfigured {

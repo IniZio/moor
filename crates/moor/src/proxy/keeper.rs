@@ -1,43 +1,33 @@
-//! What the controller keeps for each open Box: the tunnel that carries the Box's egress
-//! forwarder to the shared egress Proxy on this host, and the user's machine the Box holds.
+//! What the controller keeps for each open Box: the user's machine the Box holds.
 //!
-//! One thread per Box ticks every [`TICK`]. It follows the Box's handle, so a Box that gets a new
-//! machine gets a new tunnel and new machine forwards on the next tick. It reopens a dead tunnel
-//! with backoff, grants and frees the machine's slot, and lets everything go once the Box
-//! closes. Nothing outlives the controller: the next controller starts a keeper for each open
-//! Box as it starts.
-//!
-//! A keeper for a Box whose forwarder dials the shared Proxy itself opens no tunnel.
+//! One thread per Box ticks every [`TICK`]. It follows the Box's handle, grants and frees the
+//! machine's slot, and lets everything go once the Box closes. Nothing outlives the controller:
+//! the next controller starts a keeper for each open Box as it starts.
 //!
 //! The state lock is held only to read or swap state, never across a call into the Box, so
-//! [`Kept::up`] and [`Kept::park`] answer at once. Calls into the Box take turns on a second
-//! lock, which [`Keepers::end`] waits for while the Box is open: once it returns, the ended
-//! keeper opens nothing.
+//! [`Kept::park`] answers at once. Calls into the Box take turns on a second lock, which
+//! [`Keepers::end`] waits for while the Box is open: once it returns, the ended keeper does
+//! nothing.
 
 mod host;
-mod link;
 mod machine;
 #[cfg(test)]
 pub(crate) mod tests;
-mod tunnel;
 
 use std::collections::HashMap;
 use std::fmt::Arguments;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use moor_core::box_key::is_machine_handle;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
 use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::seam::clock::Clock;
-use moor_core::seam::driver::{Driver, TunnelHandle};
+use moor_core::seam::driver::Driver;
 use moor_core::{BoxHandle, BoxId};
 
 pub(crate) use host::{KeptProxy, NoProxyHost};
-use machine::MachineSlot;
 
 use super::Sink;
 use crate::store::{Store, StoreError};
@@ -49,15 +39,10 @@ pub(crate) const TICK: Duration = Duration::from_secs(2);
 pub(crate) struct Deps {
     /// The state store.
     pub(crate) store: Store,
-    /// Opens tunnels into Boxes.
+    /// Runs the Box's work.
     pub(crate) driver: Arc<dyn Driver>,
     /// Source of time and sleeping.
     pub(crate) clock: Arc<dyn Clock>,
-    /// The shared egress Proxy's socket each Box's tunnel reaches; `None` when Boxes dial it
-    /// themselves.
-    pub(crate) egress: Option<PathBuf>,
-    /// The machine runners, found by each machine's link row.
-    pub(crate) runners: crate::proxy::links::Runners,
     /// Where failures are logged.
     pub(crate) log: Sink,
 }
@@ -77,29 +62,19 @@ struct View {
 
 /// What one keeper holds between ticks.
 struct Inner {
-    /// The handle the tunnel and forwards lead into.
+    /// The handle the Box is on.
     handle: Option<BoxHandle>,
     /// The hands that handle is, which each machine write names.
     inc: Option<HandsInc>,
-    /// The tunnel; dropping it closes it.
-    tunnel: Option<Box<dyn TunnelHandle>>,
-    /// Whether the tunnel stays closed because the Box sleeps.
+    /// Whether the Box sleeps, so the machine's slot stays free.
     parked: bool,
-    /// Failed opens since the tunnel was last up.
-    failures: usize,
-    /// When the next open may be tried.
-    next_open: Option<Instant>,
-    /// Whether a tunnel was up before and died, so its reopening is recorded.
-    was_up: bool,
-    /// The user's machine attached to the Box.
-    machine: MachineSlot,
 }
 
 /// One Box's keeper.
 pub(crate) struct Kept {
     /// The Box.
     box_id: BoxId,
-    /// The Box port its tunnel listens on.
+    /// The Box port its forwarder listens on.
     box_port: u16,
     /// What it uses.
     deps: Arc<Deps>,
@@ -160,7 +135,7 @@ impl Keepers {
         k
     }
 
-    /// Ends every keeper, closing its tunnel and forwards, as the controller exits.
+    /// Ends every keeper as the controller exits.
     pub(crate) fn end_all(&self) {
         let all: Vec<Arc<Kept>> = lock(&self.kept).values().cloned().collect();
         for k in &all {
@@ -176,18 +151,14 @@ impl Keepers {
         lock(&self.kept).get(&box_id).cloned()
     }
 
-    /// Ends the Box's keeper, closing its tunnel and forwards. While the Box is open it first
-    /// waits for any call the keeper makes into the Box, so a keeper started after cannot lose
-    /// its tunnel to this one; a closed Box gets no later keeper, so its end does not wait.
+    /// Ends the Box's keeper. While the Box is open it first waits for any call the keeper makes
+    /// into the Box, so a keeper started after is not overtaken by this one; a closed Box gets
+    /// no later keeper, so its end does not wait.
     pub(crate) fn end(&self, box_id: BoxId) -> Option<Arc<Kept>> {
         let k = lock(&self.kept).remove(&box_id)?;
         k.stop.store(true, Ordering::Release);
         let closed = matches!(view(&k.deps.store, box_id), Ok(Some(v)) if !v.open);
         let busy = (!closed).then(|| lock(&k.busy));
-        let mut inner = k.lock();
-        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
-        drop(inner);
-        drop(held);
         drop(busy);
         Some(k)
     }
@@ -212,19 +183,14 @@ impl Kept {
             inner: Mutex::new(Inner {
                 handle: None,
                 inc: None,
-                tunnel: None,
                 parked,
-                failures: 0,
-                next_open: None,
-                was_up: false,
-                machine: MachineSlot::default(),
             }),
             busy: Mutex::new(()),
             stop: AtomicBool::new(false),
         }
     }
 
-    /// The Box port its tunnel listens on.
+    /// The Box port its forwarder listens on.
     pub(crate) const fn box_port(&self) -> u16 {
         self.box_port
     }
@@ -242,7 +208,6 @@ impl Kept {
                 return true;
             }
         };
-        let reach = self.reach_machine();
         let busy = lock(&self.busy);
         if self.stopped() {
             return false;
@@ -251,10 +216,7 @@ impl Kept {
         if parked {
             self.sleep_machine();
         } else {
-            drop(self.tend_tunnel());
-            if !self.stopped() {
-                self.tend_machine(reach);
-            }
+            self.grant_machine();
         }
         drop(busy);
         true
@@ -265,63 +227,24 @@ impl Kept {
         self.stop.load(Ordering::Acquire)
     }
 
-    /// Whether the Box's credential traffic can reach the shared Proxy now.
-    pub(crate) fn up(&self) -> bool {
-        let inner = self.lock();
-        !self.tunnels(inner.handle.as_ref()) || inner.tunnel.as_ref().is_some_and(|t| t.alive())
-    }
-
-    /// Whether the Box at `handle` reaches the Proxy over a tunnel this keeper holds. A machine's
-    /// Box dials the Proxy itself, so it has none.
-    pub(super) fn tunnels(&self, handle: Option<&BoxHandle>) -> bool {
-        self.deps.egress.is_some() && !handle.is_some_and(|h| is_machine_handle(h.as_str()))
-    }
-
-    /// Opens the tunnel now unless it is up or parked; why it is not up after.
-    pub(crate) fn bring_up(&self) -> Result<(), String> {
-        let (handle, inc) = view(&self.deps.store, self.box_id)
-            .map_err(|e| format!("cannot read the Box: {e}"))?
-            .map_or((None, None), |v| (v.handle, v.inc));
-        let tunnels = self.tunnels(handle.as_ref());
-        let busy = lock(&self.busy);
-        if self.follow(handle, inc) || !tunnels || self.stopped() {
-            return Ok(());
-        }
-        self.lock().next_open = None;
-        let up = self.tend_tunnel();
-        drop(busy);
-        up
-    }
-
     /// Whether the Box sleeps, or is about to, so the keeper holds nothing for it.
     pub(crate) fn parked(&self) -> bool {
         self.lock().parked
     }
 
-    /// Closes the tunnel and frees the machine's slot until [`Kept::restore`].
+    /// Frees the machine's slot until [`Kept::restore`].
     pub(crate) fn park(&self) {
-        let mut inner = self.lock();
-        inner.parked = true;
-        inner.was_up = false;
-        let tunnel = inner.tunnel.take();
-        drop(inner);
-        drop(tunnel);
+        self.lock().parked = true;
         self.sleep_machine();
     }
 
-    /// Opens the tunnel again after [`Kept::park`]; the machine's slot is asked for on the next
-    /// tick.
-    pub(crate) fn restore(&self) -> Result<(), String> {
+    /// Asks for the machine's slot again after [`Kept::park`], on the next tick.
+    pub(crate) fn restore(&self) {
         self.lock().parked = false;
-        self.bring_up()
     }
 
-    /// Lets go of the machine when the Box closed, closes the tunnel and removes the proxy row.
+    /// Lets go of the machine when the Box closed and removes the proxy row.
     pub(crate) fn close(&self) {
-        let mut inner = self.lock();
-        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
-        drop(inner);
-        drop(held);
         let closed = !matches!(view(&self.deps.store, self.box_id), Ok(Some(v)) if v.open);
         if closed {
             self.let_go_machine();
@@ -331,8 +254,7 @@ impl Kept {
         }
     }
 
-    /// Drops the tunnel and forwards when the Box's handle changed: they lead into a machine
-    /// that is gone. Whether the Box is parked.
+    /// Follows the Box to its new handle. Whether the Box is parked.
     fn follow(&self, handle: Option<BoxHandle>, inc: Option<HandsInc>) -> bool {
         let mut inner = self.lock();
         let parked = inner.parked;
@@ -344,19 +266,7 @@ impl Kept {
             self.say(format_args!("the Box moved to {}", to.as_str()));
         }
         inner.handle = handle;
-        inner.failures = 0;
-        inner.next_open = None;
-        inner.was_up = false;
-        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
-        drop(inner);
-        drop(held);
         parked
-    }
-
-    /// Whether what a call into the Box made for `handle` may be kept: the keeper still runs,
-    /// the Box is awake and still on that machine.
-    fn current(&self, inner: &Inner, handle: &BoxHandle) -> bool {
-        !self.stopped() && !inner.parked && inner.handle.as_ref() == Some(handle)
     }
 
     /// Appends `event` to the Box's events, reporting a failure.

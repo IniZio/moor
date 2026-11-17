@@ -1,8 +1,6 @@
 //! `show`: reconcile, then report Boxes, one Box's detail and its events.
 //! Each Box's agent is read once per command; a named Box reads only its own.
 
-use std::collections::HashMap;
-
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
@@ -15,10 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
 use crate::ops::common::target::{self, Rule};
-use crate::ops::common::view::{
-    agent_view, box_view_with_run, event_view, hide_unsupported_sleep,
-    hide_unsupported_sleep_cached, rfc3339,
-};
+use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc3339};
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
 
@@ -159,7 +154,6 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     } else {
         None
     };
-    hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {
             let last = usize::try_from(n).unwrap_or(usize::MAX);
@@ -191,7 +185,6 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
 /// Every open Box the viewer may act on.
 fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
     let mut boxes: Vec<BoxView> = Vec::new();
-    let mut sleep_caps = HashMap::new();
     for mut row in store.open_boxes()? {
         if !cx.viewer().may_act_on(row.user) {
             continue;
@@ -204,7 +197,6 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
         view.agent = agent_view(&reading);
         view.attention = attention(store, row.id)?;
-        hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
         boxes.push(view);
     }
     Ok(ShowView {

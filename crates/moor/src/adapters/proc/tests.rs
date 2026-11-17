@@ -45,11 +45,11 @@ fn only_base_env_and_extra_reach_child() {
 #[test]
 fn children_get_no_container_or_token_env() {
     let dir = TempDir::new().unwrap();
-    let body = r#"echo "$CRABBOX_FOO|$DOCKER_HOST|$GH_TOKEN|$GITHUB_TOKEN|$ANTHROPIC_API_KEY|$CLAUDE_CODE_OAUTH_TOKEN""#;
+    let body = r#"echo "$PLATFORM_FOO|$DOCKER_HOST|$GH_TOKEN|$GITHUB_TOKEN|$ANTHROPIC_API_KEY|$CLAUDE_CODE_OAUTH_TOKEN""#;
     let git = script(dir.path(), "git", body);
     let p = proc_with(vec![
         ("MOOR_GIT_BIN", git),
-        ("CRABBOX_FOO", "c".into()),
+        ("PLATFORM_FOO", "c".into()),
         ("DOCKER_HOST", "unix:///d.sock".into()),
         ("GH_TOKEN", "leak".into()),
         ("GITHUB_TOKEN", "leak".into()),

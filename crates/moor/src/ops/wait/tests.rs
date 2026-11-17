@@ -8,12 +8,11 @@ use moor_core::activity::{Probe, STARTUP_GRACE};
 use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
+use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, SleepKind};
-use moor_core::view::LaunchFailure;
+use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq};
 
 use super::{run, run_polling};
@@ -466,51 +465,6 @@ fn a_busy_agent_times_out_at_the_default_bound() {
     let v = run_polling(&cx, &req(None, None), Duration::from_secs(30)).unwrap();
     assert!(v.timed_out);
     assert_eq!(v.waited_ms, 1_800_000);
-}
-
-const SLEEP_LABELS: [(SleepKind, Option<&str>); 2] =
-    [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))];
-
-#[test]
-fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in SLEEP_LABELS {
-        let dir = tempfile::tempdir().unwrap();
-        let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
-        add_agentless(&cx);
-        let v = run(&cx, &req(None, None)).unwrap();
-        assert_eq!(v.boxed.driver.unwrap().sleep.after.as_deref(), after);
-    }
-}
-
-#[test]
-fn launch_failure_sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in SLEEP_LABELS {
-        let dir = tempfile::tempdir().unwrap();
-        let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
-        let id = ready(&cx, add(&cx));
-        let failure = LaunchFailure {
-            step: "pane".into(),
-            message: "no tab".into(),
-            tail: None,
-            at: "2026-01-01T00:00:00Z".into(),
-        };
-        let set = Fields {
-            launch_failure: Field::Set(serde_json::to_string(&failure).unwrap()),
-            ..Fields::default()
-        };
-        cx.store()
-            .unwrap()
-            .apply(Decision::new(id).set(set))
-            .unwrap();
-        let e = run(&cx, &req(None, None)).unwrap_err();
-        let shown = e.value.unwrap();
-        assert_eq!(
-            shown
-                .pointer("/driver/sleep/after")
-                .and_then(|v| v.as_str()),
-            after
-        );
-    }
 }
 
 /// Records a steer to `demo` sent once its agent had ended `turn_before` turns.

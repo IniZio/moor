@@ -1,4 +1,4 @@
-//! The environment the Box agent starts with: crabbox's own names are cleared and the agent's own set.
+//! The environment the Box agent starts with.
 
 use std::collections::BTreeMap;
 
@@ -7,28 +7,6 @@ use moor_core::name::BoxPath;
 
 /// The variable that makes Claude Code accept bypassPermissions as root.
 pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
-
-/// The crabbox gate variables; the agent never sees them.
-const GATE_VARS: [&str; 8] = [
-    "child",
-    "child_identity",
-    "child_pid",
-    "command_umask",
-    "gate",
-    "run_dir",
-    "state",
-    "token",
-];
-
-/// Shell lines that unset the crabbox gate names, every `NSC_*` name and `token` in any case.
-pub(super) fn clear_lines() -> Vec<String> {
-    vec![
-        format!("unset {}", GATE_VARS.join(" ")),
-        "for moor_v in $(env | sed -n 's/^\\(NSC_[A-Za-z0-9_]*\\)=.*/\\1/p; \
-         s/^\\([Tt][Oo][Kk][Ee][Nn]\\)=.*/\\1/p'); do unset \"$moor_v\"; done; unset moor_v"
-            .to_owned(),
-    ]
-}
 
 /// True when `name` is a shell identifier.
 fn identifier(name: &str) -> bool {

@@ -40,19 +40,19 @@ fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
 }
 
 #[test]
-fn a_box_dials_its_own_tunnel_port_on_the_local_route_and_only_wss_elsewhere() {
+fn a_box_dials_moor_host_on_the_local_route_and_only_wss_elsewhere() {
     let local = EgressRoute::Local {
         socket: "/s/egress/egress.sock".into(),
-        host: None,
+        host: Some("172.17.0.1:8443".parse().unwrap()),
     };
     assert_eq!(
-        local.upstream(None, 20555),
-        Ok("ws://127.0.0.1:20555/egress".to_owned())
+        local.upstream(),
+        Ok("ws://moor-host:8443/egress".to_owned())
     );
     assert_eq!(local.socket(), Some(Path::new("/s/egress/egress.sock")));
     let direct = EgressRoute::parse("wss://moor.example/egress").unwrap();
     assert_eq!(
-        direct.upstream(None, 20555),
+        direct.upstream(),
         Ok("wss://moor.example/egress".to_owned())
     );
     assert_eq!(direct.socket(), None);
@@ -184,7 +184,7 @@ const KEY: &[u8] = b"egress-key";
 fn tunneled() -> EgressRoute {
     EgressRoute::Local {
         socket: "/s/egress/egress.sock".into(),
-        host: None,
+        host: Some("172.17.0.1:8443".parse().unwrap()),
     }
 }
 
@@ -197,21 +197,12 @@ fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
         ]))
     };
     let route = env("172.17.0.1:8443").unwrap();
-    let machine = BoxHandle::new("m3/moor-1a2b3c4d-7".to_owned());
-    let crabbox = BoxHandle::new("crab-1".to_owned());
     assert_eq!(
-        route.upstream(Some(&machine), 20555),
+        route.upstream(),
         Ok("ws://moor-host:8443/egress".to_owned())
     );
-    assert_eq!(
-        route.upstream(Some(&crabbox), 20555),
-        Ok("ws://127.0.0.1:20555/egress".to_owned())
-    );
     let unset = EgressRoute::from_env(&Env::from_pairs([("MOOR_STATE_DIR", "/s")])).unwrap();
-    assert!(unset
-        .upstream(Some(&machine), 20555)
-        .unwrap_err()
-        .contains("MOOR_EGRESS_LISTEN"));
+    assert!(unset.upstream().unwrap_err().contains("MOOR_EGRESS_LISTEN"));
     for ok in [
         "127.0.0.1:9",
         "10.1.2.3:9",
@@ -254,7 +245,7 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
     assert_eq!(config.get("listen").unwrap(), "127.0.0.1:10556");
     assert_eq!(
         config.get("upstream").unwrap(),
-        "ws://127.0.0.1:20555/egress"
+        "ws://moor-host:8443/egress"
     );
     let sent = config.get("token").unwrap().as_str().unwrap();
     assert!(

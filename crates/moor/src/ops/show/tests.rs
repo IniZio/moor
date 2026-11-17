@@ -13,7 +13,7 @@ use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFiel
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
@@ -133,23 +133,6 @@ fn show_lists_open_boxes_with_no_selection() {
     let names: Vec<_> = v.boxes.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);
     assert!(v.boxed.is_none() && v.events.is_none());
-}
-
-#[test]
-fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))] {
-        let dir = tempfile::tempdir().unwrap();
-        let driver = Arc::new(FakeDriver::new().sleep_kind(kind));
-        let cx = cx(dir.path(), &driver);
-        let id = add(&cx, "a");
-        ready_box(&cx, &driver, id);
-        let v = run(&cx, &req(Some("a"), None)).unwrap();
-        let shown = v.boxed.unwrap().driver.unwrap().sleep.after;
-        assert_eq!(shown.as_deref(), after);
-        let v = run(&cx, &req(None, None)).unwrap();
-        let listed = first(&v).driver.as_ref().unwrap().sleep.after.clone();
-        assert_eq!(listed.as_deref(), after);
-    }
 }
 
 #[test]

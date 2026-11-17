@@ -7,7 +7,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, SleepOutcome};
 use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
@@ -394,15 +394,6 @@ fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
     assert_eq!(states(&f), (BoxLifecycle::Ready, HandsState::Ready));
     assert_eq!(session(&f), SessionState::Idle);
     assert_refused_untouched(&f);
-}
-
-#[test]
-fn sleep_label_follows_provider_sleep_support() {
-    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("5m"))] {
-        let f = idle_with(FakeDriver::new().sleep_kind(kind));
-        let v = run(&f.cx, &req()).unwrap();
-        assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
-    }
 }
 
 #[test]

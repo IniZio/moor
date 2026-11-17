@@ -56,11 +56,10 @@ on personal nodes. Personal nodes need no config. See
 
 ### `drivers`
 
-`drivers.<provider>` holds settings for one crabbox provider.
+`drivers.<provider>` holds settings for one provider.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `lookup_timeout_secs` | integer | 5, or 20 for `external` | How long moor waits for crabbox to find a Box's ssh target. |
 | `strip_env` | list of names | empty | Variables the provider puts in the Box that moor removes from every command. |
 | `cache_volumes` | boolean | `true` | `false` starts every Box on the provider cold. |
 
@@ -192,7 +191,7 @@ cache:
 | `agent.model` | none | The default agent model. `moor start --model` wins. |
 | `agent.install` | `true` | Install the agent in a Box that lacks it. |
 | `dotfiles.path`, `dotfiles.install` | none | A dotfiles directory and its install script, run on each new Box. |
-| `tools.crabbox`, `tools.claude`, `tools.ssh`, `tools.git` | the name on `PATH` | The program moor runs for each tool. |
+| `tools.claude`, `tools.ssh`, `tools.git` | the name on `PATH` | The program moor runs for each tool. |
 | `controller.socket` | none | Send CLI commands to the controller on this socket. |
 | `controller.ssh` | none | Send CLI commands over ssh to `moor controller attach`. |
 

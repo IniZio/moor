@@ -543,15 +543,6 @@ fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
         store,
         driver: Arc::new(crate::testing::driver::FakeDriver::new()),
         clock,
-        egress: None,
-        runners: crate::proxy::links::Runners::new(
-            dir.path(),
-            None,
-            Arc::new(crate::testing::clock::FakeClock::new(
-                moor_core::seam::clock::Ts::from_millis(1_000),
-            )),
-            None,
-        ),
         log: Arc::new(Mutex::new(io::sink())),
     });
     KEEPERS.start(&deps, id, 41_000);

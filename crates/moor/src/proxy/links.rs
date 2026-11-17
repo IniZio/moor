@@ -4,10 +4,9 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_client::link::broker;
-use moor_client::link::reach::{self, Runner, Service, StdConn};
+use moor_client::link::reach::Runner;
 use moor_client::link::status::Status;
 use moor_core::seam::clock::Clock;
 
@@ -72,21 +71,6 @@ impl Runners {
         let runner = self.runner(machine_id)?;
         blocking(broker::status(&runner, machine_id))
     }
-}
-
-/// A blocking connection to `runner` for `service`, its hello sent, given up after `within`.
-///
-/// # Errors
-/// The runner cannot be reached.
-pub(crate) fn connect(
-    runner: &Runner,
-    service: Service,
-    within: Duration,
-) -> Result<StdConn, String> {
-    blocking(async {
-        let conn = runner.connect_within(service, within).await?;
-        reach::into_blocking(conn).map_err(|e| e.to_string())
-    })
 }
 
 /// Runs `call` to completion on a runtime of its own, off any runtime the caller is on.

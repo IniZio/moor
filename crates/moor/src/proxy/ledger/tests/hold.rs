@@ -28,7 +28,7 @@ use crate::testing::driver::FakeDriver;
 
 /// A store with one ready Box and its ledger, as the shared egress Proxy reaches it.
 struct Rig {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
     clock: Arc<FakeClock>,
     store: Store,
     driver: Arc<FakeDriver>,
@@ -44,7 +44,7 @@ fn rig() -> Rig {
     let id = ready_box(&store, &driver);
     let ledger = box_ledger(&store, id);
     Rig {
-        dir,
+        _dir: dir,
         clock,
         store,
         driver,
@@ -118,15 +118,6 @@ impl Rig {
             store: self.store.clone(),
             driver: Arc::clone(&self.driver) as Arc<dyn Driver>,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-            egress: None,
-            runners: crate::proxy::links::Runners::new(
-                self.dir.path(),
-                None,
-                Arc::new(crate::testing::clock::FakeClock::new(
-                    moor_core::seam::clock::Ts::from_millis(1_000),
-                )),
-                None,
-            ),
             log: Arc::new(Mutex::new(std::io::sink())),
         };
         KEEPERS.hold(&Arc::new(deps), self.id, 41_000)
@@ -175,7 +166,7 @@ fn an_asleep_claim_is_released_while_parked_and_waits_once_asked_up() {
     r.store
         .apply(Decision::new(r.id).hands_input(HandsInc::FIRST, HandsInput::Wake))
         .unwrap();
-    kept.restore().unwrap();
+    kept.restore();
     assert_eq!(r.missing(), NO_SLOT, "awake, before the keeper's next tick");
     KEEPERS.end(r.id);
 }

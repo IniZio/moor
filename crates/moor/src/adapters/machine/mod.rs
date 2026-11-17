@@ -15,8 +15,8 @@ use moor_core::box_key::{parse_machine_handle, parse_pool_slug, BoxKey, Controll
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, Forwards, HandlesListing, Launched, LocalTunnel, Place,
-    Released, RunEnd, SleepKind, SleepOutcome, StepDone, TunnelHandle,
+    ExecOutcome, ExecSpec, Followed, Forwards, HandlesListing, Launched, Place, Released, RunEnd,
+    SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 
@@ -123,11 +123,6 @@ impl Forwards for Machines {}
 impl Driver for Machines {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         Ok(DriverCaps {
-            sleep: SleepKind::Suspend,
-            wake: true,
-            // A machine's Boxes reach the Proxy over Direct egress, never a tunnel from here;
-            // admission asks for the capability as the way to the Proxy.
-            reverse_tunnel: true,
             has_workdir: true,
             cache_volumes: false,
         })
@@ -306,21 +301,6 @@ impl Driver for Machines {
         ]
         .map(str::to_owned)
         .to_vec())
-    }
-
-    fn reverse_tunnel(
-        &self,
-        _handle: &BoxHandle,
-        _box_port: u16,
-        _socket: &Path,
-    ) -> Result<Box<dyn TunnelHandle>, DriverError> {
-        Err(DriverError::Unsupported(
-            "a reverse tunnel into a machine's Box",
-        ))
-    }
-
-    fn local_tunnel(&self, _handle: &BoxHandle, _port: u16) -> Result<LocalTunnel, DriverError> {
-        Err(DriverError::Unsupported("local tunnel"))
     }
 
     fn batch(

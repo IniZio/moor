@@ -51,7 +51,7 @@ fn a_failing_box_list_shows_once_on_a_starting_box_in_plain_words() {
         .notes_while_acquiring(&["machine created"], move || {
             driver.fail_list_always(DriverError::Failed {
                 summary:
-                    "box list failed (crabbox exit 2): provider=external refuses it token=ab12CD34"
+                    "box list failed (docker exit 2): provider=docker refuses it token=ab12CD34"
                         .to_owned(),
             });
             let settle = Cx::fake_with(&dir, driver.clone(), proc.clone(), UserConfig::default());
@@ -75,7 +75,7 @@ fn a_failing_box_list_shows_once_on_a_starting_box_in_plain_words() {
         *seen.lock().unwrap(),
         [
             "machine created",
-            "box list failed (crabbox exit 2): provider=external refuses it …"
+            "box list failed (docker exit 2): provider=docker refuses it …"
         ]
     );
 }
@@ -85,7 +85,7 @@ fn a_failing_box_list_warning_names_the_cause_without_secrets() {
     let w = world(FakeDriver::new());
     run(&w.cx, &req("demo")).unwrap();
     w.driver.fail_list_always(DriverError::Failed {
-        summary: "box list failed (crabbox exit 2)\nprovider=external refuses it token=ab12CD34"
+        summary: "box list failed (docker exit 2)\nprovider=docker refuses it token=ab12CD34"
             .to_owned(),
     });
     let settle = Cx::fake_with(
@@ -99,7 +99,7 @@ fn a_failing_box_list_warning_names_the_cause_without_secrets() {
     assert_eq!(warnings.len(), 1);
     let warning = warnings.first().unwrap();
     assert!(
-        warning.message.contains("provider=external refuses it …"),
+        warning.message.contains("provider=docker refuses it …"),
         "{}",
         warning.message
     );

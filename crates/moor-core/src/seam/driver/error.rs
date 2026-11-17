@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use super::TunnelFailure;
-
 /// The only error shape Driver adapters return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverError {
@@ -26,13 +24,6 @@ pub enum DriverError {
     Unavailable(String),
     /// Provider cannot do this.
     Unsupported(&'static str),
-    /// A reverse tunnel stopped or stalled before it was ready.
-    Tunnel {
-        /// What went wrong.
-        failure: TunnelFailure,
-        /// Last lines the tunnel process wrote to stderr.
-        stderr_tail: String,
-    },
     /// The ssh connection to the Box dropped, so whether the remote command ran is unknown.
     Transport {
         /// Last lines ssh wrote to stderr, as one line.

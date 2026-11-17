@@ -5,7 +5,6 @@ use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_adapter::{BoxSetup, LaunchCtx};
 use moor_core::seam::proc::Tool;
 
-use super::super::agent_env;
 use super::super::profile_writer::FAILURES_FILE;
 use super::{AGENT_PATH_LINE, BRIEF_FILE, SCRIPT_FILE};
 
@@ -44,7 +43,7 @@ pub(super) fn script(
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
-/// names and crabbox's own names are unset before anything else runs, and the `env` exports run
+/// names are unset before anything else runs, and the `env` exports run
 /// just before the profile `writers`, which run last before the agent, with the agent on `PATH`
 /// and the Proxy reachable.
 pub(super) fn script_stripping(
@@ -80,15 +79,11 @@ pub(super) fn script_stripping(
         AGENT_PATH_LINE.to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
-    // The platform's secrets and crabbox's names go before anything else runs.
+    // The platform's secrets go before anything else runs.
     let mut at = 4;
     if !strip_env.is_empty() {
         let names = strip_env.iter().map(|n| quote(n)).collect::<Vec<_>>();
         lines.insert(at, format!("unset {}", names.join(" ")));
-        at += 1;
-    }
-    for line in agent_env::clear_lines() {
-        lines.insert(at, line);
         at += 1;
     }
     lines.insert(at + 1, remove);

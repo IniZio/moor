@@ -81,7 +81,7 @@ pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::ProxyRow;
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
-pub(crate) use users::machine::{Change, HeldMachine, MachineWake, NodeSettings, SettingsWrote};
+pub(crate) use users::machine::{Change, MachineWake, NodeSettings, SettingsWrote};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
 mod webhook_outbox;

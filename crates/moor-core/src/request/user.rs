@@ -184,7 +184,7 @@ pub enum UserCmd {
         labels: Vec<String>,
         /// How many Boxes may hold it at once.
         capacity: u16,
-        /// The crabbox provider the machine offers Boxes on.
+        /// The provider the machine offers Boxes on.
         pool: Option<String>,
     },
     /// Remove one of the caller's user's machines.

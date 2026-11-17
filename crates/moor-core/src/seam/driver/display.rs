@@ -2,7 +2,6 @@
 
 use std::fmt;
 
-use super::tunnel::fmt_tunnel;
 use super::DriverError;
 
 impl fmt::Display for DriverError {
@@ -15,10 +14,6 @@ impl fmt::Display for DriverError {
             Self::Timeout(d) => write!(f, "box operation timed out after {}s", d.as_secs()),
             Self::Unavailable(m) => write!(f, "box provider unavailable: {m}"),
             Self::Unsupported(what) => write!(f, "not supported by this provider: {what}"),
-            Self::Tunnel {
-                failure,
-                stderr_tail,
-            } => fmt_tunnel(f, *failure, stderr_tail),
             Self::Transport { stderr_tail } if stderr_tail.is_empty() => {
                 f.write_str("moor lost the ssh connection to the Box")
             }

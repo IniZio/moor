@@ -1,18 +1,13 @@
 //! Store rows to the core views.
 
-use std::collections::HashMap;
-
 use moor_core::activity::AgentState;
 use moor_core::config::UserConfig;
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::SleepKind;
 use moor_core::view::{AgentView, BoxSleepView, BoxView, DriverView, EventView, RunView};
-use moor_core::ProviderId;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::cx::Cx;
 use crate::ops::common::activity::Reading;
 use crate::store::{BoxRow, EventRow, HandsRow, RunRow};
 
@@ -151,40 +146,6 @@ pub(crate) fn box_view_with_run(
         attention: Vec::new(),
         held_machine: None,
         said: None,
-    }
-}
-
-/// Drop the idle-sleep label when the Box's provider cannot sleep.
-///
-/// A provider whose capabilities cannot be read keeps the label.
-pub(crate) fn hide_unsupported_sleep(view: &mut BoxView, cx: &Cx) {
-    hide_unsupported_sleep_cached(view, cx, &mut HashMap::new());
-}
-
-/// Like [`hide_unsupported_sleep`], reading each provider's capabilities once per `cache`.
-pub(crate) fn hide_unsupported_sleep_cached(
-    view: &mut BoxView,
-    cx: &Cx,
-    cache: &mut HashMap<String, bool>,
-) {
-    hide_unsupported_box_sleep(view.driver.as_mut(), cx, cache);
-}
-
-/// Drop the idle-sleep label from `b` when its provider cannot sleep.
-pub(crate) fn hide_unsupported_box_sleep(
-    b: Option<&mut DriverView>,
-    cx: &Cx,
-    cache: &mut HashMap<String, bool>,
-) {
-    let Some(b) = b else {
-        return;
-    };
-    let cannot_sleep = *cache.entry(b.provider.clone()).or_insert_with(|| {
-        let caps = cx.driver().caps(&ProviderId::new(b.provider.clone()));
-        matches!(caps, Ok(c) if c.sleep == SleepKind::None)
-    });
-    if cannot_sleep {
-        b.sleep.after = None;
     }
 }
 

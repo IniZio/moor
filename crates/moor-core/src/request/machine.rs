@@ -27,7 +27,7 @@ pub struct MachineEnrollReq {
     /// How many Boxes may hold it at once.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub capacity: u16,
-    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
+    /// The provider the machine offers Boxes on, when it hosts a Box pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<String>,
 }
@@ -203,7 +203,7 @@ pub struct MachineLink {
     /// The cache disk, in GB, its agent set aside.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_gb: Option<u32>,
-    /// What its crabbox provider supports.
+    /// What its provider supports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
     /// The host's total memory, in MiB.

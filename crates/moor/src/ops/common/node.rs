@@ -18,7 +18,7 @@ use moor_core::{ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts::{provider_caps, require_reverse_tunnel};
+use crate::ops::common::facts::provider_caps;
 use crate::ops::common::room;
 use crate::store::{BoxRow, HandsRow, Store};
 
@@ -189,7 +189,7 @@ pub(crate) fn admit(
         room::make_room_on(cx, store, &node, row.name.as_str())?;
     }
     let provider = runtime_id(&node);
-    let caps = require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
+    let caps = provider_caps(cx, provider.as_str())?;
     let on_it = BoxSpec {
         labels: spec.labels,
         node: Some(node.name.clone()),
@@ -249,7 +249,7 @@ pub(crate) fn preflight(
         return Ok(None);
     };
     let provider = runtime_id(node);
-    require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
+    provider_caps(cx, provider.as_str())?;
     Ok(matches!(node.scope, Scope::Personal { .. })
         .then(|| format!("starting on your node {}", node.name)))
 }

@@ -9,7 +9,6 @@ use moor_core::seam::driver::{Driver, Place};
 
 use super::super::{Deps, Keepers, KeptProxy};
 use super::World;
-use crate::proxy::links::Runners;
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
 
@@ -21,13 +20,6 @@ fn kept_proxy(w: &World) -> KeptProxy {
         store: w.store.clone(),
         driver: Arc::clone(&w.driver) as Arc<dyn Driver>,
         clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-        egress: None,
-        runners: Runners::new(
-            w.dir.path(),
-            None,
-            Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-            None,
-        ),
         log: w.log.clone(),
     };
     KeptProxy {
@@ -50,7 +42,7 @@ fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it(
 
     use crate::store::db::DbExt as _;
 
-    let w = World::new([]);
+    let w = World::new();
     let before = w.store.proxy(w.id).unwrap().unwrap();
     w.store
         .writer()
@@ -109,7 +101,7 @@ fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it(
 fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
     use moor_core::seam::proxy_host::{ProxyHost as _, ProxyHostError, ProxySpec};
 
-    let w = World::new([]);
+    let w = World::new();
     let environ = moor_core::BoxPath::restore("/proc/self/environ").unwrap();
     w.driver
         .put_file(
@@ -127,13 +119,6 @@ fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
         store: w.store.clone(),
         driver: Arc::clone(&w.driver) as Arc<dyn Driver>,
         clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-        egress: Some(socket.clone()),
-        runners: Runners::new(
-            w.dir.path(),
-            None,
-            Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-            None,
-        ),
         log: w.log.clone(),
     });
     host.route = crate::proxy::route::EgressRoute::Local { socket, host: None };
@@ -150,8 +135,4 @@ fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
         unreachable!("the proxy step went on without the shared egress Proxy")
     };
     assert!(why.contains("egress Proxy is not running"), "{why}");
-    assert!(
-        w.driver.tunnels().is_empty(),
-        "no tunnel leads to a dead Proxy"
-    );
 }

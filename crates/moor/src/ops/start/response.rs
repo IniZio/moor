@@ -5,7 +5,7 @@ use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 
 use crate::cx::Cx;
 use crate::ops::common::provision::Provisioned;
-use crate::ops::common::view::{box_view, hide_unsupported_sleep};
+use crate::ops::common::view::box_view;
 use crate::store::BoxRow;
 
 /// Puts the launch outcome in the view, naming a failure in a warning too.
@@ -27,8 +27,7 @@ pub(super) fn queued_view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
 
 /// The response for `row`; nothing past the Box runs yet.
 pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
-    let mut view = box_view(row, cx.config());
-    hide_unsupported_sleep(&mut view, cx);
+    let view = box_view(row, cx.config());
     StartView {
         boxed: view,
         attached,

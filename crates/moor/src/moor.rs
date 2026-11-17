@@ -89,12 +89,6 @@ impl Moor {
         wire::prepare_egress(env)
     }
 
-    /// Whether the keepers in `env` hold a tunnel into each Box, which only a local shared
-    /// egress Proxy needs.
-    pub(crate) fn keepers_tunnel(env: &Env) -> bool {
-        wire::keepers_tunnel(env)
-    }
-
     /// What refuses every op still waiting for a Box's turn in `env`, and every later one, with a
     /// restarting error; holders finish.
     pub(crate) fn owners_drain(env: &Env) -> impl Fn() + Send + Sync + 'static {

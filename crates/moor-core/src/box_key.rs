@@ -69,7 +69,7 @@ pub struct PoolSeat {
 }
 
 /// The controller, Box and incarnation a pool lease slug names; `None` for any other text, so a
-/// host's agent keeps arbitrary crabbox names out.
+/// host's agent keeps arbitrary names out.
 ///
 /// The slug is `moor-{controller}-{id}` for the first incarnation and
 /// `moor-{controller}-{id}-h{inc}` for a later one.
@@ -131,7 +131,7 @@ impl BoxKey {
         (id.to_string() == name).then(|| Self::new(BoxId::new(id)))
     }
 
-    /// The crabbox slug, `moor-{id}-{nonce}`.
+    /// The Box slug, `moor-{id}-{nonce}`.
     #[must_use]
     pub fn slug(self, nonce: &str) -> String {
         format!("moor-{}-{nonce}", self.0.get())

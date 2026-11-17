@@ -53,7 +53,7 @@ pub(crate) struct Ask {
     labels: Vec<String>,
     /// How many Boxes may hold the machine at once.
     slots: u16,
-    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
+    /// The provider the machine offers Boxes on, when it hosts a Box pool.
     #[serde(default)]
     pool: Option<String>,
 }

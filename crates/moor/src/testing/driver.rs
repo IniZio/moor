@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, HandlesListing, Place, Released, RunEnd, SleepKind,
-    SleepOutcome, StepDone,
+    ExecOutcome, ExecSpec, Followed, HandlesListing, Place, Released, RunEnd, SleepOutcome,
+    StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -20,7 +20,6 @@ use moor_core::{BoxHandle, BoxPath, ProviderId};
 pub(crate) use runs::{eventually, live_in_group};
 pub(crate) use script::{is_clone_exec, PutCall};
 use script::{layout, write_log, CopyCall, ExecHook, PeekCall};
-pub(crate) use tunnel::{TunnelReply, LOCAL_PORT_OFFSET};
 
 #[derive(Default)]
 struct State {
@@ -73,8 +72,6 @@ struct State {
     on_release: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
-    tunnel: tunnel::TunnelState,
-    sleep_kind: Option<SleepKind>,
     cache: knobs::CacheState,
     runs: runs::RunState,
     exec_knobs: hooks::ExecKnobs,
@@ -103,7 +100,10 @@ impl FakeDriver {
 
 impl Driver for FakeDriver {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
-        Ok(self.caps_reply())
+        Ok(DriverCaps {
+            has_workdir: true,
+            cache_volumes: self.st().cache.on,
+        })
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
@@ -173,17 +173,6 @@ impl Driver for FakeDriver {
 
     fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
         self.listed_handles(handles)
-    }
-
-    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path) -> tunnel::Opened {
-        self.tunnel_request(h, bp, socket)
-    }
-    fn local_tunnel(
-        &self,
-        h: &BoxHandle,
-        bp: u16,
-    ) -> Result<moor_core::seam::driver::LocalTunnel, DriverError> {
-        self.local_request(h, bp)
     }
 
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
@@ -375,4 +364,3 @@ mod sleeps;
 #[cfg(test)]
 mod tests;
 mod trees;
-mod tunnel;

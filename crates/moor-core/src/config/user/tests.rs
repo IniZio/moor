@@ -92,10 +92,10 @@ fn a_single_node_parses_as_the_default() {
 #[test]
 fn box_and_tools_parse() {
     let c = ok("box: {size: large, sleep_after: 30m}\n\
-         tools: {crabbox: /opt/crabbox, git: git2}\n");
+         tools: {ssh: /opt/ssh, git: git2}\n");
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
-    assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
+    assert_eq!(c.tools.ssh, Some(PathBuf::from("/opt/ssh")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
     assert_eq!(c.tools.herdr, None);
 }
@@ -105,8 +105,7 @@ fn accepted_docs() {
     let docs = [
         "box: {size: small}",
         "box: {size: xlarge}\nnodes: {x: {runtime: custom-provider}}",
-        "drivers: {crabbox: {strip_env: [A]}}",
-        "drivers: {crabbox: {lookup_timeout_secs: 30}}",
+        "drivers: {docker: {strip_env: [A]}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
@@ -138,7 +137,7 @@ fn rejected_docs_with_paths() {
             "drivers.x.sleep_after_minutes",
         ),
         ("dotfiles: {nope: 1}", "dotfiles.nope"),
-        ("drivers: {crabbox: {nope: 1}}", "drivers.crabbox.nope"),
+        ("drivers: {docker: {nope: 1}}", "drivers.docker.nope"),
         (
             "mcp_servers: {m: {command: x, nope: 1}}",
             "mcp_servers.m.nope",
@@ -240,20 +239,10 @@ fn display_names_file_and_key_path() {
 
 #[test]
 fn zero_counts_are_rejected_by_type() {
-    for (doc, path) in [
-        (
-            "nodes: {c: {runtime: x, max_boxes: 0}}",
-            "nodes.c.max_boxes",
-        ),
-        (
-            "drivers: {c: {lookup_timeout_secs: 0}}",
-            "drivers.c.lookup_timeout_secs",
-        ),
-    ] {
-        let e = err(doc);
-        assert_eq!(e.path, path, "{doc}: {e}");
-        assert!(e.reason.contains("nonzero"), "{doc}: {e}");
-    }
+    let doc = "nodes: {c: {runtime: x, max_boxes: 0}}";
+    let e = err(doc);
+    assert_eq!(e.path, "nodes.c.max_boxes", "{doc}: {e}");
+    assert!(e.reason.contains("nonzero"), "{doc}: {e}");
 }
 
 #[test]
@@ -275,13 +264,6 @@ fn strip_env_rejects_bad_names() {
             "{doc}: {e}"
         );
     }
-}
-
-#[test]
-fn lookup_timeout_secs_parses() {
-    let c = ok("drivers: {crabbox: {lookup_timeout_secs: 30}}");
-    let timeout = c.drivers.get("crabbox").and_then(|d| d.lookup_timeout_secs);
-    assert_eq!(timeout, NonZeroU32::new(30));
 }
 
 #[test]

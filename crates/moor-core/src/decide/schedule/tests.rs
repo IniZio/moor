@@ -17,7 +17,7 @@ fn node(n: &str, scope: Scope, labels: &[&str]) -> Node {
         name: name(n),
         scope,
         machine: None,
-        runtime: "crabbox".to_owned(),
+        runtime: "docker".to_owned(),
         provides: None,
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         max_boxes: None,
@@ -64,7 +64,7 @@ fn run_without_shared(nodes: &[Node], s: &BoxSpec) -> Verdict {
 fn bound(node: &str, machine_id: Option<i64>) -> Verdict {
     Verdict::Bind {
         node: name(node),
-        runtime: "crabbox".to_owned(),
+        runtime: "docker".to_owned(),
         machine_id,
     }
 }
@@ -453,7 +453,7 @@ fn a_full_count_still_waits_on_a_node_with_headroom() {
 fn a_new_box_joins_the_queue_on_a_node_that_reports_memory() {
     let bound = Verdict::Bind {
         node: name("hv"),
-        runtime: "crabbox".to_owned(),
+        runtime: "docker".to_owned(),
         machine_id: None,
     };
     let silent = |waiting| Node {
