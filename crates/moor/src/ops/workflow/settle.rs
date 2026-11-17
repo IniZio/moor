@@ -66,8 +66,6 @@ pub(super) fn expire_runs(
     let agent = |id| store.first_launch_at(id).ok().flatten();
     let waited = |run: RunId| store.run_entries(run).map_or(0, |l| waited_millis(&l));
     for u in workflow_unanswered(&open, now) {
-        // Nothing is running, so no session to end and no Box to touch: the owner may still
-        // open it. Declined is not a failure, so the next firing is not held off by it.
         let key = (w.id, &u.repo, u.due_at);
         let lines = [HistoryEntry::Unanswered { step: u.at.clone() }];
         let outcome = RunOutcome::Declined { at: u.at.clone() };
