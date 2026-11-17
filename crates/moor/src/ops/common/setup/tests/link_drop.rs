@@ -66,7 +66,7 @@ fn reattached(events: &[ExtraEvent]) -> Vec<u32> {
 }
 
 #[test]
-fn a_link_lost_mid_line_waits_for_the_relink_and_follows_the_same_run_to_ready() {
+fn a_link_lost_mid_line_waits_for_the_relink_and_follows_the_same_run_to_its_exit() {
     let driver = FakeDriver::new().exec_stdout([B_RUNNING]).exec_results(
         std::iter::once(cut())
             .chain((0..30).map(|_| unlinked()))
