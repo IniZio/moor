@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::seam::agent_adapter::{AgentAdapter, Key};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, Place, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 
@@ -44,7 +44,9 @@ pub(super) fn steer(
         ),
     };
     let steps = [BoxStep::Run(format!("{AGENT_PATH_LINE}\n{line}"))];
-    let done = driver.batch(&s.handle, &[], &steps, deadline).pop();
+    let done = driver
+        .batch(&s.handle, &[], Place::Agent, &steps, deadline)
+        .pop();
     let stdout = match done {
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code: 0 },

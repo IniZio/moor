@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::config::BoxSettings;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxId, Warning};
 
@@ -48,12 +48,12 @@ pub(crate) fn run(
 ) -> Result<ExecOutcome, String> {
     let env = box_exec::prepare(cx, site, proxy, cfg, Purpose::Run)
         .map_err(|e| format!("could not prepare the install: {e}"))?;
-    let exec = ExecSpec {
-        argv: env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
-        env: env.vars(),
-        cwd: None,
-        output: Some(Output::Log(log.to_path_buf())),
-    };
+    let exec = ExecSpec::new(
+        Place::Agent,
+        env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
+    )
+    .env(env.vars())
+    .output(Some(Output::Log(log.to_path_buf())));
     cx.driver()
         .exec(site.handle, &exec, Deadline(deadline))
         .map_err(|e| exec_failure(what, &e))

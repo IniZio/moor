@@ -127,6 +127,26 @@ fn f() {
     };
 }
 RS
+exec_env exec-env-builder-shorthand fail <<'RS'
+fn f(env: Vec<(String, String)>) {
+    let _ = ExecSpec::new(Place::Work, vec![]).env(env);
+}
+RS
+exec_env exec-env-builder-multiline fail <<'RS'
+fn f() {
+    let _ = ExecSpec::new(Place::Work, vec![])
+        .env(
+            exec.vars(),
+        );
+}
+RS
+exec_env exec-env-builder-vars pass <<'RS'
+fn f() {
+    let _ = ExecSpec::new(Place::Work, vec![])
+        .env(exec.vars())
+        .cwd(exec.cwd());
+}
+RS
 exec_env exec-env-vars pass <<'RS'
 fn f() {
     let _ = ExecSpec {

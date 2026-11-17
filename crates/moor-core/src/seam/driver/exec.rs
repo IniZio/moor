@@ -1,11 +1,14 @@
 //! Commands run inside a Box.
 
 use crate::name::BoxPath;
+use crate::seam::driver::Place;
 use crate::seam::proc::Output;
 
 /// A command to run inside a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecSpec {
+    /// Which place in the Box runs the command.
+    pub place: Place,
     /// Program and arguments.
     pub argv: Vec<String>,
     /// Extra environment for the command.
@@ -14,6 +17,39 @@ pub struct ExecSpec {
     pub cwd: Option<BoxPath>,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
+}
+
+impl ExecSpec {
+    /// A command for `place` with no extra environment, the Box's login directory, and its
+    /// output captured.
+    #[must_use]
+    pub const fn new(place: Place, argv: Vec<String>) -> Self {
+        Self {
+            place,
+            argv,
+            env: Vec::new(),
+            cwd: None,
+            output: None,
+        }
+    }
+
+    /// Sets the extra environment; `tools/exec-env.sh` limits what may be passed.
+    #[must_use]
+    pub fn env(self, env: Vec<(String, String)>) -> Self {
+        Self { env, ..self }
+    }
+
+    /// Sets the directory to run in.
+    #[must_use]
+    pub fn cwd(self, cwd: Option<BoxPath>) -> Self {
+        Self { cwd, ..self }
+    }
+
+    /// Streams output to `output` instead of capturing it.
+    #[must_use]
+    pub fn output(self, output: Option<Output>) -> Self {
+        Self { output, ..self }
+    }
 }
 
 /// How a command inside a Box ended; a non-zero code is not an error.

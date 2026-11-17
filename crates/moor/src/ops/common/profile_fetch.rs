@@ -8,7 +8,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{PostCloneStep, ProfileStep};
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{ExecOutcome, Place};
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use crate::cx::Cx;
@@ -225,7 +225,7 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     let path = BoxPath::under(place.1.as_str(), FAILURES_FILE);
     let read = path.map_err(|e| e.to_string()).and_then(|p| {
         cx.driver()
-            .peek_file(&place.0, &p)
+            .peek_file(&place.0, Place::Work, &p)
             .map_err(|e| e.to_string())
     });
     let text = match read {

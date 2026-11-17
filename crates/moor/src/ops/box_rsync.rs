@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
 use moor_core::{BoxId, BoxRsyncReq, ErrorKind};
@@ -49,12 +49,7 @@ pub(crate) fn run(
     let (handle, workdir) = woken(cx, req.id)?;
     let mut argv = head;
     argv.push(beneath(&path, &workdir).map_err(refused)?);
-    let spec = ExecSpec {
-        argv,
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, argv);
     let clock = cx.clock();
     let end = clock.instant() + within;
     let late = || clock.instant() >= end;

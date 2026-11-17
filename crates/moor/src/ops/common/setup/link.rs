@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, ErrorKind, Warning};
 
@@ -47,12 +47,7 @@ pub(super) enum Left {
 /// # Errors
 /// A drain began, so the setup is left to the next process.
 pub(crate) fn await_reachable(cx: &Cx, handle: &BoxHandle) -> Result<(), Released> {
-    let spec = ExecSpec {
-        argv: vec!["true".to_owned()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, vec!["true".to_owned()]);
     let began = cx.clock().instant();
     while let Err(DriverError::Transport { .. }) =
         cx.driver().exec(handle, &spec, Deadline(REACHABLE_CALL))

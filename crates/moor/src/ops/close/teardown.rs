@@ -4,7 +4,7 @@ use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::hands::HandsState;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::{BoxHandle, ErrorKind, Warning};
 
 use super::held;
@@ -52,12 +52,9 @@ pub(super) fn teardown(cx: &Cx, row: &BoxRow, force: bool) -> Result<(), Command
         }
     };
     let script = ["sh", "-c", &teardown_script(&cfg.teardown)].map(str::to_owned);
-    let spec = ExecSpec {
-        argv: exec.argv(script.to_vec()),
-        env: exec.vars(),
-        cwd: exec.cwd(),
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, exec.argv(script.to_vec()))
+        .env(exec.vars())
+        .cwd(exec.cwd());
     let result = cx.driver().exec(handle, &spec, exec.deadline());
     let reason = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),

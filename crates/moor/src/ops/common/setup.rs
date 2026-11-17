@@ -9,7 +9,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::exec_env::prelude_stop;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::driver::{DriverError, ExecOutcome, Place};
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
@@ -326,7 +326,12 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, log_dir: &Path) -> 
     let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
         return String::new();
     };
-    if private_dir(log_dir).is_err() || cx.driver().copy_out(handle, &from, &to).is_err() {
+    if private_dir(log_dir).is_err()
+        || cx
+            .driver()
+            .copy_out(handle, Place::Work, &from, &to)
+            .is_err()
+    {
         discard(&to);
         return String::new();
     }

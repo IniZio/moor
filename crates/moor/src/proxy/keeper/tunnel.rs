@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use moor_core::domain::event::Event;
-use moor_core::seam::driver::{DriverError, ExecSpec, TunnelHandle};
+use moor_core::seam::driver::{DriverError, ExecSpec, Place, TunnelHandle};
 use moor_core::seam::proc::Deadline;
 use moor_core::BoxHandle;
 
@@ -110,16 +110,14 @@ impl Kept {
 
     /// Ends any session that holds the Box port, reporting a failure; the open goes ahead.
     fn clear(&self, handle: &BoxHandle) {
-        let spec = ExecSpec {
-            argv: ["sh", "-c", CLEAR_SCRIPT, "sh"]
+        let spec = ExecSpec::new(
+            Place::Agent,
+            ["sh", "-c", CLEAR_SCRIPT, "sh"]
                 .into_iter()
                 .map(str::to_owned)
                 .chain([self.box_port.to_string()])
                 .collect(),
-            env: Vec::new(),
-            cwd: None,
-            output: None,
-        };
+        );
         let cleared = self
             .deps
             .driver

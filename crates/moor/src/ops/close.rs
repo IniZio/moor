@@ -1,5 +1,6 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box.
 
+use moor_core::seam::driver::Place;
 use std::cell::Cell;
 
 use moor_core::decide::close::{
@@ -232,7 +233,10 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
             let steps = [plan.steps.as_slice(), index.steps.as_slice()].concat();
             // The probe and the index script each get their own allowance.
             let deadline = Deadline(BOXWORK_DEADLINE + reports::INDEX_DEADLINE);
-            done = cx.driver().batch(handle, &[], &steps, deadline).into_iter();
+            done = cx
+                .driver()
+                .batch(handle, &[], Place::Work, &steps, deadline)
+                .into_iter();
             boxwork::read(&plan, &mut done)
         }
         (Ok(_), _, _) => boxwork::probe(cx, row, b),

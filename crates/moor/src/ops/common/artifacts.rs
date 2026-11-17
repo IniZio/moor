@@ -9,7 +9,7 @@ use std::time::Duration;
 use moor_core::artifact::{fresh, parse_index, valid_name, ArtifactFile};
 use moor_core::boxscript::quote;
 use moor_core::domain::hands::HandsState;
-use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
@@ -247,6 +247,7 @@ fn index_text(
     let done = cx.driver().batch(
         handle,
         &[],
+        Place::Agent,
         &steps,
         Deadline(within.unwrap_or(INDEX_DEADLINE)),
     );

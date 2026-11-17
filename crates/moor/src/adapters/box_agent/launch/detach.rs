@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 
@@ -60,12 +60,10 @@ pub(in crate::adapters::box_agent) fn stop(
     driver: &dyn Driver,
     s: &SessionRef,
 ) -> Result<(), EngineError> {
-    let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), stop_cmd()],
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    let spec = ExecSpec::new(
+        Place::Agent,
+        vec!["sh".to_owned(), "-c".to_owned(), stop_cmd()],
+    );
     let failed = |message: String| EngineError::Failed {
         step: "stop",
         message,

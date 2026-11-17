@@ -4,7 +4,7 @@
 use moor_core::activity::{BlockKind, Life, Note, Probe, Status, Term, WaitCheck};
 use moor_core::seam::agent_adapter::AgentAdapter;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{BoxStep, Driver, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, Place, StepDone};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use serde_json::Value;
@@ -21,8 +21,9 @@ pub(super) fn probe(
     deadline: Deadline,
 ) -> Probe {
     let steps = [BoxStep::Run(script())];
-    let Some(Ok(StepDone::Ran { stdout, .. })) =
-        driver.batch(&s.handle, &[], &steps, deadline).pop()
+    let Some(Ok(StepDone::Ran { stdout, .. })) = driver
+        .batch(&s.handle, &[], Place::Agent, &steps, deadline)
+        .pop()
     else {
         return Probe::TimedOut;
     };
@@ -132,7 +133,10 @@ pub(super) fn check_wait(
         return WaitCheck::Unknown;
     };
     let steps = [BoxStep::Run(script)];
-    match driver.batch(&s.handle, &[], &steps, deadline).pop() {
+    match driver
+        .batch(&s.handle, &[], Place::Agent, &steps, deadline)
+        .pop()
+    {
         Some(Ok(StepDone::Ran { stdout, .. })) => match stdout.trim() {
             "none" => WaitCheck::Nothing,
             "running" => WaitCheck::Running,

@@ -11,7 +11,7 @@ use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
 use moor_core::{BoxHandle, ErrorKind, ExecReq};
@@ -74,12 +74,9 @@ pub(crate) fn run(cx: &Cx, req: &ExecReq, pipes: Pipes<'_>) -> Result<ExecView, 
         [line] => line.clone(),
         argv => command_line(argv),
     };
-    let spec = ExecSpec {
-        argv: env.argv(shell_argv(&script)),
-        env: env.vars(),
-        cwd: env.cwd(),
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, env.argv(shell_argv(&script)))
+        .env(env.vars())
+        .cwd(env.cwd());
     let view = within(cx, &target.handle, &spec, pipes, req.timeout_secs)?;
     let event = ExtraEvent::ExecRan {
         command: script,

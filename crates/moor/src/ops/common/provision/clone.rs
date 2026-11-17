@@ -12,7 +12,7 @@ use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsInc;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Output;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::shape::Shape;
@@ -248,12 +248,13 @@ fn clone(
     let exec = box_exec::prepare(cx, &site, proxy, cfg, Purpose::Clone)?;
     // A logged exec streams, and only a streamed exec turns SIGINT into an outcome, so the
     // Proxy started for it is still stopped.
-    let spec = ExecSpec {
-        argv: exec.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
-        env: exec.vars(),
-        cwd: exec.cwd(),
-        output: log.clone().map(Output::Log),
-    };
+    let spec = ExecSpec::new(
+        Place::Work,
+        exec.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
+    )
+    .env(exec.vars())
+    .cwd(exec.cwd())
+    .output(log.clone().map(Output::Log));
     let clock = cx.clock();
     let started = clock.instant();
     let outcome = cx.driver().exec(target.handle, &spec, exec.deadline());

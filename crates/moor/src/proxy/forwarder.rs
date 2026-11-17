@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
 use moor_core::exec_env::FORWARDER;
-use moor_core::seam::driver::Driver;
+use moor_core::seam::driver::{Driver, Place};
 use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
@@ -72,7 +72,7 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
         let path = BoxPath::under(home.as_str(), &format!("{FORWARDER}{suffix}"))
             .map_err(|e| e.to_string())?;
         to.driver
-            .put_file(handle, &path, bytes, mode)
+            .put_file(handle, Place::Agent, &path, bytes, mode)
             .map_err(|e| format!("cannot deliver the egress forwarder: {e}"))
     };
     mint_until_marked(to.store, to.key, to.box_id, |token| {
@@ -127,7 +127,7 @@ pub(crate) fn mint_until_marked(
 fn box_home(driver: &dyn Driver, handle: &BoxHandle) -> Result<BoxPath, String> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| e.to_string())?;
     let text = driver
-        .peek_file(handle, &environ)
+        .peek_file(handle, Place::Agent, &environ)
         .map_err(|e| format!("cannot find the Box user's home: {e}"))?
         .unwrap_or_default();
     let home = text

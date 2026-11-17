@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::AgentAdapter;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::engine::{EngineError, LaunchReq};
 use moor_core::seam::proc::Deadline;
 
@@ -40,7 +40,7 @@ pub(super) fn restore(
     let script = profile.restore_script(plain(id)?, ARCHIVE);
     let at = BoxPath::under(req.workdir.as_str(), ARCHIVE).map_err(|e| fail("put", e))?;
     driver
-        .put_file(&req.handle, &at, archive, 0o600)
+        .put_file(&req.handle, Place::Agent, &at, archive, 0o600)
         .map_err(|e| fail("put", e))?;
     match run(driver, req, &script) {
         Ok(0) => Ok(()),
@@ -61,12 +61,11 @@ fn plain(id: &str) -> Result<&str, EngineError> {
 
 /// The exit code of `script` run in the workdir of `req`.
 fn run(driver: &dyn Driver, req: &LaunchReq, script: &str) -> Result<i32, String> {
-    let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
-        env: Vec::new(),
-        cwd: Some(req.workdir.clone()),
-        output: None,
-    };
+    let spec = ExecSpec::new(
+        Place::Agent,
+        vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
+    )
+    .cwd(Some(req.workdir.clone()));
     match driver.exec(&req.handle, &spec, Deadline(DEADLINE)) {
         Ok(ExecOutcome::Exited { code }) => Ok(code),
         Ok(ExecOutcome::Interrupted) => Err("interrupted".to_owned()),

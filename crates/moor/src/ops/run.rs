@@ -15,7 +15,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{ExecSpec, Launched};
+use moor_core::seam::driver::{ExecSpec, Launched, Place};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
@@ -122,12 +122,9 @@ fn launch(
     let (output, log) = output(cx, req, id).inspect_err(|_| finish(store, id, None))?;
     let exec = box_env(cx, row, target, &cfg)
         .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
-    let spec = ExecSpec {
-        argv: exec.argv(argv),
-        env: exec.vars(),
-        cwd: exec.cwd(),
-        output: None,
-    };
+    let spec = ExecSpec::new(Place::Work, exec.argv(argv))
+        .env(exec.vars())
+        .cwd(exec.cwd());
     let (workdir, until) = start(
         cx,
         store,

@@ -6,7 +6,7 @@ use moor_core::boxscript::boxwork::{
     boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE, BOXWORK_NO_CHECKOUT,
 };
 use moor_core::boxscript::quote;
-use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath};
 
@@ -79,9 +79,13 @@ pub(crate) fn probe_within(cx: &Cx, row: &BoxRow, boxed: &HandsRow, within: Dura
         Ok(plan) => plan,
         Err(work) => return work,
     };
-    let done = cx
-        .driver()
-        .batch(&plan.handle, &[], &plan.steps, Deadline(within));
+    let done = cx.driver().batch(
+        &plan.handle,
+        &[],
+        Place::Work,
+        &plan.steps,
+        Deadline(within),
+    );
     read(&plan, &mut done.into_iter())
 }
 
