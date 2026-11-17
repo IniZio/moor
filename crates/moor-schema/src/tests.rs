@@ -164,6 +164,29 @@ fn the_query_identifiers_name_every_table_and_column_in_order() {
 }
 
 #[test]
+fn step_versions_strictly_increase() {
+    let migrations = moor_migrate::steps(STEPS, Backend::Sqlite).unwrap();
+    let listed: Vec<(i32, &str)> = migrations
+        .iter()
+        .zip(STEPS)
+        .map(|(m, s)| (m.version(), s.name))
+        .collect();
+    let clashes: Vec<String> = listed
+        .iter()
+        .zip(listed.iter().skip(1))
+        .filter(|(before, after)| after.0 <= before.0)
+        .map(|(before, after)| format!("{} is listed after {}", after.1, before.1))
+        .collect();
+    assert!(
+        clashes.is_empty(),
+        "step versions must strictly increase down STEPS, but {clashes:?}. Two branches that each \
+         added a step took the same version. Renumber the newer step to the next free version, \
+         change its V<n>__ prefix in crates/moor-schema/src/steps.rs, and re-pin its checksums \
+         (SQLITE and POSTGRES) in crates/moor/src/store/db/sqlite/migrate/tests/pinned.rs"
+    );
+}
+
+#[test]
 fn every_table_is_listed_after_the_tables_its_foreign_keys_reference() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
     let order: Vec<String> = crate::tables::all().into_iter().map(|(t, _)| t).collect();

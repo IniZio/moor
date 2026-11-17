@@ -202,12 +202,11 @@ fn a_file_at_the_last_sql_migration_is_adopted_with_its_rows() {
     super::refuse_other_version(&path).unwrap();
     let mut conn = Connection::open(&path).unwrap();
     init_schema(&mut conn, &path).unwrap();
+    let steps = moor_migrate::steps(moor_schema::STEPS, moor_migrate::Backend::Sqlite).unwrap();
+    let versions: Vec<i64> = steps.iter().map(|m| i64::from(m.version())).collect();
     assert_eq!(
         history(&conn),
-        [
-            45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
-            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83
-        ],
+        versions,
         "recorded at the baseline, then migrated on"
     );
     let name: String = conn

@@ -103,12 +103,6 @@ fn the_migration_runs_once_and_a_reopen_changes_nothing() {
         &conn,
         "SELECT CAST(version AS TEXT) FROM refinery_schema_history ORDER BY version",
     );
-    assert_eq!(
-        history,
-        [
-            "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "58", "59",
-            "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73",
-            "74", "75", "76", "77", "78", "79", "80", "81", "82", "83"
-        ]
-    );
+    let versions: Vec<String> = all.iter().map(|m| m.version().to_string()).collect();
+    assert_eq!(history, versions, "the history records every step, once");
 }

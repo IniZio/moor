@@ -81,6 +81,17 @@ fn the_parser_reads_the_list_the_crate_compiles() {
 }
 
 #[test]
+fn the_parser_reads_both_the_step_call_and_the_step_literal() {
+    let source = r#"
+        pub const STEPS: &[Step] = &[
+            step("V1__a", a::write),
+            Step { name: "V2__b", write: b::write },
+        ];
+    "#;
+    assert_eq!(step_names(source).unwrap(), ["V1__a", "V2__b"]);
+}
+
+#[test]
 fn a_file_without_a_steps_list_is_an_error() {
     assert!(step_names("pub const OTHER: u8 = 1;").is_err());
 }
