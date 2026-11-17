@@ -143,21 +143,19 @@ impl Store {
         Ok(())
     }
 
-    /// Box `box_id`'s sent rows, oldest first: the turns its agent has not finished.
+    /// Box `box_id`'s sent rows in the order they were sent: the turns its agent has not
+    /// finished. A row can be sent ahead of an older one, as a launch's own prompt is.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a row is corrupt.
     pub(crate) fn sent(&self, box_id: BoxId) -> Result<Vec<InboxRow>, StoreError> {
-        let q = select(box_id)
-            .and_where(Expr::col(BoxInbox::SentAt).is_not_null())
-            .take();
-        rows(&self.reader()?, q)
+        rows(&self.reader()?, sent_in_order(box_id))
     }
 
-    /// Ends the turn sent row `id` started: deletes the row and records `turn_done` for its
-    /// `steered` event in one transaction, and makes the Box's archive due. Older sent rows went
-    /// into the same prompt, so they are deleted too, with no `turn_done` of their own. Returns
-    /// whether it did; a row already answered, or not sent, is left.
+    /// Ends the turn sent row `id` started, and the turns of every row sent before it: deletes
+    /// them and records `turn_done` for each one's `steered` event in one transaction, and makes
+    /// the Box's archive due. Returns whether it did; a row already answered, or not sent, is
+    /// left.
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails, or [`StoreError::Corrupt`] when the row
@@ -172,31 +170,33 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.immediate()?;
-        let deleted = tx.run(
-            Query::delete()
-                .from_table(BoxInbox::Table)
-                .cond_where(one(box_id, id))
-                .and_where(Expr::col(BoxInbox::SentAt).is_not_null()),
-        )?;
-        if deleted == 0 {
+        let open = rows(&tx, sent_in_order(box_id))?;
+        let Some(last) = open.iter().position(|r| r.id == id) else {
             return Ok(false);
-        }
-        tx.run(
-            Query::delete()
-                .from_table(BoxInbox::Table)
-                .and_where(Expr::col(BoxInbox::Box).eq(box_id.get()))
-                .and_where(Expr::col(BoxInbox::Id).lt(id.get()))
-                .and_where(Expr::col(BoxInbox::SentAt).is_not_null()),
-        )?;
-        let steer = steered_by(&tx, box_id, id)?.ok_or_else(|| {
-            StoreError::Corrupt(format!("inbox row {} has no steered event", id.get()))
-        })?;
-        let done = Event::TurnDone {
-            steer,
-            outcome,
-            inbox: Some(id.get()),
         };
-        insert_event(&tx, box_id, &done, now)?;
+        for row in open.iter().take(last + 1) {
+            tx.run(
+                Query::delete()
+                    .from_table(BoxInbox::Table)
+                    .cond_where(one(box_id, row.id)),
+            )?;
+            let steer = match steered_by(&tx, box_id, row.id)? {
+                Some(steer) => steer,
+                None if row.id != id => continue,
+                None => {
+                    return Err(StoreError::Corrupt(format!(
+                        "inbox row {} has no steered event",
+                        id.get()
+                    )))
+                }
+            };
+            let done = Event::TurnDone {
+                steer,
+                outcome,
+                inbox: Some(row.id.get()),
+            };
+            insert_event(&tx, box_id, &done, now)?;
+        }
         tx.run(
             Query::update()
                 .table(BoxState::Table)
@@ -317,6 +317,16 @@ fn one(box_id: BoxId, id: InboxId) -> Cond {
     Cond::all()
         .add(Expr::col(BoxInbox::Box).eq(box_id.get()))
         .add(Expr::col(BoxInbox::Id).eq(id.get()))
+}
+
+/// Box `box_id`'s sent rows, in the order they were sent.
+fn sent_in_order(box_id: BoxId) -> SelectStatement {
+    let mut q = select(box_id);
+    q.and_where(Expr::col(BoxInbox::SentAt).is_not_null())
+        .clear_order_by()
+        .order_by(BoxInbox::SentAt, Order::Asc)
+        .order_by(BoxInbox::Id, Order::Asc);
+    q
 }
 
 /// Box `box_id`'s rows, oldest first, in [`inbox_row`]'s column order.

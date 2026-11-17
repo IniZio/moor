@@ -147,7 +147,7 @@ fn a_send_the_agent_refused_before_typing_does_not_count() {
 }
 
 #[test]
-fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
+fn answering_a_row_ends_every_row_sent_before_it_each_with_its_turn_done() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
@@ -174,7 +174,7 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
         .into_iter()
         .filter(|e| e.kind == "turn_done")
         .count();
-    assert_eq!(done, 1);
+    assert_eq!(done, 2);
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         ["waiting:queued", "doubt:in_doubt", "three:queued"],

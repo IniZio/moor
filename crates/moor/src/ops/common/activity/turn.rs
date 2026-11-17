@@ -12,8 +12,8 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, InboxRow, Store};
 
-/// Answer the newest sent inbox row once its turn is over: delete it, and every older sent row
-/// that went into the same prompt, append its `turn_done` event, and make the Box's archive due.
+/// Answer the last sent inbox row once its turn is over: delete it and every row sent before it,
+/// append a `turn_done` event for each, and make the Box's archive due.
 ///
 /// A row is answered once, since answering deletes it. It is answered under the Box's turn,
 /// before any state step or session end so neither can lose it. While another operation holds
@@ -39,7 +39,7 @@ pub(super) fn note_turn_done(
     Ok(false)
 }
 
-/// Whether the newest sent row's turn is still open by `reading`.
+/// Whether the last sent row's turn is still open by `reading`.
 pub(crate) fn turn_open(
     store: &Store,
     row: &BoxRow,
