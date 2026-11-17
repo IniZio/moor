@@ -312,6 +312,7 @@ mod links;
 mod machine;
 mod nodes;
 mod overdue;
+mod run_history;
 mod workflow;
 
 #[test]

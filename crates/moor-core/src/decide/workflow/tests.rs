@@ -9,8 +9,8 @@ use crate::name::ForgeRepo;
 use crate::seam::clock::Ts;
 use crate::user::UserId;
 use crate::workflow::{
-    TimeoutMinutes, Workflow, WorkflowId, WorkflowName, WorkflowOutcome, WorkflowRun,
-    WorkflowSchedule, WorkflowState,
+    Plan, RunEnd, RunId, RunOutcome, RunState, StepId, TimeoutMinutes, Workflow, WorkflowId,
+    WorkflowName, WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 
 const HOUR: i64 = 3_600_000;
@@ -41,6 +41,8 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         origin: None,
         created_at: ts(0),
         updated_at: ts(0),
+        plan: Plan::single("go"),
+        revision: 0,
     }
 }
 
@@ -284,66 +286,68 @@ fn a_time_in_the_fall_back_overlap_fires_once_at_its_first_pass() {
     assert_eq!(firings(&w, from, from + DAY), vec![1_793_511_000_000]);
 }
 
-fn run(r: &str, due: i64, recorded: i64, outcome: WorkflowOutcome) -> WorkflowRun {
+fn run(r: &str, due: i64, recorded: i64, state: RunState) -> WorkflowRun {
     WorkflowRun {
+        id: RunId::new(1),
         workflow: WorkflowId::new(1),
         repo: repo(r),
         due_at: ts(due),
-        outcome,
+        state,
         recorded_at: ts(recorded),
     }
 }
 
+fn step() -> StepId {
+    Plan::single_id()
+}
+
+fn running(box_id: i64) -> RunState {
+    RunState::Running {
+        box_id: BoxId::new(box_id),
+        at: step(),
+        try_n: 1,
+    }
+}
+
 fn started(r: &str, at: i64, box_id: i64) -> WorkflowRun {
-    run(
-        r,
-        at,
-        at,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(box_id),
-        },
-    )
+    run(r, at, at, running(box_id))
 }
 
 fn refused(r: &str, due: i64) -> WorkflowRun {
-    run(
-        r,
-        due,
-        due,
-        WorkflowOutcome::Refused {
-            detail: "full".to_owned(),
-        },
-    )
+    let detail = "full".to_owned();
+    run(r, due, due, RunState::Done(RunEnd::Refused { detail }))
+}
+
+fn ended(r: &str, due: i64, outcome: RunOutcome) -> WorkflowRun {
+    let end = RunEnd::Ended {
+        box_id: BoxId::new(1),
+        ended_at: ts(due + 1),
+        outcome,
+    };
+    run(r, due, due, RunState::Done(end))
 }
 
 fn timed_out(r: &str, due: i64) -> WorkflowRun {
-    let box_id = BoxId::new(1);
-    run(
-        r,
-        due,
-        due,
-        WorkflowOutcome::TimedOut {
-            box_id,
-            ended_at: ts(due + 1),
-        },
-    )
+    ended(r, due, RunOutcome::TimedOut { at: step() })
 }
 
 fn finished(r: &str, due: i64) -> WorkflowRun {
-    let box_id = BoxId::new(1);
-    run(
-        r,
-        due,
-        due,
-        WorkflowOutcome::Finished {
-            box_id,
-            ended_at: ts(due + 1),
-        },
-    )
+    let result = String::new();
+    ended(r, due, RunOutcome::Delivered { result })
 }
 
 fn skipped(r: &str, due: i64) -> WorkflowRun {
-    run(r, due, due, WorkflowOutcome::SkippedOverlap)
+    run(r, due, due, RunState::Done(RunEnd::SkippedOverlap))
+}
+
+fn waiting(r: &str, due: i64) -> WorkflowRun {
+    let state = RunState::Waiting {
+        box_id: BoxId::new(7),
+        at: step(),
+        try_n: 1,
+        since: ts(due),
+    };
+    run(r, due, due, state)
 }
 
 #[test]
@@ -358,6 +362,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
         repo: repo("a/b"),
         due_at: ts(DAY0),
         box_id: BoxId::new(7),
+        at: step(),
     };
     assert_eq!(at(DAY0 + 30 * 60_000), std::slice::from_ref(&expiry));
     assert_eq!(at(DAY0 + DAY), [expiry]);
@@ -366,14 +371,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
 #[test]
 fn the_timeout_counts_from_the_agent_start_not_the_due_time() {
     let w = daily();
-    let late = run(
-        "a/b",
-        DAY0,
-        DAY0 + HOUR,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(7),
-        },
-    );
+    let late = run("a/b", DAY0, DAY0 + HOUR, running(7));
     let agent = |_| Some(ts(DAY0 + HOUR));
     let ms = |m: i64| ts(DAY0 + HOUR + m * 60_000);
     assert!(workflow_expired(&w, std::slice::from_ref(&late), &agent, ms(179)).is_empty());
@@ -381,13 +379,15 @@ fn the_timeout_counts_from_the_agent_start_not_the_due_time() {
 }
 
 #[test]
-fn only_started_runs_expire() {
+fn only_running_runs_expire() {
     let w = daily();
     let runs = [
         finished("a/b", 0),
         timed_out("a/b", 1),
         refused("a/b", 2),
         skipped("a/b", 3),
+        waiting("a/b", 4),
+        run("a/b", 5, 5, RunState::Queued),
     ];
     assert!(workflow_expired(&w, &runs, &|_| Some(ts(0)), ts(DAY0)).is_empty());
 }
@@ -401,7 +401,7 @@ fn a_run_whose_agent_never_started_does_not_expire() {
 
 #[test]
 fn a_run_is_overdue_an_hour_after_its_claim_unless_its_agent_started() {
-    let claimed = run("a/b", DAY0, DAY0, WorkflowOutcome::Starting);
+    let claimed = run("a/b", DAY0, DAY0, RunState::Queued);
     let queued = started("a/b", DAY0 + 1, 7);
     let open = [claimed, queued];
     let none = |_: BoxId| None;
@@ -447,6 +447,44 @@ fn a_finished_run_resets_the_streak() {
     assert!(!breaker(&runs));
     let more = [runs.to_vec(), vec![refused("a/b", base + 5 * DAY)]].concat();
     assert!(breaker(&more));
+}
+
+#[test]
+fn a_failed_or_incomplete_run_counts_and_a_declined_one_does_neither() {
+    let base = DAY0 - 10 * DAY;
+    let failed = |due| {
+        let (at, reason) = (step(), "no".to_owned());
+        ended("a/b", due, RunOutcome::Failed { at, reason })
+    };
+    let incomplete = |due| ended("a/b", due, RunOutcome::Incomplete { at: step() });
+    let declined = |due| ended("a/b", due, RunOutcome::Declined { at: step() });
+    let runs = [
+        failed(base),
+        declined(base + DAY),
+        incomplete(base + 2 * DAY),
+    ];
+    assert!(!breaker(&runs), "a declined run is not a failure");
+    let more = [runs.to_vec(), vec![failed(base + 3 * DAY)]].concat();
+    assert!(breaker(&more), "and does not reset the streak either");
+}
+
+#[test]
+fn runs_in_flight_neither_count_nor_reset_the_streak() {
+    let base = DAY0 - 10 * DAY;
+    let runs = [
+        refused("a/b", base),
+        waiting("a/b", base + DAY),
+        refused("a/b", base + 2 * DAY),
+        started("a/b", base + 3 * DAY, 3),
+        timed_out("a/b", base + 4 * DAY),
+    ];
+    assert!(breaker(&runs));
+}
+
+#[test]
+fn a_waiting_run_is_not_overdue_for_its_start() {
+    let open = [waiting("a/b", DAY0)];
+    assert!(workflow_start_overdue(&open, &|_| None, ts(DAY0 + 9 * HOUR)).is_empty());
 }
 
 #[test]

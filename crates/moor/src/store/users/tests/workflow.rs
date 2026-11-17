@@ -7,19 +7,20 @@ use moor_core::seam::clock::Clock as _;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    RunEnd, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName, WorkflowOutcome, WorkflowRun,
-    WorkflowSchedule, WorkflowState,
+    NewRun, Plan, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId,
+    WorkflowName, WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 use moor_core::BoxId;
 
 use crate::store::tests::open;
 use crate::store::Store;
+use crate::testing::runs::{refused, running, skipped, timed_out};
 
 pub(super) fn repo(s: &str) -> ForgeRepo {
     ForgeRepo::parse(s).unwrap()
 }
 
-fn name(s: &str) -> WorkflowName {
+pub(super) fn name(s: &str) -> WorkflowName {
     WorkflowName::parse(s).unwrap()
 }
 
@@ -41,19 +42,29 @@ pub(super) fn user(store: &Store, identity: &str) -> UserId {
         .0
 }
 
-pub(super) fn run(
-    workflow: WorkflowId,
-    r: &str,
-    due: i64,
-    outcome: WorkflowOutcome,
-) -> WorkflowRun {
-    WorkflowRun {
+pub(super) fn run(workflow: WorkflowId, r: &str, due: i64, state: RunState) -> NewRun {
+    NewRun {
         workflow,
         repo: repo(r),
         due_at: Ts::from_millis(due),
-        outcome,
+        state,
         recorded_at: Ts::from_millis(due + 5),
     }
+}
+
+/// `run` as it was recorded, without the id the store gave it.
+fn recorded(run: &WorkflowRun) -> NewRun {
+    NewRun {
+        workflow: run.workflow,
+        repo: run.repo.clone(),
+        due_at: run.due_at,
+        state: run.state.clone(),
+        recorded_at: run.recorded_at,
+    }
+}
+
+fn recorded_all(runs: &[WorkflowRun]) -> Vec<NewRun> {
+    runs.iter().map(recorded).collect()
 }
 
 #[test]
@@ -111,14 +122,7 @@ fn putting_a_name_again_replaces_the_definition_and_keeps_its_runs() {
         .unwrap();
     let first = store.workflow(alice, &name("daily")).unwrap().unwrap();
     store
-        .record_workflow_run(&run(
-            id,
-            "a/one",
-            100,
-            WorkflowOutcome::Started {
-                box_id: BoxId::new(7),
-            },
-        ))
+        .record_workflow_run(&run(id, "a/one", 100, running(7)))
         .unwrap();
 
     clock.sleep(Duration::from_secs(60));
@@ -183,7 +187,7 @@ fn only_the_owner_deletes_a_workflow_and_its_runs_go_with_it() {
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
     store
-        .record_workflow_run(&run(id, "a/one", 100, WorkflowOutcome::SkippedOverlap))
+        .record_workflow_run(&run(id, "a/one", 100, skipped()))
         .unwrap();
     assert!(!store.delete_workflow(bob, &name("daily")).unwrap());
     assert!(store.workflow(alice, &name("daily")).unwrap().is_some());
@@ -201,25 +205,14 @@ fn a_firing_is_recorded_once_whatever_the_second_attempt_says() {
     let id = store
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
-    let started = run(
-        id,
-        "a/one",
-        100,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(7),
-        },
-    );
+    let started = run(id, "a/one", 100, running(7));
     assert!(store.record_workflow_run(&started).unwrap());
-    let again = run(
-        id,
-        "a/one",
-        100,
-        WorkflowOutcome::Refused {
-            detail: "full".to_owned(),
-        },
-    );
+    let again = run(id, "a/one", 100, refused("full"));
     assert!(!store.record_workflow_run(&again).unwrap());
-    assert_eq!(store.last_workflow_runs(id).unwrap(), [started]);
+    assert_eq!(
+        recorded_all(&store.last_workflow_runs(id).unwrap()),
+        [started]
+    );
 }
 
 #[test]
@@ -230,40 +223,24 @@ fn the_last_run_is_per_repo_and_by_due_time() {
     let id = store
         .put_workflow(alice, &def("daily", &["a/one", "a/two", "a/three"], true))
         .unwrap();
-    let refused = WorkflowOutcome::Refused {
-        detail: "no capacity".to_owned(),
-    };
-    let newest = run(
-        id,
-        "a/one",
-        300,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(9),
-        },
-    );
+    let refusal = refused("no capacity");
+    let newest = run(id, "a/one", 300, running(9));
     for r in [
-        run(id, "a/one", 200, WorkflowOutcome::SkippedOverlap),
+        run(id, "a/one", 200, skipped()),
         newest.clone(),
-        run(id, "a/one", 100, refused.clone()),
-        run(id, "a/two", 100, refused.clone()),
+        run(id, "a/one", 100, refusal.clone()),
+        run(id, "a/two", 100, refusal.clone()),
     ] {
         assert!(store.record_workflow_run(&r).unwrap());
     }
-    let two = run(id, "a/two", 100, refused);
+    let two = run(id, "a/two", 100, refusal);
     let mut last = store.last_workflow_runs(id).unwrap();
     last.sort_by_key(|r| r.repo.to_string());
-    assert_eq!(last, [newest, two], "a/three never fired");
+    assert_eq!(recorded_all(&last), [newest, two], "a/three never fired");
 }
 
-fn started(id: WorkflowId, r: &str, due: i64, box_id: i64) -> WorkflowRun {
-    run(
-        id,
-        r,
-        due,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(box_id),
-        },
-    )
+fn started(id: WorkflowId, r: &str, due: i64, box_id: i64) -> NewRun {
+    run(id, r, due, running(box_id))
 }
 
 #[test]
@@ -300,39 +277,46 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let key = |r: &str| (id, repo(r), Ts::from_millis(100));
     let (one, two) = (key("a/one"), key("a/two"));
     let at = Ts::from_millis(900);
+    let done = RunOutcome::Delivered {
+        result: "opened a pull request".to_owned(),
+    };
+    let expired = RunOutcome::TimedOut {
+        at: Plan::single_id(),
+    };
     assert!(store
-        .end_workflow_run((one.0, &one.1, one.2), RunEnd::Finished, at)
+        .end_workflow_run((one.0, &one.1, one.2), (BoxId::new(1), done.clone()), at)
         .unwrap());
     assert!(
         !store
-            .end_workflow_run((one.0, &one.1, one.2), RunEnd::TimedOut, at)
+            .end_workflow_run((one.0, &one.1, one.2), (BoxId::new(1), expired.clone()), at)
             .unwrap(),
         "a finished run is not expired afterwards"
     );
     assert!(store
-        .end_workflow_run((two.0, &two.1, two.2), RunEnd::TimedOut, at)
+        .end_workflow_run((two.0, &two.1, two.2), (BoxId::new(2), expired), at)
         .unwrap());
     assert!(store.open_workflow_runs(id).unwrap().is_empty());
 
     let mut last = store.last_workflow_runs(id).unwrap();
     last.sort_by_key(|r| r.repo.to_string());
-    let outcomes: Vec<_> = last.into_iter().map(|r| r.outcome).collect();
+    let outcomes: Vec<_> = last.into_iter().map(|r| r.state).collect();
     assert_eq!(
         outcomes,
         [
-            WorkflowOutcome::Finished {
+            RunState::Done(RunEnd::Ended {
                 box_id: BoxId::new(1),
-                ended_at: at
-            },
-            WorkflowOutcome::TimedOut {
-                box_id: BoxId::new(2),
-                ended_at: at
-            },
+                ended_at: at,
+                outcome: done,
+            }),
+            timed_out(2, 900),
         ]
     );
     let missing = (id, &repo("a/one"), Ts::from_millis(5));
+    let outcome = RunOutcome::Delivered {
+        result: String::new(),
+    };
     assert!(!store
-        .end_workflow_run(missing, RunEnd::Finished, at)
+        .end_workflow_run(missing, (BoxId::new(1), outcome), at)
         .unwrap());
 }
 
@@ -348,16 +332,13 @@ fn open_runs_leave_out_skips_and_refusals() {
         .record_workflow_run(&started(id, "a/one", 100, 1))
         .unwrap();
     store
-        .record_workflow_run(&run(id, "a/one", 200, WorkflowOutcome::SkippedOverlap))
+        .record_workflow_run(&run(id, "a/one", 200, skipped()))
         .unwrap();
-    let refused = WorkflowOutcome::Refused {
-        detail: "x".to_owned(),
-    };
     store
-        .record_workflow_run(&run(id, "a/one", 300, refused))
+        .record_workflow_run(&run(id, "a/one", 300, refused("x")))
         .unwrap();
     let open = store.open_workflow_runs(id).unwrap();
-    assert_eq!(open, [started(id, "a/one", 100, 1)]);
+    assert_eq!(recorded_all(&open), [started(id, "a/one", 100, 1)]);
 }
 
 #[test]
@@ -473,26 +454,24 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
     assert!(store
-        .record_workflow_run(&run(id, "a/one", 100, WorkflowOutcome::Starting))
+        .record_workflow_run(&run(id, "a/one", 100, RunState::Queued))
         .unwrap());
     assert_eq!(store.open_workflow_runs(id).unwrap().len(), 1);
     assert_eq!(store.starting_workflow_runs().unwrap().len(), 1);
 
     let key = (id, &repo("a/one"), Ts::from_millis(100));
-    let started = WorkflowOutcome::Started {
-        box_id: BoxId::new(4),
-    };
-    assert!(store.resolve_workflow_start(key, &started).unwrap());
-    let refused = WorkflowOutcome::Refused {
-        detail: "late".to_owned(),
-    };
+    let started = running(4);
+    let at = Ts::from_millis(120);
+    assert!(store.resolve_workflow_start(key, &started, at).unwrap());
     assert!(
-        !store.resolve_workflow_start(key, &refused).unwrap(),
+        !store
+            .resolve_workflow_start(key, &refused("late"), at)
+            .unwrap(),
         "settled once"
     );
     assert!(store.starting_workflow_runs().unwrap().is_empty());
     let last = store.last_workflow_runs(id).unwrap();
-    assert_eq!(last.first().map(|r| &r.outcome), Some(&started));
+    assert_eq!(last.first().map(|r| &r.state), Some(&started));
 }
 
 #[test]

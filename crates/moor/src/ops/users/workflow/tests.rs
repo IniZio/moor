@@ -10,12 +10,13 @@ use moor_core::name::ForgeRepo;
 use moor_core::request::{UserCmd, WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
-use moor_core::workflow::{WorkflowId, WorkflowName, WorkflowOutcome, WorkflowRun};
+use moor_core::workflow::{NewRun, RunOutcome, RunState, WorkflowId, WorkflowName};
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
 use crate::ops::users::run;
 use crate::ops::users::tests::{fixture, id, Fixture};
+use crate::testing::runs::{refused, running, skipped};
 
 fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
     WorkflowAddReq {
@@ -224,18 +225,18 @@ fn an_origin_is_kept_only_from_a_front_that_names_a_key() {
     );
 }
 
-fn record(f: &Fixture, who: &Identity, outcome: WorkflowOutcome, due: i64) -> WorkflowId {
+fn record(f: &Fixture, who: &Identity, state: RunState, due: i64) -> WorkflowId {
     let store = f.cx.store().unwrap();
     let user = store.user_of(who).unwrap().unwrap();
     let w = store
         .workflow(user, &WorkflowName::parse("daily").unwrap())
         .unwrap()
         .unwrap();
-    let run = WorkflowRun {
+    let run = NewRun {
         workflow: w.id,
         repo: ForgeRepo::new("o", "n"),
         due_at: Ts::from_millis(due),
-        outcome,
+        state,
         recorded_at: Ts::from_millis(due),
     };
     store.record_workflow_run(&run).unwrap();
@@ -251,7 +252,7 @@ fn the_stream_shows_a_run_again_each_time_it_moves_on() {
     let f = fixture();
     let who = me(&f, "local:2000");
     daily(&f, &who);
-    let id = record(&f, &who, WorkflowOutcome::Starting, 100);
+    let id = record(&f, &who, RunState::Queued, 100);
     let first = runs(&f, &who, None, None);
     assert_eq!(first["changes"][0]["outcome"], "starting");
     let cursor = first["next"].as_i64().unwrap();
@@ -259,25 +260,17 @@ fn the_stream_shows_a_run_again_each_time_it_moves_on() {
 
     let store = f.cx.store().unwrap();
     let key = (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100));
-    let started = WorkflowOutcome::Started {
-        box_id: BoxId::new(9),
-    };
-    store.resolve_workflow_start(key, &started).unwrap();
+    store
+        .resolve_workflow_start(key, &running(9), Ts::from_millis(150))
+        .unwrap();
     let second = runs(&f, &who, Some(cursor), None);
     assert_eq!(second["changes"].as_array().unwrap().len(), 1);
     assert_eq!(second["changes"][0]["outcome"], "started");
     assert_eq!(second["changes"][0]["workflow"], "daily");
     assert!(second["next"].as_i64().unwrap() > cursor);
 
-    record(&f, &who, WorkflowOutcome::SkippedOverlap, 200);
-    record(
-        &f,
-        &who,
-        WorkflowOutcome::Refused {
-            detail: "full".to_owned(),
-        },
-        300,
-    );
+    record(&f, &who, skipped(), 200);
+    record(&f, &who, refused("full"), 300);
     let all = runs(&f, &who, None, None);
     let outcomes: Vec<_> = all["changes"]
         .as_array()
@@ -295,11 +288,53 @@ fn the_stream_shows_a_run_again_each_time_it_moves_on() {
 }
 
 #[test]
+fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    let id = record(&f, &who, RunState::Queued, 100);
+    let store = f.cx.store().unwrap();
+    let key = (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100));
+    store
+        .resolve_workflow_start(key, &running(9), Ts::from_millis(150))
+        .unwrap();
+    let last_run = || ok(&f, &who, cmd(WorkflowCmd::List))["workflows"][0]["last_runs"][0].clone();
+    let queued = json!({"at": 100, "entry": {"kind": "queued"}});
+    let entered = json!({"at": 150, "entry": {"kind": "entered", "step": "deliver", "try_n": 1}});
+    assert_eq!(
+        last_run(),
+        json!({
+            "repo": "o/n", "due_at": 100, "outcome": "started", "phase": "running",
+            "step": "deliver", "history": [queued, entered],
+        })
+    );
+
+    let delivered = RunOutcome::Delivered {
+        result: "opened a pull request".to_owned(),
+    };
+    store
+        .end_workflow_run(key, (BoxId::new(9), delivered), Ts::from_millis(900))
+        .unwrap();
+    let ended = json!({"at": 900, "entry": {
+        "kind": "ended", "phase_before": "running",
+        "outcome": {"outcome": "delivered", "result": "opened a pull request"},
+    }});
+    let done = json!({
+        "repo": "o/n", "due_at": 100, "outcome": "finished", "phase": "done",
+        "result": "opened a pull request", "history": [queued, entered, ended],
+    });
+    assert_eq!(last_run(), done);
+    let streamed = runs(&f, &who, None, None);
+    let change = streamed["changes"].as_array().unwrap().last().unwrap();
+    assert_eq!(change["history"], done["history"]);
+}
+
+#[test]
 fn the_breaker_disabling_is_a_change_of_its_own_and_other_people_see_none() {
     let f = fixture();
     let (alice, bob) = (me(&f, "local:2000"), me(&f, "local:2001"));
     daily(&f, &alice);
-    let id = record(&f, &alice, WorkflowOutcome::SkippedOverlap, 100);
+    let id = record(&f, &alice, skipped(), 100);
     let cursor = runs(&f, &alice, None, None)["next"].as_i64().unwrap();
     f.cx.store()
         .unwrap()
@@ -322,24 +357,10 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
     let f = fixture();
     let who = me(&f, "local:2000");
     daily(&f, &who);
-    record(&f, &who, WorkflowOutcome::Starting, 100);
-    record(&f, &who, WorkflowOutcome::SkippedOverlap, 200);
-    record(
-        &f,
-        &who,
-        WorkflowOutcome::Refused {
-            detail: "full".to_owned(),
-        },
-        300,
-    );
-    let id = record(
-        &f,
-        &who,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(9),
-        },
-        400,
-    );
+    record(&f, &who, RunState::Queued, 100);
+    record(&f, &who, skipped(), 200);
+    record(&f, &who, refused("full"), 300);
+    let id = record(&f, &who, running(9), 400);
     let all = runs(&f, &who, None, None);
     let seen: Vec<_> = all["changes"]
         .as_array()

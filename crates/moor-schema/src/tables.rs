@@ -88,9 +88,11 @@ tables! {
     MachineBoxes { BoxId, MachineId, Slot, Reach, Facts, Prepared, SuspendedAt, Evicted,
         UpdatedAt, Inc }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
-        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also, Config }
+        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also, Config,
+        Plan, Revision }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
-        RecordedAt, Seq }
+        RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep }
+    WorkflowRunHistory { Run, N, At, Entry }
     WorkflowSeq { Id, N }
     Repos { Repo, Config, Revision, EditedBy, EditedAt }
 }

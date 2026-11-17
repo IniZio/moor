@@ -43,6 +43,7 @@ mod wanted_effect;
 mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
+mod workflow_plans;
 mod workflows;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
@@ -88,4 +89,5 @@ pub const STEPS: &[Step] = &[
     step("V82__box_config", box_config::write),
     step("V83__link_provides", link_provides::write),
     step("V84__node_settings", node_settings::write),
+    step("V85__workflow_plans", workflow_plans::write),
 ];

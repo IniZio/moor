@@ -229,7 +229,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
     use moor_core::name::ForgeRepo;
     use moor_core::user::Identity;
     use moor_core::workflow::{
-        TimeoutMinutes, WorkflowDef, WorkflowName, WorkflowOutcome, WorkflowRun, WorkflowSchedule,
+        NewRun, RunEnd, RunState, TimeoutMinutes, WorkflowDef, WorkflowName, WorkflowSchedule,
     };
 
     let dir = tempfile::tempdir().unwrap();
@@ -247,11 +247,11 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
     )
     .unwrap();
     let id = source.put_workflow(user, &def).unwrap();
-    let run = |due: i64| WorkflowRun {
+    let run = |due: i64| NewRun {
         workflow: id,
         repo: ForgeRepo::new("o", "n"),
         due_at: Ts::from_millis(due),
-        outcome: WorkflowOutcome::SkippedOverlap,
+        state: RunState::Done(RunEnd::SkippedOverlap),
         recorded_at: Ts::from_millis(due),
     };
     source.record_workflow_run(&run(1)).unwrap();

@@ -7,7 +7,7 @@ use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
 use moor_core::view::LaunchFailure;
-use moor_core::workflow::{box_name, RunEnd, Workflow, WorkflowOutcome};
+use moor_core::workflow::{box_name, RunOutcome, RunState, Workflow};
 
 use crate::cx::Cx;
 use crate::ops::{close, end_session};
@@ -43,7 +43,7 @@ pub(super) fn broken_detail(row: &BoxRow) -> String {
 /// run in it until a person acts. The Box stays open for inspection and nothing retries it.
 pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), StoreError> {
     for run in store.open_workflow_runs(w.id)? {
-        let WorkflowOutcome::Started { box_id } = run.outcome else {
+        let RunState::Running { box_id, .. } = run.state else {
             continue;
         };
         let row = store.box_row(box_id)?;
@@ -51,11 +51,16 @@ pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), St
         match run_verdict(row.as_ref().map(box_facts).as_ref(), now) {
             RunVerdict::Running => {}
             RunVerdict::Finished => {
-                store.end_workflow_run(key, RunEnd::Finished, now)?;
+                // Nothing yet tells a delivery from a quiet agent, so quiet is a delivery with
+                // no result.
+                let delivered = RunOutcome::Delivered {
+                    result: String::new(),
+                };
+                store.end_workflow_run(key, (box_id, delivered), now)?;
             }
             RunVerdict::Broken => {
                 if let Some(row) = &row {
-                    store.refuse_run(key, (&broken_detail(row), false))?;
+                    store.refuse_run(key, (&broken_detail(row), false), now)?;
                 }
             }
         }
@@ -88,7 +93,8 @@ pub(super) fn expire_runs(
                 ));
             }
         }
-        store.end_workflow_run((w.id, &e.repo, e.due_at), RunEnd::TimedOut, now)?;
+        let key = (w.id, &e.repo, e.due_at);
+        store.end_workflow_run(key, (e.box_id, RunOutcome::TimedOut { at: e.at }), now)?;
     }
     Ok(())
 }
@@ -144,11 +150,11 @@ pub(super) fn enforce_start_limit(
                 _ => true,
             };
         if b.claimed_only {
-            if store.refuse_run(key, (&detail, true))? {
+            if store.refuse_run(key, (&detail, true), now)? {
                 close(out);
             }
         } else if close(out) {
-            store.refuse_run(key, (&detail, false))?;
+            store.refuse_run(key, (&detail, false), now)?;
         }
     }
     Ok(())

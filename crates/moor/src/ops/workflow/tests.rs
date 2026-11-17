@@ -11,8 +11,8 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName, WorkflowOutcome, WorkflowRun,
-    WorkflowSchedule, WorkflowState,
+    NewRun, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
+    WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 use moor_core::{BoxId, BoxPath};
 
@@ -22,6 +22,7 @@ use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
+use crate::testing::runs::{refused, running, skipped, timed_out};
 
 pub(super) const DAY: i64 = 86_400_000;
 /// The first 09:00 UTC after the fake clock's start.
@@ -119,7 +120,7 @@ impl Rig {
 
     /// The Box the newest run started.
     fn latest_box(&self, id: WorkflowId) -> BoxId {
-        self.latest(id).outcome.box_id().unwrap()
+        self.latest(id).state.box_id().unwrap()
     }
 }
 
@@ -156,7 +157,7 @@ fn a_claim_a_crash_left_is_settled_and_never_started_again() {
     let claimed = RefCell::new(0);
     tick(&r.cx, &|_job| *claimed.borrow_mut() += 1, &|| false);
     assert_eq!(*claimed.borrow(), 1);
-    assert_eq!(r.latest(id).outcome, WorkflowOutcome::Starting);
+    assert_eq!(r.latest(id).state, RunState::Queued);
 
     r.pass();
     assert_eq!(r.open_boxes(), 0, "the next controller does not start it");
@@ -164,8 +165,8 @@ fn a_claim_a_crash_left_is_settled_and_never_started_again() {
 
     assert!(resolve_interrupted(&r.cx).is_empty());
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Refused { .. }
+        r.latest(id).state,
+        RunState::Done(RunEnd::Refused { .. })
     ));
     assert_eq!(r.open_boxes(), 0);
     assert!(r
@@ -207,12 +208,7 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
     )
     .unwrap();
     resolve_interrupted(&r.cx);
-    assert_eq!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Started {
-            box_id: BoxId::new(started.boxed.id)
-        }
-    );
+    assert_eq!(r.latest(id).state, running(started.boxed.id));
 }
 
 #[test]
@@ -253,9 +249,9 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
         .apply(Decision::new(box_id).lifecycle(failed))
         .unwrap();
     resolve_interrupted(&r.cx);
-    let outcome = r.latest(id).outcome;
+    let outcome = r.latest(id).state;
     assert!(
-        matches!(&outcome, WorkflowOutcome::Refused { detail } if detail.contains("clone failed")),
+        matches!(&outcome, RunState::Done(RunEnd::Refused { detail }) if detail.contains("clone failed")),
         "{outcome:?}"
     );
 }
@@ -269,7 +265,7 @@ fn a_firing_while_the_previous_box_is_open_is_skipped_and_recorded() {
     r.pass();
     r.advance_to(FIRST_DUE + DAY + 1_000);
     r.pass();
-    assert_eq!(r.latest(id).outcome, WorkflowOutcome::SkippedOverlap);
+    assert_eq!(r.latest(id).state, RunState::Done(RunEnd::SkippedOverlap));
     assert_eq!(r.latest(id).due_at, Ts::from_millis(FIRST_DUE + DAY));
     assert_eq!(r.open_boxes(), 1);
 }
@@ -280,9 +276,9 @@ fn a_refused_start_is_recorded_with_its_message_and_makes_no_box() {
     let id = r.put(180);
     r.advance_to(FIRST_DUE + 1_000);
     r.pass();
-    let outcome = r.latest(id).outcome;
+    let outcome = r.latest(id).state;
     assert!(
-        matches!(&outcome, WorkflowOutcome::Refused { detail } if !detail.is_empty()),
+        matches!(&outcome, RunState::Done(RunEnd::Refused { detail }) if !detail.is_empty()),
         "{outcome:?}"
     );
     assert_eq!(r.open_boxes(), 0);
@@ -312,24 +308,20 @@ fn a_run_past_its_timeout_ends_its_session_and_keeps_its_box() {
 
     r.advance_to(FIRST_DUE + 1_000 + 29 * 60_000);
     r.pass();
-    assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Started { .. }
-    ));
+    assert!(matches!(r.latest(id).state, RunState::Running { .. }));
 
     r.advance_to(FIRST_DUE + 1_000 + 31 * 60_000);
     r.pass();
-    let ended_at = Ts::from_millis(FIRST_DUE + 1_000 + 31 * 60_000);
     assert_eq!(
-        r.latest(id).outcome,
-        WorkflowOutcome::TimedOut { box_id, ended_at }
+        r.latest(id).state,
+        timed_out(box_id.get(), FIRST_DUE + 1_000 + 31 * 60_000)
     );
     assert!(store.live_launch(box_id).unwrap().is_none());
     assert_eq!(r.open_boxes(), 1, "the Box stays for inspection");
 
     r.advance_to(FIRST_DUE + DAY + 1_000);
     r.pass();
-    assert_eq!(r.latest(id).outcome, WorkflowOutcome::SkippedOverlap);
+    assert_eq!(r.latest(id).state, RunState::Done(RunEnd::SkippedOverlap));
 }
 
 #[test]
@@ -347,15 +339,32 @@ fn a_run_finishes_once_its_agent_has_been_quiet_a_while() {
 
     r.pass();
     assert!(
-        matches!(r.latest(id).outcome, WorkflowOutcome::Started { .. }),
+        matches!(r.latest(id).state, RunState::Running { .. }),
         "a moment of quiet"
     );
     r.advance_to(FIRST_DUE + 1_000 + 3 * 60_000);
     r.pass();
+    let run = r.latest(id);
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Finished { .. }
+        run.state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::Delivered { .. },
+            ..
+        })
     ));
+    let kinds: Vec<_> = store
+        .run_history(run.id)
+        .unwrap()
+        .iter()
+        .map(|l| {
+            l.entry
+                .get("kind")
+                .and_then(|k| k.as_str())
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(kinds, ["queued", "entered", "ended"]);
 }
 
 #[test]
@@ -377,8 +386,11 @@ fn a_closed_box_ends_its_run() {
         .unwrap();
     r.pass();
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Finished { .. }
+        r.latest(id).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::Delivered { .. },
+            ..
+        })
     ));
 }
 
@@ -421,8 +433,8 @@ fn a_skip_does_not_unblock_the_next_firing_while_the_run_is_unfinished() {
         r.advance_to(FIRST_DUE + day * DAY + 1_000);
         r.pass();
         assert_eq!(
-            r.latest(id).outcome,
-            WorkflowOutcome::SkippedOverlap,
+            r.latest(id).state,
+            RunState::Done(RunEnd::SkippedOverlap),
             "day {day}"
         );
     }
@@ -444,8 +456,11 @@ fn a_finished_run_with_an_open_box_gets_a_new_box_at_the_next_due_time() {
     r.advance_to(FIRST_DUE + 1_000 + 3 * 60_000);
     r.pass();
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Finished { .. }
+        r.latest(id).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::Delivered { .. },
+            ..
+        })
     ));
 
     r.advance_to(FIRST_DUE + DAY + 1_000);
@@ -471,15 +486,18 @@ fn a_timed_out_run_with_an_open_box_blocks_however_many_skips_follow() {
     r.advance_to(FIRST_DUE + 1_000 + 31 * 60_000);
     r.pass();
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::TimedOut { .. }
+        r.latest(id).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::TimedOut { .. },
+            ..
+        })
     ));
     for day in 1..=30 {
         r.advance_to(FIRST_DUE + day * DAY + 1_000);
         r.pass();
         assert_eq!(r.open_boxes(), 1, "day {day}");
     }
-    assert_eq!(r.latest(id).outcome, WorkflowOutcome::SkippedOverlap);
+    assert_eq!(r.latest(id).state, RunState::Done(RunEnd::SkippedOverlap));
 }
 
 #[test]
@@ -487,25 +505,22 @@ fn skips_between_failures_do_not_hide_the_breaker_streak() {
     let r = rig();
     let id = r.put(180);
     let store = r.cx.store().unwrap();
-    let record = |due: i64, outcome: WorkflowOutcome| {
-        let run = WorkflowRun {
+    let record = |due: i64, state: RunState| {
+        let run = NewRun {
             workflow: id,
             repo: repo(),
             due_at: Ts::from_millis(due),
-            outcome,
+            state,
             recorded_at: Ts::from_millis(due),
         };
         assert!(store.record_workflow_run(&run).unwrap());
     };
-    let refused = || WorkflowOutcome::Refused {
-        detail: "no".to_owned(),
-    };
-    record(FIRST_DUE, refused());
-    record(FIRST_DUE + DAY, refused());
+    record(FIRST_DUE, refused("no"));
+    record(FIRST_DUE + DAY, refused("no"));
     for day in 2..30 {
-        record(FIRST_DUE + day * DAY, WorkflowOutcome::SkippedOverlap);
+        record(FIRST_DUE + day * DAY, skipped());
     }
-    record(FIRST_DUE + 30 * DAY, refused());
+    record(FIRST_DUE + 30 * DAY, refused("no"));
     r.advance_to(FIRST_DUE + 31 * DAY);
     let lines = r.pass();
     assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
@@ -535,10 +550,10 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
             day == 2,
             "{lines:?}"
         );
-        let outcome = r.latest(id).outcome;
+        let outcome = r.latest(id).state;
         let named = |detail: &String| detail.contains(name.as_str()) && detail.contains("npm ci");
         assert!(
-            matches!(&outcome, WorkflowOutcome::Refused { detail } if named(detail)),
+            matches!(&outcome, RunState::Done(RunEnd::Refused { detail }) if named(detail)),
             "day {day}: {outcome:?}"
         );
         assert_eq!(

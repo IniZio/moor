@@ -11,8 +11,8 @@ use moor_core::name::ForgeRepo;
 use moor_core::request::CloseReq;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName, WorkflowOutcome, WorkflowRun,
-    WorkflowSchedule,
+    RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
+    WorkflowRun, WorkflowSchedule,
 };
 use moor_core::{BoxId, StartReq};
 
@@ -87,8 +87,8 @@ fn launched_at(r: &Rig, id: BoxId) -> Ts {
 }
 
 fn refused_detail(run: &WorkflowRun) -> String {
-    match &run.outcome {
-        WorkflowOutcome::Refused { detail } => detail.clone(),
+    match &run.state {
+        RunState::Done(RunEnd::Refused { detail }) => detail.clone(),
         other => panic!("not refused: {other:?}"),
     }
 }
@@ -111,25 +111,22 @@ fn a_setup_longer_than_the_timeout_keeps_its_agent_and_the_timeout_counts_from_t
     let job = claim_only(&r).remove(0);
     r.advance_to(CLAIMED + 18 * MIN);
     run_start(&r.cx, &job);
-    let box_id = r.latest(id).outcome.box_id().unwrap();
+    let box_id = r.latest(id).state.box_id().unwrap();
     let agent = launched_at(&r, box_id).as_millis();
     r.pass();
-    assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Started { .. }
-    ));
+    assert!(matches!(r.latest(id).state, RunState::Running { .. }));
     assert!(r.cx.store().unwrap().live_launch(box_id).unwrap().is_some());
     r.advance_to(agent + 10 * MIN - 1);
     r.pass();
-    assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::Started { .. }
-    ));
+    assert!(matches!(r.latest(id).state, RunState::Running { .. }));
     r.advance_to(agent + 10 * MIN);
     r.pass();
     assert!(matches!(
-        r.latest(id).outcome,
-        WorkflowOutcome::TimedOut { .. }
+        r.latest(id).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::TimedOut { .. },
+            ..
+        })
     ));
     assert!(r.cx.store().unwrap().live_launch(box_id).unwrap().is_none());
 }
@@ -142,7 +139,7 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
     r.pass();
     let queued = latest_of(&r, id, &other());
     let queued_box = queued
-        .outcome
+        .state
         .box_id()
         .expect("queued Box recorded as started");
     assert!(r
@@ -156,8 +153,8 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
     r.advance_to(CLAIMED + 59 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).outcome,
-        WorkflowOutcome::Started { .. }
+        latest_of(&r, id, &other()).state,
+        RunState::Running { .. }
     ));
 
     r.advance_to(CLAIMED + 61 * MIN);
@@ -180,8 +177,8 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
         .unwrap()
         .is_none());
     assert!(matches!(
-        latest_of(&r, id, &super::repo()).outcome,
-        WorkflowOutcome::Started { .. }
+        latest_of(&r, id, &super::repo()).state,
+        RunState::Running { .. }
     ));
 }
 
@@ -199,7 +196,7 @@ fn the_next_firing_runs_after_a_start_limit_breach() {
     let next = latest_of(&r, id, &other());
     assert!(next.due_at > breached.due_at);
     assert!(
-        !matches!(next.outcome, WorkflowOutcome::SkippedOverlap),
+        !matches!(next.state, RunState::Done(RunEnd::SkippedOverlap)),
         "{next:?}"
     );
 }
@@ -210,8 +207,8 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
     let id = two_repos(&r, 10);
     r.advance_to(CLAIMED);
     r.pass();
-    let holder = latest_of(&r, id, &super::repo()).outcome.box_id().unwrap();
-    let waiting = latest_of(&r, id, &other()).outcome.box_id().unwrap();
+    let holder = latest_of(&r, id, &super::repo()).state.box_id().unwrap();
+    let waiting = latest_of(&r, id, &other()).state.box_id().unwrap();
     r.advance_to(CLAIMED + 30 * MIN);
     close_box(&r, holder);
     let name =
@@ -246,14 +243,17 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
     r.advance_to(agent + 9 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).outcome,
-        WorkflowOutcome::Started { .. }
+        latest_of(&r, id, &other()).state,
+        RunState::Running { .. }
     ));
     r.advance_to(agent + 10 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).outcome,
-        WorkflowOutcome::TimedOut { .. }
+        latest_of(&r, id, &other()).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::TimedOut { .. },
+            ..
+        })
     ));
 }
 
@@ -265,7 +265,7 @@ fn a_claim_with_no_box_past_the_limit_is_refused_and_a_late_start_changes_nothin
     let job = claim_only(&r).remove(0);
     r.advance_to(CLAIMED + 59 * MIN);
     r.pass();
-    assert_eq!(r.latest(id).outcome, WorkflowOutcome::Starting);
+    assert_eq!(r.latest(id).state, RunState::Queued);
     r.advance_to(CLAIMED + 61 * MIN);
     r.pass();
     let detail = refused_detail(&r.latest(id));
@@ -346,7 +346,7 @@ fn a_claim_settled_at_boot_keeps_its_claim_time_and_counts_the_run_from_its_agen
     r.advance_to(agent + 25 * MIN);
     resolve_interrupted(&r.cx);
     let run = r.latest(id);
-    assert!(matches!(run.outcome, WorkflowOutcome::Started { .. }));
+    assert!(matches!(run.state, RunState::Running { .. }));
     assert_eq!(
         run.recorded_at,
         Ts::from_millis(CLAIMED),
@@ -354,7 +354,13 @@ fn a_claim_settled_at_boot_keeps_its_claim_time_and_counts_the_run_from_its_agen
     );
     r.pass();
     assert!(
-        matches!(r.latest(id).outcome, WorkflowOutcome::TimedOut { .. }),
+        matches!(
+            r.latest(id).state,
+            RunState::Done(RunEnd::Ended {
+                outcome: RunOutcome::TimedOut { .. },
+                ..
+            })
+        ),
         "the agent has worked past the timeout, whenever the controller restarted"
     );
 }

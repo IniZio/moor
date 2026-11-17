@@ -3,7 +3,7 @@
 A workflow's prompt becomes a short plan of typed steps that a person reviews.
 Each run freezes the plan and walks it. A step counts only when the agent
 reports it with evidence, or when the controller's own check passes. moor
-holds no task logic. A dependency update is one prompt like any other.
+holds no job-specific logic. A dependency update is one prompt like any other.
 
 The proof is four dependency-check workflows on the team cluster, one of them
 on `IniZio/moor-pilot-example`.
@@ -408,7 +408,7 @@ plan:
   plan with `list_workflows`.
 - Read `get_repo_config`. Say in the reply when a step needs a host or a
   credential that the repo does not grant. moor does not judge this itself,
-  because that would be task logic.
+  because that would be job-specific logic.
 
 ### Review
 
@@ -512,7 +512,7 @@ Box gone) or Broken. Finished stops meaning "the run is done". It is renamed
 Once a step has been reported, the reminder counter starts over. A run is
 Incomplete only when one step goes quiet twice without a report.
 
-The reminder is one steer, the same for every task:
+The reminder is one steer, the same for every workflow:
 
 > Step `<id>` ("<title>") has no report yet. Call `report_step` with result
 > ok and the evidence it names (`<names>`). Or call it with result fail and a
@@ -588,7 +588,7 @@ ended outcomes map to `Finished` or `TimedOut` as their row says.
 ## The Box's prompt
 
 moor wraps the workflow prompt with one generic preamble. The preamble is the
-same for every task:
+same for every workflow:
 
 ```text
 <workflow prompt>

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::name::{BoxId, ForgeRepo};
+use crate::name::ForgeRepo;
 use crate::seam::clock::Ts;
 use crate::user::UserId;
 
@@ -35,6 +35,11 @@ pub enum WorkflowError {
     /// The prompt is empty.
     #[error("a workflow needs a prompt")]
     NoPrompt,
+    /// A step id is not 1-32 bytes of lowercase letters, digits and `-`, starting with a letter.
+    #[error(
+        "invalid step id `{0}`: use 1-32 lowercase letters, digits or '-', starting with a letter"
+    )]
+    StepId(String),
     /// The timeout is outside 1-720 minutes.
     #[error("invalid timeout of {0} minutes: use 1 to 720")]
     Timeout(u32),
@@ -252,85 +257,26 @@ pub struct Workflow {
     pub created_at: Ts,
     /// When it was last changed.
     pub updated_at: Ts,
-}
-
-/// What came of one due time for one repo.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorkflowOutcome {
-    /// The firing is claimed and its Box is being started. It is recorded before the start, so
-    /// a crash leaves it behind and the firing is never repeated.
-    Starting,
-    /// A Box was started and has not ended.
-    Started {
-        /// The Box.
-        box_id: BoxId,
-    },
-    /// The Box finished before its timeout.
-    Finished {
-        /// The Box.
-        box_id: BoxId,
-        /// When the run ended.
-        ended_at: Ts,
-    },
-    /// The Box was still running at its timeout and was expired.
-    TimedOut {
-        /// The Box.
-        box_id: BoxId,
-        /// When the run was expired.
-        ended_at: Ts,
-    },
-    /// The previous firing's Box was still open, so none was started.
-    SkippedOverlap,
-    /// The start was refused.
-    Refused {
-        /// Why, as the start reported it.
-        detail: String,
-    },
-}
-
-impl WorkflowOutcome {
-    /// The Box this outcome started, if it started one.
-    #[must_use]
-    pub const fn box_id(&self) -> Option<BoxId> {
-        match self {
-            Self::Started { box_id }
-            | Self::Finished { box_id, .. }
-            | Self::TimedOut { box_id, .. } => Some(*box_id),
-            Self::Starting | Self::SkippedOverlap | Self::Refused { .. } => None,
-        }
-    }
-}
-
-/// How a started run ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunEnd {
-    /// It finished before its timeout.
-    Finished,
-    /// It ran to its timeout.
-    TimedOut,
-}
-
-/// What a firing records: one repo at one due time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowRun {
-    /// The workflow.
-    pub workflow: WorkflowId,
-    /// The repo.
-    pub repo: ForgeRepo,
-    /// The scheduled time this firing answers.
-    pub due_at: Ts,
-    /// What came of it.
-    pub outcome: WorkflowOutcome,
-    /// When it was recorded, which for a started run is when it started.
-    pub recorded_at: Ts,
+    /// The steps a run walks. [`Plan::single`] of the prompt until a person writes one.
+    pub plan: Plan,
+    /// Counts the writes of the workflow, from 0.
+    pub revision: u64,
 }
 
 mod box_name;
+mod history;
+mod plan;
+mod run;
+#[cfg(test)]
+mod run_tests;
 mod schedule;
 #[cfg(test)]
 mod tests;
 
 pub use box_name::box_name;
+pub use history::HistoryEntry;
+pub use plan::{Plan, PromptHash, Step, StepId, StepKind, Tries};
+pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowRun};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 
 /// One entry of a user's change stream, ordered by `seq` across runs and workflows.

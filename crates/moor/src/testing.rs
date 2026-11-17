@@ -12,6 +12,7 @@ pub(crate) mod inbox;
 pub(crate) mod proc;
 pub(crate) mod proxy_host;
 pub(crate) mod rng;
+pub(crate) mod runs;
 
 /// A Box name for tests; bare names are still accepted.
 pub(crate) fn box_name(s: &str) -> moor_core::BoxName {
