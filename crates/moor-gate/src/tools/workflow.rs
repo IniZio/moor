@@ -32,7 +32,7 @@ struct AddArgs {
     /// workflow clones beside its own repo; none when left out.
     #[serde(default)]
     also: Vec<String>,
-    /// A partial repo config, as YAML in the `.moor.yaml` format, laid over the repo's stored
+    /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
     /// replace. None when left out.
     config: Option<String>,

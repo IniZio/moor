@@ -107,13 +107,13 @@ fn a_set_at_a_stale_revision_is_refused_naming_the_current_one() {
 #[test]
 fn a_user_who_can_push_may_set_and_a_user_who_cannot_may_only_read() {
     let dir = tempfile::tempdir().unwrap();
-    let pusher = user(dir.path(), &forge(Ok(repo_at(BASE, None))));
+    let pusher = user(dir.path(), &forge(Ok(repo_at(BASE))));
     let set_ok = set(&pusher, &set_req("setup: [a]\n", Some(0))).unwrap();
     assert_eq!(set_ok.edited_by.as_deref(), Some("local:1000"));
 
     let read_only = RepoAt {
         can_push: false,
-        ..repo_at(BASE, None)
+        ..repo_at(BASE)
     };
     let reader = user(dir.path(), &forge(Ok(read_only)));
     let err = set(&reader, &set_req("setup: [b]\n", Some(1))).unwrap_err();
@@ -152,7 +152,7 @@ fn a_user_whose_account_cannot_see_the_repo_reads_and_writes_nothing() {
 #[test]
 fn a_user_with_no_github_token_is_told_to_log_in() {
     let dir = tempfile::tempdir().unwrap();
-    let cx = user(dir.path(), &forge(Ok(repo_at(BASE, None))));
+    let cx = user(dir.path(), &forge(Ok(repo_at(BASE))));
     let store = cx.store().unwrap();
     let name = moor_core::user::SecretName::parse("github").unwrap();
     store.delete_user_secret(REQUESTER_USER, &name).unwrap();

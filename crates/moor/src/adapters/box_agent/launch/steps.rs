@@ -69,7 +69,7 @@ fn agent_missing() -> Failure {
         "agent",
         &format!(
             "the agent command `{program}` is not on the Box's PATH; install it in the Box image \
-             or in the `setup` commands of .moor.yaml"
+             or in the `setup` commands of the repo config"
         ),
     )
 }

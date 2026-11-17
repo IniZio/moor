@@ -13,10 +13,11 @@ use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, ErrorKind, StartReq};
 
 use super::state::WORKING;
-use super::{repo, repo_req, script_base_yaml, world, World, BASE};
+use super::{repo, repo_req, script_repo, world, World, BASE};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
+use crate::testing::cx::store_config;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::repo_at;
@@ -28,10 +29,10 @@ pub(super) fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-/// Starts `demo` of a repo whose `.moor.yaml` is `yaml`.
+/// Starts `demo` of a repo whose stored repo config is `yaml`.
 pub(super) fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::view::StartView) {
     let w = world(driver);
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     let v = run(&w.cx, &start_req()).unwrap();
     (w, v)
 }
@@ -43,6 +44,7 @@ pub(super) fn start_as(
     driver: FakeDriver,
 ) -> (World, moor_core::view::StartView) {
     let w = world(driver);
+    store_config(w.cx.store().unwrap(), &repo(), yaml);
     let author = GitAuthor {
         name: author.0.to_owned(),
         email: author.1.to_owned(),
@@ -51,7 +53,7 @@ pub(super) fn start_as(
         repo(),
         Ok(RepoAt {
             author,
-            ..repo_at(BASE, Some(yaml))
+            ..repo_at(BASE)
         }),
     );
     let v = run(&w.cx, &start_req()).unwrap();
@@ -346,7 +348,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with
     let driver =
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let mut w = world(driver);
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let v = run(&w.cx, &start_req()).unwrap();
@@ -376,7 +378,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with
 #[test]
 fn setup_holds_the_setup_effect_and_ends_it_after() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
@@ -456,7 +458,7 @@ fn start_recording_launches(
     Result<moor_core::view::StartView, crate::error::CommandError>,
 ) {
     let mut w = world(FakeDriver::new().exec_results(results));
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let with_prompt = StartReq {

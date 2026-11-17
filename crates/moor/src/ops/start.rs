@@ -56,14 +56,12 @@ pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
-    /// The repo the Box clones, with its config and author at the base; `None` for no repo.
+    /// The repo the Box clones, with its author at the base; `None` for no repo.
     repo: Option<BoxRepo>,
     /// The full sha the Box starts from; `None` for a Box with no repo.
     base: Option<String>,
     /// The repo's MCP and Claude settings files at the base.
     files: RepoFiles,
-    /// Whether the requester's GitHub account may push to the repo.
-    can_push: bool,
     /// The requester's agent profile; `None` when they set none.
     profile: Option<profile::Gathered>,
 }
@@ -87,17 +85,13 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         return Err(relaunch::nothing_to_resume());
     }
     let mut facts = gather(cx, req, user)?;
-    if let Some(boxed) = facts.repo.as_mut() {
-        repo::stored_config(cx, boxed, facts.can_push)?;
-    }
     let flags = Flags {
         model: req.model.clone(),
         no_agent: req.no_agent,
     };
     let repo_cfg = repo_config_of(
         cx,
-        facts.repo.as_ref(),
-        facts.base.as_deref(),
+        facts.repo.as_ref().map(|boxed| &boxed.repo),
         req.config.as_deref(),
     )?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
@@ -330,7 +324,6 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
             repo: None,
             base: None,
             files: RepoFiles::default(),
-            can_push: false,
             profile,
         });
     };
@@ -340,13 +333,11 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     Ok(Facts {
         repo: Some(BoxRepo {
             repo: repo.clone(),
-            moor_yaml: at.files.moor_yaml.clone(),
             author: at.author,
             others,
         }),
         base: Some(at.base.as_str().to_owned()),
         files: at.files,
-        can_push: at.can_push,
         profile,
     })
 }

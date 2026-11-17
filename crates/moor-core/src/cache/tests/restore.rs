@@ -305,7 +305,7 @@ fn no_volume_with_steps_means_no_script() {
 #[test]
 fn the_seal_key_is_refused_with_no_alias() {
     let yaml = "cache: {volumes: [{name: v, path: ~/v, seal: [\"rm -rf x\"]}]}";
-    let repo = parse_repo(".moor.yaml", yaml).unwrap_err().to_string();
+    let repo = parse_repo("repo config", yaml).unwrap_err().to_string();
     assert!(
         repo.contains("unknown field") && repo.contains("seal"),
         "{repo}"
@@ -320,7 +320,7 @@ fn the_seal_key_is_refused_with_no_alias() {
 #[test]
 fn a_blank_restore_step_is_refused() {
     let yaml = "cache: {volumes: [{name: v, path: ~/v, restore: [\" \"]}]}";
-    let e = parse_repo(".moor.yaml", yaml).unwrap_err().to_string();
+    let e = parse_repo("repo config", yaml).unwrap_err().to_string();
     assert!(e.contains("restore"), "{e}");
 }
 

@@ -134,7 +134,7 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
 /// A plan for repo `o/r` built from `repo_yaml`.
 fn plan(repo_yaml: &str) -> moor_core::cache::CachePlan {
     let layers = moor_core::cache::CacheLayers {
-        repo: moor_core::config::parse_repo(".moor.yaml", repo_yaml)
+        repo: moor_core::config::parse_repo("repo config", repo_yaml)
             .unwrap()
             .cache,
         operator: moor_core::cache::CacheConfig::default(),

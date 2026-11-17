@@ -60,7 +60,7 @@ fn repo() -> ForgeRepo {
 impl Rig {
     /// Makes the forge answer the repo, so a start of it can go ahead.
     fn answer_repo(&self) {
-        self.forge.answer(repo(), Ok(repo_at("abc123", None)));
+        self.forge.answer(repo(), Ok(repo_at("abc123")));
     }
 
     /// Stores a daily 09:00 UTC workflow of the repo, owned by the test requester.

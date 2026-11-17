@@ -23,6 +23,7 @@ use crate::ops::close::run as close;
 use crate::ops::common::promote::{pass, Promoting, PROMOTE_WAIT};
 use crate::ops::show;
 use crate::ops::start;
+use crate::testing::cx::store_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
@@ -499,8 +500,8 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
     let w = world(limit(1), driver);
     let repo = ForgeRepo::new("o", "n");
     let yaml = "setup: [\"echo one\", \"echo two\"]\n";
-    w.forge
-        .answer(repo.clone(), Ok(repo_at("abc123", Some(yaml))));
+    w.forge.answer(repo.clone(), Ok(repo_at("abc123")));
+    store_config(w.cx.store().unwrap(), &repo, yaml);
     let id = queue_req(
         &w,
         &StartReq {
@@ -538,8 +539,8 @@ fn exec_on(w: &World, q: &mut sea_query::UpdateStatement) {
 /// Queues `first` from a repo whose stored config no longer parses.
 fn queue_unparsable(w: &World) -> BoxId {
     let repo = ForgeRepo::new("o", "n");
-    w.forge
-        .answer(repo.clone(), Ok(repo_at("abc123", Some("setup: []\n"))));
+    w.forge.answer(repo.clone(), Ok(repo_at("abc123")));
+    store_config(w.cx.store().unwrap(), &repo, "setup: []\n");
     let req = StartReq {
         repo: Some(repo),
         ..start_req("first")

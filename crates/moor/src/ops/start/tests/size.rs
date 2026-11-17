@@ -3,7 +3,7 @@
 use moor_core::config::UserConfig;
 
 use super::setup::{start_req, start_with};
-use super::{script_base_yaml, world, world_with};
+use super::{script_repo, world, world_with};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 
@@ -24,7 +24,7 @@ fn a_repo_size_beats_the_users() {
     let user: UserConfig =
         moor_core::config::parse_user("config.yaml", "box:\n  size: medium\n").unwrap();
     let w = world_with(FakeDriver::new(), user);
-    script_base_yaml(&w, Some("box:\n  size: xlarge\n"));
+    script_repo(&w, Some("box:\n  size: xlarge\n"));
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(classes(&w), ["xlarge"]);
 }
@@ -32,7 +32,7 @@ fn a_repo_size_beats_the_users() {
 #[test]
 fn a_box_with_no_configured_size_asks_for_no_class() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(w.driver.asked_classes(), [None]);
 }
@@ -42,7 +42,7 @@ fn a_user_size_alone_is_asked_for() {
     let user: UserConfig =
         moor_core::config::parse_user("config.yaml", "box:\n  size: medium\n").unwrap();
     let w = world_with(FakeDriver::new(), user);
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(classes(&w), ["medium"]);
 }

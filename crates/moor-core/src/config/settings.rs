@@ -15,7 +15,7 @@ use crate::cache::CacheLayers;
 pub enum Layer {
     /// A command-line flag.
     Flag,
-    /// The repo config (`.moor.yaml`).
+    /// The repo config.
     Repo,
     /// The user config.
     User,

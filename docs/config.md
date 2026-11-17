@@ -6,7 +6,7 @@ means every key takes its default.
 | File | Who writes it | Where it is |
 | --- | --- | --- |
 | [User config](#user-config) | The operator, or `moor up` | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `~/.config/moor/config.yaml` |
-| [Repo config](#mooryaml) | Anyone who can push to the repo | Stored in moor and edited with `moor repo config`; a repo's `.moor.yaml` is imported on its first start |
+| [Repo config](#repo-config) | Anyone who can push to the repo | Stored in moor and edited with `moor repo config` or the portal |
 | [Controller config](#controller-config) | The operator, or `moor up` | The path given to `moor controller serve --config` |
 
 The controller reads the user config of the host user it runs as. On a team
@@ -18,7 +18,7 @@ moor, that file holds the operator's defaults for everyone.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.size` | `small`, `medium`, `large`, `xlarge` | none | The Box size. `.moor.yaml` wins. With no size, the provider decides. |
+| `box.size` | `small`, `medium`, `large`, `xlarge` | none | The Box size. The repo config wins. With no size, the provider decides. |
 | `box.node` | string | the only node | The default shared node. Required when `nodes` has more than one entry. |
 | `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names none. |
 | `box.sleep_after` | duration, such as `45m` | `5m` | How long a Box stays idle before it sleeps. |
@@ -63,7 +63,7 @@ on personal nodes. Personal nodes need no config. See
 ### `box_credentials`
 
 Secret names a start checks for, beyond the ones the Proxy rules need. A
-`.moor.yaml` can list names too. moor never puts these secrets in the Box. A
+repo config can list names too. moor never puts these secrets in the Box. A
 secret reaches a request only through a Proxy rule.
 
 ### `mcp_servers`
@@ -170,7 +170,7 @@ The default rules are `claude` for `api.anthropic.com` and `github-api`,
 
 ### `cache`
 
-The `.moor.yaml` [`cache` keys](#cache-volumes), applied to every Box. A
+The repo config's [`cache` keys](#cache-volumes), applied to every Box. A
 volume declared here is kept per user, across all their repos.
 
 ```yaml
@@ -195,7 +195,7 @@ cache:
 moor refuses `credentials`, `github`, and `proxy.direct` in a user config.
 Secrets belong to each user, and a host that no rule serves is already direct.
 
-## `.moor.yaml`
+## Repo config
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -217,9 +217,8 @@ groups it started with. End such a setup with
 `sudo -n systemctl restart user@$(id -u).service`, or do not rely on the new
 group.
 
-moor keeps this config per repo, in its store, and a start imports a repo's
-`.moor.yaml` once. [Set up a repo](repo.md) shows the keys in use and says
-which changes reach a running Box.
+moor keeps this config per repo, in its store. [Set up a repo](repo.md) shows
+the keys in use and says which changes reach a running Box.
 
 ### Cache volumes
 
@@ -268,7 +267,7 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `android` | `~/.android/cache`, `~/.android/build-cache` |
 | `android-sdk` | `/opt/android-sdk` |
 
-A preset, the work tree, and a `.moor.yaml` volume are kept per user and repo.
+A preset, the work tree, and a repo config volume are kept per user and repo.
 A user config volume is kept per user. Another user's Box never sees a cache.
 
 The kept work tree lives at `~/moor/repos/<repo name>` in every Box of the repo.

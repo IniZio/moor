@@ -41,7 +41,7 @@ pub(super) use follow::Sink;
 ///
 /// # Errors
 /// [`CommandError`] when the command could not start: unknown Box, no usable machine, a busy machine,
-/// a `.moor.yaml` that differs from the base commit without trust, or a failure of the driver or the store before the command ran.
+/// or a failure of the driver or the store before the command ran.
 pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     streamed(cx, req, None)
 }

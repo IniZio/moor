@@ -11,7 +11,7 @@ use moor_core::seam::proxy_host::{
 use moor_core::{BoxId, BoxPath};
 
 use super::setup::{kinds, start_req};
-use super::{script_base_yaml, World};
+use super::{script_repo, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::FakeProxyHost;
@@ -60,7 +60,7 @@ fn world() -> World {
         driver: w.driver.clone(),
     };
     w.cx = w.cx.with_proxy_host(Arc::new(host));
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     w
 }
 

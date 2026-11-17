@@ -14,7 +14,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 
 fn plan(repo_yaml: &str, user_yaml: &str) -> CachePlan {
     let layers = CacheLayers {
-        repo: parse_repo(".moor.yaml", repo_yaml).unwrap().cache,
+        repo: parse_repo("repo config", repo_yaml).unwrap().cache,
         operator: parse_user("config.yaml", user_yaml).unwrap().cache,
         ..CacheLayers::default()
     };
@@ -168,7 +168,7 @@ fn only_operator_volumes_still_send_the_repo_scope() {
 #[test]
 fn a_box_without_a_repo_sends_no_scope() {
     let layers = CacheLayers {
-        repo: parse_repo(".moor.yaml", "").unwrap().cache,
+        repo: parse_repo("repo config", "").unwrap().cache,
         operator: parse_user(
             "config.yaml",
             "cache: {volumes: [{name: cargo-bin, path: ~/.cargo/bin}]}",

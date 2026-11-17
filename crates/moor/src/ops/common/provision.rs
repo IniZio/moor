@@ -54,7 +54,7 @@ pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
 /// Returns what ran, or `None` when nothing was provisioned. The caller holds the Box's `turn`,
 /// and the row is read again under it.
 ///
-/// Settings come from the `.moor.yaml` stored when the Box started, with `flags` over them.
+/// Settings come from the repo config the store holds now, with `flags` over them.
 /// Nothing is copied into a ready Box, and its setup never runs again; a failed or interrupted
 /// setup is only warned about.
 pub(crate) fn reprovision(

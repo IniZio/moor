@@ -389,10 +389,8 @@ fn the_same_workflow_on_another_repo_keeps_its_box() {
     let r = rig_probing(CLEAN);
     let other = moor_core::name::ForgeRepo::new("o", "m");
     r.answer_repo();
-    r.forge.answer(
-        other.clone(),
-        Ok(crate::testing::forge::repo_at("abc123", None)),
-    );
+    r.forge
+        .answer(other.clone(), Ok(crate::testing::forge::repo_at("abc123")));
     let def = moor_core::workflow::WorkflowDef::new(
         WorkflowName::parse("daily-fix").unwrap(),
         moor_core::workflow::WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),

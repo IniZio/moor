@@ -77,7 +77,9 @@ database back.
 
 Running a Box from inside a Box needs `/dev/kvm`, because the inner Box is a
 cloud-hypervisor VM. The node's VM provides it as `root:kvm` with mode `0660`,
-so the Box user must be in the `kvm` group. The repo's `.moor.yaml` sizes the
+so the Box user must be in the `kvm` group. The moor repo's config, kept in
+[tools/box-config.yaml](../tools/box-config.yaml) to set with `moor repo config
+set IniZio/moor --file tools/box-config.yaml`, sizes the
 Box `large` and runs `tools/box-nested-kvm.sh`, which adds the user to `kvm` and
 installs the pinned `crabbox-cloudhypervisor` release and runs its `install`,
 which fetches `cloud-hypervisor` and `passt` as it does for a user, and builds the pinned `crabbox`, all into the `nested-kvm` cache volume. A Box on a host
@@ -91,7 +93,7 @@ start a command that opens `/dev/kvm` in a Box session that already exists with
 unless `target/debug/moor` is newer than every tracked file, runs a controller
 with one `runtime: external` node that drives `crabbox-cloudhypervisor`
 (2 vCPU, 4 GiB), and starts a Box on `IniZio/moor-nested-check`, a scratch repo
-with no `.moor.yaml`. Start the outer Box with `--also IniZio/moor-nested-check`
+with no repo config. Start the outer Box with `--also IniZio/moor-nested-check`
 so its Proxy holds credentials for that repo, or set `NESTED_E2E_REPO` to another
 scratch repo you can push to.
 That Box writes NESTED.md and pushes its `moor/<id>-<name>` branch. The script

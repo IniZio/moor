@@ -28,7 +28,7 @@ pub(super) fn fx_woken(text: &str) -> Fx {
     fx_woken_with(text, None)
 }
 
-/// Like [`fx_woken`], with `yaml` as the `.moor.yaml` stored for the Box's base.
+/// Like [`fx_woken`], with `yaml` as the config stored for its repo.
 pub(super) fn fx_woken_with(text: &str, yaml: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
@@ -180,7 +180,7 @@ pub(super) fn fx_setup_failed() -> Fx {
     let id = store
         .apply(crate::testing::cx::new_box_of(
             BoxName::parse_allow_bare("t").unwrap(),
-            crate::testing::cx::box_repo(None),
+            crate::testing::cx::box_repo(),
         ))
         .unwrap()
         .box_id;

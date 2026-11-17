@@ -17,7 +17,7 @@ use crate::ops::run::run;
 
 const YAML: &str = "setup: [make deps]\nenv:\n  B: \"2\"\n  A: \"1\"\n";
 
-/// A Ready Box whose stored `.moor.yaml` is `YAML`.
+/// A Ready Box whose stored repo config is `YAML`.
 fn with_env_yaml() -> Fx {
     ready_yaml(YAML)
 }

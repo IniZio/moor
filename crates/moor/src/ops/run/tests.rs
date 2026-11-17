@@ -79,7 +79,7 @@ fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>, egress_port: u16) ->
         .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)))
 }
 
-/// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`. Its runs play
+/// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored repo config. Its runs play
 /// out with the local sh under `box_dir`, with a fake egress proxy.
 fn bare_with(driver: FakeDriver, yaml: Option<&str>, base: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
@@ -91,13 +91,17 @@ fn bare_with(driver: FakeDriver, yaml: Option<&str>, base: Option<&str>) -> Fx {
     let egress = FakeEgress::start(&home, &bin).unwrap();
     let driver = Arc::new(driver.local_runs(&home, &work));
     let cx = context(dir.path(), &driver, egress.port());
+    if let Some(yaml) = yaml {
+        let repo = moor_core::seam::forge::ForgeRepo::new("o", "n");
+        crate::testing::cx::store_config(cx.store().unwrap(), &repo, yaml);
+    }
     let id = cx
         .store()
         .unwrap()
         .apply(
             Decision::insert(NewBox {
                 name: BoxName::parse_allow_bare("t").unwrap(),
-                repo: Some(crate::testing::cx::box_repo(yaml)),
+                repo: Some(crate::testing::cx::box_repo()),
                 spec: SpecFields {
                     base: base.map(str::to_owned),
                     ..SpecFields::default()
@@ -147,12 +151,12 @@ pub(crate) fn ready_with(driver: FakeDriver) -> Fx {
     ready_repo(driver, None)
 }
 
-/// A Ready Box `t` whose stored `.moor.yaml` is `yaml`.
+/// A Ready Box `t` whose stored repo config is `yaml`.
 pub(in crate::ops::run) fn ready_yaml(yaml: &str) -> Fx {
     ready_repo(FakeDriver::new(), Some(yaml))
 }
 
-/// A Ready Box `t` with a machine from `driver`; `yaml` is its stored `.moor.yaml`.
+/// A Ready Box `t` with a machine from `driver`; `yaml` is its stored repo config.
 pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) -> Fx {
     let f = bare_with(driver, yaml, Some(SHA));
     let store = f.cx.store().unwrap();

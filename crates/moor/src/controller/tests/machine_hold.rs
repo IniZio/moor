@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::Decision;
 use moor_core::seam::clock::Ts;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::UserId;
 use moor_core::{BoxId, BoxName, HoldOp, HoldValue, MachineHoldReq, Request};
 use serde_json::{json, Value};
@@ -18,7 +19,7 @@ use super::authz::{acting, A, B};
 use super::fronts::{ask, refused, Served};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
-use crate::testing::cx::{box_repo, new_box_of};
+use crate::testing::cx::{box_repo, new_box_of, store_config};
 
 const YAML: &str = "machine:\n  labels: [macos]\n  ports: [5432, 8080]\n";
 
@@ -47,6 +48,7 @@ impl Hold {
                 json!({"cmd": "machine-enroll", "name": name, "pubkey": KEY, "labels": [label]});
             assert_eq!(ask(&herdr, &acting(who, &add))["class"], "ok");
         }
+        store_config(&store, &ForgeRepo::new("o", "n"), YAML);
         Self { served, store }
     }
 
@@ -55,7 +57,7 @@ impl Hold {
         let identity = moor_core::user::Identity::parse(who).expect("identity");
         let user: UserId = self.store.user_of(&identity).expect("read").expect("user");
         let name = BoxName::parse_allow_bare(name).expect("name");
-        let new: Decision = new_box_of(name, box_repo(Some(YAML))).requester(user);
+        let new: Decision = new_box_of(name, box_repo()).requester(user);
         self.store.apply(new).expect("box").box_id
     }
 

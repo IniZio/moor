@@ -34,7 +34,7 @@ fn probed_ending(probe: ExecOutcome, result: Option<&str>) -> Fx {
     probed_in(probe, result, None)
 }
 
-/// Like [`probed_ending`], for a Box whose stored `.moor.yaml` is `yaml`.
+/// Like [`probed_ending`], for a Box whose stored repo config is `yaml`.
 fn probed_in(probe: ExecOutcome, result: Option<&str>, yaml: Option<&str>) -> Fx {
     let f = ready_repo(FakeDriver::new().exec_results([Ok(probe)]), yaml);
     let head = git_checkout(&f);

@@ -86,7 +86,7 @@ fn a_credential_withheld_while_the_line_ran_is_named() {
         .exec_stdout(["", "moor setup: $ a\n"])
         .copy_text("moor setup: $ a\nfatal: could not read Username\n");
     let w = super::world(driver);
-    super::script_base_yaml(&w, Some("setup: [a]\n"));
+    super::script_repo(&w, Some("setup: [a]\n"));
     let store = w.cx.store().unwrap().clone();
     w.driver.on_copy_out(move || withhold(&store));
     let v = crate::ops::start::run(&w.cx, &super::setup::start_req()).unwrap();
@@ -105,7 +105,7 @@ fn a_withhold_before_the_line_ran_is_not_blamed() {
         .exec_stdout(["", "moor setup: $ a\n"])
         .copy_text("moor setup: $ a\nboom\n");
     let w = super::world(driver);
-    super::script_base_yaml(&w, Some("setup: [a]\n"));
+    super::script_repo(&w, Some("setup: [a]\n"));
     let store = w.cx.store().unwrap().clone();
     w.driver.on_exec_of("git clone", move || withhold(&store));
     let v = crate::ops::start::run(&w.cx, &super::setup::start_req()).unwrap();
@@ -136,7 +136,7 @@ fn an_exec_that_fails_with_no_output_still_says_why() {
 #[test]
 fn a_setup_cut_by_a_restart_says_so() {
     let w = super::world(FakeDriver::new());
-    super::script_base_yaml(&w, Some("setup: [a]\n"));
+    super::script_repo(&w, Some("setup: [a]\n"));
     let store = w.cx.store().unwrap();
     let id = BoxId::new(1);
     w.driver.after_exec({

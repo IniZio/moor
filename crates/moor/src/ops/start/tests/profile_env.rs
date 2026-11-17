@@ -18,14 +18,14 @@ type Env = Vec<(String, String)>;
 const PROFILE: &str =
     "claude:\n  env:\n    BUN_OPTIONS: \"--preload={profile}/a.js\"\n    NOTE: mine\n";
 
-/// Starts `demo` of [`repo`] for a requester whose profile is `manifest` and whose `.moor.yaml`
+/// Starts `demo` of [`repo`] for a requester whose profile is `manifest` and whose stored repo config
 /// is `yaml`; returns the world, the launch's profile `env` and its repo `env`.
 fn launch(manifest: &str, yaml: &str) -> (World, Env, Env) {
     let engine = Arc::new(FakeEngine::new());
     let mut w = world_answering(None, HEAD, Some(manifest));
     set_profile(&w, None);
     w.cx = w.cx.with_engine(engine.clone());
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     run(&w.cx, &repo_req("demo")).unwrap();
     let launches = engine.launches();
     let sent = launches.first().expect("the Box still starts");

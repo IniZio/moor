@@ -9,13 +9,13 @@ use super::setup::{
     argvs, exit, failed_at_set, failed_setup_with, kinds, script_argv, setup_execs, start_req,
     start_with, warning_codes,
 };
-use super::{script_base_yaml, world, World};
+use super::{script_repo, world, World};
 use crate::cx::owners::Cmd;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use moor_core::domain::box_state::BoxLifecycle;
 
-/// Starts `demo` of a repo whose `.moor.yaml` is `yaml`, on execs giving `results`.
+/// Starts `demo` of a repo whose stored repo config is `yaml`, on execs giving `results`.
 fn failed_setup_then(yaml: &str, results: [Result<ExecOutcome, DriverError>; 4]) -> (World, BoxId) {
     failed_setup_with(yaml, FakeDriver::new().exec_results(results))
 }
@@ -141,7 +141,7 @@ fn start_is_refused_while_a_setup_is_in_flight_and_leaves_it_alone() {
 #[test]
 fn start_does_not_re_run_setup_cut_off_in_a_setting_up_box() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     w.driver
         .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
     let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -30,7 +30,7 @@ fn other() -> ForgeRepo {
 /// A workflow of repos `o/n` and `o/m` with `timeout` minutes, on a one-Box node.
 fn two_repos(r: &Rig, timeout: u32) -> WorkflowId {
     r.answer_repo();
-    r.forge.answer(other(), Ok(repo_at("abc123", None)));
+    r.forge.answer(other(), Ok(repo_at("abc123")));
     let def = WorkflowDef::new(
         WorkflowName::parse("daily-fix").unwrap(),
         WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),

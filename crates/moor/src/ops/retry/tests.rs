@@ -16,6 +16,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq}
 use super::run;
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
+use crate::testing::cx::store_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
@@ -37,7 +38,7 @@ const fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-/// A world whose forge serves a repo with `.moor.yaml` text `yaml`.
+/// A world whose forge serves a repo whose stored repo config is `yaml`.
 fn world(yaml: &str, driver: FakeDriver) -> World {
     let dir = tempfile::tempdir().unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
@@ -45,7 +46,7 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
     let forge = Arc::new(FakeForge::new());
-    forge.answer(ForgeRepo::new("o", "n"), Ok(repo_at("abc123", Some(yaml))));
+    forge.answer(ForgeRepo::new("o", "n"), Ok(repo_at("abc123")));
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
     let cx = Cx::fake_with_clock(
         dir.path(),
@@ -55,6 +56,7 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
         clock,
     )
     .with_forge(forge);
+    store_config(cx.store().unwrap(), &ForgeRepo::new("o", "n"), yaml);
     World {
         _dir: dir,
         cx,
@@ -212,7 +214,7 @@ fn world_with_engine(driver: FakeDriver) -> (World, Arc<FakeEngine>) {
     yaml_world_with_engine("setup: [a]\n", driver)
 }
 
-/// A world serving `.moor.yaml` text `yaml` whose engine answers a launch with a session.
+/// A world whose stored repo config is `yaml` and whose engine answers a launch with a session.
 fn yaml_world_with_engine(yaml: &str, driver: FakeDriver) -> (World, Arc<FakeEngine>) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(pane_session())));
     let mut w = world(yaml, driver);

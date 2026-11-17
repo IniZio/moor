@@ -109,14 +109,13 @@ fn commit(oid: &str, files: &[(&str, Value)]) -> Value {
     c
 }
 
-/// Answers like GitHub for a repo `o/n` whose default branch has all three files, whose
-/// annotated tag `v1` points at a commit with only `.moor.yaml`, and whose branch `moor/t` is
-/// another commit.
+/// Answers like GitHub for a repo `o/n` whose default branch has both files, whose annotated
+/// tag `v1` points at a commit with only `.mcp.json`, and whose branch `moor/t` is another
+/// commit.
 fn github(vars: &Value, permission: &str) -> (u16, String) {
     let default = commit(
         DEFAULT_SHA,
         &[
-            ("moorYaml", blob("setup: make\n")),
             ("mcpJson", blob("{\"mcpServers\":{}}")),
             ("claudeSettings", blob("{\"permissions\":{}}")),
         ],
@@ -124,8 +123,7 @@ fn github(vars: &Value, permission: &str) -> (u16, String) {
     let tagged = commit(
         TAGGED_SHA,
         &[
-            ("moorYaml", blob("setup: old\n")),
-            ("mcpJson", Value::Null),
+            ("mcpJson", blob("{\"mcpServers\":{\"old\":{}}}")),
             ("claudeSettings", Value::Null),
         ],
     );
@@ -157,7 +155,6 @@ fn default_branch_resolves_with_its_files() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
     let at = read_via(&api, None).unwrap();
     assert_eq!(at.base, sha(DEFAULT_SHA));
-    assert_eq!(at.files.moor_yaml.as_deref(), Some("setup: make\n"));
     assert_eq!(at.files.mcp_json.as_deref(), Some("{\"mcpServers\":{}}"));
     assert_eq!(
         at.files.claude_settings.as_deref(),
@@ -178,7 +175,10 @@ fn given_base_resolves_through_its_tag_with_files_at_that_commit() {
     let api = FakeApi::start(|v| github(v, "READ"));
     let at = read_via(&api, Some("v1")).unwrap();
     assert_eq!(at.base, sha(TAGGED_SHA));
-    assert_eq!(at.files.moor_yaml.as_deref(), Some("setup: old\n"));
+    assert_eq!(
+        at.files.mcp_json.as_deref(),
+        Some("{\"mcpServers\":{\"old\":{}}}")
+    );
     assert!(!at.can_push);
 }
 
@@ -186,7 +186,6 @@ fn given_base_resolves_through_its_tag_with_files_at_that_commit() {
 fn missing_files_are_none() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
     let files = read_via(&api, Some("v1")).unwrap().files;
-    assert_eq!(files.mcp_json, None);
     assert_eq!(files.claude_settings, None);
 }
 
@@ -229,9 +228,9 @@ fn http_401_is_rejected() {
     assert_eq!(read_via(&api, None), Err(ForgeError::Rejected));
 }
 
-fn moor_yaml_reply(entry: Value) -> impl FnOnce(&Value) -> (u16, String) + Send {
+fn mcp_json_reply(entry: Value) -> impl FnOnce(&Value) -> (u16, String) + Send {
     move |_| {
-        let at = commit(DEFAULT_SHA, &[("moorYaml", entry)]);
+        let at = commit(DEFAULT_SHA, &[("mcpJson", entry)]);
         ok(&json!({"data": {
             "viewer": {"login": "octo", "databaseId": 42, "name": null},
             "repository": {"viewerPermission": "WRITE", "defaultBranchRef": {"target": at}},
@@ -240,32 +239,32 @@ fn moor_yaml_reply(entry: Value) -> impl FnOnce(&Value) -> (u16, String) + Send 
 }
 
 #[test]
-fn binary_moor_yaml_is_unreadable() {
-    let api = FakeApi::start(moor_yaml_reply(json!({"object": {
+fn binary_mcp_json_is_unreadable() {
+    let api = FakeApi::start(mcp_json_reply(json!({"object": {
         "__typename": "Blob", "byteSize": 10, "isBinary": true, "text": null,
     }})));
     assert_eq!(
         read_via(&api, None),
-        Err(ForgeError::Unreadable(".moor.yaml"))
+        Err(ForgeError::Unreadable(".mcp.json"))
     );
 }
 
 #[test]
-fn oversized_moor_yaml_is_unreadable() {
+fn oversized_mcp_json_is_unreadable() {
     let big = "a".repeat(64 * 1024 + 1);
-    let api = FakeApi::start(moor_yaml_reply(blob(&big)));
+    let api = FakeApi::start(mcp_json_reply(blob(&big)));
     assert_eq!(
         read_via(&api, None),
-        Err(ForgeError::Unreadable(".moor.yaml"))
+        Err(ForgeError::Unreadable(".mcp.json"))
     );
 }
 
 #[test]
-fn moor_yaml_at_the_size_cap_is_read() {
+fn mcp_json_at_the_size_cap_is_read() {
     let max = "a".repeat(64 * 1024);
-    let api = FakeApi::start(moor_yaml_reply(blob(&max)));
+    let api = FakeApi::start(mcp_json_reply(blob(&max)));
     let at = read_via(&api, None).unwrap();
-    assert_eq!(at.files.moor_yaml.map(|t| t.len()), Some(64 * 1024));
+    assert_eq!(at.files.mcp_json.map(|t| t.len()), Some(64 * 1024));
     assert_eq!(
         at.author.name, "octo",
         "an account with no profile name commits as its login"
@@ -408,12 +407,12 @@ fn only_write_maintain_and_admin_can_push() {
 
 #[test]
 fn binary_blob_with_text_is_unreadable() {
-    let api = FakeApi::start(moor_yaml_reply(json!({"object": {
+    let api = FakeApi::start(mcp_json_reply(json!({"object": {
         "__typename": "Blob", "byteSize": 3, "isBinary": true, "text": "abc",
     }})));
     assert_eq!(
         read_via(&api, None),
-        Err(ForgeError::Unreadable(".moor.yaml"))
+        Err(ForgeError::Unreadable(".mcp.json"))
     );
 }
 

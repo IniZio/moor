@@ -5,32 +5,31 @@ use moor_core::seam::forge::{ForgeError, RepoAt};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, CloseReq, ErrorKind, RunReq};
 
-use super::{repo, repo_req, run, script_base_yaml, world, World, BASE};
+use super::{repo, repo_req, run, script_repo, world, World, BASE};
 use crate::store::db::{Conn, DbExt as _};
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
 use moor_schema::tables::Boxes;
 use sea_query::{Asterisk, Expr, ExprTrait as _, Query};
 
-const YAML: &str = "setup: [from-forge]\n";
+const YAML: &str = "setup: [from-store]\n";
 
 /// The token the test requester holds for `github`.
 const TOKEN: &str = "github-test-value";
 
 fn started() -> (World, BoxId) {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     (w, BoxId::new(v.boxed.id))
 }
 
 #[test]
-fn a_start_stores_the_forge_repo_base_config_and_author_then_acquires() {
+fn a_start_stores_the_forge_repo_base_and_author_then_acquires() {
     let (w, id) = started();
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let stored = row.repo.expect("repo");
     assert_eq!(stored.repo, repo());
-    assert_eq!(stored.moor_yaml.as_deref(), Some(YAML));
     assert_eq!(stored.author.name, "Ann Dev");
     assert_eq!(stored.author.email, "1+ann@users.noreply.github.com");
     assert_eq!(row.base.as_deref(), Some(BASE));
@@ -43,13 +42,13 @@ fn a_start_stores_the_forge_repo_base_config_and_author_then_acquires() {
 }
 
 #[test]
-fn the_setup_lines_come_from_the_forge_copy() {
+fn the_setup_lines_come_from_the_stored_repo_config() {
     let (w, _) = started();
     let ran = w
         .driver
         .execs()
         .iter()
-        .any(|(_, spec, _)| spec.argv.iter().any(|a| a.contains("from-forge")));
+        .any(|(_, spec, _)| spec.argv.iter().any(|a| a.contains("from-store")));
     assert!(ran, "{:?}", w.driver.execs());
 }
 
@@ -78,7 +77,7 @@ fn an_account_that_cannot_push_starts_with_a_warning() {
     let w = world(FakeDriver::new());
     let read_only = RepoAt {
         can_push: false,
-        ..repo_at(BASE, None)
+        ..repo_at(BASE)
     };
     w.forge.answer(repo(), Ok(read_only));
     run(&w.cx, &repo_req("demo")).unwrap();
@@ -117,8 +116,8 @@ fn the_token_never_reaches_a_reply_event_or_error() {
         Err(ForgeError::NotVisible),
         Err(ForgeError::Rejected),
         Err(ForgeError::Unavailable("timeout".into())),
-        Err(ForgeError::Unreadable(".moor.yaml")),
-        Ok(repo_at(BASE, Some(YAML))),
+        Err(ForgeError::Unreadable(".mcp.json")),
+        Ok(repo_at(BASE)),
     ] {
         let w = world(FakeDriver::new());
         w.forge.answer(repo(), answer.clone());
@@ -162,7 +161,7 @@ fn walk(dir: &std::path::Path) -> String {
 fn a_start_a_run_and_a_close_spawn_no_host_git() {
     let box_dir = tempfile::tempdir().unwrap();
     let w = world(FakeDriver::new().local_box(box_dir.path()));
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     run(&w.cx, &repo_req("demo")).unwrap();
     let name = repo_req("demo").name;
     let ran = RunReq {

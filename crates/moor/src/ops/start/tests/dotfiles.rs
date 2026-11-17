@@ -16,7 +16,7 @@ use moor_core::{BoxId, BoxReq, StartReq};
 use super::setup::unwrapped;
 use super::state::WORKING;
 
-use super::{repo_req, req, script_base_yaml, world_with, World};
+use super::{repo_req, req, script_repo, world_with, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -66,7 +66,7 @@ fn dotfiles_world(
         ..UserConfig::default()
     };
     let mut w = world_with(driver, config);
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     w.proc.on(
         Tool::Sh,
         &["-c", TAR_SCRIPT],

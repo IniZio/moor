@@ -10,14 +10,15 @@ use moor_core::seam::proxy_host::{ProxyHostError, ProxyStatus};
 use moor_core::BoxId;
 
 use super::setup::{exit, start_req};
-use super::{agentless_req, script_base_yaml, World};
+use super::{agentless_req, script_repo, World};
 use crate::ops::start::run;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_EGRESS_PORT};
 
 const YAML: &str = "setup: [a]\n";
 
-/// A world over a GitHub repo with `.moor.yaml` `yaml` whose first execs give `results`, served by `host`.
+/// A world over a GitHub repo whose stored repo config is `yaml`, whose first execs give
+/// `results`, served by `host`.
 fn world_with(
     yaml: &str,
     results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
@@ -25,7 +26,7 @@ fn world_with(
 ) -> World {
     let mut w = super::world(FakeDriver::new().exec_results(results));
     w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     w
 }
 
@@ -130,7 +131,7 @@ fn an_egress_proxy_that_cannot_start_fails_the_setup_with_its_reason() {
             .exec_stdout([reason]),
     );
     w.cx = w.cx.with_proxy_host(Arc::new(host));
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert!(err.error.to_string().contains(reason), "{err:?}");
     assert_eq!(lifecycle(&w), BoxLifecycle::SetupFailed);

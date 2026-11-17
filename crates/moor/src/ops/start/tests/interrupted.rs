@@ -11,7 +11,7 @@ use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
 use super::setup::start_req;
-use super::{script_base_yaml, world, World};
+use super::{script_repo, world, World};
 use crate::cx::Cx;
 use crate::ops::close;
 use crate::ops::common::provision::interrupted::fail_interrupted;
@@ -23,7 +23,7 @@ use crate::testing::driver::FakeDriver;
 /// A world whose first start died inside the acquire, leaving Box 1 starting with no handle.
 pub(super) fn cut_off(driver: FakeDriver) -> World {
     let w = world(driver);
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     w.driver.notes_while_acquiring(&[], || {
         std::panic::resume_unwind(Box::new("process died mid-acquire"))
     });
@@ -204,7 +204,7 @@ fn link_lost() -> DriverError {
 /// A world whose host warms a VM its next acquire loses the link to.
 fn link_cut(driver: FakeDriver) -> World {
     let w = world(driver.cut_acquires_go_on().fail_acquire(link_lost()));
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     w
 }
 
@@ -304,7 +304,7 @@ fn a_second_cut_acquire_fails_the_box_with_its_events_deleted() {
 #[test]
 fn a_run_cut_by_a_restart_is_ended_as_interrupted_and_never_run_again() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let (cut, claim) = store
@@ -328,7 +328,7 @@ fn a_run_cut_by_a_restart_is_ended_as_interrupted_and_never_run_again() {
 fn a_run_a_relaunch_raced_is_still_ended_as_interrupted_after_a_restart() {
     use moor_core::domain::event::PostCloneStep;
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let (cut, claim) = store
@@ -363,7 +363,7 @@ fn a_run_a_relaunch_raced_is_still_ended_as_interrupted_after_a_restart() {
 fn a_restart_drops_a_wanted_sleep_or_suspend_and_keeps_a_wanted_close() {
     use moor_core::domain::decision::{Decision, WantChange, Wanted, WantedKind};
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let suspend = Wanted::Suspend {
@@ -427,7 +427,7 @@ type Closed = Result<BoxLifecycle, String>;
 #[test]
 fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
     let mut w = world(FakeDriver::new().exec_ends_when("sdkmanager", ExecOutcome::Interrupted));
-    script_base_yaml(&w, Some("setup: [sdkmanager --install ndk]\n"));
+    script_repo(&w, Some("setup: [sdkmanager --install ndk]\n"));
     let fresh = Cx::fake(w.dir.path(), w.driver.clone(), w.proc.clone());
     let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
     w.cx = cx;
@@ -488,7 +488,7 @@ pub(super) fn setup_attaches(w: &World) -> Vec<Vec<String>> {
 /// leaves it; gives back the argv of that attach.
 pub(super) fn restarted_mid_setup(yaml: &str) -> (World, Vec<String>) {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     let dying = Arc::new(AtomicBool::new(true));
     let (driver, still) = (w.driver.clone(), dying.clone());
     w.driver.after_exec(move || {

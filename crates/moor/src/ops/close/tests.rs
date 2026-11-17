@@ -6,6 +6,7 @@ use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, BoxPath, CloseReq, ErrorKind, ProviderId};
 
@@ -58,7 +59,7 @@ pub(super) fn fx_with(driver: FakeDriver) -> Fx {
     fx_box(driver, Some("ahead=0 dirty=0"))
 }
 
-/// A Ready Box of repo `o/n` with no `.moor.yaml`, with a machine from `driver`.
+/// A Ready Box of repo `o/n` with no repo config, with a machine from `driver`.
 ///
 /// `boxwork` is what the probe reads back from the first Box's recorded workdir
 /// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
@@ -66,7 +67,7 @@ pub(super) fn fx_box(driver: FakeDriver, boxwork: Option<&str>) -> Fx {
     fx_repo(driver, boxwork, None)
 }
 
-/// Like [`fx_box`], with `yaml` as the `.moor.yaml` stored for the Box's base.
+/// Like [`fx_box`], with `yaml` as the config stored for its repo.
 pub(super) fn fx_repo(driver: FakeDriver, boxwork: Option<&str>, yaml: Option<&str>) -> Fx {
     let driver = match boxwork {
         Some(text) => driver.peek_text(
@@ -90,7 +91,7 @@ pub(super) fn fx_repo(driver: FakeDriver, boxwork: Option<&str>, yaml: Option<&s
     }
 }
 
-/// Admits Box `t` of repo `o/n` holding `yaml` as its `.moor.yaml`, with a Ready machine
+/// Admits Box `t` of repo `o/n` whose repo has `yaml` stored as its config, with a Ready machine
 /// acquired from `driver`.
 fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
     admit_named(cx, driver, yaml, "t")
@@ -99,10 +100,13 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
 /// Like [`admit`], for a Box named `name`.
 fn admit_named(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>, name: &str) -> BoxId {
     let store = cx.store().unwrap();
+    if let Some(yaml) = yaml {
+        crate::testing::cx::store_config(store, &ForgeRepo::new("o", "n"), yaml);
+    }
     let id = store
         .apply(crate::testing::cx::new_box_of(
             BoxName::parse_allow_bare(name).unwrap(),
-            crate::testing::cx::box_repo(yaml),
+            crate::testing::cx::box_repo(),
         ))
         .unwrap()
         .box_id;

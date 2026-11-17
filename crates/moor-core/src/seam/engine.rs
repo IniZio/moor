@@ -75,7 +75,7 @@ pub struct LaunchReq {
     pub issue: Option<String>,
     /// The exit code of a failed setup, if setup failed.
     pub setup_exit: Option<i32>,
-    /// The `brief:` of the repo's `.moor.yaml`.
+    /// The `brief:` of the repo's config.
     pub repo_notes: Option<String>,
     /// The CPUs and memory the Box delivers, when they are recorded.
     pub shape: Option<Shape>,

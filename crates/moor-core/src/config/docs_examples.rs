@@ -21,7 +21,7 @@ struct Block {
 fn kind_of(heading: &str) -> Option<Kind> {
     match heading {
         "User config" => Some(Kind::User),
-        "`.moor.yaml`" => Some(Kind::Repo),
+        "Repo config" => Some(Kind::Repo),
         "Controller config" => Some(Kind::Controller),
         _ => None,
     }

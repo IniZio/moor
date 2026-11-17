@@ -258,7 +258,7 @@ pub struct StartReq {
     /// Repos the Box clones beside `repo`, in order; `box.also` in the user config when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub also: Option<Vec<ForgeRepo>>,
-    /// A partial repo config, in the `.moor.yaml` format, laid over the repo's config for this
+    /// A partial repo config, in the repo config format, laid over the repo's config for this
     /// Box only. Left out of the JSON when absent, so an older controller that refuses unknown
     /// fields still takes a start that has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
