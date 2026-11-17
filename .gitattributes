@@ -1,0 +1,5 @@
+# Two branches that each add a migration both append lines to these files. Keep both sides'
+# lines on a merge or rebase. Both hold only one-line entries, so the union is well formed. A
+# version clash is caught by the strictly-increasing test in moor-schema.
+crates/moor-schema/src/steps.rs merge=union
+crates/moor/src/store/db/sqlite/migrate/tests/pinned.rs merge=union
