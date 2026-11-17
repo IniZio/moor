@@ -11,6 +11,9 @@ use crate::error::CommandError;
 use crate::store::BoxRow;
 use crate::vault::Vault;
 
+mod config;
+pub(super) use config::stored_config;
+
 /// Reads `repo` at `base` as `user`'s GitHub account. An account that cannot push only warns.
 ///
 /// # Errors

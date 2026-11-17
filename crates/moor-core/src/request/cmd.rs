@@ -41,6 +41,8 @@ impl Request {
             Self::Env(_) => "env",
             Self::Artifacts(_) => "artifacts",
             Self::ArtifactRead(_) => "artifact-read",
+            Self::RepoConfigGet(_) => "repo-config-get",
+            Self::RepoConfigSet(_) => "repo-config-set",
             Self::Whoami(_) => "whoami",
             Self::Enroll(_) => "enroll",
             Self::SecretSet(_) => "secret-set",

@@ -325,7 +325,11 @@ fn requester(
 ) -> Result<Option<Identity>, CommandError> {
     if !matches!(
         request,
-        Request::Start(_) | Request::StartNeeds(_) | Request::Env(_)
+        Request::Start(_)
+            | Request::StartNeeds(_)
+            | Request::Env(_)
+            | Request::RepoConfigGet(_)
+            | Request::RepoConfigSet(_)
     ) {
         return Ok(None);
     }
@@ -339,7 +343,8 @@ fn requester(
 
 /// Whom one request acts as, and what it may see.
 pub(crate) struct Acting {
-    /// The identity a `start`, `start-needs` or `env` acts as; none for other requests.
+    /// The identity a `start`, `start-needs`, `env` or `repo-config-*` acts as; none for other
+    /// requests.
     pub(crate) who: Option<Identity>,
     /// What the request may see.
     pub(crate) grant: Grant,

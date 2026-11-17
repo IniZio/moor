@@ -30,6 +30,7 @@ mod machine_boxes;
 mod pause_publish;
 mod proxy_key;
 mod proxy_state;
+mod repo_config;
 mod resume_memory;
 mod said_at;
 mod session_archive;
@@ -186,6 +187,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V80__shared_machines",
         write: shared_machines::write,
+    },
+    Step {
+        name: "V81__repo_config",
+        write: repo_config::write,
     },
 ];
 

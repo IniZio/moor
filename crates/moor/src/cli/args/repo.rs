@@ -1,0 +1,86 @@
+//! clap definitions for `moor repo`: a repo's config as the controller stores it.
+
+use std::io::Read as _;
+
+use clap::{Args, Subcommand};
+use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq};
+use moor_core::seam::forge::ForgeRepo;
+use moor_core::Request;
+
+/// Subcommands of `repo`.
+#[derive(Debug, Subcommand)]
+pub(super) enum RepoCli {
+    /// A repo's config, which replaces its `.moor.yaml`.
+    #[command(subcommand)]
+    Config(ConfigCli),
+}
+
+/// Subcommands of `repo config`.
+#[derive(Debug, Subcommand)]
+pub(super) enum ConfigCli {
+    /// Print the repo's stored config; `--json` adds its revision and who last edited it.
+    Get(RepoArg),
+    /// Replace the repo's stored config. You need push access to the repo.
+    Set(SetArgs),
+}
+
+/// The repo a config belongs to.
+#[derive(Debug, Args)]
+pub(super) struct RepoArg {
+    /// The repo, as OWNER/NAME or a github.com URL.
+    #[arg(value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
+    repo: ForgeRepo,
+}
+
+/// Arguments of `repo config set`.
+#[derive(Debug, Args)]
+pub(super) struct SetArgs {
+    /// The repo, as OWNER/NAME or a github.com URL.
+    #[arg(value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
+    repo: ForgeRepo,
+    /// The YAML to store, as a `.moor.yaml` holds it; `-` reads stdin.
+    #[arg(
+        long = "file",
+        short = 'f',
+        value_name = "FILE",
+        default_value = "-",
+        value_parser = config_text
+    )]
+    text: String,
+    /// Refuse unless the stored revision is N, where 0 means no config yet, so a change made
+    /// since you read it is not overwritten. `repo config get --json` shows the revision.
+    #[arg(long, value_name = "N")]
+    expected_revision: Option<u64>,
+}
+
+/// The text of config file `path`, or of stdin for `-`.
+fn config_text(path: &str) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    if path == "-" {
+        std::io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("cannot read stdin: {e}"))?;
+    } else {
+        bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    }
+    String::from_utf8(bytes).map_err(|_| "the config is not UTF-8 text".to_owned())
+}
+
+impl RepoCli {
+    /// Convert the parsed verb into its request.
+    pub(super) fn into_request(self) -> Request {
+        let Self::Config(config) = self;
+        match config {
+            ConfigCli::Get(a) => Request::RepoConfigGet(RepoConfigGetReq {
+                identity: None,
+                repo: a.repo,
+            }),
+            ConfigCli::Set(a) => Request::RepoConfigSet(RepoConfigSetReq {
+                identity: None,
+                repo: a.repo,
+                text: a.text,
+                expected_revision: a.expected_revision,
+            }),
+        }
+    }
+}

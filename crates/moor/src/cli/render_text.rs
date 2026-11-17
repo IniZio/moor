@@ -10,6 +10,7 @@ mod close_failed;
 mod inspect;
 mod machine;
 mod node;
+mod repo_config;
 mod show;
 
 /// Renders `resp` as `(stdout, stderr)` text; warnings are dropped when `quiet`.
@@ -91,6 +92,8 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "close-failed" => close_failed::text(value),
         "wait" => wait_text(value),
         "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
+        "repo-config-get" => repo_config::get_text(value),
+        "repo-config-set" => repo_config::set_line(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
         "open-host-session" | "update-host-session" | "end-host-session" => {

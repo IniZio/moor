@@ -1,5 +1,5 @@
 use crate::store::db::DbExt as _;
-use moor_schema::tables::{BoxState, Boxes};
+use moor_schema::tables::{BoxState, Boxes, Repos};
 use sea_query::{Expr, ExprTrait as _, Query};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -534,7 +534,7 @@ fn exec_on(w: &World, q: &mut sea_query::UpdateStatement) {
     db.run(q).unwrap();
 }
 
-/// Queues `first` from a repo whose stored `.moor.yaml` no longer parses.
+/// Queues `first` from a repo whose stored config no longer parses.
 fn queue_unparsable(w: &World) -> BoxId {
     let repo = ForgeRepo::new("o", "n");
     w.forge
@@ -547,9 +547,8 @@ fn queue_unparsable(w: &World) -> BoxId {
     exec_on(
         w,
         Query::update()
-            .table(Boxes::Table)
-            .value(Boxes::RepoConfig, "setup: [")
-            .and_where(Expr::col(Boxes::Id).eq(id.get())),
+            .table(Repos::Table)
+            .value(Repos::Config, "setup: ["),
     );
     id
 }

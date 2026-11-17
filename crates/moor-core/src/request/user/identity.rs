@@ -5,7 +5,10 @@ use super::{
     SecretSetReq, StartNeedsReq, WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq,
     WebhookSetupShowReq,
 };
-use crate::request::{MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, StartReq};
+use crate::request::{
+    MachineEnrollReq, MachineRemoveReq, MachineStatusReq, RepoConfigGetReq, RepoConfigSetReq,
+    Request, StartReq,
+};
 use crate::user::Identity;
 
 impl Request {
@@ -14,6 +17,8 @@ impl Request {
         match self {
             Self::Start(StartReq { identity, .. })
             | Self::StartNeeds(StartNeedsReq { identity, .. })
+            | Self::RepoConfigGet(RepoConfigGetReq { identity, .. })
+            | Self::RepoConfigSet(RepoConfigSetReq { identity, .. })
             | Self::Whoami(AsReq { identity })
             | Self::Enroll(EnrollReq { identity, .. })
             | Self::SecretNames(AsReq { identity })

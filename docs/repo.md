@@ -1,12 +1,50 @@
 # Set up a repo
 
-A repo needs nothing to run in a Box. Add a `.moor.yaml` at its root to install
+A repo needs nothing to run in a Box. Give it a config to install
 dependencies, brief the agent, or ask for a bigger machine. This page shows
 the common settings. [Configuration](config.md#mooryaml) lists every key.
 
-moor reads `.moor.yaml` from GitHub at the Box's base commit. Push a change to
-the file before you start the Box that should use it. A change the agent makes
-inside a Box never changes that Box.
+moor keeps one config per repo, shared by every Box of the repo. Anyone who
+can push to the repo, and the operator, can edit it. The settings below are
+YAML, as they were in a `.moor.yaml` file, and `moor repo config` reads and
+writes them:
+
+```sh
+moor repo config get OWNER/NAME > repo.yaml
+moor repo config set OWNER/NAME --file repo.yaml --expected-revision 3
+```
+
+`get --json` also shows the revision and who last edited it. With
+`--expected-revision`, a write fails when someone else saved first, so you
+read again instead of overwriting. The text must parse, or `set` refuses it
+and says which key is wrong. The MCP tools `get_repo_config` and
+`set_repo_config` do the same.
+
+## Import an existing `.moor.yaml`
+
+A repo that has no stored config and has a `.moor.yaml` at the Box's base
+commit imports the file when a person who can push to the repo starts a Box.
+The start warns that the file is imported. From then on moor ignores the file.
+It warns on each start whose file differs from the stored config, and names
+the keys. An account that cannot push to the repo does not import: its Box
+uses the file, and nothing is stored. A repo listed beside the first one
+looks up and imports its own config the same way.
+
+## What an edit reaches
+
+An edit reaches a Box that is already running only where the setting is read
+again. Everything else applies to Boxes started afterwards.
+
+| Setting | When a change applies |
+| --- | --- |
+| `env` | The next `moor exec`, `moor run`, setup line, and teardown, with no restart. The agent keeps the environment it started with until it launches again. |
+| `teardown` | When the Box closes. |
+| `machine` | When the agent next claims the machine. |
+| `compose` | The next command. |
+| `brief` | The next time the agent launches. |
+| `setup` | A new Box, and `moor retry` on a Box whose setup failed. |
+| `box.size`, `cache` | A new Box, or one that is rebuilt on a new machine. |
+| `node.labels`, `box_credentials` | A new Box. |
 
 ## Install dependencies
 

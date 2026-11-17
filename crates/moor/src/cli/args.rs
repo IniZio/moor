@@ -17,6 +17,7 @@ use exec::ExecArgs;
 use forward::ForwardArgs;
 use inspect::InspectArgs;
 use node::NodeCmd;
+use repo::RepoCli;
 use session::SessionCmd;
 use steer::SteerArgs;
 use user::UserCli;
@@ -31,6 +32,7 @@ mod inspect;
 mod node;
 #[cfg(test)]
 mod parse_ignoring_env;
+mod repo;
 mod session;
 mod steer;
 #[cfg(test)]
@@ -180,6 +182,9 @@ enum Cmd {
     /// The nodes Boxes run on.
     #[command(subcommand)]
     Node(NodeCmd),
+    /// A repo's stored settings.
+    #[command(subcommand)]
+    Repo(RepoCli),
     /// Set this host up: controller service, local node, your user and its secrets.
     Up(UpArgs),
     /// Stop and remove the controller service; config, state and secrets stay.
@@ -236,6 +241,7 @@ impl Cmd {
             }
             Self::User(u) => u.into_action(),
             Self::Node(n) => n.into_action(),
+            Self::Repo(r) => Action::Request(r.into_request()),
             Self::Up(a) => Action::Up {
                 max_boxes: a.max_boxes,
             },

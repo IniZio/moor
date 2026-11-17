@@ -26,6 +26,7 @@ fn the_tools_are_listed() {
             "close_failed_boxes",
             "exec_in_box",
             "get_artifact",
+            "get_repo_config",
             "inspect_box",
             "list_boxes",
             "list_events",
@@ -37,6 +38,7 @@ fn the_tools_are_listed() {
             "remove_workflow",
             "retry_box",
             "send_to_box",
+            "set_repo_config",
             "set_workflow_enabled",
             "start_box"
         ]

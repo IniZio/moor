@@ -91,4 +91,5 @@ tables! {
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
         RecordedAt, Seq }
     WorkflowSeq { Id, N }
+    Repos { Repo, Config, Revision, EditedBy, EditedAt }
 }

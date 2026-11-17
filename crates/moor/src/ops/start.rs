@@ -62,6 +62,8 @@ struct Facts {
     base: Option<String>,
     /// The repo's MCP and Claude settings files at the base.
     files: RepoFiles,
+    /// Whether the requester's GitHub account may push to the repo.
+    can_push: bool,
     /// The requester's agent profile; `None` when they set none.
     profile: Option<profile::Gathered>,
 }
@@ -84,11 +86,14 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         return Err(relaunch::nothing_to_resume());
     }
     let mut facts = gather(cx, req, user)?;
+    if let Some(boxed) = facts.repo.as_mut() {
+        repo::stored_config(cx, boxed, facts.can_push)?;
+    }
     let flags = Flags {
         model: req.model.clone(),
         no_agent: req.no_agent,
     };
-    let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
+    let repo_cfg = repo_config_of(cx, facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
     let spec = spec_of(req, repo_cfg.as_ref())?;
     let note = node::preflight(cx, user, &spec)?;
@@ -309,7 +314,7 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     }
 }
 
-/// Reads the repo the Box starts from through the forge; changes nothing.
+/// Reads the repo the Box starts from through the forge; changes nothing in the store.
 fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> {
     let profile = profile::gather(cx, user)?;
     repo::check_first(req)?;
@@ -318,6 +323,7 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
             repo: None,
             base: None,
             files: RepoFiles::default(),
+            can_push: false,
             profile,
         });
     };
@@ -333,6 +339,7 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
         }),
         base: Some(at.base.as_str().to_owned()),
         files: at.files,
+        can_push: at.can_push,
         profile,
     })
 }

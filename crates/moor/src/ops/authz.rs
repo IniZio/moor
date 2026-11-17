@@ -167,6 +167,8 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Gate(_)
         | Request::Artifacts(_)
         | Request::ArtifactRead(_)
+        | Request::RepoConfigGet(_)
+        | Request::RepoConfigSet(_)
         | Request::Whoami(_)
         | Request::Enroll(_)
         | Request::SecretSet(_)

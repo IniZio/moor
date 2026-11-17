@@ -28,6 +28,7 @@ mod node_add;
 mod nodes;
 mod open_session;
 pub(crate) mod provider_ready;
+mod repo_config;
 mod retry;
 mod run;
 mod sessions;
@@ -126,6 +127,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::ForwardClose(r) => to_value(&forward::close(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),
         Request::Env(r) => to_value(&env::run(cx, &r)?),
+        Request::RepoConfigGet(r) => to_value(&repo_config::get(cx, &r)?),
+        Request::RepoConfigSet(r) => to_value(&repo_config::set(cx, &r)?),
         Request::Run(r) => to_value(&run::run(cx, &r)?),
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),

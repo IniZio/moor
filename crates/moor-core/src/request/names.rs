@@ -95,6 +95,8 @@ impl Request {
             | Self::SessionBinding(_)
             | Self::Gate(_)
             | Self::Env(_)
+            | Self::RepoConfigGet(_)
+            | Self::RepoConfigSet(_)
             | Self::Whoami(_)
             | Self::Enroll(_)
             | Self::SecretSet(_)

@@ -202,6 +202,8 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "session-binding"
         | "gate"
         | "env"
+        | "repo-config-get"
+        | "repo-config-set"
         | "repos"
         | "whoami"
         | "enroll"

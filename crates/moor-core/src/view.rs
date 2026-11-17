@@ -10,6 +10,7 @@ pub mod inspect;
 pub mod machine;
 pub mod node;
 pub mod progress;
+pub mod repo_config;
 pub mod run;
 pub mod session;
 pub mod sleep;

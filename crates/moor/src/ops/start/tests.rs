@@ -65,6 +65,7 @@ mod refresh_login;
 mod relaunch;
 mod relaunch_sessions;
 mod repo;
+mod repo_config;
 mod repos;
 mod requester;
 mod rerun;
