@@ -63,6 +63,7 @@ fn the_operator_sets_reads_and_updates_a_config_without_asking_the_forge() {
     let forge = Arc::new(FakeForge::new());
     let cx = operator(dir.path(), &forge);
     let none = get(&cx, &get_req()).unwrap();
+    assert!(none.can_edit);
     assert_eq!((none.revision, none.text), (0, None));
     let first = set(&cx, &set_req("env:\n  A: '1'\n", Some(0))).unwrap();
     assert_eq!(first.revision, 1);
@@ -124,6 +125,8 @@ fn a_user_who_can_push_may_set_and_a_user_who_cannot_may_only_read() {
     );
     let read = get(&reader, &get_req()).unwrap();
     assert_eq!(read.text.as_deref(), Some("setup: [a]\n"));
+    assert!(!read.can_edit);
+    assert!(get(&pusher, &get_req()).unwrap().can_edit);
 }
 
 #[test]

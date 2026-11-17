@@ -33,8 +33,10 @@ enum Need {
 /// # Errors
 /// Refused when the caller's account cannot see the repo; a store or forge failure.
 pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, CommandError> {
-    check(cx, &req.repo, Need::See)?;
-    Ok(value(&req.repo, cx.store()?.repo_config(&req.repo)?))
+    let who = check(cx, &req.repo, Need::See)?;
+    let mut read = value(&req.repo, cx.store()?.repo_config(&req.repo)?);
+    read.can_edit = who.can_push;
+    Ok(read)
 }
 
 /// `repo-config-set`: replaces the repo's config with `req.text`, once it parses.
@@ -43,7 +45,7 @@ pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, Co
 /// Refused when the caller's account cannot push to the repo, or when `expected_revision` is not
 /// the stored one; Usage for text that does not parse; a store or forge failure.
 pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, CommandError> {
-    let who = check(cx, &req.repo, Need::Push)?;
+    let who = check(cx, &req.repo, Need::Push)?.label;
     if req.text.len() > TEXT_CAP {
         return Err(CommandError::new(
             ErrorKind::Usage,
@@ -56,7 +58,10 @@ pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, Co
         .store()?
         .set_repo_config(&req.repo, &req.text, &who, req.expected_revision)?
     {
-        Wrote::Written(row) => Ok(value(&req.repo, Some(row))),
+        Wrote::Written(row) => Ok(RepoConfigValue {
+            can_edit: true,
+            ..value(&req.repo, Some(row))
+        }),
         Wrote::Stale { current } => {
             let now = current.map_or_else(|| "no config".to_owned(), |r| format!("revision {r}"));
             let wanted = req.expected_revision.unwrap_or_default();
@@ -72,13 +77,24 @@ pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, Co
     }
 }
 
-/// Refuses a caller that lacks `need` on `repo`; the label the write records for the caller.
-fn check(cx: &Cx, repo: &ForgeRepo, need: Need) -> Result<String, CommandError> {
+/// Who a check let through.
+struct Caller {
+    /// The label a write records for the caller.
+    label: String,
+    /// Whether the caller may push to the repo, so may replace its config.
+    can_push: bool,
+}
+
+/// Refuses a caller that lacks `need` on `repo`.
+fn check(cx: &Cx, repo: &ForgeRepo, need: Need) -> Result<Caller, CommandError> {
     let label = cx
         .requester()
         .map_or_else(|_| "operator".to_owned(), |(who, _)| who.to_string());
     if cx.viewer() == Viewer::Operator {
-        return Ok(label);
+        return Ok(Caller {
+            label,
+            can_push: true,
+        });
     }
     let (_, user) = cx.requester()?;
     let user = user
@@ -90,7 +106,10 @@ fn check(cx: &Cx, repo: &ForgeRepo, need: Need) -> Result<String, CommandError> 
             format!("your GitHub account cannot push to {repo}, so it cannot change its config"),
         ));
     }
-    Ok(label)
+    Ok(Caller {
+        label,
+        can_push: at.can_push,
+    })
 }
 
 /// The view of `row`, the repo's stored config.
@@ -101,6 +120,7 @@ fn value(repo: &ForgeRepo, row: Option<RepoConfigRow>) -> RepoConfigValue {
         edited_by: row.as_ref().map(|r| r.edited_by.clone()),
         edited_at: row.as_ref().map(|r| rfc3339(r.edited_at)),
         text: row.map(|r| r.text),
+        can_edit: false,
     }
 }
 

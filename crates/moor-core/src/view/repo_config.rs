@@ -19,4 +19,8 @@ pub struct RepoConfigValue {
     /// When it was written last, RFC3339 UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<String>,
+    /// Whether the caller may replace the config: the operator, or a user whose GitHub account
+    /// can push to the repo. Only `repo-config-get` says; a reply without it reads as false.
+    #[serde(default)]
+    pub can_edit: bool,
 }
