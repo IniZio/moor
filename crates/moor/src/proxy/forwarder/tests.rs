@@ -245,7 +245,7 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
     assert_eq!(config.get("listen").unwrap(), "127.0.0.1:10556");
     assert_eq!(
         config.get("upstream").unwrap(),
-        "ws://127.0.0.1:20555/egress"
+        "ws://moor-host:8443/egress"
     );
     let sent = config.get("token").unwrap().as_str().unwrap();
     assert!(
