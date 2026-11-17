@@ -1,67 +1,42 @@
-# Set up the Box provider
+# Set up Box hosts
 
-moor gets each Box's VM from crabbox, and crabbox gets it from a provider. Set
-up crabbox and one provider on every host that runs Boxes. That is the
-controller host for a shared node, or a teammate's machine for a personal node.
+A Box is two Docker containers on a host. A machine's agent makes them, so a
+host needs Docker and `moor-machine-agent`, and nothing else.
 
-## Install crabbox
+## Docker
 
-moor needs crabbox 0.79.1-moor.6 or a newer `-moor` build of
-[IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`. It refuses an
-upstream crabbox release, because only the `-moor` builds have the flags moor
-uses. Download a `-moor` release from that repo and put `crabbox` on `PATH`.
+Install Docker, and let the user that runs the agent use it without `sudo`.
+`docker info` must work for that user. Add a teammate's machine with
+[Add your machine](add-machine.md). The agent starts a Box in about 12 s on a
+warm host.
 
-## Install the cloud-hypervisor provider
+The agent pulls the release's images the first time a Box needs them:
+`ghcr.io/inizio/moor-agent:VERSION` and `ghcr.io/inizio/moor-work:VERSION`.
+To use your own, give `up` or `run` the `--agent-image` and `--work-image`
+flags, which [Box images](../images/README.md) describes.
 
-[crabbox-cloudhypervisor](https://github.com/IniZio/crabbox-cloudhypervisor)
-runs each Box as a cloud-hypervisor VM on the host. crabbox reaches it as its
-`external` provider. Your user needs access to `/dev/kvm`.
+The work place of every Box is a privileged container, because Docker runs
+inside it. Run Boxes only on hosts where the user who owns them may be root.
+
+## Prepare the Box image
+
+The work image needs `sh`, `git`, `curl`, `tar`, and `unzip`. Build on the
+release's work image, and add the tools a repo needs. `images/work` shows the
+contract.
+
+## Check the setup
 
 ```sh
-curl -fsSL https://github.com/IniZio/crabbox-cloudhypervisor/releases/latest/download/install.sh | sh
-crabbox-cloudhypervisor install
+docker info
+moor doctor
 ```
 
-Then select the provider in the file that `crabbox config path` prints, as the
-provider's README shows. When crabbox selects no provider, `moor up` prints
-the install commands for the release it was built against.
+## crabbox (being removed)
 
-## Boot from a template
-
-Set `bootTemplate: true` under `external.config` in the crabbox config to start
-a new VM from a snapshot of a provisioned guest, in about 4 s instead of 41 s.
-Put the provider's `cacheDir` on a filesystem that reflinks, such as btrfs or
-XFS.
-
-## Keep caches between Boxes
-
-To keep package caches and the work tree between Boxes, let the provider keep
-cache volumes:
-
-```yaml
-external:
-  capabilities: { cacheVolumes: true }
-```
-
-moor saves the caches when it releases a Box, not when a Box sleeps. A close that
-deletes an asleep Box without waking it loses its caches and records a
-`caches_not_saved` event. moor ignores `cacheSaveOnPause`.
-
-Only this trusted crabbox config can turn this on. A repo or a flag cannot.
-Without it, every Box starts cold and records a `cache_cold` event. An external
-node starts cold unless its crabbox config declares this capability.
-
-## Use agent37 instead
-
-[crabbox-agent37](https://github.com/IniZio/crabbox-agent37) runs Boxes on
-agent37 cloud VMs. Its README lists the crabbox config it needs, including
-`external.capabilities.pauseResume: true`. Turn off agent37's own auto-sleep,
-because moor sleeps each Box itself. agent37 keeps no cache volumes, so its
-Boxes start cold.
-
-## Declare a shared node
-
-On the controller host, a node in the user config names the provider:
+moor used to get each Box's VM from crabbox and a crabbox provider. That path
+is being removed, and a machine that offers Docker Boxes replaces it. A shared
+node in the controller's user config still names a crabbox provider until the
+removal lands:
 
 ```yaml
 nodes:
@@ -70,24 +45,6 @@ nodes:
     max_boxes: 5
 ```
 
-Set `max_boxes` to the number of VMs your provider account allows.
-`drivers.<provider>.strip_env` lists variables the provider puts in the Box,
-such as a platform token. moor removes them from every command it runs there.
-[Configuration](config.md#nodes) has every node key.
-
-## Check the setup
-
-```sh
-crabbox doctor --provider external
-moor doctor
-```
-
-`moor doctor` prints one `crabbox` line per node runtime and says which check
-failed, with its hint.
-
-## Prepare the Box image
-
-The Box image needs `sh`, `git`, `curl`, `tar`, and `unzip`. When `tinyproxy`
-is missing, moor installs it with `apt-get`. An image without `apt-get` must
-ship `tinyproxy`. Keep the image's sshd at `GatewayPorts no`, so the
-Proxy port stays on the Box's loopback.
+[Configuration](config.md#nodes) has every node key. This page no longer
+explains how to set a crabbox provider up. Move that host to Docker instead:
+install Docker, then pair its agent with `up`.

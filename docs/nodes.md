@@ -8,9 +8,9 @@ explains how they relate and why they are split that way.
 
 A Box is one piece of work on one repo. It has:
 
-- a VM from a crabbox provider, with its own disk, processes, and ports
+- two Docker containers on a node, with their own disk, processes, and ports
 - a branch, `moor/ID-NAME`, which the agent pushes to
-- an agent session, a real Claude Code session in a terminal inside the VM
+- an agent session, a real Claude Code session in a terminal inside the Box
 - a Proxy on the host that adds its user's secrets to its requests
 
 The id in the branch name means a reused Box name never shares a branch with
@@ -31,15 +31,15 @@ flowchart LR
 ```
 
 An idle Box sleeps after `box.sleep_after`, five minutes by default. Sleep
-suspends the VM to disk where the provider can, which frees the host's memory.
-A message from any front wakes it, and the agent carries on with its terminal
-and processes intact. A Box stays in every list while it sleeps, and only a
+stops the Box's containers, which frees the host's memory.
+A message from any front wakes it, and the agent resumes its Claude session on
+the same work tree. Processes that ran in the Box start again. A Box stays in every list while it sleeps, and only a
 person closes it.
 
 ## A node
 
-A node is a place that runs Boxes. It is a crabbox provider on some host, with
-a cap on how many Boxes it holds.
+A node is a place that runs Boxes. It is a host whose machine agent makes
+Docker Boxes, with a cap on how many Boxes it holds.
 
 - A **shared node** is listed in the controller's user config. Every user may
   use it. It suits a team's server or a cloud provider account.
@@ -60,14 +60,15 @@ no open port and moor never logs in to it.
 
 A machine serves one of two roles:
 
-- With a runtime, it is a personal node and hosts its owner's Boxes in VMs.
+- By default, it is a personal node and hosts its owner's Boxes in Docker.
 - With `--allow-exec`, it is a tool machine. It hosts no Boxes. A Box borrows
-  a slot on it to build and run what the Box's VM cannot, such as an iOS
+  a slot on it to build and run what a Box cannot, such as an iOS
   simulator. [Machine tools](machines.md) covers how.
 
 The two roles are separate because they trust the machine differently. A
-personal node runs code only inside VMs. A tool machine runs commands as its
-owner, so it does so only when the owner passed `--allow-exec`.
+personal node runs code only inside containers, and each Box's work place is a
+privileged one, so run it where its owner may be root. A tool machine runs
+commands as its owner, so it does so only when the owner passed `--allow-exec`.
 
 ## Who owns what
 

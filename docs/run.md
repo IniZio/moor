@@ -7,8 +7,8 @@ use. You add those later, when teammates join.
 You need:
 
 - a Linux host where your user can open `/dev/kvm`
-- a `-moor` build of crabbox on `PATH`, as
-  [Set up the Box provider](providers.md#install-crabbox) shows
+- a `-moor` build of crabbox on `PATH`. crabbox is
+  [being removed](providers.md#crabbox-being-removed) in favor of Docker Boxes
 - `claude` and `gh` on your own computer, signed in
 
 ## 1. Install moor
