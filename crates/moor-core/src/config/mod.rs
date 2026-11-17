@@ -16,11 +16,11 @@ pub use repo::{
 };
 
 pub use user::{
-    box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,
-    ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, MachinePick,
-    MachineService, MachinesConfig, McpServer, MoorService, NodeConfig, OAuthCallback, OAuthClient,
-    OAuthConfig, ToolsConfig, UserConfig, UserMachine, UserMcp, BOXES_HOST, DEFAULT_HEADER,
-    DEFAULT_SLEEP_AFTER, MOOR_SERVICE_HOST,
+    box_mcp, parse_user, pick_machine, reachable, unslot_ports, AgentConfig, BoxConfig, BoxMcp,
+    BoxSize, ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, MachinePick,
+    MachinesConfig, McpServer, NodeConfig, OAuthCallback, OAuthClient, OAuthConfig, Served,
+    ServedHost, ToolsConfig, Upstream, UserConfig, UserMachine, UserMcp, BOXES_HOST,
+    DEFAULT_HEADER, DEFAULT_SLEEP_AFTER, MACHINE_SERVICE_HOST, MOOR_SERVICE_HOST,
 };
 
 pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};

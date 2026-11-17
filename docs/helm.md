@@ -37,6 +37,8 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 | `gate.jwksUrl` | empty | The issuer's keys, when discovery is unreachable. |
 | `gate.separate` | `false` | Run the gate as `gate.replicas` pods of its own. Needs `egress.enabled`. |
 | `gate.drainSecs` | 60 | With `separate`, how long a stopping gate lets requests finish. Keep it above 30. |
+| `gate.stepReports` | `false` | Let the agent in a Box call `report_step` at `moor.moor.internal`. See [Step reports](kubernetes.md#step-reports). |
+| `gate.boxPort` | 8444 | The gate's Box listener port. |
 | `mcp.enabled` | `true` | Serve `/mcp`. |
 
 ## Fronts and the runner

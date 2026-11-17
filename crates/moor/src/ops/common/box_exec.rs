@@ -59,12 +59,12 @@ pub(crate) fn proxy(
         user,
     };
     let rule_env = box_env(&spec.rules);
-    let service = cx.config().machines.service.iter().map(|s| s.host.clone());
+    let served = cx.config().served_hosts().map(|s| s.host.clone());
     let hosts: Vec<String> = spec
         .rules
         .iter()
         .flat_map(|r| r.hosts.clone())
-        .chain(service)
+        .chain(served)
         .collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let forward_port = ep

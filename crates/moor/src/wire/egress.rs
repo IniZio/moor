@@ -17,6 +17,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use moor_core::config::Served;
+
 use crate::config_load::load_user;
 use crate::env::{
     Env, BLOBS_ACCESS_KEY_ID, BLOBS_SECRET_ACCESS_KEY, DATABASE_READERS, DATABASE_URL, EGRESS_KEY,
@@ -202,9 +204,13 @@ fn start(
     if let Some(host) = host {
         cmd.arg("--also-listen").arg(host.to_string());
     }
-    let service = load_user(env).ok().and_then(|c| c.machines.service);
-    if let Some(service) = service {
-        cmd.arg("--machine-service")
+    let config = load_user(env).unwrap_or_default();
+    for service in config.served_hosts() {
+        let flag = match service.served {
+            Served::Machine => "--machine-service",
+            Served::Moor => "--moor-service",
+        };
+        cmd.arg(flag)
             .arg(format!("{}={}", service.host, service.upstream));
     }
     let child = cmd

@@ -29,6 +29,7 @@ gate:
     className: example
     annotations: {example.com/timeout: "3600"}
   resources: {limits: {memory: 128Mi}}
+  stepReports: true
 persistence:
   storageClassName: standard
 podAnnotations:

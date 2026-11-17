@@ -128,8 +128,10 @@ claude:
 
 ### Machines
 
-`machines.service` routes a Box's requests for `host` to the machine runner,
-and the Proxy adds headers that name the Box and its machine:
+`machines.service` routes a Box's requests for `host` to the machine runner at
+`upstream`, and every Box gets the MCP server `machine`. The Proxy adds headers
+that name the Box and its machine. `host` defaults to `machine.moor.internal`.
+The key is off when absent.
 
 ```yaml
 machines:
@@ -137,6 +139,15 @@ machines:
     host: machine.moor.internal
     upstream: 127.0.0.1:7700
 ```
+
+`machines.service` and `moor_service` are the hosts the Proxy serves itself.
+Each entry sets both the route and the MCP server, so there is never one
+without the other. Before it sends a request on, the Proxy drops every
+`X-Moor-*` header the Box sent and adds its own. `upstream` is `host:port`.
+`host` is an IP address or a DNS name that the Proxy looks up on each
+connection. Every address it reaches must be loopback, private (RFC 1918),
+`100.64.0.0/10` or `fc00::/7`. A public, link-local or unspecified address is
+refused at load, or with a `502` when a name resolves to one.
 
 `machines.sync` sets what a sync to a tool machine leaves alone, for every
 repo. `presets` is `true`, `false`, or the presets to drop. The presets are
@@ -153,12 +164,13 @@ machines:
 ### `moor_service`
 
 `moor_service` gives every Box an MCP server named `moor`, where its agent calls
-`report_step` for a workflow step. The Proxy routes `host` to the gate's
-Box-facing listener and stamps `X-Moor-Box`; the Box holds no token. `host`
-defaults to `moor.moor.internal`. The key is off when absent.
+`report_step` for a workflow step. The Proxy routes `host` to `upstream`, the
+gate's Box-facing listener, and stamps `X-Moor-Box`. The Box holds no token.
+`host` defaults to `moor.moor.internal`. The key is off when absent.
 
 ```yaml
-moor_service: {}
+moor_service:
+  upstream: 127.0.0.1:8444
 ```
 
 ### `proxy`

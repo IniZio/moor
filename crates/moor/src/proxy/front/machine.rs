@@ -1,6 +1,6 @@
-//! What a Box holds of the machine service, and the `X-Moor-*` headers that carry it on a
-//! plain request to the service. Only the shared egress Proxy sets them; the Box's own are
-//! dropped. A Box that holds no slot is passed on too, marked with why, so its agent sees a tool
+//! What a Box holds of the machine service, and the `X-Moor-*` headers that say who sent a plain
+//! request to a host the Proxy serves itself. Only the shared egress Proxy sets them; the Box's
+//! own are dropped. A Box that holds no slot is passed on too, marked with why, so its agent sees a tool
 //! error and not an auth failure.
 
 use moor_core::request::RunnerAddr;
@@ -55,12 +55,9 @@ pub(crate) fn hold_or_missing(ledger: &BoxLedger) -> Hold {
     })
 }
 
-/// `request` without any `X-Moor-*` header, with the front's own added.
-pub(super) fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
-    let text = std::str::from_utf8(request)
-        .ok()?
-        .strip_suffix("\r\n\r\n")?;
-    let own = match slot {
+/// The `X-Moor-*` headers that tell the machine service what the Box holds.
+pub(crate) fn hold_headers(slot: &Hold) -> Option<Vec<(&'static str, String)>> {
+    Some(match slot {
         Hold::Held(held) => vec![
             ("X-Moor-Box", held.box_id.get().to_string()),
             ("X-Moor-Machine", held.name.clone()),
@@ -75,7 +72,14 @@ pub(super) fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
             ("X-Moor-Box", box_id.get().to_string()),
             ("X-Moor-Machine-Missing", reason.clone()),
         ],
-    };
+    })
+}
+
+/// `request` without any `X-Moor-*` header the Box sent, with the Proxy's `own` added.
+pub(super) fn marked(request: &[u8], own: &[(&str, String)]) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(request)
+        .ok()?
+        .strip_suffix("\r\n\r\n")?;
     if own
         .iter()
         .any(|(_, v)| v.bytes().any(|b| b.is_ascii_control()))
@@ -92,7 +96,7 @@ pub(super) fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
         out.push_str("\r\n");
     }
     for (name, value) in own {
-        for part in [name, ": ", &value, "\r\n"] {
+        for part in [name, ": ", value.as_str(), "\r\n"] {
             out.push_str(part);
         }
     }

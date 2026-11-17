@@ -2,7 +2,7 @@
 //!
 //! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
 //! optionally `--also-listen IP:PORT`, a TCP address it serves as well as `--listen`, `--ledger ADDR`, `--ledger-ca PEM`, `--ledger-cert PEM`, `--ledger-key PEM`,
-//! `--machine-service HOST=ADDR`, `--grace SECS`,
+//! `--machine-service HOST=ADDR`, `--moor-service HOST=ADDR`, `--grace SECS`,
 //! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N`, `--warm-every SECS` and
 //! `--until-stdin-closes`, and the ledger key in
 //! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
@@ -19,11 +19,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::config::Served;
 use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
 
-use super::{Config, Listen, MachineRoute, Rate, Server, Warm};
+use super::{Config, Listen, Rate, ServedRoute, Server, Warm};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY};
 use crate::ledger_dir;
@@ -55,8 +56,8 @@ pub(crate) struct Args {
     pub(crate) ledger_key: Option<PathBuf>,
     /// A TCP address to also listen on, for the Boxes of Docker machines on this host.
     pub(crate) also: Option<std::net::SocketAddr>,
-    /// The machine service plain requests for its host go to.
-    pub(crate) machine: Option<MachineRoute>,
+    /// The hosts it serves itself, each from its own flag.
+    pub(crate) served: Vec<ServedRoute>,
     /// How long open tunnels get after SIGTERM.
     pub(crate) grace: Duration,
     /// Tunnels a token may open per second.
@@ -84,7 +85,7 @@ impl Args {
             ledger_ca: None,
             ledger_cert: None,
             ledger_key: None,
-            machine: None,
+            served: Vec::new(),
             grace: GRACE,
             rate: 20.0,
             burst: 100.0,
@@ -114,9 +115,8 @@ impl Args {
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
                 "--ledger-cert" => args.ledger_cert = Some(value.into()),
                 "--ledger-key" => args.ledger_key = Some(value.into()),
-                "--machine-service" => {
-                    args.machine = Some(MachineRoute::parse(&value).ok_or_else(bad)?);
-                }
+                "--machine-service" => args.serve(Served::Machine, &value).ok_or_else(bad)?,
+                "--moor-service" => args.serve(Served::Moor, &value).ok_or_else(bad)?,
                 "--grace" => args.grace = Duration::from_secs(value.parse().map_err(|_| bad())?),
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
@@ -130,6 +130,14 @@ impl Args {
             }
         }
         Ok(args)
+    }
+
+    /// Serves `HOST=ADDR` for `served`, in place of any earlier flag for it.
+    fn serve(&mut self, served: Served, value: &str) -> Option<()> {
+        let route = ServedRoute::parse(served, value)?;
+        self.served.retain(|r| r.served != served);
+        self.served.push(route);
+        Some(())
     }
 }
 
@@ -153,7 +161,11 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     };
     let ledger = Endpoint::parse(&ledger, tls).map_err(|e| format!("--ledger: {e}"))?;
     let env = Env::capture();
-    let machine = args.machine.map(|m| keyed(m, &env)).transpose()?;
+    let routes = args
+        .served
+        .into_iter()
+        .map(|r| keyed(r, &env))
+        .collect::<Result<_, _>>()?;
     let key = env
         .get(EGRESS_KEY)
         .filter(|k| !k.is_empty())
@@ -180,7 +192,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         log: Arc::new(Mutex::new(std::io::stderr())),
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
-        machine,
+        served: routes,
         warm: args.warm_every.map(|every| Warm {
             every,
             deadline: WARM_DEADLINE,
@@ -216,15 +228,18 @@ fn stop_flag(until_stdin_closes: bool) -> Result<Arc<AtomicBool>, String> {
     Ok(stop)
 }
 
-/// `route` with the key `MOOR_MACHINE_SERVICE_KEY` holds, which it sends the service.
-fn keyed(route: MachineRoute, env: &Env) -> Result<MachineRoute, String> {
+/// `route` with the key `MOOR_MACHINE_SERVICE_KEY` holds, which it sends the machine service.
+fn keyed(route: ServedRoute, env: &Env) -> Result<ServedRoute, String> {
+    if route.served != Served::Machine {
+        return Ok(route);
+    }
     let key = env.get(MACHINE_SERVICE_KEY).filter(|k| !k.is_empty());
     if key.is_some_and(|k| !k.bytes().all(|b| b.is_ascii_graphic())) {
         return Err(format!(
             "{MACHINE_SERVICE_KEY} must be printable with no spaces"
         ));
     }
-    Ok(MachineRoute {
+    Ok(ServedRoute {
         key: key.map(Arc::from),
         ..route
     })
