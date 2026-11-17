@@ -106,7 +106,6 @@ async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link
         return offline(format!("its link closed: {e}"));
     }
     if boxes {
-        // The Box protocol is the controller's and the agent's alone: nothing more is read here.
         return (Brokered::Spliced, Some(stream));
     }
     match ops::read_line::<_, Reply>(&mut stream).await {
