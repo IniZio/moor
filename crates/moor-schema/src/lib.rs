@@ -33,6 +33,7 @@ mod proxy_state;
 mod resume_memory;
 mod said_at;
 mod session_archive;
+mod shared_machines;
 mod suspend_check;
 pub mod tables;
 mod vm_inc;
@@ -181,6 +182,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V79__drop_checkpoints",
         write: drop_checkpoints::write,
+    },
+    Step {
+        name: "V80__shared_machines",
+        write: shared_machines::write,
     },
 ];
 
