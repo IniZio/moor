@@ -65,9 +65,7 @@ impl Host {
 
     /// A machine linked to the runner of `rig`, providing fake Boxes when `boxes`.
     fn on(mut rig: Rig, boxes: bool) -> Self {
-        if let Some(agent) = rig.machine_agent.take() {
-            agent.shutdown_background();
-        }
+        rig.stop_agent();
         let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
         *rig.link.pubkey.lock().unwrap() = Some(key.public_key().to_openssh().unwrap());
         let state_dir = rig.dir().join("agent");
@@ -185,10 +183,7 @@ impl Host {
 async fn a_controller_reaches_the_machine_through_the_runner_across_the_network_that_holds_it() {
     let host = Host::remote();
     let mut idle = Rig::with_args(&["--links", "127.0.0.1:0", "--service-key", KEY]);
-    if let Some(agent) = idle.machine_agent.take() {
-        agent.shutdown_background();
-    }
-    idle.online(false);
+    idle.stop_agent();
     let elsewhere = Runner::Remote {
         addr: format!("127.0.0.1:{}", idle.links.unwrap()),
         key: KEY.to_owned(),
