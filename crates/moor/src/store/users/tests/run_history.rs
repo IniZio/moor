@@ -3,8 +3,11 @@
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{HistoryEntry, Plan, RunEnd, RunOutcome, RunPhase, RunState};
 use moor_core::BoxId;
+use moor_schema::tables::WorkflowRuns;
+use sea_query::Query;
 
 use super::workflow::{def, repo, run, user};
+use crate::store::db::DbExt as _;
 use crate::store::tests::open;
 use crate::testing::runs::{delivered, running, timed_out};
 
@@ -128,15 +131,32 @@ fn a_run_from_before_plans_reads_at_the_single_step() {
     let id = store
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
-    store
-        .writer()
-        .execute_batch(&format!(
-            "INSERT INTO workflow_runs (workflow, repo, due_at, box, outcome, ended_at, recorded_at) \
-             VALUES ({id}, 'a/one', 1, 3, 'started', NULL, 1), \
-                    ({id}, 'a/one', 2, 3, 'timed_out', 5, 2), \
-                    ({id}, 'a/one', 3, 3, 'finished', 6, 3)"
-        ))
-        .unwrap();
+    let mut insert = Query::insert();
+    insert.into_table(WorkflowRuns::Table).columns([
+        WorkflowRuns::Workflow,
+        WorkflowRuns::Repo,
+        WorkflowRuns::DueAt,
+        WorkflowRuns::Box,
+        WorkflowRuns::Outcome,
+        WorkflowRuns::EndedAt,
+        WorkflowRuns::RecordedAt,
+    ]);
+    for (due, outcome, ended) in [
+        (1_i64, "started", None),
+        (2, "timed_out", Some(5_i64)),
+        (3, "finished", Some(6)),
+    ] {
+        insert.values_panic([
+            id.get().into(),
+            "a/one".into(),
+            due.into(),
+            3_i64.into(),
+            outcome.into(),
+            ended.into(),
+            due.into(),
+        ]);
+    }
+    store.writer().run(insert).unwrap();
     let mut got = store.recent_workflow_runs(id, &repo("a/one"), 3).unwrap();
     got.reverse();
     let states: Vec<_> = got.into_iter().map(|r| r.state).collect();

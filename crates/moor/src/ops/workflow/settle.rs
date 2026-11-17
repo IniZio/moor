@@ -51,8 +51,6 @@ pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), St
         match run_verdict(row.as_ref().map(box_facts).as_ref(), now) {
             RunVerdict::Running => {}
             RunVerdict::Finished => {
-                // Nothing yet tells a delivery from a quiet agent, so quiet is a delivery with
-                // no result.
                 let delivered = RunOutcome::Delivered {
                     result: String::new(),
                 };

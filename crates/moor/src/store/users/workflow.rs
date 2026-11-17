@@ -141,8 +141,6 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         }),
         created_at: Ts::from_millis(row.created_at),
         updated_at: Ts::from_millis(row.updated_at),
-        // The `plan` column is for the plans a person writes; until one is read from it, every
-        // workflow runs its prompt as a single step.
         plan: Plan::single(&row.prompt),
         revision: u64::try_from(row.revision).map_err(|e| corrupt("revision", e))?,
     })
