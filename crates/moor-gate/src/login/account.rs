@@ -13,10 +13,10 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::repos;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
+use super::{nodes, repos};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Rebuilt by `make web`.
@@ -97,14 +97,14 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
-        ("PUT", p, session) if repos::named(p).is_some() => {
-            let body = read_body(&mut stream, req.leftover, req.length, repos::BODY_MAX);
-            match session {
-                Some(session) => {
-                    repos::write(&mut stream, gate, &session, req.csrf, p, body.as_deref());
-                }
-                None => signed_out(&mut stream),
-            }
+        ("PUT", p, session) if repos::named(p).is_some() || nodes::named(p).is_some() => {
+            write_settings(
+                &mut stream,
+                (req.leftover, req.length, req.csrf),
+                gate,
+                session.as_ref(),
+                p,
+            );
         }
         ("PUT", p, session) if p.starts_with(SECRETS) => {
             // Read the body before any answer: closing on unread bytes resets the connection
@@ -118,6 +118,31 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         }
         ("GET", p, None) if p.starts_with(API) => signed_out(&mut stream),
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
+    }
+}
+
+/// Replaces the repo config or node settings `path` names, as the session's person.
+fn write_settings(
+    stream: &mut TcpStream,
+    (leftover, length, csrf): (Vec<u8>, Option<usize>, Option<&str>),
+    gate: &Gate,
+    session: Option<&Session>,
+    path: &str,
+) {
+    let max = if nodes::named(path).is_some() {
+        nodes::BODY_MAX
+    } else {
+        repos::BODY_MAX
+    };
+    // Read the body before any answer: closing on unread bytes resets the connection.
+    let body = read_body(stream, leftover, length, max);
+    let Some(session) = session else {
+        return signed_out(stream);
+    };
+    if nodes::named(path).is_some() {
+        nodes::write(stream, gate, session, csrf, path, body.as_deref());
+    } else {
+        repos::write(stream, gate, session, csrf, path, body.as_deref());
     }
 }
 

@@ -112,3 +112,6 @@ button.quiet { background: transparent; color: var(--moor-color-accent); padding
 button.quiet:hover:not(:disabled) { background: var(--moor-color-accent-soft); }
 
 :focus-visible { outline: 2px solid var(--moor-color-focus); outline-offset: 2px; }
+
+.settings { display: grid; gap: var(--moor-space-2); margin-top: var(--moor-space-3); padding-top: var(--moor-space-3); border-top: 1px solid var(--moor-color-border); }
+.settings label { display: grid; gap: var(--moor-space-1); font-size: var(--moor-text-sm); }

@@ -26,6 +26,7 @@ pub(crate) use listen::client_down;
 mod failed;
 mod inspect;
 mod listen;
+mod node_settings;
 mod reply;
 mod repo_config;
 mod start;

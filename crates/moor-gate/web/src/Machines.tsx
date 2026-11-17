@@ -1,4 +1,6 @@
-import type { Account, Node } from './api';
+import { useEffect, useState } from 'preact/hooks';
+
+import { type Account, Conflict, type Node, nodeSet, SignedOut } from './api';
 import { Command } from './Connect';
 
 function state(n: Node): string {
@@ -8,12 +10,111 @@ function state(n: Node): string {
 	return mins < 60 ? `Offline ${mins}m` : mins < 1440 ? `Offline ${Math.round(mins / 60)}h` : `Offline ${Math.round(mins / 1440)}d`;
 }
 
-function slots(n: Node): string {
-	if (n.max_boxes === undefined) return `${n.used} running`;
-	return `${Math.max(0, n.max_boxes - n.used)} of ${n.max_boxes} free`;
+function gib(mib: number): string {
+	return `${(mib / 1024).toFixed(1)} GiB`;
 }
 
-export function Machines({ machines, serverUrl }: { machines: Account['machines']; serverUrl: string }) {
+/** What the node carries now and how hard its host is pressed, as the last memory report says. */
+function load(n: Node): string[] {
+	const parts = [n.max_boxes === undefined ? `${n.used} running, no cap` : `${n.used} of ${n.max_boxes} running`];
+	if (n.waiting > 0) parts.push(`${n.waiting} waiting`);
+	if (n.mem_free_mib !== undefined) parts.push(`${gib(n.mem_free_mib)} memory free`);
+	if (n.mem_psi_centi !== undefined) parts.push(`memory pressure ${(n.mem_psi_centi / 100).toFixed(2)}`);
+	if (n.box_memory_mib !== undefined) parts.push(`Boxes hold ${gib(n.box_memory_mib)}`);
+	if (n.mem_report_age_secs !== undefined) parts.push(`reported ${n.mem_report_age_secs}s ago`);
+	return parts;
+}
+
+function reason(err: Error): string {
+	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
+}
+
+function words(text: string): string[] {
+	return text
+		.split(/[\s,]+/)
+		.map((w) => w.trim())
+		.filter(Boolean);
+}
+
+function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChanged: () => void }) {
+	const [cap, setCap] = useState(node.max_boxes === undefined ? '' : String(node.max_boxes));
+	const [labels, setLabels] = useState(node.labels.join(', '));
+	const [busy, setBusy] = useState(false);
+	const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
+	const [saved, setSaved] = useState(false);
+
+	useEffect(() => {
+		setCap(node.max_boxes === undefined ? '' : String(node.max_boxes));
+		setLabels(node.labels.join(', '));
+	}, [node.revision]);
+
+	const capped = cap.trim() !== '';
+	const max = capped ? Number(cap.trim()) : null;
+	const valid = max === null || (Number.isInteger(max) && max >= 1);
+	const dirty = (max ?? undefined) !== node.max_boxes || words(labels).join(',') !== node.labels.join(',');
+
+	const save = async (e: Event) => {
+		e.preventDefault();
+		setBusy(true);
+		setProblem(null);
+		setSaved(false);
+		try {
+			await nodeSet(csrf, node.name, max, words(labels), node.revision);
+			setSaved(true);
+			onChanged();
+		} catch (err) {
+			setProblem({ text: err instanceof Error ? reason(err) : 'Something went wrong.', stale: err instanceof Conflict });
+		}
+		setBusy(false);
+	};
+
+	return (
+		<form onSubmit={save} class="settings">
+			<label>
+				Most Boxes
+				<input
+					type="number"
+					min={1}
+					step={1}
+					placeholder="no cap"
+					value={cap}
+					onInput={(e) => setCap(e.currentTarget.value)}
+				/>
+			</label>
+			<label>
+				Labels
+				<input
+					placeholder="gpu, big"
+					autocomplete="off"
+					spellcheck={false}
+					value={labels}
+					onInput={(e) => setLabels(e.currentTarget.value)}
+				/>
+			</label>
+			<p class="muted">Leave Most Boxes empty for no cap. Free memory and pressure then decide. A change applies to the next start.</p>
+			{problem && <p class="notice danger" role="alert">{problem.text}</p>}
+			{saved && <p class="notice ok" role="status">Saved.</p>}
+			<div class="actions">
+				<button disabled={busy || !dirty || !valid}>Save</button>
+				{problem?.stale && (
+					<button type="button" class="quiet" onClick={onChanged}>Discard mine and load theirs</button>
+				)}
+			</div>
+		</form>
+	);
+}
+
+export function Machines({
+	csrf,
+	machines,
+	serverUrl,
+	onChanged,
+}: {
+	csrf: string;
+	machines: Account['machines'];
+	serverUrl: string;
+	onChanged: () => void;
+}) {
 	return (
 		<section>
 			<h2>Machines</h2>
@@ -33,9 +134,16 @@ export function Machines({ machines, serverUrl }: { machines: Account['machines'
 								<span class={n.online ? 'pill ok' : 'pill warn'}>{state(n)}</span>
 							</div>
 							<p class="muted">
-								{n.scope === 'personal' ? 'Yours' : 'Shared'} · {n.runtime} · {slots(n)}
-								{n.mem_free_mib !== undefined && ` · ${Math.round(n.mem_free_mib / 1024)} GiB memory free`}
+								{n.scope === 'personal' ? 'Yours' : 'Shared'} · {n.provides ?? n.runtime}
+								{n.labels.length > 0 && ` · ${n.labels.join(', ')}`}
 							</p>
+							<p>{load(n).join(' · ')}</p>
+							{n.pressure_since !== undefined && (
+								<p class="notice warn" role="status">
+									Under memory pressure since {new Date(n.pressure_since * 1000).toLocaleTimeString()}.
+								</p>
+							)}
+							{n.editable && <Settings csrf={csrf} node={n} onChanged={onChanged} />}
 						</li>
 					))}
 				</ul>

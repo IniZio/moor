@@ -3,6 +3,7 @@
 //! session both live in sealed cookies, so any gate replica sharing the key can serve them.
 
 pub(crate) mod account;
+mod nodes;
 pub(crate) mod pair;
 mod repos;
 pub(crate) mod routes;
