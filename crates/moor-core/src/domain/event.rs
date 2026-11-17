@@ -254,10 +254,6 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
-    /// A client in the Box hung up during an intercepted TLS handshake without sending an alert; the Proxy refused nothing.
-    EgressAborted(EgressHost),
-    /// The Proxy allowed a request to a host whose intercepted TLS handshake was aborted earlier.
-    EgressRecovered(EgressHost),
     /// The Proxy forwarded a request to a credential host without the credential.
     CredentialWithheld {
         /// The credential host the request was for.
@@ -300,11 +296,6 @@ pub enum Event {
     ProxyCredentialRecovered {
         /// The credential rule that works again.
         rule: String,
-    },
-    /// The Box reached hosts it had not reached before, or a count changed.
-    EgressSeen {
-        /// The rows that are new or whose count changed.
-        hosts: Vec<crate::domain::egress::EgressRow>,
     },
     /// The agent's pane ended while the agent kept running on the Box.
     AgentLinkLost {
@@ -387,6 +378,9 @@ pub enum Event {
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),
+    /// An intercepted TLS handshake cut off or back, or the hosts the Box reached.
+    #[serde(untagged)]
+    Egress(EgressEvent),
 }
 pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, egress::*, kind::*};
 pub use self::{machine::MachineEvent, post_clone::*, profile::*, steered::SteerSent, steps::*};

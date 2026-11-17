@@ -189,14 +189,12 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::Working
             | Event::CredentialFailed { .. }
             | Event::EgressRefused { .. }
-            | Event::EgressAborted { .. }
-            | Event::EgressRecovered { .. }
+            | Event::Egress(_)
             | Event::CredentialWithheld { .. }
             | Event::ProxyCredentialFailed { .. }
             | Event::AgentRateLimited { .. }
             | Event::ProxyCredentialRejected { .. }
             | Event::ProxyCredentialRecovered { .. }
-            | Event::EgressSeen { .. }
             | Event::Idled
             | Event::Busy
             | Event::Asleep { .. }

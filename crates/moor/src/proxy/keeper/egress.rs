@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::box_key::is_machine_handle;
 use moor_core::domain::egress::{EgressFlushed, EgressRow, SEEN_FILE};
-use moor_core::domain::event::Event;
+use moor_core::domain::event::{EgressEvent, Event};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Place;
 use moor_core::{BoxHandle, BoxPath};
@@ -54,7 +54,7 @@ impl Kept {
         let at = u64::try_from(now.as_millis()).unwrap_or(0);
         let hosts = lock(&self.egress).flushed.take(&rows, at);
         if !hosts.is_empty() {
-            self.record(&Event::EgressSeen { hosts });
+            self.record(&Event::Egress(EgressEvent::EgressSeen { hosts }));
         }
     }
 }

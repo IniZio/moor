@@ -54,7 +54,7 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::ProxyCredentialRecovered { .. } => 45,
         Event::TurnDone { .. } => 46,
         Event::ArtifactPublished { .. } => 47,
-        Event::EgressAborted { .. } => 48,
+        Event::Egress(EgressEvent::EgressAborted(_)) => 48,
         Event::Timing(TimingEvent::Cloned { .. }) => 49,
         Event::AgentSaid { .. } => 50,
         Event::LaunchTimedOut { .. } => 51,
@@ -95,7 +95,7 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Restore(RestoreEvent::SessionLost { .. }) => 82,
         Event::SteerUnconfirmed { .. } => 83,
         Event::WantedDropped => 84,
-        Event::EgressRecovered { .. } => 85,
+        Event::Egress(EgressEvent::EgressRecovered(_)) => 85,
         Event::Inbox(InboxEvent::SteerCut { .. }) => 86,
         Event::Inbox(InboxEvent::SteersDropped { .. }) => 87,
         Event::Close(CloseEvent::CloseRefused { .. }) => 88,
@@ -104,6 +104,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Access(AccessEvent::PortForwardRefused { .. }) => 91,
         Event::Timing(TimingEvent::SetupReattached { .. }) => 92,
         Event::Timing(TimingEvent::AcquireReattached { .. }) => 93,
-        Event::EgressSeen { .. } => 94,
+        Event::Egress(EgressEvent::EgressSeen { .. }) => 94,
     }
 }

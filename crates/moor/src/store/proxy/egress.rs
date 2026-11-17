@@ -2,7 +2,7 @@
 //! records.
 
 use moor_core::attention::{open_limits, Limit};
-use moor_core::domain::event::Event;
+use moor_core::domain::event::{EgressEvent, Event};
 use moor_core::BoxId;
 use moor_schema::tables::{Events, Proxy};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
@@ -24,8 +24,7 @@ impl Store {
         if !matches!(
             event,
             Event::EgressRefused { .. }
-                | Event::EgressAborted { .. }
-                | Event::EgressRecovered { .. }
+                | Event::Egress(EgressEvent::EgressAborted(_) | EgressEvent::EgressRecovered(_))
                 | Event::CredentialWithheld { .. }
                 | Event::ProxyCredentialFailed { .. }
                 | Event::AgentRateLimited { .. }

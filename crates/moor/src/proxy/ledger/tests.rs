@@ -261,10 +261,14 @@ fn audit_events_wait_out_a_controller_that_is_down() {
     let id = id.unwrap().box_id;
     let on = box_ledger(&w.store, id);
     let refused = |host: &str| {
-        moor_core::domain::event::Event::EgressAborted(moor_core::domain::event::EgressHost {
-            host: host.to_owned(),
-            rule: None,
-        })
+        moor_core::domain::event::Event::Egress(
+            moor_core::domain::event::EgressEvent::EgressAborted(
+                moor_core::domain::event::EgressHost {
+                    host: host.to_owned(),
+                    rule: None,
+                },
+            ),
+        )
     };
     let aborted = || {
         w.store

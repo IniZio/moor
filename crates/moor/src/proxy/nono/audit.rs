@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use moor_core::config::proxy::{request_shape, ResolvedRule};
-use moor_core::domain::event::{EgressHost, Event};
+use moor_core::domain::event::{EgressEvent, EgressHost, Event};
 use moor_core::seam::forge::ForgeRepo;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
@@ -241,18 +241,18 @@ impl EgressSink for BoxSink<'_> {
     }
 
     fn aborted(&self, host: &str, rule: Option<&str>) {
-        let event = Event::EgressAborted(EgressHost {
+        let event = Event::Egress(EgressEvent::EgressAborted(EgressHost {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
-        });
+        }));
         self.ledger.record_event(&event);
     }
 
     fn recovered(&self, host: &str, rule: Option<&str>) {
-        let event = Event::EgressRecovered(EgressHost {
+        let event = Event::Egress(EgressEvent::EgressRecovered(EgressHost {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
-        });
+        }));
         self.ledger.record_event(&event);
     }
 

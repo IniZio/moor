@@ -192,10 +192,10 @@ fn all_events() -> Vec<Event> {
             size: 12,
             sha256: s("ab"),
         },
-        Event::EgressAborted(EgressHost {
+        Event::Egress(EgressEvent::EgressAborted(EgressHost {
             host: s("h"),
             rule: None,
-        }),
+        })),
         Event::Timing(TimingEvent::Cloned { ms: 7 }),
         Event::AgentSaid { text: s("done") },
         Event::LaunchTimedOut { after_secs: 180 },
@@ -325,10 +325,10 @@ fn all_events() -> Vec<Event> {
             text: s("go"),
         },
         Event::WantedDropped,
-        Event::EgressRecovered(EgressHost {
+        Event::Egress(EgressEvent::EgressRecovered(EgressHost {
             host: s("h"),
             rule: None,
-        }),
+        })),
         Event::Inbox(InboxEvent::SteerCut {
             inbox: 9,
             sender: s("steer"),
@@ -363,7 +363,7 @@ fn all_events() -> Vec<Event> {
         Event::Timing(TimingEvent::AcquireReattached {
             why: s("box provider unavailable: the stream ended: unexpected end of file"),
         }),
-        Event::EgressSeen {
+        Event::Egress(EgressEvent::EgressSeen {
             hosts: vec![crate::domain::egress::EgressRow {
                 host: s("example.com"),
                 port: 443,
@@ -371,7 +371,7 @@ fn all_events() -> Vec<Event> {
                 first_seen: 1_000,
                 count: 1,
             }],
-        },
+        }),
     ]
 }
 
