@@ -129,6 +129,8 @@ pub(crate) const PLAIN: &str = "x-moor-plain";
 pub(crate) struct Config {
     /// Where it listens.
     pub(crate) listen: Listen,
+    /// A TCP address it also listens on, for the Boxes of Docker machines on this host.
+    pub(crate) also: Option<SocketAddr>,
     /// Where the controller's ledger is.
     pub(crate) ledger: Endpoint,
     /// The key it presents on the ledger.
@@ -176,10 +178,8 @@ pub(crate) struct Server {
     runtime: tokio::runtime::Runtime,
     /// Where it listens.
     listening: Listen,
-    /// Wakes the accept loop to stop listening.
-    stop: Arc<Notify>,
-    /// The accept loop, which holds the listener until it returns.
-    accepting: tokio::task::JoinHandle<()>,
+    /// Each accept loop, which holds its listener until it returns, and what wakes it to stop.
+    accepting: Vec<(Arc<Notify>, tokio::task::JoinHandle<()>)>,
     /// Shared with connections.
     shared: Arc<Shared>,
     /// Set to stop the tending thread.
@@ -201,6 +201,16 @@ impl Server {
         let (listener, listening) = runtime
             .block_on(cfg.listen.bind())
             .map_err(|e| format!("cannot listen on {}: {e}", cfg.listen))?;
+        let also = cfg
+            .also
+            .map(|addr| {
+                let on = Listen::Tcp(addr);
+                runtime
+                    .block_on(on.bind())
+                    .map(|(l, _)| l)
+                    .map_err(|e| format!("cannot listen on {on}: {e}"))
+            })
+            .transpose()?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let (machine, warm) = (cfg.machine.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
@@ -210,8 +220,14 @@ impl Server {
             machine,
             key_id,
         });
-        let stop = Arc::new(Notify::new());
-        let accepting = runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));
+        let accepting = std::iter::once(listener)
+            .chain(also)
+            .map(|l| {
+                let stop = Arc::new(Notify::new());
+                let task = runtime.spawn(accept(l, Arc::clone(&shared), Arc::clone(&stop)));
+                (stop, task)
+            })
+            .collect();
         let tending = Arc::new(AtomicBool::new(true));
         let (on, boxes) = (Arc::clone(&tending), Arc::clone(&shared));
         let thread = std::thread::Builder::new()
@@ -238,7 +254,6 @@ impl Server {
         Ok(Self {
             runtime,
             listening,
-            stop,
             accepting,
             shared,
             tending,
@@ -273,10 +288,14 @@ impl Server {
     /// Stops listening, waits up to `grace` for open tunnels to finish while tending goes on,
     /// then stops the rest; returns how many were still open.
     pub(crate) fn drain(mut self, grace: Duration) -> usize {
-        self.stop.notify_one();
-        let (shared, accepting) = (Arc::clone(&self.shared), self.accepting);
+        let (shared, accepting) = (Arc::clone(&self.shared), std::mem::take(&mut self.accepting));
+        for (stop, _) in &accepting {
+            stop.notify_one();
+        }
         let left = self.runtime.block_on(async move {
-            drop(accepting.await);
+            for (_, task) in accepting {
+                drop(task.await);
+            }
             let waited = tokio::time::timeout(grace, async {
                 while shared.open.load(Ordering::Acquire) > 0 {
                     tokio::time::sleep(Duration::from_millis(50)).await;

@@ -1,8 +1,12 @@
 //! Which Proxy a Box's credential hosts reach, as the controller's environment sets it.
 
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
-use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_URL};
+use moor_core::box_key::is_machine_handle;
+use moor_core::BoxHandle;
+
+use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_LISTEN, EGRESS_URL};
 
 /// The controller's own shared egress Proxy socket, under the state dir.
 const LOCAL_SOCKET: &str = "egress/egress.sock";
@@ -19,6 +23,9 @@ pub(crate) enum EgressRoute {
     Local {
         /// The socket it listens on.
         socket: PathBuf,
+        /// The private address of this host it also listens on, which a machine's Box dials as
+        /// `moor-host`; `None` when no Box of a Docker machine may be served.
+        host: Option<SocketAddr>,
     },
 }
 
@@ -31,9 +38,15 @@ impl EgressRoute {
     pub(crate) fn from_env(env: &Env) -> Result<Self, String> {
         env.get(EGRESS_URL).filter(|u| !u.is_empty()).map_or_else(
             || {
+                let host = env
+                    .get(EGRESS_LISTEN)
+                    .filter(|a| !a.is_empty())
+                    .map(private_listen)
+                    .transpose()?;
                 env.state_dir()
                     .map(|dir| Self::Local {
                         socket: local_socket(&dir),
+                        host,
                     })
                     .ok_or_else(|| "no state directory for the shared egress Proxy".to_owned())
             },
@@ -60,22 +73,64 @@ impl EgressRoute {
         }
     }
 
-    /// The address the forwarder of a Box whose tunnel listens on `box_port` dials.
-    pub(crate) fn upstream(&self, box_port: u16) -> String {
-        match self {
+    /// The address the forwarder of the Box at `handle`, whose tunnel listens on `box_port`,
+    /// dials. A machine's Box has no tunnel: it dials the controller's Proxy as `moor-host`.
+    ///
+    /// # Errors
+    /// A machine's Box on the local route, and no [`EGRESS_LISTEN`] address to dial.
+    pub(crate) fn upstream(
+        &self,
+        handle: Option<&BoxHandle>,
+        box_port: u16,
+    ) -> Result<String, String> {
+        Ok(match self {
             Self::Direct { url } => url.clone(),
+            Self::Local { host, .. } if handle.is_some_and(|h| is_machine_handle(h.as_str())) => {
+                let host = host.ok_or_else(|| {
+                    format!(
+                        "a machine's Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"
+                    )
+                })?;
+                format!("ws://moor-host:{}{}", host.port(), super::egress::PATH)
+            }
             Self::Local { .. } => {
                 format!("ws://127.0.0.1:{box_port}{}", super::egress::PATH)
             }
-        }
+        })
     }
 
     /// The socket each Box's tunnel reaches, on the local route.
     pub(crate) fn socket(&self) -> Option<&Path> {
         match self {
-            Self::Local { socket } => Some(socket),
+            Self::Local { socket, .. } => Some(socket),
             Self::Direct { .. } => None,
         }
+    }
+}
+
+/// `addr` as the address the controller's Proxy also listens on. Boxes dial it over plain
+/// `ws://`, so it must be a loopback or private address: never a public or wildcard one.
+fn private_listen(addr: &str) -> Result<SocketAddr, String> {
+    let bad = |why: &str| format!("{EGRESS_LISTEN} {addr}: {why}");
+    let parsed: SocketAddr = addr
+        .parse()
+        .map_err(|_| bad("not an IP:PORT address"))?;
+    let private = match parsed.ip() {
+        IpAddr::V4(ip) => {
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                // Carrier-grade NAT space, where tailscale puts its addresses.
+                || (ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1]))
+        }
+        IpAddr::V6(ip) => ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00,
+    };
+    if private && parsed.port() != 0 {
+        Ok(parsed)
+    } else {
+        Err(bad(
+            "plain ws:// is only for a loopback or private address with a port; serve the Proxy over wss:// and set MOOR_EGRESS_URL instead",
+        ))
     }
 }
 
