@@ -67,8 +67,22 @@ done when it goes quiet at the last one. `list_workflows` shows the plan and
 `plan_stale` when the prompt changed after the plan was made. A stale plan
 still runs. Adding a workflow again without a `plan` removes its plan.
 
-`check` and `approve` steps are part of the plan format, and moor refuses them
-until it runs them.
+A `check` step is run by moor, never by the agent. moor waits until the agent
+is quiet. Then it runs the command in the Box's work place. The deadline is the
+smaller of the run's remaining timeout and 30 minutes. Exit 0
+follows `ok`. Any other exit, or the deadline passing, follows `fail`. The last
+4 KiB of output goes into the run's history, and the agent is steered with the
+result and the next step's instructions. A check that has used its `max_tries`
+follows its `fail` edge, and a run that cannot go on fails. A restart of the
+machine agent can cut a check's stream. That is no result, so moor runs the
+check again on the next pass, and a second cut in one try follows `fail`. A
+check command must therefore be safe to run twice.
+
+A work step whose agent crashed or exited is not passed. moor sends the step
+again once. A second end without progress ends the run `incomplete`.
+
+`approve` steps are part of the plan format, and moor refuses them until it
+runs them.
 
 ## Know when a run fires
 

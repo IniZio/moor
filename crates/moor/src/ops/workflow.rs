@@ -19,6 +19,7 @@ use crate::cx::Cx;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
 use advance::finish_runs;
+pub(crate) use check::{run_check, CheckJob};
 use facts::history;
 use previous::close_previous;
 use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
@@ -57,7 +58,11 @@ impl StartJob {
 
 /// Runs one pass over every enabled workflow, handing each claimed firing to `launch`, which
 /// must not wait for the start. Returns what to log.
-pub(crate) fn tick(cx: &Cx, launch: &dyn Fn(StartJob), draining: &dyn Fn() -> bool) -> Vec<String> {
+pub(crate) fn tick(
+    cx: &Cx,
+    (launch, checks): (&dyn Fn(StartJob), &dyn Fn(CheckJob)),
+    draining: &dyn Fn() -> bool,
+) -> Vec<String> {
     let mut out = Vec::new();
     let workflows = cx
         .store()
@@ -66,7 +71,7 @@ pub(crate) fn tick(cx: &Cx, launch: &dyn Fn(StartJob), draining: &dyn Fn() -> bo
     match workflows {
         Ok(list) => {
             for w in list.iter().take_while(|_| !draining()) {
-                if let Err(e) = tick_one(cx, w, launch, &mut out) {
+                if let Err(e) = tick_one(cx, w, (launch, checks), &mut out) {
                     out.push(format!("workflow {}: {e}", w.name));
                 }
             }
@@ -80,14 +85,14 @@ pub(crate) fn tick(cx: &Cx, launch: &dyn Fn(StartJob), draining: &dyn Fn() -> bo
 fn tick_one(
     cx: &Cx,
     w: &Workflow,
-    launch: &dyn Fn(StartJob),
+    (launch, checks): (&dyn Fn(StartJob), &dyn Fn(CheckJob)),
     out: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let store = cx
         .store()
         .map_err(|e| StoreError::Invalid(e.error.to_string()))?;
     let now = cx.clock().now();
-    finish_runs(cx, store, w, now, out)?;
+    finish_runs(cx, store, w, now, (checks, out))?;
     expire_runs(cx, store, w, now, out)?;
     enforce_start_limit(cx, store, w, now, out)?;
     let history = history(store, w)?;
@@ -310,6 +315,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
 }
 
 mod advance;
+mod check;
 mod facts;
 mod previous;
 mod settle;

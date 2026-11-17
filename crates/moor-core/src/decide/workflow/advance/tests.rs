@@ -10,12 +10,14 @@ use std::collections::HashMap;
 
 use serde_json::json;
 
-use super::{quiet_move, quiet_since, QuietMove};
+use super::{quiet_move, quiet_since, Move};
 use crate::decide::workflow::{RunBoxFacts, QUIET_BEFORE_FINISHED};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
 use crate::workflow::{Plan, StepId};
+
+mod check;
 
 fn id(s: &str) -> StepId {
     StepId::parse(s).unwrap()
@@ -48,7 +50,7 @@ fn a_work_step_passes_on_to_its_ok_edge() {
     let entered = counts(&[("a", 1)]);
     assert_eq!(
         quiet_move(&p, &id("a"), &entered),
-        QuietMove::Enter {
+        Move::Enter {
             step: id("b"),
             try_n: 1,
             exhausted: vec![]
@@ -59,10 +61,7 @@ fn a_work_step_passes_on_to_its_ok_edge() {
 #[test]
 fn a_deliver_step_delivers() {
     let p = plan(&[work("a", "end", None, 1)]);
-    assert_eq!(
-        quiet_move(&p, &id("end"), &counts(&[])),
-        QuietMove::Delivered
-    );
+    assert_eq!(quiet_move(&p, &id("end"), &counts(&[])), Move::Delivered);
 }
 
 #[test]
@@ -71,7 +70,7 @@ fn a_loop_enters_a_step_again_until_its_tries_are_used() {
     let again = |n| quiet_move(&p, &id("a"), &counts(&[("a", n)]));
     assert_eq!(
         again(1),
-        QuietMove::Enter {
+        Move::Enter {
             step: id("a"),
             try_n: 2,
             exhausted: vec![]
@@ -79,7 +78,7 @@ fn a_loop_enters_a_step_again_until_its_tries_are_used() {
     );
     assert_eq!(
         again(2),
-        QuietMove::Enter {
+        Move::Enter {
             step: id("a"),
             try_n: 3,
             exhausted: vec![]
@@ -87,7 +86,7 @@ fn a_loop_enters_a_step_again_until_its_tries_are_used() {
     );
     assert_eq!(
         again(3),
-        QuietMove::Enter {
+        Move::Enter {
             step: id("end"),
             try_n: 1,
             exhausted: vec![id("a")]
@@ -98,8 +97,7 @@ fn a_loop_enters_a_step_again_until_its_tries_are_used() {
 #[test]
 fn an_exhausted_step_with_no_fail_edge_fails_the_run() {
     let p = plan(&[work("a", "b", Some("end"), 3), work("b", "a", None, 1)]);
-    let QuietMove::Fail { at, exhausted, .. } =
-        quiet_move(&p, &id("a"), &counts(&[("a", 2), ("b", 1)]))
+    let Move::Fail { at, exhausted, .. } = quiet_move(&p, &id("a"), &counts(&[("a", 2), ("b", 1)]))
     else {
         panic!("the run should fail");
     };
@@ -111,7 +109,7 @@ fn an_exhausted_step_with_no_fail_edge_fails_the_run() {
 fn a_fail_target_that_is_exhausted_too_fails_the_run() {
     let p = plan(&[work("a", "a", Some("b"), 1), work("b", "end", None, 1)]);
     let entered = counts(&[("a", 1), ("b", 1)]);
-    let QuietMove::Fail { at, exhausted, .. } = quiet_move(&p, &id("a"), &entered) else {
+    let Move::Fail { at, exhausted, .. } = quiet_move(&p, &id("a"), &entered) else {
         panic!("the run should fail");
     };
     assert_eq!(at, id("b"));
@@ -128,13 +126,13 @@ fn every_run_ends_within_the_sum_of_the_tries() {
     loop {
         let entered = |s: &StepId| seen.get(s.as_str()).copied().unwrap_or(0);
         match quiet_move(&p, &at, &entered) {
-            QuietMove::Enter { step, try_n, .. } => {
+            Move::Enter { step, try_n, .. } => {
                 seen.insert(step.to_string(), try_n);
                 at = step;
                 moves += 1;
             }
-            QuietMove::Delivered => break,
-            QuietMove::Fail { .. } => panic!("the loop should end at the deliver step"),
+            Move::Delivered => break,
+            other => panic!("the loop should end at the deliver step: {other:?}"),
         }
         assert!(moves <= 5, "the loop ran past the sum of its tries");
     }

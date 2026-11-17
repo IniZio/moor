@@ -1,0 +1,315 @@
+//! Check steps through the tick: the command goes through the exec op in the Box's work place
+//! (the fake driver runs it on the host), and its exit decides where the run goes.
+#![allow(
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::cognitive_complexity,
+    reason = "test assertions index JSON values and panic on a wrong shape"
+)]
+
+use std::cell::RefCell;
+
+use moor_core::config::UserConfig;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::driver::{ExecOutcome, Place};
+use moor_core::workflow::{
+    Plan, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
+    WorkflowSchedule,
+};
+use serde_json::json;
+
+use super::plan::{step_of, PROMPT};
+use super::{repo, rig, rig_driving, tick, Rig, FIRST_DUE};
+use crate::testing::cx::REQUESTER_USER;
+
+fn plan_of(steps: &[serde_json::Value]) -> Plan {
+    Plan::parse(&json!({ "steps": steps }).to_string(), PROMPT).unwrap()
+}
+
+fn audit() -> serde_json::Value {
+    json!({"id": "audit", "title": "Audit", "kind": "work", "instructions": "look",
+           "done_when": "looked", "evidence": ["a.md"], "ok": "gate"})
+}
+
+fn gate(command: &str, tries: u8, fail: Option<&str>) -> serde_json::Value {
+    json!({"id": "gate", "title": "Gate", "kind": "check", "command": command,
+           "max_tries": tries, "ok": "ship", "fail": fail})
+}
+
+fn ship() -> serde_json::Value {
+    json!({"id": "ship", "title": "Ship", "kind": "deliver",
+           "instructions": "ship it", "done_when": "shipped"})
+}
+
+impl Rig {
+    /// Starts the run of a planned workflow, whose agent is working on its first step.
+    fn started(&self, plan: Plan) -> WorkflowId {
+        self.answer_repo();
+        let id = self.put_planned(Some(plan));
+        self.advance_to(FIRST_DUE + 1_000);
+        assert!(self.pass().is_empty());
+        id
+    }
+
+    /// The agent goes idle, long enough to count as done, and the tick passes once.
+    fn idle_then_pass(&self, id: WorkflowId) -> Vec<String> {
+        self.quiet_after_work(id);
+        self.pause(3 * 60_000);
+        self.pass()
+    }
+
+    /// The history lines of the newest run.
+    fn lines(&self, id: WorkflowId) -> Vec<serde_json::Value> {
+        let run = self.latest(id);
+        self.cx
+            .store()
+            .unwrap()
+            .run_history(run.id)
+            .unwrap()
+            .into_iter()
+            .map(|l| l.entry)
+            .collect()
+    }
+}
+
+#[test]
+fn a_check_that_exits_zero_runs_in_the_work_place_and_the_run_goes_on() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("echo all good", 1, None), ship()]));
+    assert!(r.idle_then_pass(id).is_empty());
+    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+    assert_eq!(r.kinds(id), ["queued", "entered", "entered"]);
+
+    assert!(r.pass().is_empty());
+    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "checked"]);
+    let checked = r.lines(id)[3].clone();
+    assert_eq!(checked["exit"], 0);
+    assert!(checked["tail"].as_str().unwrap().contains("all good"));
+    let driver = &r.driver;
+    let places = driver.places("exec_piped");
+    assert_eq!(places, [Place::Work]);
+
+    assert!(r.pass().is_empty());
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "entered", "checked", "entered", "sent"]
+    );
+}
+
+#[test]
+fn a_check_does_not_run_while_the_agent_works() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.idle_then_pass(id);
+    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+    r.cx.store()
+        .unwrap()
+        .apply(Decision::new(r.latest_box(id)).session(SessionInput::AgentBusy))
+        .unwrap();
+    r.pause(10 * 60_000);
+    r.pass();
+    assert_eq!(r.kinds(id), ["queued", "entered", "entered"]);
+}
+
+#[test]
+fn a_check_that_exits_non_zero_fails_the_run_when_it_has_no_fail_edge() {
+    let r = rig();
+    let id = r.started(plan_of(&[
+        audit(),
+        gate("echo broken; exit 3", 1, None),
+        ship(),
+    ]));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Failed { at, reason },
+        ..
+    }) = r.latest(id).state
+    else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert_eq!(at.as_str(), "gate");
+    assert!(reason.contains("exited 3"), "{reason}");
+    let tail = r.lines(id)[3]["tail"].as_str().unwrap().to_owned();
+    assert!(tail.contains("broken"), "{tail}");
+}
+
+#[test]
+fn a_fix_and_check_loop_runs_out_of_tries_and_the_run_fails() {
+    let fix = json!({"id": "fix", "title": "Fix", "kind": "work", "max_tries": 2,
+        "instructions": "fix it", "done_when": "fixed", "evidence": ["f.md"], "ok": "gate"});
+    let plan = plan_of(&[
+        json!({"id": "audit", "title": "Audit", "kind": "work", "instructions": "look",
+               "done_when": "looked", "evidence": ["a.md"], "ok": "gate"}),
+        gate("exit 1", 3, Some("fix")),
+        fix,
+        ship(),
+    ]);
+    let r = rig();
+    let id = r.started(plan);
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("fix".to_owned(), 1));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("fix".to_owned(), 2));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Failed { at, reason },
+        ..
+    }) = r.latest(id).state
+    else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert_eq!(at.as_str(), "fix");
+    assert!(reason.contains("ran out of tries"), "{reason}");
+    let kinds = r.kinds(id);
+    assert_eq!(
+        kinds.iter().filter(|k| *k == "checked").count(),
+        3,
+        "{kinds:?}"
+    );
+}
+
+#[test]
+fn a_lost_stream_is_no_result_and_the_next_tick_runs_the_check_again() {
+    let r = rig_driving(UserConfig::default(), |d| {
+        d.exec_ends_once_when("lost-once", ExecOutcome::Interrupted)
+    });
+    let id = r.started(plan_of(&[audit(), gate("echo lost-once", 1, None), ship()]));
+    r.idle_then_pass(id);
+    r.pass();
+    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "check_lost"]);
+    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+    r.pass();
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "entered", "check_lost", "checked"]
+    );
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+}
+
+#[test]
+fn two_lost_streams_in_one_try_follow_fail() {
+    let r = rig_driving(UserConfig::default(), |d| {
+        d.exec_ends_when("lost-always", ExecOutcome::Interrupted)
+    });
+    let id = r.started(plan_of(&[
+        audit(),
+        gate("echo lost-always", 1, None),
+        ship(),
+    ]));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+    r.pass();
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Failed { at, reason },
+        ..
+    }) = r.latest(id).state
+    else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert_eq!(at.as_str(), "gate");
+    assert!(reason.contains("lost"), "{reason}");
+    assert_eq!(
+        r.kinds(id),
+        [
+            "queued",
+            "entered",
+            "entered",
+            "check_lost",
+            "check_lost",
+            "ended"
+        ]
+    );
+}
+
+#[test]
+fn a_checks_deadline_is_the_smaller_of_the_run_remaining_and_thirty_minutes() {
+    let deadline = |minutes: u32| {
+        let r = rig();
+        r.answer_repo();
+        let mut def = WorkflowDef::new(
+            WorkflowName::parse("deps").unwrap(),
+            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            vec![repo()],
+            PROMPT,
+            (true, TimeoutMinutes::new(minutes).unwrap()),
+        )
+        .unwrap();
+        def.plan = Some(plan_of(&[audit(), gate("true", 1, None), ship()]));
+        let store = r.cx.store().unwrap();
+        let id = store.put_workflow(REQUESTER_USER, &def).unwrap();
+        r.advance_to(FIRST_DUE + 1_000);
+        r.pass();
+        r.idle_then_pass(id);
+        r.pause(60_000);
+        let jobs = RefCell::new(Vec::new());
+        tick(
+            &r.cx,
+            (&|_| {}, &|job| jobs.borrow_mut().push(job.timeout_secs)),
+            &|| false,
+        );
+        jobs.into_inner()
+    };
+    assert_eq!(deadline(180), [1_800]);
+    let short = deadline(10);
+    assert_eq!(short.len(), 1);
+    assert!(short[0] <= 600 && short[0] > 300, "{short:?}");
+}
+
+#[test]
+fn a_check_in_flight_is_not_started_twice() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.idle_then_pass(id);
+    let jobs = RefCell::new(Vec::new());
+    for _ in 0..2 {
+        tick(
+            &r.cx,
+            (&|_| {}, &|job| jobs.borrow_mut().push(job)),
+            &|| false,
+        );
+    }
+    assert_eq!(jobs.borrow().len(), 1);
+}
+
+#[test]
+fn an_ended_agent_on_a_work_step_is_sent_the_step_again_and_a_second_end_is_incomplete() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    let box_id = r.latest_box(id);
+    let end = || {
+        r.cx.store()
+            .unwrap()
+            .apply(Decision::new(box_id).session(SessionInput::End))
+            .ok();
+    };
+    end();
+    r.pause(3 * 60_000);
+    assert!(r.pass().is_empty());
+    assert_eq!(step_of(&r.latest(id).state), ("audit".to_owned(), 1));
+    assert_eq!(r.kinds(id), ["queued", "entered", "reminded"]);
+
+    end();
+    r.pause(3 * 60_000);
+    r.pass();
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Incomplete { at },
+        ..
+    }) = r.latest(id).state
+    else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert_eq!(at.as_str(), "audit");
+}

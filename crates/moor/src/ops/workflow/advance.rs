@@ -1,32 +1,37 @@
-//! Settling the started runs of a workflow when their Box goes quiet: a run at a step before its
-//! last is sent on to the next step, and a run at its last step is delivered. A Box that is
-//! gone ends the run, and one no agent can run in refuses it.
+//! Settling the started runs of a workflow from where each stands: a quiet agent at a work step
+//! is sent on to the next step, an ended one is sent its step again once, a check step runs its
+//! command and follows its exit, and a deliver step delivers. A Box that is gone ends the run,
+//! and one no agent can run in refuses it.
 
-use std::collections::HashMap;
-
-use moor_core::decide::workflow::{quiet_move, quiet_since, run_verdict, QuietMove, RunVerdict};
+use moor_core::decide::workflow::{
+    advance, quiet_since, run_verdict, Event, Move, RunBoxFacts, RunVerdict,
+};
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::session_state::SessionState;
 use moor_core::request::BoxTarget;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    HistoryEntry, Plan, RunOutcome, RunState, StepId, Workflow, WorkflowRun,
+    CheckSays, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
+    WorkflowRun,
 };
 use moor_core::{BoxId, SteerReq};
 
+use super::check::{CheckJob, Flight, CHECK_LIMIT};
 use super::settle::{box_facts, broken_detail};
 use crate::cx::Cx;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
 
 /// Settles each started run of `w` whose Box is over or quiet: sent on to its next step,
-/// delivered, failed, or refused when no agent can run in it until a person acts. The Box stays
-/// open for inspection and nothing retries it.
+/// delivered, failed, or refused when no agent can run in it until a person acts. A check that
+/// is due goes to `checks`, which must not wait for it. The Box stays open for inspection and
+/// nothing retries it.
 pub(super) fn finish_runs(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
     now: Ts,
-    out: &mut Vec<String>,
+    (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
 ) -> Result<(), StoreError> {
     for run in store.open_workflow_runs(w.id)? {
         let RunState::Running {
@@ -38,19 +43,31 @@ pub(super) fn finish_runs(
             continue;
         };
         let row = store.box_row(box_id)?;
-        let key = (w.id, &run.repo, run.due_at);
-        match run_verdict(row.as_ref().map(box_facts).as_ref(), now) {
-            RunVerdict::Running => {}
-            RunVerdict::Finished => {
-                let at = (at, try_n);
-                quiet((cx, store, w), &run, (box_id, at, row.as_ref()), now, out)?;
+        let verdict = run_verdict(row.as_ref().map(box_facts).as_ref(), now);
+        if verdict == RunVerdict::Broken {
+            if let Some(row) = &row {
+                let key = (w.id, &run.repo, run.due_at);
+                store.refuse_run(key, (&broken_detail(row), false), now)?;
             }
-            RunVerdict::Broken => {
-                if let Some(row) = &row {
-                    store.refuse_run(key, (&broken_detail(row), false), now)?;
-                }
-            }
+            continue;
         }
+        let plan = store.run_plan(run.id, &w.prompt)?;
+        let at_check = matches!(plan.step(at).map(|s| &s.kind), Some(StepKind::Check { .. }));
+        // A check runs as soon as the agent is idle, so an agent that only just stopped is
+        // quiet enough for it. A step the agent works on waits for the longer quiet.
+        if verdict == RunVerdict::Running && !at_check {
+            continue;
+        }
+        let q = Quiet {
+            cx,
+            store,
+            w,
+            run: &run,
+            row: row.as_ref(),
+            at: (at, try_n),
+            now,
+        };
+        q.settle(&plan, box_id, (checks, out))?;
     }
     Ok(())
 }
@@ -60,7 +77,7 @@ fn open(row: Option<&BoxRow>) -> Option<&BoxRow> {
     row.filter(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected))
 }
 
-/// A started run whose Box is quiet, with what the tick knows of it.
+/// A started run with what the tick knows of it.
 struct Quiet<'a> {
     /// The controller context.
     cx: &'a Cx,
@@ -78,71 +95,164 @@ struct Quiet<'a> {
     now: Ts,
 }
 
-/// What a quiet Box means for `run`, which is at step `at`, try `at.1`, in Box `box_id`.
-fn quiet(
-    (cx, store, w): (&Cx, &Store, &Workflow),
-    run: &WorkflowRun,
-    (box_id, at, row): (BoxId, (&StepId, u8), Option<&BoxRow>),
-    now: Ts,
-    out: &mut Vec<String>,
-) -> Result<(), StoreError> {
-    let q = Quiet {
-        cx,
-        store,
-        w,
-        run,
-        row,
-        at,
-        now,
-    };
-    let key = (w.id, &run.repo, run.due_at);
-    let plan = store.run_plan(run.id, &w.prompt)?;
-    let entries = store.run_entries(run.id)?;
-    let sent = entries.iter().rev().find_map(|(when, e)| match e {
-        HistoryEntry::Sent { step, try_n } if (step, *try_n) == at => Some(*when),
-        _ => None,
-    });
-    // Right after a steer the Box still shows the quiet of the step before, so that reading
-    // says nothing about this step.
-    if let (Some(sent), Some(open)) = (sent, open(row)) {
-        if !quiet_since(&box_facts(open), sent, now) {
-            return Ok(());
-        }
+/// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the
+/// last steer, or ended, in a Box that is up or asleep.
+fn quiet_for_check(facts: &RunBoxFacts, steered: Option<Ts>, now: Ts) -> bool {
+    if !matches!(facts.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep) {
+        return false;
     }
-    let mut entered: HashMap<&StepId, u8> = HashMap::new();
-    for (_, e) in &entries {
-        if let HistoryEntry::Entered { step, .. } = e {
-            *entered.entry(step).or_default() += 1;
-        }
-    }
-    let tries = |s: &StepId| entered.get(s).copied().unwrap_or(0);
-    let end = |outcome| {
-        store
-            .end_workflow_run(key, (box_id, outcome), now)
-            .map(|_| ())
-    };
-    match quiet_move(&plan, at.0, &tries) {
-        QuietMove::Delivered => end(RunOutcome::Delivered {
-            result: String::new(),
-        }),
-        QuietMove::Enter { .. } | QuietMove::Fail { .. } if open(row).is_none() => {
-            // Nobody is left to send the next step to.
-            end(RunOutcome::Incomplete { at: at.0.clone() })
-        }
-        QuietMove::Fail { at, reason, .. } => end(RunOutcome::Failed { at, reason }),
-        QuietMove::Enter {
-            step,
-            try_n,
-            exhausted,
-        } => q.enter(&plan, (step, try_n), exhausted, out),
+    match facts.session {
+        SessionState::Ended => true,
+        SessionState::Idle => steered.is_none_or(|t| quiet_since(facts, t, now)),
+        SessionState::Starting | SessionState::Working => false,
     }
 }
 
 impl Quiet<'_> {
-    /// Sends the run on to `step`, for its `try_n`th entry, and records the move.
+    /// The run's history lines, and when the agent was last told something: a reading from
+    /// before that is still the quiet of the step before. A run from before history kept an
+    /// `Entered` line reads as entered at its pointer.
+    fn history(&self) -> Result<(Vec<HistoryEntry>, Option<Ts>), StoreError> {
+        let entries = self.store.run_entries(self.run.id)?;
+        let mut history: Vec<HistoryEntry> = entries.iter().map(|(_, e)| e.clone()).collect();
+        if !history
+            .iter()
+            .any(|e| matches!(e, HistoryEntry::Entered { .. }))
+        {
+            history.insert(
+                0,
+                HistoryEntry::Entered {
+                    step: self.at.0.clone(),
+                    try_n: self.at.1,
+                },
+            );
+        }
+        let steered = entries.iter().rev().find_map(|(when, e)| {
+            matches!(e, HistoryEntry::Sent { .. } | HistoryEntry::Reminded { .. }).then_some(*when)
+        });
+        Ok((history, steered))
+    }
+
+    /// What the run's standing means now, and the move it makes.
+    fn settle(
+        &self,
+        plan: &Plan,
+        box_id: BoxId,
+        (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
+    ) -> Result<(), StoreError> {
+        let (history, steered) = self.history()?;
+        let facts = open(self.row).map(box_facts);
+        let event = match &facts {
+            Some(f) if f.session == SessionState::Ended => Event::Ended,
+            _ => Event::Idle,
+        };
+        let step = plan.step(self.at.0);
+        let at_check = matches!(step.map(|s| &s.kind), Some(StepKind::Check { .. }));
+        let m = advance(plan, &history, event);
+        if let Some(f) = &facts {
+            let waits = if at_check {
+                m == Move::RunCheck && !quiet_for_check(f, steered, self.now)
+            } else {
+                steered.is_some_and(|sent| !quiet_since(f, sent, self.now))
+            };
+            if waits {
+                return Ok(());
+            }
+        }
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let end = |outcome| {
+            self.store
+                .end_workflow_run(key, (box_id, outcome), self.now)
+                .map(|_| ())
+        };
+        match m {
+            Move::Wait => Ok(()),
+            Move::Delivered => end(RunOutcome::Delivered {
+                result: String::new(),
+            }),
+            Move::Remind | Move::RunCheck | Move::Enter { .. } | Move::Fail { .. }
+                if open(self.row).is_none() =>
+            {
+                // Nobody is left to send the next step to or to run a check in.
+                end(RunOutcome::Incomplete {
+                    at: self.at.0.clone(),
+                })
+            }
+            Move::Incomplete { at } => end(RunOutcome::Incomplete { at }),
+            Move::Fail { at, reason, .. } => end(RunOutcome::Failed { at, reason }),
+            Move::RunCheck => self.start_check(plan, box_id, checks),
+            Move::Remind => {
+                let Some(step) = step else { return Ok(()) };
+                self.remind(step, out)
+            }
+            Move::Enter {
+                step,
+                try_n,
+                exhausted,
+            } => self.enter(plan, &history, (step, try_n), exhausted, out),
+        }
+    }
+
+    /// Hands the check at the pointer to `checks`, with a deadline of the smaller of the run's
+    /// remaining timeout and [`CHECK_LIMIT`]. Nothing happens while it is running.
+    fn start_check(
+        &self,
+        plan: &Plan,
+        box_id: BoxId,
+        checks: &dyn Fn(CheckJob),
+    ) -> Result<(), StoreError> {
+        let Some(StepKind::Check { command, .. }) = plan.step(self.at.0).map(|s| &s.kind) else {
+            return Ok(());
+        };
+        let Some(flight) = Flight::claim(self.cx, self.run.id) else {
+            return Ok(());
+        };
+        let spent = self.store.first_launch_at(box_id)?.map_or(0, |began| {
+            self.now.as_millis().saturating_sub(began.as_millis())
+        });
+        let left_secs = self.w.timeout.millis().saturating_sub(spent) / 1000;
+        let limit = i64::try_from(CHECK_LIMIT.as_secs()).unwrap_or(i64::MAX);
+        let timeout_secs = u32::try_from(left_secs.clamp(1, limit)).unwrap_or(1);
+        checks(CheckJob {
+            workflow: self.w.id,
+            repo: self.run.repo.clone(),
+            due_at: self.run.due_at,
+            box_id,
+            at: (self.at.0.clone(), self.at.1),
+            command: command.clone(),
+            timeout_secs,
+            _flight: flight,
+        });
+        Ok(())
+    }
+
+    /// Sends the current step again and records the reminder.
+    fn remind(&self, step: &Step, out: &mut Vec<String>) -> Result<(), StoreError> {
+        let Some(row) = open(self.row) else {
+            return Ok(());
+        };
+        if let Err(why) = send(self.cx, row, &Plan::remind_steer(step)) {
+            out.push(format!(
+                "workflow {}: could not remind {} of step {}: {why}",
+                self.w.name,
+                row.name.as_str(),
+                step.id
+            ));
+            return Ok(());
+        }
+        let line = HistoryEntry::Reminded {
+            step: self.at.0.clone(),
+            try_n: self.at.1,
+        };
+        self.record((self.at.0, self.at.1), &[line])
+    }
+
+    /// Sends the run on to `step`, for its `try_n`th entry, and records the move. A step that is
+    /// a check is not sent: the agent is quiet and moor runs the check itself.
     fn enter(
         &self,
         plan: &Plan,
+        history: &[HistoryEntry],
         (step, try_n): (StepId, u8),
         exhausted: Vec<StepId>,
         out: &mut Vec<String>,
@@ -150,16 +260,6 @@ impl Quiet<'_> {
         let (Some(row), Some(next)) = (open(self.row), plan.step(&step)) else {
             return Ok(());
         };
-        // Steer first and record after, so a crash in between sends the step twice and never
-        // skips it.
-        if let Err(why) = send(self.cx, row, &Plan::next_step_steer(next)) {
-            out.push(format!(
-                "workflow {}: could not send step {step} to {}: {why}",
-                self.w.name,
-                row.name.as_str()
-            ));
-            return Ok(());
-        }
         let mut lines: Vec<HistoryEntry> = exhausted
             .into_iter()
             .map(|step| HistoryEntry::Exhausted { step })
@@ -168,13 +268,58 @@ impl Quiet<'_> {
             step: step.clone(),
             try_n,
         });
-        lines.push(HistoryEntry::Sent {
-            step: step.clone(),
-            try_n,
-        });
+        if !matches!(next.kind, StepKind::Check { .. }) {
+            // Steer first and record after, so a crash in between sends the step twice and
+            // never skips it.
+            if let Err(why) = send(self.cx, row, &self.steer_text(plan, history, next)) {
+                out.push(format!(
+                    "workflow {}: could not send step {step} to {}: {why}",
+                    self.w.name,
+                    row.name.as_str()
+                ));
+                return Ok(());
+            }
+            lines.push(HistoryEntry::Sent {
+                step: step.clone(),
+                try_n,
+            });
+        }
         let key = (self.w.id, &self.run.repo, self.run.due_at);
         self.store
             .step_workflow_run(key, (self.at, (&step, try_n)), (&lines, self.now))
+            .map(|_| ())
+    }
+
+    /// What the agent is told on entering `next`: after a check, what the check said.
+    fn steer_text(&self, plan: &Plan, history: &[HistoryEntry], next: &Step) -> String {
+        let Some(check) = plan
+            .step(self.at.0)
+            .filter(|s| matches!(s.kind, StepKind::Check { .. }))
+        else {
+            return Plan::next_step_steer(next);
+        };
+        let tried = history
+            .iter()
+            .rposition(|e| matches!(e, HistoryEntry::Entered { .. }))
+            .and_then(|i| history.get(i + 1..))
+            .unwrap_or_default();
+        let result = tried.iter().rev().find_map(|e| match e {
+            HistoryEntry::Checked { exit, tail, .. } => Some((*exit, tail.as_str())),
+            _ => None,
+        });
+        let says = match result {
+            Some((0, tail)) => CheckSays::Passed { tail },
+            Some((exit, tail)) => CheckSays::Failed { exit, tail },
+            None => CheckSays::Lost,
+        };
+        Plan::after_check_steer(check, &says, next)
+    }
+
+    /// Appends `lines` to the run's history without moving its pointer off `at`.
+    fn record(&self, at: (&StepId, u8), lines: &[HistoryEntry]) -> Result<(), StoreError> {
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        self.store
+            .step_workflow_run(key, (at, at), (lines, self.now))
             .map(|_| ())
     }
 }

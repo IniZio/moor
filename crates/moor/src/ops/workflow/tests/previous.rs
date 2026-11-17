@@ -33,7 +33,7 @@ fn rig_probing(first: &str) -> Rig {
     let forge = Arc::new(FakeForge::new());
     let cx = Cx::fake_with(
         dir.path(),
-        driver,
+        driver.clone(),
         Arc::new(ScriptedProc::new()),
         UserConfig {
             box_: BoxConfig {
@@ -46,6 +46,7 @@ fn rig_probing(first: &str) -> Rig {
     .with_forge(forge.clone());
     Rig {
         cx,
+        driver,
         forge,
         _dir: dir,
     }
@@ -455,7 +456,9 @@ fn the_keep_count_starts_again_after_a_run_that_did_not_keep_the_box() {
     finished_first_day(&r, id);
     r.advance_to(FIRST_DUE + DAY + 1_000);
     let job = std::cell::RefCell::new(None);
-    crate::ops::workflow::tick(&r.cx, &|j| *job.borrow_mut() = Some(j), &|| false);
+    crate::ops::workflow::tick(&r.cx, (&|j| *job.borrow_mut() = Some(j), &|_| {}), &|| {
+        false
+    });
     let job = job.into_inner().unwrap();
     let req = moor_core::StartReq {
         cold: false,

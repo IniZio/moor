@@ -16,7 +16,7 @@ use moor_core::workflow::{
 };
 use moor_core::{BoxId, BoxPath};
 
-use super::{resolve_interrupted, run_start, tick};
+use super::{resolve_interrupted, run_check, run_start, tick};
 use crate::cx::Cx;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -30,6 +30,7 @@ const FIRST_DUE: i64 = 9 * 3_600_000;
 
 struct Rig {
     cx: Cx,
+    driver: Arc<FakeDriver>,
     forge: Arc<FakeForge>,
     _dir: tempfile::TempDir,
 }
@@ -39,16 +40,26 @@ fn rig() -> Rig {
 }
 
 fn rig_with(config: UserConfig) -> Rig {
+    rig_driving(config, |d| d)
+}
+
+fn rig_driving(config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    let driver = Arc::new((1..=6).fold(FakeDriver::new(), |d, n| {
+    let driver = Arc::new(tune((1..=6).fold(FakeDriver::new(), |d, n| {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
-    }));
+    })));
     let forge = Arc::new(FakeForge::new());
-    let cx = Cx::fake_with(dir.path(), driver, Arc::new(ScriptedProc::new()), config)
-        .with_forge(forge.clone());
+    let cx = Cx::fake_with(
+        dir.path(),
+        driver.clone(),
+        Arc::new(ScriptedProc::new()),
+        config,
+    )
+    .with_forge(forge.clone());
     Rig {
         cx,
+        driver,
         forge,
         _dir: dir,
     }
@@ -93,7 +104,10 @@ impl Rig {
         let started = RefCell::new(Vec::new());
         let mut out = tick(
             &self.cx,
-            &|job| started.borrow_mut().extend(run_start(&self.cx, &job)),
+            (
+                &|job| started.borrow_mut().extend(run_start(&self.cx, &job)),
+                &|job| started.borrow_mut().extend(run_check(&self.cx, &job)),
+            ),
             &|| false,
         );
         out.extend(started.into_inner());
@@ -155,7 +169,11 @@ fn a_claim_a_crash_left_is_settled_and_never_started_again() {
     let id = r.put(180);
     r.advance_to(FIRST_DUE + 1_000);
     let claimed = RefCell::new(0);
-    tick(&r.cx, &|_job| *claimed.borrow_mut() += 1, &|| false);
+    tick(
+        &r.cx,
+        (&|_job| *claimed.borrow_mut() += 1, &|_| {}),
+        &|| false,
+    );
     assert_eq!(*claimed.borrow(), 1);
     assert_eq!(r.latest(id).state, RunState::Queued);
 
@@ -185,7 +203,9 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
     let id = r.put(180);
     r.advance_to(FIRST_DUE + 1_000);
     let job = RefCell::new(None);
-    tick(&r.cx, &|j| *job.borrow_mut() = Some(j), &|| false);
+    tick(&r.cx, (&|j| *job.borrow_mut() = Some(j), &|_| {}), &|| {
+        false
+    });
     let job = job.into_inner().unwrap();
     let started = crate::ops::start::run(
         &r.cx,
@@ -218,7 +238,9 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
     let id = r.put(180);
     r.advance_to(FIRST_DUE + 1_000);
     let job = RefCell::new(None);
-    tick(&r.cx, &|j| *job.borrow_mut() = Some(j), &|| false);
+    tick(&r.cx, (&|j| *job.borrow_mut() = Some(j), &|_| {}), &|| {
+        false
+    });
     let job = job.into_inner().unwrap();
     let started = crate::ops::start::run(
         &r.cx,
@@ -567,6 +589,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
 }
 
 mod also;
+mod check;
 mod plan;
 mod previous;
 mod start_limit;

@@ -281,8 +281,8 @@ mod tests;
 pub use box_name::box_name;
 pub use history::HistoryEntry;
 pub use plan::{
-    Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, Step, StepDoc, StepId,
-    StepKind, Tries,
+    CheckSays, Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, Step, StepDoc,
+    StepId, StepKind, Tries,
 };
 pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowRun};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};

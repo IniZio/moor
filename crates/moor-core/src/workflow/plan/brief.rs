@@ -3,6 +3,34 @@
 
 use super::{Plan, Step, StepKind};
 
+/// What a check came to, as the agent is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckSays<'a> {
+    /// It exited 0.
+    Passed {
+        /// The end of its output.
+        tail: &'a str,
+    },
+    /// It exited non-zero, or ran into its deadline.
+    Failed {
+        /// The exit code.
+        exit: i32,
+        /// The end of its output.
+        tail: &'a str,
+    },
+    /// moor could not get a result from it.
+    Lost,
+}
+
+/// A check's output as a block, or a line saying it printed nothing.
+fn output(tail: &str) -> String {
+    if tail.trim().is_empty() {
+        "It printed nothing.".to_owned()
+    } else {
+        format!("Its output ends:\n```\n{}\n```", tail.trim_end())
+    }
+}
+
 impl Step {
     /// The step as the agent is told it.
     #[must_use]
@@ -76,6 +104,35 @@ impl Plan {
         format!(
             "That step is done. Do only the next step, then stop: moor sends the one after \
              when you stop.\n\n{}",
+            step.brief()
+        )
+    }
+
+    /// The steer that sends the agent the step after a check, with what the check said.
+    #[must_use]
+    pub fn after_check_steer(check: &Step, says: &CheckSays<'_>, next: &Step) -> String {
+        let what = match says {
+            CheckSays::Passed { tail } => format!("passed.\n{}", output(tail)),
+            CheckSays::Failed { exit, tail } => {
+                format!("failed with exit code {exit}.\n{}", output(tail))
+            }
+            CheckSays::Lost => "could not run to a result, twice.".to_owned(),
+        };
+        format!(
+            "moor ran check {} (\"{}\"); it {what}\nDo only the next step, then stop: moor \
+             sends the one after when you stop.\n\n{}",
+            check.id,
+            check.title,
+            next.brief()
+        )
+    }
+
+    /// The steer that sends `step` again after the agent stopped without finishing it.
+    #[must_use]
+    pub fn remind_steer(step: &Step) -> String {
+        format!(
+            "You stopped before this step was done. Do only this step, then stop: moor sends \
+             the next one when you stop.\n\n{}",
             step.brief()
         )
     }

@@ -18,7 +18,7 @@ use serde_json::json;
 use super::{repo, rig, Rig, FIRST_DUE};
 use crate::testing::cx::REQUESTER_USER;
 
-const PROMPT: &str = "keep the dependencies current";
+pub(super) const PROMPT: &str = "keep the dependencies current";
 
 fn two_steps() -> Plan {
     Plan::parse(
@@ -37,7 +37,7 @@ fn two_steps() -> Plan {
 
 impl Rig {
     /// Stores the daily workflow with `plan`.
-    fn put_planned(&self, plan: Option<Plan>) -> WorkflowId {
+    pub(super) fn put_planned(&self, plan: Option<Plan>) -> WorkflowId {
         let mut def = WorkflowDef::new(
             WorkflowName::parse("deps").unwrap(),
             WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
@@ -55,7 +55,7 @@ impl Rig {
     }
 
     /// The `kind` of each history line of the newest run.
-    fn kinds(&self, id: WorkflowId) -> Vec<String> {
+    pub(super) fn kinds(&self, id: WorkflowId) -> Vec<String> {
         let run = self.latest(id);
         self.cx
             .store()
@@ -68,7 +68,7 @@ impl Rig {
     }
 
     /// The agent, working on what the steer sent, goes quiet.
-    fn quiet_after_work(&self, id: WorkflowId) {
+    pub(super) fn quiet_after_work(&self, id: WorkflowId) {
         self.pause(1_000);
         self.cx
             .store()
@@ -77,12 +77,12 @@ impl Rig {
             .unwrap();
     }
 
-    fn pause(&self, ms: i64) {
+    pub(super) fn pause(&self, ms: i64) {
         self.advance_to(self.cx.clock().now().as_millis() + ms);
     }
 }
 
-fn step_of(state: &RunState) -> (String, u8) {
+pub(super) fn step_of(state: &RunState) -> (String, u8) {
     match state {
         RunState::Running { at, try_n, .. } => (at.to_string(), *try_n),
         other => panic!("not running: {other:?}"),

@@ -148,13 +148,14 @@ fn parse_plan(text: &str, prompt: &str) -> Result<Plan, CommandError> {
         ))
     };
     let plan = Plan::parse(text, prompt).map_err(refuse)?;
-    // moor does not run check or approve steps yet, so a plan with one would be walked past it.
+    // moor does not run approve steps yet, so a plan with one would be walked past it.
     let unrun: Vec<PlanError> = plan
         .steps()
-        .filter(|s| matches!(s.kind, StepKind::Check { .. } | StepKind::Approve { .. }))
+        .filter(|s| matches!(s.kind, StepKind::Approve { .. }))
         .map(|s| {
             PlanError::Json(format!(
-                "step `{}` is a {} step, which moor does not run yet; use work and deliver steps",
+                "step `{}` is a {} step, which moor does not run yet; use work, check and \
+                 deliver steps",
                 s.id,
                 s.kind.name()
             ))

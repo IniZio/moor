@@ -1,13 +1,31 @@
-//! Where a run goes when its agent goes quiet, and whether a quiet reading counts.
+//! Where a run goes next: from a quiet or ended agent, or from a check's result.
 
 use super::finished::{RunBoxFacts, QUIET_BEFORE_FINISHED};
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
-use crate::workflow::{Plan, StepId};
+use crate::workflow::{HistoryEntry, Plan, StepId, StepKind};
 
-/// What a quiet agent at step `at` means for its run.
+/// How many lost exec streams one try of a check may have. The next one follows `fail`.
+pub const CHECK_LOSSES: usize = 2;
+
+/// What the tick saw of the run's agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    /// The agent is idle and has been long enough to count as done with its step.
+    Idle,
+    /// The agent's session ended, by a crash or an exit, with no report.
+    Ended,
+}
+
+/// What a run does next.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum QuietMove {
+pub enum Move {
+    /// Nothing yet.
+    Wait,
+    /// Send the current step again and record one reminder.
+    Remind,
+    /// Run the current step's check now.
+    RunCheck,
     /// The step is a deliver step, so the run is done.
     Delivered,
     /// The run goes on to `step`, for the `try_n`th time. Each step in `exhausted` was due but
@@ -30,29 +48,140 @@ pub enum QuietMove {
         /// Steps passed over for lack of tries, in order.
         exhausted: Vec<StepId>,
     },
+    /// The agent stopped twice at step `at` without finishing it.
+    Incomplete {
+        /// The step.
+        at: StepId,
+    },
 }
 
-/// Where a run at `at` goes when its agent is quiet.
+/// Which edge of a step a run leaves by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    /// The `ok` edge.
+    Ok,
+    /// The `fail` edge.
+    Fail,
+}
+
+/// What a run at the step it last entered does next, given its `history` and what the tick saw
+/// of its agent in `event`.
 ///
-/// A step passes along its `ok` edge. A step
-/// entered `max_tries` times already is exhausted, and the run follows its `fail` edge instead,
-/// once: a fail target out of tries ends the run, so every run ends within the sum of the tries.
+/// The pointer is the last `Entered` line, and what happened in this try is every line after it,
+/// so the move comes from history alone and a restarted controller decides as the old one did.
+///
+/// - A work step passes on `Idle` and is sent again on its first `Ended`. Its second `Ended` in
+///   one try ends the run Incomplete. Until agents report their steps, idle still passes it.
+/// - A deliver step delivers on either.
+/// - A check step runs. Its recorded exit decides: 0 follows `ok`, any other follows `fail`. A
+///   lost stream is no result, so the check runs again, and the second lost stream in one try
+///   follows `fail`.
+/// - An approve step waits.
+#[must_use]
+pub fn advance(plan: &Plan, history: &[HistoryEntry], event: Event) -> Move {
+    let Some((pos, at)) = history.iter().enumerate().rev().find_map(|(i, e)| match e {
+        HistoryEntry::Entered { step, .. } => Some((i, step)),
+        _ => None,
+    }) else {
+        return Move::Wait;
+    };
+    let Some(step) = plan.step(at) else {
+        return Move::Wait;
+    };
+    let this_try = history.get(pos + 1..).unwrap_or_default();
+    let entered = |s: &StepId| {
+        let n = history
+            .iter()
+            .filter(|e| matches!(e, HistoryEntry::Entered { step, .. } if step == s))
+            .count();
+        u8::try_from(n).unwrap_or(u8::MAX)
+    };
+    match &step.kind {
+        StepKind::Work { .. } => match event {
+            Event::Idle => route(plan, at, Edge::Ok, &entered, String::new()),
+            Event::Ended
+                if this_try
+                    .iter()
+                    .any(|e| matches!(e, HistoryEntry::Reminded { .. })) =>
+            {
+                Move::Incomplete { at: at.clone() }
+            }
+            Event::Ended => Move::Remind,
+        },
+        StepKind::Deliver { .. } => Move::Delivered,
+        StepKind::Check { .. } => {
+            let lost = this_try
+                .iter()
+                .filter(|e| matches!(e, HistoryEntry::CheckLost { .. }))
+                .count();
+            let exit = this_try.iter().rev().find_map(|e| match e {
+                HistoryEntry::Checked { exit, .. } => Some(*exit),
+                _ => None,
+            });
+            match exit {
+                Some(0) => route(plan, at, Edge::Ok, &entered, String::new()),
+                Some(code) => route(
+                    plan,
+                    at,
+                    Edge::Fail,
+                    &entered,
+                    format!("check {at} exited {code} and has no fail edge"),
+                ),
+                None if lost >= CHECK_LOSSES => route(
+                    plan,
+                    at,
+                    Edge::Fail,
+                    &entered,
+                    format!("check {at} lost its exec stream {lost} times and has no fail edge"),
+                ),
+                None => Move::RunCheck,
+            }
+        }
+        StepKind::Approve { .. } => Move::Wait,
+    }
+}
+
+/// Where a run at `at` goes when its agent is quiet: along its `ok` edge.
+///
+/// A step entered `max_tries` times already is exhausted, and the run follows its `fail` edge
+/// instead, once: a fail target out of tries ends the run, so every run ends within the sum of
+/// the tries.
 ///
 /// `entered` says how many times the run has entered a step.
 #[must_use]
-pub fn quiet_move(plan: &Plan, at: &StepId, entered: &dyn Fn(&StepId) -> u8) -> QuietMove {
-    let Some(next) = plan.step(at).and_then(|s| s.kind.next()) else {
-        return QuietMove::Delivered;
+pub fn quiet_move(plan: &Plan, at: &StepId, entered: &dyn Fn(&StepId) -> u8) -> Move {
+    route(plan, at, Edge::Ok, entered, String::new())
+}
+
+/// The move from `at` along `edge`. `no_edge` is the failure's reason when `at` has no such edge.
+fn route(
+    plan: &Plan,
+    at: &StepId,
+    edge: Edge,
+    entered: &dyn Fn(&StepId) -> u8,
+    no_edge: String,
+) -> Move {
+    let next = plan.step(at).and_then(|s| s.kind.next());
+    let target = match (edge, next) {
+        (_, None) => return Move::Delivered,
+        (Edge::Ok, Some(n)) => Some(n.ok.clone()),
+        (Edge::Fail, Some(n)) => n.fail.clone(),
+    };
+    let Some(mut target) = target else {
+        return Move::Fail {
+            at: at.clone(),
+            reason: no_edge,
+            exhausted: Vec::new(),
+        };
     };
     let mut exhausted = Vec::new();
-    let mut target = next.ok.clone();
     for hop in 0..2 {
         let Some(step) = plan.step(&target) else {
             break;
         };
         let tried = entered(&target);
         if tried < step.max_tries.get() {
-            return QuietMove::Enter {
+            return Move::Enter {
                 step: target,
                 try_n: tried + 1,
                 exhausted,
@@ -66,7 +195,7 @@ pub fn quiet_move(plan: &Plan, at: &StepId, entered: &dyn Fn(&StepId) -> u8) -> 
         }
     }
     let last = exhausted.last().cloned().unwrap_or_else(|| at.clone());
-    QuietMove::Fail {
+    Move::Fail {
         reason: format!("step {last} ran out of tries"),
         at: last,
         exhausted,

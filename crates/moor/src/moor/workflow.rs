@@ -4,7 +4,7 @@ use moor_core::user::Viewer;
 
 use super::Moor;
 use crate::env::Env;
-use crate::ops::workflow::{self, StartJob};
+use crate::ops::workflow::{self, CheckJob, StartJob};
 
 impl Moor {
     /// A pass that starts, finishes and expires workflow runs and returns lines to log. Each
@@ -18,7 +18,9 @@ impl Moor {
             Ok(moor) => {
                 let env = env.clone();
                 crate::cx::owners::checked(|| {
-                    workflow::tick(&moor.cx, &|job| spawn_start(&env, job), draining)
+                    let start = |job: StartJob| spawn_start(&env, job);
+                    let check = |job: CheckJob| spawn_check(&env, job);
+                    workflow::tick(&moor.cx, (&start, &check), draining)
                 })
             }
             Err(e) => vec![e.error.to_string()],
@@ -29,6 +31,19 @@ impl Moor {
     pub(crate) fn resolve_interrupted_workflow_runs(&self) -> Vec<String> {
         workflow::resolve_interrupted(&self.cx)
     }
+}
+
+/// Runs the check `job` on a new thread, so a long check never holds up the pass. Its result is a
+/// history line in the store, which the next pass reads.
+fn spawn_check(env: &Env, job: CheckJob) {
+    let env = env.clone();
+    std::thread::spawn(move || {
+        crate::cx::owners::checked(|| {
+            if let Ok(moor) = Moor::from_env(&env) {
+                workflow::run_check(&moor.cx, &job);
+            }
+        });
+    });
 }
 
 /// Starts the claimed firing `job` on a new thread, as its owner.
