@@ -231,3 +231,40 @@ fn the_operator_gets_no_start_pick() {
     let (cx, _, _) = two_users(dir.path());
     assert!(list(&cx).unwrap().start.is_none());
 }
+
+/// What runner `addr` reports for `links` and the Boxes holding `memory`, through the dispatcher.
+fn report(cx: &Cx, addr: &str, links: Vec<MachineLink>, memory: Vec<BoxHostMemory>) {
+    let req = moor_core::request::MachineLinksReq {
+        runner: moor_core::request::RunnerAddr::new(addr),
+        draining: false,
+        links,
+        box_memory: memory,
+    };
+    crate::ops::dispatch(cx, moor_core::Request::MachineLinks(req)).unwrap();
+}
+
+#[test]
+fn a_runner_without_a_machines_link_leaves_that_machines_box_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let (_, a) = enroll(&cx, "authgear:a", "mini", true);
+    let (_, b) = enroll(&cx, "authgear:b", "rack", true);
+    let (mini, rack) = (a.machine_id, b.machine_id);
+    report(&cx, "runner-a", vec![a.clone()], Vec::new());
+    report(&cx, "runner-b", vec![b.clone()], Vec::new());
+
+    report(&cx, "runner-a", vec![a.clone()], vec![on(&cx, mini, 1, 100)]);
+    report(&cx, "runner-b", vec![b.clone()], vec![on(&cx, rack, 2, 200)]);
+    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (Some(100), Some(200)));
+
+    // Each runner lists only its own machine and reports only its Boxes, again.
+    report(&cx, "runner-a", vec![a.clone()], vec![on(&cx, mini, 1, 100)]);
+    report(&cx, "runner-b", vec![b.clone()], vec![on(&cx, rack, 2, 200)]);
+    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (Some(100), Some(200)));
+
+    // An empty report from one runner drops only the Boxes of its own machines.
+    report(&cx, "runner-a", vec![a], Vec::new());
+    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (None, Some(200)));
+    report(&cx, "runner-b", vec![b], Vec::new());
+    assert_eq!(held(&cx, "rack"), None);
+}
