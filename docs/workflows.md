@@ -118,3 +118,6 @@ cause.
 
 Ask to disable it, which calls `set_workflow_enabled`, or to remove it, which
 calls `remove_workflow`.
+
+A disabled workflow fires no more runs. A run already in flight still
+finishes.
