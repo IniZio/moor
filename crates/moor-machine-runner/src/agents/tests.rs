@@ -41,6 +41,7 @@ fn report(boxes: &[(&str, u64)]) -> Report {
                 resume_memory_mib: None,
             })
             .collect(),
+        box_health: Vec::new(),
     }
 }
 

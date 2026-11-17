@@ -260,7 +260,8 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
         | Op::Lease { .. }
         | Op::Dial { .. }
         | Op::Port { .. }
-        | Op::Status => Err(refused("not a command".to_owned())),
+        | Op::Status
+        | Op::Boxes => Err(refused("not a command".to_owned())),
         Op::Listen {
             box_id,
             listen,

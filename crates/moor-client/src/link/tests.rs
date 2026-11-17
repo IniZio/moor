@@ -30,6 +30,7 @@ fn a_hello_with_an_offer_round_trips() {
             mem_mib: Some(31_232),
             cpus: Some(16),
             reserve_mib: None,
+            boxes: None,
         })),
     };
     let text = serde_json::to_string(&frame).unwrap();
@@ -123,6 +124,7 @@ fn a_report_with_the_per_box_list_round_trips() {
                 host_memory_mib: 1536,
                 resume_memory_mib: None,
             }],
+            box_health: Vec::new(),
         },
     };
     let text = serde_json::to_string(&opened).unwrap();
@@ -144,4 +146,63 @@ fn a_report_from_an_older_agent_has_no_resume_memory() {
     };
     let text = serde_json::to_string(&with).unwrap();
     assert!(text.contains("\"resume_memory_mib\":6144"), "{text}");
+}
+
+#[test]
+fn an_offer_and_a_report_that_say_nothing_of_boxes_are_what_they_were() {
+    let offer = Offer {
+        max_boxes: Some(2),
+        ..Offer::default()
+    };
+    assert_eq!(serde_json::to_string(&offer).unwrap(), r#"{"max_boxes":2}"#);
+    let report = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2}});
+    let opened: super::Opened = serde_json::from_value(report).unwrap();
+    let text = serde_json::to_string(&opened).unwrap();
+    assert!(!text.contains("box_health"), "{text}");
+}
+
+#[test]
+fn an_offer_that_provides_boxes_carries_its_protocol_and_an_old_runner_reads_past_it() {
+    let offer = Offer {
+        boxes: Some(super::boxes::BoxOffer {
+            protocol: super::boxes::PROTOCOL,
+            provides: "docker".to_owned(),
+        }),
+        ..Offer::default()
+    };
+    let text = serde_json::to_string(&offer).unwrap();
+    assert_eq!(text, r#"{"boxes":{"protocol":1,"provides":"docker"}}"#);
+    assert_eq!(serde_json::from_str::<Offer>(&text).unwrap(), offer);
+}
+
+#[test]
+fn box_health_is_carried_raw_whatever_a_later_agent_puts_in_it() {
+    let opened = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2, "box_health": [
+        {"slug": "moor-0badcafe-7", "state": "from-the-future", "extra": [1, 2]},
+    ]}});
+    let opened: super::Opened = serde_json::from_value(opened).unwrap();
+    let super::Opened::Report { report } = &opened else {
+        panic!("not a report: {opened:?}");
+    };
+    assert_eq!(report.box_health.len(), 1);
+    let text = serde_json::to_string(&opened).unwrap();
+    assert!(text.contains("from-the-future"), "{text}");
+}
+
+#[test]
+fn the_broker_splices_with_a_unit_ask_and_a_tagged_answer() {
+    use super::broker::{Ask, Brokered, PoolOp};
+    let ask = Ask {
+        machine_id: 12,
+        op: PoolOp::Boxes,
+    };
+    assert_eq!(
+        serde_json::to_string(&ask).unwrap(),
+        r#"{"machine_id":12,"op":{"op":"boxes"}}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&Brokered::Spliced).unwrap(),
+        r#"{"broker":"spliced"}"#
+    );
+    assert_eq!(super::ops::Op::from(PoolOp::Boxes), super::ops::Op::Boxes);
 }

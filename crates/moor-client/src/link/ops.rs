@@ -177,6 +177,10 @@ pub enum Op {
     },
     /// Report the agent's state; read-only, so every agent serves it.
     Status,
+    /// The rest of this stream is one Box request. Only the runner writes it, as the stream's
+    /// first line, when it splices a controller's Box request through; the agent then reads one
+    /// [`super::boxes::BoxOp`] line and refuses any other op.
+    Boxes,
 }
 
 /// The agent's answer, the line after the request.

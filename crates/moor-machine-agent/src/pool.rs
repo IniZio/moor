@@ -79,6 +79,7 @@ pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
             .ok()
             .and_then(|n| u32::try_from(n.get()).ok()),
         reserve_mib: pool.reserve_mib,
+        boxes: None,
     })
 }
 
