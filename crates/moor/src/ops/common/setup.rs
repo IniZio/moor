@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 use std::fs::{DirBuilder, Permissions};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
@@ -154,13 +155,18 @@ pub(crate) fn run_setup(
     };
     let started = cx.clock().instant();
     let output = log_dir.join(OUTPUT_FILE);
-    let result = attach(cx, &site, cfg, proxy, (run, &output), on_line);
+    let (result, running) = follow(cx, &site, cfg, proxy, (run, &output), on_line);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let result = match result {
         Ok(result) => result,
         Err(Left::Released) => return Err(Released),
-        Err(Left::LinkLost(reason)) => return Ok(link_lost(cx, &reason, ms)),
+        Err(Left::LinkLost(reason)) => {
+            let line = running
+                .checked_sub(1)
+                .and_then(|i| cfg.setup.get(usize::try_from(i).ok()?));
+            return Ok(link_lost(cx, &reason, ms, line.map(String::as_str)));
+        }
     };
     if let Some(stop) = read_stop(&output) {
         return Ok(did_not_run(cx, stop, exit_code(&result), ms));
@@ -184,7 +190,7 @@ pub(crate) fn run_setup(
         FORCED_CLOSE.to_owned()
     } else {
         cfg.setup
-            .get(failed_step(&log, cfg.setup.len()))
+            .get(failed_step(&log, running, cfg.setup.len()))
             .cloned()
             .unwrap_or_default()
     };
@@ -199,6 +205,27 @@ pub(crate) fn run_setup(
         ms,
         tail,
     })
+}
+
+/// [`attach`], and the position of the last line reported started: the one running when the
+/// follow ended, 0 before any line began.
+fn follow(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    proxy: Option<&BoxProxy>,
+    (run, output): (i64, &Path),
+    on_line: &(dyn Fn(ExtraEvent) + Sync),
+) -> (Result<Result<ExecOutcome, Failure>, Left>, u32) {
+    let running = AtomicU32::new(0);
+    let track = |e: ExtraEvent| {
+        if let ExtraEvent::SetupLineStarted { index, .. } = e {
+            running.fetch_max(index, Ordering::SeqCst);
+        }
+        on_line(e);
+    };
+    let result = attach(cx, site, cfg, proxy, (run, output), &track);
+    (result, running.into_inner())
 }
 
 /// A setup the prelude stopped at `stop` before any line ran.
@@ -362,12 +389,14 @@ fn discard(path: &Path) {
     }
 }
 
-/// Index of the failing step: the last one the log announced, else the first.
-fn failed_step(log: &str, steps: usize) -> usize {
+/// Index of the failing step: the last one the log announced or `running` reported started, else
+/// the first.
+fn failed_step(log: &str, running: u32, steps: usize) -> usize {
     let announced = log
         .lines()
         .filter(|l| l.starts_with("moor setup: $ "))
-        .count();
+        .count()
+        .max(usize::try_from(running).unwrap_or(0));
     announced.clamp(1, steps.max(1)) - 1
 }
 

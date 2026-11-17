@@ -89,12 +89,19 @@ pub(super) fn attach(
             if reached_the_box(output) {
                 unreachable_since = None;
             }
+            let gap_began = unreachable_since.is_none();
             let since = *unreachable_since.get_or_insert_with(|| cx.clock().instant());
             if let Err(left_it) = keep_waiting(cx, since, reason, left) {
                 if matches!(left_it, Left::LinkLost(_)) {
                     let _ = cx.driver().cancel_run(site.handle, run, CANCEL_GRACE_SECS);
                 }
                 return Err(left_it);
+            }
+            if gap_began {
+                on_line(ExtraEvent::SetupReattached {
+                    index: reported.started.load(Ordering::SeqCst),
+                    why: reason.to_owned(),
+                });
             }
             cx.clock().sleep(REFOLLOW_AFTER);
             continue;

@@ -49,8 +49,10 @@ pub(super) enum Left {
 pub(crate) fn await_reachable(cx: &Cx, handle: &BoxHandle) -> Result<(), Released> {
     let spec = ExecSpec::new(Place::Work, vec!["true".to_owned()]);
     let began = cx.clock().instant();
-    while let Err(DriverError::Transport { .. }) =
-        cx.driver().exec(handle, &spec, Deadline(REACHABLE_CALL))
+    while cx
+        .driver()
+        .exec(handle, &spec, Deadline(REACHABLE_CALL))
+        .is_err_and(|e| out_of_reach(&e).is_some())
     {
         if cx.env().draining().is_cancelled() {
             return Err(Released);
@@ -67,19 +69,30 @@ pub(crate) fn await_reachable(cx: &Cx, handle: &BoxHandle) -> Result<(), Release
     Ok(())
 }
 
-/// A setup the Box could not be reached for: no line is blamed, and the reason is what the Box's
-/// event shows.
-pub(super) fn link_lost(cx: &Cx, reason: &str, ms: u64) -> SetupRun {
-    let line = format!(
-        "the Box stayed unreachable for {} s, so no setup line is known to have failed: {reason}",
-        LINK_WAIT.as_secs()
+/// A setup the Box could not be reached for while `running` ran, if a line had begun; the reason
+/// is what the Box's event shows.
+pub(super) fn link_lost(cx: &Cx, reason: &str, ms: u64, running: Option<&str>) -> SetupRun {
+    let secs = LINK_WAIT.as_secs();
+    let (line, why, message) = running.map_or_else(
+        || {
+            let why = format!(
+                "the Box stayed unreachable for {secs} s, so no setup line is known to have failed: {reason}"
+            );
+            (why.clone(), why.clone(), why)
+        },
+        |line| {
+            let why =
+                format!("the Box stayed unreachable for {secs} s while this line ran: {reason}");
+            let message = format!("setup line `{line}` did not finish: {why}");
+            (line.to_owned(), why, message)
+        },
     );
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
-        message: line.clone(),
+        message,
     });
     SetupRun::Failed {
-        reason: line.clone(),
+        reason: why,
         line,
         exit: None,
         ms,
@@ -105,10 +118,20 @@ pub(super) fn keep_waiting(
     Ok(())
 }
 
-/// What ssh said when `result` is a connection to the Box that failed or dropped.
+/// Why the Box could not be reached when `result` is a connection to it that failed or dropped:
+/// what ssh said, or why the machine's link is down.
 pub(super) fn unreachable(result: &Result<ExecOutcome, Failure>) -> Option<&str> {
     match result {
-        Err(Failure::Exec(DriverError::Transport { stderr_tail })) => Some(stderr_tail),
+        Err(Failure::Exec(e)) => out_of_reach(e),
+        _ => None,
+    }
+}
+
+/// Why `e` is the Box out of reach, as against a command that failed in it.
+fn out_of_reach(e: &DriverError) -> Option<&str> {
+    match e {
+        DriverError::Transport { stderr_tail } => Some(stderr_tail),
+        DriverError::Unavailable(why) => Some(why),
         _ => None,
     }
 }

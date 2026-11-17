@@ -46,7 +46,12 @@ fn run(driver: FakeDriver) -> (SetupRun, Vec<ExtraEvent>, Vec<String>, Vec<Vec<S
         &|e| seen.lock().unwrap().push(e),
     )
     .unwrap();
-    let argvs = r.driver.execs().into_iter().map(|(_, s, _)| s.argv).collect();
+    let argvs = r
+        .driver
+        .execs()
+        .into_iter()
+        .map(|(_, s, _)| s.argv)
+        .collect();
     (got, seen.into_inner().unwrap(), r.driver.calls(), argvs)
 }
 
@@ -62,14 +67,11 @@ fn reattached(events: &[ExtraEvent]) -> Vec<u32> {
 
 #[test]
 fn a_link_lost_mid_line_waits_for_the_relink_and_follows_the_same_run_to_ready() {
-    let driver = FakeDriver::new()
-        .exec_stdout([B_RUNNING])
-        .exec_results(
-            [cut()]
-                .into_iter()
-                .chain((0..30).map(|_| unlinked()))
-                .chain([Ok(ExecOutcome::Exited { code: 0 })]),
-        );
+    let driver = FakeDriver::new().exec_stdout([B_RUNNING]).exec_results(
+        std::iter::once(cut())
+            .chain((0..30).map(|_| unlinked()))
+            .chain([Ok(ExecOutcome::Exited { code: 0 })]),
+    );
     let (got, events, calls, argvs) = run(driver);
     assert!(matches!(got, SetupRun::Ok { .. }), "{got:?}");
     assert_eq!(reattached(&events), [2], "{events:?}");
@@ -84,7 +86,12 @@ fn a_link_lost_mid_line_waits_for_the_relink_and_follows_the_same_run_to_ready()
 fn a_nonzero_exit_after_the_relink_still_fails_and_names_its_line() {
     let driver = FakeDriver::new()
         .exec_stdout([B_RUNNING, "", "", B_RUNNING])
-        .exec_results([cut(), unlinked(), unlinked(), Ok(ExecOutcome::Exited { code: 1 })]);
+        .exec_results([
+            cut(),
+            unlinked(),
+            unlinked(),
+            Ok(ExecOutcome::Exited { code: 1 }),
+        ]);
     let (got, events, _, _) = run(driver);
     assert!(
         matches!(&got, SetupRun::Failed { line, exit: Some(1), .. } if line == "b"),
@@ -111,7 +118,7 @@ fn a_nonzero_exit_fails_without_attaching_again() {
 fn a_link_down_past_the_wait_fails_naming_the_line_that_was_running() {
     let driver = FakeDriver::new()
         .exec_stdout([B_RUNNING])
-        .exec_results([cut()].into_iter().chain((0..300).map(|_| unlinked())));
+        .exec_results(std::iter::once(cut()).chain((0..300).map(|_| unlinked())));
     let (got, events, calls, _) = run(driver);
     assert!(
         matches!(&got, SetupRun::Failed { line, exit: None, reason, .. }
