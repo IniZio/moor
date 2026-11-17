@@ -417,10 +417,8 @@ fn open_session_parent_parses_and_defaults_none() {
 fn a_start_from_an_older_client_that_asks_for_cold_still_parses_and_is_never_sent_on() {
     let r: Request = serde_json::from_value(json!({"cmd": "start", "name": "t", "cold": true}))
         .expect("an older client's --cold parses");
-    let Request::Start(start) = r else {
-        panic!("not a start")
-    };
-    assert!(!serde_json::to_string(&start).expect("ser").contains("cold"));
+    assert!(matches!(&r, Request::Start(start) if start.cold));
+    assert!(!serde_json::to_string(&r).expect("ser").contains("cold"));
 }
 
 #[test]
