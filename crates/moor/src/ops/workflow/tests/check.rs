@@ -20,6 +20,7 @@ use moor_core::workflow::{
 use serde_json::json;
 
 use super::plan::{step_of, PROMPT};
+use super::previous::put_to_sleep;
 use super::{repo, rig, rig_driving, tick, Rig, FIRST_DUE};
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -398,4 +399,74 @@ fn an_ended_agent_on_a_work_step_is_sent_the_step_again_and_a_second_end_is_inco
         panic!("{:?}", r.latest(id).state);
     };
     assert_eq!(at.as_str(), "audit");
+}
+
+#[test]
+fn a_passing_check_goes_on_to_a_deliver_step_that_delivers_when_the_agent_goes_quiet() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    r.idle_then_pass(id);
+    assert_delivered(&r, id);
+}
+
+fn assert_delivered(r: &Rig, id: WorkflowId) {
+    let run = r.latest(id);
+    assert!(
+        matches!(
+            run.state,
+            RunState::Done(RunEnd::Ended {
+                outcome: RunOutcome::Delivered { .. },
+                ..
+            })
+        ),
+        "{:?} {:?}",
+        run.state,
+        r.kinds(id)
+    );
+}
+
+#[test]
+fn a_run_in_flight_still_delivers_after_its_workflow_is_disabled() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.cx.store()
+        .unwrap()
+        .set_workflow_enabled(REQUESTER_USER, &WorkflowName::parse("deps").unwrap(), false)
+        .unwrap();
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    r.idle_then_pass(id);
+    assert_delivered(&r, id);
+}
+
+#[test]
+fn a_box_that_falls_asleep_after_its_agent_finished_a_work_step_goes_on() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.quiet_after_work(id);
+    put_to_sleep(&r, r.latest_box(id));
+    r.pause(3 * 60_000);
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("gate".to_owned(), 1));
+}
+
+#[test]
+fn a_box_that_falls_asleep_after_its_agent_finished_the_deliver_step_delivers() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.idle_then_pass(id);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    r.quiet_after_work(id);
+    put_to_sleep(&r, r.latest_box(id));
+    r.pause(3 * 60_000);
+    r.pass();
+    assert_delivered(&r, id);
 }

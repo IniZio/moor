@@ -87,7 +87,7 @@ fn finished_first_day(r: &Rig, id: WorkflowId) -> BoxId {
 
 /// Puts the Box to sleep the way `moor sleep` does, which records what it holds, just after its
 /// agent was last read.
-fn put_to_sleep(r: &Rig, id: BoxId) {
+pub(super) fn put_to_sleep(r: &Rig, id: BoxId) {
     let store = r.cx.store().unwrap();
     let name = store.box_row(id).unwrap().unwrap().name;
     if let Some(live) = store.live_launch(id).unwrap() {
