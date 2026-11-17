@@ -43,7 +43,6 @@ fn req(name: &str) -> NodeAddReq {
         name: name.to_owned(),
         pubkey: KEY.to_owned(),
         labels: vec!["linux".to_owned()],
-        capacity: 1,
     }
 }
 
@@ -144,11 +143,7 @@ fn a_bad_name_or_key_is_a_usage_error() {
         pubkey: "not a key".to_owned(),
         ..req("local")
     };
-    let no_room = NodeAddReq {
-        capacity: 0,
-        ..req("local")
-    };
-    for bad in [req("Local"), req(""), bad_key, no_room] {
+    for bad in [req("Local"), req(""), bad_key] {
         let err = run(&cx, &bad).unwrap_err();
         assert_eq!(err.kind, ErrorKind::Usage);
     }

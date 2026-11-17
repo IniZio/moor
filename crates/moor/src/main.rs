@@ -267,7 +267,6 @@ fn run_node_add(env: Env, opts: &GlobalOpts, spec: cli::NodeAddSpec) -> Output {
         agent_home: spec.agent_home,
         runner: spec.runner,
         labels: spec.labels,
-        max_boxes: spec.max_boxes,
     };
     let fail = |kind, why: String| {
         let resp = moor::error::CommandError::new(kind, why).into_response("node-add", vec![]);

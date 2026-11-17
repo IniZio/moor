@@ -27,8 +27,6 @@ pub struct Add {
     pub runner: String,
     /// The machine's labels.
     pub labels: Vec<String>,
-    /// How many Boxes may hold the machine at once.
-    pub max_boxes: u16,
 }
 
 /// The agent's key file, as the agent names it.
@@ -104,7 +102,6 @@ pub fn prepare(add: &Add) -> Result<NodeAddReq, String> {
         name: add.name.clone(),
         pubkey,
         labels: add.labels.clone(),
-        capacity: add.max_boxes,
     })
 }
 
@@ -118,7 +115,7 @@ pub fn finish(add: &Add, added: &NodeAddValue) -> Result<(), String> {
         "machine_id": added.machine_id,
         "owner": OWNER,
         "name": added.name,
-        "slots": add.max_boxes,
+        "slots": 1,
     });
     let text = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
     let path = agent_dir(&add.agent_home).join(STATE);

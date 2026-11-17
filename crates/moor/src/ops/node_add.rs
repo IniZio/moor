@@ -21,7 +21,7 @@ use crate::ops::common::node::configured;
 pub(crate) fn run(cx: &Cx, req: &NodeAddReq) -> Result<NodeAddValue, CommandError> {
     let usage = |why: String| CommandError::new(ErrorKind::Usage, why);
     let name = NodeName::parse(&req.name).map_err(|e| usage(e.to_string()))?;
-    let machine = EnrolledMachine::parse(name.as_str(), &req.pubkey, &req.labels, req.capacity)
+    let machine = EnrolledMachine::parse(name.as_str(), &req.pubkey, &req.labels, 1)
         .and_then(|m| m.with_pool(BOXES_HOST))
         .map_err(usage)?;
     let taken = |what: &str| {

@@ -11,7 +11,6 @@ fn add(home: &std::path::Path) -> Add {
         agent_home: home.join("agent"),
         runner: "127.0.0.1:7701".to_owned(),
         labels: vec!["linux".to_owned()],
-        max_boxes: 3,
     }
 }
 
@@ -55,8 +54,7 @@ fn preparing_makes_a_private_key_the_controller_accepts_and_keeps_it_on_a_rerun(
     assert_eq!(first, again, "a rerun enrolls the same key");
     assert_eq!(first.name, "local");
     assert_eq!(first.labels, ["linux"]);
-    assert_eq!(first.capacity, 3);
-    EnrolledMachine::parse(&first.name, &first.pubkey, &first.labels, first.capacity)
+    EnrolledMachine::parse(&first.name, &first.pubkey, &first.labels, 1)
         .expect("the controller takes the key as written");
     let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     let agent = agent_dir(&add.agent_home);
@@ -87,7 +85,7 @@ fn finishing_writes_the_state_an_agent_run_under_that_home_reads() {
             "machine_id": 12,
             "owner": "operator",
             "name": "local",
-            "slots": 3,
+            "slots": 1,
         })
     );
     assert_eq!(

@@ -44,9 +44,6 @@ pub struct NodeAddReq {
     /// The machine's labels.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
-    /// How many Boxes may hold the machine at once.
-    #[serde(default = "one", skip_serializing_if = "is_one")]
-    pub capacity: u16,
 }
 
 /// Arguments of `machine-links`: the runner's whole view of which enrolled machines hold a

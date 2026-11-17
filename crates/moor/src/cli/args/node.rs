@@ -32,9 +32,6 @@ pub(super) struct AddArgs {
     /// A label a Box may require of the node; repeat for more.
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
-    /// How many Boxes may hold the node at once.
-    #[arg(long, value_name = "N", default_value_t = 1, value_parser = clap::value_parser!(u16).range(1..))]
-    max_boxes: u16,
 }
 
 impl NodeCmd {
@@ -47,7 +44,6 @@ impl NodeCmd {
                 agent_home: a.agent_home,
                 runner: a.runner,
                 labels: a.labels,
-                max_boxes: a.max_boxes,
             }),
         }
     }

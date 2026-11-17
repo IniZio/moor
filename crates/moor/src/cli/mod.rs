@@ -64,8 +64,6 @@ pub struct NodeAddSpec {
     pub runner: String,
     /// The labels a Box may require of the node.
     pub labels: Vec<String>,
-    /// How many Boxes may hold the node at once.
-    pub max_boxes: u16,
 }
 
 /// Result of parsing argv.

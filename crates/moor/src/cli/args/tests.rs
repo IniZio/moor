@@ -565,8 +565,6 @@ fn node_add_takes_a_name_an_agent_home_a_runner_and_labels() {
         "linux",
         "--label",
         "big",
-        "--max-boxes",
-        "4",
     ])
     .expect("node add parses") else {
         unreachable!("node add is its own action");
@@ -575,19 +573,6 @@ fn node_add_takes_a_name_an_agent_home_a_runner_and_labels() {
     assert_eq!(add.agent_home, std::path::Path::new("/srv/agent"));
     assert_eq!(add.runner, "127.0.0.1:7701");
     assert_eq!(add.labels, ["linux", "big"]);
-    assert_eq!(add.max_boxes, 4);
-    assert!(run(&[
-        "node",
-        "add",
-        "local",
-        "--agent-home",
-        "/a",
-        "--runner",
-        "127.0.0.1:1",
-        "--max-boxes",
-        "0"
-    ])
-    .is_err());
     assert!(run(&["node", "add", "local", "--runner", "127.0.0.1:7701"]).is_err());
     assert!(run(&["node", "add", "local", "--agent-home", "/srv/agent"]).is_err());
 }
