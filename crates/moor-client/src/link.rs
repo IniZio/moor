@@ -13,7 +13,9 @@ use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
+pub mod boxes;
 pub mod broker;
+pub mod chan;
 mod dial;
 pub mod lease;
 pub mod ops;
@@ -64,6 +66,11 @@ pub struct Report {
     /// are left out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boxes: Vec<BoxMemory>,
+    /// Each Box the machine provides, as [`boxes::BoxReport`] JSON. Carried raw, so a runner
+    /// forwards what a newer agent says without knowing it, and one entry it cannot read loses
+    /// only that entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub box_health: Vec<serde_json::Value>,
 }
 
 /// The host memory one lease's VM holds now.
@@ -113,6 +120,10 @@ pub struct Offer {
     /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reserve_mib: Option<u64>,
+    /// That it provides Boxes itself, and how to speak to it about them; none for a machine that
+    /// does not, or an agent from before the Box protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boxes: Option<boxes::BoxOffer>,
 }
 
 /// The frames before the socket carries yamux, one JSON text message each.

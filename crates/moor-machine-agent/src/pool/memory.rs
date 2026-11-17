@@ -31,6 +31,7 @@ fn report(proc: &Path, home: Option<&Path>) -> Option<Report> {
         disk_free_mib: disk.map(|d| d.0),
         disk_total_mib: disk.map(|d| d.1),
         boxes: Vec::new(),
+        box_health: Vec::new(),
     })
 }
 

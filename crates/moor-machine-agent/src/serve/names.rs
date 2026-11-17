@@ -14,7 +14,7 @@ pub(super) fn target(op: &Op) -> Option<String> {
         | Op::Remove { box_id } => Some(box_id.to_string()),
         Op::Lease { slug, .. } => slug.clone(),
         Op::Dial { slug, .. } | Op::Port { slug, .. } => Some(slug.clone()),
-        Op::Sweep { .. } | Op::Status => None,
+        Op::Sweep { .. } | Op::Status | Op::Boxes => None,
     }
 }
 
@@ -33,5 +33,6 @@ pub(super) const fn kind(op: &Op) -> &'static str {
         Op::Sweep { .. } => "sweep",
         Op::Remove { .. } => "remove",
         Op::Status => "status",
+        Op::Boxes => "boxes",
     }
 }

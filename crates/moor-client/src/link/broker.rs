@@ -63,6 +63,10 @@ pub enum PoolOp {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         probe: bool,
     },
+    /// [`Op::Boxes`]: the runner writes that op itself, answers [`Brokered::Spliced`], and
+    /// carries the stream's bytes both ways without reading them. The client then speaks the
+    /// Box protocol (see [`super::boxes`]) straight to the machine's agent.
+    Boxes,
     /// [`Op::Status`].
     Status,
 }
@@ -85,6 +89,7 @@ impl From<PoolOp> for Op {
             },
             PoolOp::Dial { slug, timeout_secs } => Self::Dial { slug, timeout_secs },
             PoolOp::Port { slug, port, probe } => Self::Port { slug, port, probe },
+            PoolOp::Boxes => Self::Boxes,
             PoolOp::Status => Self::Status,
         }
     }
@@ -99,6 +104,9 @@ pub enum Brokered {
         /// As the agent sent it.
         reply: Reply,
     },
+    /// The stream to the machine's agent is open and carries the Box protocol from here on; its
+    /// bytes follow this line.
+    Spliced,
     /// The machine holds no link, or its link closed.
     Offline {
         /// The machine asked for.
@@ -221,6 +229,27 @@ pub async fn status(runner: &Runner, machine_id: i64) -> Result<Status, String> 
     }
 }
 
+/// Asks `runner`'s broker for a stream to machine `machine_id`'s agent that carries one Box
+/// request ([`super::boxes`]); the caller writes the request line next.
+pub async fn boxes(runner: &Runner, machine_id: i64) -> Result<Conn, String> {
+    let mut conn = runner.connect(Service::Links).await?;
+    let ask = Ask {
+        machine_id,
+        op: PoolOp::Boxes,
+    };
+    ops::write_line(&mut conn, &ask)
+        .await
+        .map_err(|e| format!("the links broker hung up: {e}"))?;
+    match ops::read_line(&mut conn).await? {
+        Brokered::Spliced => Ok(conn),
+        Brokered::Agent { reply } => Err(refusal(machine_id, reply)),
+        Brokered::Offline { machine_id, reason } => {
+            Err(format!("machine {machine_id} is offline: {reason}"))
+        }
+        Brokered::Refused { reason } => Err(format!("the links broker refused: {reason}")),
+    }
+}
+
 /// Sends `op` and reads the agent's reply, with the connection it came on.
 async fn ask(runner: &Runner, machine_id: i64, op: PoolOp) -> Result<(Conn, Reply), String> {
     let mut conn = runner.connect(Service::Links).await?;
@@ -229,6 +258,9 @@ async fn ask(runner: &Runner, machine_id: i64, op: PoolOp) -> Result<(Conn, Repl
         .map_err(|e| format!("the links broker hung up: {e}"))?;
     match ops::read_line(&mut conn).await? {
         Brokered::Agent { reply } => Ok((conn, reply)),
+        Brokered::Spliced => {
+            Err("the links broker spliced a stream that was not asked for".to_owned())
+        }
         Brokered::Offline { machine_id, reason } => {
             Err(format!("machine {machine_id} is offline: {reason}"))
         }

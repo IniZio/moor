@@ -44,6 +44,7 @@ fn a_report_reads_available_total_and_both_psi_avg10s() {
             disk_free_mib: None,
             disk_total_mib: None,
             boxes: Vec::new(),
+            box_health: Vec::new(),
         })
     );
 }
@@ -79,6 +80,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
                 disk_free_mib: None,
                 disk_total_mib: None,
                 boxes: Vec::new(),
+                box_health: Vec::new(),
             }
         }
     );
