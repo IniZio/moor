@@ -3,6 +3,7 @@
 pub mod attach;
 pub mod attention;
 pub mod binding;
+pub mod box_config;
 pub mod close_failed;
 pub mod env;
 pub mod forward;

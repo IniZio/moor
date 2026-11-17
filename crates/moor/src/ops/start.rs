@@ -4,7 +4,7 @@
 //! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Box; without a prompt or issue the agent waits for a prompt.
 
-use moor_core::config::{BoxSettings, Flags, RepoConfig};
+use moor_core::config::{override_text, BoxSettings, Flags, RepoConfig};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, NewBox, SpecFields};
@@ -75,6 +75,7 @@ struct Facts {
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
+    super::box_config::check(req.config.as_deref())?;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
@@ -93,7 +94,12 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         model: req.model.clone(),
         no_agent: req.no_agent,
     };
-    let repo_cfg = repo_config_of(cx, facts.repo.as_ref(), facts.base.as_deref())?;
+    let repo_cfg = repo_config_of(
+        cx,
+        facts.repo.as_ref(),
+        facts.base.as_deref(),
+        req.config.as_deref(),
+    )?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
     let spec = spec_of(req, repo_cfg.as_ref())?;
     let note = node::preflight(cx, user, &spec)?;
@@ -201,6 +207,7 @@ fn attach(
 ) -> Result<StartView, CommandError> {
     preflight::check_owner(row, user)?;
     repo::check_kept(req, row)?;
+    super::box_config::check_kept(cx, req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
@@ -355,6 +362,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
             base: facts.base.clone(),
             branch: None,
             labels,
+            config: override_text(req.config.clone()),
         },
     }
 }

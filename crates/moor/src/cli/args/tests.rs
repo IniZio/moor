@@ -66,6 +66,7 @@ fn start_with_all_flags() {
         r,
         Request::Start(StartReq {
             cold: false,
+            config: None,
             name: n("t1"),
             prompt: Some("g".into()),
             issue: Some("I-1".into()),

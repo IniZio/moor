@@ -1,6 +1,7 @@
 //! The workflow tools: a signed-in user keeps recurring jobs that start a Box in each repo on
 //! a cron, and reads what each run did.
 
+use moor_core::config::override_text;
 use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowEnableReq, WorkflowRemoveReq,
     WorkflowRunsReq,
@@ -31,6 +32,10 @@ struct AddArgs {
     /// workflow clones beside its own repo; none when left out.
     #[serde(default)]
     also: Vec<String>,
+    /// A partial repo config, as YAML in the `.moor.yaml` format, laid over the repo's stored
+    /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
+    /// replace. None when left out.
+    config: Option<String>,
     /// What each Box's agent is asked to do.
     prompt: String,
     /// Minutes a run may take before it is stopped, 1 to 720; 180 when left out.
@@ -87,6 +92,7 @@ impl Tools {
             timezone: args.timezone,
             repos: args.repos,
             also: args.also,
+            config: override_text(args.config),
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
             origin_key: None,

@@ -1,5 +1,6 @@
 //! The request `start_box` sends.
 
+use moor_core::config::override_text;
 use moor_core::name::{BoxName, ForgeRepo};
 use moor_core::request::{Request as ControllerRequest, StartReq};
 
@@ -29,6 +30,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
     })?;
     Ok(ControllerRequest::Start(StartReq {
         cold: false,
+        config: override_text(args.config),
         name,
         prompt: args.prompt,
         issue: None,

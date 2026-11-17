@@ -34,7 +34,7 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
         None => (String::new(), None),
     };
     let repo_cfg = match &at {
-        Some((boxed, base, _)) => repo_config_of(cx, Some(boxed), Some(base.as_str()))?,
+        Some((boxed, base, _)) => repo_config_of(cx, Some(boxed), Some(base.as_str()), None)?,
         None => None,
     };
     let settings = resolved(cx, repo_cfg.as_ref(), &Flags::default());

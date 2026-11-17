@@ -1,6 +1,7 @@
 //! A user's workflows: `workflow-add`, `workflow-list`, `workflow-remove`,
 //! `workflow-set-enabled` and `workflow-runs`.
 
+use moor_core::config::override_text;
 use moor_core::name::ForgeRepo;
 use moor_core::request::{WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
@@ -18,6 +19,7 @@ use moor_core::ErrorKind;
 use super::to_value;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::box_config;
 use crate::store::Store;
 
 /// Changes `workflow-runs` returns when the request names no limit.
@@ -88,6 +90,7 @@ fn add(
         .map_err(usage)?;
     let repos = parse_repos("repos", &req.repos)?;
     let also = parse_repos("also", &req.also)?;
+    box_config::check(req.config.as_deref())?;
     let timeout = req
         .timeout_minutes
         .map_or(Ok(TimeoutMinutes::DEFAULT), TimeoutMinutes::new)
@@ -108,6 +111,7 @@ fn add(
         }
         _ => None,
     };
+    def.config = override_text(req.config.clone());
     store.put_workflow(user, &def)?;
     to_value(&WorkflowChangeValue {
         name: name.to_string(),
@@ -170,6 +174,7 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
         timezone: w.schedule.zone().to_owned(),
         repos: w.repos.iter().map(ToString::to_string).collect(),
         also: w.also.iter().map(ToString::to_string).collect(),
+        config: w.config.clone(),
         prompt: w.prompt.clone(),
         enabled,
         disabled_reason,

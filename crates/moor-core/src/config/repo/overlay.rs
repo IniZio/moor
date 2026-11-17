@@ -7,8 +7,7 @@
 //! out keeps the repo's value, so `setup: []` clears the setup lines and no `setup` leaves them.
 //!
 //! [`RepoOverride::over`] destructures [`RepoConfig`] in full, so a field added to it fails to
-//! compile until it is given a rule there. A field that only adds (an allow list, say) takes the
-//! union of both sides, as `env` does by key; every other field replaces.
+//! compile until it is given a rule there.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +15,12 @@ use serde::de::IgnoredAny;
 
 use super::{parse_repo, RepoConfig};
 use crate::config::{parse_strict, ConfigError};
+
+/// `text` as an override request carries it: blank text is no override.
+#[must_use]
+pub fn override_text(text: Option<String>) -> Option<String> {
+    text.filter(|t| !t.trim().is_empty())
+}
 
 /// A repo config together with the top-level keys its text named.
 #[derive(Debug, Clone, PartialEq, Eq)]

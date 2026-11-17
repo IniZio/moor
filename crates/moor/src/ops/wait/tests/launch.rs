@@ -210,6 +210,7 @@ fn an_agentless_start_of_a_box_left_launching_ends_the_launch() {
 fn agentless_start() -> StartReq {
     StartReq {
         cold: false,
+        config: None,
         name: BoxName::parse_allow_bare("demo").unwrap(),
         prompt: None,
         issue: None,

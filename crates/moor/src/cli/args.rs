@@ -6,19 +6,20 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
-use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq, StartReq};
+use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq};
 
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
-use box_ops::{BoxArg, CloseArgs, CloseFailedArgs, CpArgs};
+use box_ops::{BoxArg, BoxConfigArgs, CloseArgs, CloseFailedArgs, CpArgs};
 use events::EventsArgs;
 use exec::ExecArgs;
 use forward::ForwardArgs;
 use inspect::InspectArgs;
 use node::NodeCmd;
-use repo::RepoCli;
+use repo::{config_text, RepoCli};
 use session::SessionCmd;
+use start::StartArgs;
 use steer::SteerArgs;
 use user::UserCli;
 use wait::WaitArgs;
@@ -34,6 +35,7 @@ mod node;
 mod parse_ignoring_env;
 mod repo;
 mod session;
+mod start;
 mod steer;
 #[cfg(test)]
 pub(super) use parse_ignoring_env::parse_ignoring_env;
@@ -163,6 +165,9 @@ enum Cmd {
     Close(CloseArgs),
     /// Close every Box whose setup failed.
     CloseFailed(CloseFailedArgs),
+    /// Replace a Box's config override, or remove it; the Box's next exec, run, setup line and
+    /// teardown read it.
+    BoxConfig(BoxConfigArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
     /// Put the Box to sleep.
@@ -227,6 +232,7 @@ impl Cmd {
             Self::Close(a) => Action::Request(Request::Close(a.into())),
             Self::CloseFailed(a) => Action::Request(Request::CloseFailed(a.into())),
             Self::Cp(a) => Action::Request(Request::Cp(a.into())),
+            Self::BoxConfig(a) => Action::Request(Request::BoxConfigSet(a.into())),
             Self::Sleep(a) => Action::Request(Request::Sleep(a.into())),
             Self::Wake(a) => Action::Request(Request::Wake(a.into())),
             Self::Retry(a) => Action::Request(Request::Retry(a.into())),
@@ -272,66 +278,6 @@ struct DoctorArgs {
     /// Public URL of the gate (`moor-gate --public-url`), to check it answers.
     #[arg(long, value_name = "URL")]
     public_url: Option<String>,
-}
-
-/// Arguments of `start`.
-#[derive(Debug, Args)]
-#[allow(clippy::struct_excessive_bools, reason = "one field per CLI flag")]
-struct StartArgs {
-    /// Box name.
-    #[arg(value_parser = box_name)]
-    name: BoxName,
-    /// Prompt for the agent.
-    #[arg(long)]
-    prompt: Option<String>,
-    /// Issue reference.
-    #[arg(long)]
-    issue: Option<String>,
-    /// Base ref.
-    #[arg(long)]
-    base: Option<String>,
-    /// Repo to clone, as OWNER/NAME or a github.com URL; the current checkout's origin when absent.
-    #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::caller::repo_arg)]
-    repo: Option<moor_core::seam::forge::ForgeRepo>,
-    /// Another repo to clone beside `--repo`, as OWNER/NAME or a github.com URL; repeat for
-    /// more. Any use replaces `box.also` from your config.
-    #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::caller::repo_arg)]
-    also: Vec<moor_core::seam::forge::ForgeRepo>,
-    /// Agent model.
-    #[arg(long)]
-    model: Option<String>,
-    /// A node of yours to run the Box on, in place of your default; see `moor node ls`.
-    #[arg(long, value_name = "NODE")]
-    node: Option<String>,
-    /// Do not launch an agent.
-    #[arg(long)]
-    no_agent: bool,
-    /// Resume the agent's stored session.
-    #[arg(long)]
-    resume: bool,
-    /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
-    #[arg(long, value_name = "ID", env = "MOOR_SESSION")]
-    parent: Option<i64>,
-}
-
-impl From<StartArgs> for StartReq {
-    fn from(a: StartArgs) -> Self {
-        Self {
-            cold: false,
-            name: a.name,
-            prompt: a.prompt,
-            issue: a.issue,
-            base: a.base,
-            repo: a.repo,
-            model: a.model,
-            node: a.node,
-            no_agent: a.no_agent,
-            resume: a.resume,
-            parent: a.parent.map(SessionId::new),
-            also: (!a.also.is_empty()).then_some(a.also),
-            identity: None,
-        }
-    }
 }
 
 /// Arguments of `run`.

@@ -24,6 +24,10 @@ pub struct WorkflowAddReq {
     /// absent. The controller's own `box.also` never applies to a workflow.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also: Vec<String>,
+    /// A partial repo config, in the `.moor.yaml` format, laid over each repo's config for the
+    /// Boxes this workflow starts; none when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
     /// What each Box's agent is asked to do.
     pub prompt: String,
     /// Minutes a run may take before it is stopped; the default when absent.

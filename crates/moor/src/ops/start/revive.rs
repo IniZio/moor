@@ -136,6 +136,7 @@ fn revive(
         .is_some_and(|s| !s.is_empty());
     let req = StartReq {
         cold: false,
+        config: None,
         name: row.name.clone(),
         prompt: (!resumable).then(|| row.prompt.clone()).flatten(),
         issue: None,
@@ -203,6 +204,7 @@ fn relaunch_after_retry(
     let row = reread(store, id)?;
     let req = StartReq {
         cold: false,
+        config: None,
         name: row.name.clone(),
         prompt: row.prompt.clone(),
         issue: row.issue.clone(),

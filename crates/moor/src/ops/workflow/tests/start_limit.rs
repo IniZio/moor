@@ -225,6 +225,7 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
         &r.cx,
         &StartReq {
             cold: false,
+            config: None,
             name,
             prompt: Some("fix what is broken".to_owned()),
             issue: None,
@@ -286,6 +287,7 @@ fn a_box_still_setting_up_past_the_limit_is_closed_and_its_run_refused() {
     let job = claim_only(&r).remove(0);
     let req = StartReq {
         cold: false,
+        config: None,
         name: job.name.clone(),
         prompt: Some(job.prompt.clone()),
         issue: None,
@@ -324,6 +326,7 @@ fn a_claim_settled_at_boot_keeps_its_claim_time_and_counts_the_run_from_its_agen
         &r.cx,
         &StartReq {
             cold: false,
+            config: None,
             name: job.name.clone(),
             prompt: Some(job.prompt.clone()),
             issue: None,

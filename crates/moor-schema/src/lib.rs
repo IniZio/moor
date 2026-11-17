@@ -8,6 +8,7 @@ use moor_migrate::{Backend, Script, Step};
 
 mod agent_reads;
 mod baseline;
+mod box_config;
 mod box_hands;
 mod box_inbox;
 mod box_state;
@@ -191,6 +192,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V81__repo_config",
         write: repo_config::write,
+    },
+    Step {
+        name: "V82__box_config",
+        write: box_config::write,
     },
 ];
 

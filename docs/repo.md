@@ -53,6 +53,45 @@ again. Everything else applies to Boxes started afterwards.
 | `box.size`, `cache` | A new Box, or one that is rebuilt on a new machine. |
 | `node.labels`, `box_credentials` | A new Box. |
 
+## Override for one Box
+
+A start can carry a partial config, in the same YAML, that applies to that Box
+only. Use it to try a setting without changing the repo for everyone:
+
+```sh
+cat > one-box.yaml <<'EOF'
+env:
+  FEATURE: on
+setup: [npm ci, npm run seed]
+EOF
+moor start try-it --config one-box.yaml
+```
+
+A key the override names wins over the repo's value, and a key it leaves out
+keeps the repo's. `env` is the exception. Its variables add to the repo's by
+name, and the override wins a clash. Every other key replaces the repo's value
+whole. So `setup: [x]` replaces all the repo's setup lines, and `setup: []`
+clears them. A key set to nothing, as `machine: ~`, replaces too.
+
+moor checks the override when you give it and refuses text that is not a
+repo config. The Box keeps it with its other facts. Another Box of the repo,
+and the repo's own config, are unaffected.
+
+Change a running Box's override with `moor box-config`, which replaces the
+whole override, or removes it with `--remove`:
+
+```sh
+moor box-config try-it --file one-box.yaml
+moor box-config try-it --remove
+```
+
+Only the Box's owner and the operator may. The Box reads its config through
+the override each time, so the settings that are hot at repo level are hot
+here too. [What an edit reaches](#what-an-edit-reaches) lists them. `moor start` on an open
+Box that carries a different override is refused, so it never drops it quietly.
+The MCP `start_box` and `add_workflow` tools take a `config` argument, and a
+workflow's runs each start with it, so a schedule can override per run.
+
 ## Install dependencies
 
 List the commands that make a fresh clone ready to work in:

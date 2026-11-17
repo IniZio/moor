@@ -54,7 +54,7 @@ pub(super) struct SetArgs {
 }
 
 /// The text of config file `path`, or of stdin for `-`.
-fn config_text(path: &str) -> Result<String, String> {
+pub(super) fn config_text(path: &str) -> Result<String, String> {
     let mut bytes = Vec::new();
     if path == "-" {
         std::io::stdin()

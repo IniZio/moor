@@ -1,5 +1,6 @@
 //! Text for `repo config get` and `repo config set`.
 
+use moor_core::view::box_config::BoxConfigValue;
 use moor_core::view::repo_config::RepoConfigValue;
 use serde_json::Value;
 
@@ -11,6 +12,17 @@ pub(super) fn get_text(value: &Value) -> Option<String> {
         view.text
             .unwrap_or_else(|| format!("# no config is stored for {}\n", view.repo)),
     )
+}
+
+/// The line a `box-config-set` reply prints: the Box and whether it now has an override.
+pub(super) fn box_line(value: &Value) -> Option<String> {
+    let view = serde_json::from_value::<BoxConfigValue>(value.clone()).ok()?;
+    let now = if view.set {
+        "has its own config"
+    } else {
+        "reads its repo's config alone"
+    };
+    Some(format!("{} {now}\n", view.box_name))
 }
 
 /// The line a `repo-config-set` reply prints: the repo and the revision it is now at.

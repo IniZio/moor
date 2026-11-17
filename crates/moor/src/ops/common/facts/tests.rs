@@ -78,7 +78,7 @@ fn no_repo_config_resolves_defaults() {
 fn bad_repo_config_is_a_failed_command_naming_the_repo_and_base() {
     let d = tempfile::tempdir().unwrap();
     let repo = box_repo(Some("agent: {model: m}\n"));
-    let err = repo_config_of(&cx(d.path()), Some(&repo), Some("abc123")).unwrap_err();
+    let err = repo_config_of(&cx(d.path()), Some(&repo), Some("abc123"), None).unwrap_err();
     assert!(
         err.error.to_string().contains("o/n@abc123:.moor.yaml"),
         "{err:?}"
@@ -141,7 +141,7 @@ fn a_stored_config_that_no_longer_parses_names_the_repo_and_revision() {
         .unwrap()
         .set_repo_config(&repo.repo, "bogus: 1\n", "operator", None)
         .unwrap();
-    let err = repo_config_of(&cx, Some(&repo), None).unwrap_err();
+    let err = repo_config_of(&cx, Some(&repo), None, None).unwrap_err();
     assert!(
         err.error
             .to_string()

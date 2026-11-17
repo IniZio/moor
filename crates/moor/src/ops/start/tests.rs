@@ -151,6 +151,7 @@ fn on_github(w: World) -> World {
 fn req(name: &str) -> StartReq {
     StartReq {
         cold: false,
+        config: None,
         name: box_name(name),
         prompt: None,
         issue: None,

@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repo`; optional `also`, `name`, `prompt`, `base`, `node`, `wait` |
+| `start_box` | `repo`; optional `also`, `name`, `prompt`, `base`, `node`, `config`, `wait` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |
@@ -38,7 +38,7 @@ token's audience.
 | `list_webhooks` | none |
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
-| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `also`, `timeout_minutes` |
+| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `also`, `config`, `timeout_minutes` |
 | `list_workflows` | none |
 | `list_workflow_runs` | optional `after`, `limit` |
 | `remove_workflow` | `name` |

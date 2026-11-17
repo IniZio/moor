@@ -71,6 +71,7 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
     let caller = Ok(Caller::Local(1000));
     let start = Request::Start(StartReq {
         cold: false,
+        config: None,
         name: name("a"),
         prompt: None,
         issue: None,

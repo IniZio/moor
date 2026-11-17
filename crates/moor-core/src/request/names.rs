@@ -68,6 +68,7 @@ impl Request {
             Self::Inspect(r) => target(&r.target),
             Self::Show(r) => r.target.iter().map(|t| Named::Box(t.clone())).collect(),
             Self::Run(r) => vec![named(&r.box_name)],
+            Self::BoxConfigSet(r) => vec![named(&r.box_name)],
             Self::Wait(r) => vec![named(&r.box_name)],
             Self::Cp(r) => vec![named(&r.box_name)],
             Self::BoxRsync(r) => vec![Named::Box(r.id.into())],

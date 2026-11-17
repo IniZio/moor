@@ -28,6 +28,7 @@ impl Request {
             Self::Close(_) => "close",
             Self::Cp(_) => "cp",
             Self::BoxRsync(_) => "box-rsync",
+            Self::BoxConfigSet(_) => "box-config-set",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
             Self::Retry(_) => "retry",

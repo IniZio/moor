@@ -40,6 +40,8 @@ pub(crate) struct StartJob {
     pub(crate) repo: ForgeRepo,
     /// The repos the Box clones beside `repo`.
     pub(crate) also: Vec<ForgeRepo>,
+    /// The override each Box starts with.
+    pub(crate) config: Option<String>,
     /// The due time the claim answers.
     pub(crate) due_at: Ts,
     /// The Box to start.
@@ -252,6 +254,7 @@ fn claim(
             identity,
             repo: repo.clone(),
             also: w.also.clone(),
+            config: w.config.clone(),
             due_at,
             name,
             prompt: w.prompt.clone(),
@@ -314,6 +317,7 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
     }
     let req = StartReq {
         cold: false,
+        config: job.config.clone(),
         name: job.name.clone(),
         prompt: Some(job.prompt.clone()),
         issue: None,
