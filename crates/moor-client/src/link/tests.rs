@@ -30,7 +30,6 @@ fn a_hello_with_an_offer_round_trips() {
             mem_mib: Some(31_232),
             cpus: Some(16),
             reserve_mib: None,
-            ..Offer::default()
         })),
     };
     let text = serde_json::to_string(&frame).unwrap();
