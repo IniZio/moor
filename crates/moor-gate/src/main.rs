@@ -9,7 +9,7 @@ use std::time::Duration;
 use clap::Parser;
 use moor_client::tls::TlsPki;
 use moor_client::Client;
-use moor_gate::{Gate, Login, Mcp, Verifier};
+use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN};
 
 /// The remote front: OIDC access tokens in, the controller out.
 #[derive(Parser)]
@@ -18,6 +18,12 @@ struct Args {
     /// Address to listen on; TLS is the ingress's job.
     #[arg(long, env = "MOOR_GATE_LISTEN", default_value = "0.0.0.0:8443")]
     listen: String,
+    /// Address of the Box-facing listener, which serves only `report_step` to the agent in a
+    /// Box and trusts the `X-Moor-Box` header the Proxy stamps. Bind loopback beside a Proxy on
+    /// the host, or the pod address on a cluster, where the gate's Service reaches the Proxy.
+    /// Nothing but a Proxy may reach it. `off` turns it off.
+    #[arg(long, env = "MOOR_GATE_BOX_LISTEN", default_value = DEFAULT_BOX_LISTEN)]
+    box_listen: String,
     /// The controller's front socket for the `authgear` front.
     #[arg(
         long,
@@ -113,6 +119,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Err(why) = serve_boxes(&args.box_listen, &controller) {
+        moor_gate_log(&why);
+        return ExitCode::FAILURE;
+    }
     let mcp = match args
         .mcp_resource_url
         .map(|url| Mcp::with_setup(&url, controller.clone(), args.public_url.as_deref()))
@@ -156,6 +166,22 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Starts the Box-facing listener on `listen` in a thread of its own, unless it is `off`.
+fn serve_boxes(listen: &str, controller: &Client) -> Result<(), String> {
+    if listen == "off" {
+        return Ok(());
+    }
+    let listener =
+        TcpListener::bind(listen).map_err(|e| format!("cannot listen on {listen} for Boxes: {e}"))?;
+    let boxes = Boxes::new(controller.clone())?;
+    std::thread::spawn(move || {
+        if let Err(e) = boxes.serve(listener) {
+            moor_gate_log(&format!("the Box listener stopped: {e}"));
+        }
+    });
+    Ok(())
 }
 
 /// Writes one `moor-gate: <msg>` line to stderr.

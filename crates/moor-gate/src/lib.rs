@@ -18,6 +18,7 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 mod artifact;
 mod artifacts_http;
+mod boxes;
 mod events_http;
 mod http;
 mod login;
@@ -28,6 +29,7 @@ mod streams;
 mod token;
 mod tools;
 
+pub use boxes::{Boxes, BOX_HEADER, DEFAULT_BOX_LISTEN};
 pub use login::Login;
 pub use mcp::Mcp;
 pub use token::{Person, Verifier};
