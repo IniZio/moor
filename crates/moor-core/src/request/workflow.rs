@@ -80,6 +80,10 @@ pub struct WorkflowRunsReq {
 
 /// A workflow request without its identity, as the controller runs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one value per request, built and matched once; boxing the add would touch every caller"
+)]
 pub enum WorkflowCmd {
     /// Add or replace a workflow. `origin_front` is the front socket the request arrived on,
     /// which the controller sets and a client never sends.
