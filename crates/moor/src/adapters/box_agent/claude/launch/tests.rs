@@ -52,6 +52,7 @@ fn proxied(dir: &Path) -> LaunchCtx {
     LaunchCtx {
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(ProxyAddr {
+            keep_egress: true,
             box_port: 41234,
             ca_pem: String::new(),
             box_env: Vec::new(),

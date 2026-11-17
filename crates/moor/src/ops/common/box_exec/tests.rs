@@ -79,6 +79,7 @@ fn cfg() -> BoxSettings {
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
         addr: ProxyAddr {
+            keep_egress: true,
             box_port: 4000,
             ca_pem: "CA-PEM".to_owned(),
             box_env: vec![("RULE".to_owned(), "x".to_owned())],

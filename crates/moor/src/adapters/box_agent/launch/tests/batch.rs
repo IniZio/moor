@@ -55,6 +55,7 @@ fn req(proxy: bool) -> LaunchReq {
         nonce: "abc123".to_owned(),
         proxy: proxy.then(|| {
             Arc::new(ProxyAddr {
+                keep_egress: true,
                 box_port: 4567,
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),

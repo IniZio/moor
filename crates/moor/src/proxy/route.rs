@@ -112,9 +112,7 @@ impl EgressRoute {
 /// `ws://`, so it must be a loopback or private address: never a public or wildcard one.
 fn private_listen(addr: &str) -> Result<SocketAddr, String> {
     let bad = |why: &str| format!("{EGRESS_LISTEN} {addr}: {why}");
-    let parsed: SocketAddr = addr
-        .parse()
-        .map_err(|_| bad("not an IP:PORT address"))?;
+    let parsed: SocketAddr = addr.parse().map_err(|_| bad("not an IP:PORT address"))?;
     let private = match parsed.ip() {
         IpAddr::V4(ip) => {
             ip.is_loopback()

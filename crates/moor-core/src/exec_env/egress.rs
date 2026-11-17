@@ -123,6 +123,14 @@ pub(super) fn lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> 
     lines_with(listen, forward, hosts, &SYSTEM_APPARMOR)
 }
 
+/// The egress lines as one script for `sh -c`, for the place that owns a Box's network namespace
+/// when no exec's prelude keeps the egress proxy running. It stops with a `moor: ` line on stderr
+/// and a non-zero exit, as the prelude does.
+#[must_use]
+pub fn keep_script(listen: u16, forward: u16, hosts: &[String]) -> String {
+    lines(listen, forward, hosts).join("\n")
+}
+
 /// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
 /// on `PATH` is `aa.exec` and `aa.profile` is loaded in enforce mode, the rules from
 /// [`apparmor_rules`] go into `aa.local` and the profile is reloaded, as root or through

@@ -15,6 +15,7 @@ const CA: &str = "-----BEGIN CERTIFICATE-----\nQUJDREVGRw==\n-----END CERTIFICAT
 
 fn proxy() -> ProxyAddr {
     ProxyAddr {
+        keep_egress: true,
         box_port: PORT,
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
@@ -147,6 +148,7 @@ fn the_script_runs_and_builds_the_environment() {
     let fake = fake_sudo(dir.path());
     let egress = moor_testkit::FakeEgress::start(&home, &fake).unwrap();
     let addr = ProxyAddr {
+        keep_egress: true,
         egress_port: egress.port(),
         ..proxy()
     };
@@ -254,6 +256,7 @@ fn run_launch(with_keytool: bool) -> Launch {
     .unwrap();
     let egress = moor_testkit::FakeEgress::start(&home, &bin).unwrap();
     let addr = ProxyAddr {
+        keep_egress: true,
         egress_port: egress.port(),
         ..proxy()
     };

@@ -8,7 +8,7 @@ use crate::name::BoxPath;
 use crate::seam::agent_adapter::ProxyAddr;
 use crate::seam::proc::Deadline;
 
-pub use egress::{EGRESS_FAILED, FORWARDER};
+pub use egress::{keep_script, EGRESS_FAILED, FORWARDER};
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
 const PROXY_DIR: &str = "$HOME/.moor-proxy";
@@ -81,6 +81,8 @@ pub struct ProxyCtx<'a> {
     pub ca_pem: &'a str,
     /// The hosts the credential rules serve; only these go through the Proxy.
     pub hosts: &'a [String],
+    /// Whether the prelude keeps the egress proxy running; false when the Box's provider does.
+    pub keep_egress: bool,
 }
 
 impl<'a> ProxyCtx<'a> {
@@ -92,6 +94,7 @@ impl<'a> ProxyCtx<'a> {
             egress_port: addr.egress_port,
             ca_pem: &addr.ca_pem,
             hosts: &addr.hosts,
+            keep_egress: addr.keep_egress,
         }
     }
 }
@@ -290,7 +293,9 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             )
         ),
     ];
-    lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
+    if p.keep_egress {
+        lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
+    }
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",
@@ -316,6 +321,29 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     lines.extend(build_env::lines());
     lines.extend(java::java_lines(p.egress_port, &ca));
     lines
+}
+
+/// The variables that send a Box's tools through the egress proxy on loopback `egress_port`,
+/// for a Box whose every login reads them from the provider instead of from the prelude.
+#[must_use]
+pub fn proxy_vars(egress_port: u16) -> Vec<(String, String)> {
+    let url = format!("http://127.0.0.1:{egress_port}");
+    let mut vars: Vec<(String, String)> = [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+    ]
+    .iter()
+    .map(|name| ((*name).to_owned(), url.clone()))
+    .collect();
+    for name in ["NO_PROXY", "no_proxy"] {
+        vars.push((name.to_owned(), "127.0.0.1,localhost,::1".to_owned()));
+    }
+    vars.push(("NODE_USE_ENV_PROXY".to_owned(), "1".to_owned()));
+    vars
 }
 
 /// Shell that keeps `ca` in each trust anchor directory the Box has, or fails, writing only if needed.

@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::box_key::is_machine_handle;
 use moor_core::boxscript::profile::{failed_installs, fetch_script, setup_script, FAILURES_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
@@ -117,15 +118,27 @@ fn fetch_and_setup(
         workdir: None,
     };
     let script = fetch_script(&url, profile.sha.as_str());
-    let fetch_log = cx
-        .state_dir()
-        .map(|d| d.join("profile-fetch").join(format!("{}.log", id.get())));
-    let fetched = fetch_log.map_err(|e| e.error.to_string()).and_then(|log| {
+    // The setup script runs in the Work place; Claude's profile writers read the checkout from
+    // the Agent place. On a machine's Box those have a home each, so each gets its own checkout;
+    // elsewhere they are one machine with one home, and one checkout serves both.
+    let places: &[(Place, &str)] = if is_machine_handle(handle.as_str()) {
+        &[(Place::Work, "work"), (Place::Agent, "agent")]
+    } else {
+        &[(Place::Work, "work")]
+    };
+    let fetched = places.iter().try_for_each(|&(place, name)| {
+        let log = cx
+            .state_dir()
+            .map(|d| {
+                d.join("profile-fetch")
+                    .join(format!("{}-{name}.log", id.get()))
+            })
+            .map_err(|e| e.error.to_string())?;
         run(
             cx,
-            (&site, Place::Work),
+            (&site, place),
             (cfg, proxy),
-            (script, &log),
+            (script.clone(), &log),
             ("profile fetch", FETCH_DEADLINE),
         )
     });

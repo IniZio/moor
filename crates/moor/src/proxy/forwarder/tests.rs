@@ -212,10 +212,22 @@ fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
         .upstream(Some(&machine), 20555)
         .unwrap_err()
         .contains("MOOR_EGRESS_LISTEN"));
-    for ok in ["127.0.0.1:9", "10.1.2.3:9", "192.168.0.2:9", "100.101.1.1:9", "[fd00::1]:9"] {
+    for ok in [
+        "127.0.0.1:9",
+        "10.1.2.3:9",
+        "192.168.0.2:9",
+        "100.101.1.1:9",
+        "[fd00::1]:9",
+    ] {
         assert!(env(ok).is_ok(), "{ok}");
     }
-    for bad in ["0.0.0.0:8443", "8.8.8.8:8443", "172.17.0.1:0", "172.17.0.1", "[2001:db8::1]:9"] {
+    for bad in [
+        "0.0.0.0:8443",
+        "8.8.8.8:8443",
+        "172.17.0.1:0",
+        "172.17.0.1",
+        "[2001:db8::1]:9",
+    ] {
         assert!(env(bad).is_err(), "{bad}");
     }
 }

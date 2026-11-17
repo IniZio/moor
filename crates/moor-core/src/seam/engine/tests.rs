@@ -59,6 +59,7 @@ fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(ProxyAddr {
+            keep_egress: true,
             box_port,
             egress_port: box_port,
             ca_pem: ca_pem.to_owned(),

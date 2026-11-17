@@ -288,7 +288,10 @@ impl Server {
     /// Stops listening, waits up to `grace` for open tunnels to finish while tending goes on,
     /// then stops the rest; returns how many were still open.
     pub(crate) fn drain(mut self, grace: Duration) -> usize {
-        let (shared, accepting) = (Arc::clone(&self.shared), std::mem::take(&mut self.accepting));
+        let (shared, accepting) = (
+            Arc::clone(&self.shared),
+            std::mem::take(&mut self.accepting),
+        );
         for (stop, _) in &accepting {
             stop.notify_one();
         }
