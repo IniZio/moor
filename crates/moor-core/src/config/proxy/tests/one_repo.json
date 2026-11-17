@@ -108,6 +108,14 @@
       },
       {
         "method": "GET",
+        "path": "/repos/acme/widgets/issues"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/issues/**"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets/issues/*/comments"
       },
       {
