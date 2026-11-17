@@ -1,3 +1,4 @@
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
 //! `node-list` values across releases.
 
 use serde_json::json;
