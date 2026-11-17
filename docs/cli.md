@@ -118,8 +118,8 @@ These act as your local identity through the controller.
 
 | Command | What it does |
 | --- | --- |
-| `moor up [--max-boxes N]` | Sets the host up, as [Self-host on one machine](run.md) describes. A rerun changes nothing. |
-| `moor down` | Stops and removes the controller's user units. Config, state, and secrets stay. |
+| `moor up` | Sets the host up with a controller and a Docker node, as [Self-host on one machine](run.md) describes. A rerun changes nothing. |
+| `moor down` | Stops and removes the units `moor up` wrote: the controller, the runner, and the agent. Config, state, and secrets stay. |
 | `moor doctor [--public-url URL]` | Checks the setup, one `ok`, `warn`, or `fail` line per check, each with its fix. Exits 1 when a check failed. |
 | `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that repo would get. Operator only. |
 | `moor controller serve --config FILE` | Runs the controller. |

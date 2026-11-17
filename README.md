@@ -14,7 +14,8 @@ has nothing to leak.
 - You are on a team that runs moor. Read [Use a team moor](docs/use.md). You
   install nothing.
 - You want moor on your own Linux host. Read
-  [Self-host on one machine](docs/run.md). It takes three commands.
+  [Self-host on one machine](docs/run.md). It needs Docker and takes three
+  commands.
 - You want to change moor itself. Read [Development](docs/development.md).
 
 ## How the parts fit

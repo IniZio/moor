@@ -6,10 +6,13 @@ use. You add those later, when teammates join.
 
 You need:
 
-- a Linux host where your user can open `/dev/kvm`
-- a `-moor` build of crabbox on `PATH`. crabbox is
-  [being removed](providers.md#crabbox-being-removed) in favor of Docker Boxes
+- a Linux host with Docker that your user can run (`docker info` works)
+- `/dev/kvm`, only if a repo's Boxes run Android emulators
 - `claude` and `gh` on your own computer, signed in
+
+Docker Boxes are privileged containers. Each Box's work place runs with
+`--privileged` so Docker works inside it, and a user who can run Docker is root
+on this host. Use this setup for your own Boxes.
 
 ## 1. Install moor
 
@@ -17,8 +20,9 @@ You need:
 curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh
 ```
 
-The script puts `moor`, `moor-gate`, and `moor-egress-forward` in
-`~/.local/bin`. Make sure that directory is on your `PATH`.
+The script puts `moor`, `moor-gate`, `moor-egress-forward`,
+`moor-machine-agent`, and `moor-machine-runner` in `~/.local/bin`. Make sure
+that directory is on your `PATH`.
 
 ## 2. Set the host up
 
@@ -30,22 +34,36 @@ moor up
 line carries its fix. Rerun `moor up` after a fix. A rerun changes nothing that
 is already in place.
 
-1. It checks that crabbox selects a provider and that `crabbox doctor` passes
-   for it. When crabbox selects none, it prints the commands that install the
-   cloud-hypervisor provider.
-2. It writes the controller config, `~/.config/moor/controller.yaml`.
-3. It adds a node named `local` to `~/.config/moor/config.yaml`.
-4. It installs and starts the controller as the systemd user units
-   `moor.socket` and `moor.service`.
-5. It creates your moor user and asks for your `claude` and `github` secrets.
+1. It checks that `docker info` works for your user, and says that Docker
+   Boxes are privileged containers.
+2. It writes the controller config, `~/.config/moor/controller.yaml`, and adds
+   the controller to `~/.config/moor/config.yaml`.
+3. It installs and starts the controller as the systemd user units
+   `moor.socket` and `moor.service`. The service also listens on the address
+   of Docker's bridge network, where Boxes reach the Proxy.
+4. It creates your moor user and asks for your `claude` and `github` secrets.
    Paste what `claude setup-token` and `gh auth token` print.
-6. It runs `moor doctor` and prints the next command to run.
+5. It starts the machine runner as `moor-runner.service`. The runner takes
+   agent links on a loopback port.
+6. It runs `moor node add local` with an agent home under the controller's
+   state directory, `~/.local/state/moor/agent-home`. The node is shared, and
+   needs no sign-in.
+7. It starts the machine agent as `moor-agent.service`, run as that agent
+   home. The agent makes the node's Docker Boxes. It waits for the link.
+8. It runs `moor doctor` and prints the next command to run.
+
+`moor up` picks the three ports once and keeps them in
+`~/.local/state/moor/up-ports.json`.
 
 If a line warns that the controller stops when you log out, run
 `loginctl enable-linger` once.
 
-To skip the prompts in step 5, set `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`
+To skip the prompts in step 4, set `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`
 before you run `moor up`.
+
+If `moor up` says the user config still has the node `local`, an earlier
+release wrote it for crabbox. Delete `nodes.local` from
+`~/.config/moor/config.yaml` and rerun.
 
 ## 3. Check the node
 
@@ -53,18 +71,8 @@ before you run `moor up`.
 moor node ls
 ```
 
-You see the `local` node, and its runtime.
-`moor up` sizes it at one Box per 4 GiB of memory beyond the first 4 GiB. Pass
-`moor up --max-boxes N` to set another cap.
-
-If `moor doctor` says `no node configured`, the user config has no `nodes`
-section. Add one, with the provider that `crabbox doctor` reports:
-
-```yaml
-nodes:
-  local:
-    runtime: external
-```
+You see the `local` node, with `docker` as how it provides Boxes. The node
+takes as many Boxes as the host's free memory allows.
 
 ## 4. Start a Box
 
