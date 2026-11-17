@@ -18,6 +18,7 @@ use crate::seam::clock::Ts;
 use crate::workflow::{Plan, StepId};
 
 mod check;
+mod report;
 
 fn id(s: &str) -> StepId {
     StepId::parse(s).unwrap()
