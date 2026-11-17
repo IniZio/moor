@@ -5,11 +5,11 @@ controller runs, then install the binaries that the choice needs.
 
 | You have | Install | Guide |
 | --- | --- | --- |
-| One Linux host with KVM, for yourself or a small team | The release binaries, run as systemd user units | [Self-host on one machine](run.md), then [Run on one host](deploy.md) |
+| One Linux host with Docker, for yourself or a small team | The release binaries, run as systemd user units | [Self-host on one machine](run.md), then [Run on one host](deploy.md) |
 | A Kubernetes cluster | The Helm chart, which runs the release image | [Kubernetes](kubernetes.md) |
 
-Either way, Boxes run on nodes. A node is a crabbox provider on some host. On
-one host, `moor up` makes the host itself a node. On Kubernetes, the chart's
+Either way, Boxes run on nodes. A node is a machine whose agent makes Docker
+Boxes. On one host, `moor up` makes the host itself a node. On Kubernetes, the chart's
 `controller.nodes` declares shared nodes on a cloud provider, and teammates add
 their own machines as personal nodes.
 
@@ -23,7 +23,8 @@ The script downloads the release for your OS and CPU, checks its SHA-256, and
 installs into `~/.local/bin`. Releases cover Linux and macOS on x86_64 and
 aarch64.
 
-Without arguments it installs `moor`, `moor-gate`, and `moor-egress-forward`.
+Without arguments it installs `moor`, `moor-gate`, `moor-egress-forward`,
+`moor-machine-agent`, and `moor-machine-runner`.
 Name binaries to install others instead:
 
 ```sh
@@ -35,7 +36,8 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 | `moor` | The operator. It is the controller, the dev CLI, and the local client for `moor login` and `moor listen`. |
 | `moor-gate` | The operator, for teammates to reach moor over HTTPS. |
 | `moor-egress-forward` | Nobody by hand. The controller delivers it into each Box. |
-| `moor-machine-agent` | Each person who adds a machine. |
+| `moor-machine-agent` | Each person who adds a machine. `moor up` runs it for the host's own node. |
+| `moor-machine-runner` | The operator. `moor up` runs it beside the controller, to take agent links. |
 | `moor-listen` | Anyone who wants event lines with a token of their own. |
 | `moor-herdr` | Installed by the herdr plugin, not by hand. |
 
@@ -48,7 +50,7 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 ## Use the release image
 
 `ghcr.io/inizio/moor` holds the controller, the gate, the webhook
-front, the machine runner, and crabbox. The Helm chart at
+front, and the machine runner. The Helm chart at
 `oci://ghcr.io/inizio/charts/moor` runs it. Each release publishes the chart
 and the image at the same version.
 

@@ -98,7 +98,7 @@ fn main() -> ExitCode {
         }
         Parsed::BoxTerm { opts, term } => return run_box_term(&scoped(env, &opts), &term),
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
-        Parsed::Up { opts, max_boxes } => return run_up(&scoped(env, &opts), &opts, max_boxes),
+        Parsed::Up { opts } => return run_up(&scoped(env, &opts), &opts),
         Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
         Parsed::NodeAdd { opts, add } => run_node_add(env, &opts, add),
         Parsed::Events {
@@ -132,11 +132,10 @@ fn run_attach(env: &Env, socket: Option<&std::path::Path>) -> ExitCode {
 }
 
 /// Runs `moor up` with this process's stdio; prompts go to stderr.
-fn run_up(env: &Env, opts: &GlobalOpts, max_boxes: Option<std::num::NonZeroU32>) -> ExitCode {
+fn run_up(env: &Env, opts: &GlobalOpts) -> ExitCode {
     ExitCode::from(moor::up::up(
         env,
         opts,
-        max_boxes,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
         &mut std::io::stderr(),

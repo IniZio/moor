@@ -1,4 +1,4 @@
-//! The host checks: what a Box start needs from this machine beyond crabbox, which checks its own config.
+//! The host checks: what a Box start needs from this machine.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;

@@ -1,20 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
-use super::files::{converge_user, max_boxes, Node};
-use super::provider::{parse, Report};
+use super::files::{converge_user, Layout};
+use super::node::{agent_unit, runner_unit, Plan, Ports};
 use super::service::{service_unit, socket_unit, Unit};
 use crate::env::Env;
-
-fn node(asked: Option<u32>) -> Node {
-    Node {
-        runtime: "external".to_owned(),
-        max_boxes: NonZeroU32::new(asked.unwrap_or(3)).unwrap(),
-        asked: asked.is_some(),
-    }
-}
 
 fn env() -> Env {
     Env::from_pairs([("HOME", "/home/ada")])
@@ -22,55 +13,43 @@ fn env() -> Env {
 
 const SOCK: &str = "/home/ada/.local/state/moor/controller.sock";
 
-fn converge(existing: Option<&str>, n: &Node) -> Result<Option<String>, String> {
-    converge_user(&env(), "config.yaml", existing, Path::new(SOCK), n)
+fn converge(existing: Option<&str>) -> Result<Option<String>, String> {
+    converge_user(&env(), "config.yaml", existing, Path::new(SOCK))
         .map_err(|c| format!("{}; fix: {}", c.detail, c.fix))
 }
 
 #[test]
-fn a_missing_user_config_gets_the_controller_and_one_local_node() {
-    let text = converge(None, &node(None)).unwrap().unwrap();
-    assert_eq!(
-        text,
-        format!(
-            "controller:\n  socket: {SOCK}\nnodes:\n  local:\n    runtime: external\n    max_boxes: 3\n"
-        )
-    );
-    let config = moor_core::config::parse_user("x", &text).unwrap();
-    assert_eq!(config.default_node(), Some("local"));
+fn a_missing_user_config_gets_the_controller_socket() {
+    let text = converge(None).unwrap().unwrap();
+    assert_eq!(text, format!("controller:\n  socket: {SOCK}\n"));
+    moor_core::config::parse_user("x", &text).unwrap();
 }
 
 #[test]
 fn a_converged_user_config_needs_no_change() {
-    let text = converge(None, &node(None)).unwrap().unwrap();
-    assert_eq!(converge(Some(&text), &node(None)).unwrap(), None);
+    let text = converge(None).unwrap().unwrap();
+    assert_eq!(converge(Some(&text)).unwrap(), None);
 }
 
 #[test]
-fn other_settings_and_comments_are_kept_when_sections_are_added() {
+fn other_settings_and_comments_are_kept_when_the_controller_is_added() {
     let existing = "# mine\nbox:\n  sleep_after: 30m";
-    let text = converge(Some(existing), &node(None)).unwrap().unwrap();
-    assert!(
-        text.starts_with("# mine\nbox:\n  sleep_after: 30m\ncontroller:\n"),
-        "{text}"
+    let text = converge(Some(existing)).unwrap().unwrap();
+    assert_eq!(
+        text,
+        format!("# mine\nbox:\n  sleep_after: 30m\ncontroller:\n  socket: {SOCK}\n")
     );
 }
 
 #[test]
 fn a_home_relative_socket_counts_as_the_same_controller() {
     let existing = "controller:\n  socket: ~/.local/state/moor/controller.sock\n";
-    let text = converge(Some(existing), &node(None)).unwrap().unwrap();
-    assert!(text.starts_with(existing), "{text}");
-    assert!(text.contains("nodes:\n  local:"), "{text}");
+    assert_eq!(converge(Some(existing)).unwrap(), None);
 }
 
 #[test]
 fn a_config_naming_another_controller_says_what_to_set() {
-    let err = converge(
-        Some("controller:\n  socket: /elsewhere.sock\n"),
-        &node(None),
-    )
-    .unwrap_err();
+    let err = converge(Some("controller:\n  socket: /elsewhere.sock\n")).unwrap_err();
     assert!(
         err.contains(&format!("set controller.socket to {SOCK}")),
         "{err}"
@@ -78,50 +57,24 @@ fn a_config_naming_another_controller_says_what_to_set() {
 }
 
 #[test]
-fn existing_nodes_are_kept_without_a_max_boxes_flag() {
+fn the_node_an_earlier_up_wrote_is_named_for_deletion() {
     let existing = format!(
         "controller:\n  socket: {SOCK}\nnodes:\n  local:\n    runtime: external\n    max_boxes: 9\n"
     );
-    assert_eq!(converge(Some(&existing), &node(None)).unwrap(), None);
+    let err = converge(Some(&existing)).unwrap_err();
+    assert!(err.contains("delete nodes.local from config.yaml"), "{err}");
 }
 
 #[test]
-fn a_max_boxes_flag_that_differs_from_the_file_names_the_key_to_edit() {
-    let existing = format!(
-        "controller:\n  socket: {SOCK}\nnodes:\n  local:\n    runtime: external\n    max_boxes: 9\n"
-    );
-    let err = converge(Some(&existing), &node(Some(2))).unwrap_err();
-    assert!(err.contains("set nodes.local.max_boxes to 2"), "{err}");
+fn other_nodes_are_left_alone() {
+    let existing = format!("controller:\n  socket: {SOCK}\nnodes:\n  big:\n    runtime: static\n");
+    assert_eq!(converge(Some(&existing)).unwrap(), None);
 }
 
 #[test]
 fn an_invalid_user_config_says_which_file_to_fix() {
-    let err = converge(Some("nodes: [oops"), &node(None)).unwrap_err();
+    let err = converge(Some("nodes: [oops")).unwrap_err();
     assert!(err.contains("fix config.yaml"), "{err}");
-}
-
-#[test]
-fn max_boxes_counts_four_gib_per_box_after_four_for_the_host() {
-    assert_eq!(max_boxes(0).get(), 1);
-    assert_eq!(max_boxes(6 * 1024).get(), 1);
-    assert_eq!(max_boxes(16 * 1024).get(), 3);
-    assert_eq!(max_boxes(64 * 1024).get(), 15);
-}
-
-#[test]
-fn crabbox_doctor_reports_name_the_provider_and_each_failed_check() {
-    let out = "adapter noise\n{\"ok\":false,\"provider\":\"external\",\"checks\":[\
-        {\"status\":\"ok\",\"check\":\"config\"},\
-        {\"status\":\"failed\",\"check\":\"kvm\",\"details\":{\"hint\":\"join_kvm_group\"}},\
-        {\"status\":\"failed\",\"check\":\"passt\"}]}\n";
-    assert_eq!(
-        parse(out),
-        Some(Report {
-            provider: "external".to_owned(),
-            failed: vec!["kvm (join_kvm_group)".to_owned(), "passt".to_owned()],
-        })
-    );
-    assert_eq!(parse("not json"), None);
 }
 
 fn unit() -> Unit {
@@ -180,4 +133,71 @@ fn a_percent_in_a_path_is_not_a_systemd_specifier() {
     u.socket = PathBuf::from("/run/100%/controller.sock");
     assert!(service_unit(&u).contains("ExecStart=\"/opt/100%%/moor\""));
     assert!(socket_unit(&u).contains("ListenStream=/run/100%%/controller.sock"));
+}
+
+fn layout() -> Layout {
+    Layout {
+        controller_config: PathBuf::from("/home/ada/.config/moor/controller.yaml"),
+        user_config: PathBuf::from("/home/ada/.config/moor/config.yaml"),
+        state_dir: PathBuf::from("/home/ada/.local/state/moor"),
+        socket: PathBuf::from(SOCK),
+    }
+}
+
+fn plan() -> Plan {
+    Plan {
+        runner: PathBuf::from("/home/ada/.local/bin/moor-machine-runner"),
+        agent: PathBuf::from("/home/ada/.local/bin/moor-machine-agent"),
+        ports: Ports {
+            agents: 20001,
+            listen: 20002,
+            egress: 20003,
+        },
+        egress: "172.17.0.1:20003".parse().unwrap(),
+    }
+}
+
+#[test]
+fn the_runner_takes_agent_links_on_loopback_and_the_controller_on_its_runner_socket() {
+    assert_eq!(
+        runner_unit(&plan(), &layout(), Some("/usr/bin")),
+        "[Unit]
+Description=moor machine runner: takes the local machine agent's link
+Wants=moor.service
+After=moor.service
+
+[Service]
+ExecStart=\"/home/ada/.local/bin/moor-machine-runner\" \"--socket\" \"/home/ada/.local/state/moor/runner/runner.sock\" \"--state-dir\" \"/home/ada/.local/state/moor/machine-runner\" \"--agents\" \"127.0.0.1:20001\" \"--listen\" \"127.0.0.1:20002\"
+Environment=\"PATH=/usr/bin\"
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    );
+}
+
+#[test]
+fn the_agent_runs_under_its_own_home_and_state_and_keeps_the_users_path_to_docker() {
+    let env = Env::from_pairs([
+        ("HOME", "/nonexistent-home"),
+        ("PATH", "/usr/bin"),
+        ("DOCKER_HOST", "unix:///run/user/1000/docker.sock"),
+    ]);
+    let text = agent_unit(&plan(), Path::new("/state/agent-home"), &env);
+    assert!(
+        text.contains("ExecStart=\"/home/ada/.local/bin/moor-machine-agent\" \"run\"\n"),
+        "{text}"
+    );
+    for line in [
+        "Environment=\"HOME=/state/agent-home\"",
+        "Environment=\"XDG_STATE_HOME=/state/agent-home/.local/state\"",
+        "Environment=\"PATH=/usr/bin\"",
+        "Environment=\"DOCKER_HOST=unix:///run/user/1000/docker.sock\"",
+        "After=moor-runner.service",
+    ] {
+        assert!(text.contains(line), "{line} missing from {text}");
+    }
+    assert!(!text.to_lowercase().contains("crabbox"));
 }

@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 use std::fs;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -14,6 +15,10 @@ use crate::env::Env;
 pub(crate) const SERVICE: &str = "moor.service";
 /// The socket unit's name.
 pub(crate) const SOCKET: &str = "moor.socket";
+/// The machine runner's unit.
+pub(crate) const RUNNER: &str = "moor-runner.service";
+/// The local node's machine agent's unit.
+pub(crate) const AGENT: &str = "moor-agent.service";
 
 /// What the service runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,14 +34,18 @@ pub(crate) struct Unit {
 }
 
 impl Unit {
-    /// The unit for `layout`, run by this executable with this `PATH`.
-    pub(crate) fn new(env: &Env, layout: &Layout) -> Result<Self, Check> {
+    /// The unit for `layout`, run by this executable with this `PATH`, whose Proxy also listens
+    /// on `egress`, the address the Boxes of Docker machines on this host dial.
+    pub(crate) fn new(env: &Env, layout: &Layout, egress: SocketAddr) -> Result<Self, Check> {
         let exe = std::env::current_exe()
             .map_err(|e| Check::fail("service", format!("cannot find moor itself: {e}"), ""))?;
-        let mut vars = vec![(
-            "MOOR_CONFIG".to_owned(),
-            layout.user_config.display().to_string(),
-        )];
+        let mut vars = vec![
+            (
+                "MOOR_CONFIG".to_owned(),
+                layout.user_config.display().to_string(),
+            ),
+            ("MOOR_EGRESS_LISTEN".to_owned(), egress.to_string()),
+        ];
         if let Some(path) = env.get("PATH") {
             vars.push(("PATH".to_owned(), path.to_owned()));
         }
@@ -113,6 +122,40 @@ WantedBy=default.target
     )
 }
 
+/// A unit that keeps `exe args` running, started after `after` and restarted when it ends.
+pub(crate) fn process_unit(
+    description: &str,
+    after: &str,
+    exe: &Path,
+    args: &[String],
+    env: &[(String, String)],
+) -> String {
+    let exec = std::iter::once(exe.display().to_string())
+        .chain(args.iter().cloned())
+        .map(|w| quoted(&w))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut vars = String::new();
+    for (k, v) in env {
+        let _ = writeln!(vars, "Environment={}", quoted(&format!("{k}={v}")));
+    }
+    format!(
+        "[Unit]
+Description={description}
+Wants={after}
+After={after}
+
+[Service]
+ExecStart={exec}
+{vars}Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    )
+}
+
 /// Where user units go: `$XDG_CONFIG_HOME/systemd/user`, else `~/.config/systemd/user`.
 pub(crate) fn unit_dir(env: &Env) -> Option<PathBuf> {
     env.xdg("XDG_CONFIG_HOME", ".config", "systemd/user")
@@ -143,13 +186,44 @@ pub(crate) fn install(dir: &Path, unit: &Unit) -> Result<Check, Check> {
     ))
 }
 
-/// Stops and disables both units and removes their files; whether any was there.
+/// Writes the unit `name`, enables it and starts it: anew when its text changed or `restart` is
+/// set. Whether it changed.
+pub(crate) fn install_one(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    restart: bool,
+) -> Result<bool, Check> {
+    let path = dir.join(name);
+    let changed = fs::read_to_string(&path).ok().as_deref() != Some(text);
+    if changed {
+        write(&path, text)?;
+        systemctl(&["daemon-reload"])?;
+    }
+    systemctl(&["enable", name])?;
+    systemctl(&[
+        if changed || restart {
+            "restart"
+        } else {
+            "start"
+        },
+        name,
+    ])?;
+    Ok(changed)
+}
+
+/// Stops and disables every unit `up` wrote, the agent first, and removes their files; whether
+/// any was there.
 pub(crate) fn remove(dir: &Path) -> Result<bool, Check> {
-    let files = [dir.join(SERVICE), dir.join(SOCKET)];
-    if !files.iter().any(|f| f.exists()) {
+    let names: Vec<&str> = [AGENT, RUNNER, SERVICE, SOCKET]
+        .into_iter()
+        .filter(|n| dir.join(n).exists())
+        .collect();
+    if names.is_empty() {
         return Ok(false);
     }
-    systemctl(&["disable", "--now", SERVICE, SOCKET])?;
+    systemctl(&[&["disable", "--now"], names.as_slice()].concat())?;
+    let files: Vec<PathBuf> = names.iter().map(|n| dir.join(n)).collect();
     for f in &files {
         match fs::remove_file(f) {
             Ok(()) => {}

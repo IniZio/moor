@@ -101,7 +101,7 @@ fn report(node: &NodeView) -> String {
 }
 
 /// At least one node, with fresh memory reports and room for a Box.
-pub(super) fn check(i: &Inputs<'_>, read: &Read) -> Check {
+pub(super) fn check(read: &Read) -> Check {
     if let Some(p) = &read.problem {
         return Check::failed(
             "nodes",
@@ -112,12 +112,10 @@ pub(super) fn check(i: &Inputs<'_>, read: &Read) -> Check {
         );
     }
     if read.nodes.is_empty() {
-        let at = crate::config_load::user_path(i.env)
-            .map_or_else(|| "the user config".to_owned(), |p| p.display().to_string());
         return Check::fail(
             "nodes",
             "no node configured",
-            format!("add one under nodes in {at} (docs/run.md step 3)"),
+            "run `moor up` on the controller's host, or `moor node add` for another machine (docs/run.md)",
         );
     }
     let blocked: Vec<String> = read.nodes.iter().filter_map(blocker).collect();
