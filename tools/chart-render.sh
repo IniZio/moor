@@ -21,7 +21,7 @@ mounted=$(awk '
   kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
   kind == "Deployment" && /- \{ key: / { key = $4; sub(/,$/, "", key); print name, key }
 ' <<<"$full")
-if grep -E ' (ledger-ca\.key|slack-client\.(crt|key)|runner-client\.(crt|key))$' <<<"$mounted" | grep -v '^moor-runner '; then
+if grep -E ' (ledger-ca\.key|runner-client\.(crt|key))$' <<<"$mounted" | grep -v '^moor-runner '; then
   fail "mounts the CA key, or the runner certificate outside the runner pods"
 fi
 egress=$(awk '$1 == "moor-egress" { print $2 }' <<<"$mounted" | sort | tr '\n' ' ')
@@ -45,38 +45,6 @@ runner=$(awk '
 grep -q 'controller.alive' <<<"$full" || fail "a database-backed controller has no liveness probe"
 if helm template moor deploy/helm/moor -f deploy/helm/required-values.yaml | grep -q 'controller.alive'; then
   fail "a file-backed controller has a liveness probe, but nothing feeds it"
-fi
-
-slack=$(helm template moor "${chart[@]}" --set slack.separate=true)
-if grep -E '^(apiVersion: policy/|kind: (NetworkPolicy|PodDisruptionBudget))' <<<"$slack"; then
-  fail "renders a policy kind with slack.separate"
-fi
-slack_mounted=$(awk '
-  /^kind:/ { kind = $2; name = "" }
-  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
-  kind == "Deployment" && /- \{ key: / { key = $4; sub(/,$/, "", key); print name, key }
-' <<<"$slack")
-own=$(awk '$1 == "moor-slack" { print $2 }' <<<"$slack_mounted" | sort | tr '\n' ' ')
-[ "$own" = "ledger-ca.pem slack-app-token slack-bot-token slack-client.crt slack-client.key slack-forward.json slack-front-key slack.yaml " ] ||
-  fail "Slack pods mount [$own], want the CA, their client certificate, front key, tokens and config only"
-if awk '$1 == "moor-slack" { print $2 }' <<<"$slack_mounted" | grep -E '^(ledger-ca\.key|ledger-tls|egress|runner|vault|agent37|database)'; then
-  fail "Slack pods mount a key of the controller, the Proxy or the runner"
-fi
-if grep -E ' slack-client\.(crt|key)$' <<<"$slack_mounted" | grep -v '^moor-slack '; then
-  fail "mounts the Slack client certificate outside the Slack pods"
-fi
-controller_pod=$(awk '
-  /^kind:/ { kind = $2; name = "" }
-  kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
-  kind == "Deployment" && name == "moor" { print }
-' <<<"$slack")
-if grep -qE '^ +- name: slack$|moor-slack' <<<"$controller_pod"; then
-  fail "the controller pod still runs Slack with slack.separate"
-fi
-
-# With the flag off, Slack stays a sidecar and no Slack Deployment renders.
-if grep -qE '^  name: moor-slack$' <<<"$full"; then
-  fail "renders the Slack Deployment with slack.separate off"
 fi
 
 apart=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress.ledgerTls=null)
@@ -137,7 +105,7 @@ off_pdb=$(helm template moor "${chart[@]}" --set gate.separate=true --set egress
 grep -q PodDisruptionBudget <<<"$off_pdb" && fail "renders a PodDisruptionBudget with the budget off"
 
 bucket=(--set blobs.s3.endpoint=https://s3.example.com --set blobs.s3.bucket=moor --set blobs.s3.accessKey=ak --set blobs.s3.secretKey=sk)
-stateless=$(helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true)
+stateless=$(helm template moor "${chart[@]}" "${bucket[@]}")
 controller_pod=$(awk '
   /^kind:/ { kind = $2; name = "" }
   kind == "Deployment" && /^  name:/ && name == "" { name = $2 }
@@ -151,14 +119,11 @@ grep -q 'rollingUpdate: { maxSurge: 1, maxUnavailable: 1 }' <<<"$controller_pod"
   fail "a controller without the volume does not roll with a surge"
 grep -q 'key: blobs-secret-key' <<<"$controller_pod" || fail "the controller gets no bucket credentials"
 grep -q 'kind: s3' <<<"$stateless" || fail "the controller config names no bucket"
-if helm template moor "${chart[@]}" "${bucket[@]}" 2>&1 | grep -qv 'needs slack.separate'; then
-  fail "a controller without the volume renders with the Slack sidecar"
-fi
-if helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true --set egress.enabled=false 2>&1 | grep -qv 'needs egress.enabled'; then
+if helm template moor "${chart[@]}" "${bucket[@]}" --set egress.enabled=false 2>&1 | grep -qv 'needs egress.enabled'; then
   fail "a controller without the volume renders with its own egress Proxy"
 fi
 if grep -qE 'blob-copy|kind: Job' <<<"$stateless"; then fail "renders the blob copy without blobs.copyFromVolume"; fi
-copy=$(helm template moor "${chart[@]}" "${bucket[@]}" --set slack.separate=true --set blobs.copyFromVolume=true)
+copy=$(helm template moor "${chart[@]}" "${bucket[@]}" --set blobs.copyFromVolume=true)
 copy_job=$(awk '/^kind:/ { kind = $2 } kind == "Job" { print }' <<<"$copy")
 grep -q 'claimName: moor-state, readOnly: true' <<<"$copy_job" || fail "the blob copy does not read the volume read-only"
 grep -q -- '--ignore-existing' <<<"$copy_job" || fail "the blob copy may replace a blob the bucket already holds"

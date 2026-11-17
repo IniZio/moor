@@ -32,13 +32,6 @@ pub struct ControllerConfig {
     /// Seconds a Box may sit in `setup_failed` before the controller closes it; 0 turns the
     /// close off. None means 86400.
     pub close_setup_failed_after_secs: Option<u64>,
-    /// Removed key, kept only so a stale config gets a pointed error.
-    #[serde(default, deserialize_with = "present_key")]
-    #[allow(
-        clippy::option_option,
-        reason = "outer Some means the key was present, even when null"
-    )]
-    slack: Option<Option<serde_json::Value>>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
     pub fronts: BTreeMap<String, FrontEntry>,
     /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy, machine runner
@@ -204,13 +197,6 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     check_intervals(&cfg, file)?;
     if let Some((key, why)) = cfg.blobs.problem() {
         return Err(ConfigError::new(key, why).in_file(file));
-    }
-    if cfg.slack.is_some() {
-        return Err(ConfigError::new(
-            "slack",
-            "was removed from the controller config; delete it, the separate moor-slack daemon is the Slack front",
-        )
-        .in_file(file));
     }
     if let Some(bad) = cfg.fronts.keys().find(|ns| !valid_front_namespace(ns)) {
         return Err(ConfigError::new(

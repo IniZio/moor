@@ -97,7 +97,7 @@ const NO_USER_NAMESPACES: [&str; 6] = [
 
 /// A served controller, run from inside its state dir and logging its stdout to a file there,
 /// whose operator socket sits outside its state dir, with a `probe` front that runs a Python
-/// script and may write `front`, and a `slack` front without a command. Dropping it drains the
+/// script and may write `front`, and an `other` front without a command. Dropping it drains the
 /// controller and waits for it to exit.
 struct Controller {
     root: Dir,
@@ -133,7 +133,7 @@ impl Controller {
         fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n    state_dir: {}\n    read_only: [{}]\n  slack: {{}}\n",
+                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n    state_dir: {}\n    read_only: [{}]\n  other: {{}}\n",
                 root.join("c.sock").display(),
                 root.join("state").display(),
                 root.join("front").display(),

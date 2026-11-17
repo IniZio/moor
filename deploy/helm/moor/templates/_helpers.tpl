@@ -66,20 +66,6 @@ app.kubernetes.io/name: moor-runner
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end -}}
 
-{{/* Not moor.labels: the controller pod and its Services select on those. */}}
-{{- define "moor.slackLabels" -}}
-app.kubernetes.io/name: moor-slack
-app.kubernetes.io/instance: {{ .Release.Name | quote }}
-{{- end -}}
-
-{{/* Non-empty when Slack is its own Deployment, which dials the ledger and the shared egress Proxy. */}}
-{{- define "moor.slackSeparate" -}}
-{{- if and .Values.slack.enabled .Values.slack.separate -}}
-{{- if not .Values.egress.enabled }}{{ fail "slack.separate needs egress.enabled: Slack dials the controller through the ledger listener and spends credentials through the shared egress Proxy" }}{{ end -}}
-true
-{{- end -}}
-{{- end -}}
-
 {{/* Not moor.labels: the gate Service moves to these when the gate is its own Deployment. */}}
 {{- define "moor.gateLabels" -}}
 app.kubernetes.io/name: moor-gate
@@ -98,7 +84,6 @@ true
 {{/* Non-empty when the controller keeps no volume: Postgres holds its store and lock, a bucket its blobs. */}}
 {{- define "moor.stateless" -}}
 {{- if and .Values.database.url .Values.blobs.s3 -}}
-{{- if and .Values.slack.enabled (not .Values.slack.separate) }}{{ fail "a controller without the volume needs slack.separate: the Slack sidecar keeps slack.db on it" }}{{ end -}}
 {{- if not .Values.egress.enabled }}{{ fail "a controller without the volume needs egress.enabled: its own egress Proxy keeps the key Box tokens are signed with on it" }}{{ end -}}
 true
 {{- end -}}

@@ -20,11 +20,6 @@ controller:
   resources: {limits: {memory: 2Gi}}
   extraEnv:
     - {name: EXAMPLE, value: "1"}
-slack:
-  enabled: true
-  appToken: xapp-example
-  botToken: xoxb-example
-  resources: {limits: {memory: 256Mi}}
 notify:
   enabled: true
   resources: {limits: {memory: 128Mi}}
@@ -57,6 +52,4 @@ egress:
     egressClientKey: example-egress-key
     runnerClientCert: example-runner-cert
     runnerClientKey: example-runner-key
-    slackClientCert: example-slack-cert
-    slackClientKey: example-slack-key
   resources: {limits: {memory: 256Mi}}

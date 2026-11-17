@@ -86,18 +86,10 @@ spec:
               {{- if include "moor.gateSeparate" . }}
               install -m 0600 /src/egress/gate-front-key /var/lib/moor/config/gate-front-key
               {{- end }}
-              {{- if include "moor.slackSeparate" . }}
-              install -m 0600 /src/egress/slack-front.key /var/lib/moor/config/
-              {{- end }}
-              {{- if and .Values.slack.enabled (not (include "moor.slackSeparate" .)) }}
-              cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
-              install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
-              install -m 0600 /src/secrets/slack-bot-token /var/lib/moor/slack/bot-token
-              {{- end }}
               {{- if .Values.notify.enabled }}
               mkdir -p /pv/state/fronts/notify
               {{- end }}
-              mkdir -p /pv/state/fronts/authgear /pv/state/fronts/slack /pv/state/front-state/slack /pv/state/runner /pv/state/machine-runner
+              mkdir -p /pv/state/fronts/authgear /pv/state/runner /pv/state/machine-runner
               chmod -R go-rwx /pv/state
           volumeMounts:
             - { name: config-src, mountPath: /src/config, readOnly: true }
@@ -106,7 +98,6 @@ spec:
             - { name: egress-src, mountPath: /src/egress, readOnly: true }
             {{- end }}
             - { name: moor-config, mountPath: /var/lib/moor/config }
-            - { name: slack-config, mountPath: /var/lib/moor/slack }
             - { name: state, mountPath: /pv }
       containers:
         - name: controller
@@ -191,35 +182,9 @@ spec:
           volumeMounts:
             - { name: moor-config, mountPath: /var/lib/moor/config }
             - { name: state, mountPath: /var/lib/moor/pv/state, subPath: state }
-        {{- if and .Values.slack.enabled (not (include "moor.slackSeparate" .)) }}
-        # The controller cannot sandbox a front on every node, so Slack runs beside it and sees
-        # only its own front dir, its config and its state.
-        - name: slack
-          image: {{ include "moor.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
-          command:
-            - moor
-            - front-run
-            - --dir
-            - /var/lib/moor/front
-            - --
-            - moor-slack
-            - --config=/var/lib/moor/slack/config.yaml
-            - --state-dir=/var/lib/moor/slack-state
-          env:
-            - { name: HOME, value: /var/lib/moor/slack-state }
-          {{- with .Values.slack.resources }}
-          resources: {{- toYaml . | nindent 12 }}
-          {{- end }}
-          volumeMounts:
-            - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/slack, readOnly: true }
-            - { name: state, mountPath: /var/lib/moor/slack-state, subPath: state/front-state/slack }
-            - { name: slack-config, mountPath: /var/lib/moor/slack, readOnly: true }
-            - { name: slack-tmp, mountPath: /tmp }
-        {{- end }}
         {{- if .Values.notify.enabled }}
-        # Like Slack, notify runs beside the controller and sees only its own front dir.
+        # The controller cannot sandbox a front on every node, so notify runs beside it and sees
+        # only its own front dir.
         - name: notify
           image: {{ include "moor.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -292,19 +257,12 @@ spec:
               - { key: ledger-tls.crt, path: ledger-tls.crt }
               - { key: ledger-tls.key, path: ledger-tls.key }
               - { key: ledger-ca.pem, path: ledger-ca.pem }
-              {{- if include "moor.slackSeparate" . }}
-              - { key: slack-front-key, path: slack-front.key }
-              {{- end }}
               {{- if include "moor.gateSeparate" . }}
               - { key: gate-front-key, path: gate-front-key }
               {{- end }}
         {{- end }}
         - name: moor-config
           emptyDir: { medium: Memory, sizeLimit: 1Mi }
-        - name: slack-config
-          emptyDir: { medium: Memory, sizeLimit: 1Mi }
-        - name: slack-tmp
-          emptyDir: {}
         - name: state
           {{- if $stateless }}
           emptyDir: {}

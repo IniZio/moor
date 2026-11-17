@@ -72,7 +72,7 @@ COPY --from=planner /recipe.json recipe.json
 # The dependencies, built with the same packages, features and profile as the build below, so
 # that build finds them compiled.
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
-    pkgs="-p moor -p moor-slack -p moor-notify -p moor-machine-runner"; \
+    pkgs="-p moor -p moor-notify -p moor-machine-runner"; \
     if grep -q '"moor-gate"' recipe.json; then pkgs="$pkgs -p moor-gate"; fi; \
     cargo chef cook --release --locked --recipe-path recipe.json $pkgs
 
@@ -84,7 +84,7 @@ ENV MOOR_COMMIT=${MOOR_COMMIT}
 ARG MOOR_VERSION=
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     if [ -n "$MOOR_VERSION" ]; then export MOOR_VERSION; else unset MOOR_VERSION; fi; \
-    bins="moor moor-slack moor-notify moor-machine-runner"; \
+    bins="moor moor-notify moor-machine-runner"; \
     if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
     cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) \
  && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
