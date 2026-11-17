@@ -132,6 +132,7 @@ moor_submodules ''
 for p in .moor/ .crabbox/ /.crabbox-sealed; do
   grep -qxF -- "$p" .git/info/exclude 2>/dev/null || printf '%s\n' "$p" >> .git/info/exclude
 done
+:
 "#
     )
 }
