@@ -143,9 +143,9 @@ impl Driver for Machines {
         let (machine, op, handle) = Self::planned(req)?;
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let answer = std::thread::scope(|s| {
-            // A second open of the slug waits for one still going on and finds the same Box.
+            // A lost link is the caller's to wait out, as the open outlives it.
             let call = s.spawn(move || {
-                self.call_again(machine, &op, &mut |line| {
+                self.call(machine, &op, &mut |line| {
                     let _ = tx.send(line.to_owned());
                 })
             });

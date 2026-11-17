@@ -249,7 +249,6 @@ fn calls_safe_to_repeat_wait_for_the_relink_and_a_plain_exec_does_not() {
         down: AtomicU32::new(0),
     });
     let m = Machines::new(reach.clone(), PathBuf::from("/usr/bin/moor"));
-    drop_link(&reach, 2);
     let got = opened(&m, 47);
     let deadline = Deadline(Duration::from_secs(10));
     drop_link(&reach, 2);
