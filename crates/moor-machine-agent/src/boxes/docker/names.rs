@@ -24,6 +24,8 @@ pub(super) struct Names {
     pub(super) agents: String,
     /// `~/.claude/skills`, in both places.
     pub(super) skills: String,
+    /// `/tmp`, in both places, so a script Claude writes in one runs in the other.
+    pub(super) tmp: String,
 }
 
 impl Names {
@@ -41,11 +43,12 @@ impl Names {
             docker: name("docker"),
             agents: name("agents"),
             skills: name("skills"),
+            tmp: name("tmp"),
         }
     }
 
     /// Every volume the Box owns.
-    pub(super) fn volumes(&self) -> [&str; 7] {
+    pub(super) fn volumes(&self) -> [&str; 8] {
         [
             &self.tree,
             &self.run,
@@ -54,6 +57,7 @@ impl Names {
             &self.docker,
             &self.agents,
             &self.skills,
+            &self.tmp,
         ]
     }
 }

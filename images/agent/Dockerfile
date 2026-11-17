@@ -40,7 +40,8 @@ RUN apt-get update \
  && (userdel -r node 2>/dev/null || true) \
  && groupadd --gid 1000 agent \
  && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent \
- && install -d -o agent -g agent /home/agent/moor /run/moor /home/agent/.agents /home/agent/.claude /home/agent/.claude/skills
+ && install -d -o agent -g agent /home/agent/moor /run/moor /home/agent/.agents /home/agent/.claude /home/agent/.claude/skills \
+ && chmod 1777 /tmp
 
 RUN case "$(uname -m)" in \
       x86_64) arch=x86_64; sha=${HERDR_CORE_SHA256_X86_64} ;; \

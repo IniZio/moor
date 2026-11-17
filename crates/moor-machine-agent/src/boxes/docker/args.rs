@@ -29,7 +29,7 @@ fn owned<const N: usize>(words: [&str; N]) -> Vec<String> {
     words.iter().map(|w| (*w).to_owned()).collect()
 }
 
-/// The two volumes both places mount, the only part of the agent's home they share. The work
+/// The volumes both places mount, `/tmp` and the only parts of the agent's home they share. The work
 /// place's `npx skills add -g` writes them and Claude, in the agent place, loads them, while the
 /// rest of each home stays apart so a wrecked work place never takes Claude's session with it.
 fn shared_skills(n: &Names) -> Vec<String> {
@@ -38,6 +38,7 @@ fn shared_skills(n: &Names) -> Vec<String> {
         "-v",
         &format!("{}:/home/agent/.claude/skills", n.skills),
     ]));
+    a.extend(owned(["-v", &format!("{}:/tmp", n.tmp)]));
     a
 }
 

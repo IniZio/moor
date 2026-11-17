@@ -38,7 +38,7 @@ fn every_object_is_named_from_the_slug() {
     all.extend([n.agent.as_str(), n.work.as_str()]);
     all.sort_unstable();
     all.dedup();
-    assert_eq!(all.len(), 9, "{all:?}");
+    assert_eq!(all.len(), 10, "{all:?}");
 }
 
 #[test]
@@ -133,6 +133,7 @@ fn both_places_mount_the_shared_skills_volumes_and_nothing_else_of_the_home() {
     for argv in [&a, &w] {
         assert!(argv.contains("-v moor-3b3b3b3b-9001-agents:/home/agent/.agents "));
         assert!(argv.contains("-v moor-3b3b3b3b-9001-skills:/home/agent/.claude/skills "));
+        assert!(argv.contains("-v moor-3b3b3b3b-9001-tmp:/tmp "));
     }
     assert!(a.contains("-v moor-3b3b3b3b-9001-agent-home:/home/agent "));
     assert!(w.contains("-v moor-3b3b3b3b-9001-work-home:/home/agent "));
@@ -144,4 +145,5 @@ fn close_removes_the_shared_skills_volumes() {
     let n = Names::of(&slug());
     assert!(n.volumes().contains(&n.agents.as_str()));
     assert!(n.volumes().contains(&n.skills.as_str()));
+    assert!(n.volumes().contains(&n.tmp.as_str()));
 }

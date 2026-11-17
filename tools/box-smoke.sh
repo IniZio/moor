@@ -12,7 +12,7 @@ p=boxsmoke-$$
 net=$p-net
 agent=$p-agent
 work=$p-work
-vols=("$p-tree" "$p-run" "$p-agent-home" "$p-work-home" "$p-docker")
+vols=("$p-tree" "$p-run" "$p-agent-home" "$p-work-home" "$p-docker" "$p-agents" "$p-skills" "$p-tmp")
 built=()
 builder=
 fails=0
@@ -75,12 +75,14 @@ probe_mtu() {
 start_agent() {
   docker run -d --name "$agent" --hostname "$p" --network "$net" --restart no \
     --memory 1g -v "$p-tree:/home/agent/moor" -v "$p-run:/run/moor" -v "$p-agent-home:/home/agent" \
+    -v "$p-agents:/home/agent/.agents" -v "$p-skills:/home/agent/.claude/skills" -v "$p-tmp:/tmp" \
     "$agent_image" >/dev/null
 }
 start_work() {
   docker run -d --name "$work" --network "container:$agent" --privileged --restart no \
     --memory 768m --memory-swap 768m \
     -v "$p-tree:/home/agent/moor" -v "$p-run:/run/moor" -v "$p-work-home:/home/agent" \
+    -v "$p-agents:/home/agent/.agents" -v "$p-skills:/home/agent/.claude/skills" -v "$p-tmp:/tmp" \
     -v "$p-docker:/var/lib/docker" "$work_image" >/dev/null
 }
 work_state() { docker inspect -f '{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' "$work"; }
