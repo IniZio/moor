@@ -22,6 +22,8 @@ use names::Names;
 
 mod args;
 mod cli;
+#[cfg(test)]
+mod live;
 mod names;
 mod net;
 #[cfg(test)]
