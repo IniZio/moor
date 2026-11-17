@@ -18,7 +18,6 @@ mod failpoint;
 mod front_dir;
 mod keys;
 mod ledger_dir;
-pub mod link_dial;
 pub mod listen_cmd;
 pub mod mcp_relay;
 mod moor;

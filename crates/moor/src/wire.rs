@@ -1,31 +1,27 @@
 //! Composition root: the only module that names concrete adapters.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use moor_migrate::Outcome;
 
-use moor_core::config::{DriverConfig, UserConfig};
+use moor_core::config::UserConfig;
 use moor_core::seam::checkout::Checkout;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
-use moor_core::{ErrorKind, Warning};
+use moor_core::ErrorKind;
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
-use crate::adapters::crabbox::{Crabbox, HostLists};
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
 use crate::adapters::machine::Machines;
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
-use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
 use crate::cx::in_flight::InFlight;
 use crate::cx::owners::Owners;
@@ -37,33 +33,11 @@ use crate::store::controller_lock::{Claim, Claimant, Lost};
 use crate::store::{Database, Store};
 use crate::vault::Vault;
 
-/// Per-provider lookup deadlines for the providers that configure one.
-fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String, Duration> {
-    drivers
-        .iter()
-        .filter_map(|(provider, d)| {
-            Some((
-                provider.clone(),
-                Duration::from_secs(u64::from(d.lookup_timeout_secs?.get())),
-            ))
-        })
-        .collect()
-}
-
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
-    build_with_sockets(env, socket_dir())
-}
-
-/// [`build`], with each Box's ssh control socket in `sockets`.
-fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
-    let (parts, warning) = parts(env, sockets)?;
-    let mut cx = Cx::new(parts);
+    let mut cx = Cx::new(parts(env)?);
     if let Some(key) = env.vault_key() {
         cx = cx.with_vault_key(key.to_path_buf());
-    }
-    if let Some(w) = warning {
-        cx.warn(w);
     }
     Ok(cx)
 }
@@ -162,16 +136,8 @@ pub(crate) fn settle_keys(env: &Env, vault: &Vault) -> Result<(), String> {
     crate::keys::settle(store, vault, &state)
 }
 
-/// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
-/// request and tick, so the answer is kept for the whole process: crabbox is asked once.
-static NO_PROBE: LazyLock<Arc<OnceLock<bool>>> = LazyLock::new(Arc::default);
-
-/// The pool hosts' lists for the whole process, as the controller wires a driver per tick.
-static HOST_LISTS: LazyLock<Arc<HostLists>> = LazyLock::new(Arc::default);
-
-/// Real adapters from the environment, not yet assembled into a context, and the warning
-/// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
-fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
+/// Real adapters from the environment, not yet assembled into a context.
+fn parts(env: &Env) -> Result<CxParts, CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
@@ -186,20 +152,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             env.get(crate::env::MACHINE_SERVICE_KEY),
         )
     });
-    let crabbox = Crabbox::new(
-        Arc::clone(&proc),
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&rng),
-    )
-    .with_lookup_deadlines(lookup_deadlines(&config.drivers))
-    .with_state_dir(state_dir.clone(), sockets)
-    .with_pool_hosts(links.clone().map(|l| l as _))
-    .with_pool_ports(links.clone().map(|l| l as _))
-    .sharing_no_probe(Arc::clone(&NO_PROBE))
-    .sharing_host_lists(Arc::clone(&HOST_LISTS));
-    let link_warning = crabbox.link_warning();
     let machines = Machines::new(links::reach(links.clone()), links::moor_binary());
-    let driver: Arc<dyn Driver> = Arc::new(router::Routed { crabbox, machines });
+    let driver: Arc<dyn Driver> = Arc::new(machines);
     let engine = BoxAgent::new(Arc::clone(&driver), Arc::new(Claude));
     let proxy_host = proxy_host(env, &driver, &(Arc::clone(&clock) as Arc<dyn Clock>), &rng);
     let parts = CxParts {
@@ -216,7 +170,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         env: env.clone(),
         prompt_window: prompt_window(env),
     };
-    Ok((parts, link_warning))
+    Ok(parts)
 }
 
 /// The environment variable that sets the first-run prompt watch window, in milliseconds.
@@ -250,7 +204,6 @@ mod egress;
 mod keepers;
 mod ledger;
 mod links;
-mod router;
 mod store_copy;
 pub use store_copy::copy_store;
 

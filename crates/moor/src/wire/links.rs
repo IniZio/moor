@@ -1,16 +1,12 @@
-//! The runners that hold machines' links as the crabbox adapter's pool hosts and the ops'
-//! machine links.
+//! The runners that hold machines' links, as the ops' machine links and the machine driver's reach.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_client::link::reach::Runner;
-use moor_client::link::reach::StdConn;
 use moor_client::link::status::Status;
 use moor_core::seam::clock::Clock;
 
-use crate::adapters::crabbox::{PoolHosts, PoolPorts};
 use crate::adapters::machine::Reach;
 use crate::cx::MachineLinks;
 use crate::proxy::links::Runners;
@@ -25,35 +21,6 @@ pub(super) fn under(
     key: Option<&str>,
 ) -> Arc<Runners> {
     Arc::new(Runners::new(state_dir, store, clock, key))
-}
-
-impl PoolHosts for Runners {
-    fn lease(
-        &self,
-        machine_id: i64,
-        verb: Verb,
-        slug: Option<&str>,
-        key: Option<&str>,
-        boot: &Boot,
-    ) -> Result<Answer, String> {
-        Self::lease(self, machine_id, verb, slug, key, boot)
-    }
-
-    fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {
-        Self::dial_command(self, machine_id, slug)
-    }
-}
-
-impl PoolPorts for Runners {
-    fn port_listens(&self, machine_id: i64, slug: &str, port: u16) -> Result<bool, String> {
-        let runner = self.runner(machine_id)?;
-        crate::proxy::links::listens(&runner, machine_id, slug, port)
-    }
-
-    fn port_conn(&self, machine_id: i64, slug: &str, port: u16) -> Result<StdConn, String> {
-        let runner = self.runner(machine_id)?;
-        crate::proxy::links::port(&runner, machine_id, slug, port)
-    }
 }
 
 impl MachineLinks for Runners {

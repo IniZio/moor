@@ -113,9 +113,7 @@ fn link(store: &Store, clock: &FakeClock, addr: &str, machine_id: i64) {
 }
 
 fn runners(dir: &Path, store: Option<Store>, clock: Arc<FakeClock>) -> Runners {
-    let mut runners = Runners::new(dir, store, clock, Some(KEY));
-    runners.moor = PathBuf::from("/bin/moor");
-    runners
+    Runners::new(dir, store, clock, Some(KEY))
 }
 
 #[test]
@@ -141,18 +139,11 @@ fn a_machine_is_reached_through_the_runner_its_link_row_names_with_the_key() {
     let other = runner_dir::of(dir.path()).join("runner.sock");
     link(&store, &clock, other.to_str().unwrap(), machine_id + 1);
     let (addr, served) = remote_once(Brokered::Agent {
-        reply: Reply::Leased(Answer::Done),
+        reply: Reply::Status(Box::new(sample())),
     });
     link(&store, &clock, &addr, machine_id);
     let runners = runners(dir.path(), Some(store.clone()), Arc::clone(&clock));
-    let answer = runners.lease(
-        machine_id,
-        Verb::Warmup,
-        Some("moor-7"),
-        None,
-        &Boot::default(),
-    );
-    assert_eq!(answer, Ok(Answer::Done));
+    assert_eq!(runners.status(machine_id), Ok(sample()));
     let (hello, ask) = served.join().unwrap();
     assert_eq!(
         hello,
@@ -162,20 +153,6 @@ fn a_machine_is_reached_through_the_runner_its_link_row_names_with_the_key() {
         })
     );
     assert_eq!(ask.machine_id, machine_id);
-
-    let (addr, served) = remote_once(Brokered::Agent {
-        reply: Reply::Status(Box::new(sample())),
-    });
-    clock.sleep(Duration::from_secs(1));
-    link(&store, &clock, &addr, machine_id);
-    assert_eq!(runners.status(machine_id), Ok(sample()));
-    assert_eq!(served.join().unwrap().1.op, PoolOp::Status);
-    assert_eq!(
-        runners.dial_command(machine_id, "moor-7"),
-        Ok(format!(
-            "'/bin/moor' link-dial --runner '{addr}' {machine_id} moor-7"
-        ))
-    );
 }
 
 #[test]
@@ -187,24 +164,6 @@ fn a_link_row_not_heard_from_in_a_minute_is_not_linked() {
     let runners = runners(dir.path(), Some(store), clock);
     let not_linked = format!("machine {machine_id} is not linked");
     assert_eq!(runners.status(machine_id).unwrap_err(), not_linked);
-    let lease = runners.lease(machine_id, Verb::List, None, None, &Boot::default());
-    assert_eq!(lease.unwrap_err(), not_linked);
-    let command = runners.dial_command(machine_id, "moor-7");
-    assert_eq!(command.unwrap_err(), not_linked);
-}
-
-#[test]
-fn the_dial_command_quotes_the_address_for_the_shell_and_ssh_and_names_no_state_dir() {
-    let dir = Path::new("/s/it's 100%");
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let command = runners(dir, None, clock)
-        .dial_command(42, "moor-7")
-        .unwrap();
-    assert_eq!(
-        command,
-        "'/bin/moor' link-dial --runner '/s/it'\\''s 100%%/runner/runner.sock' 42 moor-7"
-    );
-    assert!(!command.contains("MOOR_STATE_DIR"), "{command}");
 }
 
 #[test]
@@ -212,75 +171,5 @@ fn a_missing_broker_is_an_error_not_a_panic() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let runners = runners(dir.path(), None, clock);
-    assert!(runners
-        .lease(1, Verb::List, None, None, &Boot::default())
-        .is_err());
     assert!(runners.status(1).is_err());
-}
-
-#[test]
-fn link_dial_dials_the_runner_it_names_with_the_key_and_the_deadline_ssh_handed_it() {
-    let (addr, served) = remote_once(Brokered::Agent {
-        reply: Reply::Refused {
-            reason: "no VM".into(),
-        },
-    });
-    let env =
-        crate::env::Env::from_pairs([("MOOR_MACHINE_SERVICE_KEY", KEY), ("MOOR_DIAL_WITHIN", "7")]);
-    let mut stderr = Vec::new();
-    let code = crate::link_dial::link_dial(
-        &env,
-        (&addr, 3, "moor-7"),
-        std::io::empty(),
-        Vec::new(),
-        &mut stderr,
-    );
-    assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
-    assert!(String::from_utf8_lossy(&stderr).contains("no VM"));
-    let (hello, ask) = served.join().unwrap();
-    assert!(matches!(hello, Hello::Links(Keyed { key, .. }) if key == KEY));
-    assert_eq!(
-        ask.op,
-        PoolOp::Dial {
-            slug: "moor-7".into(),
-            timeout_secs: Some(7),
-        }
-    );
-}
-
-#[test]
-fn link_dial_to_a_runner_across_the_network_needs_the_key() {
-    let env = crate::env::Env::from_pairs([("MOOR_DIAL_WITHIN", "7")]);
-    let mut stderr = Vec::new();
-    let code = crate::link_dial::link_dial(
-        &env,
-        ("127.0.0.1:1", 3, "moor-7"),
-        std::io::empty(),
-        Vec::new(),
-        &mut stderr,
-    );
-    assert_eq!(code, 1);
-    let err = String::from_utf8_lossy(&stderr);
-    assert!(err.contains("MOOR_MACHINE_SERVICE_KEY"), "{err}");
-}
-
-#[test]
-fn a_list_the_runner_never_answers_fails_at_its_deadline() {
-    let dir = tempfile::tempdir().unwrap();
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let sock = runner_dir::of(dir.path());
-    std::fs::create_dir_all(&sock).unwrap();
-    let listener = std::os::unix::net::UnixListener::bind(sock.join(broker::SOCKET)).unwrap();
-    let mut runners = runners(dir.path(), None, clock);
-    runners.list_within = Duration::from_millis(200);
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        drop(tx.send(runners.lease(1, Verb::List, None, None, &Boot::default())));
-    });
-    let (_held, _) = listener.accept().unwrap();
-    let got = rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the list waited on past its deadline");
-    let why = got.unwrap_err();
-    assert!(why.contains("did not answer"), "{why}");
 }

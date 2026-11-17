@@ -99,17 +99,6 @@ pub enum Parsed {
         /// Controller socket override.
         socket: Option<std::path::PathBuf>,
     },
-    /// Bridge stdin/stdout to a pool lease's sshd through the links broker.
-    LinkDial {
-        /// Global options.
-        opts: GlobalOpts,
-        /// The runner that holds the pool host's link.
-        runner: String,
-        /// The pool host's machine id.
-        machine_id: i64,
-        /// The lease.
-        slug: String,
-    },
     /// Run a script in one place of a machine's Box on this terminal.
     BoxTerm {
         /// Global options.
@@ -196,19 +185,6 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
             opts,
             req,
             interactive,
-        },
-        Ok((
-            opts,
-            Action::LinkDial {
-                runner,
-                machine_id,
-                slug,
-            },
-        )) => Parsed::LinkDial {
-            opts,
-            runner,
-            machine_id,
-            slug,
         },
         Ok((opts, Action::BoxTerm(term))) => Parsed::BoxTerm { opts, term },
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },

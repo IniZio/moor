@@ -79,8 +79,6 @@ mod users;
 pub(crate) use agent::{Launch, LaunchEnd};
 pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::ProxyRow;
-#[cfg(test)]
-pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 pub(crate) use users::machine::{HeldMachine, MachineWake};
