@@ -28,28 +28,7 @@ impl Reach for Local {
     }
 }
 
-/// Waits for the moment the runner sees the machine's link, which lags the rig's "online".
-fn wait_for_link(host: &Host) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    runtime.block_on(async {
-        loop {
-            match moor_client::link::broker::boxes(&host.runner(), MACHINE_ID).await {
-                Ok(conn) => return drop(conn),
-                Err(why) if why.contains("not linked") && std::time::Instant::now() < deadline => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(why) => panic!("{why}"),
-            }
-        }
-    });
-}
-
 fn machines(host: &Host) -> Machines {
-    wait_for_link(host);
     Machines::new(
         Arc::new(Local(host.runner())),
         PathBuf::from("/usr/bin/moor"),
@@ -234,15 +213,7 @@ fn sleep_wake_and_close_follow_the_box_and_close_is_repeatable() {
 #[test]
 fn a_machine_that_provides_boxes_links_saying_how() {
     let host = Host::boxes();
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    // The runner reports each change of its links, which lags the rig's first "online".
-    let provides = loop {
-        let links = host.rig.link.links.lock().unwrap().clone().unwrap();
-        let provides = links[0]["provides"].clone();
-        if !provides.is_null() || std::time::Instant::now() > deadline {
-            break provides;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
+    let links = host.rig.link.links.lock().unwrap().clone().unwrap();
+    let provides = links[0]["provides"].clone();
     assert_eq!(provides, "fake");
 }

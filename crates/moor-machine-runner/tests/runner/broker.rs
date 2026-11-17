@@ -275,18 +275,9 @@ async fn a_box_stream_is_spliced_to_an_agent_that_serves_it_unread() {
     assert_eq!(out, "work\n");
 }
 
-/// A Box stream to the rig's machine, retrying the moment the runner lags the rig's "online".
+/// A Box stream to the rig's machine.
 async fn box_stream(host: &Host) -> moor_client::link::reach::Conn {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        match broker::boxes(&host.runner(), MACHINE_ID).await {
-            Ok(conn) => return conn,
-            Err(why) if why.contains("not linked") && Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-            Err(why) => panic!("{why}"),
-        }
-    }
+    broker::boxes(&host.runner(), MACHINE_ID).await.unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
