@@ -36,17 +36,20 @@ XFS.
 ## Keep caches between Boxes
 
 To keep package caches and the work tree between Boxes, let the provider keep
-cache volumes. To also save them while a quiet Box sleeps, add
-`cacheSaveOnPause`:
+cache volumes:
 
 ```yaml
 external:
-  capabilities: { cacheVolumes: true, cacheSaveOnPause: true }
+  capabilities: { cacheVolumes: true }
 ```
 
-Only this trusted crabbox config can turn these on. A repo or a flag cannot.
-Without them, every Box starts cold and records a `cache_cold` event. An external
-node starts cold unless its crabbox config declares these capabilities.
+moor saves the caches when it releases a Box, not when a Box sleeps. A close that
+deletes an asleep Box without waking it loses its caches and records a
+`caches_not_saved` event. moor no longer reads `cacheSaveOnPause`.
+
+Only this trusted crabbox config can turn this on. A repo or a flag cannot.
+Without it, every Box starts cold and records a `cache_cold` event. An external
+node starts cold unless its crabbox config declares this capability.
 
 ## Use agent37 instead
 
