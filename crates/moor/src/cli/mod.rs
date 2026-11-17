@@ -51,6 +51,19 @@ pub struct Output {
     pub code: u8,
 }
 
+/// What `node add` asks for, as parsed.
+#[derive(Debug)]
+pub struct NodeAddSpec {
+    /// The node's name.
+    pub name: String,
+    /// The `HOME` the agent runs under.
+    pub agent_home: std::path::PathBuf,
+    /// Where the runner takes agent links.
+    pub runner: String,
+    /// The labels a Box may require of the node.
+    pub labels: Vec<String>,
+}
+
 /// Result of parsing argv.
 #[derive(Debug)]
 pub enum Parsed {
@@ -119,7 +132,7 @@ pub enum Parsed {
         /// Global options.
         opts: GlobalOpts,
         /// The node and where its agent lives.
-        add: crate::node_add::Add,
+        add: NodeAddSpec,
     },
     /// Print the event stream as JSON lines.
     Events {

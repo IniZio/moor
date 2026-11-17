@@ -99,7 +99,7 @@ fn main() -> ExitCode {
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Up { opts, max_boxes } => return run_up(&scoped(env, &opts), &opts, max_boxes),
         Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
-        Parsed::NodeAdd { opts, add } => run_node_add(env, &opts, &add),
+        Parsed::NodeAdd { opts, add } => run_node_add(env, &opts, add),
         Parsed::Events {
             opts,
             since,
@@ -254,7 +254,13 @@ fn run_stdin(env: Env, opts: GlobalOpts, then: cli::StdinRequest) -> Output {
 
 /// Runs `moor node add`: makes the agent's key, asks the controller to enroll it as a shared
 /// node, then writes the state the agent links with and says how to run it.
-fn run_node_add(env: Env, opts: &GlobalOpts, add: &moor::node_add::Add) -> Output {
+fn run_node_add(env: Env, opts: &GlobalOpts, spec: cli::NodeAddSpec) -> Output {
+    let add = &moor::node_add::Add {
+        name: spec.name,
+        agent_home: spec.agent_home,
+        runner: spec.runner,
+        labels: spec.labels,
+    };
     let fail = |kind, why: String| {
         let resp = moor::error::CommandError::new(kind, why).into_response("node-add", vec![]);
         cli::render(&resp, opts)

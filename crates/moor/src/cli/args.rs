@@ -41,6 +41,8 @@ mod user;
 mod wait;
 mod wait_events;
 
+pub(super) use super::NodeAddSpec;
+
 /// What a parsed command line asks for.
 #[derive(Debug)]
 pub(super) enum Action {
@@ -88,7 +90,7 @@ pub(super) enum Action {
     /// `down`: stop the controller's user service and remove it.
     Down,
     /// `node add`: enroll a machine agent on this host as a shared node.
-    NodeAdd(crate::node_add::Add),
+    NodeAdd(NodeAddSpec),
     /// `events`: print the event stream as JSON lines.
     Events {
         /// Only events after this id.
