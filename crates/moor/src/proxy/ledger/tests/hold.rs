@@ -67,7 +67,7 @@ impl Rig {
     }
 
     fn user(&self) -> moor_core::user::UserId {
-        let who = Identity::parse("slack:T1:U1").unwrap();
+        let who = Identity::parse("herdr:T1:U1").unwrap();
         self.store.enroll(&who, None).unwrap().0
     }
 

@@ -28,7 +28,7 @@ fn enroll_creates_a_user_once_per_identity() {
         store.enroll(&id("local:1000"), None).unwrap(),
         (user, false)
     );
-    let (other, created) = store.enroll(&id("slack:T1:U1"), None).unwrap();
+    let (other, created) = store.enroll(&id("herdr:T1:U1"), None).unwrap();
     assert!(created);
     assert_ne!(other, user);
     assert_eq!(store.user_of(&id("local:1000")).unwrap(), Some(user));
@@ -44,13 +44,13 @@ fn identities_with_one_email_are_one_user() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let alice = email("alice@example.com");
-    let (first, created) = store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap();
+    let (first, created) = store.enroll(&id("herdr:T1:U1"), Some(&alice)).unwrap();
     assert!(created);
     let (second, created) = store.enroll(&id("authgear:sub-1"), Some(&alice)).unwrap();
     assert_eq!((second, created), (first, false));
     assert_eq!(
         store.identities(first).unwrap(),
-        vec![id("authgear:sub-1"), id("slack:T1:U1")]
+        vec![id("authgear:sub-1"), id("herdr:T1:U1")]
     );
     assert_eq!(store.user_of(&id("authgear:sub-1")).unwrap(), Some(first));
 }
@@ -60,7 +60,7 @@ fn an_identity_without_an_email_gets_its_own_user() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let alice = email("alice@example.com");
-    let (first, _) = store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap();
+    let (first, _) = store.enroll(&id("herdr:T1:U1"), Some(&alice)).unwrap();
     let (third, created) = store.enroll(&id("web:bob"), None).unwrap();
     assert!(created);
     assert_ne!(third, first);
@@ -73,7 +73,7 @@ fn an_email_is_matched_whatever_its_letter_case() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let (first, _) = store
-        .enroll(&id("slack:T1:U1"), Some(&email("Alice@Example.com")))
+        .enroll(&id("herdr:T1:U1"), Some(&email("Alice@Example.com")))
         .unwrap();
     let (second, _) = store
         .enroll(&id("web:alice"), Some(&email("alice@example.COM")))
@@ -85,10 +85,10 @@ fn an_email_is_matched_whatever_its_letter_case() {
 fn a_known_identity_gains_an_email_it_lacked() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let (user, _) = store.enroll(&id("slack:T1:U1"), None).unwrap();
+    let (user, _) = store.enroll(&id("herdr:T1:U1"), None).unwrap();
     let alice = email("alice@example.com");
     assert_eq!(
-        store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap(),
+        store.enroll(&id("herdr:T1:U1"), Some(&alice)).unwrap(),
         (user, false)
     );
     let (joined, created) = store.enroll(&id("authgear:sub-1"), Some(&alice)).unwrap();
@@ -101,9 +101,9 @@ fn a_known_identity_never_takes_an_email_another_user_holds() {
     let (store, _) = open(dir.path());
     let alice = email("alice@example.com");
     let (holder, _) = store.enroll(&id("web:alice"), Some(&alice)).unwrap();
-    let (other, _) = store.enroll(&id("slack:T1:U2"), None).unwrap();
+    let (other, _) = store.enroll(&id("herdr:T1:U2"), None).unwrap();
     assert_eq!(
-        store.enroll(&id("slack:T1:U2"), Some(&alice)).unwrap(),
+        store.enroll(&id("herdr:T1:U2"), Some(&alice)).unwrap(),
         (other, false)
     );
     assert_ne!(other, holder);

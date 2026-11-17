@@ -27,7 +27,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "machine-links" => json!({"cmd": kind, "runner": "/run/runner.sock", "links": []}),
         "machine-box" => json!({"cmd": kind, "op": {"get": {"box_id": 1}}}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
-        "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
+        "session-binding" => json!({"cmd": kind, "front": "herdr", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
         "secret-delete" | "mcp-remove" | "machine-remove" | "machine-status" => {
@@ -59,7 +59,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
 #[test]
 fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identity() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let mut unknown = Vec::new();
     for kind in every_kind().iter().filter(|k| *k != "as") {
         let request = match naming(kind, B_BOX, world.b_session) {
@@ -72,13 +72,13 @@ fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identit
                 request
             }
         };
-        let got = ask(&slack, &request);
+        let got = ask(&herdr, &request);
         if kind == "version" {
             assert_eq!(got["class"], "ok", "{got}");
         } else if kind.starts_with("webhook-claim") || kind.starts_with("webhook-report") {
             refused(&got, "`webhooks: true`");
         } else {
-            refused(&got, "the slack front socket must assert an identity");
+            refused(&got, "the herdr front socket must assert an identity");
         }
     }
     assert!(
@@ -90,12 +90,12 @@ fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identit
 #[test]
 fn env_is_the_operators_only_and_repos_is_no_command() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     refused(
-        &ask(&slack, &acting(A, &json!({"cmd": "env", "repo": "o/n"}))),
+        &ask(&herdr, &acting(A, &json!({"cmd": "env", "repo": "o/n"}))),
         "env reads the host's configs, which is operator-only",
     );
-    for socket in [&slack, &world.served.main] {
+    for socket in [&herdr, &world.served.main] {
         let got = ask(socket, &json!({"cmd": "repos"}));
         assert_eq!(got["frame"], "error", "{got}");
     }
@@ -114,13 +114,13 @@ fn session_ids(envelope: &Value) -> Vec<i64> {
 #[test]
 fn the_operators_host_sessions_are_the_operators_only() {
     let world = World::new();
-    let (slack, main) = (world.slack(), &world.served.main);
+    let (herdr, main) = (world.herdr(), &world.served.main);
     let opened = ask(
         main,
         &json!({"cmd": "open-host-session", "workdir": "/home/op/w"}),
     );
     let host = opened["value"]["session"].as_i64().expect("host Session");
-    let bind = json!({"cmd": "bind-session", "front": "slack", "key": "thread",
+    let bind = json!({"cmd": "bind-session", "front": "herdr", "key": "thread",
         "session": host, "owner": "o"});
     assert_eq!(ask(main, &bind)["class"], "ok");
     for kind in [
@@ -134,17 +134,17 @@ fn the_operators_host_sessions_are_the_operators_only() {
         "start",
     ] {
         let (on_host, on_missing) = (on_session(kind, host), on_session(kind, MISSING_SESSION));
-        not_yours(&ask(&slack, &acting(A, &on_host)));
+        not_yours(&ask(&herdr, &acting(A, &on_host)));
         assert_eq!(
-            response_line(&slack, &acting(A, &on_host)),
-            response_line(&slack, &acting(A, &on_missing)),
+            response_line(&herdr, &acting(A, &on_host)),
+            response_line(&herdr, &acting(A, &on_missing)),
             "{kind}"
         );
     }
-    let listed = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
+    let listed = ask(&herdr, &acting(A, &json!({"cmd": "sessions"})));
     assert!(!session_ids(&listed).contains(&host), "{listed}");
-    let lookup = json!({"cmd": "session-binding", "front": "slack", "key": "thread"});
-    assert_eq!(ask(&slack, &acting(A, &lookup))["value"], Value::Null);
+    let lookup = json!({"cmd": "session-binding", "front": "herdr", "key": "thread"});
+    assert_eq!(ask(&herdr, &acting(A, &lookup))["value"], Value::Null);
     assert_eq!(ask(main, &lookup)["value"]["session"], host);
     assert!(session_ids(&ask(main, &json!({"cmd": "sessions"}))).contains(&host));
     let shown = ask(main, &json!({"cmd": "show-session", "session": host}));
@@ -166,22 +166,22 @@ const ON_SESSION: [&str; 8] = [
 #[test]
 fn a_host_session_belongs_to_the_user_who_opened_it() {
     let world = World::new();
-    let (slack, main) = (world.slack(), &world.served.main);
+    let (herdr, main) = (world.herdr(), &world.served.main);
     let open = json!({"cmd": "open-host-session"});
-    let opened = ask(&slack, &acting(A, &open));
+    let opened = ask(&herdr, &acting(A, &open));
     let host = opened["value"]["session"]
         .as_i64()
         .expect("A opens a host Session");
     for kind in ON_SESSION {
-        not_yours(&ask(&slack, &acting(B, &on_session(kind, host))));
+        not_yours(&ask(&herdr, &acting(B, &on_session(kind, host))));
     }
-    let listed = ask(&slack, &acting(B, &json!({"cmd": "sessions"})));
+    let listed = ask(&herdr, &acting(B, &json!({"cmd": "sessions"})));
     assert!(!session_ids(&listed).contains(&host), "{listed}");
-    let listed = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
+    let listed = ask(&herdr, &acting(A, &json!({"cmd": "sessions"})));
     assert!(session_ids(&listed).contains(&host), "{listed}");
     assert!(session_ids(&ask(main, &json!({"cmd": "sessions"}))).contains(&host));
     for kind in ON_SESSION {
-        let got = ask(&slack, &acting(A, &on_session(kind, host)));
+        let got = ask(&herdr, &acting(A, &on_session(kind, host)));
         let message = got["error"]["message"].as_str().unwrap_or_default();
         assert_ne!(message, "not your Box", "{kind}: {got}");
     }
@@ -197,7 +197,7 @@ fn an_identity_with_no_user_cannot_open_a_host_session() {
     let world = World::new();
     let open = json!({"cmd": "open-host-session", "workdir": "/w"});
     refused(
-        &ask(&world.slack(), &acting("slack:T1:NOBODY", &open)),
+        &ask(&world.herdr(), &acting("herdr:T1:NOBODY", &open)),
         "log in first: moor user enroll",
     );
 }
@@ -220,7 +220,7 @@ fn on_session(kind: &str, session: i64) -> Value {
 fn a_start_under_another_users_session_is_refused() {
     let world = World::new();
     let start = json!({"cmd": "start", "name": "new-box", "parent": world.b_session});
-    not_yours(&ask(&world.slack(), &acting(A, &start)));
+    not_yours(&ask(&world.herdr(), &acting(A, &start)));
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn a_session_opened_under_another_users_session_is_refused() {
     let world = World::new();
     let open =
         json!({"cmd": "open-session", "box": A_BOX, "seed": "go", "parent": world.b_session});
-    not_yours(&ask(&world.slack(), &acting(A, &open)));
+    not_yours(&ask(&world.herdr(), &acting(A, &open)));
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn show_session_lists_only_the_children_the_caller_may_see() {
     };
     let show = json!({"cmd": "show-session", "session": parent});
     assert_eq!(
-        children(ask(&world.slack(), &acting(A, &show))),
+        children(ask(&world.herdr(), &acting(A, &show))),
         ["a-child"]
     );
     assert_eq!(

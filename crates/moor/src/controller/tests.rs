@@ -215,7 +215,6 @@ mod artifacts;
 mod authz;
 mod front_attach;
 mod front_processes;
-mod front_proxy;
 mod front_read_only;
 mod fronts;
 mod host_paths;
@@ -251,7 +250,7 @@ fn first_start_creates_the_vault_key_beside_the_config() {
 #[test]
 fn a_new_vault_key_over_a_store_of_sealed_keys_stops_the_start_instead_of_making_new_ones() {
     let tmp = tempfile::tempdir().expect("tmp");
-    let cfg = config(tmp.path(), "fronts:\n  slack:\n    proxy_rules: [claude]\n");
+    let cfg = config(tmp.path(), "");
     drop(start(&env(tmp.path()), &cfg).expect("first start"));
     let pool = tmp.path().join("state").join("pool").join("id_ed25519");
     let kept = std::fs::read_to_string(&pool).expect("ssh key");

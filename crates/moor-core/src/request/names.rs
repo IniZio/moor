@@ -126,9 +126,6 @@ impl Request {
             | Self::MachineKeys {}
             | Self::MachineLinks(_)
             | Self::MachineBox(_)
-            | Self::ProxyLease(_)
-            | Self::ProxyRelease(_)
-            | Self::ProxyStatus(_)
             | Self::WebhookClaim(_)
             | Self::WebhookReport(_)
             | Self::Version {} => Vec::new(),

@@ -42,8 +42,8 @@ mod user;
 mod workflow;
 pub use user::{
     ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
-    ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
-    WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+    SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd, WebhookAddReq,
+    WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq, WorkflowRunsReq,
@@ -197,12 +197,6 @@ pub enum Request {
     /// Claim one of a Box's user's machines for it, or let go of it; the operator's only.
     #[serde(rename = "machine-hold")]
     MachineHold(MachineHoldReq),
-    /// Lease the front Proxy for the caller's user until the lease is released or expires.
-    ProxyLease(AsReq),
-    /// End a lease `proxy-lease` granted.
-    ProxyRelease(ProxyReleaseReq),
-    /// Whether the front Proxy is running.
-    ProxyStatus(AsReq),
     /// Lease the oldest pending webhook deliveries; only a front with `webhooks: true`.
     WebhookClaim(WebhookClaimReq),
     /// End a claimed webhook delivery with its outcome; only a front with `webhooks: true`.

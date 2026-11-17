@@ -6,15 +6,13 @@
 //! The nono module embeds nono-proxy as each Box's egress proxy.
 //!
 //! The egress module is the shared Proxy, which serves many Boxes by token and runs each Box's
-//! engine. The fronts module is the front Proxy, which serves the controller's fronts rather
-//! than Boxes. Each Box's keeper in the controller holds its tunnel and machine forwards.
+//! engine. Each Box's keeper in the controller holds its tunnel and machine forwards.
 
 pub(crate) mod chain;
 pub(crate) mod egress;
 pub(crate) mod engine;
 pub(crate) mod forwarder;
 pub(crate) mod front;
-pub(crate) mod fronts;
 pub(crate) mod graphql;
 pub(crate) mod guard;
 pub(crate) mod keeper;

@@ -268,7 +268,7 @@ fn held_by_other(conn: &dyn Db, box_id: BoxId, port: u16) -> Result<bool, StoreE
 }
 
 mod egress;
-mod key;
+pub(super) mod key;
 mod ports;
 use ports::{free_port, give_forward_port, BOX_PORTS, EGRESS_PORTS};
 pub(crate) mod state;

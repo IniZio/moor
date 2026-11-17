@@ -9,7 +9,6 @@ use super::{parsed, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::vault::Vault;
 
-pub(super) mod front_leases;
 pub(super) mod machine;
 mod mcp;
 pub(super) mod mcp_oauth;

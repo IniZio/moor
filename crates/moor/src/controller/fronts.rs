@@ -17,7 +17,6 @@ use command_fds::{CommandFdExt as _, FdMapping};
 use rustix::fs::{Mode, OFlags};
 use rustix::process::{kill_process, Pid, Signal};
 
-use super::front_proxy::{self, Plan};
 use super::{log, Sink};
 use crate::env::{BLOBS_ACCESS_KEY_ID, BLOBS_SECRET_ACCESS_KEY, DATABASE_URL};
 
@@ -143,14 +142,8 @@ impl Drop for Supervised {
 }
 
 /// Starts one supervisor thread per front, unless the host forbids the namespaces or the
-/// sandbox each front runs in; then it starts none and logs why. With `proxy`, the moor binary
-/// and the front Proxy it runs, one more thread keeps that Proxy running.
-pub(super) fn supervise(
-    mut fronts: Vec<Front>,
-    shim: Shim,
-    proxy: Option<(OsString, Plan)>,
-    sink: &Sink,
-) -> Supervised {
+/// sandbox each front runs in; then it starts none and logs why.
+pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supervised {
     let shim = Arc::new(shim);
     if let Some(Err(e)) = (!fronts.is_empty()).then(|| shim.check()) {
         log(sink, &format!("fronts not started: {e}"));
@@ -167,15 +160,6 @@ pub(super) fn supervise(
             )
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
-    let (mut stops, mut threads) = (stops, threads);
-    if let Some((program, plan)) = proxy {
-        let (stop, stopped) = mpsc::channel();
-        let sink = sink.clone();
-        stops.push(stop);
-        threads.push(thread::spawn(move || {
-            front_proxy::keep_running(&plan, &program, &stopped, &sink);
-        }));
-    }
     Supervised { stops, threads }
 }
 
@@ -327,8 +311,8 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     Ok(child)
 }
 
-/// Adds to `command` the shim flags and front variables for what `front` may write and read
-/// and how it reaches its Proxy, creating its state dir's `tmp`.
+/// Adds to `command` the shim flags and front variables for what `front` may write and read,
+/// creating its state dir's `tmp`.
 fn what_it_reaches(front: &Front, command: &mut Command) -> io::Result<()> {
     if let Some(dir) = &front.state_dir {
         let tmp = dir.join("tmp");
@@ -345,12 +329,6 @@ fn what_it_reaches(front: &Front, command: &mut Command) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     for port in &front.ports {
         command.arg("--port").arg(port.to_string());
-    }
-    if let Some(proxy) = &front.proxy {
-        command
-            .arg("--proxy")
-            .arg(&proxy.socket)
-            .env(front_proxy::CA_PEM_VAR, &proxy.ca_pem);
     }
     Ok(())
 }

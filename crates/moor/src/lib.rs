@@ -42,15 +42,6 @@ pub use crate::wire::{copy_store, migrate_store};
 
 pub use moor_core;
 
-/// Runs `moor proxy serve-fronts`, the front Proxy the controller starts, with the words after
-/// `serve-fronts`; returns the exit code.
-///
-/// # Errors
-/// Why the Proxy could not start.
-pub fn serve_front_proxy(words: &[std::ffi::OsString]) -> Result<u8, String> {
-    proxy::fronts::run::main(words)
-}
-
 /// Runs `moor proxy serve-egress`, the shared egress Proxy, with the words after
 /// `serve-egress`; returns the exit code.
 ///

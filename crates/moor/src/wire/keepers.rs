@@ -85,7 +85,6 @@ pub(super) fn proxy_host(
         deps,
         rng: Arc::clone(rng),
         vault_key: env.vault_key().map(Path::to_path_buf),
-        state_dir: env.state_dir(),
         keepers: &KEEPERS,
         route,
         key: Zeroizing::new(route::key(env).to_vec()),

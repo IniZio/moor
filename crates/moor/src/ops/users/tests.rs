@@ -117,9 +117,9 @@ fn identities_with_one_email_see_the_same_secrets() {
     let f = fixture();
     let email = Email::parse("alice@example.com").unwrap();
     let enroll = UserCmd::Enroll { email: Some(email) };
-    let slack = id("slack:T1:U1");
-    let first = run(&f.cx, &f.vault, &slack, &enroll).unwrap();
-    run(&f.cx, &f.vault, &slack, &secret_set("claude", "tok-1")).unwrap();
+    let herdr = id("herdr:T1:U1");
+    let first = run(&f.cx, &f.vault, &herdr, &enroll).unwrap();
+    run(&f.cx, &f.vault, &herdr, &secret_set("claude", "tok-1")).unwrap();
     let authgear = id("authgear:sub-1");
     let second = run(&f.cx, &f.vault, &authgear, &enroll).unwrap();
     assert_eq!(second["user"], first["user"]);
@@ -127,7 +127,7 @@ fn identities_with_one_email_see_the_same_secrets() {
     let names = run(&f.cx, &f.vault, &authgear, &UserCmd::SecretNames).unwrap();
     assert_eq!(names, json!({"names": ["claude"]}));
     let who = run(&f.cx, &f.vault, &authgear, &UserCmd::Whoami).unwrap();
-    assert_eq!(who["identities"], json!(["authgear:sub-1", "slack:T1:U1"]));
+    assert_eq!(who["identities"], json!(["authgear:sub-1", "herdr:T1:U1"]));
     let third = run(
         &f.cx,
         &f.vault,

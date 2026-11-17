@@ -2,13 +2,8 @@
 //! host or of another front is reachable from it, and it has no route out.
 
 use std::fs;
-use std::io::{BufRead as _, BufReader};
 use std::net::{Ipv6Addr, TcpListener, TcpStream};
-use std::os::unix::net::UnixListener;
-use std::process::{ChildStdout, Command, Stdio};
 
-use moor_testkit::ChildGuard;
-use rustix::process::{kill_process, Pid, Signal};
 use serde_json::Value;
 
 use super::{fresh_dir_outside_tmp, shim};
@@ -33,40 +28,6 @@ got["netns"] = os.readlink("/proc/self/ns/net")
 print(json.dumps(got), flush=True)
 "#;
 
-/// Prints the front Proxy port pid 1 bridged and whether the front reaches it, then waits.
-const BRIDGED: &str = r#"
-import os, socket, time
-port = os.environ["MOOR_FRONT_PROXY_PORT"]
-s = socket.socket()
-s.settimeout(2)
-s.connect(("127.0.0.1", int(port)))
-print(port, "connected", flush=True)
-time.sleep(600)
-"#;
-
-/// Starts `moor front-shim` as a child of this test, with `flags` and `command`, its stdout
-/// piped; returns it and its stdout lines.
-fn spawn_shim(
-    flags: &[&str],
-    command: &[&str],
-) -> (ChildGuard, std::io::Lines<BufReader<ChildStdout>>) {
-    let me = std::process::id().to_string();
-    let child = Command::new(env!("CARGO_BIN_EXE_moor"))
-        .args(["front-shim", "--parent", &me])
-        .args(flags)
-        .arg("--")
-        .args(command)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut child = ChildGuard::new(child);
-    let lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    (child, lines)
-}
-
 /// What [`REACH`] got from inside a front for `targets`.
 fn reach(targets: &[String]) -> Value {
     let dir = fresh_dir_outside_tmp("reach");
@@ -77,13 +38,6 @@ fn reach(targets: &[String]) -> Value {
     let said = String::from_utf8_lossy(&out.stdout);
     serde_json::from_str(&said)
         .unwrap_or_else(|_| panic!("{said} {}", String::from_utf8_lossy(&out.stderr)))
-}
-
-/// Kills `child` and reaps it.
-fn kill(mut child: ChildGuard) {
-    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
-    let _ = kill_process(pid, Signal::KILL);
-    let _ = child.wait();
 }
 
 #[test]
@@ -108,23 +62,4 @@ fn a_front_reaches_no_loopback_listener_of_the_host() {
     assert_eq!(got["interfaces"], serde_json::json!(["lo"]), "{got}");
     let host_netns = fs::read_link("/proc/self/ns/net").unwrap();
     assert_ne!(got["netns"], host_netns.to_str().unwrap(), "{got}");
-}
-
-#[test]
-fn a_front_cannot_reach_another_fronts_proxy_bridge() {
-    let dir = fresh_dir_outside_tmp("bridges");
-    let socket = dir.join("proxy.sock");
-    let _proxy = UnixListener::bind(&socket).unwrap();
-    let socket = socket.to_str().unwrap();
-    let (first, mut said) = spawn_shim(&["--proxy", socket], &["python3", "-c", BRIDGED]);
-    let line = said.next().unwrap().unwrap();
-    let (port, reached) = line.split_once(' ').unwrap();
-    assert_eq!(reached, "connected", "the front reaches its own bridge");
-    let got = reach(&[format!("127.0.0.1:{port}")]);
-    kill(first);
-    assert_eq!(
-        got[format!("127.0.0.1:{port}")],
-        "ConnectionRefusedError",
-        "{got}"
-    );
 }

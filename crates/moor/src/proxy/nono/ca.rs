@@ -1,4 +1,4 @@
-//! Interception CA of a Box or of the front Proxy, which survives a proxy restart.
+//! Interception CA of a Box, which survives a proxy restart.
 //!
 //! The machine trusts the certificate for the Box's whole life, so the CA is
 //! persisted under the state directory and reloaded rather than regenerated.
@@ -63,40 +63,6 @@ pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
     cert_in(&ca_dir(state_dir, box_id))
 }
 
-/// Loads the CA in `dir`, or generates and persists one with common name `cn` when neither file
-/// exists. Directory and files are owner-only.
-pub(crate) fn load_or_create_in(dir: &Path, cn: &str) -> std::io::Result<BoxCa> {
-    DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
-    std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
-    let key_path = dir.join(KEY_FILE);
-    let cert_path = dir.join(CERT_FILE);
-    match (key_path.exists(), cert_path.exists()) {
-        (false, false) => create(dir, &key_path, &cert_path, cn),
-        (true, true) => load(&key_path, &cert_path),
-        (true, false) => Err(missing(&cert_path)),
-        (false, true) => Err(missing(&key_path)),
-    }
-}
-
-/// Loads the CA in `dir`; a missing one is refused, not made.
-pub(crate) fn load_in(dir: &Path) -> std::io::Result<BoxCa> {
-    let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
-    for path in [&key_path, &cert_path] {
-        if !path.exists() {
-            return Err(missing(path));
-        }
-    }
-    load(&key_path, &cert_path)
-}
-
-/// The CA's key and certificate PEM in `dir`.
-pub(crate) fn read_in(dir: &Path) -> std::io::Result<(Zeroizing<Vec<u8>>, String)> {
-    Ok((
-        Zeroizing::new(std::fs::read(dir.join(KEY_FILE))?),
-        std::fs::read_to_string(dir.join(CERT_FILE))?,
-    ))
-}
-
 /// Writes the CA into `dir`, replacing what is there, and loads it back.
 pub(crate) fn install_in(dir: &Path, (key_pem, cert_pem): (&[u8], &str)) -> std::io::Result<BoxCa> {
     DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
@@ -126,7 +92,7 @@ pub(crate) fn install(
 }
 
 /// Path of the CA certificate in `dir`.
-pub(crate) fn cert_in(dir: &Path) -> PathBuf {
+fn cert_in(dir: &Path) -> PathBuf {
     dir.join(CERT_FILE)
 }
 
@@ -138,32 +104,12 @@ pub(crate) fn remove(state_dir: &Path, box_id: BoxId) -> std::io::Result<()> {
     }
 }
 
-/// Error for a CA file that is absent while its partner exists.
-fn missing(path: &Path) -> Error {
-    Error::new(
-        ErrorKind::NotFound,
-        format!("proxy CA file {} is missing", path.display()),
-    )
-}
-
 /// Error for a CA file that cannot be used; carries no file content.
 fn invalid(path: &Path) -> Error {
     Error::new(
         ErrorKind::InvalidData,
         format!("proxy CA file {} is not a valid CA", path.display()),
     )
-}
-
-/// Generates a CA and writes cert and key atomically, key first.
-fn create(dir: &Path, key_path: &Path, cert_path: &Path, cn: &str) -> std::io::Result<BoxCa> {
-    let ca = EphemeralCa::generate_with_cn(cn, VALIDITY)
-        .map_err(|_| Error::other("proxy CA generation failed"))?;
-    write_private(dir, key_path, ca.key_pem().as_bytes())?;
-    write_private(dir, cert_path, ca.cert_pem().as_bytes())?;
-    Ok(BoxCa {
-        key_der: Zeroizing::new(ca.key_der().to_vec()),
-        cert_pem: ca.cert_pem().to_owned(),
-    })
 }
 
 /// Reads both files and checks that the key matches the certificate.

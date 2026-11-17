@@ -1,12 +1,24 @@
 //! The token a Box presents to the shared egress Proxy. Only its hex SHA-256 is stored.
 
+use std::fmt::Write as _;
+
 use moor_core::BoxId;
 use moor_schema::tables::Proxy;
 use sea_query::{Expr, ExprTrait as _, Query};
+use sha2::{Digest, Sha256};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
-use crate::store::users::front_leases::hash;
 use crate::store::{Store, StoreError};
+
+/// The hex SHA-256 of `token`, which is all the store keeps of it.
+pub(crate) fn hash(token: &[u8]) -> String {
+    Sha256::digest(token)
+        .iter()
+        .fold(String::with_capacity(64), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        })
+}
 
 impl Store {
     /// Records `token` as the one `box_id` presents to the shared egress Proxy, replacing any
@@ -117,8 +129,8 @@ mod tests {
     use moor_core::domain::decision::{Decision, NewBox, SpecFields};
     use moor_core::BoxName;
 
+    use super::hash;
     use crate::store::tests::open;
-    use crate::store::users::front_leases::hash;
     use crate::testing::rng::FakeRng;
 
     #[test]

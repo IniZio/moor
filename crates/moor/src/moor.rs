@@ -1,6 +1,5 @@
 //! Composition root: the single entry every caller uses.
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::cx::owners::{checked, Owners};
@@ -67,58 +66,18 @@ impl Moor {
         wire::schema_warning(env)
     }
 
-    /// Ends every front Proxy lease: a controller that holds the state lock is the only one,
-    /// and it restarts every front that held a lease.
-    ///
-    /// # Errors
-    /// The store or clock failure.
-    pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
-        wire::end_front_leases(env)
-    }
-
     /// Settles the controller's keys in the store and the state dir.
-    pub(crate) fn settle_keys(env: &Env, vault: &Vault, front_ca: bool) -> Result<(), String> {
-        wire::settle_keys(env, vault, front_ca)
+    pub(crate) fn settle_keys(env: &Env, vault: &Vault) -> Result<(), String> {
+        wire::settle_keys(env, vault)
     }
 
-    /// The socket of front `ns`'s Proxy for the state dir `state_dir`, which its shim bridges.
-    pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
-        wire::front_proxy_socket(state_dir, ns)
-    }
-
-    /// Creates the directory of front `ns`'s Proxy socket, which its shim opens at start.
-    ///
-    /// # Errors
-    /// Why the directory could not be made or is not private.
-    pub(crate) fn prepare_front_proxy_socket(state_dir: &Path, ns: &str) -> Result<(), String> {
-        wire::prepare_front_proxy_socket(state_dir, ns)
-    }
-
-    /// The CA certificate the front Proxy signs with.
-    ///
-    /// # Errors
-    /// Why the CA could not be read.
-    pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
-        wire::front_proxy_ca(state_dir)
-    }
-
-    /// Serves one connection on the ledger socket, the store calls of the Proxy processes,
-    /// with `fronts_key` as the front Proxy's key.
+    /// Serves one connection on the ledger socket or its TLS listener, the store calls of the
+    /// shared egress Proxy.
     pub(crate) fn serve_ledger(
         (env, vault): (&Env, &Vault),
-        fronts_key: Option<&str>,
         stream: impl std::io::Read + std::io::Write,
     ) {
-        wire::serve_ledger((env, vault), fronts_key, stream);
-    }
-
-    /// Serves one connection on the ledger's TLS listener, which answers only the shared
-    /// egress Proxy.
-    pub(crate) fn serve_egress_ledger(
-        (env, vault): (&Env, &Vault),
-        stream: impl std::io::Read + std::io::Write,
-    ) {
-        wire::serve_egress_ledger((env, vault), stream);
+        wire::serve_ledger((env, vault), stream);
     }
 
     /// `env` with the shared egress Proxy's key, and the controller's own Proxy running unless

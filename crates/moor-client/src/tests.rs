@@ -216,7 +216,7 @@ fn watch_follow_omits_defaults() {
 
 #[test]
 fn an_acting_client_asserts_its_identity_on_requests_and_watches() {
-    let identity = Identity::parse("slack:T1/U1").unwrap();
+    let identity = Identity::parse("herdr:T1/U1").unwrap();
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("c.sock");
     let answer = format!(
@@ -229,7 +229,7 @@ fn an_acting_client_asserts_its_identity_on_requests_and_watches() {
     let seen = server.join().unwrap();
     let sent: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
     assert_eq!(sent["request"]["cmd"], "as");
-    assert_eq!(sent["request"]["identity"], "slack:T1/U1");
+    assert_eq!(sent["request"]["identity"], "herdr:T1/U1");
     assert_eq!(sent["request"]["request"]["cmd"], "show");
     std::fs::remove_file(&sock).unwrap();
     let server = serve(&sock, vec![vec![hello()], vec![]]);
@@ -239,7 +239,7 @@ fn an_acting_client_asserts_its_identity_on_requests_and_watches() {
     let sent: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
     assert_eq!(
         sent,
-        serde_json::json!({"frame": "watch", "since": 0, "identity": "slack:T1/U1"})
+        serde_json::json!({"frame": "watch", "since": 0, "identity": "herdr:T1/U1"})
     );
 }
 

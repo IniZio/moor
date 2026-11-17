@@ -195,44 +195,6 @@ pub struct StartNeedsValue {
     pub missing: Vec<SecretName>,
 }
 
-/// Value of `proxy-lease`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "lease", rename_all = "snake_case")]
-pub enum ProxyLeaseValue {
-    /// The lease: requests that present `token` as the proxy password carry the user's
-    /// secrets until it is released or expires.
-    Granted {
-        /// The lease token; it stands in for no secret, but it lets its holder spend them.
-        token: SecretValue,
-        /// Seconds until the lease expires.
-        expires_in_secs: u64,
-        /// The PEM CA the Proxy signs with, for a front that finds it on no disk of its own.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        ca_pem: Option<String>,
-    },
-    /// The user lacks the secret `name`, which a rule of the front's Proxy injects.
-    NoSecret {
-        /// The missing secret's name.
-        name: SecretName,
-    },
-    /// The front Proxy is not running, so no lease was granted.
-    ProxyDown,
-}
-
-/// Value of `proxy-release`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProxyReleaseValue {
-    /// True when the call ended a live lease.
-    pub released: bool,
-}
-
-/// Value of `proxy-status`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProxyStatusValue {
-    /// True when the front's Proxy accepts connections.
-    pub running: bool,
-}
-
 /// Where a webhook is in its setup. It posts nothing until its person has seen its signing
 /// key, and given the value of the header the receiver wants, on the gate's setup page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -42,12 +42,6 @@ impl ProxyHost for ReadsHome {
     fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         self.host.status(box_id)
     }
-    fn front_running(&self, front: &str) -> bool {
-        self.host.front_running(front)
-    }
-    fn front_ca_pem(&self) -> Result<String, String> {
-        self.host.front_ca_pem()
-    }
     fn stop(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
         self.host.stop(box_id)
     }

@@ -190,9 +190,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::NodeList(_)
         | Request::ProviderReady(_)
         | Request::MachineStatus(_)
-        | Request::ProxyLease(_)
-        | Request::ProxyRelease(_)
-        | Request::ProxyStatus(_)
         | Request::As(_)
         | Request::Version {} => None,
     }

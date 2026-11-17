@@ -1,6 +1,5 @@
-//! The ledger end to end over a real socket: a front Proxy with the right key reads only what
-//! a live lease allows, a wrong key or protocol is refused, and a controller that went away
-//! is unavailable until it is back.
+//! The ledger end to end over a real socket: a wrong key or protocol is refused, and a controller
+//! that went away is unavailable until it is back.
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::Shutdown;
@@ -8,14 +7,13 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use moor_core::seam::clock::{Clock as _, Ts};
-use moor_core::user::{Identity, SecretName, UserId};
+use moor_core::seam::clock::Ts;
+use moor_core::user::{Identity, UserId};
 
 use moor_core::BoxId;
 
-use super::{serve, BoxLedger, Endpoint, FrontsLedger, Keys, LedgerError};
+use super::{serve, BoxLedger, EgressLedger, Endpoint, Keys, LedgerError};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, test_vault_key};
@@ -49,24 +47,8 @@ impl Drop for Served {
     }
 }
 
-/// Serves the ledger of `store` on `socket`, with `fronts` as the front Proxy's key.
-pub(crate) fn serve_on(
-    socket: &Path,
-    store: Store,
-    vault: Arc<Vault>,
-    fronts: Option<String>,
-) -> Served {
-    serve_on_with(socket, store, vault, fronts, None)
-}
-
-/// [`serve_on`], answering calls about remote fronts as `env` says.
-pub(crate) fn serve_on_with(
-    socket: &Path,
-    store: Store,
-    vault: Arc<Vault>,
-    fronts: Option<String>,
-    env: Option<crate::env::Env>,
-) -> Served {
+/// Serves the ledger of `store` on `socket`.
+pub(crate) fn serve_on(socket: &Path, store: Store, vault: Arc<Vault>) -> Served {
     let listener = UnixListener::bind(socket).unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let streams = Arc::new(Mutex::new(Vec::new()));
@@ -78,13 +60,10 @@ pub(crate) fn serve_on_with(
                 return;
             }
             kept.lock().unwrap().push(stream.try_clone().unwrap());
-            let (store, vault, fronts) = (store.clone(), Arc::clone(&vault), fronts.clone());
-            let env = env.clone();
+            let (store, vault) = (store.clone(), Arc::clone(&vault));
             std::thread::spawn(move || {
                 let keys = Keys {
-                    fronts: fronts.as_deref(),
                     egress: Some(EGRESS_KEY),
-                    env: env.as_ref(),
                 };
                 serve((&store, &vault), &keys, stream);
             });
@@ -124,12 +103,7 @@ impl OnLedger {
 
     /// Serves the ledger again, as a restarted controller does.
     pub(crate) fn up(&self) {
-        let served = serve_on(
-            &self.socket,
-            self.store.clone(),
-            Arc::clone(&self.vault),
-            None,
-        );
+        let served = serve_on(&self.socket, self.store.clone(), Arc::clone(&self.vault));
         *self.served.lock().unwrap() = Some(served);
     }
 }
@@ -177,7 +151,6 @@ pub(super) struct World {
     _dir: tempfile::TempDir,
     pub(super) store: Store,
     pub(super) vault: Arc<Vault>,
-    clock: Arc<FakeClock>,
     pub(super) ann: UserId,
     pub(super) socket: PathBuf,
 }
@@ -185,18 +158,15 @@ pub(super) struct World {
 pub(super) fn world() -> World {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let vault = Vault::load(&test_vault_key(dir.path())).unwrap();
-    let (ann, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
-        .unwrap();
+    let (ann, _) = store.enroll(&Identity::local(1), None).unwrap();
     put_secret(&store, &vault, ann, "claude", "ann-token");
     let socket = dir.path().join("proxy.sock");
     World {
         _dir: dir,
         store,
         vault: Arc::new(vault),
-        clock,
         ann,
         socket,
     }
@@ -204,60 +174,17 @@ pub(super) fn world() -> World {
 
 impl World {
     pub(super) fn serve(&self) -> Served {
-        serve_on(
-            &self.socket,
-            self.store.clone(),
-            Arc::clone(&self.vault),
-            Some("front-key".to_owned()),
-        )
+        serve_on(&self.socket, self.store.clone(), Arc::clone(&self.vault))
     }
-
-    fn lease(&self, token: &[u8]) {
-        let expires = self.clock.now().saturating_add(Duration::from_secs(60));
-        self.store
-            .add_front_lease(token, "slack", self.ann, expires)
-            .unwrap();
-    }
-}
-
-fn claude() -> SecretName {
-    SecretName::parse("claude").unwrap()
-}
-
-#[test]
-fn a_front_proxy_reads_a_secret_only_while_its_user_holds_a_lease() {
-    let w = world();
-    let _served = w.serve();
-    let ledger = FrontsLedger::at(w.socket.clone(), "front-key".to_owned());
-    assert!(
-        matches!(
-            ledger.secret("slack", w.ann, &claude()),
-            Err(LedgerError::Refused(_))
-        ),
-        "no lease"
-    );
-    w.lease(b"lease-ann");
-    assert_eq!(ledger.lease_user(b"lease-ann", "slack"), Ok(Some(w.ann)));
-    assert_eq!(ledger.lease_user(b"lease-ann", "web"), Ok(None));
-    let secret = ledger.secret("slack", w.ann, &claude()).unwrap().unwrap();
-    assert_eq!(secret.expose(), b"ann-token");
-    assert!(
-        matches!(
-            ledger.secret("web", w.ann, &claude()),
-            Err(LedgerError::Refused(_))
-        ),
-        "a lease of another front"
-    );
 }
 
 #[test]
 fn a_wrong_key_is_refused() {
     let w = world();
     let _served = w.serve();
-    w.lease(b"lease-ann");
-    let ledger = FrontsLedger::at(w.socket, "not-the-key".to_owned());
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket), "not-the-key".to_owned());
     assert!(matches!(
-        ledger.lease_user(b"lease-ann", "slack"),
+        ledger.awake_tokens(),
         Err(LedgerError::Refused(_))
     ));
 }
@@ -267,7 +194,11 @@ fn a_hello_at_another_protocol_is_refused() {
     let w = world();
     let _served = w.serve();
     let mut stream = UnixStream::connect(&w.socket).unwrap();
-    writeln!(stream, r#"{{"fronts":{{"v":999,"key":"front-key"}}}}"#).unwrap();
+    writeln!(
+        stream,
+        r#"{{"egress":{{"v":999,"key":"{EGRESS_KEY}","box_id":null}}}}"#
+    )
+    .unwrap();
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply).unwrap();
     assert!(reply.contains("refused"), "{reply}");
@@ -288,18 +219,17 @@ fn a_hello_too_long_to_be_one_is_refused_without_reading_it_all() {
 #[test]
 fn a_controller_that_went_away_is_unavailable_until_it_is_back() {
     let w = world();
-    let ledger = FrontsLedger::at(w.socket.clone(), "front-key".to_owned());
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
     assert!(matches!(
-        ledger.lease_user(b"x", "slack"),
+        ledger.awake_tokens(),
         Err(LedgerError::Unavailable(_))
     ));
     let served = w.serve();
-    assert_eq!(ledger.lease_user(b"x", "slack"), Ok(None));
+    assert!(ledger.awake_tokens().is_ok());
     drop(served);
     let _restarted = w.serve();
-    assert_eq!(
-        ledger.lease_user(b"x", "slack"),
-        Ok(None),
+    assert!(
+        ledger.awake_tokens().is_ok(),
         "a pooled connection to the old controller is replaced"
     );
 }
@@ -307,12 +237,12 @@ fn a_controller_that_went_away_is_unavailable_until_it_is_back() {
 #[test]
 fn a_call_while_the_controller_is_down_is_unavailable() {
     let w = world();
-    let ledger = FrontsLedger::at(w.socket.clone(), "front-key".to_owned());
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
     let served = w.serve();
-    assert_eq!(ledger.lease_user(b"x", "slack"), Ok(None));
+    assert!(ledger.awake_tokens().is_ok());
     drop(served);
     assert!(matches!(
-        ledger.lease_user(b"x", "slack"),
+        ledger.awake_tokens(),
         Err(LedgerError::Unavailable(_))
     ));
 }

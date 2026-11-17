@@ -51,7 +51,7 @@ fn a_put_for_replaced_hands_writes_nothing_and_warns() {
         .unwrap()
         .box_id;
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .enroll(&Identity::parse("herdr:T1:U1").unwrap(), None)
         .unwrap();
     let machine_id = store
         .set_user_machine(user, &UserMachine::parse("mini", &[]).unwrap())

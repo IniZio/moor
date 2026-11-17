@@ -19,7 +19,6 @@ mod end_session;
 pub(crate) mod env;
 pub(crate) mod exec;
 pub(crate) mod forward;
-mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
 mod inspect;
@@ -100,10 +99,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
-        | Request::MachineStatus(_)
-        | Request::ProxyLease(_)
-        | Request::ProxyRelease(_)
-        | Request::ProxyStatus(_)) => Err(socket_only(&req)),
+        | Request::MachineStatus(_)) => Err(socket_only(&req)),
         Request::WebhookClaim(_) | Request::WebhookReport(_) => Err(CommandError::new(
             ErrorKind::Refused,
             webhook_outbox::FRONT_ONLY,

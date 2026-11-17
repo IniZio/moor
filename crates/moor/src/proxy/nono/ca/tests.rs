@@ -7,25 +7,14 @@ use nono_proxy::tls_intercept::EphemeralCa;
 
 use super::*;
 
-/// Loads or creates the CA the way the Proxy does, with the Box's common name.
+/// Makes and installs a CA for the Box the way the controller does.
 fn load_or_create(state: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
-    load_or_create_in(
-        &ca_dir(state, box_id),
-        &format!("moor box {}", box_id.get()),
-    )
+    let (key, cert) = generate(box_id)?;
+    install(state, box_id, (key.as_bytes(), &cert))
 }
 
 fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
-}
-
-#[test]
-fn reload_returns_same_cert() {
-    let state = tempfile::tempdir().unwrap();
-    let first = load_or_create(state.path(), BoxId::new(7)).unwrap();
-    let second = load_or_create(state.path(), BoxId::new(7)).unwrap();
-    assert_eq!(first.cert_pem, second.cert_pem);
-    assert_eq!(*first.key_der, *second.key_der);
 }
 
 #[test]
@@ -67,42 +56,17 @@ fn remove_deletes_and_is_idempotent() {
 }
 
 #[test]
-fn corrupt_key_errors_with_path_but_no_content() {
+fn a_key_that_does_not_match_the_cert_is_refused() {
     let state = tempfile::tempdir().unwrap();
-    let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
-    let key_path = ca_dir(state.path(), BoxId::new(7)).join("ca-key.pem");
-    std::fs::write(&key_path, "SECRET-GARBAGE-123").unwrap();
-    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
-    let text = err.to_string();
-    assert!(text.contains(&key_path.display().to_string()), "{text}");
-    assert!(!text.contains("SECRET-GARBAGE-123"), "{text}");
-    assert_eq!(
-        std::fs::read_to_string(&key_path).unwrap(),
-        "SECRET-GARBAGE-123"
-    );
-    assert!(!ca.cert_pem.is_empty());
-}
-
-#[test]
-fn mismatched_key_and_cert_error() {
-    let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), BoxId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), BoxId::new(7));
+    let (_, cert) = generate(BoxId::new(7)).unwrap();
     let other = EphemeralCa::generate().unwrap();
-    std::fs::write(dir.join("ca-key.pem"), other.key_pem().as_bytes()).unwrap();
-    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
-    assert!(err.to_string().contains("ca-key.pem"));
-}
-
-#[test]
-fn only_one_file_present_errors_without_regenerating() {
-    let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), BoxId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), BoxId::new(7));
-    std::fs::remove_file(dir.join("ca.pem")).unwrap();
-    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
-    assert!(err.to_string().contains("ca.pem"));
-    assert!(!dir.join("ca.pem").exists());
+    let err = install(
+        state.path(),
+        BoxId::new(7),
+        (other.key_pem().as_bytes(), &cert),
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("ca-key.pem"), "{err}");
 }
 
 #[test]

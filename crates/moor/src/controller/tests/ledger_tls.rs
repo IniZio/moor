@@ -248,22 +248,11 @@ fn a_connect_without_tls_gets_no_ledger_answer() {
 }
 
 #[test]
-fn old_supervisors_and_the_front_proxy_are_refused_over_tls() {
+fn old_supervisors_are_refused_over_tls() {
     let dir = tempfile::tempdir().unwrap();
-    let (running, addr, ca) = started(&dir, "fronts:\n  slack:\n    proxy_rules: [claude]\n");
-    let fronts_key = running
-        .ledger
-        .1
-        .as_deref()
-        .expect("front Proxy key")
-        .to_owned();
+    let (running, addr, ca) = started(&dir, "");
     serve(running);
     let at = endpoint(addr, &ca);
-    let front = say(
-        &at,
-        &format!(r#"{{"fronts":{{"v":1,"key":"{fronts_key}"}}}}"#),
-    );
-    assert!(front.contains("refused"), "{front}");
     let supervisor = say(&at, r#"{"box":{"v":1,"box_id":1,"key":"k"}}"#);
     assert!(supervisor.contains("bad hello"), "{supervisor}");
 }

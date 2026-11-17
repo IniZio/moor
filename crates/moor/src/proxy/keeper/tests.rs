@@ -298,7 +298,7 @@ fn runner(w: &World) -> Asked {
 fn hold_machine(w: &World) {
     let (user, _) = w
         .store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .enroll(&Identity::parse("herdr:T1:U1").unwrap(), None)
         .unwrap();
     let mini = UserMachine::parse("mini", &["macos".to_owned()]).unwrap();
     w.store.set_user_machine(user, &mini).unwrap();

@@ -200,7 +200,7 @@ fn an_origin_is_kept_only_from_a_front_that_names_a_key() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let mut req = add_req("daily", "0 9 * * *", "UTC");
-    ok(&f, &who, add(req.clone(), Some("slack")));
+    ok(&f, &who, add(req.clone(), Some("herdr")));
     let store = f.cx.store().unwrap();
     let origin = |s: &crate::store::Store| {
         s.workflow(
@@ -215,11 +215,11 @@ fn an_origin_is_kept_only_from_a_front_that_names_a_key() {
 
     req.origin_key = Some("C1/T1".to_owned());
     assert!(refusal(&f, &who, add(req.clone(), None)).contains("only a front"));
-    ok(&f, &who, add(req, Some("slack")));
+    ok(&f, &who, add(req, Some("herdr")));
     let got = origin(store).unwrap();
     assert_eq!(
         (got.front.as_str(), got.key.as_deref()),
-        ("slack", Some("C1/T1"))
+        ("herdr", Some("C1/T1"))
     );
 }
 

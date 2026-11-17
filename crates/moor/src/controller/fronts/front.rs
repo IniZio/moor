@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::FrontEntry;
 
-use crate::controller::front_proxy::Access;
 #[cfg(target_os = "linux")]
 use crate::controller::front_shim::refuse_under_tmp;
 use crate::controller::front_shim::SYSTEM;
@@ -26,23 +25,19 @@ pub(in crate::controller) struct Front {
     /// Paths it may read even where a cover hides them: its `read_only` entries and its
     /// program.
     pub(super) read_only: Vec<PathBuf>,
-    /// How it reaches its Proxy; none without a Proxy.
-    pub(super) proxy: Option<Access>,
     /// The TCP ports the host reaches it on at `127.0.0.1`.
     #[cfg(target_os = "linux")]
     pub(super) ports: Vec<u16>,
 }
 
 impl Front {
-    /// The front `ns` listening on `listener`, run as `entry` says, reaching its Proxy as
-    /// `access` says; none when `entry` has no command. Refuses a `read_only` path that would
+    /// The front `ns`, run as `entry` says; none when `entry` has no command. Refuses a `read_only` path that would
     /// show the front the controller's state dir, config dir, operator socket or vault key.
     pub(in crate::controller) fn new(
         ns: &str,
         entry: &FrontEntry,
         env: &Env,
         operator: &Path,
-        access: Option<Access>,
     ) -> Option<Result<Self, String>> {
         let mut command = entry.command.clone()?;
         let resolv = fs::canonicalize("/etc/resolv.conf").ok();
@@ -67,7 +62,6 @@ impl Front {
                         command,
                         state_dir: entry.state_dir.clone(),
                         read_only,
-                        proxy: access,
                         #[cfg(target_os = "linux")]
                         ports: entry.ports.clone(),
                     })
@@ -251,7 +245,7 @@ mod tests {
         };
         let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);
         let operator = Path::new("/nonexistent/c.sock");
-        let made = super::Front::new("web", &entry, &env, operator, None).unwrap();
+        let made = super::Front::new("web", &entry, &env, operator).unwrap();
         let e = made.err().unwrap();
         assert!(e.starts_with("fronts.web: its program "), "{e}");
     }

@@ -15,7 +15,7 @@ fn set(url: &str) -> UserCmd {
 #[test]
 fn set_show_and_rm_round_trip() {
     let f = fixture();
-    let me = id("slack:T1:UA");
+    let me = id("herdr:T1:UA");
     f.cx.store().unwrap().enroll(&me, None).unwrap();
     let none = json!({"source": null});
     assert_eq!(
@@ -50,7 +50,7 @@ fn set_show_and_rm_round_trip() {
 #[test]
 fn set_replaces_and_drops_an_earlier_ref() {
     let f = fixture();
-    let me = id("slack:T1:UA");
+    let me = id("herdr:T1:UA");
     f.cx.store().unwrap().enroll(&me, None).unwrap();
     run(
         &f.cx,
@@ -69,7 +69,7 @@ fn set_replaces_and_drops_an_earlier_ref() {
 #[test]
 fn another_users_profile_is_invisible_and_untouched() {
     let f = fixture();
-    let (a, b) = (id("slack:T1:UA"), id("slack:T1:UB"));
+    let (a, b) = (id("herdr:T1:UA"), id("herdr:T1:UB"));
     let store = f.cx.store().unwrap();
     store.enroll(&a, None).unwrap();
     store.enroll(&b, None).unwrap();
@@ -88,6 +88,6 @@ fn another_users_profile_is_invisible_and_untouched() {
 #[test]
 fn a_profile_needs_an_enrolled_user() {
     let f = fixture();
-    let err = run(&f.cx, &f.vault, &id("slack:T1:UZ"), &UserCmd::ProfileShow).unwrap_err();
+    let err = run(&f.cx, &f.vault, &id("herdr:T1:UZ"), &UserCmd::ProfileShow).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
 }

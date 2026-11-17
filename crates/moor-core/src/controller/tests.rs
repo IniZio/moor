@@ -124,7 +124,7 @@ fn default_watch_omits_filter_and_follow() {
 
 #[test]
 fn a_watch_carries_the_identity_it_asserts() {
-    let identity = Identity::parse("slack:T1/U1").expect("identity");
+    let identity = Identity::parse("herdr:T1/U1").expect("identity");
     let watch = ClientFrame::Watch {
         since: 0,
         boxes: None,
@@ -134,7 +134,7 @@ fn a_watch_carries_the_identity_it_asserts() {
         identity: Some(identity),
     };
     let line = watch.to_line();
-    assert!(line.contains(r#""identity":"slack:T1/U1""#), "{line}");
+    assert!(line.contains(r#""identity":"herdr:T1/U1""#), "{line}");
     assert_eq!(parse_frame(&line), Ok(watch));
 }
 

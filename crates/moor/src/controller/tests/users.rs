@@ -53,7 +53,7 @@ fn a_secret_value_is_in_no_reply_log_event_or_plaintext_db_byte() {
 #[test]
 fn two_fronts_asserting_one_email_share_a_user_and_its_secrets() {
     let served = Served::start();
-    let slack = served.front("slack");
+    let herdr = served.front("herdr");
     let web = served.front("web");
     let enroll = |socket: &Path, identity: &str, email: Option<&str>| {
         let mut req = json!({"cmd": "enroll", "identity": identity});
@@ -62,11 +62,11 @@ fn two_fronts_asserting_one_email_share_a_user_and_its_secrets() {
         }
         ask(socket, &req)
     };
-    let first = enroll(&slack, "slack:T1:U1", Some("alice@example.com"));
+    let first = enroll(&herdr, "herdr:T1:U1", Some("alice@example.com"));
     assert_eq!(first["value"]["created"], true, "{first}");
     let set =
-        json!({"cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": CANARY});
-    ask(&slack, &set);
+        json!({"cmd": "secret-set", "identity": "herdr:T1:U1", "name": "claude", "value": CANARY});
+    ask(&herdr, &set);
     let second = enroll(&web, "web:sub-1", Some("Alice@Example.com"));
     assert_eq!(second["value"]["user"], first["value"]["user"], "{second}");
     assert_eq!(second["value"]["created"], false, "{second}");
@@ -94,8 +94,8 @@ fn only_a_front_socket_may_vouch_for_an_email() {
     );
     refused(&machine, "only a front can vouch for an email");
     let bad = ask(
-        &served.front("slack"),
-        &json!({"cmd": "enroll", "identity": "slack:T1:U1", "email": "not-an-email"}),
+        &served.front("herdr"),
+        &json!({"cmd": "enroll", "identity": "herdr:T1:U1", "email": "not-an-email"}),
     );
     assert_ne!(bad["class"], "ok", "{bad}");
 }
@@ -104,14 +104,14 @@ fn only_a_front_socket_may_vouch_for_an_email() {
 fn a_front_socket_cannot_act_for_the_local_user() {
     let served = Served::start();
     ask(&served.main, &json!({"cmd": "enroll"}));
-    let slack = served.front("slack");
+    let herdr = served.front("herdr");
     for request in [
         json!({"cmd": "enroll", "identity": me()}),
         json!({"cmd": "secret-set", "identity": me(), "name": "claude", "value": CANARY}),
         json!({"cmd": "secret-names", "identity": me()}),
     ] {
-        let got = ask(&slack, &request);
-        refused(&got, "may assert only slack:");
+        let got = ask(&herdr, &request);
+        refused(&got, "may assert only herdr:");
         assert!(!got.to_string().contains(CANARY), "{got}");
     }
     let names = ask(&served.main, &json!({"cmd": "secret-names"}));
@@ -119,32 +119,32 @@ fn a_front_socket_cannot_act_for_the_local_user() {
 }
 
 #[test]
-fn the_controller_socket_cannot_act_for_a_slack_user() {
+fn the_controller_socket_cannot_act_for_a_herdr_user() {
     let served = Served::start();
-    let slack = served.front("slack");
-    ask(&slack, &json!({"cmd": "enroll", "identity": "slack:T1:U1"}));
+    let herdr = served.front("herdr");
+    ask(&herdr, &json!({"cmd": "enroll", "identity": "herdr:T1:U1"}));
     let set =
-        json!({"cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": "v"});
+        json!({"cmd": "secret-set", "identity": "herdr:T1:U1", "name": "claude", "value": "v"});
     refused(&ask(&served.main, &set), "speaks only for local:");
-    let names = json!({"cmd": "secret-names", "identity": "slack:T1:U1"});
-    assert_eq!(ask(&slack, &names)["value"]["names"], json!([]));
+    let names = json!({"cmd": "secret-names", "identity": "herdr:T1:U1"});
+    assert_eq!(ask(&herdr, &names)["value"]["names"], json!([]));
 }
 
 #[test]
 fn a_workflow_add_obeys_the_default_floor_and_takes_its_origin_from_the_socket() {
     let served = Served::start();
-    let slack = served.front("slack");
-    ask(&slack, &json!({"cmd": "enroll", "identity": "slack:U1"}));
+    let herdr = served.front("herdr");
+    ask(&herdr, &json!({"cmd": "enroll", "identity": "herdr:U1"}));
     ask(&served.main, &json!({"cmd": "enroll"}));
     let add = |cron: &str, key: Option<&str>| {
-        let mut req = json!({"cmd": "workflow-add", "identity": "slack:U1", "name": "daily",
+        let mut req = json!({"cmd": "workflow-add", "identity": "herdr:U1", "name": "daily",
             "cron": cron, "timezone": "UTC", "repos": ["o/n"], "prompt": "fix"});
         if let Some(key) = key {
             req["origin_key"] = json!(key);
         }
         req
     };
-    let fast = ask(&slack, &add("* * * * *", None));
+    let fast = ask(&herdr, &add("* * * * *", None));
     assert_eq!(fast["error"]["kind"], "usage", "{fast}");
     let message = fast["error"]["message"].as_str().unwrap_or_default();
     assert!(
@@ -152,11 +152,11 @@ fn a_workflow_add_obeys_the_default_floor_and_takes_its_origin_from_the_socket()
         "{fast}"
     );
 
-    let added = ask(&slack, &add("0 9 * * *", Some("C1/T1")));
+    let added = ask(&herdr, &add("0 9 * * *", Some("C1/T1")));
     assert_eq!(added["class"], "ok", "{added}");
     let listed = ask(
-        &slack,
-        &json!({"cmd": "workflow-list", "identity": "slack:U1"}),
+        &herdr,
+        &json!({"cmd": "workflow-list", "identity": "herdr:U1"}),
     );
     assert_eq!(listed["value"]["workflows"][0]["name"], "daily", "{listed}");
 

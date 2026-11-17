@@ -112,14 +112,6 @@ impl fmt::Debug for FakeProxyHost {
 }
 
 impl ProxyHost for FakeProxyHost {
-    fn front_ca_pem(&self) -> Result<String, String> {
-        Ok("test front CA".to_owned())
-    }
-
-    fn front_running(&self, _front: &str) -> bool {
-        false
-    }
-
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         let mut s = self.lock();
         s.calls.push(ProxyHostCall::Ensure(spec.clone()));

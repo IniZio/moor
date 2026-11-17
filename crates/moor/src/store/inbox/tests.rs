@@ -62,7 +62,7 @@ fn a_sender_appends_without_a_turn_and_the_oldest_row_is_next() {
         .enqueue(id, InboxKind::Prompt, "fix it", "start")
         .unwrap();
     let second = store
-        .enqueue(id, InboxKind::Steer, "and test", "U1 slack")
+        .enqueue(id, InboxKind::Steer, "and test", "U1 herdr")
         .unwrap();
     assert!(second > first);
     let next = store.next_for(id).unwrap().unwrap();

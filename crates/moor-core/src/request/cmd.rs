@@ -73,11 +73,8 @@ impl Request {
             Self::MachineLinks(_) => "machine-links",
             Self::MachineBox(_) => "machine-box",
             Self::MachineHold(_) => "machine-hold",
-            Self::ProxyLease(_) => "proxy-lease",
             Self::WebhookClaim(_) => "webhook-claim",
             Self::WebhookReport(_) => "webhook-report",
-            Self::ProxyRelease(_) => "proxy-release",
-            Self::ProxyStatus(_) => "proxy-status",
             Self::As(_) => "as",
             Self::Version {} => "version",
         }

@@ -7,31 +7,14 @@ use crate::proxy::ledger::{serve, Keys};
 use crate::store::Store;
 use crate::vault::Vault;
 
-/// Serves one connection on the ledger socket, to the front and shared egress Proxies; without a
-/// shared store it closes at once, so the Proxy sees the controller as unavailable. Any other
-/// hello is refused, so a per-Box Proxy an earlier build left running gives up and exits.
-pub(crate) fn serve_ledger(
-    (env, vault): (&Env, &Vault),
-    fronts_key: Option<&str>,
-    stream: impl Read + Write,
-) {
+/// Serves one connection on the ledger socket or its TLS listener, to the shared egress Proxy;
+/// without a shared store it closes at once, so the Proxy sees the controller as unavailable.
+/// Any other hello is refused, so a per-Box Proxy an earlier build left running gives up and
+/// exits.
+pub(crate) fn serve_ledger((env, vault): (&Env, &Vault), stream: impl Read + Write) {
     if let Some(store) = env.shared::<Store>() {
         let keys = Keys {
-            fronts: fronts_key,
             egress: egress_key(env),
-            env: Some(env),
-        };
-        serve((store, vault), &keys, stream);
-    }
-}
-
-/// Serves one connection on the ledger's TLS listener, to the shared egress Proxy only.
-pub(crate) fn serve_egress_ledger((env, vault): (&Env, &Vault), stream: impl Read + Write) {
-    if let Some(store) = env.shared::<Store>() {
-        let keys = Keys {
-            fronts: None,
-            egress: egress_key(env),
-            env: Some(env),
         };
         serve((store, vault), &keys, stream);
     }
@@ -77,7 +60,7 @@ mod tests {
         let env =
             Env::from_pairs([("MOOR_STATE_DIR", dir.path().to_str().unwrap())]).sharing(store);
         let (ours, theirs) = UnixStream::pair().unwrap();
-        let served = std::thread::spawn(move || serve_ledger((&env, &vault), None, theirs));
+        let served = std::thread::spawn(move || serve_ledger((&env, &vault), theirs));
         let line = format!(
             "{{\"box\":{{\"v\":{LEDGER},\"box_id\":{},\"key\":\"k\"}}}}\n",
             id.get()

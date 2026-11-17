@@ -19,7 +19,6 @@ use tokio_tungstenite::WebSocketStream;
 use super::boxes::{Refused, Route};
 use super::{Shared, PATH, SYNCED};
 use crate::proxy::front::{connect_head, plain_request, refusal};
-use crate::proxy::token::is_lease;
 use crate::store::token_hash;
 use moor_core::Secret;
 
@@ -59,20 +58,12 @@ struct Open {
     key: String,
     /// `host:port`.
     target: String,
-    /// Where it goes.
-    to: To,
+    /// The Box's route.
+    route: Route,
     /// Whether the tunnel carries one plain `http://` request.
     plain: bool,
     /// Whether the target is the machine service.
     machine: bool,
-}
-
-/// Where a tunnel goes.
-enum To {
-    /// A Box's proxy.
-    Box(Route),
-    /// The proxy of a remote front's user, and the token it checks.
-    Front(SocketAddr, Secret),
 }
 
 /// Serves one connection to its end.
@@ -92,15 +83,11 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
 /// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
 /// the connection and relays the tunnel.
 async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
-    let (addr, internal) = match &ask.to {
-        To::Box(route) => {
-            if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
-                return machine::tunnel(stream, service, ask, route).await;
-            }
-            (route.served.addr, &route.served.internal)
-        }
-        To::Front(addr, internal) => (*addr, internal),
-    };
+    let route = &ask.route;
+    if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
+        return machine::tunnel(stream, service, ask, route).await;
+    }
+    let (addr, internal) = (route.served.addr, &route.served.internal);
     let (mut upstream, rest) = match open(addr, internal, &ask.target).await {
         Ok(opened) => opened,
         Err(status) => return answer(&mut stream, status, "the Box's proxy refused").await,
@@ -196,37 +183,26 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
         return Err(refuse(401, "unknown token"));
     }
     let hash = token_hash(&token);
-    let lease = is_lease(&token);
-    if lease && machine {
-        return Err(refuse(403, "a lease does not reach the machine service"));
-    }
-    let to = tokio::task::block_in_place(|| {
-        if lease {
-            shared
-                .leases
-                .admit(&hash, &shared.boxes)
-                .map(|(addr, internal)| To::Front(addr, internal))
-        } else {
-            shared.boxes.admit(&hash).map(To::Box)
-        }
-    })
-    .map_err(|refused| match refused {
-        Refused::Unknown => refuse(401, "unknown token"),
-        Refused::Limited => refuse(429, "too many tunnels; retry after a second"),
-        Refused::Unavailable(why) => {
-            shared
-                .boxes
-                .say(format_args!("a tunnel was refused: {why}"));
-            refuse(503, "temporarily unavailable")
-        }
-    })?;
+    let route =
+        tokio::task::block_in_place(|| shared.boxes.admit(&hash)).map_err(
+            |refused| match refused {
+                Refused::Unknown => refuse(401, "unknown token"),
+                Refused::Limited => refuse(429, "too many tunnels; retry after a second"),
+                Refused::Unavailable(why) => {
+                    shared
+                        .boxes
+                        .say(format_args!("a tunnel was refused: {why}"));
+                    refuse(503, "temporarily unavailable")
+                }
+            },
+        )?;
     if machine && !ask.plain {
         return Err(refuse(403, "the machine service takes only plain http"));
     }
     Ok(Checked::Tunnel(Open {
         key,
         target,
-        to,
+        route,
         plain: ask.plain,
         machine,
     }))

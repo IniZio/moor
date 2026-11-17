@@ -60,17 +60,6 @@ pub struct EnrollReq {
     pub email: Option<Email>,
 }
 
-/// Arguments of `proxy-release`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProxyReleaseReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The token `proxy-lease` granted.
-    pub token: SecretValue,
-}
-
 /// Arguments of `as`: another request, acting as the identity a front asserts for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -210,15 +199,6 @@ pub enum UserCmd {
         /// The machine's name.
         name: String,
     },
-    /// Lease the front Proxy for the caller's user.
-    ProxyLease,
-    /// End the lease of `token`.
-    ProxyRelease {
-        /// The token `proxy-lease` granted.
-        token: SecretValue,
-    },
-    /// Whether the front Proxy is running.
-    ProxyStatus,
 }
 
 impl UserCmd {
@@ -247,9 +227,6 @@ impl UserCmd {
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
             Self::MachineStatus { .. } => "machine-status",
-            Self::ProxyLease => "proxy-lease",
-            Self::ProxyRelease { .. } => "proxy-release",
-            Self::ProxyStatus => "proxy-status",
             Self::Workflow(c) => c.cmd(),
         }
     }
@@ -329,9 +306,6 @@ impl Request {
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
             Self::MachineList(r) => (r.identity, UserCmd::MachineList),
             Self::MachineStatus(r) => (r.identity, UserCmd::MachineStatus { name: r.name }),
-            Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
-            Self::ProxyRelease(r) => (r.identity, UserCmd::ProxyRelease { token: r.token }),
-            Self::ProxyStatus(r) => (r.identity, UserCmd::ProxyStatus),
             other => match super::workflow::split(other) {
                 Ok((identity, cmd)) => (identity, UserCmd::Workflow(cmd)),
                 Err(other) => return Err(other),

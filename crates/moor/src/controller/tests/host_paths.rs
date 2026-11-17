@@ -20,7 +20,7 @@ use super::fronts::{ask, refused, Served};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
-const ANN: &str = "slack:T1:ANN";
+const ANN: &str = "herdr:T1:ANN";
 pub(super) const BOX: &str = "ann-box";
 
 /// A crabbox that reports a supported version and the ssh target of every Box.
@@ -65,12 +65,12 @@ fn acting(identity: &str, request: &Value) -> Value {
     json!({"cmd": "as", "identity": identity, "request": request})
 }
 
-/// Enrolls `identity` through the `slack` front and gives its user a `claude` secret.
+/// Enrolls `identity` through the `herdr` front and gives its user a `claude` secret.
 fn enroll_ann(served: &Served) -> UserId {
-    let slack = served.front("slack");
-    let got = ask(&slack, &json!({"cmd": "enroll", "identity": ANN}));
+    let herdr = served.front("herdr");
+    let got = ask(&herdr, &json!({"cmd": "enroll", "identity": ANN}));
     let set = json!({"cmd": "secret-set", "identity": ANN, "name": "claude", "value": "x"});
-    assert_eq!(ask(&slack, &set)["class"], "ok");
+    assert_eq!(ask(&herdr, &set)["class"], "ok");
     UserId::new(got["value"]["user"].as_i64().expect("user"))
 }
 
@@ -121,7 +121,7 @@ fn a_front_cp_to_the_host_is_refused_and_the_operators_cp_still_copies() {
     std::fs::write(&src, "copied").expect("box file");
     let dest = served.dir.path().join("out.txt");
     let cp = json!({"cmd": "cp", "box": BOX, "src": src, "dest": dest});
-    let got = ask(&served.front("slack"), &acting(ANN, &cp));
+    let got = ask(&served.front("herdr"), &acting(ANN, &cp));
     refused(&got, "cp to the host is operator-only");
     assert!(!dest.exists(), "the refused cp wrote {}", dest.display());
     assert_eq!(copies(&store, id), 0);
@@ -137,7 +137,7 @@ fn no_request_names_a_host_directory_for_the_controller_to_read() {
     enroll_ann(&served);
     let inside = json!({"cmd": "in", "dir": "/", "request": {"cmd": "env"}});
     for got in [
-        ask(&served.front("slack"), &acting(ANN, &inside)),
+        ask(&served.front("herdr"), &acting(ANN, &inside)),
         ask(&served.main, &inside),
     ] {
         assert_eq!(got["frame"], "error", "{got}");
@@ -158,7 +158,7 @@ fn a_front_box_rsync_is_refused_even_on_its_own_box() {
         "./",
     ];
     let rsync = json!({"cmd": "box-rsync", "box": id.get(), "argv": argv});
-    let got = ask(&served.front("slack"), &acting(ANN, &rsync));
+    let got = ask(&served.front("herdr"), &acting(ANN, &rsync));
     refused(
         &got,
         "box-rsync is the machine runner's, which is operator-only",
