@@ -12,7 +12,7 @@ use crate::ops::common::node::seat_of;
 use crate::ops::common::step;
 use crate::store::{BoxRow, Store};
 
-/// The feature a machine's agent reports when its crabbox mounts cache volumes.
+/// The feature a machine's agent reports when it mounts cache volumes.
 const CACHE_VOLUME: &str = "cache-volume";
 
 /// Why a Box whose plan holds volumes starts without them.
@@ -50,12 +50,6 @@ impl Why {
                 provider.as_str()
             ),
             Self::NoUser => "the Box has no owning user".to_owned(),
-            Self::Provider if provider.as_str() == "external" => {
-                "provider external keeps no cache \
-                volumes: declare external.capabilities.cacheVolumes in the crabbox config (see \
-                docs/providers.md)"
-                    .to_owned()
-            }
             Self::Provider => format!("provider {} keeps no cache volumes", provider.as_str()),
             Self::MachineOffline => {
                 "the machine is not linked and online as the owner's".to_owned()
@@ -101,7 +95,7 @@ fn layers(cx: &Cx, cfg: &BoxSettings) -> CacheLayers {
     }
 }
 
-/// Why the personal machine `row` is placed on keeps no crabbox cache volumes for `user`, when
+/// Why the personal machine `row` is placed on keeps no cache volumes for `user`, when
 /// it does not: it is offline, unlinked or not the owner's, or its agent does not report them.
 fn machine_lacks(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<Why> {
     match machine_features(cx, store, row, user) {

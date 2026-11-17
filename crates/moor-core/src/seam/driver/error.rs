@@ -26,8 +26,6 @@ pub enum DriverError {
     Unavailable(String),
     /// Provider cannot do this.
     Unsupported(&'static str),
-    /// The provider moor looked up is not one crabbox knows.
-    UnknownProvider(String),
     /// A reverse tunnel stopped or stalled before it was ready.
     Tunnel {
         /// What went wrong.
@@ -37,7 +35,7 @@ pub enum DriverError {
     },
     /// The ssh connection to the Box dropped, so whether the remote command ran is unknown.
     Transport {
-        /// Last lines crabbox or ssh wrote to stderr, as one line.
+        /// Last lines ssh wrote to stderr, as one line.
         stderr_tail: String,
     },
     /// A setting or file permission on this host makes the provider refuse; a retry cannot help.

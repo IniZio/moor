@@ -91,26 +91,6 @@ impl Drop for Active<'_> {
     }
 }
 
-/// A writer shared between the stderr copier and the wait notice.
-#[derive(Clone)]
-struct Shared(Arc<Mutex<Box<dyn Write + Send>>>);
-
-impl Write for Shared {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .flush()
-    }
-}
-
 /// Stops the interrupt watcher when dropped.
 struct Done(Arc<AtomicBool>);
 
@@ -297,8 +277,7 @@ impl SystemProc {
         inherit_err: Box<dyn Write + Send>,
     ) -> Result<(), ProcError> {
         let (stdin, payload) = stdin_for(&spec.stdin).map_err(ProcError::Spawn)?;
-        let notice = Shared(Arc::new(Mutex::new(inherit_err)));
-        let (stdout, err_sink) = sinks(out, Box::new(notice.clone())).map_err(ProcError::Spawn)?;
+        let (stdout, err_sink) = sinks(out, inherit_err).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
         cmd.stdin(stdin).stdout(stdout).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(ProcError::Spawn)?;

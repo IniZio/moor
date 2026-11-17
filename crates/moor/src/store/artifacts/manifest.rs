@@ -1,5 +1,4 @@
-//! The host-side `artifact-manifest.json` for a Box, in the crabbox artifact
-//! manifest shape (schema version 1).
+//! The host-side `artifact-manifest.json` for a Box (schema version 1).
 
 use std::io;
 

@@ -141,7 +141,7 @@ fn a_machine_is_reached_through_the_runner_its_link_row_names_with_the_key() {
         reply: Reply::Status(Box::new(sample())),
     });
     link(&store, &clock, &addr, machine_id);
-    let runners = runners(dir.path(), Some(store.clone()), Arc::clone(&clock));
+    let runners = runners(dir.path(), Some(store), Arc::clone(&clock));
     assert_eq!(runners.status(machine_id), Ok(sample()));
     let (hello, ask) = served.join().unwrap();
     assert_eq!(
