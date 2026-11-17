@@ -140,6 +140,7 @@ fn holding(w: &World, service: SocketAddr) -> (Server, i64) {
 /// Machine `machine_id`'s link, up since 1 s.
 fn link(machine_id: i64) -> MachineLink {
     MachineLink {
+        provides: None,
         machine_id,
         online: true,
         since: Ts::from_millis(1_000),
@@ -212,6 +213,7 @@ fn relinking(w: &World, machine_id: i64, new_holder: SocketAddr, unread: bool) -
         assert!(head.contains("X-Moor-Holder-Only: 1\r\n"), "{head}");
         let runner = RunnerAddr::new(new_holder.as_str());
         let link = MachineLink {
+            provides: None,
             since: Ts::from_millis(2_000),
             ..link(machine_id)
         };

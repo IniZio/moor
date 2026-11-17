@@ -42,6 +42,7 @@ fn a_personal_node_whose_link_drops_before_the_plan_records_why_the_box_is_cold(
     let links = store.user_machine_links(REQUESTER_USER).unwrap();
     let machine_id = links.first().unwrap().1.machine_id;
     let link = MachineLink {
+        provides: None,
         machine_id,
         online: false,
         since: Ts::from_millis(2),

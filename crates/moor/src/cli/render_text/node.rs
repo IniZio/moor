@@ -68,7 +68,8 @@ pub(super) fn added_text(value: &Value) -> Option<String> {
     Some(format!("shared node \"{name}\" is machine {id}\n"))
 }
 
-/// One line per node: name, scope, runtime, link state, used/capacity and labels.
+/// One line per node: name, scope, what its Boxes run on, link state, used/capacity and labels.
+/// That is how the agent says it provides Boxes, such as `docker`, else the node's runtime.
 pub(super) fn list_text(value: &Value) -> Option<String> {
     let nodes = value.get("nodes")?.as_array()?;
     if nodes.is_empty() {
@@ -82,7 +83,7 @@ pub(super) fn list_text(value: &Value) -> Option<String> {
             "{}  {}  {}  {}  {}",
             text("name")?,
             text("scope")?,
-            text("runtime")?,
+            text("provides").or_else(|| text("runtime"))?,
             link_text(n)?,
             load_text(n)?
         );

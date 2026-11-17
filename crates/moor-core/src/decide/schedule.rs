@@ -60,6 +60,8 @@ pub struct Node {
     pub waiting: usize,
     /// Its live memory; `None` when its agent has never reported it, so only the count limits it.
     pub memory: Option<Memory>,
+    /// How its agent provides Boxes itself, such as `docker`, when it says; for people to read.
+    pub provides: Option<String>,
 }
 
 /// What a new Box asks of a node.

@@ -38,6 +38,7 @@ fn enrolled(w: &World, name: &str, online: Option<bool>, max_boxes: Option<u32>)
 
 fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
     let link = MachineLink {
+        provides: None,
         machine_id,
         online,
         since: Ts::from_millis(1),
@@ -213,6 +214,7 @@ pub(super) fn cached_world(features: &[&str], online: bool) -> World {
     let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());
     let id = enrolled(&w, "hv", None, None);
     let link = MachineLink {
+        provides: None,
         machine_id: id,
         online,
         since: Ts::from_millis(1),
@@ -266,6 +268,7 @@ fn report(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>) {
 /// Like [`report`], with PSI `full` as well.
 fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, full: Option<u32>) {
     let link = MachineLink {
+        provides: None,
         machine_id: hv,
         online: true,
         since: Ts::from_millis(1),
@@ -294,6 +297,7 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
 /// Like [`report`] with plenty of memory, plus `free` of `total` GiB of disk.
 fn report_disk(w: &World, hv: i64, disk: Option<(u64, u64)>) {
     let link = MachineLink {
+        provides: None,
         machine_id: hv,
         online: true,
         since: Ts::from_millis(1),

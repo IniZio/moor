@@ -17,6 +17,7 @@ const KEYS: [&str; 2] = [
 
 fn link(machine_id: i64, online: bool, since: i64) -> MachineLink {
     MachineLink {
+        provides: None,
         machine_id,
         online,
         since: Ts::from_millis(since),

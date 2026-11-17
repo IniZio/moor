@@ -11,6 +11,7 @@ fn node(name: &str) -> NodeView {
         scope: NodeScope::Shared,
         owner: None,
         runtime: "cloudhypervisor".to_owned(),
+        provides: None,
         online: true,
         offline_since: None,
         used: 0,

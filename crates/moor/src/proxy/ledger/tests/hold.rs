@@ -85,6 +85,7 @@ impl Rig {
             unreachable!("not held")
         };
         let link = MachineLink {
+            provides: None,
             machine_id: held.machine_id,
             online: true,
             since: Ts::from_millis(1_000),
