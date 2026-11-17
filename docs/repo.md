@@ -14,6 +14,13 @@ moor repo config get OWNER/NAME > repo.yaml
 moor repo config set OWNER/NAME --file repo.yaml --expected-revision 3
 ```
 
+The portal is where people edit it. Sign in to the gate and open **Repos** on
+the account page. Pick or type a repo, then edit the YAML in the text box.
+Save sends the revision the page read. If someone else saved first, the page
+says who changed it and when, and you reload before saving again. A parse
+error shows under the text box. An account that cannot push to the repo reads
+the config and cannot save.
+
 `get --json` also shows the revision and who last edited it. With
 `--expected-revision`, a write fails when someone else saved first, so you
 read again instead of overwriting. The text must parse, or `set` refuses it
