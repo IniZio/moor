@@ -210,6 +210,7 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
     let started = crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
+            placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,
             name: job.name.clone(),
@@ -245,6 +246,7 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
     let started = crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
+            placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,
             name: job.name.clone(),

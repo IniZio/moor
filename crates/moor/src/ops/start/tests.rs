@@ -157,6 +157,7 @@ fn on_github(w: World) -> World {
 /// A start request for `name`, with no repo.
 fn req(name: &str) -> StartReq {
     StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
         name: box_name(name),

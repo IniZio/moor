@@ -1,6 +1,7 @@
 //! The node scheduler: which node hosts a new Box, or why none can.
 
 use crate::name::NodeName;
+pub use crate::request::Placement;
 use crate::user::UserId;
 
 mod memory;
@@ -67,6 +68,8 @@ pub struct Node {
 /// What a new Box asks of a node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxSpec {
+    /// How far to look past the first candidate when no node is named.
+    pub placement: Placement,
     /// Labels the node must carry.
     pub labels: Vec<String>,
     /// The node the user named, if any.
@@ -159,7 +162,9 @@ fn nowhere(default: Option<&NodeName>) -> Verdict {
 ///
 /// With no node named, the candidates are the requester's personal nodes, then every shared
 /// one, `default` first among those. Only the first candidate is tried: an offline or full
-/// node never sends the Box to another one. `now` is unix seconds.
+/// node never sends the Box to another one, unless the spec's placement is
+/// [`Placement::FirstOnline`], which skips offline candidates. A full node still queues the Box.
+/// `now` is unix seconds.
 #[must_use]
 pub fn schedule(
     nodes: &[Node],
@@ -208,6 +213,11 @@ pub fn schedule(
     let Some((first, rest)) = order.split_first() else {
         return nowhere(default);
     };
+    if spec.placement == Placement::FirstOnline && spec.node.is_none() {
+        if let Some(up) = order.iter().find(|n| n.online == Online::Online) {
+            return place(up, None, now);
+        }
+    }
     let other = rest
         .iter()
         .find(|n| n.online == Online::Online)

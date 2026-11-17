@@ -146,6 +146,7 @@ fn spec_of(req: &StartReq, repo: Option<&RepoConfig>) -> Result<BoxSpec, Command
         .transpose()
         .map_err(|e| CommandError::new(ErrorKind::Refused, e.to_string()))?;
     Ok(BoxSpec {
+        placement: req.placement,
         labels: repo.map(|r| r.node.labels.clone()).unwrap_or_default(),
         node,
     })

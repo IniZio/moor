@@ -13,6 +13,7 @@ fn n(s: &str) -> BoxName {
 #[test]
 fn config_is_left_out_when_absent_and_kept_when_given() {
     let start = |config: Option<&str>| StartReq {
+        placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: config.map(str::to_owned),
         name: n("x"),

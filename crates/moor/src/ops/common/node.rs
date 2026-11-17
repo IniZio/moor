@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use moor_core::box_key::PoolSeat;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::decide::schedule::{
-    behind_the_queue, schedule, BoxSpec, Memory, Node, Scope, Verdict,
+    behind_the_queue, schedule, BoxSpec, Memory, Node, Placement, Scope, Verdict,
 };
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -191,6 +191,7 @@ pub(crate) fn admit(
     let provider = runtime_id(&node);
     let caps = provider_caps(cx, provider.as_str())?;
     let on_it = BoxSpec {
+        placement: Placement::FirstOnly,
         labels: spec.labels,
         node: Some(node.name.clone()),
     };

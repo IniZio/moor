@@ -8,7 +8,7 @@ use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFiel
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use moor_core::decide::schedule::BoxSpec;
+use moor_core::decide::schedule::{BoxSpec, Placement};
 
 use super::{backfill, configured, preflight, runtime_of};
 use crate::cx::Cx;
@@ -183,6 +183,7 @@ fn with_no_shared_node_a_host_provider_still_goes_to_its_machine() {
 fn with_no_node_at_all_a_start_is_refused_saying_how_to_get_one() {
     let w = world_without_nodes();
     let spec = BoxSpec {
+        placement: Placement::FirstOnly,
         labels: Vec::new(),
         node: None,
     };

@@ -18,6 +18,7 @@ pub(super) fn lost(row: &BoxRow) -> bool {
 /// Brings Box `row` back on new hands with its agent, as a start on it does.
 pub(super) fn bring_back(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let req = StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
         name: row.name.clone(),
