@@ -77,9 +77,6 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     if let Some(warning) = Moor::schema_warning(&running.env) {
         log(&sink, &warning);
     }
-    for line in Moor::import_repo_configs(&running.env) {
-        log(&sink, &line);
-    }
     serve_started(
         running,
         &wake,
