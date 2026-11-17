@@ -119,6 +119,11 @@ impl FakeBox {
 
     /// The `sh` that runs the egress lines for `hosts`, then `echo ran`.
     fn command(&self, hosts: &[String]) -> std::process::Command {
+        self.command_with(hosts, false)
+    }
+
+    /// [`Self::command`], with tinyproxy logging each request when `log`.
+    fn command_with(&self, hosts: &[String], log: bool) -> std::process::Command {
         let [profile, exec, local, loaded] = self.apparmor_paths();
         let aa = AppArmor {
             profile: &profile,
@@ -126,7 +131,7 @@ impl FakeBox {
             local: &local,
             loaded: &loaded,
         };
-        let mut script = lines_with(self.port.port(), UPSTREAM, hosts, &aa).join("\n");
+        let mut script = lines_with(self.port.port(), UPSTREAM, hosts, &aa, log).join("\n");
         script.push_str("\necho ran\n");
         let mut cmd = std::process::Command::new(self.bin.join("sh"));
         cmd.args(["-c", &script])
@@ -228,6 +233,7 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
             "github.com",
             "git.internal.example",
         ]),
+        false,
     );
     assert_eq!(
         got,
@@ -275,7 +281,7 @@ fn tinyproxy_starts_with_its_descriptor_limit_raised_to_the_hard_limit() {
 
 #[test]
 fn a_config_with_no_credential_host_sends_everything_direct() {
-    assert!(!config(40000, 20000, &[]).contains("upstream"));
+    assert!(!config(40000, 20000, &[], false).contains("upstream"));
 }
 
 #[test]
@@ -374,9 +380,25 @@ fn tinyproxy_starts_from_the_config_with_its_pid_file_under_dot_moor() {
         b.port.port(),
         UPSTREAM,
         &hosts(&["api.anthropic.com", "github.com"]),
+        false,
     ) + &format!("PidFile \"{}\"\n", pid_file.display());
     assert_eq!(b.conf(), expected);
     assert!(pid_file.exists());
+}
+
+#[test]
+fn a_logging_tinyproxy_logs_each_request_under_dot_moor() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    let hosts = hosts(&["github.com"]);
+    let (ok, out, err) = FakeBox::outcome(&b.command_with(&hosts, true).output().unwrap());
+    assert!(ok, "{out}{err}");
+    let conf = b.conf();
+    assert!(conf.contains("\nLogLevel Connect\n"), "{conf}");
+    let log = b.home.join(".moor/egress-proxy.log");
+    assert!(
+        conf.contains(&format!("\nLogFile \"{}\"\n", log.display())),
+        "{conf}"
+    );
 }
 
 #[test]

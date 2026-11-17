@@ -12,6 +12,11 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 pub(super) const EGRESS_SHELL_VARS: &str =
     "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa";
 
+/// The log of the requests tinyproxy took, relative to the Box user's home. Only the agent place
+/// of a machine's Box keeps it, for the machine agent to read. Its `Request` lines name each
+/// host and port.
+pub const PROXY_LOG: &str = ".moor/egress-proxy.log";
+
 /// The egress forwarder, relative to the Box user's home. Its config is this path with `.json`,
 /// a replacement waiting to be swapped in has `.new`, and it writes `.pid` and `.log` beside it.
 pub const FORWARDER: &str = ".moor/egress-forward";
@@ -29,6 +34,8 @@ const LOCK: &str = "$HOME/.moor/egress.lock";
 const INSTALL_LOG: &str = "$HOME/.moor/egress-install.log";
 /// What tinyproxy printed when it last started.
 const START_LOG: &str = "$HOME/.moor/egress-start.log";
+/// [`PROXY_LOG`], as shell text.
+const LOG: &str = "$HOME/.moor/egress-proxy.log";
 /// What `apparmor_parser` printed when it last reloaded tinyproxy's profile.
 const APPARMOR_LOG: &str = "$HOME/.moor/egress-apparmor.log";
 
@@ -54,11 +61,15 @@ pub(super) const SYSTEM_APPARMOR: AppArmor<'static> = AppArmor {
 };
 
 /// The local `AppArmor` rules that let the distro's tinyproxy profile reach moor's files and no
-/// others, as shell text inside double quotes.
-pub(super) fn apparmor_rules() -> String {
-    format!(
+/// others, as shell text inside double quotes. With `log` they also let it write [`PROXY_LOG`].
+pub(super) fn apparmor_rules(log: bool) -> String {
+    let mut rules = format!(
         "# Written by moor for its egress proxy.\nfile r \\\"{CONF}\\\",\nfile r \\\"{CONF}.new\\\",\nfile rw \\\"{PID}\\\",\nfile w \\\"{START_LOG}\\\","
-    )
+    );
+    if log {
+        let _ = write!(rules, "\nfile w \\\"{LOG}\\\",");
+    }
+    rules
 }
 
 /// Proxy variables apt must not see, so the install goes direct.
@@ -85,16 +96,18 @@ const LOCK_WAIT: u32 = 300;
 /// with its soft descriptor limit raised to the hard one.
 const MAX_CLIENTS: u32 = 1024;
 
-/// The tinyproxy config without its `PidFile` line: listen on loopback `listen`, and send each of
-/// `hosts` to the Proxy tunnel on loopback `upstream`.
+/// The tinyproxy config without its `PidFile` and `LogFile` lines: listen on loopback `listen`,
+/// and send each of `hosts` to the Proxy tunnel on loopback `upstream`. With `log` it logs each
+/// request, and `Connect` is the quietest level that does.
 ///
 /// A quoted host matches only itself; a host that starts with `.` matches its subdomains.
-pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
+pub(super) fn config(listen: u16, upstream: u16, hosts: &[String], log: bool) -> String {
     let mut hosts: Vec<&str> = hosts.iter().map(String::as_str).collect();
     hosts.sort_unstable();
     hosts.dedup();
+    let level = if log { "Connect" } else { "Critical" };
     let mut out = format!(
-        "Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\n"
+        "Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel {level}\nMaxClients {MAX_CLIENTS}\n"
     );
     for host in hosts {
         let _ = writeln!(out, "upstream http 127.0.0.1:{upstream} \"{host}\"");
@@ -120,19 +133,21 @@ fn stop(reason: &str) -> String {
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
 pub(super) fn lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> {
-    lines_with(listen, forward, hosts, &SYSTEM_APPARMOR)
+    lines_with(listen, forward, hosts, &SYSTEM_APPARMOR, false)
 }
 
 /// The egress lines as one script for `sh -c`.
 ///
 /// It serves the place that owns a Box's network namespace when no exec's prelude keeps the egress
 /// proxy running, and stops with a `moor: ` line on stderr and a non-zero exit, as the prelude does.
+/// Its tinyproxy logs each request to [`PROXY_LOG`].
 #[must_use]
 pub fn keep_script(listen: u16, forward: u16, hosts: &[String]) -> String {
-    lines(listen, forward, hosts).join("\n")
+    lines_with(listen, forward, hosts, &SYSTEM_APPARMOR, true).join("\n")
 }
 
-/// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
+/// [`lines`] against the `AppArmor` files in `aa`, with tinyproxy logging to [`PROXY_LOG`] when
+/// `log`. Before tinyproxy starts, when the `tinyproxy`
 /// on `PATH` is `aa.exec` and `aa.profile` is loaded in enforce mode, the rules from
 /// [`apparmor_rules`] go into `aa.local` and the profile is reloaded, as root or through
 /// `sudo -n`. tinyproxy always runs under its profile: with no way to write the rules the exec
@@ -142,6 +157,7 @@ pub(super) fn lines_with(
     upstream: u16,
     hosts: &[String],
     aa: &AppArmor<'_>,
+    log: bool,
 ) -> Vec<String> {
     let unset = PROXY_VARS.iter().fold(String::new(), |mut out, v| {
         let _ = write!(out, " -u {v}");
@@ -153,9 +169,14 @@ pub(super) fn lines_with(
         stop("tinyproxy is not installed and the Box has no apt-get; moor installs it only with apt"),
         stop(&format!("apt-get could not install tinyproxy-bin: $(tail -n 1 \"{INSTALL_LOG}\")")),
     );
+    let log_file = if log {
+        format!("\nLogFile \\\"{LOG}\\\"")
+    } else {
+        String::new()
+    };
     let config = format!(
-        "moor_conf={}\"PidFile \\\"{PID}\\\"\"; moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
-        crate::boxscript::quote(&config(listen, upstream, hosts)),
+        "moor_conf={}\"PidFile \\\"{PID}\\\"{log_file}\"; moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
+        crate::boxscript::quote(&config(listen, upstream, hosts, log)),
         stop(&format!("its config could not be written to {CONF}")),
     );
     let ours = format!(
@@ -170,7 +191,7 @@ pub(super) fn lines_with(
     let apparmor = format!(
         "if [ -f {profile} ] && [ -e {loaded} ] && [ \"$(readlink -f \"$(command -v tinyproxy)\")\" = {exec} ]; then if [ \"$(id -u)\" = 0 ]; then moor_su=; elif sudo -n true 2>/dev/null; then moor_su=\"sudo -n\"; else {}; fi; if $moor_su grep -qx 'tinyproxy (enforce)' {loaded} 2>/dev/null; then moor_aa=\"{}\"; if ! printf '%s\\n' \"$moor_aa\" | $moor_su cmp -s - {local} 2>/dev/null; then {{ printf '%s\\n' \"$moor_aa\" | $moor_su tee {local} >/dev/null && $moor_su apparmor_parser -r {profile} >\"{APPARMOR_LOG}\" 2>&1; }} || {{ $moor_su rm -f {local}; {}; }}; fi; fi; fi",
         stop(&format!("{} confines tinyproxy, and allowing it {DIR} in {} needs root or passwordless sudo", aa.profile, aa.local)),
-        apparmor_rules(),
+        apparmor_rules(log),
         stop(&format!("{} could not be reloaded with {DIR} allowed: $(tail -n 1 \"{APPARMOR_LOG}\")", aa.profile)),
     );
     // tinyproxy removes its pid file as it exits, so the new one starts only once the old one

@@ -8,7 +8,7 @@ use crate::name::BoxPath;
 use crate::seam::agent_adapter::ProxyAddr;
 use crate::seam::proc::Deadline;
 
-pub use egress::{keep_script, proxy_vars, EGRESS_FAILED, FORWARDER};
+pub use egress::{keep_script, proxy_vars, EGRESS_FAILED, FORWARDER, PROXY_LOG};
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
 const PROXY_DIR: &str = "$HOME/.moor-proxy";
