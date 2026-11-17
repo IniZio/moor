@@ -75,6 +75,8 @@ struct State {
     cache: knobs::CacheState,
     runs: runs::RunState,
     exec_knobs: hooks::ExecKnobs,
+    /// Names Boxes as a machine's, `m1/moor-0000abcd-N`, not `box-N`.
+    machine_handles: bool,
     trees: Option<trees::Trees>,
     ports: ports::PortState,
 }
@@ -137,7 +139,10 @@ impl Driver for FakeDriver {
     }
 
     fn planned_handle(&self, _req: &AcquireReq) -> BoxHandle {
-        BoxHandle::new(format!("box-{}", self.st().next + 1))
+        {
+            let s = self.st();
+            BoxHandle::new(s.handle_named(s.next + 1))
+        }
     }
 
     fn manual_release(&self, handle: &BoxHandle) -> Option<String> {

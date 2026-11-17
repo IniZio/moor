@@ -62,6 +62,12 @@ impl FakeDriver {
         self
     }
 
+    /// Names its Boxes as a machine's, `m1/moor-0000abcd-N`, which the profile reads as Agent plus Work places.
+    pub(crate) fn machine_handles(self) -> Self {
+        self.st().machine_handles = true;
+        self
+    }
+
     /// Calls so far, like `acquire`, `release box-1` or `exec box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
