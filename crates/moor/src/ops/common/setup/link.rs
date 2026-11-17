@@ -127,8 +127,8 @@ pub(super) fn unreachable(result: &Result<ExecOutcome, Failure>) -> Option<&str>
     }
 }
 
-/// Why `e` is the Box out of reach, as against a command that failed in it.
-fn out_of_reach(e: &DriverError) -> Option<&str> {
+/// Why `e` is the Box or its machine out of reach, as against a command that failed in it.
+pub(crate) fn out_of_reach(e: &DriverError) -> Option<&str> {
     match e {
         DriverError::Transport { stderr_tail } => Some(stderr_tail),
         DriverError::Unavailable(why) => Some(why),

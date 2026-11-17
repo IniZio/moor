@@ -161,6 +161,12 @@ impl Driver for Machines {
         }
     }
 
+    /// The agent makes the Box on a spawn of its own, so an open whose stream is lost goes on; a
+    /// second open of the slug waits for it under the Box's flight and finds the same Box.
+    fn acquire_outlives_caller(&self, handle: &BoxHandle) -> bool {
+        parse_machine_handle(handle.as_str()).is_some()
+    }
+
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
         Self::planned(req).map_or_else(|_| BoxHandle::new(""), |(_, _, handle)| handle)
     }

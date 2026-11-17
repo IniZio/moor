@@ -17,6 +17,7 @@ use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::{box_name, driver::FakeDriver};
 
+mod acquire_link;
 mod activity;
 mod agent_install;
 mod also;

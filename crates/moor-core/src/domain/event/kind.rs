@@ -133,6 +133,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "setup_line_started",
     "setup_line_finished",
     "setup_reattached",
+    "acquire_reattached",
     "cache_cold",
     "cache_emptied",
 ];
