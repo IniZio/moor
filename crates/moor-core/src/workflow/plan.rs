@@ -286,6 +286,15 @@ impl Plan {
         }
     }
 
+    /// Whether this is the shape of [`Plan::single`] of some prompt: one deliver step, called
+    /// `deliver`. A run of such a plan has no report to wait for.
+    #[must_use]
+    pub fn is_single(&self) -> bool {
+        self.rest.is_empty()
+            && self.first.id == Self::single_id()
+            && matches!(self.first.kind, StepKind::Deliver { .. })
+    }
+
     /// The step a run starts at.
     #[must_use]
     pub const fn first(&self) -> &Step {

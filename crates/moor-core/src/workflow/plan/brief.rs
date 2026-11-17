@@ -90,9 +90,8 @@ impl Plan {
     #[must_use]
     pub fn start_prompt(&self, prompt: &str) -> String {
         format!(
-            "{prompt}\n\nmoor runs this as a plan of {} steps. Do only the current step, then \
-             stop: moor sends the next step when you stop. Leave each evidence file in \
-             .moor/artifacts/.\n\n{}",
+            "{prompt}\n\nmoor runs this as a plan of {} steps. Do only the current step, then call \
+             report_step. Leave each evidence file in .moor/artifacts/.\n\n{}",
             self.step_count(),
             self.first().brief()
         )
@@ -102,8 +101,7 @@ impl Plan {
     #[must_use]
     pub fn next_step_steer(step: &Step) -> String {
         format!(
-            "That step is done. Do only the next step, then stop: moor sends the one after \
-             when you stop.\n\n{}",
+            "That step is done. Do only the next step, then call report_step.\n\n{}",
             step.brief()
         )
     }
@@ -119,21 +117,28 @@ impl Plan {
             CheckSays::Lost => "could not run to a result, twice.".to_owned(),
         };
         format!(
-            "moor ran check {} (\"{}\"); it {what}\nDo only the next step, then stop: moor \
-             sends the one after when you stop.\n\n{}",
+            "moor ran check {} (\"{}\"); it {what}\nDo only the next step, then call \
+             report_step.\n\n{}",
             check.id,
             check.title,
             next.brief()
         )
     }
 
-    /// The steer that sends `step` again after the agent stopped without finishing it.
+    /// The steer for a step the agent stopped on without reporting it. One per try.
     #[must_use]
     pub fn remind_steer(step: &Step) -> String {
+        let ask = match &step.kind {
+            StepKind::Work { evidence, .. } => {
+                let names: Vec<&str> = evidence.names().map(super::EvidenceName::as_str).collect();
+                format!("with result ok and the evidence it names ({})", names.join(", "))
+            }
+            _ => "with result ok and a note: the run's result".to_owned(),
+        };
         format!(
-            "You stopped before this step was done. Do only this step, then stop: moor sends \
-             the next one when you stop.\n\n{}",
-            step.brief()
+            "Step {} (\"{}\") has no report yet. Call report_step {ask}. Or call it with \
+             result fail and a note that says why the step cannot be done.",
+            step.id, step.title
         )
     }
 

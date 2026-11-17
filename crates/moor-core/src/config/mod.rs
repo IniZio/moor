@@ -18,7 +18,8 @@ pub use repo::{
 pub use user::{
     box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,
     ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, MachinePick,
-    MachineService, MachinesConfig, McpServer, NodeConfig, OAuthCallback, OAuthClient, OAuthConfig,
+    MachineService, MachinesConfig, McpServer, MoorService, NodeConfig, OAuthCallback, OAuthClient,
+    OAuthConfig, MOOR_SERVICE_HOST,
     ToolsConfig, UserConfig, UserMachine, UserMcp, BOXES_HOST, DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
 };
 

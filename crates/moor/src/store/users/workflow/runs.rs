@@ -298,6 +298,33 @@ impl Store {
             .collect()
     }
 
+    /// The run that is at a step in Box `box_id`, with its workflow; none when the Box has none.
+    pub(crate) fn running_run_of_box(
+        &self,
+        box_id: BoxId,
+    ) -> Result<Option<(WorkflowId, WorkflowRun)>, StoreError> {
+        let row: Option<(i64, RunRow)> = self
+            .reader()?
+            .rows(
+                Query::select()
+                    .column(WorkflowRuns::Workflow)
+                    .columns(RUN_COLS)
+                    .from(WorkflowRuns::Table)
+                    .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED))
+                    .order_by(WorkflowRuns::Id, Order::Desc)
+                    .limit(1),
+                |r| Ok::<_, db::Error>((r.get(0)?, read_run(r, 1)?)),
+            )?
+            .next()
+            .transpose()?;
+        row.map(|(workflow, row)| {
+            let id = WorkflowId::new(workflow);
+            run_of(id, &row).map(|run| (id, run))
+        })
+        .transpose()
+    }
+
     /// The latest run of each repo of `workflow` that has one, by due time.
     pub(crate) fn last_workflow_runs(
         &self,

@@ -36,11 +36,14 @@ pub use machine::{
 pub use nodes::NodeConfig;
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
-pub use service::{MachineService, MachinesConfig};
+pub use service::{MachineService, MachinesConfig, MoorService, MOOR_SERVICE_HOST};
 pub use tools::ToolsConfig;
 
 /// The name a Box's agent knows the machine service's MCP server by.
 const MACHINE_MCP: &str = "machine";
+
+/// The name a Box's agent knows moor's own MCP server by, the one that has `report_step`.
+const MOOR_MCP: &str = "moor";
 
 /// Idle time before a Box sleeps when `box.sleep_after` is unset.
 pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(5);
@@ -272,6 +275,8 @@ pub struct UserConfig {
     pub dotfiles: Option<DotfilesConfig>,
     /// The service Boxes reach for the machine they hold.
     pub machines: MachinesConfig,
+    /// The MCP server a Box's agent reports its workflow steps to; none leaves Boxes without it.
+    pub moor_service: Option<MoorService>,
     /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
     /// that validates.
     #[serde(default, deserialize_with = "super::controller::present_key")]
@@ -298,12 +303,17 @@ pub struct UserConfig {
 
 impl UserConfig {
     /// The MCP servers every Box gets: `mcp_servers`, plus the machine service's server when
-    /// `machines.service` is set and no entry already takes its name.
+    /// `machines.service` is set and moor's own when `moor_service` is set, unless an entry
+    /// already takes the name.
     #[must_use]
     pub fn shared_mcp(&self) -> BTreeMap<String, McpServer> {
         let mut out = self.mcp_servers.clone();
         if let Some(s) = &self.machines.service {
             out.entry(MACHINE_MCP.to_owned())
+                .or_insert_with(|| s.mcp_server());
+        }
+        if let Some(s) = &self.moor_service {
+            out.entry(MOOR_MCP.to_owned())
                 .or_insert_with(|| s.mcp_server());
         }
         out
@@ -349,6 +359,9 @@ impl UserConfig {
             d.validate()?;
         }
         if let Some(s) = &self.machines.service {
+            s.validate()?;
+        }
+        if let Some(s) = &self.moor_service {
             s.validate()?;
         }
         self.machines.sync.validate("machines.sync")?;

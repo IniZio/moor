@@ -107,6 +107,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Refused,
             webhook_outbox::FRONT_ONLY,
         )),
+        Request::StepReport(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            authz::STEP_REPORT_FRONT_ONLY,
+        )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
             shared: cx.store()?.shared_machine_keys()?,
@@ -150,6 +154,14 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::BindSession(r) => to_value(&binding::bind(cx, &r)?),
         Request::SessionBinding(r) => to_value(&binding::lookup(cx, &r)?),
     }
+}
+
+/// `step-report`: the agent's report for its Box's run, answered with what to do next.
+pub(crate) fn step_report(
+    cx: &Cx,
+    req: &moor_core::request::StepReportReq,
+) -> Result<serde_json::Value, CommandError> {
+    to_value(&workflow::step_report(cx, req)?)
 }
 
 /// The refusal for `req`, a request only the controller socket serves.

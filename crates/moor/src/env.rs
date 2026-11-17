@@ -69,6 +69,8 @@ pub struct Env {
     draining: Cancel,
     /// The fronts that deliver the users' webhooks, by namespace.
     front_webhooks: Arc<BTreeSet<String>>,
+    /// The fronts that report steps for the agents in Boxes, by namespace.
+    front_step_reports: Arc<BTreeSet<String>>,
     /// The shortest gap a workflow's cron may have between firings.
     workflow_min_interval: Option<Duration>,
     /// What the controller opened once for every request and tick, such as the state store, by type.
@@ -184,6 +186,13 @@ impl Env {
         self
     }
 
+    /// Set the fronts that report steps for the agents in Boxes, by namespace.
+    #[must_use]
+    pub fn with_front_step_reports(mut self, fronts: BTreeSet<String>) -> Self {
+        self.front_step_reports = Arc::new(fronts);
+        self
+    }
+
     /// Set the shortest gap a workflow's cron may have between firings.
     #[must_use]
     pub const fn with_workflow_min_interval(mut self, floor: Duration) -> Self {
@@ -200,6 +209,11 @@ impl Env {
     /// Whether front `ns` delivers the users' webhooks.
     pub(crate) fn front_webhooks(&self, ns: &str) -> bool {
         self.front_webhooks.contains(ns)
+    }
+
+    /// Whether front `ns` reports steps for the agents in Boxes.
+    pub(crate) fn front_step_reports(&self, ns: &str) -> bool {
+        self.front_step_reports.contains(ns)
     }
 
     /// Share `value` with every request and tick that runs in this environment.

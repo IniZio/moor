@@ -120,6 +120,12 @@ fn answer(
             Err(e) => e.into_response(cmd, vec![]),
         });
     }
+    if !runner && matches!(request, Request::StepReport(_)) {
+        return Some(match Moor::from_env(env) {
+            Ok(moor) => moor.call_step_report(&peer.caller, &request),
+            Err(e) => e.into_response(cmd, vec![]),
+        });
+    }
     let grant =
         match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
             Ok(grant) => grant,

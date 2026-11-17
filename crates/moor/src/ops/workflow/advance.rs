@@ -11,7 +11,7 @@ use moor_core::domain::session_state::SessionState;
 use moor_core::request::BoxTarget;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    CheckSays, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
+    CheckSays, HistoryEntry, Plan, RunId, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
     WorkflowRun,
 };
 use moor_core::{BoxId, SteerReq};
@@ -73,6 +73,33 @@ pub(super) fn finish_runs(
     Ok(())
 }
 
+/// The history lines of run `run` that is at `at`, and when the agent was last told something. A
+/// run from before history kept an `Entered` line reads as entered at its pointer.
+pub(super) fn history_of(
+    store: &Store,
+    run: RunId,
+    at: (&StepId, u8),
+) -> Result<(Vec<HistoryEntry>, Option<Ts>), StoreError> {
+    let entries = store.run_entries(run)?;
+    let mut history: Vec<HistoryEntry> = entries.iter().map(|(_, e)| e.clone()).collect();
+    if !history
+        .iter()
+        .any(|e| matches!(e, HistoryEntry::Entered { .. }))
+    {
+        history.insert(
+            0,
+            HistoryEntry::Entered {
+                step: at.0.clone(),
+                try_n: at.1,
+            },
+        );
+    }
+    let steered = entries.iter().rev().find_map(|(when, e)| {
+        matches!(e, HistoryEntry::Sent { .. } | HistoryEntry::Reminded { .. }).then_some(*when)
+    });
+    Ok((history, steered))
+}
+
 /// A check of the run is already running.
 struct CheckRunning;
 
@@ -117,24 +144,7 @@ impl Quiet<'_> {
     /// before that is still the quiet of the step before. A run from before history kept an
     /// `Entered` line reads as entered at its pointer.
     fn history(&self) -> Result<(Vec<HistoryEntry>, Option<Ts>), StoreError> {
-        let entries = self.store.run_entries(self.run.id)?;
-        let mut history: Vec<HistoryEntry> = entries.iter().map(|(_, e)| e.clone()).collect();
-        if !history
-            .iter()
-            .any(|e| matches!(e, HistoryEntry::Entered { .. }))
-        {
-            history.insert(
-                0,
-                HistoryEntry::Entered {
-                    step: self.at.0.clone(),
-                    try_n: self.at.1,
-                },
-            );
-        }
-        let steered = entries.iter().rev().find_map(|(when, e)| {
-            matches!(e, HistoryEntry::Sent { .. } | HistoryEntry::Reminded { .. }).then_some(*when)
-        });
-        Ok((history, steered))
+        history_of(self.store, self.run.id, (self.at.0, self.at.1))
     }
 
     /// The claim a tick at a check step holds while it settles: an error when a check of the

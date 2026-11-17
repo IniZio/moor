@@ -48,20 +48,62 @@ impl MachineService {
 
     /// `host` is a DNS name.
     pub(super) fn validate(&self) -> Result<(), ConfigError> {
-        let label_ok = |l: &str| {
-            !l.is_empty()
-                && l.len() <= 63
-                && !l.starts_with('-')
-                && !l.ends_with('-')
-                && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        };
-        if self.host.len() > 253 || !self.host.split('.').all(label_ok) {
-            return Err(ConfigError::new(
-                "machines.service.host",
-                "must be a DNS name such as machine.moor.internal",
-            ));
+        dns_name(&self.host, "machines.service.host", "machine.moor.internal")
+    }
+}
+
+/// Refuses `host` unless it is a DNS name; `key` and `example` shape the message.
+fn dns_name(host: &str, key: &str, example: &str) -> Result<(), ConfigError> {
+    let label_ok = |l: &str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    };
+    if host.len() > 253 || !host.split('.').all(label_ok) {
+        return Err(ConfigError::new(
+            key,
+            format!("must be a DNS name such as {example}"),
+        ));
+    }
+    Ok(())
+}
+
+/// The host name a Box reaches moor's own MCP server at when `moor_service` names none.
+pub const MOOR_SERVICE_HOST: &str = "moor.moor.internal";
+
+/// `moor_service:` the MCP server a Box's agent calls `report_step` on. The Proxy routes the
+/// host to the gate's Box listener and stamps `X-Moor-Box`; the Box holds no token.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct MoorService {
+    /// Name a Box requests over `http://`.
+    pub host: String,
+}
+
+impl Default for MoorService {
+    fn default() -> Self {
+        Self {
+            host: MOOR_SERVICE_HOST.to_owned(),
         }
-        Ok(())
+    }
+}
+
+impl MoorService {
+    /// The service's MCP server, reached over plain `http://` so the Proxy can route it.
+    #[must_use]
+    pub fn mcp_server(&self) -> McpServer {
+        McpServer {
+            kind: Some("http".to_owned()),
+            url: Some(format!("http://{}/mcp", self.host)),
+            ..McpServer::default()
+        }
+    }
+
+    /// `host` is a DNS name.
+    pub(super) fn validate(&self) -> Result<(), ConfigError> {
+        dns_name(&self.host, "moor_service.host", MOOR_SERVICE_HOST)
     }
 }
 

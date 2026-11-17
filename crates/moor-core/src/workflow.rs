@@ -271,6 +271,7 @@ mod history;
 mod plan;
 #[cfg(test)]
 mod plan_tests;
+mod report;
 mod run;
 #[cfg(test)]
 mod run_tests;
@@ -284,6 +285,7 @@ pub use plan::{
     CheckSays, Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, Step, StepDoc,
     StepId, StepKind, Tries,
 };
+pub use report::{StepReport, StepResult, EVIDENCE_MAX, NOTE_MAX};
 pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowRun};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 

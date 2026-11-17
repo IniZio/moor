@@ -16,6 +16,10 @@ pub(crate) const NOT_YOURS: &str = "not your Box";
 /// The refusal for a `cp` from anyone but the operator: it writes on the controller host.
 pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 
+/// The refusal for a `step-report` from anyone but a front whose config sets `step_reports: true`.
+pub(crate) const STEP_REPORT_FRONT_ONLY: &str =
+    "step-report serves only a front whose controller config sets `step_reports: true`";
+
 /// The refusal for a `box-rsync` from anyone but the runner and the operator.
 pub(crate) const RSYNC_OPERATOR_ONLY: &str =
     "box-rsync is the machine runner's, which is operator-only";
@@ -130,6 +134,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::WebhookClaim(_) | Request::WebhookReport(_) => {
             Some(crate::ops::webhook_outbox::FRONT_ONLY)
         }
+        Request::StepReport(_) => Some(STEP_REPORT_FRONT_ONLY),
         Request::BoxRsync(_) => Some(RSYNC_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),

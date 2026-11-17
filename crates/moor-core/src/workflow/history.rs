@@ -1,6 +1,6 @@
 //! One line of a run's history. Rows are only appended.
 
-use super::{RunEnd, RunOutcome, RunPhase, RunState, StepId};
+use super::{RunEnd, RunOutcome, RunPhase, RunState, StepId, StepReport};
 
 /// What happened to a run. The store keeps each line as tagged JSON, so a later kind of line
 /// reads as a plain line to anything that does not know it.
@@ -22,6 +22,24 @@ pub enum HistoryEntry {
         step: StepId,
         /// The try they were sent for.
         try_n: u8,
+    },
+    /// The agent reported the step and the code gate passed.
+    Reported {
+        /// The step.
+        step: StepId,
+        /// The try.
+        try_n: u8,
+        /// What the agent sent.
+        report: StepReport,
+    },
+    /// The agent reported the step and the code gate refused it.
+    GateRefused {
+        /// The step.
+        step: StepId,
+        /// The try.
+        try_n: u8,
+        /// What was missing, too small or too large.
+        missing: Vec<String>,
     },
     /// The agent stopped without the step being done, and was sent the step again. A step gets
     /// one reminder per try.
