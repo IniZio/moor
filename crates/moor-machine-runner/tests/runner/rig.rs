@@ -211,14 +211,20 @@ impl Rig {
     /// Starts the fake machine's agent again, dialing `port` instead of this runner, and waits
     /// until it is linked.
     pub fn agent_dials(&mut self, port: u16) {
-        if let Some(agent) = self.machine_agent.take() {
-            agent.shutdown_background();
-        }
-        self.online(false);
+        self.stop_agent();
         let grace = moor_machine_agent::Machine::from_env().sweep_grace;
         let (agent, log) = machine::start_agent(self.dir(), &self.remote, port, &self.link, grace);
         (self.machine_agent, self.agent_log) = (Some(agent), log);
         self.online(true);
+    }
+
+    /// Stops the fake machine's agent and waits until the runner has told the controller the
+    /// machine is offline, so no later link to machine 7 is mistaken for this agent's.
+    pub fn stop_agent(&mut self) {
+        if let Some(agent) = self.machine_agent.take() {
+            agent.shutdown_background();
+        }
+        self.online(false);
     }
 
     /// Sends the runner SIGTERM.
@@ -517,7 +523,11 @@ fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16, Option<u16>) {
         stderr.read_line(&mut line).unwrap();
         line.trim().rsplit(':').next().unwrap().parse().unwrap()
     });
-    std::thread::spawn(move || std::io::copy(&mut stderr, &mut std::io::sink()));
+    std::thread::spawn(move || {
+        for line in stderr.lines().map_while(Result::ok) {
+            eprintln!("runner: {line}");
+        }
+    });
     (runner, port, agents, links)
 }
 

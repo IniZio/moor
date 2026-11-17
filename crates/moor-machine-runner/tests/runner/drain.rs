@@ -77,9 +77,7 @@ fn an_exec_in_flight_finishes_while_every_runner_rolls_under_it() {
     let mut old = Rig::start();
     let [mut next, mut last] = [Rig::start(), Rig::start()];
     for rig in [&mut next, &mut last] {
-        if let Some(agent) = rig.machine_agent.take() {
-            agent.shutdown_background();
-        }
+        rig.stop_agent();
     }
     let to = Arc::new(AtomicU16::new(old.agents));
     old.agent_dials(forwarder(Arc::clone(&to)));
