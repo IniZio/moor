@@ -83,3 +83,71 @@ fn a_surviving_agent_is_steered_in_place_after_wake() {
     );
     assert!(relaunch_events(&f).is_empty());
 }
+
+/// Runs `ls` in Box `f`, as `exec_in_box` does.
+fn exec_ls(f: &Fx) {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let pipes = moor_core::seam::proc::Pipes {
+        stdin: Box::new(std::io::empty()),
+        stdout: &mut out,
+        stderr: &mut err,
+        stop: &|| false,
+    };
+    let req = moor_core::ExecReq {
+        target: moor_core::BoxName::parse_allow_bare("t").unwrap().into(),
+        argv: vec!["ls".to_owned()],
+        timeout_secs: None,
+    };
+    let view = crate::ops::exec::run(&f.cx, &req, pipes).unwrap();
+    assert_eq!(view.exit, Some(0));
+}
+
+#[test]
+fn an_exec_in_an_asleep_box_leaves_its_agent_down_until_a_steer_wakes_it() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", agent::at_turn(super::working(), 0))
+        .launch_result(Ok(relaunched("agent-2")));
+    let f = fx_with(engine, true);
+    let set = Fields {
+        agent_session_id: Field::Set("claude-1".into()),
+        ..Fields::default()
+    };
+    let store = f.cx.store().unwrap();
+    store.apply(Decision::new(f.id).set(set)).unwrap();
+    run(&f.cx, &text("old work")).unwrap();
+    put_to_sleep(&f);
+    let engine = f.engine.clone();
+    f.driver
+        .on_wake(move || engine.set_probes("agent-1", agent::gone()));
+
+    exec_ls(&f);
+    pass(&f);
+
+    assert_eq!(f.driver.execs().len(), 1, "the command ran");
+    assert!(f.engine.launches().is_empty(), "no agent was launched");
+    assert!(relaunch_events(&f).is_empty());
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Text("old work".into()))],
+        "nothing was replayed"
+    );
+    let row = store.box_row(f.id).unwrap().unwrap();
+    assert!(row.asleep(), "the Box is still asleep, its agent down");
+    assert!(
+        f.driver.calls().iter().any(|c| c.starts_with("sleep ")),
+        "the machine went back to sleep"
+    );
+
+    run(&f.cx, &text("next")).unwrap();
+    reports_idle(&f, "agent-2");
+    pass(&f);
+    assert_eq!(f.engine.launches().len(), 1, "the steer woke the agent");
+    let to_new: Vec<_> = f
+        .engine
+        .steers()
+        .into_iter()
+        .filter(|(s, _)| s == "agent-2")
+        .map(|(_, s)| s)
+        .collect();
+    assert!(to_new.contains(&Steer::Text("next".into())), "{to_new:?}");
+}
