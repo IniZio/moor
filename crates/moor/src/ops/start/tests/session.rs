@@ -14,7 +14,7 @@ use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::state::idle;
 use super::state::WORKING;
-use super::{repo, req, script_base_yaml, world, World};
+use super::{repo, req, script_repo, world, World};
 use crate::cx::owners::Cmd;
 use crate::env::Cancel;
 use crate::ops::start::run;
@@ -282,7 +282,7 @@ fn a_failed_setup_line_launches_no_agent() {
     let engine = Arc::new(FakeEngine::new());
     let mut w = world(driver);
     w.cx = w.cx.with_engine(engine.clone());
-    script_base_yaml(&w, Some("setup: [bad]\n"));
+    script_repo(&w, Some("setup: [bad]\n"));
     let of_repo = StartReq {
         repo: Some(repo()),
         ..prompt_req("demo")

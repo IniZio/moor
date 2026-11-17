@@ -6,7 +6,7 @@ use moor_core::domain::event::PostCloneStep;
 use moor_core::BoxId;
 
 use super::setup::start_req;
-use super::{script_base_yaml, world};
+use super::{script_repo, world};
 use crate::ops::common::provision::interrupted::{cut_short, drop_wanted, fail_interrupted};
 use crate::ops::common::provision::resume_setup;
 use crate::ops::start::run;
@@ -15,7 +15,7 @@ use crate::testing::driver::FakeDriver;
 #[test]
 fn a_run_a_whole_relaunch_ran_beside_ends_as_interrupted_once_its_follower_is_gone() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let id = BoxId::new(1);
@@ -65,7 +65,7 @@ fn a_run_a_whole_relaunch_ran_beside_ends_as_interrupted_once_its_follower_is_go
 #[test]
 fn a_run_still_followed_at_a_restart_keeps_its_effect_and_stays_open() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let id = BoxId::new(1);
@@ -91,7 +91,7 @@ fn a_run_still_followed_at_a_restart_keeps_its_effect_and_stays_open() {
 #[test]
 fn a_close_wanted_with_nothing_in_flight_is_finished_after_a_restart() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let id = BoxId::new(1);
@@ -113,7 +113,7 @@ fn a_close_wanted_with_nothing_in_flight_is_finished_after_a_restart() {
 #[test]
 fn an_acquire_left_on_ready_hands_ends_at_a_restart_with_nothing_to_resume() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let id = BoxId::new(1);

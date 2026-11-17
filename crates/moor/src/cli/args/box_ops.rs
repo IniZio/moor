@@ -84,7 +84,7 @@ pub(super) struct BoxConfigArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     pub(super) name: BoxName,
-    /// The Box's whole override, as a partial `.moor.yaml`; `-` reads stdin.
+    /// The Box's whole override, as a partial repo config; `-` reads stdin.
     #[arg(
         long = "file",
         short = 'f',

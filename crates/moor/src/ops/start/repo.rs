@@ -11,9 +11,6 @@ use crate::error::CommandError;
 use crate::store::BoxRow;
 use crate::vault::Vault;
 
-mod config;
-pub(super) use config::stored_config;
-
 /// Reads `repo` at `base` as `user`'s GitHub account. An account that cannot push only warns.
 ///
 /// # Errors
@@ -37,7 +34,7 @@ pub(crate) fn read(
     Ok(at)
 }
 
-/// The repos listed beside `primary`, each with its `.moor.yaml` on its default branch.
+/// The repos listed beside `primary`, each one the account can push to.
 ///
 /// # Errors
 /// Usage for a repo listed twice or two repos of one name, which would share a folder;
@@ -71,10 +68,7 @@ pub(crate) fn others(
                 )
                 .with_hint("list only repos you can push to beside the first one"));
             }
-            Ok(ListedRepo {
-                repo: r.clone(),
-                moor_yaml: at.files.moor_yaml,
-            })
+            Ok(ListedRepo { repo: r.clone() })
         })
         .collect()
 }

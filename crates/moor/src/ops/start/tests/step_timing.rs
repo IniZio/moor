@@ -13,7 +13,7 @@ use moor_core::{BoxId, StartReq};
 use serde_json::{json, Value};
 
 use super::agent_install::step_events_where;
-use super::{repo_req, run, script_base_yaml, world_with, World, BASE};
+use super::{repo_req, run, script_repo, world_with, World, BASE};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -24,7 +24,7 @@ use crate::testing::proxy_host::FakeProxyHost;
 fn clocked(driver: FakeDriver) -> (World, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let mut w = world_with(driver, UserConfig::default());
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     w.cx = w.cx.with_clock(clock.clone());
     (w, clock)
 }
@@ -79,7 +79,7 @@ fn the_proxy_start_records_a_step_and_a_failed_one_ends_not_ok() {
 fn the_other_repos_clone_as_one_step_with_the_batch_time() {
     let (w, clock) = clocked(FakeDriver::new());
     let lib = ForgeRepo::new("o", "lib");
-    w.forge.answer(lib.clone(), Ok(repo_at(BASE, None)));
+    w.forge.answer(lib.clone(), Ok(repo_at(BASE)));
     w.driver
         .on_exec(move || clock.sleep(Duration::from_secs(5)));
     let req = StartReq {

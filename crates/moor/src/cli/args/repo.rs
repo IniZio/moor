@@ -10,7 +10,7 @@ use moor_core::Request;
 /// Subcommands of `repo`.
 #[derive(Debug, Subcommand)]
 pub(super) enum RepoCli {
-    /// A repo's config, which replaces its `.moor.yaml`.
+    /// A repo's config, which lives in moor, not in the repo.
     #[command(subcommand)]
     Config(ConfigCli),
 }
@@ -38,7 +38,7 @@ pub(super) struct SetArgs {
     /// The repo, as OWNER/NAME or a github.com URL.
     #[arg(value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
     repo: ForgeRepo,
-    /// The YAML to store, as a `.moor.yaml` holds it; `-` reads stdin.
+    /// The YAML to store, as a repo config holds it; `-` reads stdin.
     #[arg(
         long = "file",
         short = 'f',

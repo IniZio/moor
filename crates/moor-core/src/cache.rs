@@ -91,7 +91,7 @@ impl Volume {
 pub enum Origin {
     /// A built-in preset: scoped like a repo volume.
     Preset,
-    /// The repo's `.moor.yaml`: kept per user and repo.
+    /// The repo's config: kept per user and repo.
     Repo,
     /// The operator's moor config: kept per user, across repos.
     Operator,

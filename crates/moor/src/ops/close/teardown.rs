@@ -19,7 +19,7 @@ use crate::store::BoxRow;
 ///
 /// Nothing runs without lines or a live Box; a failure only warns, except a Proxy that will not
 /// start, which fails the close unless `force` is set, when it warns like the rest. The lines
-/// come from the `.moor.yaml` stored when the Box started. The env is the agent's Box env.
+/// come from the repo config the store holds now. The env is the agent's Box env.
 pub(super) fn teardown(cx: &Cx, row: &BoxRow, force: bool) -> Result<(), CommandError> {
     let ready = row.hands.as_ref().filter(|b| b.state == HandsState::Ready);
     let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {

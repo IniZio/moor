@@ -35,7 +35,7 @@ pub(super) struct StartArgs {
     /// A node of yours to run the Box on, in place of your default; see `moor node ls`.
     #[arg(long, value_name = "NODE")]
     node: Option<String>,
-    /// A partial repo config, in the `.moor.yaml` format, laid over the repo's config for this
+    /// A partial repo config, in the repo config format, laid over the repo's config for this
     /// Box only; `-` reads stdin.
     #[arg(
         long,

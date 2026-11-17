@@ -25,7 +25,7 @@ struct GetArgs {
 struct SetArgs {
     /// The repo as `owner/name`.
     repo: String,
-    /// The whole config as YAML, in the `.moor.yaml` format.
+    /// The whole config as YAML, in the repo config format.
     text: String,
     /// The `revision` you read it at, 0 when it has none yet; the write is refused when the
     /// stored revision differs. Leave it out to write whatever is stored.
@@ -37,7 +37,7 @@ impl Tools {
     /// Reads a repo's config.
     #[tool(
         description = "Read a repo's config as moor stores it: the YAML text (setup, env, brief, \
-                       and the rest of what a .moor.yaml holds), its revision, and who last \
+                       and the rest of what a repo config holds), its revision, and who last \
                        edited it. A repo with none has revision 0 and no text. Needs the \
                        moor:read scope and a GitHub account that can see the repo."
     )]
@@ -59,8 +59,8 @@ impl Tools {
     #[tool(
         description = "Replace a repo's config with new YAML text. It applies to every Box of \
                        the repo: env and teardown to a running Box's next command, the rest \
-                       to Boxes started or rebuilt afterwards. The text must parse as a \
-                       .moor.yaml, or the write is refused with the reason. Pass the revision \
+                       to Boxes started or rebuilt afterwards. The text must parse as \
+                       a repo config, or the write is refused with the reason. Pass the revision \
                        you read as expected_revision, so a change made since is not \
                        overwritten. Needs the moor:write scope and a GitHub account that can \
                        push to the repo."

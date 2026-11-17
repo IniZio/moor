@@ -1,8 +1,8 @@
 //! Facts every Box op needs, built once per command.
 
 use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig, RepoOverride};
-use moor_core::domain::decision::BoxRepo;
 use moor_core::seam::driver::DriverCaps;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::ProviderId;
 
 use crate::cx::Cx;
@@ -30,49 +30,39 @@ pub(crate) fn settings_of(
 /// A stored text that does not parse.
 pub(crate) fn repo_config(cx: &Cx, row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
     let over = cx.store()?.box_config_override(row.id)?;
-    repo_config_of(cx, row.repo.as_ref(), row.base.as_deref(), over.as_deref())
+    repo_config_of(cx, row.repo.as_ref().map(|r| &r.repo), over.as_deref())
 }
 
-/// The repo config of `repo`, parsed, with `over` laid over it. A config stored for the repo
-/// wins over the `.moor.yaml` read at `base`, so an edit reaches Boxes already running; a repo
-/// with neither has an empty config, which `over` still lays over. An error names the text it
-/// came from.
+/// The repo config of `repo` as the store holds it now, parsed, with `over` laid over it, so an
+/// edit reaches Boxes already running. A repo with none stored has an empty config, which `over`
+/// still lays over. An error names the text it came from.
 ///
 /// # Errors
 /// A text that does not parse, or a store failure.
 pub(crate) fn repo_config_of(
     cx: &Cx,
-    repo: Option<&BoxRepo>,
-    base: Option<&str>,
+    repo: Option<&ForgeRepo>,
     over: Option<&str>,
 ) -> Result<Option<RepoConfig>, CommandError> {
-    let stored = stored_config_of(cx, repo, base)?;
+    let stored = stored_config_of(cx, repo)?;
     let Some(text) = over.filter(|t| !t.trim().is_empty()) else {
         return Ok(stored);
     };
-    let whose = repo.map_or_else(|| "Box".to_owned(), |r| r.repo.to_string());
+    let whose = repo.map_or_else(|| "Box".to_owned(), ToString::to_string);
     let over = RepoOverride::parse(&format!("{whose}:box config"), text)?;
     Ok(Some(over.over(stored.unwrap_or_default())))
 }
 
-/// The config the store or the repo's file holds for `repo`, before any override.
-fn stored_config_of(
-    cx: &Cx,
-    repo: Option<&BoxRepo>,
-    base: Option<&str>,
-) -> Result<Option<RepoConfig>, CommandError> {
+/// The config the store holds for `repo`, before any override.
+fn stored_config_of(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<Option<RepoConfig>, CommandError> {
     let Some(repo) = repo else {
         return Ok(None);
     };
-    if let Some(stored) = cx.store()?.repo_config(&repo.repo)? {
-        let file = format!("{}:repo config (revision {})", repo.repo, stored.revision);
-        return Ok(Some(parse_repo(&file, &stored.text)?));
-    }
-    let Some(text) = repo.moor_yaml.as_deref() else {
+    let Some(stored) = cx.store()?.repo_config(repo)? else {
         return Ok(None);
     };
-    let file = format!("{}@{}:.moor.yaml", repo.repo, base.unwrap_or("base"));
-    Ok(Some(parse_repo(&file, text)?))
+    let file = format!("{repo}:repo config (revision {})", stored.revision);
+    Ok(Some(parse_repo(&file, &stored.text)?))
 }
 
 /// Settings for one command from an already-read repo config, user config from Cx, and flags.

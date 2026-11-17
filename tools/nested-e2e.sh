@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_DIR=$(git rev-parse --show-toplevel)
 D=${NESTED_E2E_DIR:-$REPO_DIR/.moor/dev/nested-e2e}
 NAME=${NESTED_E2E_NAME:-nested-e2e-$(date +%s)}
-# A repo without .moor.yaml, so the inner Box has no setup to run.
+# A repo without a stored config, so the inner Box has no setup to run.
 GH_REPO_NAME=${NESTED_E2E_REPO:-IniZio/moor-nested-check}
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
 START_TIMEOUT=${NESTED_E2E_START_TIMEOUT:-600}

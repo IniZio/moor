@@ -150,7 +150,7 @@ pub(crate) fn import_repo_configs(env: &Env) -> Vec<String> {
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         lines.push(format!(
-            "imported the repo config of {} from their newest Box: {}",
+            "imported the repo configs of {} repos from their newest Boxes: {}",
             repos.len(),
             repos.join(", ")
         ));

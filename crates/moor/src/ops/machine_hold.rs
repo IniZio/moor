@@ -1,5 +1,5 @@
 //! `machine-hold`: a Box claims one of its user's machines, or lets go of it. The repo's
-//! `.moor.yaml` `machine:` section gives the labels and ports a claim leaves out, and its
+//! repo config's `machine:` section gives the labels and ports a claim leaves out, and its
 //! `machine.sync` what the machine's syncs leave alone.
 
 use moor_core::config::sync_excludes;
@@ -13,7 +13,7 @@ use crate::ops::common::facts::repo_config;
 /// Run `machine-hold` for the open Box `req.id`, among the machines of the user it acts for.
 ///
 /// # Errors
-/// No open Box with that id, a Box that acts for no user, a stored `.moor.yaml` that does not
+/// No open Box with that id, a Box that acts for no user, a stored repo config that does not
 /// parse, or a store failure.
 pub(crate) fn run(cx: &Cx, req: &MachineHoldReq) -> Result<HoldValue, CommandError> {
     let store = cx.store()?;

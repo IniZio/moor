@@ -76,7 +76,7 @@ fn a_size_comes_from_the_repo_then_the_operator() {
         "cache: {work_tree: {size_gb: 0}}",
     ] {
         assert!(
-            parse_repo(".moor.yaml", bad).is_err(),
+            parse_repo("repo config", bad).is_err(),
             "{bad} must be refused"
         );
     }

@@ -3,7 +3,7 @@
 use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::{BoxId, ErrorKind, StartReq};
 
-use super::{repo_req, req, run, script_base_yaml, world_with, World};
+use super::{repo_req, req, run, script_repo, world_with, World};
 use crate::testing::driver::FakeDriver;
 
 const KEY: &str =
@@ -67,7 +67,7 @@ fn repo_labels_the_default_node_has_start_there() {
     let yaml = "nodes: {ci: {runtime: local-container}, \
                 big: {runtime: local-container, labels: [gpu]}}\nbox: {node: big}";
     let w = world_with(FakeDriver::new(), parse_user("config.yaml", yaml).unwrap());
-    script_base_yaml(&w, Some("node: {labels: [gpu]}\n"));
+    script_repo(&w, Some("node: {labels: [gpu]}\n"));
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(node_of(&w, v.boxed.id).as_deref(), Some("big"));
 }
@@ -75,7 +75,7 @@ fn repo_labels_the_default_node_has_start_there() {
 #[test]
 fn repo_labels_no_node_has_refuse_the_start() {
     let w = world();
-    script_base_yaml(&w, Some("node: {labels: [arm]}\n"));
+    script_repo(&w, Some("node: {labels: [arm]}\n"));
     let e = run(&w.cx, &repo_req("demo")).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused, "{e:?}");
     assert!(
@@ -87,7 +87,7 @@ fn repo_labels_no_node_has_refuse_the_start() {
 #[test]
 fn a_repo_that_names_a_node_is_refused() {
     let w = world();
-    script_base_yaml(&w, Some("node: {name: big}\n"));
+    script_repo(&w, Some("node: {name: big}\n"));
     let e = run(&w.cx, &repo_req("demo")).unwrap_err();
     assert!(e.error.to_string().contains("unknown field"), "{e:?}");
 }

@@ -47,7 +47,7 @@ function Help() {
 	return (
 		<>
 			<p class="muted">
-				One config for every Box of the repo, as YAML in the <code>.moor.yaml</code> format. A change reaches a running Box
+				One config for every Box of the repo, as YAML. A change reaches a running Box
 				where the setting is read again.
 			</p>
 			<ul class="muted help">

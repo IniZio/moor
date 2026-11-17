@@ -29,6 +29,7 @@ names=(
   'Identity::of(cx' 'Layer::Git' 'proxy::origin'
   DirectHost check_direct direct_hosts RepoProxy WaitingForBox '--pool-max' provider_of
   seal_script seal_caches seal_step cache_seal_failed work_tree_not_kept MOOR_SEAL_BASE OnFail
+  moor_yaml moorYaml
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.
@@ -42,7 +43,8 @@ scan=(-rn --include='*.rs' --include='*.sh'
 # rewrite may use it, and it writes no git config.
 hits=$( { grep "${scan[@]}" -wF "${word_args[@]}" crates/ || true
           grep "${scan[@]}" -F "${sub_args[@]}" crates/ || true; } | sort -u |
-  grep -vE '^crates/moor-core/src/boxscript/clone\.rs:[0-9]+:.*-c url\.https://github\.com/\.insteadOf=' || true )
+  grep -vE '^crates/moor-core/src/boxscript/clone\.rs:[0-9]+:.*-c url\.https://github\.com/\.insteadOf=' |
+  grep -vE '^crates/moor/src/store/repo_import\.rs:[0-9]+:    #\[serde\(rename = "moor_yaml"\)\]$' || true )
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"

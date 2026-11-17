@@ -17,8 +17,6 @@ use crate::store::db::Row;
 struct StoredRepo {
     /// `OWNER/NAME`.
     repo: ForgeRepo,
-    /// The repo's `.moor.yaml` at the base.
-    moor_yaml: Option<String>,
 }
 
 /// The Box's repo columns; a stored repo that is not `OWNER/NAME` is an invalid row.
@@ -31,16 +29,12 @@ pub(super) fn repo_from_row(row: &Row<'_>) -> Result<Option<BoxRepo>, StoreError
             serde_json::from_str::<Vec<StoredRepo>>(s)
         })?
         .into_iter()
-        .map(|r| ListedRepo {
-            repo: r.repo,
-            moor_yaml: r.moor_yaml,
-        })
+        .map(|r| ListedRepo { repo: r.repo })
         .collect(),
         None => Vec::new(),
     };
     Ok(Some(BoxRepo {
         repo: parsed("box repo", &repo, ForgeRepo::parse)?,
-        moor_yaml: row.get(const { box_at(Boxes::RepoConfig) })?,
         author: GitAuthor {
             name: row
                 .get::<_, Option<String>>(const { box_at(Boxes::AuthorName) })?
@@ -61,7 +55,7 @@ pub(super) fn others_column(repo: &BoxRepo) -> Option<String> {
     let stored: Vec<serde_json::Value> = repo
         .others
         .iter()
-        .map(|r| serde_json::json!({ "repo": r.repo.to_string(), "moor_yaml": r.moor_yaml }))
+        .map(|r| serde_json::json!({ "repo": r.repo.to_string() }))
         .collect();
     Some(serde_json::Value::from(stored).to_string())
 }

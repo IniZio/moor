@@ -17,7 +17,7 @@ fn names(plan: &CachePlan) -> Vec<&str> {
 }
 
 fn started(w: &World) -> CachePlan {
-    script_base_yaml(w, Some(YAML));
+    script_repo(w, Some(YAML));
     run(&w.cx, &repo_req("demo")).unwrap();
     let plans = w.driver.acquired_plans();
     assert_eq!(plans.len(), 1);
@@ -77,7 +77,7 @@ fn a_provider_without_cache_volumes_starts_cold_with_one_warning() {
 fn presets_alone_start_cold_without_a_warning() {
     for yaml in [None, Some("cache: {presets: [go]}\n")] {
         let w = world(FakeDriver::new());
-        script_base_yaml(&w, yaml);
+        script_repo(&w, yaml);
         run(&w.cx, &repo_req("demo")).unwrap();
         assert!(cache_warnings(&w).is_empty(), "{yaml:?}");
     }
@@ -91,7 +91,7 @@ fn an_operator_volume_on_a_provider_without_cache_volumes_warns() {
     )
     .unwrap();
     let w = world_with(FakeDriver::new(), config);
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(cache_warnings(&w), ["cache_unavailable"]);
 }
@@ -132,7 +132,7 @@ fn refusals(w: &World) -> Vec<String> {
 fn a_volume_over_docker_data_is_refused_and_the_box_keeps_the_rest() {
     let w = world(FakeDriver::new().cache_volumes());
     let yaml = "cache: {volumes: [{name: mine, path: ~/docker}, {name: sdk, path: /opt/sdk}]}\n";
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     run(&w.cx, &repo_req("demo")).unwrap();
     let plan = w.driver.acquired_plans().into_iter().next().unwrap();
     let got = names(&plan);
@@ -149,7 +149,7 @@ fn a_volume_over_docker_data_is_refused_and_the_box_keeps_the_rest() {
 fn a_volume_over_docker_data_is_refused_with_presets_off() {
     let w = world(FakeDriver::new().cache_volumes());
     let yaml = "cache: {presets: false, volumes: [{name: mine, path: ~/docker}]}\n";
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     run(&w.cx, &repo_req("demo")).unwrap();
     let [plan]: [CachePlan; 1] = w.driver.acquired_plans().try_into().unwrap();
     assert_eq!(names(&plan), ["worktree"], "only the work tree is kept");
@@ -228,7 +228,7 @@ fn a_cold_box_runs_no_restore() {
 fn an_emptied_volume_warns_and_records_and_the_box_starts() {
     let printed = "moor: cache emptied docker: blob abc does not match its hash\n";
     let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let view = run(&w.cx, &repo_req("demo")).unwrap();
     let got = w.cx.take_warnings();
     let warned: Vec<&Warning> = got.iter().filter(|w| w.code == "cache_emptied").collect();
@@ -254,7 +254,7 @@ fn an_emptied_volume_is_reported_even_when_the_clone_fails() {
             .exec_stdout([printed])
             .exec_results([Ok(ExecOutcome::Exited { code: 1 })]),
     );
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     assert!(run(&w.cx, &repo_req("demo")).is_err());
     let got = w.cx.take_warnings();
     assert!(got.iter().any(|w| w.code == "cache_emptied"), "{got:?}");
@@ -283,7 +283,7 @@ fn a_box_without_the_work_tree_clones_with_no_refresh() {
     for driver in [FakeDriver::new(), FakeDriver::new().cache_volumes()] {
         let w = world(driver);
         let yaml = "cache: {work_tree: false}\n";
-        script_base_yaml(&w, Some(yaml));
+        script_repo(&w, Some(yaml));
         run(&w.cx, &repo_req("demo")).unwrap();
         assert!(!clone_exec(&w).1.contains("moor_tree_refresh"));
     }
@@ -293,7 +293,7 @@ fn a_box_without_the_work_tree_clones_with_no_refresh() {
 /// `work_tree` warnings the start raised, as `message`.
 fn start_printing(printed: &str, yaml: Option<&str>) -> (StartView, Vec<String>) {
     let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
-    script_base_yaml(&w, yaml);
+    script_repo(&w, yaml);
     let view = run(&w.cx, &repo_req("demo")).unwrap();
     let warned =
         w.cx.take_warnings()
@@ -342,7 +342,7 @@ fn a_refresh_that_fell_back_warns_with_its_reason() {
 #[test]
 fn a_refresh_that_printed_nothing_says_nothing() {
     let w = world(FakeDriver::new().cache_volumes());
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let view = run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(view.work_tree, None);
     assert!(w.cx.take_warnings().iter().all(|w| w.code != "work_tree"));
@@ -365,7 +365,7 @@ fn the_clone_log_is_still_removed_after_the_outcome_is_read() {
             .cache_volumes()
             .exec_stdout(["moor: work tree refreshed\n"]),
     );
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     run(&w.cx, &repo_req("demo")).unwrap();
     assert!(!w.dir.path().join("clone").join("1.log").exists());
 }
@@ -374,7 +374,7 @@ fn the_clone_log_is_still_removed_after_the_outcome_is_read() {
 fn a_preset_only_box_on_a_provider_without_cache_volumes_records_why_it_is_cold() {
     for yaml in [None, Some("cache: {presets: [go]}\n")] {
         let w = world(FakeDriver::new());
-        script_base_yaml(&w, yaml);
+        script_repo(&w, yaml);
         let v = run(&w.cx, &repo_req("demo")).unwrap();
         assert_eq!(reasons(&w, &v), ["provider_unsupported"], "{yaml:?}");
         let detail = cold_events(&w, &v).first().unwrap()["detail"]
@@ -394,7 +394,7 @@ fn a_box_whose_operator_switched_cache_volumes_off_records_why_it_is_cold() {
     )
     .unwrap();
     let w = world_with(FakeDriver::new().cache_volumes(), config);
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(reasons(&w, &v), ["switched_off"]);
     assert!(cache_warnings(&w).is_empty());
@@ -408,7 +408,7 @@ fn a_clash_records_why_the_box_is_cold_next_to_its_warning() {
     )
     .unwrap();
     let w = world_with(FakeDriver::new().cache_volumes(), config);
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(reasons(&w, &v), ["refused"]);
     assert_eq!(cache_warnings(&w), ["cache_refused"]);
@@ -419,7 +419,7 @@ fn a_box_with_no_volumes_to_keep_records_nothing() {
     let off = "cache: {presets: false, work_tree: false}\n";
     for driver in [FakeDriver::new(), FakeDriver::new().cache_volumes()] {
         let w = world(driver);
-        script_base_yaml(&w, Some(off));
+        script_repo(&w, Some(off));
         let v = run(&w.cx, &repo_req("demo")).unwrap();
         assert!(cold_events(&w, &v).is_empty());
     }
@@ -428,7 +428,7 @@ fn a_box_with_no_volumes_to_keep_records_nothing() {
 #[test]
 fn a_box_that_keeps_its_volumes_records_nothing() {
     let w = world(FakeDriver::new().cache_volumes());
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     assert!(cold_events(&w, &v).is_empty());
 }
@@ -436,7 +436,7 @@ fn a_box_that_keeps_its_volumes_records_nothing() {
 #[test]
 fn a_box_with_no_owning_user_records_why_it_is_cold() {
     let w = world(FakeDriver::new().cache_volumes());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     assert!(cold_events(&w, &v).is_empty());
     let store = w.cx.store().unwrap();
@@ -455,7 +455,7 @@ fn a_box_with_no_owning_user_records_why_it_is_cold() {
 #[test]
 fn an_external_provider_without_cache_volumes_names_the_capability_to_declare() {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, None);
+    script_repo(&w, None);
     let v = run(&w.cx, &repo_req("demo")).unwrap();
     let store = w.cx.store().unwrap();
     let row = store.box_row(BoxId::new(v.boxed.id)).unwrap().unwrap();

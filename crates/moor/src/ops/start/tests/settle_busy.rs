@@ -5,7 +5,7 @@ use moor_core::request::{WaitEventsReq, WaitMode};
 use moor_core::{BoxId, BoxName, ShowReq, StartReq};
 
 use super::state::{idle, working};
-use super::{repo_req, req, script_base_yaml, world, World};
+use super::{repo_req, req, script_repo, world, World};
 use crate::cx::owners::{Cmd, Held};
 use crate::cx::Cx;
 use crate::ops::start::{run, settle_all};
@@ -83,7 +83,7 @@ fn wait_events_leaves_a_box_while_an_op_holds_its_box() {
 #[test]
 fn a_start_with_settles_running_during_setup_still_launches() {
     let mut w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let dir = w.dir.path().to_path_buf();

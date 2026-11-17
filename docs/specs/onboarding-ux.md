@@ -115,7 +115,7 @@ Get started
 Use
   Start and steer Boxes                how-to, tabs per front: Claude Code, herdr
   Add your machine                     how-to
-  Set up a repo (.moor.yaml)           how-to
+  Set up a repo (repo config)          how-to
   Run Boxes on a schedule              how-to
   Get Box events                       how-to
 Self-host
@@ -126,7 +126,7 @@ Self-host
   Upgrade and back up                  how-to
 Reference
   moor, moor-machine-agent CLI         generated
-  .moor.yaml, user config, controller config
+  repo config, user config, controller config
   Helm values                          generated
   MCP tools                            generated
   Events

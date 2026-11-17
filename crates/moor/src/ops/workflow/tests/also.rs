@@ -22,7 +22,7 @@ fn fired_with(also: Vec<ForgeRepo>) -> (Vec<ForgeRepo>, Vec<ForgeRepo>) {
     r.cx = r.cx.with_proxy_host(Arc::new(proxy.clone()));
     r.answer_repo();
     for other in [&also[..], &config_also()].concat() {
-        r.forge.answer(other, Ok(repo_at("def456", None)));
+        r.forge.answer(other, Ok(repo_at("def456")));
     }
     let def = WorkflowDef::new(
         WorkflowName::parse("audit").unwrap(),

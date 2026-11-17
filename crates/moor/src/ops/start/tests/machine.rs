@@ -1,5 +1,5 @@
 //! A start holds no machine: the Box claims one of its requester's machines through
-//! `machine-hold`, with the ports and syncs its repo's `.moor.yaml` names; closing the Box
+//! `machine-hold`, with the ports and syncs its repo's config names; closing the Box
 //! frees the machine for the next claim.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
@@ -11,7 +11,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::view::StartView;
 use moor_core::{BoxId, HoldOp, HoldValue, MachineHoldReq};
 
-use super::{repo_req, script_base_yaml, world, World};
+use super::{repo_req, script_repo, world, World};
 use crate::ops::machine_hold;
 use crate::ops::start::run;
 use crate::testing::cx::REQUESTER_USER;
@@ -21,7 +21,7 @@ const YAML: &str = "machine:\n  labels: [macos]\n  ports: [5432, 8080]\n";
 
 fn with_machines(names: &[(&str, &str)]) -> World {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let store = w.cx.store().unwrap();
     for (name, label) in names {
         let m = UserMachine::parse(name, &[(*label).to_owned()]).unwrap();
@@ -95,7 +95,7 @@ fn a_second_box_gets_the_next_free_machine() {
 
 fn shared(capacity: u16) -> World {
     let w = world(FakeDriver::new());
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let m = UserMachine::parse("mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(capacity))
         .unwrap();
@@ -193,7 +193,7 @@ fn the_hold_keeps_what_its_syncs_leave_alone() {
     let w = with_machines(&[("mini", "macos")]);
     let yaml =
         "machine:\n  labels: [macos]\n  sync: {presets: [node, rust], exclude: [app/build]}\n";
-    script_base_yaml(&w, Some(yaml));
+    script_repo(&w, Some(yaml));
     let v = start(&w, "a");
     let store = w.cx.store().unwrap();
     let got = store.box_machine(BoxId::new(v.boxed.id)).unwrap().unwrap();

@@ -8,7 +8,7 @@ use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::setup::{exit, kinds, setup_execs, start_req};
 use super::state::working;
-use super::{hold, script_base_yaml, world, World};
+use super::{hold, script_repo, world, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
@@ -24,7 +24,7 @@ fn world_with_setup(
     results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
 ) -> (World, Arc<FakeEngine>) {
     let mut w = world(FakeDriver::new().exec_results(results));
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     (w, engine)
@@ -189,7 +189,7 @@ fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() 
         FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(0)), Ok(exit(0))]),
         yaml("a"),
     );
-    script_base_yaml(&w, Some(YAML));
+    script_repo(&w, Some(YAML));
     w.cx = w.cx.with_engine(Arc::new(FakeEngine::new()));
     start(&w).unwrap_err();
     let execs_before = w.driver.execs().len();

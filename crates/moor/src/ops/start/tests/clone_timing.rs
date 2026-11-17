@@ -9,7 +9,7 @@ use moor_core::BoxId;
 use serde_json::json;
 
 use super::setup::start_req;
-use super::{script_base_yaml, world, World};
+use super::{script_repo, world, World};
 use crate::ops::start::run;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -18,7 +18,7 @@ use crate::testing::driver::FakeDriver;
 fn timed_world(steps: Vec<Duration>) -> World {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let mut w = world(FakeDriver::new());
-    script_base_yaml(&w, Some("setup: [a]\n"));
+    script_repo(&w, Some("setup: [a]\n"));
     w.cx = w.cx.with_clock(clock.clone());
     let n = AtomicUsize::new(0);
     w.driver.on_exec(move || {

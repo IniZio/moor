@@ -25,7 +25,6 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
             let at = repo::fetch(cx, user, r, req.base.as_deref())?;
             let boxed = BoxRepo {
                 repo: r.clone(),
-                moor_yaml: at.files.moor_yaml.clone(),
                 author: at.author,
                 others: Vec::new(),
             };
@@ -34,7 +33,7 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
         None => (String::new(), None),
     };
     let repo_cfg = match &at {
-        Some((boxed, base, _)) => repo_config_of(cx, Some(boxed), Some(base.as_str()), None)?,
+        Some((boxed, _, _)) => repo_config_of(cx, Some(&boxed.repo), None)?,
         None => None,
     };
     let settings = resolved(cx, repo_cfg.as_ref(), &Flags::default());

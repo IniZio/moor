@@ -5,7 +5,8 @@ use moor_core::domain::decision::ListedRepo;
 use moor_core::seam::forge::{ForgeRepo, RepoAt};
 use moor_core::{BoxId, ErrorKind, StartReq};
 
-use super::{repo, repo_req, run, script_base_yaml, world, world_with, World, BASE};
+use super::{repo, repo_req, run, script_repo, world, world_with, World, BASE};
+use crate::testing::cx::store_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
 
@@ -17,12 +18,12 @@ fn deploy() -> ForgeRepo {
     ForgeRepo::new("p", "deploy")
 }
 
-/// Scripts the primary and both other repos, each with its own `.moor.yaml`.
+/// Scripts the primary and both other repos; the primary and `o/lib` have a stored config.
 fn scripted(w: &World) {
-    script_base_yaml(w, Some("setup: [main]\n"));
-    w.forge
-        .answer(lib(), Ok(repo_at(BASE, Some("setup: [lib]\n"))));
-    w.forge.answer(deploy(), Ok(repo_at(BASE, None)));
+    script_repo(w, Some("setup: [main]\n"));
+    store_config(w.cx.store().unwrap(), &lib(), "setup: [lib]\n");
+    w.forge.answer(lib(), Ok(repo_at(BASE)));
+    w.forge.answer(deploy(), Ok(repo_at(BASE)));
 }
 
 fn listing(name: &str, also: Vec<ForgeRepo>) -> StartReq {
@@ -41,25 +42,16 @@ fn started(w: &World, req: &StartReq) -> BoxId {
     BoxId::new(run(&w.cx, req).unwrap().boxed.id)
 }
 
-fn listed(repo: ForgeRepo, moor_yaml: Option<&str>) -> ListedRepo {
-    ListedRepo {
-        repo,
-        moor_yaml: moor_yaml.map(str::to_owned),
-    }
+fn listed(repo: ForgeRepo) -> ListedRepo {
+    ListedRepo { repo }
 }
 
 #[test]
-fn a_two_repo_start_records_the_others_in_order_with_their_configs() {
+fn a_two_repo_start_records_the_others_in_order() {
     let w = world(FakeDriver::new());
     scripted(&w);
     let id = started(&w, &listing("demo", vec![deploy(), lib()]));
-    assert_eq!(
-        others(&w, id),
-        vec![
-            listed(deploy(), None),
-            listed(lib(), Some("setup: [lib]\n"))
-        ]
-    );
+    assert_eq!(others(&w, id), vec![listed(deploy()), listed(lib())]);
 }
 
 #[test]
@@ -68,7 +60,7 @@ fn a_listed_repo_the_account_cannot_push_to_is_refused_by_name() {
     scripted(&w);
     let read_only = RepoAt {
         can_push: false,
-        ..repo_at(BASE, None)
+        ..repo_at(BASE)
     };
     w.forge.answer(deploy(), Ok(read_only));
     let err = run(&w.cx, &listing("demo", vec![lib(), deploy()])).unwrap_err();
@@ -105,14 +97,14 @@ fn configured() -> World {
 fn the_configured_list_applies_when_the_start_names_none() {
     let w = configured();
     let id = started(&w, &repo_req("demo"));
-    assert_eq!(others(&w, id), vec![listed(lib(), Some("setup: [lib]\n"))]);
+    assert_eq!(others(&w, id), vec![listed(lib())]);
 }
 
 #[test]
 fn a_listed_set_replaces_the_configured_one() {
     let w = configured();
     let id = started(&w, &listing("demo", vec![deploy()]));
-    assert_eq!(others(&w, id), vec![listed(deploy(), None)]);
+    assert_eq!(others(&w, id), vec![listed(deploy())]);
     let id = started(&w, &listing("solo", Vec::new()));
     assert!(others(&w, id).is_empty());
 }

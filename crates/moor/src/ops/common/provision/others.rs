@@ -227,12 +227,15 @@ pub(super) fn set_up_all(
             break;
         }
         let repo = &tree.listed.repo;
-        let lines = match tree.listed.moor_yaml.as_deref() {
-            None => continue,
-            Some(text) => match parse_repo(&format!("{repo}:.moor.yaml"), text) {
-                Ok(parsed) => parsed.setup,
-                Err(e) => return Ok(failed_before_run(cx, format!("{repo}: {e}"))),
-            },
+        let stored = match store.repo_config(repo) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => continue,
+            Err(e) => return Ok(failed_before_run(cx, format!("{repo}: {e}"))),
+        };
+        let label = format!("{repo}:repo config (revision {})", stored.revision);
+        let lines = match parse_repo(&label, &stored.text) {
+            Ok(parsed) => parsed.setup,
+            Err(e) => return Ok(failed_before_run(cx, format!("{repo}: {e}"))),
         };
         let own = BoxSettings {
             setup: lines,

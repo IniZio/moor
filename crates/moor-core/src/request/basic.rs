@@ -42,7 +42,7 @@ pub struct BoxConfigSetReq {
     /// Box name.
     #[serde(rename = "box")]
     pub box_name: BoxName,
-    /// The Box's whole override, in the `.moor.yaml` format; none or blank removes it.
+    /// The Box's whole override, in the repo config format; none or blank removes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
 }

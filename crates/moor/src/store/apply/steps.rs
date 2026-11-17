@@ -205,17 +205,13 @@ fn box_columns(
     new: &NewBox,
     requester: Option<UserId>,
     now: Ts,
-) -> Result<[(Boxes, Value); 12], StoreError> {
+) -> Result<[(Boxes, Value); 11], StoreError> {
     let repo = new.repo.as_ref();
     let labels = serde_json::to_string(&new.spec.labels)
         .map_err(|e| StoreError::Corrupt(format!("node labels: {e}")))?;
     Ok([
         (Boxes::Name, new.name.as_str().into()),
         (Boxes::Repo, repo.map(|r| r.repo.to_string()).into()),
-        (
-            Boxes::RepoConfig,
-            repo.and_then(|r| r.moor_yaml.as_deref()).into(),
-        ),
         (
             Boxes::AuthorName,
             repo.map(|r| r.author.name.as_str()).into(),

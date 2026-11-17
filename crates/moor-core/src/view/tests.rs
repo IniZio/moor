@@ -263,7 +263,7 @@ fn env_items() -> Vec<super::env::EnvItem> {
 
 fn settings(user: &str, repo: Option<&str>) -> crate::config::BoxSettings {
     let user = crate::config::parse_user("user.yaml", user).unwrap();
-    let repo = repo.map(|r| crate::config::parse_repo(".moor.yaml", r).unwrap());
+    let repo = repo.map(|r| crate::config::parse_repo("repo config", r).unwrap());
     crate::config::BoxSettings::resolve(&user, repo.as_ref(), &crate::config::Flags::default())
 }
 

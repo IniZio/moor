@@ -32,15 +32,11 @@ pub(crate) struct Read {
     pub(crate) token: String,
 }
 
-/// What a forge answers for a repo at `base` whose `.moor.yaml` is `moor_yaml`
-/// and that the token's account may push to.
-pub(crate) fn repo_at(base: &str, moor_yaml: Option<&str>) -> RepoAt {
+/// What a forge answers for a repo at `base` that the token's account may push to.
+pub(crate) fn repo_at(base: &str) -> RepoAt {
     RepoAt {
         base: Sha::parse(base).expect("hex sha"),
-        files: RepoFiles {
-            moor_yaml: moor_yaml.map(str::to_owned),
-            ..RepoFiles::default()
-        },
+        files: RepoFiles::default(),
         author: GitAuthor {
             name: "Ann Dev".to_owned(),
             email: "1+ann@users.noreply.github.com".to_owned(),

@@ -25,7 +25,7 @@ pub struct RepoConfigSetReq {
     pub identity: Option<Identity>,
     /// The repo whose config to replace.
     pub repo: ForgeRepo,
-    /// The whole config as YAML, in the `.moor.yaml` format.
+    /// The whole config as YAML, in the repo config format.
     pub text: String,
     /// The revision the writer last saw, 0 for none; the write is refused when the stored
     /// revision differs. Absent writes whatever is stored.

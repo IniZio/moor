@@ -35,7 +35,7 @@ fn box_view_maps_row_without_box() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: Some(crate::testing::cx::box_repo(None)),
+        repo: Some(crate::testing::cx::box_repo()),
         spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
@@ -289,15 +289,14 @@ fn box_view_lists_the_other_repos_in_order_and_omits_none() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let mut two = crate::testing::cx::box_repo(None);
+    let mut two = crate::testing::cx::box_repo();
     two.others = ["b", "c"]
         .map(|n| ListedRepo {
             repo: ForgeRepo::new("o", n),
-            moor_yaml: None,
         })
         .to_vec();
     let mut views = Vec::new();
-    for (name, repo) in [("one", crate::testing::cx::box_repo(None)), ("two", two)] {
+    for (name, repo) in [("one", crate::testing::cx::box_repo()), ("two", two)] {
         let nt = NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: Some(repo),
@@ -328,7 +327,7 @@ fn box_view_flags_an_asleep_box_whose_session_is_busy() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: Some(crate::testing::cx::box_repo(None)),
+        repo: Some(crate::testing::cx::box_repo()),
         spec: SpecFields::default(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;

@@ -1,4 +1,4 @@
-//! The repo config file (`.moor.yaml`): strict parse plus validation, no IO.
+//! The repo config: strict parse plus validation, no IO.
 
 use std::collections::BTreeMap;
 
@@ -71,7 +71,7 @@ pub struct RepoConfig {
     pub node: RepoNode,
 }
 
-/// Parses and validates a `.moor.yaml` document.
+/// Parses and validates a repo config document.
 ///
 /// # Errors
 /// Returns [`ConfigError`] (with `file` set) for bad YAML, unknown
@@ -83,7 +83,7 @@ pub fn parse_repo(file: &str, text: &str) -> Result<RepoConfig, ConfigError> {
 }
 
 impl RepoConfig {
-    /// Top-level `.moor.yaml` keys whose values differ between `self` and `other`, in file order.
+    /// Top-level keys whose values differ between `self` and `other`, in document order.
     #[must_use]
     pub fn changed_keys(&self, other: &Self) -> Vec<&'static str> {
         [
