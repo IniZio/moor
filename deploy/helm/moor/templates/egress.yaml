@@ -147,6 +147,10 @@ spec:
             - --machine-service
             - machine.moor.internal={{ .Release.Name }}-machine.{{ .Release.Namespace }}.svc:7700
             {{- end }}
+            {{- if include "moor.stepReports" . }}
+            - --moor-service
+            - moor.moor.internal={{ include "moor.boxUpstream" . }}
+            {{- end }}
           env:
             - name: MOOR_EGRESS_KEY
               valueFrom:

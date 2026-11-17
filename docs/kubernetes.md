@@ -78,6 +78,25 @@ runner:
 `podDisruptionBudget.enabled` adds a budget for the gate and runner replicas.
 It needs RBAC on `policy/v1`, which some installs do not grant.
 
+## Step reports
+
+`gate.stepReports: true` lets the agent in a Box report its workflow steps. The
+Proxy routes `moor.moor.internal` to the gate's Box listener and stamps the
+Box's id, so the Box holds no token. The chart then gives every Box the `moor`
+MCP server and lets the gate's controller entry report steps.
+
+With `egress.enabled` the gate binds the listener on its pod address, and the
+egress pods reach it through the ClusterIP Service `<release>-gate-boxes`. The
+listener trusts the Box id it is sent, and the chart has no NetworkPolicy. So
+turn the key on only where nothing but the egress pods can reach
+`gate.boxPort` on the gate pods. A NetworkPolicy of your own can admit that
+port only from pods labelled `app.kubernetes.io/name: moor-egress`. It must
+keep the pod's other ports open.
+
+The listener keeps each Box's MCP session in memory. With `gate.separate` and
+two or more replicas, a Box's calls can reach a replica without its session.
+Keep one gate replica until the listener shares sessions.
+
 ## Run the controller without a volume
 
 With `database.url` and `blobs.s3` both set, the controller keeps its store in

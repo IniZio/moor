@@ -20,6 +20,12 @@ data:
       authgear:
         remote:
           key_file: /var/lib/moor/config/gate-front-key
+        {{- if include "moor.stepReports" . }}
+        step_reports: true
+        {{- end }}
+      {{- else if include "moor.stepReports" . }}
+      authgear:
+        step_reports: true
       {{- else if .Values.gate.enabled }}
       authgear: {}
       {{- end }}
@@ -54,6 +60,10 @@ data:
       service:
         host: machine.moor.internal
         upstream: 127.0.0.1:7700
+    {{- end }}
+    {{- if include "moor.stepReports" . }}
+    moor_service:
+      upstream: {{ include "moor.boxUpstream" . }}
     {{- end }}
 ---
 apiVersion: v1
