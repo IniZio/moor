@@ -38,7 +38,7 @@ fn every_object_is_named_from_the_slug() {
     all.extend([n.agent.as_str(), n.work.as_str()]);
     all.sort_unstable();
     all.dedup();
-    assert_eq!(all.len(), 7, "{all:?}");
+    assert_eq!(all.len(), 10, "{all:?}");
 }
 
 #[test]
@@ -123,4 +123,27 @@ fn docker_ps_lines_become_each_boxes_two_places() {
     assert_eq!(boxes[&slug()], (Up, Down));
     let other = Slug::parse("moor-3b3b3b3b-9002").unwrap();
     assert_eq!(boxes[&other], (Up, Down));
+}
+
+#[test]
+fn both_places_mount_the_shared_skills_volumes_and_nothing_else_of_the_home() {
+    let n = Names::of(&slug());
+    let a = agent_run(&settings(), &slug(), &n).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, None).join(" ");
+    for argv in [&a, &w] {
+        assert!(argv.contains("-v moor-3b3b3b3b-9001-agents:/home/agent/.agents "));
+        assert!(argv.contains("-v moor-3b3b3b3b-9001-skills:/home/agent/.claude/skills "));
+        assert!(argv.contains("-v moor-3b3b3b3b-9001-tmp:/tmp "));
+    }
+    assert!(a.contains("-v moor-3b3b3b3b-9001-agent-home:/home/agent "));
+    assert!(w.contains("-v moor-3b3b3b3b-9001-work-home:/home/agent "));
+    assert!(!a.contains("work-home") && !w.contains("agent-home"));
+}
+
+#[test]
+fn close_removes_the_shared_skills_volumes() {
+    let n = Names::of(&slug());
+    assert!(n.volumes().contains(&n.agents.as_str()));
+    assert!(n.volumes().contains(&n.skills.as_str()));
+    assert!(n.volumes().contains(&n.tmp.as_str()));
 }
