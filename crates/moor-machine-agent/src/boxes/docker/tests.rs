@@ -129,7 +129,7 @@ fn docker_ps_lines_become_each_boxes_two_places() {
 fn both_places_mount_the_shared_skills_volumes_and_nothing_else_of_the_home() {
     let n = Names::of(&slug());
     let a = agent_run(&settings(), &slug(), &n).join(" ");
-    let w = work_run(&settings(), &slug(), &n, 4096).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, None).join(" ");
     for argv in [&a, &w] {
         assert!(argv.contains("-v moor-3b3b3b3b-9001-agents:/home/agent/.agents "));
         assert!(argv.contains("-v moor-3b3b3b3b-9001-skills:/home/agent/.claude/skills "));
