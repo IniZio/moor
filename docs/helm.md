@@ -20,7 +20,7 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 | --- | --- | --- |
 | `image.repository`, `image.tag` | `ghcr.io/inizio/moor`, the chart's version | The release image. |
 | `controller.nodes` | `{}` | Shared nodes, as `{name: {runtime, labels, max_boxes}}`. Empty runs Boxes only on paired machines. |
-| `controller.defaultNode` | empty | `box.node`. Needed when `nodes` has more than one entry. |
+| `controller.defaultNode` | empty | `box.node`, the shared node tried first. |
 | `controller.agentModel` | empty | The model a Box's agent starts with. |
 | `controller.drainTimeoutSecs` | 30 | The controller's drain on stop. The pod's grace is this plus 30 s. |
 | `controller.settleEverySecs` | 5 | Seconds between settle passes. |

@@ -157,8 +157,9 @@ fn nowhere(default: Option<&NodeName>) -> Verdict {
 
 /// Picks the node for a new Box.
 ///
-/// Only the first node in order is tried: an offline or full node never sends the Box to
-/// another one. With no `default`, only personal nodes are candidates. `now` is unix seconds.
+/// With no node named, the candidates are the requester's personal nodes, then every shared
+/// one, `default` first among those. Only the first candidate is tried: an offline or full
+/// node never sends the Box to another one. `now` is unix seconds.
 #[must_use]
 pub fn schedule(
     nodes: &[Node],
@@ -203,17 +204,15 @@ pub fn schedule(
         ));
     }
 
-    let order: Vec<&Node> = if spec.node.is_some() {
-        fits
-    } else {
-        ordered(&fits, requester, default)
-            .into_iter()
-            .filter(|n| n.scope != Scope::Shared || Some(&n.name) == default)
-            .collect()
+    let order = ordered(&fits, requester, default);
+    let Some((first, rest)) = order.split_first() else {
+        return nowhere(default);
     };
-    order
-        .first()
-        .map_or_else(|| nowhere(default), |first| place(first, default, now))
+    let other = rest
+        .iter()
+        .find(|n| n.online == Online::Online)
+        .map(|n| &n.name);
+    place(first, other, now)
 }
 
 /// Personal nodes by enrollment then machine id, then the shared ones with the default first.
@@ -237,23 +236,24 @@ fn ordered<'a>(nodes: &[&'a Node], requester: UserId, default: Option<&NodeName>
     mine
 }
 
-/// Judges the first node in order: offline fails, full by count or memory waits, otherwise binds.
-fn place(n: &Node, default: Option<&NodeName>, now: i64) -> Verdict {
+/// Judges the first node in order: offline fails, naming `other`, the next online candidate;
+/// full by count or memory waits; otherwise binds.
+fn place(n: &Node, other: Option<&NodeName>, now: i64) -> Verdict {
     if let Online::Offline { since } = n.online {
         let at = ago(since, now);
-        return fail(match default {
-            Some(d) if d == &n.name => {
-                format!("{} is offline for {at}: wait for it to come back", n.name)
-            }
-            Some(d) => format!(
-                "{} is offline for {at}: start moor-machine-agent on it, or start with --node {d}",
-                n.name
-            ),
-            None => format!(
-                "{} is offline for {at}: start moor-machine-agent on it",
-                n.name
-            ),
-        });
+        let fix = match n.scope {
+            Scope::Shared => "wait for it to come back",
+            Scope::Personal { .. } => "start moor-machine-agent on it",
+        };
+        return fail(other.map_or_else(
+            || format!("{} is offline for {at}: {fix}", n.name),
+            |o| {
+                format!(
+                    "{} is offline for {at}: {fix}, or start with --node {o}",
+                    n.name
+                )
+            },
+        ));
     }
     match n.max_boxes {
         Some(max) if n.used >= max => Verdict::Pending {

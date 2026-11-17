@@ -19,7 +19,7 @@ moor, that file holds the operator's defaults for everyone.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `box.size` | `small`, `medium`, `large`, `xlarge` | none | The Box size. The repo config wins. With no size, the provider decides. |
-| `box.node` | string | the only node | The default shared node. Required when `nodes` has more than one entry. |
+| `box.node` | string | the only node in `nodes` | The shared node a start that names none tries first, after your personal nodes. It may name an enrolled machine's node. |
 | `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names none. |
 | `box.sleep_after` | duration, such as `45m` | `5m` | How long a Box stays idle before it sleeps. |
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box waits on an unanswered prompt before it sleeps. The shorter of the two applies. |
@@ -50,8 +50,8 @@ A node listed here is changed here. The cap and labels of a machine's node are
 settings in moor instead, which its owner edits, as [Boxes, nodes and
 machines](nodes.md#a-node) says.
 
-A node name matches `[a-z][a-z0-9-]*`. Without a shared node, Boxes start only
-on personal nodes. Personal nodes need no config. See
+A node name matches `[a-z][a-z0-9-]*`. A machine an operator adds with `moor node
+add` is a shared node too, with no entry here. Personal nodes need no config. See
 [Add your machine](add-machine.md).
 
 ### `drivers`
