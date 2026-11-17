@@ -132,6 +132,11 @@ fn private_listen(addr: &str) -> Result<SocketAddr, String> {
     }
 }
 
+/// Whether the shared egress Proxy runs on this host, for the controller `env` sets up.
+pub(crate) fn is_local(env: &Env) -> bool {
+    EgressRoute::from_env(env).is_ok_and(|r| r.socket().is_some())
+}
+
 /// The socket the controller's own shared Proxy listens on.
 pub(crate) fn local_socket(state_dir: &Path) -> PathBuf {
     state_dir.join(LOCAL_SOCKET)

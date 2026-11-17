@@ -1,34 +1,24 @@
-//! A Box's keeper against the store and a fake driver: its tunnel follows the Box's handle, is
-//! reopened when it dies, is parked while the Box sleeps, and goes with the Box.
+//! A Box's keeper against the store and a fake driver: the machine it holds is freed while the
+//! Box sleeps and let go with the Box.
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::request::{MachineLink, RunnerAddr};
-use moor_core::seam::clock::Clock as _;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::user::Identity;
 use moor_core::{BoxHandle, BoxId, BoxName, HoldOp, ProviderId};
 
 use super::{Deps, Kept};
-use crate::proxy::links::Runners;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
-use crate::testing::driver::{FakeDriver, TunnelReply};
+use crate::testing::driver::FakeDriver;
 use crate::testing::rng::FakeRng;
-
-mod turns;
 
 /// A store with one ready Box, a fake driver and a keeper for the Box.
 struct World {
@@ -40,11 +30,11 @@ struct World {
 }
 
 impl World {
-    fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
+    fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-        let driver = Arc::new(FakeDriver::new().reverse_tunnels().tunnel_replies(replies));
+        let driver = Arc::new(FakeDriver::new());
         let id = ready_box(&store, &driver);
         store.reserve(id, &FakeRng::default()).unwrap();
         Self {
@@ -56,21 +46,11 @@ impl World {
         }
     }
 
-    /// A keeper that tunnels to the shared Proxy's socket when `tunnels`.
-    fn kept(&self, tunnels: bool) -> Kept {
-        let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-        let runners = Runners::new(self.dir.path(), None, clock, None);
-        self.kept_via(tunnels, runners)
-    }
-
-    /// A keeper that reaches machines through `runners`.
-    fn kept_via(&self, tunnels: bool, runners: Runners) -> Kept {
+    fn kept(&self) -> Kept {
         let deps = Deps {
             store: self.store.clone(),
             driver: Arc::clone(&self.driver) as Arc<dyn Driver>,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-            egress: tunnels.then(|| self.socket()),
-            runners,
             log: self.log.clone(),
         };
         Kept::new(Arc::new(deps), self.id, 41_000)
@@ -83,28 +63,6 @@ impl World {
     fn handle(&self) -> BoxHandle {
         let row = self.store.box_row(self.id).unwrap().unwrap();
         row.hands.unwrap().handle.unwrap()
-    }
-
-    /// The handles each tunnel was opened into, in order.
-    fn opened(&self) -> Vec<String> {
-        let calls = self.driver.tunnels().into_iter();
-        calls.map(|c| c.handle.as_str().to_owned()).collect()
-    }
-
-    /// Gives the Box a fresh machine, as a retry that moves it does.
-    fn move_box(&self) -> BoxHandle {
-        let lost = Decision::new(self.id).hands_input(HandsInc::FIRST, HandsInput::DriverMissing);
-        self.store.apply(lost).unwrap();
-        let again = Decision::new(self.id).hands_input(HandsInc::new(2), HandsInput::Requested);
-        self.store.apply(again).unwrap();
-        let handle = acquire(&self.driver, self.id, "moved");
-        let acquired = HandsInput::Acquired {
-            handle: handle.clone(),
-        };
-        self.store
-            .apply(Decision::new(self.id).hands_input(HandsInc::new(2), acquired))
-            .unwrap();
-        handle
     }
 
     fn close_box(&self) {
@@ -125,7 +83,7 @@ impl World {
         let events = self.store.events(self.id, 50).unwrap().into_iter();
         events
             .map(|e| e.kind)
-            .filter(|k| k.starts_with("machine_") || k == "tunnel_restarted")
+            .filter(|k| k.starts_with("machine_"))
             .collect()
     }
 }
@@ -177,124 +135,16 @@ pub(crate) fn ready_box(store: &Store, driver: &FakeDriver) -> BoxId {
 }
 
 #[test]
-fn the_first_tick_opens_the_tunnel_from_the_box_port_to_the_shared_proxy() {
-    let w = World::new([]);
-    let kept = w.kept(true);
-    assert!(kept.tick());
-    let calls = w.driver.tunnels();
-    let [call] = calls.as_slice() else {
-        unreachable!("{calls:?}")
-    };
-    assert_eq!(
-        (&call.handle, call.box_port, &call.socket),
-        (&w.handle(), 41_000, &w.socket())
-    );
-    assert!(kept.up());
-    assert!(kept.tick());
-    assert_eq!(w.driver.tunnels().len(), 1, "a live tunnel is kept");
-}
-
-#[test]
-fn a_box_that_dials_the_proxy_itself_gets_no_tunnel() {
-    let w = World::new([]);
-    let kept = w.kept(false);
-    assert!(kept.tick());
-    assert!(w.driver.tunnels().is_empty());
-    assert!(kept.up());
-}
-
-#[test]
-fn a_box_moved_to_a_fresh_machine_gets_its_tunnel_there_on_the_next_tick() {
-    let w = World::new([]);
-    let kept = w.kept(true);
-    let old = w.handle();
-    assert!(kept.tick());
-    let moved = w.move_box();
-    assert!(kept.tick());
-    assert_eq!(w.opened(), [old.as_str(), moved.as_str()]);
-    assert_eq!(
-        w.driver.dropped_tunnels().len(),
-        1,
-        "the old tunnel is closed"
-    );
-    assert!(kept.up());
-}
-
-#[test]
-fn a_dead_tunnel_is_opened_again_and_recorded() {
-    let w = World::new([TunnelReply::ExitAfterReady]);
-    let kept = w.kept(true);
-    assert!(kept.tick());
-    assert!(!kept.up());
-    assert!(kept.tick());
-    assert_eq!(w.driver.tunnels().len(), 2);
-    assert!(kept.up());
-    assert_eq!(w.kinds(), ["tunnel_restarted"]);
-}
-
-#[test]
-fn a_failed_open_waits_before_it_is_tried_again() {
-    let hang = TunnelReply::EarlyExit {
-        code: 255,
-        stderr: "ssh: connect refused".into(),
-    };
-    let w = World::new([hang.clone(), hang]);
-    let kept = w.kept(true);
-    assert!(kept.tick());
-    assert!(kept.tick());
-    assert_eq!(w.driver.tunnels().len(), 1, "the second try waits");
-    assert!(kept.bring_up().is_err(), "a direct call tries at once");
-    assert!(kept.bring_up().is_ok());
-    assert_eq!(w.driver.tunnels().len(), 3);
-}
-
-#[test]
-fn a_parked_box_keeps_no_tunnel_until_it_is_restored() {
-    let w = World::new([]);
-    let kept = w.kept(true);
-    assert!(kept.tick());
-    kept.park();
-    assert_eq!(w.driver.dropped_tunnels().len(), 1);
-    assert!(kept.tick());
-    assert_eq!(w.driver.tunnels().len(), 1, "no tunnel while parked");
-    kept.restore().unwrap();
-    assert_eq!(w.driver.tunnels().len(), 2);
-    assert!(kept.up());
-}
-
-#[test]
 fn a_closed_box_ends_its_keeper_and_loses_its_proxy_row() {
-    let w = World::new([]);
-    let kept = w.kept(true);
+    let w = World::new();
+    let kept = w.kept();
     assert!(kept.tick());
     w.close_box();
     assert!(!kept.tick());
-    assert_eq!(w.driver.dropped_tunnels().len(), 1);
     assert!(w.store.proxy(w.id).unwrap().is_none());
 }
 
-/// What the machine runner was asked.
-type Asked = Receiver<UnixStream>;
-
-/// Stands in for the machine runner's forward socket: answers each request `up` and holds it.
-fn runner(w: &World) -> Asked {
-    let dir = crate::runner_dir::of(w.dir.path());
-    std::fs::create_dir_all(&dir).unwrap();
-    let listener = UnixListener::bind(dir.join(moor_client::forward::SOCKET)).unwrap();
-    let (tx, asked) = mpsc::channel();
-    std::thread::spawn(move || {
-        for conn in listener.incoming() {
-            let mut conn = conn.unwrap();
-            let mut line = String::new();
-            BufReader::new(&conn).read_line(&mut line).unwrap();
-            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
-            drop(tx.send(conn));
-        }
-    });
-    asked
-}
-
-/// The Box's requester holds the machine `mini`, forwarding Box port 8081.
+/// The Box's requester holds the machine `mini`.
 fn hold_machine(w: &World) {
     let (user, _) = w
         .store
@@ -313,126 +163,37 @@ fn hold_machine(w: &World) {
 }
 
 #[test]
-fn the_machine_is_attached_reattached_on_a_new_machine_and_let_go_on_close() {
-    let w = World::new([]);
+fn the_machine_is_let_go_when_the_box_closes() {
+    let w = World::new();
     hold_machine(&w);
-    let asked = runner(&w);
-    let kept = w.kept(false);
+    let kept = w.kept();
     assert!(kept.tick());
-    assert_eq!(w.kinds(), ["machine_attached"]);
-    assert!(kept.tick());
-    assert_eq!(asked.try_iter().count(), 1, "live forwards are kept");
-    w.move_box();
-    assert!(kept.tick());
-    assert_eq!(w.kinds(), ["machine_attached", "machine_attached"]);
     w.close_box();
     assert!(!kept.tick());
-    assert_eq!(
-        w.kinds(),
-        ["machine_attached", "machine_attached", "machine_detached"]
-    );
+    assert_eq!(w.kinds(), ["machine_detached"]);
     assert!(w.store.box_machine(w.id).unwrap().is_none());
-}
-
-/// A machine runner across the network: answers each forward request `up` and holds it; its
-/// address and, per connection, the hello it opened with.
-fn tcp_runner() -> (String, Receiver<(String, TcpStream)>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap().to_string();
-    let (tx, asked) = mpsc::channel();
-    std::thread::spawn(move || {
-        for conn in listener.incoming() {
-            let mut conn = conn.unwrap();
-            let mut reader = BufReader::new(conn.try_clone().unwrap());
-            let (mut hello, mut ask) = (String::new(), String::new());
-            reader.read_line(&mut hello).unwrap();
-            reader.read_line(&mut ask).unwrap();
-            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
-            drop(tx.send((hello, conn)));
-        }
-    });
-    (addr, asked)
-}
-
-/// Records that the runner at `addr` holds machine `machine_id`'s link at `clock`'s now.
-fn link_row(w: &World, clock: &FakeClock, addr: &str, machine_id: i64) {
-    let link = MachineLink {
-        provides: None,
-        machine_id,
-        online: true,
-        since: clock.now(),
-        version: None,
-        protocol: None,
-        max_boxes: None,
-        cache_gb: None,
-        features: Vec::new(),
-        mem_mib: None,
-        cpus: None,
-        reserve_mib: None,
-        memory: None,
-    };
-    let runner = RunnerAddr::new(addr);
-    w.store
-        .set_machine_links(&runner, false, &[link], clock.now())
-        .unwrap();
-}
-
-#[test]
-fn forwards_reach_the_runner_the_link_row_names_and_reopen_when_it_moves() {
-    let w = World::new([]);
-    hold_machine(&w);
-    let machine_id = w.store.box_machine(w.id).unwrap().unwrap().machine_id;
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let runners = Runners::new(
-        w.dir.path(),
-        Some(w.store.clone()),
-        clock.clone(),
-        Some("k"),
-    );
-    let kept = w.kept_via(false, runners);
-    let (first, at_first) = tcp_runner();
-    link_row(&w, &clock, &first, machine_id);
-    assert!(kept.tick());
-    assert_eq!(w.kinds(), ["machine_attached"]);
-    let (hello, _held) = at_first.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert_eq!(hello, "{\"forwards\":{\"v\":1,\"key\":\"k\"}}\n");
-    assert!(kept.tick());
-    assert_eq!(at_first.try_iter().count(), 0, "live forwards are kept");
-
-    clock.sleep(Duration::from_secs(1));
-    let (second, at_second) = tcp_runner();
-    link_row(&w, &clock, &second, machine_id);
-    assert!(kept.tick());
-    let reopened = at_second.recv_timeout(Duration::from_secs(5));
-    assert!(
-        reopened.is_ok(),
-        "the forwards reopen on the runner the row names now"
-    );
-    assert_eq!(w.kinds(), ["machine_attached", "machine_attached"]);
 }
 
 #[test]
 fn a_parked_box_frees_its_machine_slot() {
-    let w = World::new([]);
+    let w = World::new();
     hold_machine(&w);
-    let _asked = runner(&w);
-    let kept = w.kept(false);
+    let kept = w.kept();
     assert!(kept.tick());
     kept.park();
-    assert_eq!(w.kinds(), ["machine_attached", "machine_detached"]);
+    assert_eq!(w.kinds(), ["machine_detached"]);
     assert!(w.store.box_machine(w.id).unwrap().is_none());
 }
 
 #[test]
 fn a_park_for_hands_the_box_replaced_keeps_the_slot_and_logs_the_stale_write() {
-    let w = World::new([]);
+    let w = World::new();
     hold_machine(&w);
-    let _asked = runner(&w);
-    let kept = w.kept(false);
+    let kept = w.kept();
     assert!(kept.tick());
     w.store.replace_hands(w.id);
     kept.park();
-    assert_eq!(w.kinds(), ["machine_attached"]);
+    assert!(w.kinds().is_empty());
     assert!(w.store.box_machine(w.id).unwrap().is_some(), "still held");
     assert!(String::from_utf8_lossy(&w.log.lock().unwrap()).contains("stale_hands_write"));
 }

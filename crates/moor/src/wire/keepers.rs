@@ -12,12 +12,11 @@ use zeroize::Zeroizing;
 use super::parts;
 use crate::env::Env;
 use crate::proxy::keeper::{Deps, KeptProxy, NoProxyHost, KEEPERS};
-use crate::proxy::links::Runners;
 use crate::proxy::route::{self, EgressRoute};
 use crate::store::Store;
 
-/// Starts a keeper for each proxy row in the store `env` shares; its first tick opens the Box's
-/// tunnel and forwards, or lets them go when the Box closed. One line per failure.
+/// Starts a keeper for each proxy row in the store `env` shares; its first tick grants the Box's
+/// machine, or lets it go when the Box closed. One line per failure.
 pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     let Some(store) = env.shared::<Store>() else {
         return Vec::new();
@@ -39,12 +38,6 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     Vec::new()
 }
 
-/// Whether the keepers in `env` tunnel into each Box: only to reach a shared egress Proxy on a
-/// socket of this host.
-pub(crate) fn keepers_tunnel(env: &Env) -> bool {
-    EgressRoute::from_env(env).is_ok_and(|r| r.socket().is_some())
-}
-
 /// Ends every Box's keeper in this process.
 pub(crate) fn end_keepers() {
     KEEPERS.end_all();
@@ -53,18 +46,10 @@ pub(crate) fn end_keepers() {
 /// What each Box's keeper uses, in a controller; `None` without a shared store.
 fn keeper_deps(env: &Env, driver: &Arc<dyn Driver>, clock: &Arc<dyn Clock>) -> Option<Arc<Deps>> {
     let store = env.shared::<Store>()?.clone();
-    let state_dir = env.state_dir()?;
-    let egress = EgressRoute::from_env(env)
-        .ok()
-        .and_then(|r| r.socket().map(Path::to_path_buf));
-    let key = env.get(crate::env::MACHINE_SERVICE_KEY);
-    let runners = Runners::new(&state_dir, Some(store.clone()), Arc::clone(clock), key);
     Some(Arc::new(Deps {
         store,
         driver: Arc::clone(driver),
         clock: Arc::clone(clock),
-        egress,
-        runners,
         log: Arc::new(Mutex::new(std::io::stderr())),
     }))
 }
@@ -89,21 +74,4 @@ pub(super) fn proxy_host(
         key: Zeroizing::new(route::key(env).to_vec()),
         binary: route::binary(env),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::keepers_tunnel;
-    use crate::env::Env;
-
-    #[test]
-    fn only_keepers_of_a_local_shared_proxy_tunnel() {
-        let local = Env::from_pairs([("MOOR_STATE_DIR", "/s")]);
-        assert!(keepers_tunnel(&local));
-        let direct = Env::from_pairs([
-            ("MOOR_STATE_DIR", "/s"),
-            ("MOOR_EGRESS_URL", "wss://egress.test/egress"),
-        ]);
-        assert!(!keepers_tunnel(&direct));
-    }
 }

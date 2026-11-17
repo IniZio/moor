@@ -1,5 +1,5 @@
 //! The Proxy host the controller runs: each Box's credential traffic goes to the shared egress
-//! Proxy, and the Box's keeper holds the tunnel and machine forwards it needs.
+//! Proxy, and the Box's keeper holds the machine it needs.
 
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -80,8 +80,7 @@ impl KeptProxy {
 }
 
 impl ProxyHost for KeptProxy {
-    /// Records `spec`, starts the Box's keeper when it has none, brings its tunnel up and
-    /// delivers the Box's forwarder with a token unless it is in place.
+    /// Records `spec`, starts the Box's keeper when it has none and delivers the Box's forwarder with a token unless it is in place.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         if let Some(socket) = self.route.socket() {
             UnixStream::connect(socket).map_err(|e| {
@@ -99,7 +98,6 @@ impl ProxyHost for KeptProxy {
             .map_err(|e| failed(&e))?;
         let ca_pem = self.ca_pem(box_id)?;
         let kept = self.keepers.start(&self.deps, box_id, row.box_port);
-        kept.bring_up().map_err(ProxyHostError::Failed)?;
         let mut ep = ProxyEndpoint {
             box_port: kept.box_port(),
             egress_port: row.egress_port,
@@ -137,10 +135,9 @@ impl ProxyHost for KeptProxy {
         Ok(match (row, self.keepers.get(box_id)) {
             (None, _) => ProxyStatus::Absent,
             (Some(_), None) => ProxyStatus::Stale,
-            (Some(_), Some(kept)) if kept.up() => ProxyStatus::Ready {
+            (Some(_), Some(kept)) => ProxyStatus::Ready {
                 box_port: kept.box_port(),
             },
-            (Some(_), Some(_)) => ProxyStatus::Starting,
         })
     }
 
@@ -162,16 +159,15 @@ impl ProxyHost for KeptProxy {
         Ok(())
     }
 
-    /// Opens the tunnel of the Box's keeper again, starting the keeper when the Box has a row
-    /// and none runs.
+    /// Lets the Box's keeper ask for its machine again, starting the keeper when the Box has a
+    /// row and none runs.
     fn restore(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
         let Some(kept) = self.keepers.get(box_id) else {
             let row = self.deps.store.proxy(box_id).map_err(|e| failed(&e))?;
             return row.map_or(Ok(()), |_| self.restart(box_id));
         };
-        kept.restore().map_err(|why| {
-            ProxyHostError::Failed(format!("the tunnel did not come back up: {why}"))
-        })
+        kept.restore();
+        Ok(())
     }
 }
 
