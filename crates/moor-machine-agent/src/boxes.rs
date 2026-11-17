@@ -6,10 +6,8 @@
 //! controller names one on each command without learning what it is made of.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::io;
 use std::path::Path;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_client::link::boxes::{BoxAnswer, BoxOffer, BoxOp, BoxReport, ReportState, PROTOCOL};
@@ -20,10 +18,14 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 #[cfg(any(test, feature = "fake-boxes"))]
 mod fake;
 mod held;
+mod host;
 mod inside;
 mod provider;
+mod stream;
 #[cfg(test)]
 mod tests;
+
+pub use host::Host;
 
 #[cfg(any(test, feature = "fake-boxes"))]
 use fake::FakeProvider;
@@ -172,8 +174,8 @@ impl<P: BoxProvider> Boxes<P> {
             .open(&slug, &held.spec, notes)
             .await
             .map_err(|e| e.to_string())?;
-        if held.env != Env::default() {
-            let env = self.provider.apply_env(&slug, &held.env);
+        if held.box_env != Env::default() {
+            let env = self.provider.apply_env(&slug, &held.box_env);
             env.await.map_err(|e| e.to_string())?;
         }
         if held.generation == 0 || restarting {
@@ -268,7 +270,7 @@ impl<P: BoxProvider> Boxes<P> {
             Err(ProvideError::Missing) => return Ok(BoxAnswer::Gone),
             other => other.map_err(|e| e.to_string())?,
         }
-        held.env = env;
+        held.box_env = env;
         self.keep(&slug, &held)?;
         Ok(BoxAnswer::Done)
     }
@@ -299,79 +301,6 @@ impl<P: BoxProvider> Boxes<P> {
             }
         }
         reports
-    }
-
-    /// Runs the command `op` asks for in its place and carries its frames on `stream`.
-    async fn exec<S: Wire>(&self, op: &BoxOp, mut stream: S) {
-        let BoxOp::Exec {
-            slug,
-            place,
-            argv,
-            env,
-            cwd,
-            stdin,
-            tty,
-        } = op
-        else {
-            return;
-        };
-        let started = async {
-            if argv.is_empty() {
-                return Err("an exec needs a command".to_owned());
-            }
-            if let Some((name, _)) = env.iter().find(|(name, _)| !valid_name(name)) {
-                return Err(format!("{name:?} is not a variable name"));
-            }
-            let Some(slug) = self.awake(slug)? else {
-                return Ok(None);
-            };
-            let carrier = self.provider.carrier(&slug, *place, tty.is_some());
-            let script = inside::script(env, cwd.as_deref(), argv);
-            inside::start(carrier, &script, *stdin, *tty)
-                .map(Some)
-                .map_err(|e| format!("cannot start the command: {e}"))
-        };
-        match started.await {
-            Ok(Some(started)) => {
-                answer(&mut stream, BoxAnswer::Streaming).await;
-                inside::pump(started, *place, stream).await;
-            }
-            Ok(None) => answer(&mut stream, BoxAnswer::Gone).await,
-            Err(reason) => answer(&mut stream, refused(reason)).await,
-        }
-    }
-
-    /// Whether anything listens on a port of the Box's loopback, or a stream to it.
-    async fn forward<S: Wire>(&self, op: &BoxOp, mut stream: S) {
-        let BoxOp::Forward { slug, port, probe } = op else {
-            return;
-        };
-        let slug = match self.awake(slug) {
-            Ok(Some(slug)) => slug,
-            Ok(None) => return answer(&mut stream, BoxAnswer::Gone).await,
-            Err(reason) => return answer(&mut stream, refused(reason)).await,
-        };
-        let carrier = self
-            .provider
-            .carrier(&slug, moor_core::seam::driver::Place::Agent, false);
-        if *probe {
-            let script = format!(
-                "exec bash -c {}",
-                ops::quote(&format!("exec 3<>/dev/tcp/127.0.0.1/{port}"))
-            );
-            let said = match inside::probe(carrier, &script).await {
-                Ok(yes) => BoxAnswer::Listens { yes },
-                Err(e) => refused(format!("cannot probe the port: {e}")),
-            };
-            return answer(&mut stream, said).await;
-        }
-        match inside::start_forward(carrier, &self.provider.forward_script(*port)) {
-            Ok(child) => {
-                answer(&mut stream, BoxAnswer::Streaming).await;
-                inside::bridge(child, stream).await;
-            }
-            Err(e) => answer(&mut stream, refused(format!("cannot reach the port: {e}"))).await,
-        }
     }
 
     /// `slug` when the Box is held and awake; none when it is not held; an error when it sleeps.
@@ -421,87 +350,4 @@ const fn refused(reason: String) -> BoxAnswer {
 /// Writes `said` as an answer line; a closed stream is the controller's to notice.
 async fn answer<W: AsyncWrite + Unpin + Send>(stream: &mut W, said: BoxAnswer) {
     let _: io::Result<()> = ops::write_line(stream, &said).await;
-}
-
-/// A boxed future, so [`Serving`] can be held as a trait object.
-type Later<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// What the rest of the agent asks of the Boxes of one provider.
-trait Serving: Send + Sync {
-    /// What the machine offers.
-    fn offer(&self) -> BoxOffer;
-    /// Serves the one request on `stream`.
-    fn serve(&self, stream: Box<dyn Wire>) -> Later<'_, ()>;
-    /// Every Box's health.
-    fn reports(&self) -> Later<'_, Vec<BoxReport>>;
-}
-
-impl<P: BoxProvider> Serving for Boxes<P> {
-    fn offer(&self) -> BoxOffer {
-        Self::offer(self)
-    }
-
-    fn serve(&self, stream: Box<dyn Wire>) -> Later<'_, ()> {
-        Box::pin(Self::serve(self, stream))
-    }
-
-    fn reports(&self) -> Later<'_, Vec<BoxReport>> {
-        Box::pin(Self::reports(self))
-    }
-}
-
-/// How this machine provides Boxes, as the rest of the agent holds it.
-#[derive(Clone)]
-pub struct Host(Arc<dyn Serving>);
-
-impl Host {
-    /// The host named `kind`, keeping its state under `home`.
-    ///
-    /// # Errors
-    /// No provider of this build is called `kind`.
-    #[cfg_attr(
-        not(any(test, feature = "fake-boxes")),
-        expect(
-            unused_variables,
-            reason = "no provider is built in without fake-boxes"
-        )
-    )]
-    pub fn named(kind: &str, home: &Path) -> Result<Self, String> {
-        match kind {
-            #[cfg(any(test, feature = "fake-boxes"))]
-            "fake" => Ok(Self(Arc::new(Boxes::new(
-                FakeProvider::new(home.join("fake-boxes")),
-                home,
-            )))),
-            other => Err(format!(
-                "this build provides no Boxes as {other:?}; it has {}",
-                providers()
-            )),
-        }
-    }
-
-    /// What the machine offers.
-    #[must_use]
-    pub fn offer(&self) -> BoxOffer {
-        self.0.offer()
-    }
-
-    /// Serves the one request on `stream`.
-    pub(crate) async fn serve<S: Wire>(&self, stream: S) {
-        self.0.serve(Box::new(stream)).await;
-    }
-
-    /// Every Box's health.
-    pub(crate) async fn reports(&self) -> Vec<BoxReport> {
-        self.0.reports().await
-    }
-}
-
-/// The providers this build has, for an error.
-const fn providers() -> &'static str {
-    if cfg!(any(test, feature = "fake-boxes")) {
-        "fake"
-    } else {
-        "none"
-    }
 }

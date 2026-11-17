@@ -65,7 +65,7 @@ fn exec(place: Place, script: &str, tty: Option<Size>) -> BoxOp {
 }
 
 impl Rig {
-    /// A stream to a task serving `op`, with `op` already written.
+    /// A stream to a spawned server of `op`, with `op` already written.
     async fn ask(&self, op: &(impl serde::Serialize + Sync)) -> DuplexStream {
         let (mut client, server) = tokio::io::duplex(64 * 1024);
         let boxes = Arc::clone(&self.boxes);
@@ -311,14 +311,8 @@ async fn dropping_the_stream_ends_the_commands_process_group() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
     drop(client);
-    let alive = || {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    };
+    let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+    let alive = || rustix::process::test_kill_process(pid).is_ok();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
     while alive() {
         assert!(
