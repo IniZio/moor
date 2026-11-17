@@ -6,7 +6,6 @@ The onboarding spec gets a person to their first Box. This spec sets what they d
 
 - **Teammate.** Uses a team moor. Wants to hand work to a Box, check on it, take it over when needed, and get a PR. Never installs the controller.
 - **Operator.** Runs moor for a team or for themselves. Also a teammate on their own moor.
-- **Thread.** A Slack channel where several people start and steer Boxes together.
 
 ## Surfaces
 
@@ -17,7 +16,6 @@ One job per surface. No surface repeats another's job.
 | Account page (`https://HOST`) | Sign in, link secrets, see machines and nodes, copy connect commands | Nothing |
 | Claude Code over MCP | Start, check, steer and close Boxes from your own agent | One `claude mcp add` line |
 | hc client | Open a Box's live Claude session and take over | hc and one connect line |
-| Slack | Start and follow Boxes as a team, in a thread | Nothing |
 | Webhooks, `moor-listen` | Get told when a Box needs you | Optional |
 
 The dev CLI (`moor`) is for operators and contributors. No teammate step uses it.
@@ -26,7 +24,7 @@ The dev CLI (`moor`) is for operators and contributors. No teammate step uses it
 
 ```mermaid
 flowchart LR
-	J[Join<br/>account page] --> S[Start<br/>Claude Code or Slack]
+	J[Join<br/>account page] --> S[Start<br/>Claude Code]
 	S --> W[Watch<br/>status in the same front]
 	W -->|question or stuck| T[Take over<br/>hc client]
 	W -->|done| R[Result<br/>PR and artifacts]
@@ -43,10 +41,9 @@ open https://HOST            sign in with the team's OIDC
   Machines  none             [add your machine]    optional
   Connect   Claude Code      claude mcp add --transport http moor https://HOST/mcp
             hc               moor-hc login https://HOST   (once, see Take over)
-            Slack            mention @moor in a channel
 ```
 
-Secrets are linked in one place, the account page. Slack `/moor login` links to it.
+Secrets are linked in one place, the account page.
 
 ### Start
 
@@ -60,8 +57,6 @@ From Claude Code, in plain words:
   started. setup ~2 min, I'll check back.
 ```
 
-From Slack, mention the bot in a thread. The coordinator asks for nothing the account page already has.
-
 ### Watch
 
 Each front shows the same states from the same events:
@@ -73,7 +68,6 @@ starting → setting up → working → needs you → idle → asleep → closed
 ```
 
 - Claude Code shows `box_status`, and gets a resource update when a Box changes state.
-- Slack edits one status message per Box in place, and mentions you when it needs you.
 - The hc client shows a status dot per Box.
 
 ### Take over
@@ -113,7 +107,7 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 
 ## Decisions
 
-- **One job per surface.** The account page never starts Boxes. hc never links secrets. Slack and Claude Code never show a terminal.
+- **One job per surface.** The account page never starts Boxes. hc never links secrets. Claude Code never shows a terminal.
 - **Secrets only on the account page.** One form to keep correct instead of two.
 - **Take over through hc.** It holds the session in the Box already, so a client needs no moor front code.
 - **moor-web goes now.** The account page replaces it.
@@ -135,9 +129,9 @@ moor-hc sync                        user service: adds and removes hc machines a
 
 | Stage | Today | Gap |
 | --- | --- | --- |
-| Join | Secrets only in Slack `/moor login`. No page at `HOST`. | Account page, then Slack points to it. |
-| Start | Works from Claude Code and Slack. Node shown. | None. |
-| Watch | Claude Code, Slack and herdr show state. Claude Code hears Box events only through the moor plugin, which runs the dev CLI's `moor listen`. | Events over the HTTP MCP connection, so no CLI is needed. hc client view once connect exists. |
+| Join | No page at `HOST`. | Account page. |
+| Start | Works from Claude Code. Node shown. | None. |
+| Watch | Claude Code and herdr show state. Claude Code hears Box events only through the moor plugin, which runs the dev CLI's `moor listen`. | Events over the HTTP MCP connection, so no CLI is needed. hc client view once connect exists. |
 | Take over | herdr plugin, or dev CLI `moor exec`. | `moor-hc` bridge. |
 | Result | Branch, artifacts, sleep. | None. |
 | Close | Any front. | None. |

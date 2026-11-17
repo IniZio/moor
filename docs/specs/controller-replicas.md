@@ -109,8 +109,7 @@ The controller log was not read, since this host's kubeconfig only names a local
 | Mid-turn artifact memory | [`ops/common/artifacts/midturn.rs:25`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/artifacts/midturn.rs#L25) | Per process. A roll delays one collect. | Stays |
 | Box keepers | [`proxy/keeper.rs:116`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/proxy/keeper.rs#L116), [`wire/keepers.rs:22-41`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/wire/keepers.rs#L22-L41) | Two would both hold slots and forwards. A roll blips forwards, accepted in #1134. | Stays |
 | Credential delivery guard | [`proxy/forwarder.rs:17`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/proxy/forwarder.rs#L17) | Its comment covers another controller. Fine. | Stays |
-| Front supervisors, front Proxy | [`controller/fronts.rs:159-178`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/fronts.rs#L159-L178) | Each replica would start its own. | Stays, for dev. The cluster runs fronts as their own containers. |
-| Front lease cleanup at start | [`controller/mod.rs:166`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/mod.rs#L166) | A second replica would end the first's leases. | Stays |
+| Front supervisors | [`controller/fronts.rs:159-178`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/fronts.rs#L159-L178) | Each replica would start its own. | Stays, for dev. The cluster runs fronts as their own containers. |
 | Proxy reconcile | [`controller/serving.rs:59`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/serving.rs#L59), [`:86`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/controller/serving.rs#L86) | Runs after start, in the background. Fine on a roll. | Stays |
 | Shared egress Proxy | [`deploy/helm/moor/templates/egress.yaml:75-79`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/egress.yaml#L75-L79) | Already its own Deployment. Serves from cache in the gap. | Done |
 | Machine runner, link rows | [`deploy/helm/moor/templates/runner.yaml:12`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/runner.yaml#L12), [`store/users/machine/links.rs:273`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/store/users/machine/links.rs#L273) | Already its own Deployment, off in nightly values. | Done, turn on after the drain change |
@@ -124,7 +123,6 @@ The controller log was not read, since this host's kubeconfig only names a local
 | `/front` relay | [`moor-gate/src/http.rs:165-170`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/http.rs#L165-L170), [`moor-gate/src/relay.rs:18`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-gate/src/relay.rs#L18) | Per connection. A controller gap answers 503. | Gate holds, then relays |
 | herdr attach | [`moor-herdr/src/card.rs:24`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor-herdr/src/card.rs#L24) | Re-attaches by itself at 1, 2, 4 s. The pane shows `reconnecting…`. | Stays |
 | Gate placement | [`deploy/helm/moor/templates/deployment.yaml:205-235`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L205-L235) | Sidecar of the controller pod, so it dies with it. | Own Deployment |
-| Slack sidecar | [`deploy/helm/moor/templates/deployment.yaml:161`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/deploy/helm/moor/templates/deployment.yaml#L161) | Moves to a front hello over ledger TLS, handled apart. | Own work |
 
 Notify is not measured. The chart mounts only its front dir, read-only.
 
@@ -213,10 +211,8 @@ An advisory lock is rejected because a hung holder keeps a session lock. A poole
 | File | Home |
 | --- | --- |
 | Controller ssh key, [`adapters/crabbox/pool.rs:190`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/adapters/crabbox/pool.rs#L190) | Vault row, as Box CAs are today, [`vault.rs:70`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/vault.rs#L70) |
-| Front CA, [`proxy/fronts.rs:49`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/proxy/fronts.rs#L49) | Vault row |
 | Artifacts, reports, transcripts | Blob seam. Transcript events keep a key, not a path, [`ops/common/transcript.rs:285`](https://github.com/IniZio/moor/blob/6d6d322144f02a8cb7f09edc03c7e93a18e68f26/crates/moor/src/ops/common/transcript.rs#L285). |
 | crabbox claims and state | `emptyDir`. `leases/<slug>` is remade at the same path. |
-| `slack.db` and host session directories | Slack's work. The volume cannot go until they move. |
 | Sockets, locks, `ssh/`, setup and clone logs | `emptyDir`. No reader after the step ends. |
 
 The blob seam has filesystem, S3 and GCS backends, and its library is still open. A URL in config picks one, so moor names no vendor. RustFS is only a dev endpoint, per the handbook's blob storage guide.
@@ -234,7 +230,7 @@ crabbox state needs no restore on the evidence so far.
 4. **Gate holds and dials over TLS.** Front hello, redial budget, hold on `/mcp` and `/front` before any 503. The check is a controller away for 20 s, with every call answered and no 503. About 400 lines.
 5. **Gate Deployment.** Two replicas, rolling, no PVC. Its roll probe proves no 404 with a real client across two gates. The check is a k3s roll-probe, helm upgrade and eviction, n=5 each, with MCP every 0.2 s and a herdr pane. It needs zero failed calls, zero refused handshakes, pane back with no key. About 250 lines.
 6. **Lease and liveness.** Lease row, heartbeat, liveness probe. The check is two processes on one Postgres, with a clean stop and a kill. About 400 lines.
-7. **Keys in vault.** Controller ssh key and front CA. The check is a roll with a machine Box that still connects. About 200 lines.
+7. **Keys in vault.** Controller ssh key. The check is a roll with a machine Box that still connects. About 200 lines.
 8. **Blob seam.** Artifacts, reports, transcripts. It needs a RustFS bucket from an admin. The check is the existing tests on each backend. About 600 lines.
 9. **Chart with `emptyDir`.** A copy Job moves the volume's files. The check proves a live agent37 Box stays reachable across a pod replacement on an empty state dir. About 300 lines.
 
@@ -248,6 +244,5 @@ PR 1 fixes #1174 alone, as #1184. PR 2 is #1195. Turn on `runner.separate` in ni
 
 ## Out of scope
 
-- Slack, which moves to a front hello over ledger TLS.
 - Replaying a cut exec.
 - Machine and dev-tunnel forward blips, accepted in #1134.

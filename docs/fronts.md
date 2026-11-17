@@ -29,56 +29,6 @@ namespace.
 Over `--controller`, a request waits up to 30 s for the controller, then gets
 `503` with `Retry-After: 5`. At most 512 requests wait on one gate.
 
-## moor-slack
-
-The Slack front, over Socket Mode. It uses the `slack` namespace.
-
-| Flag | Environment | Meaning |
-| --- | --- | --- |
-| `--config PATH` | `MOOR_SLACK_CONFIG` | Required. The front's config file. |
-| `--socket PATH` | `MOOR_SLACK_SOCKET`, else `MOOR_FRONT_SOCKET` | The controller's `slack` front socket. |
-| `--state-dir DIR` | `MOOR_SLACK_STATE_DIR` | The front's state, including `slack.db`. Defaults to `MOOR_FRONT_STATE_DIR`, then `$XDG_STATE_HOME/moor-slack`. |
-| `--controller`, `--controller-ca`, `--controller-cert`, `--controller-key`, `--front-key-file` | none | For a front in another pod, as for the gate. |
-
-### Config keys
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `app_token_file` | required | The `xapp-` token file, mode 0600. |
-| `bot_token_file` | required | The `xoxb-` token file, mode 0600. |
-| `api_base` | `https://slack.com/api` | The Slack Web API base. |
-| `github_api_base` | `https://api.github.com` | Where a pasted GitHub token is checked. |
-| `long_turn_minutes` | 20 | Minutes one Box turn runs before the bot posts about it. |
-| `coordinator.binary` | `claude` on `PATH` | The Claude Code binary. |
-| `coordinator.model` | `sonnet` | The model for each coordinator turn. |
-| `coordinator.context_kib` | 32 | The context budget for one turn. |
-| `coordinator.max_open_boxes` | 1 | The most Boxes one thread has open at once. |
-| `coordinator.idle_minutes` | 30 | Quiet minutes before a thread's host Session ends. |
-| `roleplay.users` | off | For test automation only. Lets the bot post as the listed Slack users. |
-
-### Slack commands
-
-Every command answers only you, except `/moor repo`, which changes the
-channel.
-
-| Command | What it does |
-| --- | --- |
-| `/moor repo` | Lists the channel's repos and marks the default. |
-| `/moor repo add OWNER/NAME` | Adds a repo to the channel. |
-| `/moor repo remove NAME` | Removes a repo. |
-| `/moor repo default NAME` | Makes `NAME` the channel's default repo. |
-| `/moor login` | Replies with a link to the account page, where you link your secrets. |
-| `/moor logout [claude\|github]` | Deletes that secret. `claude` by default. |
-| `/moor mcp add` | Opens a form to add an MCP server of yours, with a name, an `https://` URL, and a key. Leave the key empty to sign in over OAuth. |
-| `/moor mcp list` | Lists your MCP servers. |
-| `/moor mcp remove NAME` | Removes a server and its key. |
-| `/moor machine add` | Replies with how to pair a machine. |
-| `/moor machine list` | Lists your machines. |
-| `/moor machine remove NAME` | Removes a machine. |
-| `/moor profile` | Shows your agent profile repo. |
-| `/moor profile set URL[#REF]` | Sets your agent profile repo. |
-| `/moor profile remove` | Clears your profile. |
-
 ## moor-notify
 
 The webhook front. It claims each queued delivery, signs it, posts it, and

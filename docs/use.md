@@ -91,7 +91,6 @@ registered redirect is `http://localhost:5177` works. Ctrl-C ends the forward.
 
 ## Next
 
-- [Start and steer Boxes](boxes.md) covers Slack and taking over the agent's
-  terminal.
+- [Start and steer Boxes](boxes.md) covers taking over the agent's terminal.
 - [Add your machine](add-machine.md) runs your Boxes on your own computer.
 - [Set up a repo](repo.md) tells Boxes how to install and test your project.

@@ -1,12 +1,11 @@
 # Start and steer Boxes
 
-You can start, watch, and steer a Box from Claude Code or from Slack. To type
-into the agent's own terminal, take it over in herdr. Each front shows the same
-Box, so you can start in one and follow in another.
+You can start, watch, and steer a Box from Claude Code. To type into the
+agent's own terminal, take it over in herdr. Each front shows the same Box, so
+you can start in one and follow in another.
 
 Before you start, link your `claude` and `github` secrets on the account page
-at `https://HOST`. In Slack, `/moor login` replies with a link to that page. A
-start without the secrets is refused, and the refusal names each one that is
+at `https://HOST`. A start without the secrets is refused, and the refusal names each one that is
 missing.
 
 ## From Claude Code
@@ -39,29 +38,6 @@ request. Look at the screen with `inspect_box` before you steer.
 
 To have Claude Code tell you when a Box needs you, install the moor plugin.
 [Get Box events](notify.md#in-claude-code) shows how.
-
-## From Slack
-
-1. Invite the bot to a channel with `/invite @moor`.
-2. Add a repo to the channel with `/moor repo add OWNER/NAME`.
-3. Mention the bot at the top level and describe the work.
-
-The coordinator answers in a thread and starts Boxes when you ask for work.
-Reply in the thread to steer, ask, or close. Only the person who started the
-thread directs the coordinator.
-
-Each Box has one status message in the thread. The bot edits it as the Box
-moves through starting, setting up, working, waiting on a question, asleep,
-and closing.
-
-- While the Box works, a `now:` line shows what the agent is doing.
-- A **Stop** button interrupts the agent.
-- A question from the agent shows one button per option.
-- After 20 minutes in one turn, the bot posts a new message, so Slack notifies
-  you.
-- Files the Box publishes, such as screenshots, are uploaded to the thread.
-
-[Fronts](fronts.md#slack-commands) lists every `/moor` command.
 
 ## Take over the agent's terminal in herdr
 

@@ -16,8 +16,7 @@ id. Then:
 3. Let the client sign in as a public client with PKCE, with the scopes
    `openid`, `email`, and `offline_access`.
 
-The gate reads the person's email from the token. A person with the same email
-in Slack and at your provider is one moor user, with one set of secrets.
+The gate reads the person's email from the token.
 
 ## Register the MCP resource
 

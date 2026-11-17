@@ -69,8 +69,6 @@ Nightly versions look like `0.3.0-nightly.76`.
 - `gate.login` turns on browser sign-in, which the account page, webhook
   setup, and machine pairing need. Register `https://HOST/auth/callback`
   first.
-- `slack.enabled` runs the [Slack front](slack.md). Set `slack.appToken` and
-  `slack.botToken`.
 - `notify.enabled` runs the webhook front, so [webhooks](notify.md#at-a-webhook)
   get delivered.
 - `runner.enabled`, on by default, lets teammates
@@ -91,8 +89,6 @@ gate:
   separate: true
 runner:
   separate: true
-slack:
-  separate: true
 ```
 
 - `egress.enabled` runs the shared egress Proxy as two replicas. Boxes keep
@@ -101,8 +97,6 @@ slack:
   to 30 s while the controller is away.
 - `runner.separate` runs the machine runner as its own replicas, so paired
   machines stay linked.
-- `slack.separate` runs Slack in its own pod, on a new volume. Turning it on
-  loses the old threads' context and each channel's repo list.
 
 `podDisruptionBudget.enabled` adds a budget for the gate and runner replicas.
 It needs RBAC on `policy/v1`, which some installs do not grant.
@@ -111,8 +105,8 @@ It needs RBAC on `policy/v1`, which some installs do not grant.
 
 With `database.url` and `blobs.s3` both set, the controller keeps its store in
 Postgres and its artifacts in a bucket. The pod then mounts no volume and rolls
-like any Deployment. This needs `egress.enabled` and `slack.separate`, and the
-chart refuses to render otherwise.
+like any Deployment. This needs `egress.enabled`, and the chart refuses to
+render otherwise.
 
 To move existing artifacts into the bucket, set `blobs.copyFromVolume: true`
 for one deploy. [Helm values](helm.md#blobs) has the steps.

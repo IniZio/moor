@@ -85,4 +85,4 @@ binary.
 ## Remove a machine
 
 `moor-machine-agent down` stops and removes the user service. The machine stays
-paired. To remove the pairing, run `/moor machine remove NAME` in Slack.
+paired.

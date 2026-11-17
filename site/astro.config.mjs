@@ -29,7 +29,7 @@ export default defineConfig({
 				{ label: 'Use', items: ['boxes', 'add-machine', 'repo', 'workflows', 'notify'] },
 				{
 					label: 'Self-host',
-					items: ['install', 'providers', 'deploy', 'kubernetes', 'oidc', 'slack', 'upgrade'],
+					items: ['install', 'providers', 'deploy', 'kubernetes', 'oidc', 'upgrade'],
 				},
 				{ label: 'Reference', items: ['cli', 'config', 'helm', 'mcp', 'events', 'fronts', 'machines'] },
 				{ label: 'Concepts', items: ['nodes', 'proxy', 'scheduling'] },

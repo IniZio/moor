@@ -8,7 +8,6 @@
 | [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for crabbox, herdr, and git, and one module per command in [ops](../crates/moor/src/ops). |
 | [moor-migrate](../crates/moor-migrate) | Forward-only schema migrations for the `SQLite` databases, run by [refinery](https://github.com/rust-db/refinery). |
 | [moor-client](../crates/moor-client) | A client for the controller socket that fronts use. |
-| [moor-slack](../crates/moor-slack) | The Slack front. |
 | [moor-listen](../crates/moor-listen) | Holds the gate's listen stream open and prints a line per Box event. |
 | [moor-notify](../crates/moor-notify) | The webhook front: posts a person's Box events to a URL. |
 | [moor-testkit](../crates/moor-testkit) | Helpers that the other crates' tests share. |
@@ -51,10 +50,10 @@ Each failing check prints a `fix:` line. In short:
 
 ## Database migrations
 
-Each database's schema is an ordered list of migrations. moor.db's are written
-once in Rust with sea-query, in [crates/moor-schema](../crates/moor-schema),
-and rendered for SQLite and for Postgres. moor-slack still uses
-`V<n>__<name>.sql` files. When moor opens a database, it applies the missing
+Each database's schema is an ordered list of migrations. moor.db's are all
+written once in Rust with sea-query, in
+[crates/moor-schema](../crates/moor-schema). Each is rendered for SQLite and
+for Postgres. When moor opens a database, it applies the missing
 migrations in one `BEGIN IMMEDIATE` transaction and records each one in
 `refinery_schema_history`. A second process that opens the database waits for
 the whole run.

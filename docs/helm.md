@@ -47,8 +47,6 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `slack.enabled` | `false` | Run the Slack front. Needs `slack.appToken` and `slack.botToken`, both secret. |
-| `slack.separate` | `false` | Run Slack as `<release>-slack` on a volume of its own. Needs `egress.enabled`. |
 | `notify.enabled` | `false` | Run the webhook front. |
 | `runner.enabled` | `true` | Run the machine runner, so teammates can pair machines. |
 | `runner.separate` | `false` | Run the runner as `runner.replicas` pods of its own. Needs `egress.enabled`. |
@@ -70,7 +68,7 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 
 On first install the chart makes the Secret `<release>-egress`. It holds the
 egress key, a ledger CA with its key, the ledger's certificate, and client
-certificates for the egress, runner, and Slack pods. The certificates last ten
+certificates for the egress and runner pods. The certificates last ten
 years. Each upgrade reads them back, and an uninstall keeps the Secret.
 
 To bring your own, set `egress.key` and all of `egress.ledgerTls.cert`, `key`,

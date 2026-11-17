@@ -95,10 +95,6 @@ Enable `moor-front@notify.socket` and restart the controller, as for the gate.
 release binaries. On a host, build each from a checkout, such as with
 `cargo install --path crates/moor-notify`.
 
-## Add Slack
-
-Follow [Slack app](slack.md). It adds a `slack` front the same way.
-
 ## Take machines from teammates
 
 Teammates pair machines through the gate, at `https://HOST/pair`. The controller
