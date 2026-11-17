@@ -26,6 +26,10 @@ pub use place::Place;
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use types::{AcquireReq, Acquired, BoxListing, HandlesListing, Released, SleepOutcome};
 
+/// How long a call safe to repeat keeps asking a machine whose link is down, which a runner
+/// restart or a link that drops and redials looks like, before it fails.
+pub const LINK_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync + Forwards {
     /// Reports what `provider` can do.

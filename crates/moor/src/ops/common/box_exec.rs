@@ -110,7 +110,9 @@ fn keep_egress(
         "( {} ) 2>{KEEP_ERR}",
         exec_env::keep_script(egress_port, forward_port, hosts)
     );
-    let spec = ExecSpec::new(Place::Agent, vec!["sh".to_owned(), "-c".to_owned(), script]);
+    // The script starts the proxy or keeps the one running, under a lock, so it may run twice.
+    let spec =
+        ExecSpec::new(Place::Agent, vec!["sh".to_owned(), "-c".to_owned(), script]).repeatable();
     let out = cx
         .driver()
         .exec(handle, &spec, Deadline(KEEP_WITHIN))

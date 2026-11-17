@@ -17,6 +17,9 @@ pub struct ExecSpec {
     pub cwd: Option<BoxPath>,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
+    /// Whether the command is safe to run twice, so a driver may run it again when a lost link
+    /// leaves unknown whether it ran. Off unless moor marks it.
+    pub repeatable: bool,
 }
 
 impl ExecSpec {
@@ -30,6 +33,16 @@ impl ExecSpec {
             env: Vec::new(),
             cwd: None,
             output: None,
+            repeatable: false,
+        }
+    }
+
+    /// Marks the command safe to run twice.
+    #[must_use]
+    pub fn repeatable(self) -> Self {
+        Self {
+            repeatable: true,
+            ..self
         }
     }
 

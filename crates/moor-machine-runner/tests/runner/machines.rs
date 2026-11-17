@@ -2,6 +2,7 @@
 //! runner: open, exec in both places, files over exec, sleep, wake and close.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -216,4 +217,71 @@ fn a_machine_that_provides_boxes_links_saying_how() {
     let links = host.rig.link.links.lock().unwrap().clone().unwrap();
     let provides = links[0]["provides"].clone();
     assert_eq!(provides, "fake");
+}
+
+/// The runner the host's agent is linked to, once the machine's link is back after `down` asks.
+struct Relinking {
+    runner: Runner,
+    down: AtomicU32,
+}
+
+impl Reach for Relinking {
+    fn runner(&self, machine_id: i64) -> Result<Runner, String> {
+        let left = self.down.load(Ordering::SeqCst);
+        if left > 0 {
+            self.down.store(left - 1, Ordering::SeqCst);
+            return Err(format!("machine {machine_id} is not linked"));
+        }
+        Ok(self.runner.clone())
+    }
+}
+
+/// Takes the machine's link down for the next `asks` calls.
+fn drop_link(reach: &Relinking, asks: u32) {
+    reach.down.store(asks, Ordering::SeqCst);
+}
+
+#[test]
+fn calls_safe_to_repeat_wait_for_the_relink_and_a_plain_exec_does_not() {
+    let host = Host::boxes();
+    let reach = Arc::new(Relinking {
+        runner: host.runner(),
+        down: AtomicU32::new(0),
+    });
+    let m = Machines::new(reach.clone(), PathBuf::from("/usr/bin/moor"));
+    drop_link(&reach, 2);
+    let got = opened(&m, 47);
+    let deadline = Deadline(Duration::from_secs(10));
+    drop_link(&reach, 2);
+    let marked = ExecSpec::new(Place::Agent, vec!["true".into()]).repeatable();
+    assert_eq!(
+        m.exec(&got.handle, &marked, deadline),
+        Ok(ExecOutcome::Exited { code: 0 })
+    );
+    drop_link(&reach, 2);
+    let steps = [BoxStep::Repeatable("echo probed".to_owned())];
+    let done = m.batch(&got.handle, &[], Place::Agent, &steps, deadline);
+    assert!(
+        matches!(&done[..], [Ok(StepDone::Ran { stdout, .. })] if stdout.trim() == "probed"),
+        "{done:?}"
+    );
+    drop_link(&reach, 2);
+    assert_eq!(m.sleep(&got.handle), Ok(SleepOutcome::Slept));
+    drop_link(&reach, 2);
+    m.wake(&got.handle).unwrap();
+    drop_link(&reach, 1);
+    let plain = ExecSpec::new(Place::Work, vec!["true".into()]);
+    let err = m.exec(&got.handle, &plain, deadline);
+    assert!(
+        matches!(&err, Err(DriverError::Unavailable(why)) if why.contains("not linked")),
+        "{err:?}"
+    );
+    drop_link(&reach, 1);
+    let steps = [BoxStep::Run("true".to_owned())];
+    let done = m.batch(&got.handle, &[], Place::Agent, &steps, deadline);
+    assert!(
+        matches!(&done[..], [Err(DriverError::Unavailable(_))]),
+        "{done:?}"
+    );
+    assert_eq!(m.release(&got.handle), Ok(Released::Deleted));
 }

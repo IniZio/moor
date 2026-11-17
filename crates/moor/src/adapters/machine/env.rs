@@ -41,7 +41,7 @@ pub(super) fn send(
         vars: want.0.clone(),
         ca_pem: want.1.clone(),
     };
-    match m.call(machine, &op, &mut |_| {})? {
+    match m.call_again(machine, &op, &mut |_| {})? {
         BoxAnswer::Done => {
             sent(m).insert(slug.to_owned(), want);
             Ok(())

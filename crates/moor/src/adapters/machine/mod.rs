@@ -25,9 +25,12 @@ use stream::{ask, blocking, failed, open, unreached};
 mod env;
 mod exec;
 mod over_exec;
+mod relink;
 mod stream;
 mod term;
 pub use term::box_term;
+
+use relink::relinked;
 
 /// How the controller reaches the runner that holds a machine's link.
 pub trait Reach: Send + Sync {
@@ -72,7 +75,7 @@ impl Machines {
     }
 
     /// Sends `op` to `machine`'s agent and reads its answer, handing each note to `note`.
-    fn call(
+    pub(super) fn call(
         &self,
         machine: i64,
         op: &BoxOp,
@@ -88,7 +91,7 @@ impl Machines {
     /// Sends the verb for `handle` that `op` builds from the slug and wants `Done` back.
     fn done(&self, handle: &BoxHandle, verb: impl Fn(String) -> BoxOp) -> Result<(), DriverError> {
         let (machine, slug) = Self::seat(handle)?;
-        match self.call(machine, &verb(slug.to_owned()), &mut |_| {})? {
+        match self.call_again(machine, &verb(slug.to_owned()), &mut |_| {})? {
             BoxAnswer::Done => Ok(()),
             BoxAnswer::Gone => Err(DriverError::NotFound),
             other => Err(unexpected(&other)),
@@ -140,8 +143,9 @@ impl Driver for Machines {
         let (machine, op, handle) = Self::planned(req)?;
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let answer = std::thread::scope(|s| {
+            // A second open of the slug waits for one still going on and finds the same Box.
             let call = s.spawn(move || {
-                self.call(machine, &op, &mut |line| {
+                self.call_again(machine, &op, &mut |line| {
                     let _ = tx.send(line.to_owned());
                 })
             });
@@ -176,7 +180,7 @@ impl Driver for Machines {
         let op = BoxOp::Close {
             slug: slug.to_owned(),
         };
-        let answer = self.call(machine, &op, &mut |_| {});
+        let answer = self.call_again(machine, &op, &mut |_| {});
         env::forget_closed(self, slug, &answer);
         match answer? {
             BoxAnswer::Done => Ok(Released::Deleted),
@@ -232,7 +236,7 @@ impl Driver for Machines {
 
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
         let spec = ExecSpec::new(Place::Agent, vec!["pwd".to_owned()]);
-        let (out, outcome) = over_exec::capture_out(self, handle, &spec)?;
+        let (out, outcome) = relinked(|| over_exec::capture_out(self, handle, &spec))?;
         match outcome {
             ExecOutcome::Exited { code: 0 } => BoxPath::restore(out.trim())
                 .map_err(|e| failed(format!("the Box's workdir is unreadable: {e}"))),
@@ -246,6 +250,9 @@ impl Driver for Machines {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
+        if spec.repeatable {
+            return relinked(|| self.run_captured(handle, spec, deadline));
+        }
         self.run_captured(handle, spec, deadline)
     }
 
@@ -377,7 +384,7 @@ impl Driver for Machines {
         let op = BoxOp::Wake {
             slug: slug.to_owned(),
         };
-        match self.call(machine, &op, &mut |_| {})? {
+        match self.call_again(machine, &op, &mut |_| {})? {
             BoxAnswer::Woke { .. } => Ok(()),
             BoxAnswer::Gone => Err(DriverError::NotFound),
             other => Err(unexpected(&other)),

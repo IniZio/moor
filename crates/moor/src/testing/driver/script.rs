@@ -261,7 +261,7 @@ impl FakeDriver {
             BoxStep::Put { path, bytes, mode } => self
                 .put_file(handle, place, path, bytes, *mode)
                 .map(|()| StepDone::Put),
-            BoxStep::Run(script) => {
+            BoxStep::Run(script) | BoxStep::Repeatable(script) => {
                 let spec = ExecSpec::new(
                     place,
                     vec!["sh".to_owned(), "-c".to_owned(), script.clone()],
