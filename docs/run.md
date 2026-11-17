@@ -37,7 +37,10 @@ is already in place.
 1. It checks that `docker info` works for your user, and says that Docker
    Boxes are privileged containers.
 2. It writes the controller config, `~/.config/moor/controller.yaml`, and adds
-   the controller to `~/.config/moor/config.yaml`.
+   the controller to `~/.config/moor/config.yaml`. It also adds
+   `moor_service`, which routes `moor.moor.internal` to `127.0.0.1:8444`. That
+   is where a `moor-gate` on this host serves `report_step` to Boxes. moor up
+   does not start that gate.
 3. It installs and starts the controller as the systemd user units
    `moor.socket` and `moor.service`. The service also listens on the address
    of Docker's bridge network, where Boxes reach the Proxy.

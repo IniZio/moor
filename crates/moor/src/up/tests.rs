@@ -13,16 +13,33 @@ fn env() -> Env {
 
 const SOCK: &str = "/home/ada/.local/state/moor/controller.sock";
 
+/// The `moor_service` section `up` adds.
+const MOOR_SERVICE: &str = "moor_service:\n  upstream: 127.0.0.1:8444\n";
+
 fn converge(existing: Option<&str>) -> Result<Option<String>, String> {
     converge_user(&env(), "config.yaml", existing, Path::new(SOCK))
         .map_err(|c| format!("{}; fix: {}", c.detail, c.fix))
 }
 
 #[test]
-fn a_missing_user_config_gets_the_controller_socket() {
+fn a_missing_user_config_gets_the_controller_socket_and_the_gate_route() {
     let text = converge(None).unwrap().unwrap();
-    assert_eq!(text, format!("controller:\n  socket: {SOCK}\n"));
-    moor_core::config::parse_user("x", &text).unwrap();
+    assert_eq!(
+        text,
+        format!("controller:\n  socket: {SOCK}\n{MOOR_SERVICE}")
+    );
+    let config = moor_core::config::parse_user("x", &text).unwrap();
+    assert_eq!(
+        config.moor_service.unwrap().upstream.as_str(),
+        "127.0.0.1:8444"
+    );
+}
+
+#[test]
+fn a_moor_service_of_the_users_own_is_kept() {
+    let existing =
+        format!("controller:\n  socket: {SOCK}\nmoor_service:\n  upstream: 10.0.0.9:8444\n");
+    assert_eq!(converge(Some(&existing)).unwrap(), None);
 }
 
 #[test]
@@ -37,14 +54,15 @@ fn other_settings_and_comments_are_kept_when_the_controller_is_added() {
     let text = converge(Some(existing)).unwrap().unwrap();
     assert_eq!(
         text,
-        format!("# mine\nbox:\n  sleep_after: 30m\ncontroller:\n  socket: {SOCK}\n")
+        format!("# mine\nbox:\n  sleep_after: 30m\ncontroller:\n  socket: {SOCK}\n{MOOR_SERVICE}")
     );
 }
 
 #[test]
 fn a_home_relative_socket_counts_as_the_same_controller() {
-    let existing = "controller:\n  socket: ~/.local/state/moor/controller.sock\n";
-    assert_eq!(converge(Some(existing)).unwrap(), None);
+    let existing =
+        format!("controller:\n  socket: ~/.local/state/moor/controller.sock\n{MOOR_SERVICE}");
+    assert_eq!(converge(Some(&existing)).unwrap(), None);
 }
 
 #[test]
@@ -67,7 +85,9 @@ fn the_node_an_earlier_up_wrote_is_named_for_deletion() {
 
 #[test]
 fn other_nodes_are_left_alone() {
-    let existing = format!("controller:\n  socket: {SOCK}\nnodes:\n  big:\n    runtime: static\n");
+    let existing = format!(
+        "controller:\n  socket: {SOCK}\nnodes:\n  big:\n    runtime: static\n{MOOR_SERVICE}"
+    );
     assert_eq!(converge(Some(&existing)).unwrap(), None);
 }
 

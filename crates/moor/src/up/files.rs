@@ -97,8 +97,11 @@ pub(crate) fn controller(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// The user config text after `up`: `existing` with a `controller` section added where it has
-/// none, or `None` when it needs no change.
+/// moor-gate's own `--box-listen`, where the Proxy beside the controller sends `moor.moor.internal`.
+const GATE_BOX_LISTEN: &str = "127.0.0.1:8444";
+
+/// The user config text after `up`: `existing` with a `controller` section, and a `moor_service`
+/// routed to the gate on this host, added where it has none; `None` when it needs no change.
 ///
 /// # Errors
 /// A config that names another controller, or that still holds the `local` node an earlier
@@ -136,6 +139,12 @@ pub(crate) fn converge_user(
             format!("{file} still has the node {NODE} an earlier moor up wrote"),
             format!("delete nodes.{NODE} from {file}; moor up adds the Docker node of that name"),
         ));
+    }
+    if config.moor_service.is_none() && !has_key("moor_service") {
+        section(
+            &mut out,
+            &format!("moor_service:\n  upstream: {GATE_BOX_LISTEN}\n"),
+        );
     }
     Ok((existing != Some(out.as_str())).then_some(out))
 }
