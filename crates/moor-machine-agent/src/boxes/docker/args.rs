@@ -64,8 +64,9 @@ pub(super) fn gid_of(device: &std::path::Path) -> Option<u32> {
 }
 
 /// The argv, after `docker`, that starts the work place: privileged, in the agent place's network
-/// namespace, with Docker of its own inside. With `kvm_gid` the Box user joins that group, so
-/// it can open the host's `/dev/kvm`.
+/// namespace, with Docker of its own inside. With `kvm_gid` the work init puts the Box user in
+/// that group so it can open the host's `/dev/kvm`. Docker's `--group-add` would not do: the ssh
+/// login that runs commands rebuilds the user's groups from `/etc/group`.
 pub(super) fn work_run(
     s: &Settings,
     slug: &Slug,
@@ -78,7 +79,7 @@ pub(super) fn work_run(
     a.extend(owned(["--network", &format!("container:{}", n.agent)]));
     a.extend(owned(["--privileged", "--restart", "no"]));
     if let Some(gid) = kvm_gid {
-        a.extend(owned(["--group-add", &gid.to_string()]));
+        a.extend(owned(["-e", &format!("MOOR_KVM_GID={gid}")]));
     }
     a.extend(owned(["--memory", &mem, "--memory-swap", &mem]));
     a.extend(owned([

@@ -75,14 +75,14 @@ fn the_work_place_joins_the_agent_places_network_and_is_privileged() {
     assert!(w.contains("-v moor-3b3b3b3b-9001-docker:/var/lib/docker"));
     assert!(!w.contains("--hostname"));
     assert!(w.ends_with(" work:dev"));
-    assert!(!w.contains("--group-add"));
+    assert!(!w.contains("MOOR_KVM_GID"));
 }
 
 #[test]
 fn the_work_place_joins_the_group_of_a_hosts_kvm_device() {
     let n = Names::of(&slug());
     let w = work_run(&settings(), &slug(), &n, 4096, Some(994)).join(" ");
-    assert!(w.contains("--privileged --restart no --group-add 994 --memory"));
+    assert!(w.contains("--privileged --restart no -e MOOR_KVM_GID=994 --memory"));
 }
 
 #[test]
