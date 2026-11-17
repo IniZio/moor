@@ -15,6 +15,7 @@ use moor_client::link::ops;
 use moor_core::box_key::{parse_pool_slug, ControllerId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
+mod docker;
 #[cfg(any(test, feature = "fake-boxes"))]
 mod fake;
 mod held;
@@ -25,6 +26,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
+pub use docker::Images;
 pub use host::Host;
 
 #[cfg(any(test, feature = "fake-boxes"))]
@@ -89,7 +91,7 @@ impl<P: BoxProvider> Boxes<P> {
 
     /// Serves the one request on `stream`: reads its line, answers, and for an exec or a forward
     /// carries the stream. Anything that is not a Box request is refused.
-    pub(crate) async fn serve<S: Wire>(&self, mut stream: S) {
+    pub(crate) async fn serve<S: Wire>(self: &Arc<Self>, mut stream: S) {
         let op = match ops::read_line::<_, BoxOp>(&mut stream).await {
             Ok(op) => op,
             Err(e) => return answer(&mut stream, refused(format!("not a Box request: {e}"))).await,
@@ -101,14 +103,18 @@ impl<P: BoxProvider> Boxes<P> {
         }
     }
 
-    /// Serves a verb that answers and ends: notes while it works, then its answer.
-    async fn lifecycle<S: Wire>(&self, op: BoxOp, mut stream: S) {
+    /// Serves a verb that answers and ends: notes while it works, then its answer. The verb runs
+    /// on a spawn of its own, so a controller that goes away mid-verb leaves it to finish and keep
+    /// its held state instead of leaving a Box half made.
+    async fn lifecycle<S: Wire>(self: &Arc<Self>, op: BoxOp, mut stream: S) {
         let (notes, mut said) = Notes::new();
-        let work = self.verb(op, &notes);
-        tokio::pin!(work);
+        let me = Arc::clone(self);
+        let mut work = tokio::spawn(async move { me.verb(op, &notes).await });
         let done = loop {
             tokio::select! {
-                done = &mut work => break done,
+                done = &mut work => {
+                    break done.unwrap_or_else(|e| refused(format!("the request failed: {e}")));
+                }
                 Some(line) = said.recv() => answer(&mut stream, BoxAnswer::Note { line }).await,
             }
         };

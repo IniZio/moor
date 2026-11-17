@@ -13,15 +13,11 @@ use serde::{Deserialize, Serialize};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 
-pub use crate::boxes::Host;
+pub use crate::boxes::{Host, Images};
 pub use crate::pool::Pool;
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 
-#[cfg_attr(
-    not(any(test, feature = "fake-boxes")),
-    expect(dead_code, reason = "no provider is built in without fake-boxes")
-)]
 mod boxes;
 mod busy;
 mod files;

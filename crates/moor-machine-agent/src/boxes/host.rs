@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use moor_client::link::boxes::{BoxOffer, BoxReport};
 
+use super::docker::Docker;
 #[cfg(any(test, feature = "fake-boxes"))]
 use super::FakeProvider;
-use super::{BoxProvider, Boxes, Wire};
+use super::{BoxProvider, Boxes, Images, Wire};
 
 /// A boxed future, so [`Serving`] can be held as a trait object.
 type Later<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -19,7 +20,7 @@ trait Serving: Send + Sync {
     /// What the machine offers.
     fn offer(&self) -> BoxOffer;
     /// Serves the one request on `stream`.
-    fn serve(&self, stream: Box<dyn Wire>) -> Later<'_, ()>;
+    fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()>;
     /// Every Box's health.
     fn reports(&self) -> Later<'_, Vec<BoxReport>>;
 }
@@ -29,8 +30,8 @@ impl<P: BoxProvider> Serving for Boxes<P> {
         Self::offer(self)
     }
 
-    fn serve(&self, stream: Box<dyn Wire>) -> Later<'_, ()> {
-        Box::pin(Self::serve(self, stream))
+    fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()> {
+        Box::pin(async move { Self::serve(&self, stream).await })
     }
 
     fn reports(&self) -> Later<'_, Vec<BoxReport>> {
@@ -43,19 +44,13 @@ impl<P: BoxProvider> Serving for Boxes<P> {
 pub struct Host(Arc<dyn Serving>);
 
 impl Host {
-    /// The host named `kind`, keeping its state under `home`.
+    /// The host named `kind`, keeping its state under `home`; `docker` runs the release's images.
     ///
     /// # Errors
     /// No provider of this build is called `kind`.
-    #[cfg_attr(
-        not(any(test, feature = "fake-boxes")),
-        expect(
-            unused_variables,
-            reason = "no provider is built in without fake-boxes"
-        )
-    )]
     pub fn named(kind: &str, home: &Path) -> Result<Self, String> {
         match kind {
+            "docker" => Ok(Self::docker(Images::default(), home)),
             #[cfg(any(test, feature = "fake-boxes"))]
             "fake" => Ok(Self(Arc::new(Boxes::new(
                 FakeProvider::new(home.join("fake-boxes")),
@@ -68,6 +63,13 @@ impl Host {
         }
     }
 
+    /// The host that makes Boxes of Docker containers from `images`, keeping its state under
+    /// `home`.
+    #[must_use]
+    pub fn docker(images: Images, home: &Path) -> Self {
+        Self(Arc::new(Boxes::new(Docker::new(images, None), home)))
+    }
+
     /// What the machine offers.
     #[must_use]
     pub fn offer(&self) -> BoxOffer {
@@ -76,7 +78,7 @@ impl Host {
 
     /// Serves the one request on `stream`.
     pub(crate) async fn serve<S: Wire>(&self, stream: S) {
-        self.0.serve(Box::new(stream)).await;
+        Arc::clone(&self.0).serve(Box::new(stream)).await;
     }
 
     /// Every Box's health.
@@ -88,8 +90,8 @@ impl Host {
 /// The providers this build has, for an error.
 const fn providers() -> &'static str {
     if cfg!(any(test, feature = "fake-boxes")) {
-        "fake"
+        "docker, fake"
     } else {
-        "none"
+        "docker"
     }
 }

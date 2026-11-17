@@ -12,7 +12,7 @@ use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::service::Manager;
 use moor_machine_agent::up::{self, down, Runtime, Up};
 use moor_machine_agent::{
-    run_hosting, state_dir, until_stopped, update, Ended, Host, Machine, Pool,
+    run_hosting, state_dir, until_stopped, update, Ended, Host, Images, Machine, Pool,
 };
 
 /// Command line.
@@ -43,10 +43,13 @@ enum Command {
         /// Run `exec` scripts the server sends; without it they are refused.
         #[arg(long, conflicts_with = "runtime")]
         allow_exec: bool,
-        /// Provide Boxes of this kind and expose only Boxes; this build has `fake` for tests when
-        /// built with the `fake-boxes` feature, and no other yet.
+        /// Provide Boxes of this kind and expose only Boxes: `docker` makes each of two
+        /// containers on this host, and a build with the `fake-boxes` feature has `fake` for tests.
         #[arg(long, value_name = "KIND", conflicts_with_all = ["runtime", "allow_exec"])]
         boxes: Option<String>,
+        /// The images `--boxes docker` makes Boxes from.
+        #[command(flatten)]
+        images: ImageFlags,
         /// When the server needs another release, install it and restart in place.
         #[arg(long)]
         auto_update: bool,
@@ -191,8 +194,9 @@ fn main() -> ExitCode {
             cache_gb,
             allow_exec,
             boxes,
+            images,
             auto_update,
-        } => run_here(pool, cache_gb, (allow_exec, boxes), auto_update),
+        } => run_here(pool, cache_gb, (allow_exec, boxes, images), auto_update),
         Command::Update { version } => return update_here(&version),
         Command::Lease {
             verb,
@@ -218,11 +222,36 @@ fn main() -> ExitCode {
     ExitCode::FAILURE
 }
 
+/// The images a Docker Box is made from; each left out is this release's own.
+#[derive(clap::Args, Debug)]
+struct ImageFlags {
+    /// The agent place's image, such as one built from `images/agent` for development.
+    #[arg(long, env = "MOOR_AGENT_IMAGE", value_name = "IMAGE")]
+    agent_image: Option<String>,
+    /// The work place's image, such as one built from `images/work` for development.
+    #[arg(long, env = "MOOR_WORK_IMAGE", value_name = "IMAGE")]
+    work_image: Option<String>,
+}
+
+impl ImageFlags {
+    /// The host that provides Boxes of `kind`, under `home`.
+    fn host(self, kind: &str, home: &std::path::Path) -> Result<Host, String> {
+        if kind == "docker" {
+            let images = Images {
+                agent: self.agent_image,
+                work: self.work_image,
+            };
+            return Ok(Host::docker(images, home));
+        }
+        Host::named(kind, home)
+    }
+}
+
 /// Keeps this machine linked until the server or the host stops it.
 fn run_here(
     pool: PoolFlags,
     cache_gb: Option<u32>,
-    (allow_exec, boxes): (bool, Option<String>),
+    (allow_exec, boxes, images): (bool, Option<String>, ImageFlags),
     auto_update: bool,
 ) -> Result<(), String> {
     let machine = Machine {
@@ -231,7 +260,7 @@ fn run_here(
         ..Machine::from_env()
     };
     let host = boxes
-        .map(|kind| Host::named(&kind, &machine.home))
+        .map(|kind| images.host(&kind, &machine.home))
         .transpose()?;
     let rt = runtime()?;
     let ended = rt.block_on(until_stopped(run_hosting(
