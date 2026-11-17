@@ -469,9 +469,13 @@ fn a_sole_node_is_the_default_without_box_node() {
 }
 
 #[test]
-fn several_nodes_need_box_node() {
+fn box_node_picks_among_several_nodes_or_names_an_enrolled_one() {
     let two = "nodes: {a: {runtime: x}, b: {runtime: y}}";
-    assert_eq!(err(two).path, "box.node");
+    assert_eq!(ok(two).default_node(), None);
+    assert_eq!(
+        ok("box: {node: local-agent}").default_node(),
+        Some("local-agent")
+    );
     assert_eq!(
         ok(&format!("{two}\nbox: {{node: b}}")).default_node(),
         Some("b")
@@ -490,9 +494,7 @@ fn node_rejects() {
             "nodes.ci.max_boxes",
         ),
         ("nodes: {ci: {runtime: x, nope: 1}}", "nodes.ci.nope"),
-        ("nodes: {ci: {runtime: x}}\nbox: {node: other}", "box.node"),
-        ("box: {node: ci}", "box.node"),
-        ("nodes: {}\nbox: {node: ci}", "box.node"),
+        ("box: {node: Bad}", "box.node"),
     ]);
 }
 

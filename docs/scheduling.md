@@ -8,7 +8,7 @@ Boxes to disk.
 ## Which node a start gets
 
 A start that names a node goes there. Otherwise moor tries your personal nodes
-first, in the order you paired them, then the default shared node. It tries
+first, in the order you paired them, then the shared nodes, `box.node` first. It tries
 only the first in that order. An offline node refuses the start and says since
 when. A full node makes the Box wait. It never sends the Box elsewhere.
 

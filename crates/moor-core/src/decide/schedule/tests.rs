@@ -99,7 +99,7 @@ fn first_personal_by_enrolled_at_then_machine_id() {
 }
 
 #[test]
-fn a_shared_node_with_a_machine_binds_to_it_and_is_chosen_only_by_name_or_default() {
+fn a_shared_node_with_a_machine_binds_to_it() {
     let shared = Node {
         machine: Some(12),
         ..node("local", Scope::Shared, &["linux"])
@@ -529,4 +529,18 @@ fn a_start_naming_no_node_on_an_offline_fleet_refuses_saying_so() {
     local.online = Online::Offline { since: NOW - 3600 };
     let r = fail(run_without_shared(&[local], &spec(&[], None)));
     assert_eq!(r, "local is offline for 1h: wait for it to come back");
+}
+
+#[test]
+fn an_offline_personal_node_names_the_online_shared_node_to_start_on() {
+    let mut hv = mine("hv", 7, 100);
+    hv.online = Online::Offline { since: NOW - 60 };
+    let r = fail(run_without_shared(
+        &[hv, enrolled_shared()],
+        &spec(&[], None),
+    ));
+    assert_eq!(
+        r,
+        "hv is offline for 1m: start moor-machine-agent on it, or start with --node local"
+    );
 }

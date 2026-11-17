@@ -42,7 +42,7 @@ impl NodeConfig {
 }
 
 impl UserConfig {
-    /// The node Boxes run on: `box.node`, else the only configured node.
+    /// The shared node tried first: `box.node`, else the only configured node.
     #[must_use]
     pub fn default_node(&self) -> Option<&str> {
         match (&self.box_.node, self.nodes.len()) {
@@ -52,24 +52,15 @@ impl UserConfig {
         }
     }
 
-    /// Every node is well-formed and `box.node` names one.
+    /// Every node and `box.node` is well-formed. `box.node` may name an enrolled machine's node,
+    /// which only the store knows.
     pub(super) fn validate_nodes(&self) -> Result<(), ConfigError> {
         for (name, n) in &self.nodes {
             n.validate(name)?;
         }
-        match &self.box_.node {
-            Some(n) if !self.nodes.contains_key(n) => {
-                let known: Vec<&str> = self.nodes.keys().map(String::as_str).collect();
-                Err(ConfigError::new(
-                    "box.node",
-                    format!("no node named {n}; configured nodes: {}", known.join(", ")),
-                ))
-            }
-            None if self.nodes.len() > 1 => Err(ConfigError::new(
-                "box.node",
-                "is required when nodes has more than one entry",
-            )),
-            _ => Ok(()),
+        if let Some(n) = &self.box_.node {
+            NodeName::parse(n).map_err(|e| ConfigError::new("box.node", e.to_string()))?;
         }
+        Ok(())
     }
 }

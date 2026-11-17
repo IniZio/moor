@@ -116,7 +116,8 @@ pub struct BoxConfig {
         reason = "outer Some means the key was present, even when null"
     )]
     pub provider: Option<Option<serde_json::Value>>,
-    /// The shared node new Boxes run on; a key of `nodes`.
+    /// The shared node a new Box naming none tries first: a key of `nodes` or an enrolled
+    /// machine's node.
     pub node: Option<String>,
     /// Box size class.
     pub size: Option<BoxSize>,

@@ -33,7 +33,7 @@ controller:
   agentModel: ""
   # Shared nodes as {name: {runtime, labels, max_boxes}}; empty runs Boxes only on enrolled machines.
   nodes: {}
-  # box.node: the default shared node; needed only when nodes has more than one entry.
+  # box.node: the shared node a start naming none tries first, after the user's own.
   defaultNode: ""
   settleEverySecs: 5
   # Kept short while one pod runs everything: the pod is replaced, not rolled.

@@ -49,8 +49,9 @@ also shows each node's load. A change applies to the next start, and raising or
 removing a cap starts the Boxes that were waiting. The cap is a decision of
 moor, not of the machine, so the agent has no flag for it.
 
-- A **shared node** is listed in the controller's user config. Every user may
-  use it. It suits a team's server or a cloud provider account.
+- A **shared node** is a machine an operator adds with `moor node add`. Every
+  user may use it, and a start that names no node lands there when the user
+  has no personal node. It suits a team's server.
 - A **personal node** is a machine its owner paired with a runtime. Only its
   owner's Boxes run there. It is online while the machine's agent is linked.
 
