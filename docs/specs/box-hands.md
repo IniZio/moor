@@ -159,11 +159,11 @@ stands after the steps above. A cell names the step or the code behind it.
 | --- | --- | --- | --- | --- |
 | Identity and fencing | Key under a unique index, incarnation per hands, a launch row per agent start, one owner per Box. Steps 1, 2, 3, 6. | Keyed ids, epoch per allocation, incarnation, effects with attempts. | Name per namespace. No fencing, no reconcile loop. | Run claim with epoch and holder, re-adopted on restart. |
 | Durability of the conversation | Claude's own session files, archived each turn, restored, `--resume`. Step 2. | Transcript kept by the client. A lost sandbox gets the last events replayed as text. | None. One headless run. | Every turn and tool call committed. Not a Claude Code conversation. |
-| Recovery from VM loss | New hands from the checkpoint chain, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves its job running. | A container per run. No snapshot. |
+| Recovery from VM loss | New hands, set up again, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves its job running. | A container per run. No snapshot. |
 | Interactivity and steering | Steer mid-turn, interrupt, inbox for an asleep Box. `ops/steer.rs`, step 5. | Prompt through the adapter, live events. | None. | A message waits for the turn to end. |
 | Human in the loop | `needs_input` events and webhooks. `docs/events.md`. | Permission requests over RPC. The reference app auto-accepts edits. | None. | Needs-input webhooks. Workflows cannot wait on a person. |
 | Real Claude Code fidelity | Claude Code in its terminal under `hc`, with the profile's plugins and the user's MCP servers. `docs/config.md`. | Driven through an agent protocol adapter. | `claude --print`. | The SDK with its native tools off. |
-| Warm start | Checkpoint chain per user, repo, machine class and cache plan. `docs/nodes.md`. | Forks from database checkpoints. No sandbox warm start. | Snapshot restore. No warm pool. | None. |
+| Warm start | None. Every Box starts cold, with kept caches. | Forks from database checkpoints. No sandbox warm start. | Snapshot restore. No warm pool. | None. |
 | Workflows and triggers | Cron with a floor, latest missed due fired once, skip while active, breaker after three refused or timed-out runs. `docs/workflows.md`. | Schedules per actor. A failed run is not retried. | None. | Cron, at, every and signed webhooks. Catch-up window, pause after five, cost cap. |
 | Multi-user team model | Users, per-user secrets, machines and workflows. A run acts as its user. | Grants per resource. The reference app shares keys. | No sign-in. | One owner. |
 | Secrets and egress | The Proxy injects a secret per rule, so the Box never holds it. Egress goes through the Proxy, allowed per rule and host. `docs/config.md`. | Engine credentials stripped. Sandbox egress is not guarded. | Plaintext in the job spec. | A loopback proxy holds the keys. Egress to registries and GitHub. |
@@ -210,6 +210,6 @@ Rejected from the peers.
 ## Not in scope
 
 - Replacing Claude Code's terminal with an agent protocol adapter.
-- A new storage layer. Checkpoints and the blob store cover what is needed.
+- A new storage layer. The blob store covers what is needed.
 - Moving claude out of the guest.
 - Running moor on another actor engine.

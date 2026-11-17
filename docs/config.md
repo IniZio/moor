@@ -207,7 +207,6 @@ Secrets belong to each user, and a host that no rule serves is already direct.
 | `node.labels` | list | Labels the node must carry. |
 | `machine.labels`, `machine.ports` | lists | The tool machine a Box claims by default, and the ports to forward. |
 | `machine.sync.presets`, `machine.sync.exclude` | as `machines.sync` | Paths a sync leaves alone, added to the user config's. |
-| `checkpoint.across_commits` | bool | `false` keeps saved setup per commit. `true` by default. |
 | `cache` | map | See [Cache volumes](#cache-volumes). |
 | `box_credentials` | list | Secrets the user must hold for a start. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
@@ -220,23 +219,6 @@ group.
 
 moor reads the file at the Box's base commit and keeps that copy for the Box's
 life. [Set up a repo](repo.md) shows the keys in use.
-
-### Setup checkpoints
-
-On a provider with checkpoints, moor saves the Box after the clone and after
-the last `setup` line. It also saves after each line that runs over 20 seconds. One more
-layer above them holds the dotfiles, the agent install, and the profile. Each
-layer's key covers the user, the repo, the machine class, the cache plan, and
-the text of every line up to it. No key holds a commit unless
-`checkpoint.across_commits` is `false`.
-
-A new Box forks the deepest layer whose key matches. At the same commit, it
-runs only the lines above that layer. At another commit, it resets tracked
-files, keeps ignored ones, and runs every line again. A chain lives 7 days and
-rolls forward 8 times at most. `moor start --cold` skips it.
-
-The events `warm_started`, `warm_rerun`, `checkpoint_skipped`, and
-`checkpoint_evicted` record what happened.
 
 ### Cache volumes
 

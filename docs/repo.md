@@ -22,10 +22,9 @@ Each line runs once on a new Box, in the work tree. When a line fails, the Box
 goes to `setup_failed` and the agent does not start. The start names the line
 and shows the end of its log. Fix the line, push it, and retry the Box.
 
-moor saves the Box after the clone, after each line that runs longer than 20
-seconds, and after the last line. A later Box of yours on the same repo starts
-from the deepest saved point and skips those lines. A Box at a newer commit
-runs every line again on the updated tree. So keep each line safe to rerun.
+Every Box runs every line. A kept work tree, which
+[Cache volumes](config.md#cache-volumes) describes, keeps ignored files from
+an earlier Box on the updated tree. So keep each line safe to rerun.
 
 A guard that checks only whether output exists can keep stale output:
 
@@ -38,9 +37,6 @@ Check content instead, such as a hash of the sources:
 ```sh
 [ "$(cat dist/sum 2>/dev/null)" = "$(cksum src)" ] || { make dist && cksum src > dist/sum; }
 ```
-
-If a guard cannot change, set `checkpoint.across_commits: false`. Each commit
-then gets its own saved setup.
 
 ## Brief the agent
 

@@ -26,28 +26,12 @@ Then select the provider in the file that `crabbox config path` prints, as the
 provider's README shows. When crabbox selects no provider, `moor up` prints
 the install commands for the release it was built against.
 
-## Turn on warm starts
+## Boot from a template
 
-Three settings in the crabbox config let moor save a Box's setup and start the
-next Box from it:
-
-```yaml
-external:
-  capabilities: { checkpoints: true }
-  config: { checkpoints: true, bootTemplate: true }
-```
-
-- `capabilities.checkpoints` lets moor save and fork a Box's VM.
-- `config.checkpoints` makes `crabbox doctor` fail unless cloud-hypervisor is
-  the patched `v52.0-moor.1`. A stock build loses the guest's network after a
-  checkpoint.
-- `bootTemplate` starts a new VM from a snapshot of a provisioned guest, in
-  about 4 s instead of 41 s. Put the provider's `cacheDir` on a filesystem
-  that reflinks, such as btrfs or XFS.
-
-On a personal node, `moor-machine-agent up` adds both `checkpoints` keys when
-they are missing. It never changes a value you set, so `false` turns warm
-starts off. `moor node ls` shows `warm starts on`, or `off` with the reason.
+Set `bootTemplate: true` under `external.config` in the crabbox config to start
+a new VM from a snapshot of a provisioned guest, in about 4 s instead of 41 s.
+Put the provider's `cacheDir` on a filesystem that reflinks, such as btrfs or
+XFS.
 
 ## Keep caches between Boxes
 

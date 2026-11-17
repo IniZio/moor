@@ -75,16 +75,4 @@ Box some minutes and nothing else.
 A personal node keeps the larger of 10% of its disk and 20 GiB free. Below
 that floor, a start waits with `low disk on NODE`. Each owner with a Box on the
 node gets one `node_disk_low` event. Each gets `node_disk_recovered` once the
-disk is back above the floor plus 5%. To free disk, only saved setups that no
-Box holds are deleted, superseded ones first.
-
-## Warm starts
-
-A later Box of yours on the same node can start from a saved setup of an
-earlier one, at any commit. A saved setup is never shared across users or
-nodes, because it holds what your setup lines and profile wrote. A Box at
-another commit runs every setup line again on the updated tree. A line that
-skips its work when its output exists can then keep stale files.
-[Set up a repo](repo.md#install-dependencies) shows how to guard a line.
-
-`moor node ls` and `list_nodes` show whether warm starts are on, or why not.
+disk is back above the floor plus 5%.

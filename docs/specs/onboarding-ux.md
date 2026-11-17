@@ -63,7 +63,7 @@ sequenceDiagram
 	M->>G: poll until confirmed
 	M->>M: install and start user service
 	M->>G: link
-	M-->>U: print "linked: NAME, 4 Box slots, warm starts on"
+	M-->>U: print "linked: NAME, 4 Box slots"
 ```
 
 Then every front shows the machine with online state and free slots. A start names its node before it runs.
