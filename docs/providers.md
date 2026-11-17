@@ -45,7 +45,7 @@ external:
 
 moor saves the caches when it releases a Box, not when a Box sleeps. A close that
 deletes an asleep Box without waking it loses its caches and records a
-`caches_not_saved` event. moor no longer reads `cacheSaveOnPause`.
+`caches_not_saved` event. moor ignores `cacheSaveOnPause`.
 
 Only this trusted crabbox config can turn this on. A repo or a flag cannot.
 Without it, every Box starts cold and records a `cache_cold` event. An external
