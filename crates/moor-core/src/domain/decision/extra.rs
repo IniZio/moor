@@ -119,6 +119,11 @@ pub enum ExtraEvent {
         /// The line, cut to a length a status line can hold.
         line: String,
     },
+    /// The machine's link dropped while it opened the Box, so the acquire asks for the same Box again.
+    AcquireReattached {
+        /// What the lost link said.
+        why: String,
+    },
     /// The machine's link dropped while a `setup:` line ran, so setup attaches to the run again.
     SetupReattached {
         /// Position of the line that was running, counting from 1; 0 before any line began.

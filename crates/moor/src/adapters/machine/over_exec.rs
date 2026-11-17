@@ -18,6 +18,7 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::{Deadline, Pipes, OUTPUT_CAP};
 
 use super::exec::SHORT;
+use super::relink::relinked;
 use super::stream::{failed, Timer};
 
 pub(super) mod copy;
@@ -69,6 +70,17 @@ fn capture(
     Ok((outcome, String::from_utf8_lossy(&out.0).into_owned()))
 }
 
+/// [`capture`] for a command safe to run twice, run again while the machine's link is down.
+fn capture_again(
+    d: &dyn Driver,
+    h: &BoxHandle,
+    spec: &ExecSpec,
+    stdin: &[u8],
+    within: Duration,
+) -> Result<(ExecOutcome, String), DriverError> {
+    relinked(|| capture(d, h, spec, stdin.to_vec(), within))
+}
+
 /// Runs `spec` with no stdin; its stdout and how it ended.
 pub(super) fn capture_out(
     d: &dyn Driver,
@@ -103,7 +115,7 @@ pub(super) fn peek_file(
 ) -> Result<Option<String>, DriverError> {
     let p = quote(path.as_str());
     let spec = sh(place, &format!("test -e {p} || exit {MISSING}; cat -- {p}"));
-    match capture(d, h, &spec, Vec::new(), READ_WITHIN)? {
+    match capture_again(d, h, &spec, &[], READ_WITHIN)? {
         (ExecOutcome::Exited { code: 0 }, text) => Ok(Some(text)),
         (ExecOutcome::Exited { code: MISSING }, _) => Ok(None),
         _ => Err(failed("box file read failed".to_owned())),
@@ -122,7 +134,7 @@ pub(super) fn put_file(
     // umask keeps the file private while it is written, chmod then sets the real mode, and the
     // write replaces the whole file, so a repeat is safe.
     let script = format!("umask 077 && mkdir -p {dir} && cat > {file} && chmod {mode:o} {file}");
-    match capture(d, h, &sh(place, &script), bytes.to_vec(), WRITE_WITHIN)? {
+    match capture_again(d, h, &sh(place, &script), bytes, WRITE_WITHIN)? {
         (ExecOutcome::Exited { code: 0 }, _) => Ok(()),
         _ => Err(failed("box file write failed".to_owned())),
     }
@@ -146,6 +158,8 @@ pub(super) fn batch(
                 put_file(d, h, place, path, (bytes, *mode)).map(|()| StepDone::Put)
             }
             BoxStep::Run(script) => capture(d, h, &sh(place, script), Vec::new(), within)
+                .map(|(outcome, stdout)| StepDone::Ran { outcome, stdout }),
+            BoxStep::Repeatable(script) => capture_again(d, h, &sh(place, script), &[], within)
                 .map(|(outcome, stdout)| StepDone::Ran { outcome, stdout }),
         };
         let stop = match &result {
@@ -176,7 +190,8 @@ pub(super) fn launch_run(
         output: None,
         ..spec.clone()
     };
-    match capture(d, h, &launcher, Vec::new(), SHORT)? {
+    // A second launch of the run is refused, so a repeat is safe.
+    match capture_again(d, h, &launcher, &[], SHORT)? {
         (ExecOutcome::Exited { code: 0 }, out) => out
             .lines()
             .last()
@@ -283,7 +298,7 @@ pub(super) fn end_run(
         format!("cd -- {} || exit 1\n", quote(w.as_str()))
     });
     let spec = sh(Place::Work, &format!("{cd}{}", end_script(run)));
-    match capture(d, h, &spec, Vec::new(), SHORT)? {
+    match capture_again(d, h, &spec, &[], SHORT)? {
         (ExecOutcome::Exited { code: 0 }, text) => parse_end(&text)
             .ok_or_else(|| failed(format!("unreadable end of run {run}: {}", text.trim()))),
         _ => Err(failed("the run end read failed".to_owned())),
@@ -299,7 +314,7 @@ pub(super) fn cancel_run(
 ) -> Result<Cancelled, DriverError> {
     let within = SHORT + Duration::from_secs(grace_secs.into());
     let spec = sh(Place::Work, &cancel_script(run, grace_secs));
-    match capture(d, h, &spec, Vec::new(), within)? {
+    match capture_again(d, h, &spec, &[], within)? {
         (ExecOutcome::Exited { code: 0 }, _) => Ok(Cancelled::Signalled),
         (ExecOutcome::Exited { code: REFUSED }, _) => Ok(Cancelled::NoProcess),
         _ => Err(failed("the run cancel failed".to_owned())),

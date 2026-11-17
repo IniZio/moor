@@ -167,6 +167,39 @@ async fn open_notes_then_opens_and_a_second_open_finds_the_same_box() {
 }
 
 #[tokio::test]
+async fn an_open_asked_again_after_its_caller_left_waits_for_it_and_finds_the_same_box() {
+    let rig = rig();
+    let held = rig.boxes.provider.hold_opens().await;
+    let mut first = rig.ask(&open()).await;
+    let said = ops::read_line::<_, BoxAnswer>(&mut first).await.unwrap();
+    assert!(matches!(said, BoxAnswer::Note { .. }), "{said:?}");
+    drop(first);
+    let mut again = rig.ask(&open()).await;
+    let early = tokio::time::timeout(
+        Duration::from_millis(200),
+        ops::read_line::<_, BoxAnswer>(&mut again),
+    )
+    .await;
+    assert!(
+        early.is_err(),
+        "answered while the first open went on: {early:?}"
+    );
+    drop(held);
+    let mut answers = Vec::new();
+    while let Ok(a) = ops::read_line::<_, BoxAnswer>(&mut again).await {
+        answers.push(a);
+    }
+    assert!(
+        matches!(
+            answers.last(),
+            Some(BoxAnswer::Opened { generation: 1, .. })
+        ),
+        "{answers:?}"
+    );
+    assert_eq!(rig.boxes.provider.most_opens_at_once(), 1);
+}
+
+#[tokio::test]
 async fn exec_runs_in_each_place_in_the_shared_workdir() {
     let rig = rig();
     let BoxAnswer::Opened { workdir, .. } = rig.one(&open()).await else {

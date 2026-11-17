@@ -360,6 +360,9 @@ fn all_events() -> Vec<Event> {
             index: 7,
             why: s("box provider unavailable: machine 1 is not linked"),
         }),
+        Event::Timing(TimingEvent::AcquireReattached {
+            why: s("box provider unavailable: the stream ended: unexpected end of file"),
+        }),
     ]
 }
 
@@ -377,7 +380,7 @@ fn asserted_kinds_are_the_frozen_twenty() {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 93);
+    assert_eq!(all.len(), 94);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

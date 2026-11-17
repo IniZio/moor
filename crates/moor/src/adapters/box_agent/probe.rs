@@ -20,7 +20,7 @@ pub(super) fn probe(
     s: &SessionRef,
     deadline: Deadline,
 ) -> Probe {
-    let steps = [BoxStep::Run(script())];
+    let steps = [BoxStep::Repeatable(script())];
     let Some(Ok(StepDone::Ran { stdout, .. })) = driver
         .batch(&s.handle, &[], Place::Agent, &steps, deadline)
         .pop()
@@ -132,7 +132,7 @@ pub(super) fn check_wait(
     let Some(script) = profile.wait_check_script() else {
         return WaitCheck::Unknown;
     };
-    let steps = [BoxStep::Run(script)];
+    let steps = [BoxStep::Repeatable(script)];
     match driver
         .batch(&s.handle, &[], Place::Agent, &steps, deadline)
         .pop()

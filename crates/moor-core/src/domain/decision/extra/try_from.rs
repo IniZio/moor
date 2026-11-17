@@ -65,6 +65,9 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::SetupLineStarted { index, total, line }) => {
                 Ok(Self::SetupLineStarted { index, total, line })
             }
+            Event::Timing(TimingEvent::AcquireReattached { why }) => {
+                Ok(Self::AcquireReattached { why })
+            }
             Event::Timing(TimingEvent::SetupReattached { index, why }) => {
                 Ok(Self::SetupReattached { index, why })
             }

@@ -14,6 +14,9 @@ pub enum BoxStep {
     Peek(BoxPath),
     /// Runs `sh -c <script>` in the Box with stdin closed; its stdout is returned.
     Run(String),
+    /// As [`BoxStep::Run`], for a script safe to run twice, which a driver may run again when a
+    /// lost link leaves unknown whether it ran.
+    Repeatable(String),
     /// Writes `bytes` to `path`, creating parent dirs, leaving the file at `mode`.
     /// Content travels on stdin, never argv.
     Put {
@@ -31,6 +34,7 @@ impl fmt::Debug for BoxStep {
         match self {
             Self::Peek(path) => f.debug_tuple("Peek").field(path).finish(),
             Self::Run(script) => f.debug_tuple("Run").field(script).finish(),
+            Self::Repeatable(script) => f.debug_tuple("Repeatable").field(script).finish(),
             Self::Put { path, bytes, mode } => f
                 .debug_struct("Put")
                 .field("path", path)
@@ -73,8 +77,13 @@ pub fn run_each<D: Driver + ?Sized>(
     for step in steps {
         let result = match step {
             BoxStep::Peek(path) => driver.peek_file(handle, place, path).map(StepDone::Peeked),
-            BoxStep::Run(script) => {
+            BoxStep::Run(script) | BoxStep::Repeatable(script) => {
                 let spec = ExecSpec::new(place, vec!["sh".into(), "-c".into(), script.clone()]);
+                let spec = if matches!(step, BoxStep::Repeatable(_)) {
+                    spec.repeatable()
+                } else {
+                    spec
+                };
                 driver
                     .exec(handle, &spec, deadline)
                     .map(|outcome| StepDone::Ran {

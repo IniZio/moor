@@ -123,9 +123,8 @@ impl Docker {
     async fn start_places(&self, slug: &Slug, create: Option<&Spec>) -> Result<(), ProvideError> {
         let names = Names::of(slug);
         let fresh = self.start_agent(slug, &names, create.is_some()).await?;
-        if fresh {
-            self.await_agent(&names).await?;
-        }
+        // A running agent place may be one an open cut off by a restart made, not ready yet.
+        self.await_agent(&names).await?;
         match (Cli::state(&names.work).await?, create) {
             (Some(State::Running), _) if fresh => {
                 Cli::ok(["restart", "-t", STOP_SECONDS, &names.work]).await?;

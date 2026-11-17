@@ -14,7 +14,7 @@ use crate::error::CommandError;
 
 /// How long a follower keeps attaching while the Box cannot be reached, which a machine's link
 /// being down between two runners looks like; the run in the Box goes on meanwhile.
-pub(crate) const LINK_WAIT: Duration = Duration::from_secs(120);
+pub(crate) const LINK_WAIT: Duration = moor_core::seam::driver::LINK_WAIT;
 
 /// Longest one call that asks whether the Box answers may take.
 const REACHABLE_CALL: Duration = Duration::from_secs(10);
@@ -127,8 +127,8 @@ pub(super) fn unreachable(result: &Result<ExecOutcome, Failure>) -> Option<&str>
     }
 }
 
-/// Why `e` is the Box out of reach, as against a command that failed in it.
-fn out_of_reach(e: &DriverError) -> Option<&str> {
+/// Why `e` is the Box or its machine out of reach, as against a command that failed in it.
+pub(crate) fn out_of_reach(e: &DriverError) -> Option<&str> {
     match e {
         DriverError::Transport { stderr_tail } => Some(stderr_tail),
         DriverError::Unavailable(why) => Some(why),

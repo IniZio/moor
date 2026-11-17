@@ -126,7 +126,7 @@ impl Launch<'_> {
     /// steps before it.
     pub(super) fn plan(&self, plan: &mut Plan) -> Result<(), Failure> {
         let (req, cred, ctx) = (self.req, self.cred, self.ctx);
-        plan.push(Tag::Agent, BoxStep::Run(agent_check_script()));
+        plan.push(Tag::Agent, BoxStep::Repeatable(agent_check_script()));
         let hooks = self
             .profile
             .hook_writer(ctx)
