@@ -1,7 +1,7 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
 //! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
-//! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--ledger-cert PEM`, `--ledger-key PEM`,
+//! optionally `--also-listen IP:PORT`, a TCP address it serves as well as `--listen`, `--ledger ADDR`, `--ledger-ca PEM`, `--ledger-cert PEM`, `--ledger-key PEM`,
 //! `--machine-service HOST=ADDR`, `--grace SECS`,
 //! `--rate N`, `--burst N`, `--lookup-rate N`, `--tunnels N`, `--warm-every SECS` and
 //! `--until-stdin-closes`, and the ledger key in
@@ -53,6 +53,8 @@ pub(crate) struct Args {
     pub(crate) ledger_cert: Option<PathBuf>,
     /// The private key of `ledger_cert`.
     pub(crate) ledger_key: Option<PathBuf>,
+    /// A TCP address to also listen on, for the Boxes of Docker machines on this host.
+    pub(crate) also: Option<std::net::SocketAddr>,
     /// The machine service plain requests for its host go to.
     pub(crate) machine: Option<MachineRoute>,
     /// How long open tunnels get after SIGTERM.
@@ -77,6 +79,7 @@ impl Args {
         let mut args = Self {
             state_dir: None,
             listen: None,
+            also: None,
             ledger: None,
             ledger_ca: None,
             ledger_cert: None,
@@ -106,6 +109,7 @@ impl Args {
                     args.listen = Some(Listen::Unix(value.into()));
                 }
                 "--listen" => args.listen = Some(Listen::Tcp(value.parse().map_err(|_| bad())?)),
+                "--also-listen" => args.also = Some(value.parse().map_err(|_| bad())?),
                 "--ledger" => args.ledger = Some(value),
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
                 "--ledger-cert" => args.ledger_cert = Some(value.into()),
@@ -159,6 +163,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let stop = stop_flag(args.until_stdin_closes)?;
     let server = Server::start(Config {
         listen,
+        also: args.also,
         ledger,
         key,
         work_dir: state_dir.join("egress"),

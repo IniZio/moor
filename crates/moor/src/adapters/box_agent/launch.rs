@@ -59,6 +59,7 @@ pub(super) fn launch(
         model: req.model.clone(),
         workdir: req.workdir.clone(),
         proxy: req.proxy.as_deref().map(|p| ProxyAddr {
+            keep_egress: p.keep_egress,
             box_port: p.box_port,
             egress_port: p.egress_port,
             ca_pem: p.ca_pem.clone(),

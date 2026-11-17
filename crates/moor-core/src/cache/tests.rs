@@ -183,6 +183,7 @@ fn the_cache_preset_holds_the_caches_the_exec_env_points_tools_at() {
                 egress_port: 2,
                 ca_pem: "pem",
                 hosts: &[],
+                keep_egress: true,
             }),
             workdir: None,
             strip: &[],

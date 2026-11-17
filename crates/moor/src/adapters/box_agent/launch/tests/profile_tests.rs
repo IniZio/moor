@@ -71,6 +71,7 @@ fn the_repo_env_is_exported_after_the_profile_env() {
     let script = launched(|| LaunchReq {
         profile: Some(parse("claude:\n  env: {A: profile}\n").unwrap()),
         proxy: Some(Arc::new(ProxyAddr {
+            keep_egress: true,
             box_env: vec![("A".to_owned(), "repo".to_owned())],
             ..proxy_addr()
         })),

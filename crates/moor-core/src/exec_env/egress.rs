@@ -123,6 +123,15 @@ pub(super) fn lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> 
     lines_with(listen, forward, hosts, &SYSTEM_APPARMOR)
 }
 
+/// The egress lines as one script for `sh -c`.
+///
+/// It serves the place that owns a Box's network namespace when no exec's prelude keeps the egress
+/// proxy running, and stops with a `moor: ` line on stderr and a non-zero exit, as the prelude does.
+#[must_use]
+pub fn keep_script(listen: u16, forward: u16, hosts: &[String]) -> String {
+    lines(listen, forward, hosts).join("\n")
+}
+
 /// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
 /// on `PATH` is `aa.exec` and `aa.profile` is loaded in enforce mode, the rules from
 /// [`apparmor_rules`] go into `aa.local` and the profile is reloaded, as root or through
@@ -203,4 +212,26 @@ pub(super) fn forwarder(port: u16) -> String {
         stop(&format!("port {port} is taken by another process")),
         stop(&format!("the egress forwarder is not listening on 127.0.0.1:{port}: $(tail -n 1 \"$moor_fw.log\")")),
     )
+}
+/// The variables that send a Box's tools through the egress proxy on loopback `egress_port`,
+/// for a Box whose every login reads them from the provider instead of from the prelude.
+#[must_use]
+pub fn proxy_vars(egress_port: u16) -> Vec<(String, String)> {
+    let url = format!("http://127.0.0.1:{egress_port}");
+    let mut vars: Vec<(String, String)> = [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+    ]
+    .iter()
+    .map(|name| ((*name).to_owned(), url.clone()))
+    .collect();
+    for name in ["NO_PROXY", "no_proxy"] {
+        vars.push((name.to_owned(), "127.0.0.1,localhost,::1".to_owned()));
+    }
+    vars.push(("NODE_USE_ENV_PROXY".to_owned(), "1".to_owned()));
+    vars
 }

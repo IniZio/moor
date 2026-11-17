@@ -59,6 +59,7 @@ fn a_failed_script_step_removes_the_temp_dir() {
 fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
     let d = driver(FakeDriver::new());
     let addr = ProxyAddr {
+        keep_egress: true,
         box_env: vec![("APP_NOTE".to_owned(), "it's\n$(id) `id`".to_owned())],
         ..proxy_addr()
     };
@@ -81,6 +82,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
     let d = driver(FakeDriver::new());
     d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
     let addr = ProxyAddr {
+        keep_egress: true,
         box_env: vec![("IS_SANDBOX".to_owned(), "0".to_owned())],
         ..proxy_addr()
     };
@@ -105,6 +107,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
     let d = driver(FakeDriver::new());
     let addr = ProxyAddr {
+        keep_egress: true,
         hosts: vec!["api.anthropic.com".to_owned()],
         ..proxy_addr()
     };

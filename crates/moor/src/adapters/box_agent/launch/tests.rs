@@ -334,6 +334,7 @@ fn a_box_without_a_home_fails_before_delivering() {
 
 fn proxy_addr() -> ProxyAddr {
     ProxyAddr {
+        keep_egress: true,
         box_port: 4567,
         ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),

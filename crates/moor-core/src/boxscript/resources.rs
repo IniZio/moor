@@ -4,9 +4,17 @@ use crate::shape::Shape;
 
 /// POSIX sh that prints `moor.cpus=N` and `moor.mem_mib=N`; it never exits.
 ///
-/// `nproc` counts the CPUs the Box may run on, so a cpuset smaller than the machine shows.
+/// `nproc` counts the CPUs the Box may run on, so a cpuset smaller than the machine shows. A
+/// container's `/proc/meminfo` names its host's memory, so a cgroup limit below that wins.
 pub const PROBE: &str = "echo moor.cpus=$(nproc 2>/dev/null); \
-echo moor.mem_mib=$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null); ";
+mem=$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null); \
+for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do \
+lim=$(cat $f 2>/dev/null); \
+case $lim in ''|*[!0-9]*) continue;; esac; \
+lim=$((lim/1048576)); \
+if [ \"$lim\" -gt 0 ] && [ \"$lim\" -lt \"${mem:-0}\" ]; then mem=$lim; fi; \
+done; \
+echo moor.mem_mib=$mem; ";
 
 /// `script` followed by [`PROBE`], exiting with `script`'s own status.
 ///

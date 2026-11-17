@@ -117,6 +117,7 @@ fn a_non_root_agent_is_not_told_it_is_sandboxed() {
 fn repo_env_is_exported_for_the_agent() {
     let script = script_for(ENVIRON, || {
         let addr = ProxyAddr {
+            keep_egress: true,
             box_env: vec![("APP_NOTE".to_owned(), "it's here".to_owned())],
             ..proxy_addr()
         };

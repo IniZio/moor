@@ -51,6 +51,7 @@ impl Scratch {
     /// The Proxy address whose egress port the fake tinyproxy opens.
     pub(super) fn proxy_addr(&self) -> ProxyAddr {
         ProxyAddr {
+            keep_egress: true,
             egress_port: self.egress.port(),
             ..proxy_addr()
         }

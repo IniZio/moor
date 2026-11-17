@@ -15,6 +15,7 @@ const CA: &str = "-----BEGIN CERTIFICATE-----\nQUJDREVGRw==\n-----END CERTIFICAT
 
 fn proxy() -> ProxyAddr {
     ProxyAddr {
+        keep_egress: true,
         box_port: PORT,
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
@@ -139,6 +140,15 @@ fn a_bad_name_or_value_is_refused() {
     assert!(script_lines(&proxy(), &binary).is_err());
 }
 
+fn assert_sh_syntax(script: &std::path::Path) {
+    let syntax = Command::new("sh").arg("-n").arg(script).output().unwrap();
+    assert!(
+        syntax.status.success(),
+        "{}",
+        String::from_utf8_lossy(&syntax.stderr)
+    );
+}
+
 #[test]
 fn the_script_runs_and_builds_the_environment() {
     let dir = tempfile::TempDir::new().unwrap();
@@ -147,6 +157,7 @@ fn the_script_runs_and_builds_the_environment() {
     let fake = fake_sudo(dir.path());
     let egress = moor_testkit::FakeEgress::start(&home, &fake).unwrap();
     let addr = ProxyAddr {
+        keep_egress: true,
         egress_port: egress.port(),
         ..proxy()
     };
@@ -154,16 +165,7 @@ fn the_script_runs_and_builds_the_environment() {
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
-    let syntax = Command::new("sh")
-        .arg("-n")
-        .arg(&script_path)
-        .output()
-        .unwrap();
-    assert!(
-        syntax.status.success(),
-        "{}",
-        String::from_utf8_lossy(&syntax.stderr)
-    );
+    assert_sh_syntax(&script_path);
     let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
     let out = Command::new("sh")
         .arg(&script_path)
@@ -254,6 +256,7 @@ fn run_launch(with_keytool: bool) -> Launch {
     .unwrap();
     let egress = moor_testkit::FakeEgress::start(&home, &bin).unwrap();
     let addr = ProxyAddr {
+        keep_egress: true,
         egress_port: egress.port(),
         ..proxy()
     };

@@ -214,6 +214,15 @@ impl Driver for Routed {
         self.of(handle).refresh_login(handle)
     }
 
+    fn set_env(
+        &self,
+        handle: &BoxHandle,
+        vars: &[(String, String)],
+        ca_pem: Option<&str>,
+    ) -> Result<(), DriverError> {
+        self.of(handle).set_env(handle, vars, ca_pem)
+    }
+
     fn local_tunnel(&self, handle: &BoxHandle, box_port: u16) -> Result<LocalTunnel, DriverError> {
         self.of(handle).local_tunnel(handle, box_port)
     }

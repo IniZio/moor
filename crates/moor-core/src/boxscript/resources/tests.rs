@@ -57,3 +57,27 @@ fn an_empty_script_after_probes_and_exits_zero() {
     assert_eq!(exit, 0);
     assert!(shape.is_some());
 }
+
+#[test]
+fn a_cgroup_limit_below_meminfo_is_what_the_probe_reports() {
+    let out = Command::new("sh").arg("-c").arg(PROBE).output().unwrap();
+    let got = parse(&String::from_utf8(out.stdout).unwrap())
+        .unwrap()
+        .mem_mib;
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap();
+    let total = meminfo
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))
+        .and_then(|l| l.split_whitespace().next()?.parse::<u64>().ok())
+        .unwrap()
+        / 1024;
+    assert!(got <= total, "{got} above the host's {total}");
+    let limit = std::fs::read_to_string("/sys/fs/cgroup/memory.max")
+        .ok()
+        .and_then(|l| l.trim().parse::<u64>().ok())
+        .map(|b| b / 1_048_576)
+        .filter(|l| *l > 0);
+    if let Some(limit) = limit.filter(|l| *l < total) {
+        assert_eq!(got, limit);
+    }
+}
