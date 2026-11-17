@@ -8,9 +8,7 @@ use std::time::Duration;
 
 use crate::linked;
 use crate::pair::{self, Ask};
-use crate::pool::doctor_failures;
 use crate::service::{Manager, Service};
-use crate::settings::{self, Ensured};
 use crate::{read_key, State, KEY};
 
 /// How many seconds `up` waits for the service's first link.
@@ -68,7 +66,6 @@ pub fn up(
                 Runtime::Provider(p) => p.clone(),
                 _ => configured_provider(&crabbox)?,
             };
-            apply_settings(&up.home, &provider, say);
             provider_ready(&crabbox, &provider)?;
             (Some(provider), Some(crabbox))
         }
@@ -165,20 +162,6 @@ fn configured_provider(crabbox: &Path) -> Result<String, String> {
     }
 }
 
-/// Adds what warm starts need to crabbox's user config under `home`, saying what changed; a
-/// failure only leaves this host's Boxes starting cold.
-pub fn apply_settings(home: &Path, provider: &str, say: &mut dyn FnMut(&str)) {
-    let path = settings::config_path(home);
-    match settings::ensure(&path, provider) {
-        Ok(Ensured::Added) => say(&format!(
-            "turned on checkpoints in {}; set them to false there to opt out",
-            path.display()
-        )),
-        Ok(Ensured::Kept) => {}
-        Err(e) => say(&format!("cannot turn on checkpoints: {e}")),
-    }
-}
-
 /// Asks crabbox whether `provider` can run Boxes here, showing its own fixes when not.
 fn provider_ready(crabbox: &Path, provider: &str) -> Result<(), String> {
     let out = Command::new(crabbox)
@@ -203,6 +186,22 @@ fn provider_ready(crabbox: &Path, provider: &str) -> Result<(), String> {
         "crabbox provider {provider} is not ready here:\n{}\nfix the above, then run moor-machine-agent up again",
         lines.trim()
     ))
+}
+
+/// What failed in doctor's output, each once: the adapter's own `FAIL` lines, which the provider
+/// check carries among its passing ones, and crabbox's `failed` checks other than that carrier.
+fn doctor_failures<'a>(said: &'a str, err: &'a str) -> Vec<&'a str> {
+    let all = || said.lines().chain(err.lines());
+    let adapter = all().filter(|l| l.starts_with("FAIL "));
+    let carrier = |l: &&str| l.starts_with("failed") && l.contains("external provider command");
+    let crabbox = all().filter(|l| l.starts_with("failed") && !carrier(l));
+    let mut found: Vec<&str> = Vec::new();
+    for line in adapter.chain(crabbox) {
+        if !found.contains(&line) {
+            found.push(line);
+        }
+    }
+    found
 }
 
 /// The state of a pairing with `server` that left its key in `dir`.

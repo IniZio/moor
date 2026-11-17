@@ -218,9 +218,6 @@ fn run_here(
     allow_exec: bool,
     auto_update: bool,
 ) -> Result<(), String> {
-    if let Some(provider) = &pool.runtime {
-        apply_settings(provider);
-    }
     let machine = Machine {
         pool: pool.pool(cache_gb),
         allow_exec,
@@ -239,11 +236,6 @@ fn run_here(
         say(&format!("stopped by {signal}"));
     }
     Ok(())
-}
-
-/// Adds what warm starts need to the crabbox user config, saying what changed.
-fn apply_settings(provider: &str) {
-    up::apply_settings(&Machine::from_env().home, provider, &mut |line| say(line));
 }
 
 /// Installs release `version` in place of this executable and says what changed.

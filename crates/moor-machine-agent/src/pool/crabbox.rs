@@ -96,20 +96,7 @@ impl Crabbox<'_> {
     }
 
     /// Runs `crabbox ARGS` in `dir`, with git looking no further up than `ceiling`, within
-    /// `within`; its stdout when it exits with a code in `ok`.
-    pub(super) async fn spawn(
-        &self,
-        args: &[&str],
-        place: (&Path, &Path),
-        within: Duration,
-        ok: &[i32],
-        env: &[(&str, String)],
-    ) -> Result<String, String> {
-        let printed = self.spawn_both(args, place, within, ok, env).await?;
-        Ok(printed.0)
-    }
-
-    /// Like [`Self::spawn`], with what it said on stderr as well.
+    /// `within`; its stdout and stderr when it exits with a code in `ok`.
     pub(super) async fn spawn_both(
         &self,
         args: &[&str],

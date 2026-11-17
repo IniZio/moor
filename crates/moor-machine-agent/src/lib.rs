@@ -27,7 +27,6 @@ pub mod pool;
 mod release;
 mod serve;
 pub mod service;
-pub mod settings;
 mod status;
 mod stop;
 mod sweep;

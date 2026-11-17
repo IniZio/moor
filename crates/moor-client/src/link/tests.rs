@@ -73,6 +73,23 @@ fn a_hello_with_a_field_this_build_does_not_know_still_reads() {
 }
 
 #[test]
+fn an_offer_from_an_agent_that_still_says_checkpoints_reads_and_drops_them() {
+    let hello = json!({"hello": {"machine_id": 7, "version": "0.9.0", "offer": {
+        "max_boxes": 4,
+        "features": ["workspace-checkpoint", "workspace-fork"],
+        "checkpoints": true,
+        "checkpoints_off": "crabbox doctor failed: x",
+    }}});
+    let frame: Frame = serde_json::from_value(hello).unwrap();
+    let Frame::Hello { offer, .. } = frame else {
+        panic!("not a hello: {frame:?}");
+    };
+    let offer = offer.unwrap();
+    assert_eq!(offer.max_boxes, Some(4));
+    assert_eq!(serde_json::to_value(&offer).unwrap().get("checkpoints"), None);
+}
+
+#[test]
 fn a_report_without_the_per_box_list_reads_as_empty_and_writes_none() {
     let opened = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2}});
     let opened: super::Opened = serde_json::from_value(opened).unwrap();
