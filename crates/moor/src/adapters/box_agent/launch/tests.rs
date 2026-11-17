@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, Place};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
@@ -229,6 +229,7 @@ fn the_agent_is_reached_through_herdr_core() {
         .skip(before)
         .map(|(_, spec, _)| spec.argv.join(" "))
         .collect();
+    assert!(d.all_in(Place::Agent));
     cmds.extend(kit.relay_argv(&["ssh".into()]).unwrap());
     let cmds = cmds.join("\n");
     for want in ["herdr-core get", "herdr-core kill", "herdr-core attach"] {
@@ -434,6 +435,7 @@ use scratch_run::Scratch;
 
 mod batch;
 mod env_tests;
+mod places;
 mod profile_tests;
 mod proxy_launch_tests;
 mod scratch_run;

@@ -30,16 +30,17 @@ pub(crate) fn warning(reason: &str) -> Warning {
     }
 }
 
-/// Runs the agent's install script in the Box with the env and Proxy setup gets, logging to
+/// Runs an install script in `place` in the Box with the env and Proxy setup gets, logging to
 /// `log`, for at most `deadline`. The error is why it could not run to an exit; `what` names the
 /// step in it when the deadline hit.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the Box, settings, Proxy, script, log and deadline"
+    reason = "the Box, place, settings, Proxy, script, log and deadline"
 )]
 pub(crate) fn run(
     cx: &Cx,
     site: &Site<'_>,
+    place: Place,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
     script: String,
@@ -49,7 +50,7 @@ pub(crate) fn run(
     let env = box_exec::prepare(cx, site, proxy, cfg, Purpose::Run)
         .map_err(|e| format!("could not prepare the install: {e}"))?;
     let exec = ExecSpec::new(
-        Place::Agent,
+        place,
         env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
     )
     .env(env.vars())
@@ -119,7 +120,16 @@ pub(crate) fn present(
         workdir: None,
     };
     let limit = ("agent check", PRESENT_DEADLINE);
-    let ran = run(cx, &site, cfg, proxy.as_ref(), install.present, &log, limit);
+    let ran = run(
+        cx,
+        &site,
+        Place::Agent,
+        cfg,
+        proxy.as_ref(),
+        install.present,
+        &log,
+        limit,
+    );
     matches!(ran, Ok(ExecOutcome::Exited { code: 0 }))
 }
 
@@ -135,6 +145,7 @@ fn install_in_box(
     let reason = match run(
         cx,
         site,
+        Place::Agent,
         cfg,
         proxy,
         script,

@@ -1,6 +1,7 @@
 //! A keeper's calls into the Box take turns with ending and parking it: what waits for a clear
 //! of the Box port in flight and what answers at once.
 
+use moor_core::seam::driver::Place;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -51,6 +52,7 @@ fn up_and_park_answer_while_the_tunnel_opens() {
         w.driver.dropped_tunnels().len(),
         "every tunnel opened was closed"
     );
+    assert!(w.driver.all_in(Place::Agent));
 }
 
 #[test]

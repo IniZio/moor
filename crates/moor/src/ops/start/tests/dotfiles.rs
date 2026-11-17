@@ -7,7 +7,7 @@ use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::driver::{DriverError, ExecOutcome, Place};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
@@ -98,6 +98,7 @@ fn assert_archive_put(w: &World) -> String {
     assert_eq!(puts.len(), 1);
     let (handle, path, bytes, mode) = puts.first().unwrap();
     assert_eq!(handle.as_str(), "box-1");
+    assert_eq!(w.driver.places("put_file"), [Place::Work]);
     let hex = path
         .as_str()
         .strip_prefix("/tmp/moor-dotfiles-1-")
@@ -117,6 +118,12 @@ fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 3);
+    let placed: Vec<Place> = execs.iter().map(|e| e.1.place).collect();
+    assert_eq!(
+        placed,
+        [Place::Work; 3],
+        "clone, setup and dotfiles run in the work place"
+    );
     let (_, spec, deadline) = execs.last().unwrap();
     assert!(spec
         .argv

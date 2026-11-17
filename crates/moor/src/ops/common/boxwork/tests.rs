@@ -8,7 +8,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::{HandsInc, HandsState};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
@@ -133,6 +133,8 @@ fn clean_box_is_clean_and_the_probe_is_shaped_right() {
     assert_eq!(run(&r), BoxWork::Clean);
     assert_eq!(r.driver.execs().len(), 1);
     let spec = first_exec(&r);
+    assert_eq!(spec.place, Place::Work);
+    assert_eq!(r.driver.places("batch"), [Place::Work]);
     assert_eq!(spec.cwd, None);
     let mut argv = spec.argv.iter().map(String::as_str);
     assert_eq!((argv.next(), argv.next()), (Some("sh"), Some("-c")));

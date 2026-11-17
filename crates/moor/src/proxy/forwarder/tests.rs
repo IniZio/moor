@@ -221,6 +221,13 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
 }
 
 #[test]
+fn the_forwarder_is_delivered_in_the_agent_place() {
+    let r = rig();
+    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert!(r.driver.all_in(Place::Agent));
+}
+
+#[test]
 fn a_delivered_token_is_not_delivered_again() {
     let r = rig();
     r.deliver(&tunneled(), &Rig::endpoint()).unwrap();

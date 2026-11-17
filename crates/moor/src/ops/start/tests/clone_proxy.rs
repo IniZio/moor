@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proxy_host::{ProxyHostError, ProxyStatus};
 use moor_core::BoxId;
 
@@ -65,6 +65,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(*seen.lock().unwrap(), [true], "{:?}", host.calls());
     let spec = clone_exec(&w);
+    assert_eq!(spec.place, Place::Work);
     let script = spec.argv.get(2).cloned().unwrap_or_default();
     assert!(
         script.contains(&format!(

@@ -11,7 +11,7 @@ use moor_core::config::{BoxSettings, Flags, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, Place};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
@@ -572,4 +572,24 @@ fn a_drain_during_a_link_gap_leaves_the_run_going_for_the_next_process() {
     assert_eq!(r.driver.execs().len(), 1);
     assert!(!r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
     assert!(r.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn waiting_for_the_box_to_answer_probes_the_work_place() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    super::await_reachable(&r.cx, &r.handle).unwrap();
+    assert_eq!(r.driver.places("exec"), [Place::Work]);
+}
+
+#[test]
+fn a_setup_runs_and_copies_its_log_in_the_work_place() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new()
+        .exec_results(exits(&[3]))
+        .copy_text("moor setup: $ bad\n");
+    let r = rig(d.path(), driver);
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["bad"], &[]));
+    assert_eq!(r.driver.places("exec"), [Place::Work]);
+    assert_eq!(r.driver.places("copy_out"), [Place::Work]);
 }

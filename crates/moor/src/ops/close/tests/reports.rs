@@ -8,7 +8,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::driver::{DriverError, ExecOutcome, Place};
 use moor_core::BoxPath;
 
 use super::teardown::{fx_yaml, YAML};
@@ -91,6 +91,27 @@ fn collect_execs(f: &Fx) -> usize {
         .count()
 }
 
+/// The place of each exec the close made, in order.
+fn placed(f: &Fx) -> Vec<Place> {
+    f.driver.execs().iter().map(|e| e.1.place).collect()
+}
+
+/// The close's execs: the probe, the recheck and the Report index share a batch in the work place.
+fn want() -> [Place; 5] {
+    [
+        Place::Work,
+        Place::Work,
+        Place::Work,
+        Place::Agent,
+        Place::Work,
+    ]
+}
+
+/// The last file read is a Report, which the agent wrote.
+fn last_peek_is_in_the_agent_place(f: &Fx) {
+    assert_eq!(f.driver.places("peek_file").last(), Some(&Place::Agent));
+}
+
 fn peeked(f: &Fx) -> Vec<String> {
     f.driver
         .peeks()
@@ -108,6 +129,7 @@ fn two_reports_are_collected() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(collect_execs(&f), 1);
+    last_peek_is_in_the_agent_place(&f);
     let peeks = peeked(&f);
     assert!(peeks.contains(&index_path().as_str().to_owned()));
     assert!(peeks.contains(&report_path("result.md").as_str().to_owned()));
@@ -239,6 +261,12 @@ fn collection_runs_before_teardown_and_release() {
     let specs = f.driver.execs();
     let c = &specs.get(2).unwrap().1;
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
+    // The probe and the Report index share one batch, so the index runs in the probe's place.
+    assert_eq!(
+        placed(&f),
+        want(),
+        "probe, recheck, index, artifacts, teardown"
+    );
     let last_peek = calls
         .iter()
         .rposition(|c| c.starts_with("peek_file"))

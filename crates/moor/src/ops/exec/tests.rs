@@ -1,3 +1,4 @@
+use moor_core::seam::driver::Place;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -122,6 +123,7 @@ fn the_command_runs_in_the_box_env_with_its_stdio_on_the_pipes() {
     let execs = driver.execs();
     assert_eq!(execs.len(), 1, "{execs:?}");
     let spec = &execs.first().unwrap().1;
+    assert_eq!(spec.place, Place::Work);
     assert_eq!(
         spec.argv.get(..2),
         Some(&["sh".to_owned(), "-c".to_owned()][..])

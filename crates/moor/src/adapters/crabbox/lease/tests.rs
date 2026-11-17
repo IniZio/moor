@@ -86,13 +86,13 @@ const CALLS: [(&str, Call); 12] = [
         drop(c.stream_files(&handle(), &path(), &names, deadline, &mut |_, _| {}));
     }),
     ("peek_file", |c| {
-        drop(c.peek_file(&handle(), Place::Work, &path()))
+        drop(c.peek_file(&handle(), Place::Work, &path()));
     }),
     ("put_file", |c| {
         drop(c.put_file(&handle(), Place::Work, &path(), b"x", 0o600));
     }),
     ("connect_argv", |c| {
-        drop(c.connect_argv(&handle(), Place::Work))
+        drop(c.connect_argv(&handle(), Place::Work));
     }),
     ("reverse_tunnel", |c| {
         drop(c.reverse_tunnel(&handle(), 8080, Path::new("/s")));

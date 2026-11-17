@@ -81,6 +81,7 @@ fn setup_waits_for_a_new_guest_that_answers_late() {
         "{kinds:?}"
     );
     assert_ne!(lifecycle(&w), BoxLifecycle::SetupFailed);
+    assert!(w.driver.op_in("peek_file", Place::Agent));
 }
 
 #[test]

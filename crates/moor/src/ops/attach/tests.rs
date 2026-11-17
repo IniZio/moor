@@ -17,7 +17,7 @@ use crate::testing::proc::ScriptedProc;
 
 /// A Cx holding Box `t` with a live machine, the driver's connect argv for it, and the work
 /// tree the driver reports for it.
-fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
+fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String, Arc<FakeDriver>) {
     let driver = Arc::new(FakeDriver::new());
     let cx = Cx::fake(dir, driver.clone(), Arc::new(ScriptedProc::new()));
     let store = cx.store().unwrap();
@@ -66,7 +66,7 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
                 .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle }),
         )
         .unwrap();
-    (cx, connect, workdir)
+    (cx, connect, workdir, driver)
 }
 
 fn req(shell: bool) -> AttachReq {
@@ -79,10 +79,11 @@ fn req(shell: bool) -> AttachReq {
 #[test]
 fn a_shell_attach_runs_a_login_shell_in_the_work_tree_over_connect() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, connect, workdir) = ready_box(dir.path());
+    let (cx, connect, workdir, driver) = ready_box(dir.path());
     let got = argv(&cx, &req(true)).unwrap();
     let (last, head) = got.split_last().unwrap();
     assert_eq!(head, connect.as_slice());
+    assert_eq!(driver.places("connect_argv").last(), Some(&Place::Work));
     assert_eq!(
         last,
         &format!("cd '{workdir}' && exec \"${{SHELL:-bash}}\" -l")
@@ -92,29 +93,31 @@ fn a_shell_attach_runs_a_login_shell_in_the_work_tree_over_connect() {
 #[test]
 fn an_agent_attach_never_opens_a_shell() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _, _) = ready_box(dir.path());
+    let (cx, _, _, driver) = ready_box(dir.path());
     let got = argv(&cx, &req(false))
         .map(|a| a.join(" "))
         .unwrap_or_default();
     assert!(!got.contains("SHELL"), "{got}");
+    assert_eq!(driver.places("connect_argv").last(), Some(&Place::Agent));
 }
 
 #[test]
 fn an_agent_attach_relays_through_herdr_core() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _, _) = ready_box(dir.path());
+    let (cx, _, _, driver) = ready_box(dir.path());
     let cx = cx.with_engine(Arc::new(FakeEngine::new()));
     cx.store()
         .unwrap()
         .begin_launch(BoxId::new(1), "s1")
         .unwrap();
     assert_eq!(argv(&cx, &req(false)).unwrap().pop().unwrap(), "relay");
+    assert_eq!(driver.places("connect_argv").last(), Some(&Place::Agent));
 }
 
 #[test]
 fn an_agent_attach_to_a_box_another_holder_kept_says_to_recreate_it() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, _, _) = ready_box(dir.path());
+    let (cx, _, _, _) = ready_box(dir.path());
     let cx = cx.with_engine(Arc::new(FakeEngine::new()));
     let store = cx.store().unwrap();
     let id = BoxId::new(1);
