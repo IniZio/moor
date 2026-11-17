@@ -51,6 +51,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "workflow-set-enabled" => json!({"cmd": kind, "name": "n", "enabled": false}),
         "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
         "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
+        "step-report" => json!({"cmd": kind, "box_id": 1,
+            "report": {"step": "a", "result": "ok", "evidence": [], "note": ""}}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-rsync" => json!({"cmd": kind, "box": 1, "argv": ["rsync"]}),
@@ -61,7 +63,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
 }
 
 #[test]
-fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identity() {
+fn every_front_request_but_version_the_webhook_outbox_and_step_reports_must_assert_an_identity() {
     let world = World::new();
     let herdr = world.herdr();
     let mut unknown = Vec::new();
@@ -81,6 +83,8 @@ fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identit
             assert_eq!(got["class"], "ok", "{got}");
         } else if kind.starts_with("webhook-claim") || kind.starts_with("webhook-report") {
             refused(&got, "`webhooks: true`");
+        } else if kind == "step-report" {
+            refused(&got, "`step_reports: true`");
         } else {
             refused(&got, "the herdr front socket must assert an identity");
         }

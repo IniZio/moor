@@ -232,6 +232,25 @@ fn stage_and_store(
     Ok(())
 }
 
+/// The top-level regular files of the Box's artifacts folder right now, with their sizes, from
+/// the same index script a collect uses. It looks in the Box and does not wait for a collect.
+///
+/// # Errors
+/// Why the Box could not be looked in: it is not ready, or the script could not run.
+pub(crate) fn index_now(cx: &Cx, row: &BoxRow) -> Result<Vec<ArtifactFile>, String> {
+    let (b, handle) = target(row).ok_or("the Box is not ready")?;
+    let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
+        Some(w) => w,
+        None => cx
+            .driver()
+            .workdir(handle)
+            .map_err(|e| format!("cannot find the box workdir: {e}"))?,
+    };
+    let text = index_text(cx, handle, &workdir, None)?;
+    let (index, _unreadable) = parse_index(&text);
+    Ok(index.into_iter().filter(|f| valid_name(&f.name)).collect())
+}
+
 /// Runs the index script in the Box and returns what it prints.
 fn index_text(
     cx: &Cx,

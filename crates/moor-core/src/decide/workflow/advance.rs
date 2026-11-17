@@ -3,7 +3,7 @@
 use super::finished::{RunBoxFacts, QUIET_BEFORE_FINISHED};
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
-use crate::workflow::{HistoryEntry, Plan, StepId, StepKind};
+use crate::workflow::{HistoryEntry, Plan, StepId, StepKind, StepReport, StepResult};
 
 /// How many lost exec streams one try of a check may have. The next one follows `fail`.
 pub const CHECK_LOSSES: usize = 2;
@@ -70,15 +70,18 @@ enum Edge {
 /// The pointer is the last `Entered` line, and what happened in this try is every line after it,
 /// so the move comes from history alone and a restarted controller decides as the old one did.
 ///
-/// - A work step passes on `Idle` and is sent again on its first `Ended`. Its second `Ended` in
-///   one try ends the run Incomplete. Until agents report their steps, idle still passes it.
-/// - A deliver step delivers on either.
+/// - A work step waits for the agent's report, which [`report_move`] decides. An agent that is
+///   quiet, or whose session ended, without one is reminded once; quiet or ended again in the
+///   same try ends the run Incomplete. `event` makes no difference: the two readings of "no
+///   report" are treated alike.
+/// - A deliver step is the same, except in the plan of a workflow nobody planned
+///   ([`Plan::is_single`]), where it delivers on either.
 /// - A check step runs. Its recorded exit decides: 0 follows `ok`, any other follows `fail`. A
 ///   lost stream is no result, so the check runs again, and the second lost stream in one try
 ///   follows `fail`.
 /// - An approve step waits.
 #[must_use]
-pub fn advance(plan: &Plan, history: &[HistoryEntry], event: Event) -> Move {
+pub fn advance(plan: &Plan, history: &[HistoryEntry], _event: Event) -> Move {
     let Some((pos, at)) = history.iter().enumerate().rev().find_map(|(i, e)| match e {
         HistoryEntry::Entered { step, .. } => Some((i, step)),
         _ => None,
@@ -89,26 +92,23 @@ pub fn advance(plan: &Plan, history: &[HistoryEntry], event: Event) -> Move {
         return Move::Wait;
     };
     let this_try = history.get(pos + 1..).unwrap_or_default();
-    let entered = |s: &StepId| {
-        let n = history
-            .iter()
-            .filter(|e| matches!(e, HistoryEntry::Entered { step, .. } if step == s))
-            .count();
-        u8::try_from(n).unwrap_or(u8::MAX)
+    let entered = |s: &StepId| entered_count(history, s);
+    let reminded = this_try
+        .iter()
+        .any(|e| matches!(e, HistoryEntry::Reminded { .. }));
+    // A step the agent reports waits for the report. A quiet agent is reminded once, and quiet
+    // again after the reminder ends the run. A workflow nobody planned has no report to wait
+    // for: its one deliver step delivers when the agent is quiet.
+    let unreported = |reminded: bool| {
+        if reminded {
+            Move::Incomplete { at: at.clone() }
+        } else {
+            Move::Remind
+        }
     };
     match &step.kind {
-        StepKind::Work { .. } => match event {
-            Event::Idle => route(plan, at, Edge::Ok, &entered, String::new()),
-            Event::Ended
-                if this_try
-                    .iter()
-                    .any(|e| matches!(e, HistoryEntry::Reminded { .. })) =>
-            {
-                Move::Incomplete { at: at.clone() }
-            }
-            Event::Ended => Move::Remind,
-        },
-        StepKind::Deliver { .. } => Move::Delivered,
+        StepKind::Deliver { .. } if plan.is_single() => Move::Delivered,
+        StepKind::Work { .. } | StepKind::Deliver { .. } => unreported(reminded),
         StepKind::Check { .. } => {
             let lost = this_try
                 .iter()
@@ -139,6 +139,76 @@ pub fn advance(plan: &Plan, history: &[HistoryEntry], event: Event) -> Move {
         }
         StepKind::Approve { .. } => Move::Wait,
     }
+}
+
+/// The move after the agent's passed `report` at the step the run last entered: along the `ok`
+/// edge for ok, along the `fail` edge for fail, and the end of the run for ok at a deliver step.
+///
+/// A step with no `fail` edge, or a fail target out of tries, fails the run with the report's
+/// note as the reason. A report of a step the run is not at is none of this function's business.
+#[must_use]
+pub fn report_move(plan: &Plan, history: &[HistoryEntry], report: &StepReport) -> Move {
+    let Some(at) = history.iter().rev().find_map(|e| match e {
+        HistoryEntry::Entered { step, .. } => Some(step),
+        _ => None,
+    }) else {
+        return Move::Wait;
+    };
+    let entered = |s: &StepId| entered_count(history, s);
+    let reason = format!("step {at} failed: {}", report.note.trim());
+    match report.result {
+        StepResult::Ok => route(plan, at, Edge::Ok, &entered, String::new()),
+        StepResult::Fail => failed(plan, at, &entered, reason),
+    }
+}
+
+/// The move after the code gate refused a report of the step the run last entered: nothing for
+/// the first refusal of a try, and the step failing for the second.
+#[must_use]
+pub fn refusal_move(plan: &Plan, history: &[HistoryEntry]) -> Move {
+    let Some((pos, at)) = history.iter().enumerate().rev().find_map(|(i, e)| match e {
+        HistoryEntry::Entered { step, .. } => Some((i, step)),
+        _ => None,
+    }) else {
+        return Move::Wait;
+    };
+    let refused = history
+        .get(pos + 1..)
+        .unwrap_or_default()
+        .iter()
+        .any(|e| matches!(e, HistoryEntry::GateRefused { .. }));
+    if !refused {
+        return Move::Wait;
+    }
+    let entered = |s: &StepId| entered_count(history, s);
+    failed(
+        plan,
+        at,
+        &entered,
+        format!("step {at}: the agent's report was refused twice"),
+    )
+}
+
+/// How often the run in `history` has entered `step`.
+fn entered_count(history: &[HistoryEntry], step: &StepId) -> u8 {
+    let n = history
+        .iter()
+        .filter(|e| matches!(e, HistoryEntry::Entered { step: s, .. } if s == step))
+        .count();
+    u8::try_from(n).unwrap_or(u8::MAX)
+}
+
+/// The move when step `at` failed with `reason`: its `fail` edge, or the end of the run as
+/// failed when it has none. A deliver step has none.
+fn failed(plan: &Plan, at: &StepId, entered: &dyn Fn(&StepId) -> u8, reason: String) -> Move {
+    if plan.step(at).is_some_and(|s| s.kind.next().is_none()) {
+        return Move::Fail {
+            at: at.clone(),
+            reason,
+            exhausted: Vec::new(),
+        };
+    }
+    route(plan, at, Edge::Fail, entered, reason)
 }
 
 /// Where a run at `at` goes when its agent is quiet: along its `ok` edge.

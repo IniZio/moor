@@ -300,6 +300,38 @@ impl Moor {
         }
     }
 
+    /// Run `step-report` for `caller`, which must be a front whose config sets
+    /// `step_reports: true`. The front names the Box from its transport and asserts no identity.
+    pub(crate) fn call_step_report(
+        &self,
+        caller: &Result<Caller, String>,
+        request: &Request,
+    ) -> Response {
+        let name = request.cmd();
+        let run = || {
+            match caller {
+                Ok(Caller::Front(ns)) if self.cx.env().front_step_reports(ns) => {}
+                _ => {
+                    return Err(CommandError::new(
+                        ErrorKind::Refused,
+                        ops::authz::STEP_REPORT_FRONT_ONLY,
+                    ))
+                }
+            }
+            let Request::StepReport(req) = request else {
+                return Err(CommandError::new(
+                    ErrorKind::Internal,
+                    "not a step-report request",
+                ));
+            };
+            ops::step_report(&self.cx, req)
+        };
+        match run() {
+            Ok(value) => Response::ok(name, Some(value)),
+            Err(e) => e.into_response(name, vec![]),
+        }
+    }
+
     /// Run `artifact-read`, passing the Artifact's bytes to `out` piece by piece, then answer
     /// with what was sent.
     pub fn read_artifact(

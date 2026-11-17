@@ -78,7 +78,8 @@ pub(super) fn expire_runs(
             }
         }
         let key = (w.id, &e.repo, e.due_at);
-        store.end_workflow_run(key, (e.box_id, RunOutcome::TimedOut { at: e.at }), now)?;
+        let outcome = RunOutcome::TimedOut { at: e.at.clone() };
+        store.end_workflow_run(key, (&e.at, e.try_n), (e.box_id, outcome), (&[], now))?;
     }
     Ok(())
 }

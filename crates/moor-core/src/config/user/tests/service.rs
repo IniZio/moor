@@ -65,3 +65,31 @@ fn the_machine_service_is_an_mcp_server_every_box_gets() {
         "an operator entry of that name stays"
     );
 }
+
+#[test]
+fn moor_service_is_an_mcp_server_every_box_gets_at_its_default_or_named_host() {
+    let cfg = ok("moor_service: {}");
+    let moor = &cfg.shared_mcp()["moor"];
+    assert_eq!(moor.url.as_deref(), Some("http://moor.moor.internal/mcp"));
+    assert_eq!(moor.kind.as_deref(), Some("http"));
+
+    let named = ok("moor_service: {host: gate.internal}");
+    assert_eq!(
+        named.shared_mcp()["moor"].url.as_deref(),
+        Some("http://gate.internal/mcp")
+    );
+    assert!(!ok("").shared_mcp().contains_key("moor"));
+
+    let own = ok("mcp_servers: {moor: {url: 'https://mine.example.com/mcp'}}\nmoor_service: {}");
+    assert_eq!(
+        own.shared_mcp()["moor"].url.as_deref(),
+        Some("https://mine.example.com/mcp"),
+        "an operator entry of that name stays"
+    );
+}
+
+#[test]
+fn a_moor_service_host_that_is_not_a_dns_name_is_refused() {
+    let e = err("moor_service: {host: 'a/b'}");
+    assert_eq!(e.path, "moor_service.host");
+}

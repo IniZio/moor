@@ -229,6 +229,7 @@ mod runner_socket;
 mod serve_first;
 mod socket_path_len;
 mod socket_rebind;
+mod step_report_front;
 mod users;
 mod webhook_front;
 

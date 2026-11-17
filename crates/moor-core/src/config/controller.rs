@@ -73,6 +73,10 @@ pub struct FrontEntry {
     /// Whether the front may claim and report the users' webhook deliveries.
     #[serde(default)]
     pub webhooks: bool,
+    /// Whether the front may report a step for the agent in a Box, naming the Box from its own
+    /// transport. Only a gate behind the Proxy should have it.
+    #[serde(default)]
+    pub step_reports: bool,
     /// TCP ports a client on the host reaches the front on at `127.0.0.1`, where the front
     /// listens on the same port inside its own network namespace.
     #[serde(default)]
@@ -124,6 +128,16 @@ impl ControllerConfig {
         self.fronts
             .iter()
             .filter(|(_, front)| front.webhooks)
+            .map(|(ns, _)| ns.clone())
+            .collect()
+    }
+
+    /// The namespaces of the fronts that report steps for the agents in Boxes.
+    #[must_use]
+    pub fn step_report_fronts(&self) -> BTreeSet<String> {
+        self.fronts
+            .iter()
+            .filter(|(_, front)| front.step_reports)
             .map(|(ns, _)| ns.clone())
             .collect()
     }

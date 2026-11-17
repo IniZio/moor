@@ -48,7 +48,7 @@ fn rig_probing(first: &str) -> Rig {
         cx,
         driver,
         forge,
-        _dir: dir,
+        dir,
     }
 }
 

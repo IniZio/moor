@@ -32,7 +32,7 @@ struct Rig {
     cx: Cx,
     driver: Arc<FakeDriver>,
     forge: Arc<FakeForge>,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 fn rig() -> Rig {
@@ -61,7 +61,7 @@ fn rig_driving(config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) 
         cx,
         driver,
         forge,
-        _dir: dir,
+        dir,
     }
 }
 
@@ -592,4 +592,5 @@ mod also;
 mod check;
 mod plan;
 mod previous;
+mod report;
 mod start_limit;

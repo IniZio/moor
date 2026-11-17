@@ -54,6 +54,8 @@ pub use workflow::{
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
+mod step_report;
+pub use step_report::StepReportReq;
 mod webhook_outbox;
 pub use webhook_outbox::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 
@@ -217,6 +219,9 @@ pub enum Request {
     WebhookClaim(WebhookClaimReq),
     /// End a claimed webhook delivery with its outcome; only a front with `webhooks: true`.
     WebhookReport(WebhookReportReq),
+    /// What the agent in a Box reports for the step its run is at; only a front with
+    /// `step_reports: true`, which names the Box from its transport.
+    StepReport(StepReportReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
     /// Print version information.

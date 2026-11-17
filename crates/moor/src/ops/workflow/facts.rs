@@ -1,7 +1,10 @@
 //! What the tick reads of a workflow's runs, and how the decider sees each one.
 
 use moor_core::decide::workflow::{PriorRun, WorkflowRepoFacts};
-use moor_core::workflow::{RunEnd, RunOutcome, RunState, Workflow, WorkflowRun};
+use moor_core::seam::clock::Ts;
+use moor_core::workflow::{
+    HistoryEntry, RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun,
+};
 use moor_core::BoxId;
 
 use crate::store::{Store, StoreError};
@@ -96,4 +99,31 @@ pub(super) fn box_is_open(store: &Store, id: BoxId) -> Result<bool, StoreError> 
     Ok(store
         .box_row(id)?
         .is_some_and(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)))
+}
+
+/// The history lines of run `run` that is at `at`, and when the agent was last told something. A
+/// run from before history kept an `Entered` line reads as entered at its pointer.
+pub(super) fn history_of(
+    store: &Store,
+    run: RunId,
+    at: (&StepId, u8),
+) -> Result<(Vec<HistoryEntry>, Option<Ts>), StoreError> {
+    let entries = store.run_entries(run)?;
+    let mut history: Vec<HistoryEntry> = entries.iter().map(|(_, e)| e.clone()).collect();
+    if !history
+        .iter()
+        .any(|e| matches!(e, HistoryEntry::Entered { .. }))
+    {
+        history.insert(
+            0,
+            HistoryEntry::Entered {
+                step: at.0.clone(),
+                try_n: at.1,
+            },
+        );
+    }
+    let steered = entries.iter().rev().find_map(|(when, e)| {
+        matches!(e, HistoryEntry::Sent { .. } | HistoryEntry::Reminded { .. }).then_some(*when)
+    });
+    Ok((history, steered))
 }

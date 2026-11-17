@@ -7,7 +7,7 @@ use moor_core::seam::clock::Clock as _;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    NewRun, Plan, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId,
+    NewRun, Plan, RunEnd, RunOutcome, RunState, StepId, TimeoutMinutes, WorkflowDef, WorkflowId,
     WorkflowName, WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 use moor_core::BoxId;
@@ -260,6 +260,27 @@ fn a_timeout_is_stored_and_replaced_with_the_definition() {
     assert_eq!(got(&store).minutes(), 720);
 }
 
+/// Ends the run at `key`, started at its only step, as Box `box_id` with `outcome`, at `at`.
+pub(super) fn ends(
+    store: &Store,
+    key: (WorkflowId, &ForgeRepo, Ts),
+    (box_id, outcome): (i64, &RunOutcome),
+    at: Ts,
+) -> bool {
+    let (step, try_n) = single();
+    let ended = (BoxId::new(box_id), outcome.clone());
+    store
+        .end_workflow_run(key, (step, try_n), ended, (&[], at))
+        .unwrap()
+}
+
+/// The step and try of a run that was started at its only step.
+pub(super) fn single() -> (&'static StepId, u8) {
+    (&SINGLE, 1)
+}
+
+static SINGLE: std::sync::LazyLock<StepId> = std::sync::LazyLock::new(Plan::single_id);
+
 #[test]
 fn a_started_run_ends_once_as_finished_or_timed_out() {
     let dir = tempfile::tempdir().unwrap();
@@ -285,18 +306,13 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let expired = RunOutcome::TimedOut {
         at: Plan::single_id(),
     };
-    assert!(store
-        .end_workflow_run((one.0, &one.1, one.2), (BoxId::new(1), done.clone()), at)
-        .unwrap());
+    let (k1, k2) = ((one.0, &one.1, one.2), (two.0, &two.1, two.2));
+    assert!(ends(&store, k1, (1, &done), at));
     assert!(
-        !store
-            .end_workflow_run((one.0, &one.1, one.2), (BoxId::new(1), expired.clone()), at)
-            .unwrap(),
+        !ends(&store, k1, (1, &expired), at),
         "a finished run is not expired afterwards"
     );
-    assert!(store
-        .end_workflow_run((two.0, &two.1, two.2), (BoxId::new(2), expired), at)
-        .unwrap());
+    assert!(ends(&store, k2, (2, &expired), at));
     assert!(store.open_workflow_runs(id).unwrap().is_empty());
 
     let mut last = store.last_workflow_runs(id).unwrap();
@@ -317,9 +333,7 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let outcome = RunOutcome::Delivered {
         result: String::new(),
     };
-    assert!(!store
-        .end_workflow_run(missing, (BoxId::new(1), outcome), at)
-        .unwrap());
+    assert!(!ends(&store, missing, (1, &outcome), at));
 }
 
 #[test]

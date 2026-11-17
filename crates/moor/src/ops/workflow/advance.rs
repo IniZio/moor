@@ -17,6 +17,7 @@ use moor_core::workflow::{
 use moor_core::{BoxId, SteerReq};
 
 use super::check::{CheckJob, Flight, CHECK_LIMIT};
+use super::facts::history_of;
 use super::settle::{box_facts, broken_detail};
 use crate::cx::Cx;
 use crate::ops::steer;
@@ -117,24 +118,7 @@ impl Quiet<'_> {
     /// before that is still the quiet of the step before. A run from before history kept an
     /// `Entered` line reads as entered at its pointer.
     fn history(&self) -> Result<(Vec<HistoryEntry>, Option<Ts>), StoreError> {
-        let entries = self.store.run_entries(self.run.id)?;
-        let mut history: Vec<HistoryEntry> = entries.iter().map(|(_, e)| e.clone()).collect();
-        if !history
-            .iter()
-            .any(|e| matches!(e, HistoryEntry::Entered { .. }))
-        {
-            history.insert(
-                0,
-                HistoryEntry::Entered {
-                    step: self.at.0.clone(),
-                    try_n: self.at.1,
-                },
-            );
-        }
-        let steered = entries.iter().rev().find_map(|(when, e)| {
-            matches!(e, HistoryEntry::Sent { .. } | HistoryEntry::Reminded { .. }).then_some(*when)
-        });
-        Ok((history, steered))
+        history_of(self.store, self.run.id, (self.at.0, self.at.1))
     }
 
     /// The claim a tick at a check step holds while it settles: an error when a check of the
@@ -184,12 +168,7 @@ impl Quiet<'_> {
                 return Ok(());
             }
         }
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
-        let end = |outcome| {
-            self.store
-                .end_workflow_run(key, (box_id, outcome), self.now)
-                .map(|_| ())
-        };
+        let end = |outcome| self.end(box_id, outcome);
         match m {
             Move::Wait => Ok(()),
             Move::Delivered => end(RunOutcome::Delivered {
@@ -218,6 +197,15 @@ impl Quiet<'_> {
                 exhausted,
             } => self.enter(plan, &history, (step, try_n), exhausted, out),
         }
+    }
+
+    /// Ends the run at the step and try this tick read it at; nothing changes when a report or an
+    /// expiry moved it first.
+    fn end(&self, box_id: BoxId, outcome: RunOutcome) -> Result<(), StoreError> {
+        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        self.store
+            .end_workflow_run(key, self.at, (box_id, outcome), (&[], self.now))
+            .map(|_| ())
     }
 
     /// Hands the check at the pointer to `checks`, with a deadline of the smaller of the run's

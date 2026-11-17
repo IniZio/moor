@@ -7,7 +7,8 @@
 )]
 
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{HistoryEntry, Plan, RunState, StepId};
+use moor_core::workflow::{HistoryEntry, Plan, RunOutcome, RunState, StepId};
+use moor_core::BoxId;
 use serde_json::json;
 
 use super::workflow::{def, repo, run, user};
@@ -157,4 +158,60 @@ fn the_pointer_moves_once_from_exactly_the_step_and_try_it_was_read_at() {
         .collect();
     assert_eq!(kinds.len(), 4, "{kinds:?}");
     assert_eq!(&kinds[2..], &lines);
+}
+
+#[test]
+fn a_run_ends_only_from_exactly_the_step_and_try_it_was_read_at_with_its_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = user(&store, "local:1");
+    let wid = store
+        .put_workflow(alice, &def("daily", &["a/one"], true))
+        .unwrap();
+    store
+        .record_workflow_run(&run(wid, "a/one", 100, RunState::Queued))
+        .unwrap();
+    let key = (wid, &repo("a/one"), Ts::from_millis(100));
+    let first = Plan::single_id();
+    assert!(store
+        .resolve_workflow_start(key, &running(4), Ts::from_millis(110))
+        .unwrap());
+    let next = id("next");
+    assert!(store
+        .step_workflow_run(key, ((&first, 1), (&next, 1)), (&[], Ts::from_millis(150)),)
+        .unwrap());
+
+    let line = [HistoryEntry::Reported {
+        step: next.clone(),
+        try_n: 1,
+        report: moor_core::workflow::StepReport {
+            step: next.clone(),
+            result: moor_core::workflow::StepResult::Ok,
+            evidence: Vec::new(),
+            note: String::new(),
+        },
+    }];
+    let outcome = RunOutcome::Incomplete { at: first.clone() };
+    let end = |on: (&StepId, u8), lines: &[HistoryEntry]| {
+        store
+            .end_workflow_run(
+                key,
+                on,
+                (BoxId::new(4), outcome.clone()),
+                (lines, Ts::from_millis(200)),
+            )
+            .unwrap()
+    };
+    assert!(!end((&first, 1), &line), "a step the run has left");
+    assert!(!end((&next, 2), &line), "a try the run is not at");
+    let run_row = store.last_workflow_runs(wid).unwrap().remove(0);
+    assert_eq!(store.run_history(run_row.id).unwrap().len(), 2);
+    assert!(end((&next, 1), &line));
+    let kinds: Vec<_> = store
+        .run_history(run_row.id)
+        .unwrap()
+        .into_iter()
+        .map(|l| l.entry["kind"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(kinds, ["queued", "entered", "reported", "ended"]);
 }

@@ -181,10 +181,14 @@ fn an_ended_agent_on_a_work_step_is_sent_the_step_again_once() {
 }
 
 #[test]
-fn an_idle_agent_still_passes_its_work_step_after_a_reminder() {
+fn an_idle_agent_with_no_report_is_reminded_once_and_then_incomplete() {
     let p = fix_and_test(2, 3);
+    assert_eq!(advance(&p, &[entered("fix", 1)], Event::Idle), Move::Remind);
     let h = [entered("fix", 1), reminded("fix", 1)];
-    assert_eq!(advance(&p, &h, Event::Idle), enter("test", 1, &[]));
+    assert_eq!(
+        advance(&p, &h, Event::Idle),
+        Move::Incomplete { at: id("fix") }
+    );
 }
 
 #[test]
@@ -201,8 +205,22 @@ fn a_reminder_belongs_to_its_try() {
 }
 
 #[test]
-fn an_ended_agent_on_a_deliver_step_delivers() {
+fn a_planned_deliver_step_waits_for_its_report_like_a_work_step() {
     let p = plan(&[]);
     let h = [entered("end", 1)];
+    assert_eq!(advance(&p, &h, Event::Ended), Move::Remind);
+    assert_eq!(advance(&p, &h, Event::Idle), Move::Remind);
+    let after = [entered("end", 1), reminded("end", 1)];
+    assert_eq!(
+        advance(&p, &after, Event::Idle),
+        Move::Incomplete { at: id("end") }
+    );
+}
+
+#[test]
+fn the_deliver_step_of_a_workflow_nobody_planned_delivers_when_quiet() {
+    let p = Plan::single("fix what is broken");
+    let h = [entered("deliver", 1)];
     assert_eq!(advance(&p, &h, Event::Ended), Move::Delivered);
+    assert_eq!(advance(&p, &h, Event::Idle), Move::Delivered);
 }

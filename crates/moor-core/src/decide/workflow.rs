@@ -115,6 +115,8 @@ pub struct WorkflowExpiry {
     pub box_id: BoxId,
     /// The step the run was at.
     pub at: StepId,
+    /// The try of that step.
+    pub try_n: u8,
 }
 
 /// How long a run may take from its claim until its agent has started, queueing and setup
@@ -177,7 +179,7 @@ pub fn workflow_expired(
     let limit = workflow.timeout.millis();
     open.iter()
         .filter_map(|run| match &run.state {
-            RunState::Running { box_id, at, .. }
+            RunState::Running { box_id, at, try_n }
                 if agent_started(*box_id).is_some_and(|began| {
                     now.as_millis().saturating_sub(began.as_millis()) >= limit
                 }) =>
@@ -187,6 +189,7 @@ pub fn workflow_expired(
                     due_at: run.due_at,
                     box_id: *box_id,
                     at: at.clone(),
+                    try_n: *try_n,
                 })
             }
             _ => None,
@@ -256,8 +259,12 @@ const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict 
 
 mod advance;
 mod finished;
+mod gate;
 #[cfg(test)]
 mod tests;
 
-pub use advance::{advance, quiet_move, quiet_since, Event, Move, CHECK_LOSSES};
+pub use advance::{
+    advance, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
+};
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
+pub use gate::code_gate;

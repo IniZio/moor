@@ -6,7 +6,7 @@ use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
 use sea_query::Query;
 
-use super::workflow::{def, repo, run, user};
+use super::workflow::{def, ends, repo, run, user};
 use crate::store::db::DbExt as _;
 use crate::store::tests::open;
 use crate::testing::runs::{delivered, running, timed_out};
@@ -35,12 +35,8 @@ fn every_move_of_a_run_appends_one_line_to_its_history() {
     let outcome = RunOutcome::Delivered {
         result: "done".to_owned(),
     };
-    assert!(store
-        .end_workflow_run(key, (BoxId::new(4), outcome.clone()), Ts::from_millis(900))
-        .unwrap());
-    assert!(!store
-        .end_workflow_run(key, (BoxId::new(4), outcome.clone()), Ts::from_millis(950))
-        .unwrap());
+    assert!(ends(&store, key, (4, &outcome), Ts::from_millis(900)));
+    assert!(!ends(&store, key, (4, &outcome), Ts::from_millis(950)));
 
     let run_id = store.last_workflow_runs(id).unwrap().first().unwrap().id;
     let lines = store.run_history(run_id).unwrap();

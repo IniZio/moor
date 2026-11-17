@@ -142,7 +142,9 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
 
 /// `env` with the settings from `cfg` that requests read.
 fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
-    let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
+    let env = env
+        .with_workflow_min_interval(cfg.workflow_min_interval())
+        .with_front_step_reports(cfg.step_report_fronts());
     crate::blobs::share(env.with_front_webhooks(cfg.webhook_fronts()), &cfg.blobs)
 }
 

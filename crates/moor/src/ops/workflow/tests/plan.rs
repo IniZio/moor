@@ -144,7 +144,7 @@ fn a_workflow_without_a_plan_gets_its_bare_prompt_and_freezes_none() {
 }
 
 #[test]
-fn a_two_step_plan_advances_on_quiet_and_delivers_at_the_last_step() {
+fn a_two_step_plan_advances_on_a_report_and_delivers_with_the_deliver_note() {
     let r = rig();
     r.answer_repo();
     let id = r.put_planned(Some(two_steps()));
@@ -155,47 +155,47 @@ fn a_two_step_plan_advances_on_quiet_and_delivers_at_the_last_step() {
     store
         .apply(Decision::new(box_id).session(SessionInput::AgentQuiet))
         .unwrap();
-
-    r.pass();
-    assert_eq!(step_of(&r.latest(id).state), ("audit".to_owned(), 1));
     r.pause(3 * 60_000);
-    let log = r.pass();
-    assert!(log.is_empty(), "{log:?}");
+
+    let told = r.report_current(id);
+    assert!(!told.error, "{told:?}");
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "sent"]);
-
-    // The steer is on its way and the Box still shows the quiet of the first step. That
-    // reading says nothing about the second, so another pass must not end the run.
-    r.pause(3 * 60_000);
-    r.pass();
-    r.pass();
-    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
-    assert_eq!(r.kinds(id), ["queued", "entered", "entered", "sent"]);
-
-    r.quiet_after_work(id);
-    r.pause(3 * 60_000);
-    r.pass();
-    let run = r.latest(id);
-    assert!(
-        matches!(
-            run.state,
-            RunState::Done(RunEnd::Ended {
-                outcome: RunOutcome::Delivered { .. },
-                ..
-            })
-        ),
-        "{:?}",
-        run.state
-    );
     assert_eq!(
         r.kinds(id),
-        ["queued", "entered", "entered", "sent", "ended"]
+        ["queued", "entered", "reported", "entered", "sent"]
+    );
+
+    // The reply is on its way and the Box still shows the quiet before the first report. That
+    // reading says nothing about the second step, so no pass may remind or end the run.
+    r.pause(3 * 60_000);
+    r.pass();
+    r.pass();
+    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "reported", "entered", "sent"]
+    );
+
+    let told = r.report_current(id);
+    assert_eq!(told.reply, "Done.");
+    let run = r.latest(id);
+    let RunState::Done(RunEnd::Ended {
+        outcome: RunOutcome::Delivered { result },
+        ..
+    }) = run.state
+    else {
+        panic!("{:?}", run.state);
+    };
+    assert_eq!(result, "all done");
+    assert_eq!(
+        r.kinds(id),
+        ["queued", "entered", "reported", "entered", "sent", "reported", "ended"]
     );
     let entries = store.run_history(run.id).unwrap();
     assert_eq!(entries[1].entry["step"], "audit");
-    assert_eq!(entries[2].entry["step"], "ship");
-    assert_eq!(entries[2].entry["try_n"], 1);
     assert_eq!(entries[3].entry["step"], "ship");
+    assert_eq!(entries[3].entry["try_n"], 1);
+    assert_eq!(entries[4].entry["step"], "ship");
 }
 
 #[test]
@@ -217,18 +217,10 @@ fn a_loop_runs_out_of_tries_and_takes_its_fail_edge() {
     let id = r.put_planned(Some(plan));
     r.advance_to(FIRST_DUE + 1_000);
     r.pass();
-    let box_id = r.latest_box(id);
-    r.cx.store()
-        .unwrap()
-        .apply(Decision::new(box_id).session(SessionInput::AgentQuiet))
-        .unwrap();
-    r.pause(3 * 60_000);
-    r.pass();
+    assert!(!r.report_current(id).error);
     assert_eq!(step_of(&r.latest(id).state), ("fix".to_owned(), 2));
 
-    r.quiet_after_work(id);
-    r.pause(3 * 60_000);
-    r.pass();
+    assert!(!r.report_current(id).error);
     assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
     let kinds = r.kinds(id);
     assert!(kinds.contains(&"exhausted".to_owned()), "{kinds:?}");

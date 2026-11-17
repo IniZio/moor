@@ -1,6 +1,6 @@
 //! The `moor-gate` binary.
 
-use std::net::TcpListener;
+use std::net::{TcpListener, ToSocketAddrs as _};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use clap::Parser;
 use moor_client::tls::TlsPki;
 use moor_client::Client;
-use moor_gate::{Gate, Login, Mcp, Verifier};
+use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN};
 
 /// The remote front: OIDC access tokens in, the controller out.
 #[derive(Parser)]
@@ -18,6 +18,18 @@ struct Args {
     /// Address to listen on; TLS is the ingress's job.
     #[arg(long, env = "MOOR_GATE_LISTEN", default_value = "0.0.0.0:8443")]
     listen: String,
+    /// Address of the Box-facing listener, which serves only `report_step` to the agent in a
+    /// Box and trusts the `X-Moor-Box` header the Proxy stamps. Bind loopback beside a Proxy on
+    /// the host, or the pod address on a cluster, where the gate's Service reaches the Proxy.
+    /// Nothing but a Proxy may reach it. `off` turns it off. A non-loopback address is refused
+    /// unless `--box-listen-off-host` is also set.
+    #[arg(long, env = "MOOR_GATE_BOX_LISTEN", default_value = DEFAULT_BOX_LISTEN)]
+    box_listen: String,
+    /// Allows `--box-listen` to bind an address that is not loopback, such as the pod address
+    /// on a cluster. Set it only where nothing but a Proxy can reach that address, because the
+    /// listener trusts the `X-Moor-Box` header it is sent.
+    #[arg(long, env = "MOOR_GATE_BOX_LISTEN_OFF_HOST")]
+    box_listen_off_host: bool,
     /// The controller's front socket for the `authgear` front.
     #[arg(
         long,
@@ -101,10 +113,7 @@ fn main() -> ExitCode {
     let args = Args::parse();
     let controller = match args.client() {
         Ok(controller) => controller,
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let listener = match TcpListener::bind(&args.listen) {
         Ok(listener) => listener,
@@ -113,16 +122,18 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let boxes = guarded_box_listen(&args.box_listen, args.box_listen_off_host)
+        .and_then(|()| serve_boxes(&args.box_listen, &controller));
+    if let Err(why) = boxes {
+        return fail(&why);
+    }
     let mcp = match args
         .mcp_resource_url
         .map(|url| Mcp::with_setup(&url, controller.clone(), args.public_url.as_deref()))
         .transpose()
     {
         Ok(mcp) => mcp,
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let sign_in = |url: &str| {
         args.cookie_key
@@ -131,10 +142,7 @@ fn main() -> ExitCode {
     };
     let login = match args.public_url.as_deref().map(sign_in).transpose() {
         Ok(login) => login.map(Arc::new),
-        Err(why) => {
-            moor_gate_log(&why);
-            return ExitCode::FAILURE;
-        }
+        Err(why) => return fail(&why),
     };
     let gate = Arc::new(Gate {
         controller,
@@ -158,8 +166,65 @@ fn main() -> ExitCode {
     }
 }
 
+/// Refuses a `--box-listen` that is not loopback unless `off_host` opts in, so no caller off the
+/// host can name a Box unchecked. `off` and an address that does not resolve pass: the first
+/// binds nothing and the second fails on bind.
+fn guarded_box_listen(listen: &str, off_host: bool) -> Result<(), String> {
+    if listen == "off" || off_host {
+        return Ok(());
+    }
+    let reaches_off_host = listen
+        .to_socket_addrs()
+        .is_ok_and(|mut addrs| addrs.any(|a| !a.ip().is_loopback()));
+    if reaches_off_host {
+        return Err(format!(
+            "--box-listen {listen} is not loopback, so it needs --box-listen-off-host"
+        ));
+    }
+    Ok(())
+}
+
+/// Starts the Box-facing listener on `listen` in a thread of its own, unless it is `off`.
+fn serve_boxes(listen: &str, controller: &Client) -> Result<(), String> {
+    if listen == "off" {
+        return Ok(());
+    }
+    let listener = TcpListener::bind(listen)
+        .map_err(|e| format!("cannot listen on {listen} for Boxes: {e}"))?;
+    let boxes = Boxes::new(controller.clone())?;
+    std::thread::spawn(move || {
+        if let Err(e) = boxes.serve(listener) {
+            moor_gate_log(&format!("the Box listener stopped: {e}"));
+        }
+    });
+    Ok(())
+}
+
+/// Logs `why` and gives the exit code of a gate that cannot run.
+fn fail(why: &str) -> ExitCode {
+    moor_gate_log(why);
+    ExitCode::FAILURE
+}
+
 /// Writes one `moor-gate: <msg>` line to stderr.
 fn moor_gate_log(msg: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "moor-gate: {msg}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::guarded_box_listen;
+
+    #[test]
+    fn a_box_listener_off_the_loopback_needs_the_opt_in() {
+        for addr in ["127.0.0.1:8444", "[::1]:8444", "localhost:8444", "off"] {
+            assert_eq!(guarded_box_listen(addr, false), Ok(()), "{addr}");
+        }
+        for addr in ["0.0.0.0:8444", "10.1.2.3:8444", "[::]:8444"] {
+            let why = guarded_box_listen(addr, false).unwrap_err();
+            assert!(why.contains("--box-listen-off-host"), "{addr}: {why}");
+            assert_eq!(guarded_box_listen(addr, true), Ok(()), "{addr}");
+        }
+    }
 }

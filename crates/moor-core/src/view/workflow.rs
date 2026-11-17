@@ -165,3 +165,13 @@ pub struct WorkflowRunsValue {
     /// The cursor to send next time; the one sent when there were no changes.
     pub next: i64,
 }
+
+/// Value of `step-report`: what the agent is told next, and whether it is an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepReportValue {
+    /// What to do next, in words for the agent.
+    pub reply: String,
+    /// Whether the report was refused or has no run to count for, so the agent should act on
+    /// the reply before it reports again.
+    pub error: bool,
+}
