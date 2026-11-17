@@ -90,10 +90,7 @@ gate:
   # Proxy routes that host to the gate's Box listener and stamps the Box's id, which the listener
   # trusts. On, every Box gets the moor MCP server and the gate's controller entry may report
   # steps. With egress.enabled the listener binds the pod address behind the ClusterIP Service
-  # <release>-gate-boxes, so the egress pods can reach it. Off by default: the chart has no
-  # NetworkPolicy, so turn it on only where nothing but the egress pods can reach that port on
-  # the gate pods. Two or more gate replicas also need one replica to keep each Box's MCP
-  # session, which the listener does not share.
+  # <release>-gate-boxes. Off by default, since the chart has no NetworkPolicy: docs/kubernetes.md.
   stepReports: false
   boxPort: 8444
   # /front is a WebSocket held open for a whole session: the ingress must allow long-lived

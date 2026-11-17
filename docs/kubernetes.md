@@ -93,10 +93,6 @@ turn the key on only where nothing but the egress pods can reach
 port only from pods labelled `app.kubernetes.io/name: moor-egress`. It must
 keep the pod's other ports open.
 
-The listener keeps each Box's MCP session in memory. With `gate.separate` and
-two or more replicas, a Box's calls can reach a replica without its session.
-Keep one gate replica until the listener shares sessions.
-
 ## Run the controller without a volume
 
 With `database.url` and `blobs.s3` both set, the controller keeps its store in
