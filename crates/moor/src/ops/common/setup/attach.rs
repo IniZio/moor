@@ -9,7 +9,7 @@ use moor_core::boxscript::setup::setup_script;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxPath;
 
@@ -128,16 +128,17 @@ fn attach_spec(
         private_dir(dir).map_err(|e| Failure::Prepare(format!("{}: {e}", dir.display())))?;
     }
     let script = ["sh", "-c", &setup_script(&cfg.setup)].map(quote).join(" ");
-    let spec = ExecSpec {
-        argv: exec.argv(vec![
+    let spec = ExecSpec::new(
+        Place::Work,
+        exec.argv(vec![
             "sh".to_owned(),
             "-c".to_owned(),
             attached_script(run, &script),
         ]),
-        env: exec.vars(),
-        cwd: exec.cwd(),
-        output: Some(Output::Log(output.to_path_buf())),
-    };
+    )
+    .env(exec.vars())
+    .cwd(exec.cwd())
+    .output(Some(Output::Log(output.to_path_buf())));
     let Deadline(limit) = exec.deadline();
     Ok((spec, limit))
 }

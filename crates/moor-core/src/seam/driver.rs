@@ -157,12 +157,18 @@ pub trait Driver: Send + Sync + Forwards {
         ))
     }
 
-    /// Copies a file or directory out of the Box to the host path `to`, or into `to` when it is
+    /// Copies a file or directory out of `place` in the Box to the host path `to`, or into `to` when it is
     /// a directory. A failed copy leaves nothing at the destination.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the copy fails.
-    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError>;
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        place: Place,
+        from: &BoxPath,
+        to: &Path,
+    ) -> Result<(), DriverError>;
 
     /// Streams the regular files `names` from directory `dir` in the Box in one round trip,
     /// calling `sink` once per file received, in stream order. `Some(reader)` yields exactly that
@@ -186,15 +192,20 @@ pub trait Driver: Send + Sync + Forwards {
         Err(DriverError::Unsupported("streaming files"))
     }
 
-    /// Reads one file in the Box without queueing behind a running command.
+    /// Reads one file in `place` in the Box without queueing behind a running command.
     /// `Ok(None)` means the file does not exist.
     ///
     /// # Errors
     /// Returns [`DriverError::Timeout`] when the read hangs, and another
     /// [`DriverError`] when the Box cannot be reached or the file cannot be read.
-    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError>;
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        place: Place,
+        path: &BoxPath,
+    ) -> Result<Option<String>, DriverError>;
 
-    /// Writes `bytes` to `path` in the Box, creating missing parent directories,
+    /// Writes `bytes` to `path` in `place` in the Box, creating missing parent directories,
     /// and leaves the file at `mode`. The content travels on stdin, never in argv.
     ///
     /// # Errors
@@ -204,18 +215,19 @@ pub trait Driver: Send + Sync + Forwards {
     fn put_file(
         &self,
         handle: &BoxHandle,
+        place: Place,
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
     ) -> Result<(), DriverError>;
 
-    /// The `ssh -t <target>` argv that opens a terminal on the Box, for a pane to run.
+    /// The `ssh -t <target>` argv that opens a terminal on `place` in the Box, for a pane to run.
     /// Takes no lease lock.
     ///
     /// # Errors
     /// Returns [`DriverError::NotFound`] when the Box is gone, and another
     /// [`DriverError`] when the target cannot be looked up.
-    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError>;
+    fn connect_argv(&self, handle: &BoxHandle, place: Place) -> Result<Vec<String>, DriverError>;
 
     /// Exposes the host Unix socket `socket` inside the Box on loopback `box_port` until the
     /// returned handle drops. It opens `socket` per Box connection, so it reaches a listener
@@ -253,7 +265,7 @@ pub trait Driver: Send + Sync + Forwards {
         Err(DriverError::Unsupported("local tunnel"))
     }
 
-    /// Runs `steps` in order in one round trip where the provider can. `connect` is what
+    /// Runs `steps` in `place` in order in one round trip where the provider can. `connect` is what
     /// `connect_argv` returned for `handle`; a driver may reach the Box through it rather than
     /// looking the target up again. The batch stops after a step that errs or a `Run` that does
     /// not exit 0, so the result holds one entry per step run, the last being the one that stopped it.
@@ -261,11 +273,12 @@ pub trait Driver: Send + Sync + Forwards {
         &self,
         handle: &BoxHandle,
         connect: &[String],
+        place: Place,
         steps: &[BoxStep],
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
         let _ = connect;
-        run_each(self, handle, steps, deadline)
+        run_each(self, handle, place, steps, deadline)
     }
 
     /// Starts `spec` as run `run`, detached so it outlives moor and the connection to the Box.

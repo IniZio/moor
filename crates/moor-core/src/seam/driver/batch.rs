@@ -5,7 +5,7 @@ use std::fmt;
 use crate::name::{BoxHandle, BoxPath};
 use crate::seam::proc::Deadline;
 
-use super::{Driver, DriverError, ExecOutcome, ExecSpec};
+use super::{Driver, DriverError, ExecOutcome, ExecSpec, Place};
 
 /// One step of a Box batch.
 #[derive(Clone, PartialEq, Eq)]
@@ -57,7 +57,7 @@ pub enum StepDone {
     Put,
 }
 
-/// Runs `steps` one call at a time through the other [`Driver`] methods.
+/// Runs `steps` in `place` one call at a time through the other [`Driver`] methods.
 ///
 /// Stops after a step that errs or a `Run` that does not exit 0, so the result
 /// holds one entry per step run, the last being the one that stopped it. The
@@ -65,20 +65,16 @@ pub enum StepDone {
 pub fn run_each<D: Driver + ?Sized>(
     driver: &D,
     handle: &BoxHandle,
+    place: Place,
     steps: &[BoxStep],
     deadline: Deadline,
 ) -> Vec<Result<StepDone, DriverError>> {
     let mut done = Vec::with_capacity(steps.len());
     for step in steps {
         let result = match step {
-            BoxStep::Peek(path) => driver.peek_file(handle, path).map(StepDone::Peeked),
+            BoxStep::Peek(path) => driver.peek_file(handle, place, path).map(StepDone::Peeked),
             BoxStep::Run(script) => {
-                let spec = ExecSpec {
-                    argv: vec!["sh".into(), "-c".into(), script.clone()],
-                    env: vec![],
-                    cwd: None,
-                    output: None,
-                };
+                let spec = ExecSpec::new(place, vec!["sh".into(), "-c".into(), script.clone()]);
                 driver
                     .exec(handle, &spec, deadline)
                     .map(|outcome| StepDone::Ran {
@@ -87,7 +83,7 @@ pub fn run_each<D: Driver + ?Sized>(
                     })
             }
             BoxStep::Put { path, bytes, mode } => driver
-                .put_file(handle, path, bytes, *mode)
+                .put_file(handle, place, path, bytes, *mode)
                 .map(|()| StepDone::Put),
         };
         let stop = match &result {

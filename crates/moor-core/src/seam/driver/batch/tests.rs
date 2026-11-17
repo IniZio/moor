@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use super::*;
@@ -14,6 +15,15 @@ struct Scripted {
     exec_codes: Vec<i32>,
     next: AtomicUsize,
     peek_fails: bool,
+    places: Mutex<Vec<Place>>,
+}
+
+impl Scripted {
+    fn note(&self, place: Place) {
+        if let Ok(mut seen) = self.places.lock() {
+            seen.push(place);
+        }
+    }
 }
 
 fn no<T>() -> Result<T, DriverError> {
@@ -47,26 +57,41 @@ impl Driver for Scripted {
         spec: &ExecSpec,
         _: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
+        self.note(spec.place);
         assert_eq!(spec.argv[..2], ["sh", "-c"]);
         let i = self.next.fetch_add(1, Ordering::SeqCst);
         Ok(ExecOutcome::Exited {
             code: self.exec_codes[i],
         })
     }
-    fn copy_out(&self, _: &BoxHandle, _: &BoxPath, _: &Path) -> Result<(), DriverError> {
+    fn copy_out(&self, _: &BoxHandle, _: Place, _: &BoxPath, _: &Path) -> Result<(), DriverError> {
         no()
     }
-    fn peek_file(&self, _: &BoxHandle, _: &BoxPath) -> Result<Option<String>, DriverError> {
+    fn peek_file(
+        &self,
+        _: &BoxHandle,
+        place: Place,
+        _: &BoxPath,
+    ) -> Result<Option<String>, DriverError> {
+        self.note(place);
         if self.peek_fails {
             Err(DriverError::NotFound)
         } else {
             Ok(None)
         }
     }
-    fn put_file(&self, _: &BoxHandle, _: &BoxPath, _: &[u8], _: u32) -> Result<(), DriverError> {
+    fn put_file(
+        &self,
+        _: &BoxHandle,
+        place: Place,
+        _: &BoxPath,
+        _: &[u8],
+        _: u32,
+    ) -> Result<(), DriverError> {
+        self.note(place);
         Ok(())
     }
-    fn connect_argv(&self, _: &BoxHandle) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, _: &BoxHandle, _: Place) -> Result<Vec<String>, DriverError> {
         no()
     }
     fn reverse_tunnel(
@@ -90,9 +115,14 @@ fn path() -> BoxPath {
 }
 
 fn run(d: &Scripted, steps: &[BoxStep]) -> Vec<Result<StepDone, DriverError>> {
+    run_in(d, Place::Work, steps)
+}
+
+fn run_in(d: &Scripted, place: Place, steps: &[BoxStep]) -> Vec<Result<StepDone, DriverError>> {
     run_each(
         d,
         &BoxHandle::new("h"),
+        place,
         steps,
         Deadline(Duration::from_secs(1)),
     )
@@ -104,6 +134,7 @@ fn stops_after_nonzero_run() {
         exec_codes: vec![0, 3, 0],
         next: AtomicUsize::new(0),
         peek_fails: false,
+        places: Mutex::default(),
     };
     let steps = [
         BoxStep::Run("a".into()),
@@ -127,6 +158,7 @@ fn stops_after_err() {
         exec_codes: vec![],
         next: AtomicUsize::new(0),
         peek_fails: true,
+        places: Mutex::default(),
     };
     let steps = [BoxStep::Peek(path()), BoxStep::Run("a".into())];
     let out = run(&d, &steps);
@@ -140,6 +172,7 @@ fn runs_all_when_clean() {
         exec_codes: vec![0],
         next: AtomicUsize::new(0),
         peek_fails: false,
+        places: Mutex::default(),
     };
     let steps = [
         BoxStep::Put {
@@ -164,4 +197,28 @@ fn debug_hides_put_bytes() {
     };
     let text = format!("{s:?}");
     assert!(!text.contains("secret") && text.contains("len: 6"));
+}
+
+#[test]
+fn every_step_runs_in_the_place_the_batch_was_given() {
+    for place in [Place::Agent, Place::Work] {
+        let d = Scripted {
+            exec_codes: vec![0],
+            next: AtomicUsize::new(0),
+            peek_fails: false,
+            places: Mutex::default(),
+        };
+        let steps = [
+            BoxStep::Put {
+                path: path(),
+                bytes: vec![1],
+                mode: 0o600,
+            },
+            BoxStep::Run("a".into()),
+            BoxStep::Peek(path()),
+        ];
+        assert_eq!(run_in(&d, place, &steps).len(), 3);
+        let seen = d.places.lock().map(|p| p.clone()).unwrap_or_default();
+        assert_eq!(seen, [place; 3]);
+    }
 }

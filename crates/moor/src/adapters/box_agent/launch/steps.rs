@@ -4,7 +4,7 @@ use moor_core::boxscript::profile::PROFILE_DIR;
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::BoxSetup;
-use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::agent_env;
@@ -174,7 +174,13 @@ impl Launch<'_> {
     /// Runs the steps of `plan` as one batch, which stops at its first failed step.
     pub(super) fn execute(&self, connect: &[String], plan: &Plan) -> Result<(), Failure> {
         let deadline = Deadline(BATCH_DEADLINE);
-        let results = (self.driver).batch(&self.req.handle, connect, &plan.steps, deadline);
+        let results = (self.driver).batch(
+            &self.req.handle,
+            connect,
+            Place::Agent,
+            &plan.steps,
+            deadline,
+        );
         for (result, &tag) in results.into_iter().zip(&plan.tags) {
             match tag {
                 Tag::Agent => gate(tag, result)?,

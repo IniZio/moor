@@ -9,7 +9,7 @@ use moor_core::boxscript::quote;
 use moor_core::config::{BoxSettings, DotfilesConfig};
 use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
 use moor_core::view::DotfilesView;
 use moor_core::{BoxHandle, BoxId, BoxPath};
@@ -127,12 +127,12 @@ fn install(
 ) -> Result<ExecOutcome, String> {
     let env = box_exec::prepare(cx, site, proxy, cfg, Purpose::Run)
         .map_err(|e| format!("could not prepare the dotfiles install: {e}"))?;
-    let exec = ExecSpec {
-        argv: env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
-        env: env.vars(),
-        cwd: None,
-        output: Some(Output::Log(log.to_path_buf())),
-    };
+    let exec = ExecSpec::new(
+        Place::Work,
+        env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
+    )
+    .env(env.vars())
+    .output(Some(Output::Log(log.to_path_buf())));
     cx.driver()
         .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE))
         .map_err(|e| exec_failure("dotfiles install", &e))
@@ -190,7 +190,7 @@ fn deliver(
     let archive = BoxPath::under(&stage, "dotfiles.tgz")
         .map_err(|e| fail(format!("could not upload dotfiles: {e}")))?;
     cx.driver()
-        .put_file(handle, &archive, &bytes, 0o600)
+        .put_file(handle, Place::Work, &archive, &bytes, 0o600)
         .map_err(|e| fail(format!("could not upload dotfiles: {e}")))?;
     let log = cx
         .state_dir()

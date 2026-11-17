@@ -39,8 +39,8 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, HandlesListing, Launched, LocalTunnel, Released, RunEnd,
-    SleepOutcome, StepDone, TunnelHandle,
+    ExecOutcome, ExecSpec, Followed, HandlesListing, Launched, LocalTunnel, Place, Released,
+    RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -243,7 +243,13 @@ impl Driver for Crabbox {
         exec::run(self, handle, spec, deadline)
     }
 
-    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        _place: Place,
+        from: &BoxPath,
+        to: &Path,
+    ) -> Result<(), DriverError> {
         self.require_version()?;
         cp::copy_out(self, handle, from, to)
     }
@@ -292,7 +298,12 @@ impl Driver for Crabbox {
         runbox::cancel(self, h, run, grace)
     }
 
-    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        _place: Place,
+        path: &BoxPath,
+    ) -> Result<Option<String>, DriverError> {
         self.require_version()?;
         peek::peek_file(self, handle, path)
     }
@@ -300,6 +311,7 @@ impl Driver for Crabbox {
     fn put_file(
         &self,
         handle: &BoxHandle,
+        _place: Place,
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
@@ -312,6 +324,7 @@ impl Driver for Crabbox {
         &self,
         handle: &BoxHandle,
         connect: &[String],
+        _place: Place,
         steps: &[BoxStep],
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
@@ -331,7 +344,7 @@ impl Driver for Crabbox {
         piped::run(self, handle, spec, pipes)
     }
 
-    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, handle: &BoxHandle, _place: Place) -> Result<Vec<String>, DriverError> {
         self.require_version()?;
         connect::connect_argv(self, handle)
     }

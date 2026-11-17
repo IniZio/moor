@@ -8,7 +8,7 @@ use std::path::Path;
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, NOTHING_TO_ARCHIVE};
-use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, Place, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::{Deadline, OUTPUT_CAP};
 
@@ -119,14 +119,14 @@ pub(super) fn save(
         profile.transcript_script(ARCHIVE)
     );
     let connect = driver
-        .connect_argv(&s.handle)
+        .connect_argv(&s.handle, Place::Agent)
         .map_err(|e| lost_or(e, |e| fail("archive", e.to_string())))?;
     let steps = [
         BoxStep::Run(script),
         BoxStep::Run(stream_script(s.workdir.as_str(), STREAM_CAP)),
     ];
     let mut done = driver
-        .batch(&s.handle, &connect, &steps, deadline)
+        .batch(&s.handle, &connect, Place::Agent, &steps, deadline)
         .into_iter();
     match done.next() {
         Some(Ok(StepDone::Ran {
@@ -156,7 +156,7 @@ pub(super) fn save(
     let from =
         BoxPath::under(s.workdir.as_str(), ARCHIVE).map_err(|e| fail("copy", e.to_string()))?;
     driver
-        .copy_out(&s.handle, &from, dest)
+        .copy_out(&s.handle, Place::Agent, &from, dest)
         .map_err(|e| lost_or(e, |e| fail("copy", e.to_string())))
 }
 

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use moor_core::boxscript::quote;
 use moor_core::domain::hands::HandsState;
-use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, ExecSpec, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
@@ -202,12 +202,11 @@ fn run(
             .workdir(handle)
             .map_err(|e| format!("cannot find the box workdir: {e}"))?,
     };
-    let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), INDEX_SCRIPT.to_owned()],
-        env: Vec::new(),
-        cwd: Some(workdir.clone()),
-        output: None,
-    };
+    let spec = ExecSpec::new(
+        Place::Agent,
+        vec!["sh".to_owned(), "-c".to_owned(), INDEX_SCRIPT.to_owned()],
+    )
+    .cwd(Some(workdir.clone()));
     let allowed = tally.within.map_or(INDEX_DEADLINE, |(within, _)| within);
     match cx.driver().exec(handle, &spec, Deadline(allowed)) {
         Ok(ExecOutcome::Exited { code: 0 }) => {}
@@ -312,7 +311,7 @@ fn peek(
 ) -> Result<Option<String>, String> {
     let path = BoxPath::under(workdir.as_str(), rel).map_err(|e| format!("bad path: {e}"))?;
     cx.driver()
-        .peek_file(handle, &path)
+        .peek_file(handle, Place::Agent, &path)
         .map_err(|e| format!("cannot read a report file: {e}"))
 }
 

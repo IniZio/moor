@@ -43,11 +43,25 @@ b=$(awk '
 # shellcheck disable=SC2086
 c=$(grep -nE '\.env( =|\.push\(|\.extend\()' $files /dev/null | grep -Ev "^[^:]*:[0-9]+:[[:space:]]*//" \
   | grep -v '^crates/moor-core/src/seam/proc.rs:' | sed 's/$/  <- ExecSpec env mutated after construction/' || true)
+# (c2) in a statement that builds an `ExecSpec::new(..)`, a `.env(..)` call takes `<path>.vars()` or
+# `<path>.vars.clone()` on its own line; the builder's `env` is the only way to set it, so the forms
+# are the same as (b)'s.
+# shellcheck disable=SC2086
+c2=$(awk '
+  FNR == 1 { open = 0 }
+  /ExecSpec::new\(/ { open = 1 }
+  open {
+    if (match($0, /\.env\(/)) {
+      rest = substr($0, RSTART)
+      if (rest !~ /^\.env\([A-Za-z0-9_.]+\.vars(\(\)|\.clone\(\))\)/) print FILENAME ":" FNR ":" $0 "  <- ExecSpec env not from exec_env"
+    }
+    if ($0 ~ /;[ \t]*$/) open = 0
+  }' $files || true)
 # (d) `vars` producers live in exec_env.rs (ExecEnv.vars) and box_exec.rs (BoxExec::vars) only.
 # shellcheck disable=SC2086
 d=$(grep -nE 'fn vars\(' $files /dev/null | grep -v '^crates/moor/src/ops/common/box_exec.rs:' \
   | sed 's/$/  <- vars producer outside exec_env\/box_exec/' || true)
-hits=$(printf '%s\n%s\n%s\n%s\n' "$a" "$b" "$c" "$d" | sed '/^$/d')
+hits=$(printf '%s\n%s\n%s\n%s\n%s\n' "$a" "$b" "$c" "$c2" "$d" | sed '/^$/d')
 if [ -n "$hits" ]; then
   echo "exec-env: Box exec env built outside moor_core::exec_env"
   echo "$hits"

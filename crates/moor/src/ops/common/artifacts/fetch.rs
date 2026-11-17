@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::artifact::ArtifactFile;
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, Place};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath};
 use sha2::{Digest, Sha256};
@@ -149,7 +149,11 @@ impl Fetch<'_> {
         };
         let staged = self.staging.join(name);
         discard(&staged);
-        if let Err(e) = self.cx.driver().copy_out(self.handle, &from, &staged) {
+        if let Err(e) = self
+            .cx
+            .driver()
+            .copy_out(self.handle, Place::Agent, &from, &staged)
+        {
             skipped(
                 self.cx,
                 &format!("artifact {name} could not be copied: {e}; it will be tried next time"),

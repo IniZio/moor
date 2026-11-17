@@ -2,6 +2,7 @@
 //!
 //! Holds the Box's turn for the copy and never syncs a checkout.
 
+use moor_core::seam::driver::Place;
 use std::fs;
 use std::path::Path;
 
@@ -54,7 +55,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     }
     let handle = usable_handle(&row)?;
     let from = source(cx, &row, &handle, &req.src)?;
-    let copied = cx.driver().copy_out(&handle, &from, &to);
+    let copied = cx.driver().copy_out(&handle, Place::Work, &from, &to);
     let event = ExtraEvent::Copied {
         from: from.as_str().to_owned(),
         to: to.display().to_string(),

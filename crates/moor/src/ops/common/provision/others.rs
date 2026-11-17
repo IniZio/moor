@@ -5,7 +5,7 @@ use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
@@ -161,12 +161,13 @@ fn prepare_clone(
     };
     let proxy = proxy.as_ref().ok().and_then(Option::as_ref);
     let exec = box_exec::prepare(cx, &site, proxy, cfg, Purpose::Clone)?;
-    let spec = ExecSpec {
-        argv: exec.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
-        env: exec.vars(),
-        cwd: exec.cwd(),
-        output: log.clone().map(Output::Log),
-    };
+    let spec = ExecSpec::new(
+        Place::Work,
+        exec.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
+    )
+    .env(exec.vars())
+    .cwd(exec.cwd())
+    .output(log.clone().map(Output::Log));
     Ok(CloneJob {
         spec,
         deadline: exec.deadline(),

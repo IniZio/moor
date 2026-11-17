@@ -6,7 +6,7 @@ pub(in crate::adapters::box_agent) use moor_core::boxscript::AGENT_PATH_LINE;
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, Place, StepDone};
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 
@@ -51,7 +51,7 @@ pub(super) fn launch(
     req: &LaunchReq,
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
-        .connect_argv(&req.handle)
+        .connect_argv(&req.handle, Place::Agent)
         .map_err(|e| failed(fail("connect", &e)))?;
     let (home, root) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
@@ -111,7 +111,7 @@ fn dirs_in(home: &BoxPath, req: &LaunchReq) -> Result<(BoxPath, BoxPath), Failur
 /// The credential and tmp directories a launch of `req` creates on its Box.
 pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath), EngineError> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| failed(fail("home", &e)))?;
-    let text = match d.peek_file(&req.handle, &environ) {
+    let text = match d.peek_file(&req.handle, Place::Agent, &environ) {
         Ok(Some(text)) => text,
         Ok(None) => return Err(failed(fail("home", &"the Box has no process environment"))),
         Err(e) => return Err(failed(fail("home", &e))),
@@ -128,7 +128,7 @@ fn open_box(
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
     let steps = [BoxStep::Peek(environ)];
     let deadline = Deadline(BATCH_DEADLINE);
-    let done = driver.batch(&req.handle, connect, &steps, deadline);
+    let done = driver.batch(&req.handle, connect, Place::Agent, &steps, deadline);
     box_user(done.into_iter().next())
 }
 
@@ -210,7 +210,7 @@ impl Launch<'_> {
         let deadline = Deadline(BATCH_DEADLINE);
         match self
             .driver
-            .batch(&self.req.handle, connect, &steps, deadline)
+            .batch(&self.req.handle, connect, Place::Agent, &steps, deadline)
             .pop()
         {
             Some(Ok(StepDone::Ran {
@@ -236,14 +236,12 @@ fn remove_cred(
     req: &LaunchReq,
     (cred, tmp): (&BoxPath, &BoxPath),
 ) -> Result<(), String> {
-    let spec = ExecSpec {
-        argv: ["rm", "-rf", cred.as_str(), tmp.as_str()]
+    let spec = ExecSpec::new(
+        Place::Agent,
+        ["rm", "-rf", cred.as_str(), tmp.as_str()]
             .map(str::to_owned)
             .to_vec(),
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
+    );
     match driver.exec(&req.handle, &spec, Deadline(CLEANUP_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
         Ok(ExecOutcome::Exited { code }) => Err(format!("rm exited {code}")),

@@ -4,6 +4,7 @@
 use moor_core::boxscript::quote;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
+use moor_core::seam::driver::Place;
 use moor_core::{AttachReq, ErrorKind};
 
 use crate::cx::Cx;
@@ -39,9 +40,10 @@ pub(crate) fn argv(cx: &Cx, req: &AttachReq) -> Result<Vec<String>, CommandError
         .handle
         .as_ref()
         .ok_or_else(|| refused("has no machine yet"))?;
+    let place = if req.shell { Place::Work } else { Place::Agent };
     let connect = cx
         .driver()
-        .connect_argv(handle)
+        .connect_argv(handle, place)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
     if req.shell {
         let recorded = boxed.workdir.as_deref().and_then(recorded_workdir);

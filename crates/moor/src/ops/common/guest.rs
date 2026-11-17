@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, Place};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind};
 
 use crate::cx::Cx;
@@ -34,7 +34,7 @@ pub(crate) fn await_guest(
     let mut attempts = 0;
     loop {
         attempts += 1;
-        let Err(e) = cx.driver().peek_file(handle, &probe) else {
+        let Err(e) = cx.driver().peek_file(handle, Place::Agent, &probe) else {
             return Ok(());
         };
         if let DriverError::Misconfigured { .. } = e {

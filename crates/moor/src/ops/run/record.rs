@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::command_line;
 use moor_core::boxscript::quote;
 use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE};
-use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxPath, ErrorKind, Sha};
 
@@ -39,9 +39,13 @@ pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
         head_script()
     );
     let steps = [BoxStep::Run(script), BoxStep::Peek(path)];
-    let done = cx
-        .driver()
-        .batch(&target.handle, &[], &steps, Deadline(HEAD_DEADLINE));
+    let done = cx.driver().batch(
+        &target.handle,
+        &[],
+        Place::Work,
+        &steps,
+        Deadline(HEAD_DEADLINE),
+    );
     let text = match done.as_slice() {
         [Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code: 0 },
