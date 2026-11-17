@@ -30,6 +30,7 @@ mod machine_boxes;
 mod pause_publish;
 mod proxy_key;
 mod proxy_state;
+mod repo_config;
 mod resume_memory;
 mod said_at;
 mod session_archive;
@@ -181,6 +182,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V79__drop_checkpoints",
         write: drop_checkpoints::write,
+    },
+    Step {
+        name: "V80__repo_config",
+        write: repo_config::write,
     },
 ];
 
