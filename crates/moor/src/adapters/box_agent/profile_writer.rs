@@ -32,8 +32,8 @@ pub(crate) trait ProfileWriter {
     /// agent reads them, on each launch.
     fn write(&self, ctx: &ProfileCtx<'_>) -> Result<BoxSetup, NameError>;
 
-    /// The shell lines that add `manifest`'s marketplaces and install its plugins, which last across
-    /// a checkpoint. They read the checkout as `$d`, and report through `fail`.
+    /// The shell lines that add `manifest`'s marketplaces and install its plugins. They read the
+    /// checkout as `$d`, and report through `fail`.
     fn installs(&self, manifest: &Manifest) -> String;
 
     /// The repos those lines install from. The profile's own checkout is not one, as its commit is

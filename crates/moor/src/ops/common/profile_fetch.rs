@@ -66,8 +66,7 @@ pub(crate) fn apply(
     Ok(ran && installed)
 }
 
-/// Runs the plugin installs of `profile`'s manifest, ahead of the launch so a checkpoint can hold
-/// them; whether they all went well. Each one that failed is recorded, and the rest still ran.
+/// Runs the plugin installs of `profile`'s manifest, ahead of the launch; whether they all went well. Each one that failed is recorded, and the rest still ran.
 fn plugin_installs(
     cx: &Cx,
     store: &Store,

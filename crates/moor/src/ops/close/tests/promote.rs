@@ -151,6 +151,7 @@ fn on_provider_node(cx: &Cx, id: BoxId, provider: &str) {
 
 fn start_req(name: &str) -> StartReq {
     StartReq {
+        cold: false,
         name: BoxName::parse_allow_bare(name).unwrap(),
         prompt: None,
         issue: None,

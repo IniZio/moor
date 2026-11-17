@@ -13,8 +13,9 @@ use super::interpreters;
 /// the workdir, its resolved path and the git repository root above that, since Claude Code keys
 /// trust by the physical cwd and accepts a trusted repository root for any folder inside it.
 ///
-/// A home with no [`IDENTITY_MARK`] has not yet seen a launch, but may hold a checkpoint's identity
-/// from `claude plugin`, shared with every fork of it. That goes once, and the agent makes its own.
+/// A home with no [`IDENTITY_MARK`] has not yet seen a launch, but may hold an identity from
+/// `claude plugin`, which a Box copied from another would share. That goes once, and the agent
+/// makes its own.
 const PRESEED_PY: &str = r#"
 import json, os, sys
 p, w = sys.argv[1:3]

@@ -307,6 +307,7 @@ struct StartArgs {
 impl From<StartArgs> for StartReq {
     fn from(a: StartArgs) -> Self {
         Self {
+            cold: false,
             name: a.name,
             prompt: a.prompt,
             issue: a.issue,

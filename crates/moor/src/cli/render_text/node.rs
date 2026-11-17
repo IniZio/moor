@@ -58,23 +58,7 @@ fn load_text(n: &Value) -> Option<String> {
         .map_or_else(String::new, |t| {
             format!("  pressure: high since {}", stamp::utc(t))
         });
-    Some(format!(
-        "{used}/{cap}{mem}{disk}{held}{pressure}{}",
-        warm_text(n)
-    ))
-}
-
-/// Whether a Box there can start from a checkpoint, and why not; nothing when no agent said.
-fn warm_text(n: &Value) -> String {
-    let warm = n.get("warm_starts");
-    match warm.and_then(|w| w.get("state")).and_then(Value::as_str) {
-        Some("on") => "  warm starts on".to_owned(),
-        Some(_) => {
-            let why = warm.and_then(|w| w.get("why")).and_then(Value::as_str);
-            format!("  warm starts off: {}", why.unwrap_or("no reason given"))
-        }
-        None => String::new(),
-    }
+    Some(format!("{used}/{cap}{mem}{disk}{held}{pressure}"))
 }
 
 /// One line per node: name, scope, runtime, link state, used/capacity and labels.
@@ -112,6 +96,3 @@ pub(super) fn list_text(value: &Value) -> Option<String> {
     }
     Some(out)
 }
-
-#[cfg(test)]
-mod tests;

@@ -28,6 +28,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
     })?;
     Ok(ControllerRequest::Start(StartReq {
+        cold: false,
         name,
         prompt: args.prompt,
         issue: None,

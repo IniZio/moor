@@ -168,6 +168,7 @@ fn start_owner_box(r: &Rig) -> BoxId {
     crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
+            cold: false,
             name: moor_core::BoxName::parse_allow_bare("owner-box").unwrap(),
             prompt: None,
             issue: None,
@@ -458,6 +459,7 @@ fn the_keep_count_starts_again_after_a_run_that_did_not_keep_the_box() {
     crate::ops::workflow::tick(&r.cx, &|j| *job.borrow_mut() = Some(j), &|| false);
     let job = job.into_inner().unwrap();
     let req = moor_core::StartReq {
+        cold: false,
         name: job.name.clone(),
         prompt: Some(job.prompt.clone()),
         issue: None,

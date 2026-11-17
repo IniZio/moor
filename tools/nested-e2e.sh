@@ -69,7 +69,6 @@ external:
   command: $(command -v crabbox-cloudhypervisor)
   capabilities:
     idempotentLeaseId: true
-    checkpoints: true
   connection:
     ssh:
       trustProviderOutput: true

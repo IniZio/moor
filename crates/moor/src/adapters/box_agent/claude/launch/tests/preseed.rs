@@ -170,7 +170,7 @@ fn preseed_failure_fails_the_step() {
     assert_eq!(fs::read_to_string(&path).unwrap(), "not json");
 }
 
-/// What a checkpoint holds when a plugin install ran before the agent ever started.
+/// What a copied home holds when a plugin install ran before the agent ever started.
 const FORKED: &str = r#"{"machineID":"m","userID":"u","firstStartTime":"t","migrationVersion":14}"#;
 
 fn check_a_forked_home_gets_a_new_identity_once(path: Option<&str>, merges: bool) {

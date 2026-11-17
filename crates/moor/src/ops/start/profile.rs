@@ -88,7 +88,7 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
 
 /// The commit of each of `listed`, and why for each that has none. A ref that is a whole commit id
 /// needs no lookup. The rest are asked at once, and one still unanswered at `bound` counts as
-/// unresolved, so a slow forge costs a Box its checkpoint and not its start.
+/// unresolved, so a slow forge leaves a source unresolved and does not hold up the start.
 pub(crate) fn resolve_sources(
     cx: &Cx,
     listed: Vec<GitSource>,

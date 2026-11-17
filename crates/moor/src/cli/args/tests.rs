@@ -64,6 +64,7 @@ fn start_with_all_flags() {
     assert_eq!(
         r,
         Request::Start(StartReq {
+            cold: false,
             name: n("t1"),
             prompt: Some("g".into()),
             issue: Some("I-1".into()),
