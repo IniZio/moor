@@ -62,30 +62,113 @@ fn qualifier_ok(key: &str, value: &str) -> bool {
     NAMED.contains(&key) && is_name(value)
 }
 
-/// Requires every token to be allowed and the query to name the Box repo exactly once.
-pub(super) fn search_scope(query: &str, repo: &RepoRef) -> Result<(), Reason> {
+/// Deepest parenthesis nesting a query may use.
+const MAX_DEPTH: usize = 4;
+
+/// The whitespace-separated words of a query, with each leading `(` and trailing `)` of a
+/// word split off as a token of its own.
+fn tokens(query: &str) -> impl Iterator<Item = &str> {
+    query.split_ascii_whitespace().flat_map(|word| {
+        let inner = word.trim_start_matches('(');
+        let core = inner.trim_end_matches(')');
+        let opens = std::iter::repeat_n("(", word.len() - inner.len());
+        let closes = std::iter::repeat_n(")", inner.len() - core.len());
+        opens
+            .chain(Some(core).filter(|c| !c.is_empty()))
+            .chain(closes)
+    })
+}
+
+/// Requires every token to be allowed and the query to name the Box repo exactly once,
+/// outside any group. With `grouped` the query may hold parenthesised groups, with `OR`,
+/// `AND` and `NOT` only inside them, as `gh pr list --search` sends: the Box repo term is
+/// joined by AND to every group, so no group widens the search past it. Only advanced search
+/// reads groups that way. A refusal carries the query with its values hidden.
+pub(super) fn search_scope(query: &str, repo: &RepoRef, grouped: bool) -> Result<(), Reason> {
     let want = format!("{}/{}", repo.owner, repo.name);
+    scope(query, &want, grouped).map_err(|reason| reason.with_query(masked(query, &want)))
+}
+
+/// Longest masked query kept, in characters.
+const MAX_MASKED: usize = 200;
+/// Refused qualifiers a masked query names, besides the allowed ones.
+const REFUSED_KEYS: &[&str] = &["org", "user", "owner", "in", "-repo", "-label", "repos"];
+
+/// Whether a masked query shows qualifier `key`, given in lower case.
+fn known_key(key: &str) -> bool {
+    key == "repo"
+        || key == "sort"
+        || FIXED.iter().any(|(k, _)| *k == key)
+        || NAMED.contains(&key)
+        || REFUSED_KEYS.contains(&key)
+}
+
+/// `query` with grouping, operators, known qualifier names, fixed values and the Box repo
+/// kept, and every other name, value and word shown as `…`.
+fn masked(query: &str, want: &str) -> String {
+    let words: Vec<String> = tokens(query).map(|t| mask(t, want)).collect();
+    words.join(" ").chars().take(MAX_MASKED).collect()
+}
+
+/// One token of [`masked`].
+fn mask(token: &str, want: &str) -> String {
+    let lower = token.to_ascii_lowercase();
+    if matches!(lower.as_str(), "(" | ")" | "or" | "and" | "not") {
+        return token.to_owned();
+    }
+    let Some((key, value)) = token.split_once(':') else {
+        return "…".to_owned();
+    };
+    let lower_key = key.to_ascii_lowercase();
+    let key = if known_key(&lower_key) { key } else { "…" };
+    let fixed = FIXED.iter().any(|(k, values)| {
+        *k == lower_key && values.contains(&value.to_ascii_lowercase().as_str())
+    });
+    let value = if lower_key == "repo" && value.eq_ignore_ascii_case(want) {
+        "{repo}"
+    } else if fixed || value.is_empty() {
+        value
+    } else {
+        "…"
+    };
+    format!("{key}:{value}")
+}
+
+/// The check of [`search_scope`].
+fn scope(query: &str, want: &str, grouped: bool) -> Result<(), Reason> {
     let mut seen = false;
-    for token in query.split_ascii_whitespace() {
+    let mut depth = 0_usize;
+    for token in tokens(query) {
         let denied = || Reason::new(format!("search term `{}` is not allowed", shown(token)));
-        let Some((key, value)) = token.split_once(':') else {
-            let word = token.chars().all(|c| name_char(c) && c != '/' && c != '@');
-            if !word || matches!(token.to_ascii_lowercase().as_str(), "or" | "and" | "not") {
-                return Err(denied());
-            }
-            continue;
-        };
-        let key = key.to_ascii_lowercase();
-        if key == "repo" {
-            if seen || !value.eq_ignore_ascii_case(&want) {
-                return Err(denied());
-            }
-            seen = true;
-        } else if !qualifier_ok(&key, value) {
-            return Err(denied());
+        match token {
+            "(" if grouped && depth < MAX_DEPTH => depth += 1,
+            ")" if grouped && depth > 0 => depth -= 1,
+            _ => match token.split_once(':') {
+                None => {
+                    let word = token.chars().all(|c| name_char(c) && c != '/' && c != '@');
+                    let operator =
+                        matches!(token.to_ascii_lowercase().as_str(), "or" | "and" | "not");
+                    if !word || (operator && depth == 0) {
+                        return Err(denied());
+                    }
+                }
+                Some((key, value)) if key.eq_ignore_ascii_case("repo") => {
+                    if seen || depth > 0 || !value.eq_ignore_ascii_case(want) {
+                        return Err(denied());
+                    }
+                    seen = true;
+                }
+                Some((key, value)) => {
+                    if !qualifier_ok(&key.to_ascii_lowercase(), value) {
+                        return Err(denied());
+                    }
+                }
+            },
         }
     }
-    if seen {
+    if depth > 0 {
+        Err(Reason::new("search query has an unclosed `(`"))
+    } else if seen {
         Ok(())
     } else {
         Err(Reason::new("search query needs `repo:<owner>/<name>`"))

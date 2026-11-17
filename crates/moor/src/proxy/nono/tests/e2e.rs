@@ -272,7 +272,14 @@ impl EgressSink for Recorder {
         self.push(format!("credential_failed({rule})"));
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, _: Option<&str>, _: &str) {
+    fn withheld(
+        &self,
+        host: &str,
+        rule: &str,
+        _: Option<&str>,
+        request: &crate::proxy::graphql::WithheldRequest,
+    ) {
+        let method = &request.method;
         self.push(format!("withheld({host}, {rule}, {method})"));
     }
 

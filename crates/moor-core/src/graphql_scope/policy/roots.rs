@@ -11,7 +11,10 @@ const VIEWER_FIELDS: &[&str] = &["login", "id", "databaseId", "name", "__typenam
 
 /// Search types whose results are issues and pull requests. gh picks
 /// `ISSUE_ADVANCED` when the schema offers it.
-const SEARCH_TYPES: &[&str] = &["ISSUE", "ISSUE_ADVANCED"];
+const SEARCH_TYPES: &[&str] = &["ISSUE", ADVANCED];
+
+/// The search type that reads parenthesised groups as groups.
+const ADVANCED: &str = "ISSUE_ADVANCED";
 
 /// The one type whose enum values the schema probe may list.
 const PROBED_ENUM: &str = "SearchType";
@@ -24,19 +27,21 @@ impl<'a> Policy<'a> {
     pub(super) fn search(&mut self, field: &'a Field) -> Result<(), Reason> {
         Self::only_args(field, SEARCH_ARGS)?;
         let kind = field.args.iter().find(|(k, _)| k == "type");
-        let issue = match kind.map(|(_, v)| v) {
-            Some(Value::Enum(name)) => SEARCH_TYPES.contains(&name.as_str()),
-            Some(var @ Value::Var(_)) => {
-                matches!(self.resolve(var)?, Json::String(name) if SEARCH_TYPES.contains(&name.as_str()))
-            }
-            _ => false,
+        let kind = match kind.map(|(_, v)| v) {
+            Some(Value::Enum(name)) => Some(name.clone()),
+            Some(var @ Value::Var(_)) => match self.resolve(var)? {
+                Json::String(name) => Some(name),
+                _ => None,
+            },
+            _ => None,
         };
-        if !issue {
+        let Some(kind) = kind.filter(|k| SEARCH_TYPES.contains(&k.as_str())) else {
             return Err(Reason::new(
                 "`search` needs `type: ISSUE` or `type: ISSUE_ADVANCED`",
             ));
-        }
-        super::query::search_scope(&self.arg_str(field, "query")?, self.repo)?;
+        };
+        let grouped = kind == ADVANCED;
+        super::query::search_scope(&self.arg_str(field, "query")?, self.repo, grouped)?;
         self.connection(&field.sel, "pr", 2)
     }
 

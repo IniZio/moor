@@ -34,8 +34,8 @@ pub(crate) trait EgressSink {
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
-    /// the credential, with its templated shape when one is sound, and why.
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str);
+    /// the credential, with its templated shape when one is sound; `request` says why.
+    fn withheld(&self, host: &str, rule: &str, shape: Option<&str>, request: &WithheldRequest);
     /// Records, once, that further distinct withheld requests are not reported.
     fn withheld_overflow(&self);
     /// The status of the open limit on `rule` recorded earlier, if any.
@@ -70,8 +70,8 @@ const MAX_WITHHELD: usize = 256;
 /// What has been reported for one Box.
 #[derive(Default)]
 struct Reported {
-    /// `(rule, method, shape, reason)` already reported.
-    keys: BTreeSet<(String, String, Option<String>, String)>,
+    /// `(rule, shape, request without its path)` already reported.
+    keys: BTreeSet<(String, Option<String>, WithheldRequest)>,
     /// Whether the overflow line has been written.
     overflowed: bool,
 }
@@ -138,6 +138,7 @@ impl Withheld {
             method: method.to_owned(),
             path: event.path.clone().unwrap_or_else(|| "/".to_owned()),
             reason: NO_MATCH.to_owned(),
+            query: None,
         };
         self.record(host, rule, &request, sink);
     }
@@ -170,13 +171,9 @@ impl Withheld {
         self.limits.excuse(host, status);
     }
 
-    /// Reports one withheld request once per `(rule, method, shape, reason)`.
+    /// Reports one withheld request once per rule, shape, and request other than its path.
     fn record(&self, host: &str, rule: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
-        let WithheldRequest {
-            method,
-            path,
-            reason,
-        } = request;
+        let (method, path) = (&request.method, &request.path);
         if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
             return;
         }
@@ -184,12 +181,11 @@ impl Withheld {
             .repo
             .as_ref()
             .and_then(|repo| request_shape(method, path, (&repo.owner, &repo.name)));
-        let key = (
-            rule.to_owned(),
-            method.to_owned(),
-            shape.clone(),
-            reason.to_owned(),
-        );
+        let pathless = WithheldRequest {
+            path: String::new(),
+            ..request.clone()
+        };
+        let key = (rule.to_owned(), shape.clone(), pathless);
         let mut seen = self
             .seen
             .lock()
@@ -206,7 +202,7 @@ impl Withheld {
         }
         seen.keys.insert(key);
         drop(seen);
-        sink.withheld(host, rule, method, shape.as_deref(), reason);
+        sink.withheld(host, rule, shape.as_deref(), request);
     }
 }
 
@@ -267,13 +263,14 @@ impl EgressSink for BoxSink<'_> {
         self.ledger.record_event(&event);
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str) {
+    fn withheld(&self, host: &str, rule: &str, shape: Option<&str>, request: &WithheldRequest) {
         let event = Event::CredentialWithheld {
             host: host.to_owned(),
             rule: rule.to_owned(),
-            method: method.to_owned(),
+            method: request.method.clone(),
             shape: shape.map(str::to_owned),
-            reason: Some(reason.to_owned()),
+            reason: Some(request.reason.clone()),
+            query: request.query.clone(),
         };
         self.ledger.record_event(&event);
     }

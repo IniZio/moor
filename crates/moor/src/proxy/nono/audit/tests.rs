@@ -13,6 +13,7 @@ use nono::undo::NetworkAuditEvent;
 use serde_json::{json, Value};
 
 use super::{apply, BoxSink, EgressSink, Refusal, Withheld};
+use crate::proxy::graphql::WithheldRequest;
 use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -53,7 +54,8 @@ impl EgressSink for Recorder {
         self.0.lock().unwrap().push(format!("failed {rule}"));
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, _: &str) {
+    fn withheld(&self, host: &str, rule: &str, shape: Option<&str>, request: &WithheldRequest) {
+        let method = &request.method;
         self.0
             .lock()
             .unwrap()

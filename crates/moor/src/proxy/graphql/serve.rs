@@ -199,11 +199,11 @@ fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Fl
             let relay = Relay::Checked(&linked);
             forward(shared, client, up, &asked, &Payload::Raw(&body), relay)
         }
-        Gate::Anonymous(body, reason) => {
+        Gate::Anonymous(body, reason, query) => {
             // The one place a request leaves without its credential. GitHub
             // answers the placeholder with 401, which clients read as a bad
             // token. No `Authorization` gets 403, which they read as a rate limit.
-            shared.withhold(&head.method, "/graphql", &reason);
+            shared.withhold(&head.method, "/graphql", &reason, query);
             let bare = without_credential(
                 head,
                 &shared.credential_headers,
@@ -239,7 +239,7 @@ fn repo_id(
             forward(shared, client, up, head, &Payload::Stream(f), Relay::Plain)
         }
         IdGate::Anonymous(reason) => {
-            shared.withhold(&head.method, &head.target, reason);
+            shared.withhold(&head.method, &head.target, reason, None);
             let bare = without_credential(
                 head,
                 &shared.credential_headers,

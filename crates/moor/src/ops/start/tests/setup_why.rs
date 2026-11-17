@@ -19,6 +19,7 @@ fn withhold(store: &crate::store::Store) {
                 method: "GET".to_owned(),
                 shape: None,
                 reason: None,
+                query: None,
             },
         )
         .unwrap();

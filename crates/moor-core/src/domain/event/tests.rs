@@ -162,6 +162,7 @@ fn all_events() -> Vec<Event> {
             method: s("GET"),
             shape: None,
             reason: None,
+            query: None,
         },
         Event::ProxyCredentialFailed { rule: s("r") },
         Event::NeedsInput {

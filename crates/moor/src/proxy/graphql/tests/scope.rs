@@ -336,3 +336,63 @@ fn withheld_methods(rig: &Rig) -> Vec<String> {
         .map(|w| w.method)
         .collect()
 }
+
+/// The search `gh pr list -R <repo> --search "author:app/dependabot"` sends, as `search_type`.
+fn pr_list_search(repo: &str, search_type: &str) -> Vec<u8> {
+    let query = "query PullRequestSearch($q: String!, $type: SearchType!, $limit: Int!) { \
+                 search(query: $q, type: $type, first: $limit) { issueCount } }";
+    let q = format!("( author:app/dependabot ) repo:{repo} state:open type:pr");
+    let vars = json!({ "q": q, "type": search_type, "limit": 30 });
+    post(
+        "/graphql",
+        &json!({ "query": query, "variables": vars }).to_string(),
+    )
+}
+
+#[test]
+fn grouped_search_of_a_listed_repo_gets_the_credential() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    for repo in ["IniZio/moor", "IniZio/lib"] {
+        let sent = pr_list_search(repo, "ISSUE_ADVANCED");
+        assert_eq!(rig.client().call(&sent).status(), 200);
+    }
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 2);
+    assert!(seen.iter().all(has_token));
+    assert!(rig.filter.drain_withheld().is_empty());
+}
+
+#[test]
+fn grouped_search_of_an_unlisted_repo_stays_anonymous() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = pr_list_search("IniZio/other", "ISSUE_ADVANCED");
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    assert_anonymous(rig.requests().first().unwrap());
+}
+
+#[test]
+fn a_withheld_search_reports_its_masked_query() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = pr_list_search("IniZio/moor", "ISSUE");
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    assert_anonymous(rig.requests().first().unwrap());
+    let withheld = rig.filter.drain_withheld();
+    let queries: Vec<Option<&str>> = withheld.iter().map(|w| w.query.as_deref()).collect();
+    assert_eq!(
+        queries,
+        [Some("( author:… ) repo:{repo} state:open type:pr")]
+    );
+}
+
+#[test]
+fn a_withheld_search_of_the_listed_repo_reports_it_as_a_box_repo() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = pr_list_search("IniZio/lib", "ISSUE");
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let withheld = rig.filter.drain_withheld();
+    let queries: Vec<Option<&str>> = withheld.iter().map(|w| w.query.as_deref()).collect();
+    assert_eq!(
+        queries,
+        [Some("( author:… ) repo:{repo} state:open type:pr")]
+    );
+}

@@ -87,7 +87,7 @@ pub(crate) struct Refusal {
 }
 
 /// One request forwarded without its credential. The path only templates the report.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WithheldRequest {
     /// The request method.
     pub(crate) method: String,
@@ -95,6 +95,8 @@ pub(crate) struct WithheldRequest {
     pub(crate) path: String,
     /// Why the credential stayed behind; never a body or token.
     pub(crate) reason: String,
+    /// The refused GraphQL search query with its values hidden, if a search was refused.
+    pub(crate) query: Option<String>,
 }
 
 /// Why the filter could not start.
@@ -171,7 +173,7 @@ impl Shared {
     }
 
     /// Notes a request forwarded without its credential.
-    pub(super) fn withhold(&self, method: &str, path: &str, reason: &str) {
+    pub(super) fn withhold(&self, method: &str, path: &str, reason: &str, query: Option<String>) {
         let mut q = self.lock_withheld();
         if q.len() >= MAX_REFUSALS {
             q.pop_front();
@@ -180,6 +182,7 @@ impl Shared {
             method: method.to_owned(),
             path: path.to_owned(),
             reason: reason.to_owned(),
+            query,
         });
     }
 

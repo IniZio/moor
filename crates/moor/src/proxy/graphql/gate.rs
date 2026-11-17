@@ -22,8 +22,8 @@ pub(super) enum Gate {
     Forward(Vec<u8>, Linked),
     /// Forward the request with the placeholder in place of its credential,
     /// with these exact body bytes. The request is outside the Box repos or
-    /// could not be judged, for the reason given.
-    Anonymous(Vec<u8>, String),
+    /// could not be judged, for the reason given, with the masked search query it refused.
+    Anonymous(Vec<u8>, String, Option<String>),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),
     /// Close without a reply.
@@ -52,23 +52,32 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
     };
     let in_scope = |repo: &RepoRef| match judge_linked(&body, repo) {
         (Verdict::Allow, linked) => Ok(linked),
-        (Verdict::Deny(reason), _) => Err(reason.redacted()),
+        (Verdict::Deny(reason), _) => Err((reason.redacted(), reason.query().map(str::to_owned))),
         (Verdict::NeedsNodeCheck(ids), linked) => match nodes_listed(shared, head, &ids) {
             Some(true) => Ok(linked),
-            Some(false) => Err("a node id is outside the Box repos".to_owned()),
-            None => Err("node id lookup failed".to_owned()),
+            Some(false) => Err(("a node id is outside the Box repos".to_owned(), None)),
+            None => Err(("node id lookup failed".to_owned(), None)),
         },
     };
-    let mut why = None;
+    // A search names one repo, so the denial worth reporting is the one judged against it.
+    let names_repo =
+        |why: &(String, Option<String>)| why.1.as_deref().is_some_and(|q| q.contains("{repo}"));
+    let mut why: Option<(String, Option<String>)> = None;
     for repo in &shared.repos {
         match in_scope(repo) {
             Ok(linked) => return Gate::Forward(raw, linked),
             Err(reason) => {
-                why.get_or_insert(reason);
+                if why
+                    .as_ref()
+                    .is_none_or(|w| !names_repo(w) && names_repo(&reason))
+                {
+                    why = Some(reason);
+                }
             }
         }
     }
-    Gate::Anonymous(raw, why.unwrap_or_else(|| "the Box has no repo".to_owned()))
+    let (reason, query) = why.unwrap_or_else(|| ("the Box has no repo".to_owned(), None));
+    Gate::Anonymous(raw, reason, query)
 }
 
 /// `head` without `Authorization` or any of the `injected` header names, in

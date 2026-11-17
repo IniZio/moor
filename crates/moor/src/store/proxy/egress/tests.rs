@@ -55,6 +55,7 @@ fn credential_withheld_is_appended() {
         method: "GET".into(),
         shape: Some("GET /repos/{repo}/pulls/*".into()),
         reason: None,
+        query: None,
     };
     store.record_proxy_event(id, &e).unwrap();
     let rows = store.events(id, 100).unwrap();

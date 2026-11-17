@@ -32,7 +32,7 @@ fn search_is_confined_to_the_box_repo() {
         ("repo:IniZio/moor -repo:other/x", "-repo:other/x"),
         ("repo:IniZio/moor OR org:victim", "OR"),
         ("is:pr author:@me", "needs `repo:"),
-        ("repo:IniZio/moor (org:victim)", "(org:victim)"),
+        ("repo:IniZio/moor (org:victim)", "`(`"),
         (
             "repo:IniZio/moor +repo:victim/secrets",
             "+repo:victim/secrets",
@@ -287,9 +287,18 @@ fn gh_advanced_search_is_confined_to_the_box_repo() {
         ("repo:IniZio/moor OR org:victim", "OR"),
         ("repo:IniZio/moor AND is:pr", "AND"),
         ("repo:IniZio/moor NOT is:pr", "NOT"),
-        ("repo:IniZio/moor (org:victim)", "(org:victim)"),
+        ("repo:IniZio/moor (org:victim)", "org:victim"),
         ("repo:IniZio/moor -repo:other/x", "-repo:other/x"),
-        ("(repo:IniZio/moor OR repo:other/x)", "(repo:IniZio/moor"),
+        ("(repo:IniZio/moor OR repo:other/x)", "repo:IniZio/moor"),
+        ("(repo:IniZio/moor)", "repo:IniZio/moor"),
+        ("repo:IniZio/moor (is:open) OR (is:closed)", "OR"),
+        ("(is:open) OR author:a repo:IniZio/moor", "OR"),
+        ("repo:IniZio/moor (is:open OR repo:other/x)", "repo:other/x"),
+        ("repo:IniZio/moor (is:open OR user:victim)", "user:victim"),
+        ("repo:IniZio/moor (is:open", "unclosed"),
+        ("repo:IniZio/moor is:open)", "`)`"),
+        ("repo:IniZio/moor (a(b)", "a(b"),
+        ("repo:IniZio/moor (((((is:open)))))", "`(`"),
     ] {
         let vars = json!({"q": q, "type": "ISSUE_ADVANCED", "limit": 1});
         denied(ADVANCED, &vars, needle);
@@ -297,5 +306,20 @@ fn gh_advanced_search_is_confined_to_the_box_repo() {
     for kind in ["REPOSITORY", "USER", "ISSUE_SEMANTIC"] {
         let vars = json!({"q": q, "type": kind, "limit": 1});
         denied(ADVANCED, &vars, "type: ISSUE");
+    }
+}
+
+#[test]
+fn gh_pr_list_search_groups_are_allowed_in_advanced_search() {
+    for q in [
+        // `gh pr list -R IniZio/moor --search "author:app/dependabot"`, as gh 2.102 sends it.
+        "( author:app/dependabot ) repo:IniZio/moor state:open type:pr",
+        "repo:IniZio/moor (label:a OR label:b) (is:open AND NOT is:draft)",
+        "repo:IniZio/moor ((is:open OR is:merged) author:app/dependabot)",
+    ] {
+        let vars = json!({"q": q, "type": "ISSUE_ADVANCED", "limit": 1});
+        allowed(ADVANCED, &vars);
+        let legacy = json!({"q": q, "type": "ISSUE", "limit": 1});
+        denied(ADVANCED, &legacy, "`(`");
     }
 }

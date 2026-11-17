@@ -271,6 +271,9 @@ pub enum Event {
         /// Why the credential stayed behind, such as `no allow entry matches the request`; never a body or token.
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        /// The refused GraphQL search query with its values hidden, such as `( author:… ) repo:{repo} state:open`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
     },
     /// The Proxy could not obtain the credential of a tool rule.
     ProxyCredentialFailed {
