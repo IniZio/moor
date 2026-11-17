@@ -91,11 +91,20 @@ pub(super) fn search_scope(query: &str, repo: &RepoRef, grouped: bool) -> Result
 
 /// Longest masked query kept, in characters.
 const MAX_MASKED: usize = 200;
-/// Longest qualifier name a masked query shows.
-const MAX_KEY: usize = 24;
+/// Refused qualifiers a masked query names, besides the allowed ones.
+const REFUSED_KEYS: &[&str] = &["org", "user", "owner", "in", "-repo", "-label", "repos"];
 
-/// `query` with grouping, operators, qualifier names, fixed values and the Box repo kept,
-/// and every other value and word shown as `…`.
+/// Whether a masked query shows qualifier `key`, given in lower case.
+fn known_key(key: &str) -> bool {
+    key == "repo"
+        || key == "sort"
+        || FIXED.iter().any(|(k, _)| *k == key)
+        || NAMED.contains(&key)
+        || REFUSED_KEYS.contains(&key)
+}
+
+/// `query` with grouping, operators, known qualifier names, fixed values and the Box repo
+/// kept, and every other name, value and word shown as `…`.
 fn masked(query: &str, want: &str) -> String {
     let words: Vec<String> = tokens(query).map(|t| mask(t, want)).collect();
     words.join(" ").chars().take(MAX_MASKED).collect()
@@ -110,12 +119,8 @@ fn mask(token: &str, want: &str) -> String {
     let Some((key, value)) = token.split_once(':') else {
         return "…".to_owned();
     };
-    let plain_key = key.len() <= MAX_KEY
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'+' | b'~' | b'_'));
-    let key = if plain_key { key } else { "…" };
     let lower_key = key.to_ascii_lowercase();
+    let key = if known_key(&lower_key) { key } else { "…" };
     let fixed = FIXED.iter().any(|(k, values)| {
         *k == lower_key && values.contains(&value.to_ascii_lowercase().as_str())
     });

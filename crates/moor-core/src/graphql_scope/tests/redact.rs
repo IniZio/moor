@@ -50,6 +50,10 @@ fn a_refused_search_keeps_its_shape_and_hides_its_values() {
         refused("repo:victim/secrets OR org:victim").as_deref(),
         Some("repo:… OR org:…"),
     );
+    assert_eq!(
+        refused("repo:IniZio/moor hunter2:x OR").as_deref(),
+        Some("repo:{repo} …:… OR"),
+    );
     let long = format!("repo:IniZio/moor {}", "label:x ".repeat(100));
     let capped = refused(&format!("{long} OR")).unwrap_or_default();
     assert!(capped.chars().count() <= 200, "{capped}");

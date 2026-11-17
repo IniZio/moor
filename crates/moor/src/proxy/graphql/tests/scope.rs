@@ -383,3 +383,16 @@ fn a_withheld_search_reports_its_masked_query() {
         [Some("( author:… ) repo:{repo} state:open type:pr")]
     );
 }
+
+#[test]
+fn a_withheld_search_of_the_listed_repo_reports_it_as_a_box_repo() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = pr_list_search("IniZio/lib", "ISSUE");
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let withheld = rig.filter.drain_withheld();
+    let queries: Vec<Option<&str>> = withheld.iter().map(|w| w.query.as_deref()).collect();
+    assert_eq!(
+        queries,
+        [Some("( author:… ) repo:{repo} state:open type:pr")]
+    );
+}

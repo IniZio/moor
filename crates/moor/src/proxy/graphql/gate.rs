@@ -59,12 +59,20 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
             None => Err(("node id lookup failed".to_owned(), None)),
         },
     };
-    let mut why = None;
+    // A search names one repo, so the denial worth reporting is the one judged against it.
+    let names_repo =
+        |why: &(String, Option<String>)| why.1.as_deref().is_some_and(|q| q.contains("{repo}"));
+    let mut why: Option<(String, Option<String>)> = None;
     for repo in &shared.repos {
         match in_scope(repo) {
             Ok(linked) => return Gate::Forward(raw, linked),
             Err(reason) => {
-                why.get_or_insert(reason);
+                if why
+                    .as_ref()
+                    .is_none_or(|w| !names_repo(w) && names_repo(&reason))
+                {
+                    why = Some(reason);
+                }
             }
         }
     }
