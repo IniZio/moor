@@ -55,7 +55,8 @@ pub async fn serve_broker(listener: UnixListener, agents: Agents, uid: u32) -> i
 }
 
 /// Serves one ask, refused unless `admitted`: the agent's reply, then for a started dial or port the
-/// bytes both ways until either side closes.
+/// bytes both ways until either side closes; a Box request's stream is spliced the same way,
+/// unread.
 pub(crate) async fn carry<S>(mut conn: S, agents: &Agents, admitted: bool)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -87,7 +88,8 @@ where
 /// Why a connection whose hello carried another key is refused.
 pub(crate) const WRONG_KEY: &str = "the machine service key is wrong";
 
-/// Sends `ask` on its machine's link; the answer, and the stream when a dial started.
+/// Sends `ask` on its machine's link; the answer, and the stream when a dial started or a Box
+/// stream is spliced.
 async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link::Channel>) {
     let machine_id = ask.machine_id;
     let dial = matches!(
@@ -99,8 +101,13 @@ async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link
         Ok(stream) => stream,
         Err(reason) => return offline(reason),
     };
+    let boxes = ask.op == PoolOp::Boxes;
     if let Err(e) = ops::write_line(&mut stream, &Op::from(ask.op)).await {
         return offline(format!("its link closed: {e}"));
+    }
+    if boxes {
+        // The Box protocol is the controller's and the agent's alone: nothing more is read here.
+        return (Brokered::Spliced, Some(stream));
     }
     match ops::read_line::<_, Reply>(&mut stream).await {
         Ok(reply) => {
