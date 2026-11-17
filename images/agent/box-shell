@@ -1,0 +1,67 @@
+#!/bin/bash
+run=/run/moor
+port=2222
+
+remote=
+if [ "${1:-}" = -c ]; then
+  shift
+  remote=1
+elif [ "${2:-}" = -c ] && [ -n "${3+x}" ]; then
+  shift 2
+fi
+line=${1:-}
+
+case $line in
+  *"/.claude/plugins/"*) exec bash -c "$line" ;;
+  *"/shell-snapshots/snapshot-"*"pwd -P >| "*) remote=1 ;;
+esac
+[ -n "$remote" ] || exec bash -c "$line"
+
+line=$(printf '%s' "$line" | sed -E 's#^source [^ ]+/shell-snapshots/[^ ]+ 2>/dev/null \|\| true#true#')
+
+say_notes() {
+  [ -s "$run/notes" ] || return 0
+  (
+    flock 9
+    seen=$(cat "$run/notes.seen" 2>/dev/null || echo 0)
+    total=$(wc -l < "$run/notes")
+    if [ "$total" -gt "$seen" ]; then
+      tail -n +"$((seen + 1))" "$run/notes" | head -n "$((total - seen))" >&2
+      echo "$total" > "$run/notes.seen"
+    fi
+  ) 9> "$run/notes.lock"
+}
+
+say_notes
+if ! timeout 3 bash -c ": < /dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+  echo "moor: the Box is starting again (it stopped and moor is bringing it back); retry in a moment." >&2
+  exit 75
+fi
+
+dir=$(pwd -P 2>/dev/null || echo "$HOME/moor")
+
+remote_script='cd "$1" 2>/dev/null || cd "$HOME"
+export TMPDIR=/run/moor/tmp
+mkdir -p "$TMPDIR"
+oom() { sed -n "s/^oom_kill //p" /sys/fs/cgroup/memory.events 2>/dev/null || cat /run/moor/oom 2>/dev/null || echo 0; }
+before=$(oom)
+before=${before:-0}
+parent=$PPID
+setsid bash -lc "$2" <&0 &
+child=$!
+( while kill -0 "$parent" 2>/dev/null; do sleep 1; done
+  kill -TERM -- "-$child" 2>/dev/null; sleep 3; kill -KILL -- "-$child" 2>/dev/null ) &
+watcher=$!
+wait "$child"
+status=$?
+kill "$watcher" 2>/dev/null
+after=$(oom)
+after=${after:-0}
+[ "$after" -gt "$before" ] && echo "moor: the Box ran out of memory and a process in it was killed ($((after - before)) in this command)." >&2
+exit "$status"'
+
+exec ssh -q -T -p "$port" -i "$run/ssh/id" \
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -o ServerAliveInterval=15 -o ConnectTimeout=10 -o LogLevel=ERROR \
+  agent@127.0.0.1 \
+  "exec bash -c $(printf '%q' "$remote_script") box-shell $(printf '%q' "$dir") $(printf '%q' "$line")"
