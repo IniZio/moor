@@ -38,9 +38,9 @@ fn a_pushing_account_imports_the_file_and_is_told() {
         .collect();
     assert_eq!(imported.len(), 1, "{warned:?}");
     assert!(
-        imported[0].message.contains("o/n"),
+        imported.first().unwrap().message.contains("o/n"),
         "{}",
-        imported[0].message
+        imported.first().unwrap().message
     );
     let row = w.cx.store().unwrap().repo_config(&repo()).unwrap().unwrap();
     assert_eq!(
@@ -82,9 +82,9 @@ fn a_file_that_disagrees_with_the_stored_config_is_ignored_with_a_warning() {
         .collect();
     assert_eq!(ignored.len(), 1, "{warned:?}");
     assert!(
-        ignored[0].message.contains("setup, env"),
+        ignored.first().unwrap().message.contains("setup, env"),
         "{}",
-        ignored[0].message
+        ignored.first().unwrap().message
     );
     assert!(!warned.iter().any(|w| w.code == "repo_config_imported"));
     assert_eq!(setup_of(&w, id), ["from-the-row"]);
