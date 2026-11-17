@@ -487,6 +487,7 @@ mod hold;
 mod listen;
 mod login;
 mod mcp;
+mod nodes;
 mod pair;
 mod repos;
 mod secrets;

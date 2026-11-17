@@ -24,10 +24,24 @@ mod hold;
 mod links;
 mod nodes;
 mod row;
+mod settings;
 
 use hold::ClaimState;
 pub(crate) use hold::MachineWake;
 use row::{claim_in, put_in, Claim};
+pub(crate) use settings::{Change, NodeSettings, Wrote as SettingsWrote};
+
+/// `fresh` as a machine's labels, unless its settings were ever written: pairing again must not
+/// undo what a person set.
+fn labels_unless_edited(fresh: Expr) -> Expr {
+    let m = |c| (UserMachinesV2::Table, c);
+    Expr::case(
+        Expr::col(m(UserMachinesV2::SettingsRevision)).gt(0),
+        Expr::col(m(UserMachinesV2::Labels)),
+    )
+    .finally(fresh)
+    .into()
+}
 
 impl Store {
     /// Adds the machine an agent enrolled to `user`'s, replacing the key, labels and capacity
@@ -65,11 +79,14 @@ impl Store {
                     OnConflict::columns([UserMachinesV2::User, UserMachinesV2::Name])
                         .update_columns([
                             UserMachinesV2::Pubkey,
-                            UserMachinesV2::Labels,
                             UserMachinesV2::Capacity,
                             UserMachinesV2::PoolProvider,
                             UserMachinesV2::EnrolledAt,
                         ])
+                        .value(
+                            UserMachinesV2::Labels,
+                            labels_unless_edited(Expr::col(("excluded", UserMachinesV2::Labels))),
+                        )
                         .to_owned(),
                 )
                 .returning_col(UserMachinesV2::MachineId),
@@ -104,7 +121,10 @@ impl Store {
                 Query::update()
                     .table(UserMachinesV2::Table)
                     .value(UserMachinesV2::Pubkey, machine.pubkey.as_str())
-                    .value(UserMachinesV2::Labels, labels)
+                    .value(
+                        UserMachinesV2::Labels,
+                        labels_unless_edited(Expr::val(&labels)),
+                    )
                     .value(UserMachinesV2::Capacity, machine.capacity)
                     .value(UserMachinesV2::PoolProvider, machine.pool.as_deref())
                     .value(UserMachinesV2::EnrolledAt, now)

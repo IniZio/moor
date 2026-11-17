@@ -190,7 +190,7 @@ async fn keep_linked(
     tell: &tokio::sync::watch::Sender<String>,
 ) -> Result<(), String> {
     let state = &own.state;
-    let boxes = listen::Boxes::new(state.slots);
+    let boxes = listen::Boxes::new(own.host.is_none().then_some(state.slots));
     let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
     // The link a relink left open; while it is, the new runner is coming up, so no backoff.

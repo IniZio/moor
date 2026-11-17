@@ -46,6 +46,10 @@ box:
 | `nodes.<name>.labels` | list of strings | none | Labels a repo may require. |
 | `nodes.<name>.max_boxes` | integer, at least 1 | unlimited | The most live Boxes on the node. Free memory may allow fewer. |
 
+A node listed here is changed here. The cap and labels of a machine's node are
+settings in moor instead, which its owner edits, as [Boxes, nodes and
+machines](nodes.md#a-node) says.
+
 A node name matches `[a-z][a-z0-9-]*`. Without a shared node, Boxes start only
 on personal nodes. Personal nodes need no config. See
 [Add your machine](add-machine.md).

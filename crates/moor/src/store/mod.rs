@@ -83,7 +83,7 @@ pub(crate) use proxy::ProxyRow;
 pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
-pub(crate) use users::machine::{HeldMachine, MachineWake};
+pub(crate) use users::machine::{Change, HeldMachine, MachineWake, NodeSettings, SettingsWrote};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
 mod webhook_outbox;

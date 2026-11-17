@@ -153,7 +153,7 @@ fn changed(stream: &mut TcpStream, now: &RepoConfigValue) {
 
 /// Answers `reply` as the page reads it: its value, or the controller's reason with a status
 /// that says whose doing it is.
-fn answered(stream: &mut TcpStream, reply: &ControllerResponse) {
+pub(super) fn answered(stream: &mut TcpStream, reply: &ControllerResponse) {
     let status = match reply.class {
         ExitClass::Ok => {
             let value = reply.value.clone().unwrap_or_default();

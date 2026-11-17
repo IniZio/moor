@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use moor_core::decide::schedule::gib;
+use moor_core::view::node::NodeSettingsValue;
 
 use crate::stamp;
 
@@ -19,13 +20,13 @@ fn link_text(n: &Value) -> Option<String> {
     ))
 }
 
-/// Boxes holding a slot over the cap, `-` when there is none.
+/// Boxes holding a slot over the cap, `(no cap)` when there is none.
 fn load_text(n: &Value) -> Option<String> {
     let used = n.get("used")?.as_u64()?;
-    let cap = n
+    let used = n
         .get("max_boxes")
         .and_then(Value::as_u64)
-        .map_or_else(|| "-".to_owned(), |m| m.to_string());
+        .map_or_else(|| format!("{used} (no cap)"), |m| format!("{used}/{m}"));
     let mem = match (
         n.get("mem_free_mib").and_then(Value::as_u64),
         n.get("mem_report_age_secs").and_then(Value::as_i64),
@@ -58,7 +59,24 @@ fn load_text(n: &Value) -> Option<String> {
         .map_or_else(String::new, |t| {
             format!("  pressure: high since {}", stamp::utc(t))
         });
-    Some(format!("{used}/{cap}{mem}{disk}{held}{pressure}"))
+    Some(format!("{used}{mem}{disk}{held}{pressure}"))
+}
+
+/// What `node set` left: the node's cap and labels.
+pub(super) fn settings_text(value: &Value) -> Option<String> {
+    let v = serde_json::from_value::<NodeSettingsValue>(value.clone()).ok()?;
+    let cap = v
+        .max_boxes
+        .map_or_else(|| "no cap".to_owned(), |m| format!("at most {m} Boxes"));
+    let labels = if v.labels.is_empty() {
+        "no labels".to_owned()
+    } else {
+        format!("labels {}", v.labels.join(","))
+    };
+    Some(format!(
+        "{}: {cap}, {labels} (revision {})\n",
+        v.name, v.revision
+    ))
 }
 
 /// What `node add` enrolled.

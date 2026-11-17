@@ -259,10 +259,7 @@ fn up_pairs_installs_the_service_and_says_the_machine_is_linked() {
     let ran = w.up();
     assert!(ran.ok, "{}", ran.said);
     assert!(ran.said.contains("/pair?code="), "{}", ran.said);
-    assert_eq!(
-        last_line(&ran.said),
-        "moor-machine-agent: linked: hv, 4 Box slots"
-    );
+    assert_eq!(last_line(&ran.said), "moor-machine-agent: linked: hv");
     assert_paired_as_hv(&w);
     assert_service_serves_docker_boxes(&w);
 }
@@ -320,10 +317,7 @@ fn a_second_up_keeps_the_pairing_and_the_running_service() {
     let again = w.up();
     assert!(again.ok, "{}", again.said);
     assert!(!again.said.contains("/pair?code="), "{}", again.said);
-    assert_eq!(
-        last_line(&again.said),
-        "moor-machine-agent: linked: hv, 4 Box slots"
-    );
+    assert_eq!(last_line(&again.said), "moor-machine-agent: linked: hv");
     assert_eq!(w.enrolled.lock().unwrap().len(), 1, "paired once");
     assert_eq!(std::fs::read_to_string(w.unit()).unwrap(), unit);
     let rerun = w.log("systemctl.log").replacen(&calls, "", 1);
@@ -396,10 +390,7 @@ fn a_mark_left_by_a_service_that_died_is_ignored_and_up_waits_for_a_fresh_link()
         began.elapsed() >= std::time::Duration::from_secs(2),
         "up waited for the fresh link"
     );
-    assert_eq!(
-        last_line(&again.said),
-        "moor-machine-agent: linked: hv, 4 Box slots"
-    );
+    assert_eq!(last_line(&again.said), "moor-machine-agent: linked: hv");
 }
 
 #[test]
@@ -440,14 +431,20 @@ fn down_stops_and_removes_the_service_but_keeps_the_pairing() {
 }
 
 #[test]
-fn the_old_enroll_command_and_slots_flag_are_gone() {
+fn the_old_enroll_command_and_the_slot_flags_are_gone() {
     let w = world();
     let ran = w.agent(&["enroll", "--server", &w.gate, "--name", "hv"]);
     assert!(!ran.ok);
     assert!(ran.said.contains("unrecognized subcommand"), "{}", ran.said);
-    let ran = w.agent(&["up", "--server", &w.gate, "--slots", "2"]);
-    assert!(!ran.ok);
-    assert!(ran.said.contains("unexpected argument"), "{}", ran.said);
+    for flag in ["--slots", "--max-boxes"] {
+        let ran = w.agent(&["up", "--server", &w.gate, flag, "2"]);
+        assert!(!ran.ok);
+        assert!(
+            ran.said.contains("unexpected argument"),
+            "{flag}: {}",
+            ran.said
+        );
+    }
 }
 
 #[test]
@@ -482,17 +479,12 @@ fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_boxes() {
         "--labels",
         "macos,ios-sim",
         "--allow-exec",
-        "--max-boxes",
-        "2",
     ]);
     assert!(ran.ok, "{}", ran.said);
-    assert_eq!(
-        last_line(&ran.said),
-        "moor-machine-agent: linked: mac, 2 Box slots"
-    );
+    assert_eq!(last_line(&ran.said), "moor-machine-agent: linked: mac");
     let enrolled = w.enrolled.lock().unwrap().clone();
     assert_eq!(enrolled[0]["labels"], json!(["macos", "ios-sim"]));
-    assert_eq!(enrolled[0]["capacity"], 2);
+    assert_eq!(enrolled[0]["capacity"], 4);
     assert!(enrolled[0].get("pool").is_none(), "{}", enrolled[0]);
     assert!(w.log("docker.log").is_empty(), "no docker to check");
     let unit = std::fs::read_to_string(w.unit()).unwrap();

@@ -33,6 +33,8 @@ pub use machine::{
 };
 mod names;
 pub use names::{Grant, Named, Pins};
+mod node_settings;
+pub use node_settings::{CapEdit, NodeSettingsGetReq, NodeSettingsSetReq};
 mod repo_config;
 pub use repo_config::{RepoConfigGetReq, RepoConfigSetReq};
 mod session;
@@ -194,6 +196,11 @@ pub enum Request {
     NodeList(AsReq),
     /// Add or replace a shared node's machine, which no user owns; the operator's only.
     NodeAdd(NodeAddReq),
+    /// Read a node's cap and labels.
+    NodeSettingsGet(NodeSettingsGetReq),
+    /// Change a node's cap or labels: its owner's for a personal node, the operator's for a
+    /// shared one.
+    NodeSettingsSet(NodeSettingsSetReq),
     /// Ask the controller whether each node runtime's provider credentials are in place.
     ProviderReady(AsReq),
     /// Ask one of the caller's user's machine agents for its status.

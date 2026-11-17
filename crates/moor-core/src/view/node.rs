@@ -75,6 +75,47 @@ pub struct NodeView {
     pub box_memory_mib: Option<u64>,
     /// Its labels.
     pub labels: Vec<String>,
+    /// How many times its settings were written, 0 for none; what a write names as the revision
+    /// it read.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub revision: u64,
+    /// Whether the caller may change its cap and labels.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub editable: bool,
+}
+
+/// True for 0, which the wire leaves out.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+const fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// A node's settings as `node-settings-get` and `node-settings-set` show them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeSettingsValue {
+    /// The node's name.
+    pub name: String,
+    /// Who may use it.
+    pub scope: NodeScope,
+    /// Most live Boxes it holds; none means no cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_boxes: Option<u32>,
+    /// Its labels.
+    pub labels: Vec<String>,
+    /// How many times its settings were written, 0 for none.
+    pub revision: u64,
+    /// Who wrote them last, as `operator` or the identity that did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_by: Option<String>,
+    /// When they were written last, RFC3339 UTC.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at: Option<String>,
+    /// Whether the caller may change them: the owner of a personal node, or the operator for a
+    /// shared node a machine agent provides. A node the controller's config lists is edited there.
+    pub can_edit: bool,
 }
 
 /// What starting a Box with no node named would do right now.
@@ -245,3 +286,6 @@ pub struct ProviderReadyValue {
     /// One entry per distinct node runtime, sorted.
     pub providers: Vec<ProviderReady>,
 }
+
+#[cfg(test)]
+mod tests;

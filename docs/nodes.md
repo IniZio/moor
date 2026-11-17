@@ -39,7 +39,15 @@ person closes it.
 ## A node
 
 A node is a place that runs Boxes. It is a host whose machine agent makes
-Docker Boxes, with a cap on how many Boxes it holds.
+Docker Boxes.
+
+A node has no cap on its Boxes by default. Free memory and memory pressure
+decide whether another Box starts, and a start that does not fit waits. You
+can set a cap and labels on a node in the account page's Machines section, with
+`moor node set`, or with the `set_node_settings` tool. The Machines section
+also shows each node's load. A change applies to the next start, and raising or
+removing a cap starts the Boxes that were waiting. The cap is a decision of
+moor, not of the machine, so the agent has no flag for it.
 
 - A **shared node** is listed in the controller's user config. Every user may
   use it. It suits a team's server or a cloud provider account.

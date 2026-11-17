@@ -26,6 +26,7 @@ mod inspect;
 mod machine_box;
 pub(crate) mod machine_hold;
 mod node_add;
+mod node_settings;
 mod nodes;
 mod open_session;
 pub(crate) mod provider_ready;
@@ -121,6 +122,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::MachineBox(r) => to_value(&machine_box::run(cx, r.op)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::NodeAdd(r) => to_value(&node_add::run(cx, &r)?),
+        Request::NodeSettingsGet(r) => to_value(&node_settings::get(cx, &r)?),
+        Request::NodeSettingsSet(r) => to_value(&node_settings::set(cx, &r)?),
         Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),

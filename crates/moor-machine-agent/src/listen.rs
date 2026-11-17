@@ -24,19 +24,20 @@ pub(crate) struct Link {
     pub(crate) host: Option<crate::Host>,
 }
 
-/// The Boxes with a listen up, at most the machine's slots of them.
+/// The Boxes with a listen up. A machine that provides Boxes holds as many as its server places
+/// on it; a tool machine, at most its slots.
 pub(crate) struct Boxes {
-    /// How many Boxes may hold the machine at once.
-    slots: usize,
+    /// How many Boxes may hold the machine at once; none for no limit.
+    slots: Option<usize>,
     /// Each listening Box and how many listens it has up.
     held: Mutex<BTreeMap<i64, usize>>,
 }
 
 impl Boxes {
-    /// None yet, on a machine of `slots`.
-    pub(crate) fn new(slots: u16) -> Arc<Self> {
+    /// None yet, on a machine of `slots`, if it has them.
+    pub(crate) fn new(slots: Option<u16>) -> Arc<Self> {
         Arc::new(Self {
-            slots: usize::from(slots),
+            slots: slots.map(usize::from),
             held: Mutex::default(),
         })
     }
@@ -44,7 +45,7 @@ impl Boxes {
     /// Counts a listen of `box_id`, unless it would make more Boxes than slots.
     fn take(self: &Arc<Self>, box_id: i64) -> Result<Taken, String> {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
-        if !held.contains_key(&box_id) && held.len() >= self.slots {
+        if !held.contains_key(&box_id) && self.slots.is_some_and(|slots| held.len() >= slots) {
             return Err(format!(
                 "{} Boxes already listen, as many as the machine's slots",
                 held.len()

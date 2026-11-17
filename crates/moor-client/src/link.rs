@@ -102,7 +102,8 @@ pub enum Opened {
 /// What a Box-hosting machine reports about itself in its hello.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Offer {
-    /// The most Boxes it will hold at once.
+    /// The most Boxes it will hold at once, as an agent before the node setting offered. Read and
+    /// ignored: a node's cap is its setting in the controller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_boxes: Option<u32>,
     /// The disk, in GB, it sets aside for caches; reported, not enforced.

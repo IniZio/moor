@@ -109,7 +109,8 @@ These act as your local identity through the controller.
 | `moor user webhook add URL` | Adds a webhook. `--event KIND` and `--header NAME` narrow it. |
 | `moor user webhook setup ID`, `finish ID`, `ls`, `rm ID` | Shows the setup with its key, finishes it, lists, or removes. |
 | `moor whoami` | Shows your identity, its user, and the user's linked identities. |
-| `moor node ls` | Lists the shared nodes and yours, with their load. |
+| `moor node ls` | Lists the shared nodes and yours, with their load. A node with no cap reads `(no cap)`. |
+| `moor node set NAME [--max-boxes N \| --no-cap] [--label L ... \| --no-labels] [--expected-revision N]` | Sets a node's cap or labels. You change your own node, and the operator changes a shared one. The next start reads it. |
 | `moor box-config NAME` | Replaces an open Box's config override with `--file FILE`, or stdin, or removes it with `--remove`. |
 | `moor repo config get OWNER/NAME` | Prints the repo's stored config as YAML; `--json` adds its revision and last editor. |
 | `moor repo config set OWNER/NAME` | Replaces the config with `--file FILE`, or stdin. It needs push access to the repo. `--expected-revision N` refuses a write after someone else's save. |
@@ -188,7 +189,6 @@ success, else `{kind, message, hints, context}`.
 | `--server URL` | `MOOR_SERVER` | The moor server. |
 | `--name NAME` | the host name | The machine's name. |
 | `--labels a,b` | none | Labels a Box can ask for. |
-| `--max-boxes N` | 4 | The most Boxes held at once. |
 | `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |
 | `--agent-image IMAGE` | this release's | The image of a Box's agent place. `MOOR_AGENT_IMAGE` also sets it. |
 | `--work-image IMAGE` | this release's | The image of a Box's work place. `MOOR_WORK_IMAGE` also sets it. |

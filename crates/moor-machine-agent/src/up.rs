@@ -49,8 +49,6 @@ pub struct Up {
     pub name: String,
     /// The machine's labels.
     pub labels: Vec<String>,
-    /// How many Boxes may hold the machine at once.
-    pub max_boxes: u16,
     /// What the machine offers.
     pub runtime: Runtime,
 }
@@ -83,7 +81,6 @@ pub fn up(
     let ask = Ask {
         name: up.name.clone(),
         labels: up.labels.clone(),
-        max_boxes: up.max_boxes,
         pool,
     };
     let state = match paired(dir, &server, &ask)? {
@@ -101,10 +98,7 @@ pub fn up(
     }
     for _ in 0..LINK_WAIT_SECS {
         if linked::live(&linked) {
-            return Ok(format!(
-                "linked: {}, {} Box slots",
-                state.name, up.max_boxes
-            ));
+            return Ok(format!("linked: {}", state.name));
         }
         std::thread::sleep(Duration::from_secs(1));
     }

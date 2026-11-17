@@ -8,9 +8,18 @@ const NodeSchema = v.object({
 	runtime: v.string(),
 	online: v.boolean(),
 	offline_since: v.optional(v.number()),
+	provides: v.optional(v.string()),
 	used: v.number(),
+	waiting: v.number(),
 	max_boxes: v.optional(v.number()),
 	mem_free_mib: v.optional(v.number()),
+	mem_psi_centi: v.optional(v.number()),
+	mem_report_age_secs: v.optional(v.number()),
+	pressure_since: v.optional(v.number()),
+	box_memory_mib: v.optional(v.number()),
+	labels: v.array(v.string()),
+	revision: v.optional(v.number(), 0),
+	editable: v.optional(v.boolean(), false),
 });
 
 const AccountSchema = v.object({
@@ -30,6 +39,15 @@ const RepoConfigSchema = v.object({
 	can_edit: v.boolean(),
 });
 
+const NodeSettingsSchema = v.object({
+	name: v.string(),
+	max_boxes: v.optional(v.number()),
+	labels: v.array(v.string()),
+	revision: v.number(),
+	edited_by: v.nullish(v.string()),
+	edited_at: v.nullish(v.string()),
+});
+
 const RepoListSchema = v.object({ repos: v.array(v.string()) });
 
 const FailureSchema = v.object({ error: v.string() });
@@ -37,6 +55,7 @@ const FailureSchema = v.object({ error: v.string() });
 export type Secret = v.InferOutput<typeof SecretSchema>;
 export type Node = v.InferOutput<typeof NodeSchema>;
 export type RepoConfig = v.InferOutput<typeof RepoConfigSchema>;
+export type NodeSettings = v.InferOutput<typeof NodeSettingsSchema>;
 export type Account = v.InferOutput<typeof AccountSchema>;
 
 /** Thrown when the session ended; the page offers sign-in again. */
@@ -99,4 +118,20 @@ export async function repoSet(csrf: string, repo: string, text: string, revision
 		body: JSON.stringify({ text, revision }),
 	});
 	return answer(res, RepoConfigSchema);
+}
+
+/** Replaces a node's cap (none for no cap) and labels, against the revision the page read. */
+export async function nodeSet(
+	csrf: string,
+	name: string,
+	maxBoxes: number | null,
+	labels: string[],
+	revision: number,
+): Promise<NodeSettings> {
+	const res = await fetch(`/account/api/nodes/${encodeURIComponent(name)}`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ max_boxes: maxBoxes, labels, revision }),
+	});
+	return answer(res, NodeSettingsSchema);
 }

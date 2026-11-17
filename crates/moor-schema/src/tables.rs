@@ -76,7 +76,8 @@ tables! {
     Bindings { Id, Front, ConvKey, Session, Owner, CreatedAt }
     BoxProfiles { Box, Repo, Sha, Manifest }
     WebhookDeliveries { Id, Webhook, Event, LeasedUntil }
-    UserMachinesV2 { MachineId, User, Name, Pubkey, Labels, Capacity, EnrolledAt, PoolProvider }
+    UserMachinesV2 { MachineId, User, Name, Pubkey, Labels, Capacity, EnrolledAt, PoolProvider,
+        MaxBoxes, SettingsRevision, SettingsEditedBy, SettingsEditedAt }
     MachineLinks { MachineId, Online, Since, Version, Protocol, MaxBoxes, CacheGb, PoolFeatures,
         MemMib, Cpus, ReserveMib, MemAvailableMib, PsiCenti, ReportedAt, PsiFullCenti, DiskFreeMib,
         DiskTotalMib, RunnerAddr, HeardAt, DrainingSince, WarmStarts, Provides }

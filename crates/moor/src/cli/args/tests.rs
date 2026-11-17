@@ -15,6 +15,7 @@ use crate::cli::GlobalOpts;
 
 mod box_term;
 mod events;
+mod node;
 mod repo;
 
 /// Parse `moor <args>` into opts and action.
