@@ -6,8 +6,7 @@ use clap::{Args, Subcommand};
 use moor_core::request::AsReq;
 use moor_core::Request;
 
-use super::Action;
-use crate::node_add::Add;
+use super::{Action, NodeAddSpec};
 
 /// Subcommands of `node`.
 #[derive(Debug, Subcommand)]
@@ -40,7 +39,7 @@ impl NodeCmd {
     pub(super) fn into_action(self) -> Action {
         match self {
             Self::Ls => Action::Request(Request::NodeList(AsReq { identity: None })),
-            Self::Add(a) => Action::NodeAdd(Add {
+            Self::Add(a) => Action::NodeAdd(NodeAddSpec {
                 name: a.name,
                 agent_home: a.agent_home,
                 runner: a.runner,
