@@ -50,21 +50,6 @@ controller:
   # Extra env for the controller container, as a list of {name, value}.
   extraEnv: []
 
-slack:
-  enabled: false
-  # true runs Slack as <release>-slack, one replica of its own on a PVC of its own, in place of a
-  # sidecar of the controller pod: a controller deploy then costs it one redial. Needs
-  # egress.enabled. The new PVC starts empty; docs/kubernetes.md lists what that loses.
-  separate: false
-  # separate only: the PVC holding slack.db and each thread's workdir.
-  persistence:
-    size: 1Gi
-  # separate only: the loopback port of the forwarder that carries a turn to the shared egress Proxy.
-  proxyPort: 4480
-  appToken: ""
-  botToken: ""
-  resources: {}
-
 # moor-notify: delivers the webhooks users add with the gate's add_webhook tool.
 notify:
   enabled: false
@@ -152,9 +137,6 @@ egress:
     egressClientKey: ""
     runnerClientCert: ""
     runnerClientKey: ""
-    # slack.separate only, with your own ca and no caKey.
-    slackClientCert: ""
-    slackClientKey: ""
   resources: {}
 
 # Off by default because applying a PodDisruptionBudget needs RBAC on policy/v1 that some installs lack.

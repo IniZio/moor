@@ -7,12 +7,8 @@
 {{- $tls := .Values.egress.ledgerTls | default dict -}}
 {{- $names := list "ledger-ca.pem" "ledger-ca.key" "ledger-tls.crt" "ledger-tls.key" "egress-client.crt" "egress-client.key" "runner-client.crt" "runner-client.key" -}}
 {{- $roles := list "egress" "runner" -}}
-{{- if include "moor.slackSeparate" . -}}
-{{- $names = concat $names (list "slack-client.crt" "slack-client.key") -}}
-{{- $roles = append $roles "slack" -}}
-{{- end -}}
 {{- $pem := dict -}}
-{{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey "slack-client.crt" $tls.slackClientCert "slack-client.key" $tls.slackClientKey -}}
+{{- $given := dict "ledger-ca.pem" $tls.ca "ledger-ca.key" $tls.caKey "ledger-tls.crt" $tls.cert "ledger-tls.key" $tls.key "egress-client.crt" $tls.egressClientCert "egress-client.key" $tls.egressClientKey "runner-client.crt" $tls.runnerClientCert "runner-client.key" $tls.runnerClientKey -}}
 {{- if include "moor.gateSeparate" . -}}
 {{- $names = concat $names (list "gate-client.crt" "gate-client.key") -}}
 {{- $_ := set $given "gate-client.crt" .Values.gate.clientCert -}}
@@ -29,9 +25,6 @@
 {{- end -}}
 {{- if not (or $tls.caKey (and $tls.egressClientCert $tls.egressClientKey $tls.runnerClientCert $tls.runnerClientKey)) -}}
 {{- fail "egress.ledgerTls with your own ca needs caKey, or all of egressClientCert, egressClientKey, runnerClientCert and runnerClientKey" -}}
-{{- end -}}
-{{- if and (include "moor.slackSeparate" .) (not (or $tls.caKey (and $tls.slackClientCert $tls.slackClientKey))) -}}
-{{- fail "slack.separate with your own ca needs caKey, or both slackClientCert and slackClientKey" -}}
 {{- end -}}
 {{- if eq (get $was "ledger-ca.pem") $tls.ca -}}
 {{- range $names }}{{ $_ := set $pem . (get $was .) }}{{ end -}}
@@ -81,9 +74,6 @@ stringData:
   {{ . }}: {{ get $pem . | default "" | quote }}
   {{- end }}
   machine-service-key: {{ printf "moor machine service:%s" $key | sha256sum | quote }}
-  {{- if include "moor.slackSeparate" . }}
-  slack-front-key: {{ printf "moor front slack:%s" $key | sha256sum | quote }}
-  {{- end }}
   {{- if include "moor.gateSeparate" . }}
   gate-front-key: {{ printf "moor gate front:%s" $key | sha256sum | quote }}
   {{- end }}

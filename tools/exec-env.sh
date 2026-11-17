@@ -14,10 +14,9 @@ files=$(find "$root" -name '*.rs' -not -path "$root/target/*" -not -path "$root/
   -not -name tests.rs -not -path 'crates/moor-core/src/exec_env.rs' \
   -not -path 'crates/moor-core/src/exec_env/*' | sort)
 # Exempt from (a): config/check.rs names the variables to refuse a repo `env:` that sets them, and
-# brief.rs only mentions HTTPS_PROXY in prose to the agent; neither builds an env. The Slack
-# coordinator's wiring.rs builds the env of a host process that reaches the front Proxy, not a Box.
+# brief.rs only mentions HTTPS_PROXY in prose to the agent; neither builds an env.
 # front_shim.rs names the front's egress proxy to the front it runs, also a host process.
-named=$(printf '%s\n' "$files" | grep -v -e '^crates/moor-core/src/config/check.rs$' -e '^crates/moor/src/adapters/box_agent/brief.rs$' -e '^crates/moor-slack/src/coordinator/claude/wiring.rs$' -e '^crates/moor/src/controller/front_shim.rs$')
+named=$(printf '%s\n' "$files" | grep -v -e '^crates/moor-core/src/config/check.rs$' -e '^crates/moor/src/adapters/box_agent/brief.rs$' -e '^crates/moor/src/controller/front_shim.rs$')
 [ -n "$files" ] || { echo "exec-env: ok"; exit 0; }
 # (a) proxy/CA variable names belong to the builder alone (comments ignored).
 # shellcheck disable=SC2086

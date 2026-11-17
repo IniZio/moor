@@ -125,23 +125,6 @@ fn removed_proof_cap_key_is_unknown() {
 }
 
 #[test]
-fn removed_slack_key_says_to_delete_it() {
-    for text in [
-        "slack: {app_token_file: /x/app, bot_token_file: /x/bot, channels: [C1], users: [U1]}\n",
-        "slack: ~\n",
-        "slack:\n",
-        "slack: null\n",
-    ] {
-        let e = err(text);
-        assert_eq!(e.path, "slack", "{text}");
-        let line = e.to_string();
-        assert!(line.contains("delete it"), "{text}: {line}");
-        assert!(line.contains("moor-slack"), "{text}: {line}");
-        assert!(!line.contains('\n'), "{text}: {line}");
-    }
-}
-
-#[test]
 fn a_repos_key_is_an_unknown_key() {
     let e = err("repos:\n  app:\n    url: https://github.com/o/app.git\n");
     assert!(e.to_string().contains("unknown field `repos`"), "{e}");

@@ -10,8 +10,7 @@
 )]
 
 use std::fs;
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-use std::net::TcpListener;
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -120,7 +119,7 @@ impl Controller {
         this
     }
 
-    /// Serves a `probe` front that runs [`PROBE`] and may write `front`, and a `slack` front
+    /// Serves a `probe` front that runs [`PROBE`] and may write `front`, and an `other` front
     /// without a command.
     fn probe() -> Self {
         Self::probe_running(PROBE)
@@ -143,7 +142,7 @@ impl Controller {
                 sockets[1],
             ]);
             format!(
-                "  probe:\n    command: {command}\n    state_dir: {}\n    read_only: [{}, {}]\n  slack: {{}}\n",
+                "  probe:\n    command: {command}\n    state_dir: {}\n    read_only: [{}, {}]\n  other: {{}}\n",
                 root.join("front").display(),
                 root.join("home").join("shared").display(),
                 python.prefix.display(),
@@ -248,13 +247,6 @@ fn hidden_program_and_note(root: &Path, python: &Path) -> PathBuf {
     fs::create_dir_all(root.join("home").join("shared")).unwrap();
     fs::write(root.join("home").join("shared").join("note"), "shared").unwrap();
     program
-}
-
-/// A sibling binary of `moor` in the target dir, such as `moor-slack`.
-fn sibling(name: &str) -> PathBuf {
-    let path = Path::new(env!("CARGO_BIN_EXE_moor")).with_file_name(name);
-    assert!(path.is_file(), "build {name} first: {}", path.display());
-    path
 }
 
 /// Polls `check` until it returns something, for up to 20 s.
@@ -428,56 +420,5 @@ fn the_check_tries_a_write_the_sandbox_refuses() {
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         "sandbox enforced: a write outside the allow-list was refused"
-    );
-}
-
-#[test]
-fn moor_slack_starts_under_the_sandbox() {
-    let slack = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = slack.local_addr().unwrap().port();
-    std::thread::spawn(move || {
-        let reply = r#"{"ok":true,"team_id":"T1","url":"ws://127.0.0.1:9/"}"#;
-        for mut stream in slack.incoming().map_while(Result::ok) {
-            let mut head = [0; 4096];
-            let _ = stream.read(&mut head);
-            let _ = write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                reply.len()
-            );
-        }
-    });
-    let ctl = Controller::start(|root, _| {
-        let cfg = root.join("slack-cfg");
-        fs::create_dir(&cfg).unwrap();
-        for (file, token) in [("app", "xapp-test"), ("bot", "xoxb-test")] {
-            let path = cfg.join(file);
-            fs::write(&path, token).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-        }
-        let config = cfg.join("slack.yaml");
-        fs::write(
-            &config,
-            format!(
-                "app_token_file: {}\nbot_token_file: {}\napi_base: http://127.0.0.1:{port}\n",
-                cfg.join("app").display(),
-                cfg.join("bot").display(),
-            ),
-        )
-        .unwrap();
-        let command = serde_json::json!([sibling("moor-slack"), "--config", config]);
-        format!(
-            "  slack:\n    command: {command}\n    state_dir: {}\n    read_only: [{}]\n",
-            root.join("slack").display(),
-            cfg.display(),
-        )
-    });
-    wait_for("moor-slack's coordinator probe", || {
-        ctl.line("slack", "moor-slack: coordinator")
-    });
-    assert!(
-        ctl.root.join("slack").join("slack.db").exists(),
-        "{}",
-        ctl.log()
     );
 }

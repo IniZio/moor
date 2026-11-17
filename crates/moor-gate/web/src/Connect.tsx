@@ -24,10 +24,6 @@ export function Connect({ url }: { url: string | null }) {
 			<h2>Connect</h2>
 			<ul class="cards">
 				{url && <Command label="Claude Code" line={`claude mcp add --transport http moor ${url}`} />}
-				<li>
-					<div class="row-head"><strong>Slack</strong></div>
-					<p class="muted">Mention <code>@moor</code> in a channel to start a Box. Nothing to install.</p>
-				</li>
 			</ul>
 		</section>
 	);

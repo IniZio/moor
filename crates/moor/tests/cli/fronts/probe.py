@@ -78,7 +78,7 @@ unmounted = libc.umount2(f"{root}/state".encode(), 2) == 0
 got = {
     "own": dial("/proc/self/fd/3"),
     "operator": dial(f"{root}/c.sock"),
-    "other_front": dial(f"{root}/state/fronts/slack.sock"),
+    "other_front": dial(f"{root}/state/fronts/other.sock"),
     "vault_key": read(f"{root}/cfg/vault.key"),
     "controller_fds": listdir(f"/proc/{ctl}/fd"),
     "controller_root": dial(f"/proc/{ctl}/root{root}/c.sock"),
