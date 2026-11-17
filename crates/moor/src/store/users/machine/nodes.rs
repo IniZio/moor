@@ -142,7 +142,6 @@ fn machine_select() -> SelectStatement {
             .map(m),
         )
         .columns([MachineLinks::Online, MachineLinks::Since].map(l))
-        // The cap is the node's own setting; what its agent offered is not read.
         .column(m(UserMachinesV2::MaxBoxes))
         .columns(
             [
