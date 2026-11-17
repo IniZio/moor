@@ -5,7 +5,7 @@ use moor_migrate::Backend;
 use postgres::{Client, NoTls};
 use rusqlite::Connection;
 
-use crate::vm_inc::TABLES;
+use crate::steps::vm_inc::TABLES;
 
 /// Box 1 on its second hands, Box 2 with none yet, each with a row in every VM table.
 const BEFORE: &str = r#"

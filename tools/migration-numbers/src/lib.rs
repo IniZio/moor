@@ -7,10 +7,14 @@
 use std::collections::BTreeMap;
 
 use syn::visit::Visit;
-use syn::{Expr, ExprStruct, Item, Lit, Member};
+use syn::{Expr, ExprCall, ExprStruct, Item, Lit, Member};
 
 /// Where the store's migration list is written.
-pub const STEPS_FILE: &str = "crates/moor-schema/src/lib.rs";
+pub const STEPS_FILE: &str = "crates/moor-schema/src/steps.rs";
+
+/// Where the list was written before it moved to [`STEPS_FILE`], for a base branch that has not
+/// taken the move.
+pub const LEGACY_STEPS_FILE: &str = "crates/moor-schema/src/lib.rs";
 
 /// How to clear a failure, printed after the violations.
 pub const FIX: &str = "fix: give each new migration a version above the base branch's highest, \
@@ -25,10 +29,20 @@ fn version(name: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("migration `{name}` is not named V<n>__<name>"))
 }
 
-/// Collects the `name` of each `Step { .. }` literal it visits.
+/// Collects the name of each `step("..", ..)` call and `Step { name: "..", .. }` literal it visits.
 struct Names(Vec<String>);
 
 impl<'ast> Visit<'ast> for Names {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if matches!(&*node.func, Expr::Path(p) if p.path.is_ident("step")) {
+            if let Some(Expr::Lit(lit)) = node.args.first() {
+                if let Lit::Str(name) = &lit.lit {
+                    self.0.push(name.value());
+                }
+            }
+        }
+    }
+
     fn visit_expr_struct(&mut self, node: &'ast ExprStruct) {
         for field in &node.fields {
             if matches!(&field.member, Member::Named(id) if id == "name") {
@@ -42,7 +56,8 @@ impl<'ast> Visit<'ast> for Names {
     }
 }
 
-/// The migration names in the `STEPS` list of `source`, the text of [`STEPS_FILE`].
+/// The migration names in the `STEPS` list of `source`, the text of [`STEPS_FILE`] or, on an older
+/// base, [`LEGACY_STEPS_FILE`].
 pub fn step_names(source: &str) -> Result<Vec<String>, String> {
     let file = syn::parse_file(source).map_err(|e| format!("cannot parse {STEPS_FILE}: {e}"))?;
     let mut names = Names(Vec::new());
@@ -55,7 +70,7 @@ pub fn step_names(source: &str) -> Result<Vec<String>, String> {
     }
     if names.0.is_empty() {
         return Err(format!(
-            "no `STEPS` list of `Step {{ name: .. }}` in {STEPS_FILE}"
+            "no `STEPS` list of `step(\"..\", ..)` entries in {STEPS_FILE}"
         ));
     }
     Ok(names.0)

@@ -5,7 +5,18 @@
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
-use migration_numbers::{step_names, violations, FIX, STEPS_FILE};
+use migration_numbers::{step_names, violations, FIX, LEGACY_STEPS_FILE, STEPS_FILE};
+
+/// `git show <base_ref>:<file>`, run in the repo root.
+fn show(root: &Path, base_ref: &str, file: &str) -> Result<std::process::Output, String> {
+    Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("show")
+        .arg(format!("{base_ref}:{file}"))
+        .output()
+        .map_err(|e| format!("cannot run git: {e}"))
+}
 
 fn run() -> Result<Vec<String>, String> {
     let base_ref = std::env::args()
@@ -13,13 +24,10 @@ fn run() -> Result<Vec<String>, String> {
         .or_else(|| std::env::var("BASE").ok().filter(|b| !b.is_empty()))
         .unwrap_or_else(|| "origin/develop".to_owned());
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let shown = Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .arg("show")
-        .arg(format!("{base_ref}:{STEPS_FILE}"))
-        .output()
-        .map_err(|e| format!("cannot run git: {e}"))?;
+    let mut shown = show(&root, &base_ref, STEPS_FILE)?;
+    if !shown.status.success() {
+        shown = show(&root, &base_ref, LEGACY_STEPS_FILE)?;
+    }
     if !shown.status.success() {
         return Err(format!(
             "cannot read {STEPS_FILE} on `{base_ref}`: {}\nfetch it (git fetch origin develop) or name \

@@ -4,7 +4,7 @@
 use moor_migrate::sea_query::{Query, Table};
 use moor_migrate::Script;
 
-use super::text;
+use crate::text;
 
 mod boxes;
 mod machines;
