@@ -103,10 +103,9 @@ pub(crate) async fn serve(
 /// Serves `op` when this machine's mode allows it; why it failed.
 async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match (machine.pool.as_ref(), op) {
-        (
-            Some(pool),
-            op @ (Op::Lease { .. } | Op::Dial { .. } | Op::Port { .. }),
-        ) => serve_pool(&machine.home, pool, ch, op).await,
+        (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. } | Op::Port { .. })) => {
+            serve_pool(&machine.home, pool, ch, op).await
+        }
         (
             None,
             op @ (Op::Exec { .. }

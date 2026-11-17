@@ -567,4 +567,3 @@ fn doctor_takes_an_optional_gate_url() {
         Some("https://moor.example")
     );
 }
-

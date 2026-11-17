@@ -426,4 +426,3 @@ fn a_refresh_moves_an_initialised_ssh_submodule_to_its_new_commit() {
     assert_eq!(o.git(&o.tree().join("lib"), &["rev-parse", "HEAD"]), moved);
     assert_eq!(read(&o, "lib/s.txt"), "moved\n");
 }
-

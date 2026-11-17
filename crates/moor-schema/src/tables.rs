@@ -86,9 +86,6 @@ tables! {
     MachineBoxMemory { MachineId, BoxId, HostMemoryMib, ResumeMemoryMib, Inc }
     MachineBoxes { BoxId, MachineId, Slot, Reach, Facts, Prepared, SuspendedAt, Evicted,
         UpdatedAt, Inc }
-    SetupCheckpoints { Provider, LayerKey, Checkpoint, Repo, Bytes, CreatedAt, LastUsedAt, Workdir,
-        SetupMs, User, Chain, ChainAt, Parent, Evicting, Base, Depth, StaleSince }
-    SetupCheckpointPins { BoxId, Provider, LayerKey, Layer, Checkpoint, Inc }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
         TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,

@@ -14,6 +14,7 @@ mod box_state;
 mod checkpoint_base;
 mod checkpoint_depth;
 mod checkpoint_stale;
+mod drop_checkpoints;
 mod drop_panes;
 mod effect_backfill;
 mod egress_token;
@@ -176,6 +177,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V78__workflow_also",
         write: workflow_also::write,
+    },
+    Step {
+        name: "V79__drop_checkpoints",
+        write: drop_checkpoints::write,
     },
 ];
 
