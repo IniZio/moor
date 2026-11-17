@@ -94,6 +94,9 @@ esac
 home=$(getent passwd "$user" | cut -d: -f6)
 mkdir -p "$home"
 chown "$uid:$uid" "$home" 2>/dev/null || true
+# The mount points of the skills volumes both places share are made by Docker as root.
+mkdir -p "$home/.agents" "$home/.claude/skills"
+chown "$uid:$uid" "$home/.agents" "$home/.claude" "$home/.claude/skills" 2>/dev/null || true
 
 write_profile
 install_ca

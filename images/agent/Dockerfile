@@ -33,14 +33,14 @@ FROM ${NODE_IMAGE}
 ARG CLAUDE_CODE_VERSION HERDR_CORE_VERSION HERDR_CORE_SHA256_X86_64 HERDR_CORE_SHA256_AARCH64
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git openssh-client socat tinyproxy tini procps util-linux rsync \
+      ca-certificates curl git openssh-client socat tinyproxy tini procps util-linux rsync jq \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force \
  && (userdel -r node 2>/dev/null || true) \
  && groupadd --gid 1000 agent \
  && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent \
- && install -d -o agent -g agent /home/agent/moor /run/moor
+ && install -d -o agent -g agent /home/agent/moor /run/moor /home/agent/.agents /home/agent/.claude /home/agent/.claude/skills
 
 RUN case "$(uname -m)" in \
       x86_64) arch=x86_64; sha=${HERDR_CORE_SHA256_X86_64} ;; \

@@ -20,6 +20,10 @@ pub(super) struct Names {
     pub(super) work_home: String,
     /// The work place's `/var/lib/docker`.
     pub(super) docker: String,
+    /// `~/.agents`, in both places, so skills the work place installs reach Claude.
+    pub(super) agents: String,
+    /// `~/.claude/skills`, in both places.
+    pub(super) skills: String,
 }
 
 impl Names {
@@ -35,17 +39,21 @@ impl Names {
             agent_home: name("agent-home"),
             work_home: name("work-home"),
             docker: name("docker"),
+            agents: name("agents"),
+            skills: name("skills"),
         }
     }
 
     /// Every volume the Box owns.
-    pub(super) fn volumes(&self) -> [&str; 5] {
+    pub(super) fn volumes(&self) -> [&str; 7] {
         [
             &self.tree,
             &self.run,
             &self.agent_home,
             &self.work_home,
             &self.docker,
+            &self.agents,
+            &self.skills,
         ]
     }
 }

@@ -29,6 +29,18 @@ fn owned<const N: usize>(words: [&str; N]) -> Vec<String> {
     words.iter().map(|w| (*w).to_owned()).collect()
 }
 
+/// The two volumes both places mount, the only part of the agent's home they share. The work
+/// place's `npx skills add -g` writes them and Claude, in the agent place, loads them, while the
+/// rest of each home stays apart so a wrecked work place never takes Claude's session with it.
+fn shared_skills(n: &Names) -> Vec<String> {
+    let mut a = owned(["-v", &format!("{}:/home/agent/.agents", n.agents)]);
+    a.extend(owned([
+        "-v",
+        &format!("{}:/home/agent/.claude/skills", n.skills),
+    ]));
+    a
+}
+
 /// The argv, after `docker`, that starts the agent place: not privileged, on the Box network,
 /// and never restarted by Docker, because the machine agent is the only actor that restarts a Box.
 pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names) -> Vec<String> {
@@ -44,6 +56,7 @@ pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names) -> Vec<String> {
     a.extend(owned(["-v", &format!("{}:{WORKDIR}", n.tree)]));
     a.extend(owned(["-v", &format!("{}:/run/moor", n.run)]));
     a.extend(owned(["-v", &format!("{}:/home/agent", n.agent_home)]));
+    a.extend(shared_skills(n));
     a.push(s.agent_image.clone());
     a
 }
@@ -90,6 +103,7 @@ pub(super) fn work_run(
     a.extend(owned(["-v", &format!("{}:{WORKDIR}", n.tree)]));
     a.extend(owned(["-v", &format!("{}:/run/moor", n.run)]));
     a.extend(owned(["-v", &format!("{}:/home/agent", n.work_home)]));
+    a.extend(shared_skills(n));
     a.extend(owned(["-v", &format!("{}:/var/lib/docker", n.docker)]));
     a.push(s.work_image.clone());
     a
