@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 
 use moor_core::view::env::{EnvCredential, EnvRow, EnvView};
+use moor_core::view::repo_config::RepoConfigValue;
 use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
@@ -90,6 +91,8 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "close-failed" => close_failed::text(value),
         "wait" => wait_text(value),
         "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
+        "repo-config-get" => repo_config_text(value),
+        "repo-config-set" => repo_config_set_line(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
         "open-host-session" | "update-host-session" | "end-host-session" => {
@@ -97,6 +100,25 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The stored config of a `repo-config-get` reply as the YAML it holds, so the output can go
+/// straight back to `repo config set`; a YAML comment says when there is none.
+fn repo_config_text(value: &Value) -> Option<String> {
+    let view = serde_json::from_value::<RepoConfigValue>(value.clone()).ok()?;
+    Some(
+        view.text
+            .unwrap_or_else(|| format!("# no config is stored for {}\n", view.repo)),
+    )
+}
+
+/// The line a `repo-config-set` reply prints: the repo and the revision it is now at.
+fn repo_config_set_line(value: &Value) -> Option<String> {
+    let view = serde_json::from_value::<RepoConfigValue>(value.clone()).ok()?;
+    Some(format!(
+        "{} config is now revision {}\n",
+        view.repo, view.revision
+    ))
 }
 
 /// The profile repo a `profile-*` reply names, or that none is set.

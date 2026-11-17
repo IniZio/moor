@@ -14,6 +14,7 @@ use super::{parse_ignoring_env as parse, Action};
 use crate::cli::GlobalOpts;
 
 mod events;
+mod repo;
 
 /// Parse `moor <args>` into opts and action.
 fn run(args: &[&str]) -> Result<(GlobalOpts, Action), clap::Error> {

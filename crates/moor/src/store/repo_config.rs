@@ -132,8 +132,7 @@ impl Store {
                     .value(Repos::EditedAt, self.now().as_millis())
                     .and_where(Expr::col(Repos::Repo).eq(key(repo)))
                     .and_where(
-                        Expr::col(Repos::Revision)
-                            .eq(i64::try_from(revision).unwrap_or(i64::MAX)),
+                        Expr::col(Repos::Revision).eq(i64::try_from(revision).unwrap_or(i64::MAX)),
                     ),
             )?,
             None => self.writer().run(

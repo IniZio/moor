@@ -33,6 +33,8 @@ pub use machine::{
 };
 mod names;
 pub use names::{Grant, Named, Pins};
+mod repo_config;
+pub use repo_config::{RepoConfigGetReq, RepoConfigSetReq};
 mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
@@ -129,6 +131,10 @@ pub enum Request {
     Artifacts(ArtifactsReq),
     /// Read a byte range of one artifact.
     ArtifactRead(ArtifactReadReq),
+    /// Read a repo's config from the store.
+    RepoConfigGet(RepoConfigGetReq),
+    /// Replace a repo's config in the store, when the caller may push to the repo.
+    RepoConfigSet(RepoConfigSetReq),
     /// Show the caller's user and its linked identities.
     Whoami(AsReq),
     /// Create a user for the caller's identity, or return the one it has; a front adds the

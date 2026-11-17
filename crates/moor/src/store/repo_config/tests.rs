@@ -11,9 +11,10 @@ fn repo(s: &str) -> ForgeRepo {
 
 fn written(w: Wrote) -> super::RepoConfigRow {
     match w {
-        Wrote::Written(row) => row,
-        Wrote::Stale { current } => panic!("stale at {current:?}"),
+        Wrote::Written(row) => Some(row),
+        Wrote::Stale { .. } => None,
     }
+    .expect("the write was not refused")
 }
 
 #[test]
@@ -80,7 +81,10 @@ fn a_write_with_no_expected_revision_replaces_whatever_the_row_holds() {
             .set_repo_config(&repo("o/n"), "setup: [b]\n", "operator", None)
             .unwrap(),
     );
-    assert_eq!((replaced.revision, replaced.text.as_str()), (2, "setup: [b]\n"));
+    assert_eq!(
+        (replaced.revision, replaced.text.as_str()),
+        (2, "setup: [b]\n")
+    );
 }
 
 #[test]
