@@ -150,7 +150,7 @@ fn fresh_store() -> Connection {
 }
 
 #[test]
-fn fresh_store_has_no_front_message_column_or_slack_tables() {
+fn fresh_store_has_no_front_message_column_or_herdr_tables() {
     let conn = fresh_store();
     let columns: Vec<String> = conn
         .prepare("SELECT name FROM pragma_table_info('bindings')")
@@ -161,11 +161,11 @@ fn fresh_store_has_no_front_message_column_or_slack_tables() {
         .unwrap();
     assert!(columns.iter().any(|c| c == "owner"), "{columns:?}");
     assert!(!columns.iter().any(|c| c == "status_ts"), "{columns:?}");
-    let slack = count(
+    let herdr = count(
         &conn,
-        "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'slack%'",
+        "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'herdr%'",
     );
-    assert_eq!(slack, 0);
+    assert_eq!(herdr, 0);
 }
 
 /// A file the SQL migrations brought to `through`: their schema and a history ending there.

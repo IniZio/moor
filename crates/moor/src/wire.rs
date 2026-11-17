@@ -1,7 +1,7 @@
 //! Composition root: the only module that names concrete adapters.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
@@ -153,37 +153,12 @@ pub fn migrate_store(env: &Env) -> Result<String, String> {
     })
 }
 
-/// Ends the front Proxy leases of every front that does not run elsewhere.
-pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
-    if let Some(store) = env.shared::<Store>() {
-        store.purge_front_leases(env.remote_fronts())?;
-    }
-    Ok(())
-}
-
 /// See [`crate::keys::settle`]; an env with no store or state dir has none.
-pub(crate) fn settle_keys(env: &Env, vault: &Vault, front_ca: bool) -> Result<(), String> {
+pub(crate) fn settle_keys(env: &Env, vault: &Vault) -> Result<(), String> {
     let (Some(store), Some(state)) = (env.shared::<Store>(), env.state_dir()) else {
         return Ok(());
     };
-    crate::keys::settle(store, vault, &state, front_ca)
-}
-
-/// The socket of front `ns`'s Proxy for `state_dir`.
-pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
-    crate::proxy::fronts::socket_path(state_dir, ns)
-}
-
-/// Creates the directory of front `ns`'s Proxy socket for `state_dir`, so the front's shim can
-/// open it before the Proxy binds the socket.
-pub(crate) fn prepare_front_proxy_socket(state_dir: &Path, ns: &str) -> Result<(), String> {
-    let owner = rustix::process::getuid().as_raw();
-    crate::proxy::front::FrontSocket::of_front(owner, state_dir, ns).prepare()
-}
-
-/// The front Proxy's CA certificate, made when missing.
-pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
-    crate::proxy::fronts::ca_cert(state_dir)
+    crate::keys::settle(store, vault, &state)
 }
 
 /// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
@@ -280,7 +255,7 @@ pub use store_copy::copy_store;
 pub(crate) use egress::prepare_egress;
 use keepers::proxy_host;
 pub(crate) use keepers::{end_keepers, keepers_tunnel, reconcile_proxies};
-pub(crate) use ledger::{serve_egress_ledger, serve_ledger};
+pub(crate) use ledger::serve_ledger;
 
 #[cfg(test)]
 mod tests;

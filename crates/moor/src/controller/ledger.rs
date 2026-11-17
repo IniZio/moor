@@ -35,12 +35,10 @@ const HELLO_DEADLINE: Duration = Duration::from_secs(10);
 /// The longest hello read; anyone who can reach the listener can send one.
 const HELLO_MAX: usize = 64 * 1024;
 
-/// Serves `listener` on a thread of its own until the process exits, with `fronts_key` as the
-/// front Proxy's key.
+/// Serves `listener` on a thread of its own until the process exits.
 pub(super) fn serve_until_exit(
     listener: UnixListener,
     (env, vault): (&Arc<Env>, &Arc<Vault>),
-    fronts_key: Option<Arc<str>>,
     sink: &Sink,
 ) {
     let (env, vault, sink) = (Arc::clone(env), Arc::clone(vault), Arc::clone(sink));
@@ -48,12 +46,9 @@ pub(super) fn serve_until_exit(
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    let (env, vault, key) =
-                        (Arc::clone(&env), Arc::clone(&vault), fronts_key.clone());
+                    let (env, vault) = (Arc::clone(&env), Arc::clone(&vault));
                     std::thread::spawn(move || {
-                        Moor::checked(|| {
-                            Moor::serve_ledger((&env, &vault), key.as_deref(), stream);
-                        });
+                        Moor::checked(|| Moor::serve_ledger((&env, &vault), stream));
                     });
                 }
                 Err(e) => log(&sink, &format!("ledger accept failed: {e}")),
@@ -239,7 +234,7 @@ fn serve_one(
         }
         Err(_) => {
             let head = io::Cursor::new(line);
-            Moor::serve_egress_ledger((env, vault), Replayed { head, stream });
+            Moor::serve_ledger((env, vault), Replayed { head, stream });
         }
     }
 }

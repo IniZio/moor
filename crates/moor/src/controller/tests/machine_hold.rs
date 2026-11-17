@@ -37,15 +37,15 @@ impl Hold {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
         let db = served.dir.path().join("state").join("moor.db");
         let store = Store::open(&db, clock).expect("store");
-        let slack = served.front("slack");
+        let herdr = served.front("herdr");
         for (who, name, label) in [(A, "mini", "macos"), (B, "studio", "macos")] {
             assert_eq!(
-                ask(&slack, &json!({"cmd": "enroll", "identity": who}))["class"],
+                ask(&herdr, &json!({"cmd": "enroll", "identity": who}))["class"],
                 "ok"
             );
             let add =
                 json!({"cmd": "machine-enroll", "name": name, "pubkey": KEY, "labels": [label]});
-            assert_eq!(ask(&slack, &acting(who, &add))["class"], "ok");
+            assert_eq!(ask(&herdr, &acting(who, &add))["class"], "ok");
         }
         Self { served, store }
     }
@@ -177,7 +177,7 @@ fn a_shared_machine_gives_each_box_its_own_slot_and_ports_until_full() {
     let add = json!({"cmd": "machine-enroll", "name": "mini", "pubkey": KEY,
         "labels": ["macos"], "capacity": 2});
     assert_eq!(
-        ask(&h.served.front("slack"), &acting(A, &add))["class"],
+        ask(&h.served.front("herdr"), &acting(A, &add))["class"],
         "ok"
     );
     let (a, b, c) = (h.new_box(A, "a"), h.new_box(A, "b"), h.new_box(A, "c"));
@@ -208,7 +208,7 @@ fn a_shared_machine_gives_each_box_its_own_slot_and_ports_until_full() {
 fn a_front_may_not_send_machine_hold_even_for_its_own_box() {
     let h = Hold::new();
     let a = h.new_box(A, "a");
-    let got = ask(&h.served.front("slack"), &acting(A, &hold(a, &claim())));
+    let got = ask(&h.served.front("herdr"), &acting(A, &hold(a, &claim())));
     refused(
         &got,
         "machine-hold is the machine runner's, which is operator-only",

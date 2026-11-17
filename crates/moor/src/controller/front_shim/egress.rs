@@ -274,14 +274,14 @@ mod tests {
     #[test]
     fn a_connect_line_names_its_host_and_port() {
         assert_eq!(
-            target("CONNECT slack.com:443 HTTP/1.1\r\nHost: slack.com:443\r\n\r\n"),
-            Some(("slack.com".to_owned(), 443))
+            target("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"),
+            Some(("example.com".to_owned(), 443))
         );
         assert_eq!(
             target("CONNECT [2606:4700::1111]:443 HTTP/1.1\r\n\r\n"),
             Some(("2606:4700::1111".to_owned(), 443))
         );
-        assert_eq!(target("GET http://slack.com/ HTTP/1.1\r\n\r\n"), None);
-        assert_eq!(target("CONNECT slack.com HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(target("GET http://example.com/ HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(target("CONNECT example.com HTTP/1.1\r\n\r\n"), None);
     }
 }

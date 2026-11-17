@@ -53,7 +53,6 @@
 //! grace to finish.
 
 mod boxes;
-mod leases;
 mod limit;
 mod listen;
 pub(crate) mod run;
@@ -81,7 +80,6 @@ use boxes::Boxes;
 pub(crate) use limit::Rate;
 pub(crate) use listen::Listen;
 use listen::Listener;
-use moor_core::config::proxy::ResolvedRule;
 
 /// The path the forwarder opens its WebSocket on.
 pub(crate) const PATH: &str = "/egress";
@@ -158,16 +156,12 @@ pub(crate) struct Config {
     pub(crate) warm: Option<Warm>,
     /// Source of time.
     pub(crate) clock: Arc<dyn Clock>,
-    /// The rules a remote front's lease may name.
-    pub(crate) front_rules: Vec<ResolvedRule>,
 }
 
 /// What every connection shares.
 struct Shared {
     /// Each token's Box and its proxy.
     boxes: Boxes,
-    /// Each remote front's leases and their proxies.
-    leases: leases::Leases,
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
     /// The machine service, when one is configured.
@@ -210,10 +204,8 @@ impl Server {
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let (machine, warm) = (cfg.machine.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
-        let leases = leases::Leases::new(&cfg);
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
-            leases,
             open: AtomicUsize::new(0),
             machine,
             key_id,
@@ -302,7 +294,6 @@ impl Server {
         }
         self.runtime.shutdown_background();
         self.shared.boxes.stop();
-        self.shared.leases.stop();
         left
     }
 }

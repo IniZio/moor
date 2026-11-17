@@ -469,12 +469,12 @@ fn a_box_stays_reachable_with_the_same_key_after_an_empty_state_dir_and_a_restar
     let store = crate::store::db::testing::open_store(&kept.path().join("moor.db"), clock);
     let vault = crate::vault::Vault::load_or_create(&kept.path().join("vault.key")).unwrap();
 
-    crate::keys::settle(&store, &vault, &state, false).unwrap();
+    crate::keys::settle(&store, &vault, &state).unwrap();
     cb.acquire(&req()).unwrap();
     let key = std::fs::read_to_string(state.join("pool/id_ed25519")).unwrap();
 
     std::fs::remove_dir_all(&state).unwrap();
-    crate::keys::settle(&store, &vault, &state, false).unwrap();
+    crate::keys::settle(&store, &vault, &state).unwrap();
     cb.acquire(&req()).unwrap();
 
     let authorized: Vec<_> = host

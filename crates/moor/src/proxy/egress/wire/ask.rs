@@ -3,7 +3,6 @@
 use zeroize::Zeroizing;
 
 use crate::proxy::egress::{PLAIN, TARGET};
-use crate::proxy::fronts::lease::basic_password;
 
 /// What the forwarder asked for.
 pub(super) struct Ask {
@@ -38,7 +37,6 @@ pub(super) fn parse(head: &[u8]) -> Option<Ask> {
         v.strip_prefix(b"Bearer ")
             .filter(|t| !t.is_empty())
             .map(|t| Zeroizing::new(t.to_vec()))
-            .or_else(|| std::str::from_utf8(v).ok().and_then(basic_password))
     });
     Some(Ask {
         path: req.path?.to_owned(),

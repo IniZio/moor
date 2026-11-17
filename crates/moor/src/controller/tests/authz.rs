@@ -22,9 +22,9 @@ use crate::controller::watch::{stream, Ask, Limits};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
-pub(super) const A: &str = "slack:T1:A";
-pub(super) const B: &str = "slack:T1:B";
-const OPERATOR_ON_SLACK: &str = "slack:T1:OP";
+pub(super) const A: &str = "herdr:T1:A";
+pub(super) const B: &str = "herdr:T1:B";
+const OPERATOR_ON_HERDR: &str = "herdr:T1:OP";
 pub(super) const A_BOX: &str = "a-box";
 pub(super) const B_BOX: &str = "b-box";
 const NO_USER_BOX: &str = "fixture-box";
@@ -47,7 +47,7 @@ impl World {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
         let db = served.dir.path().join("state").join("moor.db");
         let store = Store::open(&db, clock).expect("store");
-        let slack = served.front("slack");
+        let herdr = served.front("herdr");
         let enroll = |socket: &Path, identity: Option<&str>| {
             let mut req = json!({"cmd": "enroll"});
             if let Some(id) = identity {
@@ -56,16 +56,16 @@ impl World {
             let user = ask(socket, &req)["value"]["user"].as_i64().expect("user");
             UserId::new(user)
         };
-        let (a, b) = (enroll(&slack, Some(A)), enroll(&slack, Some(B)));
+        let (a, b) = (enroll(&herdr, Some(A)), enroll(&herdr, Some(B)));
         let operator = enroll(&served.main, None);
         let email = Email::parse("operator@example.com").expect("email");
         store
             .enroll(&Identity::parse(&me()).expect("identity"), Some(&email))
             .expect("give the operator's user an email");
         let redeem = json!({
-            "cmd": "enroll", "identity": OPERATOR_ON_SLACK, "email": email.as_str(),
+            "cmd": "enroll", "identity": OPERATOR_ON_HERDR, "email": email.as_str(),
         });
-        assert_eq!(ask(&slack, &redeem)["value"]["user"], json!(operator.get()));
+        assert_eq!(ask(&herdr, &redeem)["value"]["user"], json!(operator.get()));
         insert(&store, A_BOX, Some(a));
         insert(&store, OPERATOR_BOX, Some(operator));
         let b_box = insert(&store, B_BOX, Some(b));
@@ -80,9 +80,9 @@ impl World {
         }
     }
 
-    /// The `slack` front's socket.
-    pub(super) fn slack(&self) -> std::path::PathBuf {
-        self.served.front("slack")
+    /// The `herdr` front's socket.
+    pub(super) fn herdr(&self) -> std::path::PathBuf {
+        self.served.front("herdr")
     }
 }
 
@@ -193,7 +193,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "sessions" => json!({"cmd": kind, "parent": session}),
         "open-host-session" => json!({"cmd": kind, "workdir": "/w", "parent": session}),
         "bind-session" => {
-            json!({"cmd": kind, "front": "slack", "key": "k", "session": session, "owner": "o"})
+            json!({"cmd": kind, "front": "herdr", "key": "k", "session": session, "owner": "o"})
         }
         "webhook-setup-show"
         | "webhook-setup-finish"
@@ -249,14 +249,14 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
 #[test]
 fn every_request_kind_that_names_a_box_is_refused_for_another_user() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let kinds = every_kind();
     assert!(kinds.len() > 30, "{kinds:?}");
     let (mut checked, mut unknown) = (0, Vec::new());
     for kind in &kinds {
         match naming(kind, B_BOX, world.b_session) {
             Names::Box(foreign) => {
-                not_yours(&ask(&slack, &acting(A, &foreign)));
+                not_yours(&ask(&herdr, &acting(A, &foreign)));
                 checked += 1;
             }
             Names::Nothing => {}
@@ -273,7 +273,7 @@ fn every_request_kind_that_names_a_box_is_refused_for_another_user() {
 #[test]
 fn a_missing_box_and_another_users_box_get_byte_identical_replies() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     for kind in every_kind().iter().filter(|k| *k != "start") {
         let (Names::Box(foreign), Names::Box(missing)) = (
             naming(kind, B_BOX, world.b_session),
@@ -282,24 +282,24 @@ fn a_missing_box_and_another_users_box_get_byte_identical_replies() {
             continue;
         };
         assert_eq!(
-            response_line(&slack, &acting(A, &foreign)),
-            response_line(&slack, &acting(A, &missing)),
+            response_line(&herdr, &acting(A, &foreign)),
+            response_line(&herdr, &acting(A, &missing)),
             "{kind}"
         );
     }
     let by_id = |id: i64| json!({"cmd": "steer", "box": {"id": id}, "text": "hi"});
     assert_eq!(
-        response_line(&slack, &acting(A, &by_id(world.b_box.get()))),
-        response_line(&slack, &acting(A, &by_id(4242))),
+        response_line(&herdr, &acting(A, &by_id(world.b_box.get()))),
+        response_line(&herdr, &acting(A, &by_id(4242))),
     );
 }
 
 #[test]
 fn a_user_runs_steers_closes_and_shows_only_its_own_box() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let show = |name: &str| json!({"cmd": "show", "box": name});
-    let got = ask(&slack, &acting(A, &show(A_BOX)));
+    let got = ask(&herdr, &acting(A, &show(A_BOX)));
     assert_eq!(got["class"], "ok", "{got}");
     assert_eq!(got["value"]["box"]["name"], A_BOX, "{got}");
     for request in [
@@ -308,7 +308,7 @@ fn a_user_runs_steers_closes_and_shows_only_its_own_box() {
         json!({"cmd": "close", "box": B_BOX, "force": true}),
         show(B_BOX),
     ] {
-        not_yours(&ask(&slack, &acting(A, &request)));
+        not_yours(&ask(&herdr, &acting(A, &request)));
     }
     let b = world
         .store
@@ -321,11 +321,11 @@ fn a_user_runs_steers_closes_and_shows_only_its_own_box() {
 #[test]
 fn a_box_owner_may_attach_to_its_own_box() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let attach = |name: &str| json!({"cmd": "attach", "box": name, "cols": 80, "rows": 24});
-    let got = ask(&slack, &acting(A, &attach(A_BOX)));
+    let got = ask(&herdr, &acting(A, &attach(A_BOX)));
     assert_ne!(got["error"]["message"], "not your Box", "{got}");
-    not_yours(&ask(&slack, &acting(A, &attach(B_BOX))));
+    not_yours(&ask(&herdr, &acting(A, &attach(B_BOX))));
 }
 
 #[test]
@@ -354,30 +354,30 @@ fn the_operator_acts_on_every_box() {
 #[test]
 fn a_front_socket_is_never_the_operator_whatever_it_asserts() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let show = |name: &str| json!({"cmd": "show", "box": name});
     refused(
-        &ask(&slack, &acting(&me(), &show(B_BOX))),
-        "may assert only slack:",
+        &ask(&herdr, &acting(&me(), &show(B_BOX))),
+        "may assert only herdr:",
     );
-    refused(&ask(&slack, &show(B_BOX)), "must assert an identity");
-    let got = ask(&slack, &acting(OPERATOR_ON_SLACK, &show(OPERATOR_BOX)));
+    refused(&ask(&herdr, &show(B_BOX)), "must assert an identity");
+    let got = ask(&herdr, &acting(OPERATOR_ON_HERDR, &show(OPERATOR_BOX)));
     assert_eq!(
         got["class"], "ok",
         "the operator's user owns its Box: {got}"
     );
     for name in [B_BOX, NO_USER_BOX] {
-        not_yours(&ask(&slack, &acting(OPERATOR_ON_SLACK, &show(name))));
+        not_yours(&ask(&herdr, &acting(OPERATOR_ON_HERDR, &show(name))));
     }
 }
 
 #[test]
 fn a_box_with_no_user_is_the_operators_only() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let show = json!({"cmd": "show", "box": NO_USER_BOX});
     for user in [A, B] {
-        not_yours(&ask(&slack, &acting(user, &show)));
+        not_yours(&ask(&herdr, &acting(user, &show)));
     }
     let got = ask(&world.served.main, &show);
     assert_eq!(got["class"], "ok", "{got}");
@@ -399,16 +399,16 @@ fn listed(envelope: &Value) -> Vec<String> {
 #[test]
 fn a_list_shows_only_the_callers_boxes_and_the_operator_sees_all() {
     let world = World::new();
-    let slack = world.slack();
+    let herdr = world.herdr();
     let list = json!({"cmd": "show"});
-    assert_eq!(listed(&ask(&slack, &acting(A, &list))), [A_BOX]);
-    assert_eq!(listed(&ask(&slack, &acting(B, &list))), [B_BOX]);
-    refused(&ask(&slack, &list), "must assert an identity");
+    assert_eq!(listed(&ask(&herdr, &acting(A, &list))), [A_BOX]);
+    assert_eq!(listed(&ask(&herdr, &acting(B, &list))), [B_BOX]);
+    refused(&ask(&herdr, &list), "must assert an identity");
     assert_eq!(
         listed(&ask(&world.served.main, &list)),
         [A_BOX, B_BOX, NO_USER_BOX, OPERATOR_BOX]
     );
-    let sessions = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
+    let sessions = ask(&herdr, &acting(A, &json!({"cmd": "sessions"})));
     let boxes: Vec<&Value> = sessions["value"]["sessions"]
         .as_array()
         .expect("a list of Sessions")
@@ -473,7 +473,7 @@ fn watched_as(socket: &Path, identity: Option<&str>) -> Vec<String> {
 #[test]
 fn a_watch_on_a_front_socket_carries_no_events_and_the_operator_sees_all() {
     let world = World::new();
-    assert_eq!(watched_over(&world.slack()), Vec::<String>::new());
+    assert_eq!(watched_over(&world.herdr()), Vec::<String>::new());
     assert_eq!(
         watched_over(&world.served.main),
         [A_BOX, B_BOX, NO_USER_BOX, OPERATOR_BOX]
@@ -483,12 +483,12 @@ fn a_watch_on_a_front_socket_carries_no_events_and_the_operator_sees_all() {
 #[test]
 fn a_watch_on_a_front_socket_carries_the_boxes_of_the_user_it_asserts() {
     let world = World::new();
-    let slack = world.slack();
-    assert_eq!(watched_as(&slack, Some(A)), [A_BOX]);
-    assert_eq!(watched_as(&slack, Some(B)), [B_BOX]);
-    assert_eq!(watched_as(&slack, Some(OPERATOR_ON_SLACK)), [OPERATOR_BOX]);
+    let herdr = world.herdr();
+    assert_eq!(watched_as(&herdr, Some(A)), [A_BOX]);
+    assert_eq!(watched_as(&herdr, Some(B)), [B_BOX]);
+    assert_eq!(watched_as(&herdr, Some(OPERATOR_ON_HERDR)), [OPERATOR_BOX]);
     assert_eq!(
-        watched_as(&slack, Some("slack:T1:NOBODY")),
+        watched_as(&herdr, Some("herdr:T1:NOBODY")),
         Vec::<String>::new()
     );
 }
@@ -497,7 +497,7 @@ fn a_watch_on_a_front_socket_carries_the_boxes_of_the_user_it_asserts() {
 fn a_watch_asserting_an_identity_its_socket_may_not_assert_carries_nothing() {
     let world = World::new();
     assert_eq!(
-        watched_as(&world.slack(), Some("web:A")),
+        watched_as(&world.herdr(), Some("web:A")),
         Vec::<String>::new()
     );
     assert_eq!(
@@ -510,7 +510,7 @@ fn a_watch_asserting_an_identity_its_socket_may_not_assert_carries_nothing() {
 fn a_client_acting_as_a_user_watches_and_acts_only_on_that_users_boxes() {
     let world = World::new();
     let identity = moor_core::user::Identity::parse(A).expect("identity");
-    let client = moor_client::Client::new(world.slack()).acting_as(identity);
+    let client = moor_client::Client::new(world.herdr()).acting_as(identity);
     let watch = client
         .watch(0, WatchFilter::default(), false)
         .expect("watch");
@@ -552,20 +552,20 @@ fn a_watch_carries_only_the_events_of_boxes_its_viewer_may_see() {
 #[test]
 fn a_binding_to_another_users_box_reads_as_no_binding() {
     let world = World::new();
-    let slack = world.slack();
-    let bind = json!({"cmd": "bind-session", "front": "slack", "key": "k1",
+    let herdr = world.herdr();
+    let bind = json!({"cmd": "bind-session", "front": "herdr", "key": "k1",
         "session": world.b_session, "owner": "o"});
-    assert_eq!(ask(&slack, &acting(B, &bind))["class"], "ok");
-    let lookup = |key: &str| json!({"cmd": "session-binding", "front": "slack", "key": key});
-    let foreign = ask(&slack, &acting(A, &lookup("k1")));
-    assert_eq!(foreign, ask(&slack, &acting(A, &lookup("k2"))));
+    assert_eq!(ask(&herdr, &acting(B, &bind))["class"], "ok");
+    let lookup = |key: &str| json!({"cmd": "session-binding", "front": "herdr", "key": key});
+    let foreign = ask(&herdr, &acting(A, &lookup("k1")));
+    assert_eq!(foreign, ask(&herdr, &acting(A, &lookup("k2"))));
     assert_eq!(foreign["value"], Value::Null, "{foreign}");
-    let mine = ask(&slack, &acting(B, &lookup("k1")));
+    let mine = ask(&herdr, &acting(B, &lookup("k1")));
     assert_eq!(mine["value"]["session"], world.b_session, "{mine}");
     let a_session = world.store.box_sessions(BoxId::new(1)).expect("sessions")[0].id;
-    let squat = json!({"cmd": "bind-session", "front": "slack", "key": "k1",
+    let squat = json!({"cmd": "bind-session", "front": "herdr", "key": "k1",
         "session": a_session, "owner": "o"});
-    not_yours(&ask(&slack, &acting(A, &squat)));
+    not_yours(&ask(&herdr, &acting(A, &squat)));
 }
 
 #[test]
@@ -573,7 +573,7 @@ fn an_identity_the_socket_may_not_assert_is_refused_even_for_a_list() {
     let world = World::new();
     let list = json!({"cmd": "show"});
     refused(
-        &ask(&world.slack(), &acting("web:alice", &list)),
-        "may assert only slack:",
+        &ask(&world.herdr(), &acting("web:alice", &list)),
+        "may assert only herdr:",
     );
 }

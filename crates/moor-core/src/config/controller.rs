@@ -8,7 +8,6 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::blobs::BlobsConfig;
-use super::proxy::front_rules;
 use super::{parse_strict, ConfigError};
 use crate::user::valid_front_namespace;
 
@@ -71,9 +70,6 @@ pub struct FrontEntry {
     /// Absolute paths the front may read even where the controller hides the host from it.
     #[serde(default)]
     pub read_only: Vec<PathBuf>,
-    /// Names of the rules the front's Proxy serves to the users it leases for, such as `claude`.
-    #[serde(default)]
-    pub proxy_rules: Vec<String>,
     /// Whether the front may claim and report the users' webhook deliveries.
     #[serde(default)]
     pub webhooks: bool,
@@ -106,9 +102,6 @@ where
     Option::<serde_json::Value>::deserialize(d).map(Some)
 }
 
-/// The name the controller's log gives the front Proxy, which no front may take.
-const PROXY_LOG_NAME: &str = "proxy";
-
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
@@ -131,16 +124,6 @@ impl ControllerConfig {
         self.fronts
             .iter()
             .filter(|(_, front)| front.webhooks)
-            .map(|(ns, _)| ns.clone())
-            .collect()
-    }
-
-    /// The namespaces of the fronts that run elsewhere and dial `ledger_tls`.
-    #[must_use]
-    pub fn remote_fronts(&self) -> BTreeSet<String> {
-        self.fronts
-            .iter()
-            .filter(|(_, front)| front.remote.is_some())
             .map(|(ns, _)| ns.clone())
             .collect()
     }
@@ -205,13 +188,6 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         )
         .in_file(file));
     }
-    if cfg.fronts.contains_key(PROXY_LOG_NAME) {
-        return Err(ConfigError::new(
-            format!("fronts.{PROXY_LOG_NAME}"),
-            "is reserved: the controller logs the front Proxy as `front proxy`",
-        )
-        .in_file(file));
-    }
     for (ns, front) in &cfg.fronts {
         front_entry(front).map_err(|(key, why)| {
             ConfigError::new(format!("fronts.{ns}.{key}"), why).in_file(file)
@@ -238,17 +214,6 @@ fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
         return Err((
             "remote",
             "a remote front runs elsewhere, so it takes no command",
-        ));
-    }
-    let known = front_rules();
-    if !front
-        .proxy_rules
-        .iter()
-        .all(|r| known.iter().any(|k| k.name == *r))
-    {
-        return Err((
-            "proxy_rules",
-            "must name rules a front Proxy serves, such as claude",
         ));
     }
     if front.ports.contains(&0) {

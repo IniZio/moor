@@ -30,7 +30,7 @@ impl Rig {
     fn new(capacity: u16) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (store, clock) = open(dir.path());
-        let user = enroll(&store, "slack:T1:U1");
+        let user = enroll(&store, "herdr:T1:U1");
         let mini = add_machine(&store, user, "mini", capacity);
         Self {
             store,
@@ -250,7 +250,7 @@ fn sleep_frees_the_slot_and_a_wake_takes_one_again_through_the_grant() {
 #[test]
 fn a_box_cannot_name_another_users_machine() {
     let r = Rig::new(1);
-    let other = enroll(&r.store, "slack:T1:U2");
+    let other = enroll(&r.store, "herdr:T1:U2");
     let _ = add_machine(&r.store, other, "studio", 1);
     let a = r.new_box("a");
 

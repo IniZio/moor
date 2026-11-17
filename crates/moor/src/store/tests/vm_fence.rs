@@ -73,7 +73,7 @@ fn a_proxy_spec_naming_no_hands_still_lands() {
 /// An enrolled machine's id.
 fn machine(store: &Store) -> i64 {
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .enroll(&Identity::parse("herdr:T1:U1").unwrap(), None)
         .unwrap();
     let mini = UserMachine::parse("mini", &[]).unwrap();
     store.set_user_machine(user, &mini).unwrap()

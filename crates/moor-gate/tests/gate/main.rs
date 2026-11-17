@@ -214,7 +214,7 @@ fn a_frame_asserting_another_identity_never_reaches_the_controller() {
     let spoofs = [
         json!({"cmd": "whoami", "identity": "authgear:mallory"}),
         json!({"cmd": "as", "identity": "authgear:mallory", "request": {"cmd": "sessions"}}),
-        json!({"cmd": "as", "identity": "slack:T1/U1", "request": {"cmd": "sessions"}}),
+        json!({"cmd": "as", "identity": "herdr:T1/U1", "request": {"cmd": "sessions"}}),
         json!({"cmd": "enroll", "email": "mallory@example.com"}),
     ];
     for (n, spoof) in spoofs.into_iter().enumerate() {

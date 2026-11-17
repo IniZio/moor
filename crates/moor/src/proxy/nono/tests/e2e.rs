@@ -391,9 +391,10 @@ fn box_ca_is_reused_across_restart_and_key_is_private() {
     let mut rig = rig();
     let old_pem = rig.ca_pem.clone();
     rig.proxy.take().unwrap().stop();
-    let again = ca::load_or_create_in(&ca::ca_dir(&rig.state(), BOX_ID), "moor box").unwrap();
-    assert_eq!(again.preloaded().cert_pem, old_pem);
+    let cert = std::fs::read_to_string(ca::cert_path(&rig.state(), BOX_ID)).unwrap();
+    assert_eq!(cert, old_pem);
     let key = ca::ca_dir(&rig.state(), BOX_ID).join("ca-key.pem");
+    let again = ca::install(&rig.state(), BOX_ID, (&std::fs::read(&key).unwrap(), &cert)).unwrap();
     let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
 

@@ -2,37 +2,13 @@
 //! call answers for that Box.
 
 use moor_core::domain::event::Event;
-use moor_core::user::{SecretName, UserId};
+use moor_core::user::SecretName;
 use serde::{Deserialize, Serialize};
 
 /// One store call.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Call {
-    /// The user the live lease `token` of `front` acts for.
-    FrontLeaseUser {
-        /// The lease token the request presented.
-        token: Vec<u8>,
-        /// The front it arrived on.
-        front: String,
-    },
-    /// `user`'s secret `name`, while they hold a live lease of `front`.
-    FrontSecret {
-        /// The front the secret is spent through.
-        front: String,
-        /// Whose secret.
-        user: UserId,
-        /// Which secret.
-        name: SecretName,
-    },
-    /// The front, user and rules of the live lease of a remote front whose token hashes to
-    /// `token_hash`.
-    FrontLeaseOf {
-        /// The hex SHA-256 of the token the request presented.
-        token_hash: String,
-    },
-    /// The CA every remote front's Proxy signs with, made on first call.
-    FrontCa,
     /// The Box as the shared egress Proxy sees it.
     View,
     /// What the Box holds, as the machine service reads it.

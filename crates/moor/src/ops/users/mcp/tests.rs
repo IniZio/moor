@@ -27,12 +27,12 @@ fn enrolled(f: &Fixture, who: &str) -> moor_core::user::UserId {
 #[test]
 fn a_users_servers_and_keys_are_theirs_alone() {
     let f = fixture();
-    let a = enrolled(&f, "slack:T1:UA");
-    let b = enrolled(&f, "slack:T1:UB");
+    let a = enrolled(&f, "herdr:T1:UA");
+    let b = enrolled(&f, "herdr:T1:UB");
     let linear = add("linear", "https://mcp.linear.app/mcp/readonly", Some(KEY));
-    run(&f.cx, &f.vault, &id("slack:T1:UA"), &linear).unwrap();
+    run(&f.cx, &f.vault, &id("herdr:T1:UA"), &linear).unwrap();
 
-    let listed = run(&f.cx, &f.vault, &id("slack:T1:UA"), &UserCmd::McpList).unwrap();
+    let listed = run(&f.cx, &f.vault, &id("herdr:T1:UA"), &UserCmd::McpList).unwrap();
     assert_eq!(
         listed,
         json!({"servers": [{"name": "linear", "url": "https://mcp.linear.app/mcp/readonly",
@@ -42,7 +42,7 @@ fn a_users_servers_and_keys_are_theirs_alone() {
         !listed.to_string().contains(KEY),
         "a list never shows a key"
     );
-    let theirs = run(&f.cx, &f.vault, &id("slack:T1:UB"), &UserCmd::McpList).unwrap();
+    let theirs = run(&f.cx, &f.vault, &id("herdr:T1:UB"), &UserCmd::McpList).unwrap();
     assert_eq!(theirs, json!({"servers": []}), "B never sees A's server");
 
     let store = f.cx.store().unwrap();
@@ -68,7 +68,7 @@ fn a_users_servers_and_keys_are_theirs_alone() {
     let removed = run(
         &f.cx,
         &f.vault,
-        &id("slack:T1:UB"),
+        &id("herdr:T1:UB"),
         &UserCmd::McpRemove {
             name: "linear".to_owned(),
         },
@@ -149,7 +149,7 @@ fn a_bad_url_or_name_is_refused_before_anything_is_stored() {
 #[test]
 fn every_box_gets_the_machine_server_only_when_the_service_is_set() {
     let mut f = fixture();
-    let user = enrolled(&f, "slack:T1:UA");
+    let user = enrolled(&f, "herdr:T1:UA");
     assert!(!for_box(&f.cx, Some(user))
         .unwrap()
         .servers

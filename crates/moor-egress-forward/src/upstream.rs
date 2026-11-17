@@ -14,8 +14,8 @@ use crate::PATIENCE;
 pub struct Upstream {
     /// `ws://` or `wss://` address.
     pub(crate) url: String,
-    /// `Bearer <token>`; none passes on each client's proxy password.
-    pub(crate) bearer: Option<HeaderValue>,
+    /// `Bearer <token>`.
+    pub(crate) bearer: HeaderValue,
     /// TLS for a `wss://` address.
     pub(crate) tls: Arc<ClientConfig>,
     /// How long a CONNECT keeps dialing while the Proxy cannot be reached.
@@ -42,23 +42,11 @@ impl Upstream {
         let mut bearer = HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|_| "the token cannot be sent in a header".to_owned())?;
         bearer.set_sensitive(true);
-        Self::with_bearer(url, Some(bearer), roots)
-    }
-
-    /// `url`, passing on each client's proxy password, trusting `roots` for `wss://`.
-    ///
-    /// # Errors
-    /// The upstream is not a `ws://` or `wss://` address.
-    pub fn passing_leases(url: String, roots: RootCertStore) -> Result<Self, String> {
-        Self::with_bearer(url, None, roots)
+        Self::with_bearer(url, bearer, roots)
     }
 
     /// `url` with `bearer`, trusting `roots` for `wss://`.
-    fn with_bearer(
-        url: String,
-        bearer: Option<HeaderValue>,
-        roots: RootCertStore,
-    ) -> Result<Self, String> {
+    fn with_bearer(url: String, bearer: HeaderValue, roots: RootCertStore) -> Result<Self, String> {
         match (url.strip_prefix("ws://"), url.starts_with("wss://")) {
             (Some(rest), _) if !loopback(rest) => {
                 return Err(format!(

@@ -26,8 +26,7 @@ use zeroize::Zeroizing;
 use super::boxes::closed;
 use super::wire::authority_ok;
 use super::{Config, Listen, Rate, Server, Warm, PATH, PLAIN, TARGET};
-use crate::env::Env;
-use crate::proxy::ledger::tests::{serve_on_with, Served, EGRESS_KEY};
+use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
 use crate::proxy::ledger::{BoxView, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
@@ -78,15 +77,7 @@ impl World {
         };
         store.set_proxy_spec(id, &spec).unwrap();
         let socket = dir.path().join("proxy.sock");
-        let env = Env::from_pairs([("MOOR_STATE_DIR", dir.path().to_str().unwrap())])
-            .with_front_proxies(BTreeMap::from([
-                (leases::REMOTE.to_owned(), vec!["tool".to_owned()]),
-                (leases::BESIDE.to_owned(), vec!["tool".to_owned()]),
-            ]))
-            .with_remote_fronts(std::collections::BTreeSet::from(
-                [leases::REMOTE.to_owned()],
-            ));
-        let ledger = serve_on_with(&socket, store.clone(), Arc::new(vault), None, Some(env));
+        let ledger = serve_on(&socket, store.clone(), Arc::new(vault));
         Self {
             dir,
             store,
@@ -139,7 +130,6 @@ impl World {
                 deadline: Duration::from_secs(8),
             }),
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-            front_rules: vec![rule(self.up.port)],
         }
     }
 
@@ -567,7 +557,6 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
 }
 
 mod holder;
-mod leases;
 mod logs;
 mod plain;
 mod synced;

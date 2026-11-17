@@ -45,7 +45,7 @@ exec "$@""#;
         )
     });
 
-/// A served controller whose `web` front runs [`FAKE_FRONT`] and whose `slack` front has no
+/// A served controller whose `web` front runs [`FAKE_FRONT`] and whose `herdr` front has no
 /// command. Dropping it stops the fronts before the state dir goes.
 struct Fronts {
     supervised: Option<Supervised>,
@@ -72,7 +72,7 @@ impl Fronts {
         let cfg = config(
             dir.path(),
             &format!(
-                "fronts:\n  web:\n    command: [python3, -c, {}, '{PROTOCOL}']\n  slack: {{}}\n",
+                "fronts:\n  web:\n    command: [python3, -c, {}, '{PROTOCOL}']\n  herdr: {{}}\n",
                 serde_json::to_string(FAKE_FRONT).expect("quote")
             ),
         );
@@ -176,9 +176,9 @@ fn a_killed_front_is_started_again() {
 fn a_front_without_a_command_is_not_started() {
     let fronts = Fronts::start();
     wait_for("an answer", || (fronts.answers() == 1).then_some(()));
-    assert!(!fronts.pid_file("slack").exists());
+    assert!(!fronts.pid_file("herdr").exists());
     assert!(
-        !fronts.log.text().contains("front slack"),
+        !fronts.log.text().contains("front herdr"),
         "{}",
         fronts.log.text()
     );

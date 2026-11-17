@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use super::{config, env_with, Buf};
 use crate::controller::{start, Sink};
 
-/// A running controller with a `slack` front, and where its sockets and stderr are.
+/// A running controller with a `herdr` front, and where its sockets and stderr are.
 pub(super) struct Served {
     /// Holds the config, the vault key and the state dir.
     pub(super) dir: tempfile::TempDir,
@@ -27,14 +27,14 @@ pub(super) struct Served {
 }
 
 impl Served {
-    /// Starts a controller with the `slack` and `web` fronts.
+    /// Starts a controller with the `herdr` and `web` fronts.
     pub(super) fn start() -> Self {
         Self::start_in(tempfile::tempdir().expect("tmp"), &[])
     }
 
     /// [`Self::start`] with its config and state in `dir`, and the variables `extra` set.
     pub(super) fn start_in(dir: tempfile::TempDir, extra: &[(&str, &str)]) -> Self {
-        Self::start_fronts(dir, "fronts:\n  slack: {}\n  web: {}\n", extra)
+        Self::start_fronts(dir, "fronts:\n  herdr: {}\n  web: {}\n", extra)
     }
 
     /// [`Self::start_in`] with the controller config `cfg`.
@@ -107,7 +107,7 @@ fn each_front_gets_an_owner_only_socket_in_an_owner_only_dir() {
     let served = Served::start();
     let mode = |p: &Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
     assert_eq!(mode(&served.dir.path().join("state").join("fronts")), 0o700);
-    for ns in ["slack", "web"] {
+    for ns in ["herdr", "web"] {
         assert_eq!(mode(&served.front(ns)), 0o600, "{ns}");
         assert_eq!(mode(served.front(ns).parent().unwrap()), 0o700, "{ns}");
     }
@@ -125,7 +125,7 @@ fn the_controller_socket_acts_as_its_peer_uid() {
 #[test]
 fn the_controller_socket_refuses_a_front_identity() {
     let served = Served::start();
-    for other in ["slack:T1:U1", "local:4242"] {
+    for other in ["herdr:T1:U1", "local:4242"] {
         let got = ask(&served.main, &json!({"cmd": "whoami", "identity": other}));
         refused(&got, "speaks only for local:");
     }
@@ -134,15 +134,15 @@ fn the_controller_socket_refuses_a_front_identity() {
 #[test]
 fn a_front_socket_acts_only_in_its_own_namespace() {
     let served = Served::start();
-    let slack = served.front("slack");
-    let got = ask(&slack, &json!({"cmd": "whoami", "identity": "slack:T1:U1"}));
-    assert_eq!(got["value"]["identity"], "slack:T1:U1", "{got}");
+    let herdr = served.front("herdr");
+    let got = ask(&herdr, &json!({"cmd": "whoami", "identity": "herdr:T1:U1"}));
+    assert_eq!(got["value"]["identity"], "herdr:T1:U1", "{got}");
     for other in [me(), "web:alice".to_owned()] {
-        let got = ask(&slack, &json!({"cmd": "whoami", "identity": other}));
-        refused(&got, "may assert only slack:");
+        let got = ask(&herdr, &json!({"cmd": "whoami", "identity": other}));
+        refused(&got, "may assert only herdr:");
     }
     refused(
-        &ask(&slack, &json!({"cmd": "whoami"})),
+        &ask(&herdr, &json!({"cmd": "whoami"})),
         "must assert an identity",
     );
     let got = ask(
@@ -155,7 +155,7 @@ fn a_front_socket_acts_only_in_its_own_namespace() {
 #[test]
 fn a_front_socket_serves_the_other_requests_too() {
     let served = Served::start();
-    let got = ask(&served.front("slack"), &json!({"cmd": "version"}));
+    let got = ask(&served.front("herdr"), &json!({"cmd": "version"}));
     assert_eq!(got["class"], "ok", "{got}");
 }
 
@@ -173,13 +173,13 @@ fn a_start_acts_only_as_an_identity_its_socket_may_assert() {
         &ask(&served.main, &start(Some("local:4242"))),
         "speaks only for local:",
     );
-    let slack = served.front("slack");
+    let herdr = served.front("herdr");
     refused(
-        &ask(&slack, &start(Some("web:alice"))),
-        "may assert only slack:",
+        &ask(&herdr, &start(Some("web:alice"))),
+        "may assert only herdr:",
     );
-    refused(&ask(&slack, &start(None)), "must assert an identity");
-    for (socket, identity) in [(&slack, Some("slack:T1:U1")), (&served.main, None)] {
+    refused(&ask(&herdr, &start(None)), "must assert an identity");
+    for (socket, identity) in [(&herdr, Some("herdr:T1:U1")), (&served.main, None)] {
         let got = ask(socket, &start(identity));
         refused(&got, "log in first: moor user enroll");
         let who = identity.map_or_else(me, str::to_owned);
@@ -211,14 +211,14 @@ fn env_reads_a_repo_as_the_identity_a_start_acts_as() {
 #[test]
 fn start_needs_answers_for_the_identity_a_front_asserts() {
     let served = Served::start();
-    let slack = served.front("slack");
+    let herdr = served.front("herdr");
     let ask_needs =
-        |identity: &str| ask(&slack, &json!({"cmd": "start-needs", "identity": identity}));
-    let got = ask_needs("slack:T1:U1");
+        |identity: &str| ask(&herdr, &json!({"cmd": "start-needs", "identity": identity}));
+    let got = ask_needs("herdr:T1:U1");
     assert_eq!(got["class"], "ok", "{got}");
-    assert_eq!(got["value"]["identity"], "slack:T1:U1", "{got}");
+    assert_eq!(got["value"]["identity"], "herdr:T1:U1", "{got}");
     assert_eq!(got["value"]["user"], json!(null), "{got}");
     assert_eq!(got["value"]["missing"], got["value"]["needs"], "{got}");
     assert_eq!(got["value"]["needs"][0], "claude", "{got}");
-    refused(&ask_needs("web:alice"), "may assert only slack:");
+    refused(&ask_needs("web:alice"), "may assert only herdr:");
 }

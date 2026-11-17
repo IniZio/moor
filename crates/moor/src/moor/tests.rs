@@ -74,7 +74,7 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
         })
     };
     let got = |c: Caller| super::with_origin(&add, &Ok(c));
-    assert_eq!(got(Caller::Front("slack".to_owned())), with(Some("slack")));
+    assert_eq!(got(Caller::Front("herdr".to_owned())), with(Some("herdr")));
     assert_eq!(got(Caller::Operator(1000)), with(None));
     assert_eq!(got(Caller::Local(1000)), with(None));
 }

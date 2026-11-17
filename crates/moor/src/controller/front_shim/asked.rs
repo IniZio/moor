@@ -11,9 +11,6 @@ use super::Layout;
 pub(super) struct Asked {
     /// The controller that started this shim; pid 1 is not told.
     pub(super) parent: Option<Pid>,
-    /// The front Proxy's socket, which pid 1 bridges to a loopback port.
-    #[cfg(target_os = "linux")]
-    pub(super) proxy: Option<PathBuf>,
     /// The TCP ports the outer shim forwards from the host's `127.0.0.1` to the front.
     #[cfg(target_os = "linux")]
     pub(super) ports: Vec<u16>,
@@ -25,14 +22,11 @@ pub(super) struct Asked {
 }
 
 impl Asked {
-    /// Reads `--writable DIR` and, on Linux, `--proxy SOCKET` (at most one each) and
-    /// `--read-only PATH` flags, and `--parent PID` and, on Linux, `--port PORT` flags when
-    /// `outer`.
+    /// Reads `--writable DIR` (at most one) and `--read-only PATH` flags, and `--parent PID`
+    /// and, on Linux, `--port PORT` flags when `outer`.
     pub(super) fn parse(flags: &[OsString], outer: bool) -> Result<Self, String> {
         let mut asked = Self {
             parent: None,
-            #[cfg(target_os = "linux")]
-            proxy: None,
             #[cfg(target_os = "linux")]
             ports: Vec::new(),
             #[cfg(target_os = "linux")]
@@ -53,10 +47,6 @@ impl Asked {
                     if asked.parent.is_none() {
                         return Err(format!("--parent {} is not a pid", word.display()));
                     }
-                }
-                #[cfg(target_os = "linux")]
-                Some("--proxy") if asked.proxy.is_none() => {
-                    asked.proxy = Some(PathBuf::from(word));
                 }
                 #[cfg(target_os = "linux")]
                 Some("--port") if outer => asked.ports.push(

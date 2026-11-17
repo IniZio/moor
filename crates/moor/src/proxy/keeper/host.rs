@@ -28,8 +28,6 @@ pub(crate) struct KeptProxy {
     pub(crate) rng: Arc<dyn Rng>,
     /// The vault key that seals each Box's CA; `None` outside a controller.
     pub(crate) vault_key: Option<PathBuf>,
-    /// The state directory, where the front Proxy listens.
-    pub(crate) state_dir: Option<PathBuf>,
     /// The keepers of this process.
     pub(crate) keepers: &'static Keepers,
     /// Where each Box's credential hosts go.
@@ -82,22 +80,6 @@ impl KeptProxy {
 }
 
 impl ProxyHost for KeptProxy {
-    fn front_ca_pem(&self) -> Result<String, String> {
-        let state = self
-            .state_dir
-            .as_ref()
-            .ok_or("a front Proxy needs a state dir")?;
-        crate::proxy::fronts::ca_pair(state)
-            .map(|pair| pair.cert_pem.clone())
-            .map_err(|e| format!("cannot read the front Proxy CA: {e}"))
-    }
-
-    fn front_running(&self, front: &str) -> bool {
-        self.state_dir
-            .as_ref()
-            .is_some_and(|dir| crate::proxy::fronts::running(dir, front))
-    }
-
     /// Records `spec`, starts the Box's keeper when it has none, brings its tunnel up and
     /// delivers the Box's forwarder with a token unless it is in place.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
@@ -202,14 +184,6 @@ fn no_controller() -> ProxyHostError {
 }
 
 impl ProxyHost for NoProxyHost {
-    fn front_ca_pem(&self) -> Result<String, String> {
-        Err("this host runs no Proxy".to_owned())
-    }
-
-    fn front_running(&self, _front: &str) -> bool {
-        false
-    }
-
     fn ensure(&self, _spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         Err(no_controller())
     }

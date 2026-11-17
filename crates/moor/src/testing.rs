@@ -1,7 +1,6 @@
 //! Test doubles and builders; compiled only under `cfg(test)`.
 
 pub(crate) mod agent;
-pub(crate) mod bridge;
 pub(crate) mod clock;
 pub(crate) mod cx;
 pub(crate) mod db;

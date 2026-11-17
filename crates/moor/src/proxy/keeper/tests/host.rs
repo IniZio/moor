@@ -34,7 +34,6 @@ fn kept_proxy(w: &World) -> KeptProxy {
         deps: Arc::new(deps),
         rng: Arc::new(FakeRng::default()),
         vault_key: Some(crate::testing::cx::test_vault_key(w.dir.path())),
-        state_dir: None,
         keepers: Box::leak(Box::<Keepers>::default()),
         route: crate::proxy::route::EgressRoute::parse("wss://egress.test/egress").unwrap(),
         key: zeroize::Zeroizing::new(b"egress-key".to_vec()),

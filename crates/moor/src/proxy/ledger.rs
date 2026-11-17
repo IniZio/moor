@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use boxes::{AwakeTokens, BoxLedger, BoxView, CaPair};
 use call::Call;
-pub(crate) use client::{EgressLedger, FrontLease, FrontsLedger};
+pub(crate) use client::EgressLedger;
 pub(crate) use endpoint::{Endpoint, TlsFiles};
 pub(crate) use serve::{box_ca, serve, Keys};
 
@@ -38,13 +38,6 @@ pub(crate) const LEDGER: u32 = 1;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Hello {
-    /// The front Proxy, with the key the controller started it with.
-    Fronts {
-        /// The protocol it speaks.
-        v: u32,
-        /// Its key.
-        key: String,
-    },
     /// The shared egress Proxy, with the key it and the controller were both given.
     Egress {
         /// The protocol it speaks.

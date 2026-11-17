@@ -4,21 +4,21 @@ use super::{valid_front_namespace, Caller, Identity, SecretName, UserId, Viewer}
 
 #[test]
 fn an_identity_splits_at_the_first_colon_only() {
-    let id = Identity::parse("slack:T1:U2").unwrap();
-    assert_eq!(id.namespace(), "slack");
-    assert_eq!(id.as_str(), "slack:T1:U2");
+    let id = Identity::parse("herdr:T1:U2").unwrap();
+    assert_eq!(id.namespace(), "herdr");
+    assert_eq!(id.as_str(), "herdr:T1:U2");
     assert_eq!(Identity::local(1000).as_str(), "local:1000");
 }
 
 #[test]
 fn malformed_identities_are_refused() {
-    let long = format!("slack:{}", "x".repeat(251));
+    let long = format!("herdr:{}", "x".repeat(251));
     for bad in [
         "",
-        "slack",
+        "herdr",
         ":u",
-        "slack:",
-        "Slack:u",
+        "herdr:",
+        "Herdr:u",
         "1x:u",
         "a_b:u",
         long.as_str(),
@@ -36,9 +36,9 @@ fn identities_deserialize_through_the_parser() {
 
 #[test]
 fn local_is_reserved_for_the_controller_socket() {
-    assert!(valid_front_namespace("slack"));
+    assert!(valid_front_namespace("herdr"));
     assert!(valid_front_namespace("chat-2"));
-    for bad in ["local", "", "Slack", "2chat", "a:b", "a_b"] {
+    for bad in ["local", "", "Herdr", "2chat", "a:b", "a_b"] {
         assert!(!valid_front_namespace(bad), "{bad:?} accepted");
     }
 }
@@ -60,7 +60,7 @@ fn the_local_socket_speaks_only_for_its_peer_uid() {
             local.resolve(Some(&Identity::local(1000))).unwrap(),
             Identity::local(1000)
         );
-        for other in ["local:0", "slack:T1:U1"] {
+        for other in ["local:0", "herdr:T1:U1"] {
             let err = local
                 .resolve(Some(&Identity::parse(other).unwrap()))
                 .unwrap_err();
@@ -86,15 +86,15 @@ fn a_box_is_its_own_users_and_the_operators_alone() {
 
 #[test]
 fn a_front_socket_asserts_only_its_own_namespace() {
-    let slack = Caller::Front("slack".into());
-    let mine = Identity::parse("slack:T1:U1").unwrap();
-    assert_eq!(slack.resolve(Some(&mine)).unwrap(), mine);
-    for other in ["local:1000", "web:alice", "slackx:U1"] {
-        let err = slack
+    let herdr = Caller::Front("herdr".into());
+    let mine = Identity::parse("herdr:T1:U1").unwrap();
+    assert_eq!(herdr.resolve(Some(&mine)).unwrap(), mine);
+    for other in ["local:1000", "web:alice", "herdrx:U1"] {
+        let err = herdr
             .resolve(Some(&Identity::parse(other).unwrap()))
             .unwrap_err();
-        assert!(err.contains("may assert only slack:"), "{err}");
+        assert!(err.contains("may assert only herdr:"), "{err}");
     }
-    let err = slack.resolve(None).unwrap_err();
+    let err = herdr.resolve(None).unwrap_err();
     assert!(err.contains("must assert an identity"), "{err}");
 }

@@ -10,7 +10,7 @@ use crate::user::Identity;
 fn whoami_round_trips_with_and_without_an_identity() {
     for wire in [
         json!({"cmd": "whoami"}),
-        json!({"cmd": "whoami", "identity": "slack:T1:U1"}),
+        json!({"cmd": "whoami", "identity": "herdr:T1:U1"}),
     ] {
         let req: Request = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(req.cmd(), "whoami");
@@ -43,7 +43,7 @@ const CANARY: &str = "sk-ant-canary-0d9f";
 
 fn secret_set() -> Request {
     serde_json::from_value(json!({
-        "cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": CANARY,
+        "cmd": "secret-set", "identity": "herdr:T1:U1", "name": "claude", "value": CANARY,
     }))
     .unwrap()
 }
@@ -116,14 +116,14 @@ fn the_value_crosses_the_wire_only_inside_secret_set() {
 fn as_carries_the_identity_a_front_asserts_for_another_request() {
     let wire = json!({
         "cmd": "as",
-        "identity": "slack:T1:U1",
+        "identity": "herdr:T1:U1",
         "request": {"cmd": "steer", "box": "b", "text": "hi"},
     });
     let req: Request = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(req.cmd(), "as");
     assert_eq!(serde_json::to_value(&req).unwrap(), wire);
     let (who, inner) = req.split_identity().unwrap();
-    assert_eq!(who, Some(Identity::parse("slack:T1:U1").unwrap()));
+    assert_eq!(who, Some(Identity::parse("herdr:T1:U1").unwrap()));
     assert_eq!(inner.cmd(), "steer");
 }
 

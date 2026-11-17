@@ -1,11 +1,11 @@
 //! `moor front-shim`: runs a front in new user, mount, PID and network namespaces, inside a
 //! root that holds only what a front needs.
 //!
-//! The controller runs `moor front-shim --parent PID [--proxy SOCKET] [--port PORT]...
-//! [--writable DIR] [--read-only PATH]... -- COMMAND...`. That process dies with the
+//! The controller runs `moor front-shim --parent PID [--port PORT]... [--writable DIR]
+//! [--read-only PATH]... -- COMMAND...`. That process dies with the
 //! controller `PID` (it exits at once if `PID` is not its parent), starts the egress helper
 //! and listens on the host's loopback for each PORT, enters the namespaces, serves the
-//! front's proxy port and PORTs (see the `net` and `egress` modules) and runs
+//! front's egress proxy port and PORTs (see the `net` and `egress` modules) and runs
 //! `moor front-shim --init` with the same paths as pid 1 of the new PID namespace. pid 1 builds the front's root (see the `root` module): the system dirs,
 //! a few devices, the program and each PATH read-only, DIR read-write with its `tmp` as `/tmp`,
 //! and a fresh `/proc`, so no controller pid is visible. It pivots into that root, confines
@@ -13,15 +13,14 @@
 //! and runs the front without capabilities. Both shims pass SIGTERM and SIGINT on, reap every
 //! child and exit with the front's status. `--check` enters the namespaces, then as pid 1
 //! (`--check-root`) the root and the sandbox, so the controller can refuse fronts on a host
-//! that forbids any of them. With `--proxy`, pid 1 also bridges a loopback port to the front
-//! Proxy's SOCKET and tells the front the port (see the `bridge` module).
+//! that forbids any of them.
 //!
 //! `moor front-run --dir DIR -- COMMAND...` runs a front the controller does not start, whose
 //! isolation comes from elsewhere (a container), with what pid 1 gives a started one: the
-//! front socket in DIR and, when DIR holds the Proxy's CA, the bridge to DIR's Proxy socket.
+//! front socket in DIR.
 //!
 //! macOS has none of these namespaces: there the shim confines itself and the front with
-//! nono's Seatbelt profile instead (see the `seatbelt` module), and no front gets a Proxy.
+//! nono's Seatbelt profile instead (see the `seatbelt` module).
 
 #[cfg(target_os = "linux")]
 use std::ffi::OsString;
@@ -46,8 +45,7 @@ use rustix::process::Pid;
 use rustix::process::WaitStatus;
 #[cfg(target_os = "linux")]
 use rustix::process::{
-    kill_process, set_dumpable_behavior, set_parent_process_death_signal, waitpid,
-    DumpableBehavior, Signal, WaitOptions,
+    kill_process, set_parent_process_death_signal, waitpid, Signal, WaitOptions,
 };
 #[cfg(target_os = "linux")]
 use rustix::thread::{
@@ -59,8 +57,6 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 mod asked;
-#[cfg(target_os = "linux")]
-mod bridge;
 #[cfg(target_os = "linux")]
 mod denied;
 #[cfg(target_os = "linux")]
@@ -130,7 +126,6 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
 fn outer(flags: &[OsString], command: &[OsString]) -> Result<u8, String> {
     let Asked {
         parent,
-        proxy,
         layout,
         ports,
         ..
@@ -142,15 +137,11 @@ fn outer(flags: &[OsString], command: &[OsString]) -> Result<u8, String> {
     enter::enter_pid_namespace()?;
     enter::pass_sys_admin()?;
     let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
-    let proxy = proxy
-        .iter()
-        .flat_map(|p| [OsString::from("--proxy"), p.into()]);
     let writable = layout.writable.iter().map(|dir| ("--writable", dir));
     let read_only = layout.read_only.iter().map(|path| ("--read-only", path));
     relay(
         Command::new("/proc/self/exe")
             .args(["front-shim", "--init", "--egress-port", &egress_port])
-            .args(proxy)
             .args(
                 writable
                     .chain(read_only)
@@ -213,15 +204,13 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 
 /// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
 /// confines itself to writing the writable dir and `/tmp`, empties its bounding set and drops
-/// every capability, turns undumpable when it holds the Proxy socket's dir open, so the front
-/// cannot reach that dir through `/proc/1/fd`, and runs `command` with its socket on fd 3,
-/// `proxy` bridged to a loopback port, and the proxy variables naming the egress proxy port
-/// when there is one. The kernel kills the namespace if the outer shim dies. The outer shim
+/// every capability, and runs `command` with its socket on fd 3 and the proxy variables naming
+/// the egress proxy port when there is one. The kernel kills the namespace if the outer shim dies. The outer shim
 /// holds the only write end of stdin, so a readable stdin means it died before the death
 /// signal was set, and pid 1 exits.
 #[cfg(target_os = "linux")]
 fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
-    let (layout, proxy) = (&asked.layout, asked.proxy.as_deref());
+    let layout = &asked.layout;
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     let held = io::stdin();
@@ -233,7 +222,6 @@ fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
     if poll(&mut outer, Some(&idle)).map_err(|e| format!("poll: {e}"))? > 0 {
         return Err("the outer shim exited before pid 1 started".to_owned());
     }
-    let bridge = proxy.map(bridge::Bridge::open).transpose()?;
     let socket = root::enter(layout)?;
     let _ = nix::unistd::close(3);
     let writable: Vec<PathBuf> = layout
@@ -254,16 +242,9 @@ fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
         },
     )
     .map_err(|e| format!("cannot drop capabilities: {e}"))?;
-    if bridge.is_some() {
-        set_dumpable_behavior(DumpableBehavior::NotDumpable)
-            .map_err(|e| format!("cannot make pid 1 undumpable: {e}"))?;
-    }
     let (program, args) = command.split_first().ok_or("no front command")?;
     let mut front = Command::new(program);
     front.args(args).stdin(Stdio::null());
-    if let Some(bridge) = bridge {
-        front.env(bridge::PORT_VAR, bridge.serve()?.to_string());
-    }
     if let Some(port) = asked.egress_port {
         name_egress_proxy(&mut front, port);
     }

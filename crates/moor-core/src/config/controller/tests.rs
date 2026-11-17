@@ -132,20 +132,20 @@ fn a_repos_key_is_an_unknown_key() {
 
 #[test]
 fn fronts_parse_by_namespace() {
-    let c = parse_controller("c.yaml", "fronts:\n  slack: {}\n  web-2: {}\n")
+    let c = parse_controller("c.yaml", "fronts:\n  herdr: {}\n  web-2: {}\n")
         .unwrap_or_else(|e| panic!("{e}"));
     let names: Vec<&str> = c.fronts.keys().map(String::as_str).collect();
-    assert_eq!(names, ["slack", "web-2"]);
+    assert_eq!(names, ["herdr", "web-2"]);
 }
 
 #[test]
 fn a_reserved_or_malformed_front_namespace_is_refused() {
-    for ns in ["local", "Slack", "2x", "a_b"] {
+    for ns in ["local", "Herdr", "2x", "a_b"] {
         let e = err(&format!("fronts:\n  {ns}: {{}}\n"));
         assert_eq!(e.path, format!("fronts.{ns}"), "{e}");
         assert!(e.to_string().contains("not be `local`"), "{e}");
     }
-    let e = err("fronts:\n  slack: {bogus: 1}\n");
+    let e = err("fronts:\n  herdr: {bogus: 1}\n");
     assert!(e.to_string().contains("bogus"), "{e}");
 }
 
@@ -153,7 +153,7 @@ fn a_reserved_or_malformed_front_namespace_is_refused() {
 fn a_front_command_is_an_argv() {
     let c = parse_controller(
         "c.yaml",
-        "fronts:\n  web:\n    command: [moor-front, --port, '8080']\n  slack: {}\n",
+        "fronts:\n  web:\n    command: [moor-front, --port, '8080']\n  herdr: {}\n",
     )
     .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(
@@ -164,7 +164,7 @@ fn a_front_command_is_an_argv() {
                 .as_slice()
         )
     );
-    assert_eq!(c.fronts.get("slack").map(|f| f.command.clone()), Some(None));
+    assert_eq!(c.fronts.get("herdr").map(|f| f.command.clone()), Some(None));
 }
 
 #[test]
@@ -224,22 +224,6 @@ fn a_front_read_only_path_under_tmp_is_refused() {
 }
 
 #[test]
-fn a_front_may_name_the_claude_rule_and_no_unknown_one() {
-    let c = parse_controller("c.yaml", "fronts:\n  slack:\n    proxy_rules: [claude]\n")
-        .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(c.fronts.get("slack").unwrap().proxy_rules, ["claude"]);
-    let e = err("fronts:\n  slack:\n    proxy_rules: [github-api]\n");
-    assert_eq!(e.path, "fronts.slack.proxy_rules");
-}
-
-#[test]
-fn no_front_may_be_named_proxy() {
-    let e = err("fronts:\n  proxy: {}\n");
-    assert_eq!(e.path, "fronts.proxy");
-    assert!(e.to_string().contains("reserved"), "{e}");
-}
-
-#[test]
 fn a_front_lists_tcp_ports_and_no_port_zero() {
     let c = parse_controller("c.yaml", "fronts:\n  web:\n    ports: [8080, 8443]\n")
         .unwrap_or_else(|e| panic!("{e}"));
@@ -292,13 +276,13 @@ fn workflow_floor_parses_and_defaults_to_an_hour() {
 
 #[test]
 fn a_remote_front_needs_ledger_tls_and_takes_no_command() {
-    let remote = "fronts:\n  slack:\n    remote:\n      key_file: /k\n";
+    let remote = "fronts:\n  herdr:\n    remote:\n      key_file: /k\n";
     let err = parse_controller("c.yaml", remote).unwrap_err().to_string();
-    assert!(err.contains("fronts.slack.remote"), "{err}");
+    assert!(err.contains("fronts.herdr.remote"), "{err}");
     assert!(err.contains("needs ledger_tls"), "{err}");
     let tls = "ledger_tls:\n  listen: 127.0.0.1:0\n  cert: /c\n  key: /k\n  client_ca: /a\n";
     let both =
-        format!("{tls}fronts:\n  slack:\n    command: [x]\n    remote:\n      key_file: /k\n");
+        format!("{tls}fronts:\n  herdr:\n    command: [x]\n    remote:\n      key_file: /k\n");
     let err = parse_controller("c.yaml", &both).unwrap_err().to_string();
     assert!(err.contains("takes no command"), "{err}");
     let fine = format!("{tls}{remote}");

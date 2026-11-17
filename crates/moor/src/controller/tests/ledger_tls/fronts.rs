@@ -10,18 +10,16 @@ use moor_client::{Client, ClientError};
 use moor_core::request::Request;
 use serde_json::Value;
 
-use super::{
-    env_with, pki, runner_asks, serve, start, started, started_with, tls_config, KEY, SERVICE_KEY,
-};
+use super::{env_with, pki, runner_asks, serve, start, started_with, tls_config, KEY, SERVICE_KEY};
 
-const FRONT_KEY: &str = "slack-front-key";
+const FRONT_KEY: &str = "herdr-front-key";
 
-/// A controller with `slack` as a remote front and `notify` as a front on its socket.
+/// A controller with `herdr` as a remote front and `notify` as a front on its socket.
 fn serving_fronts(dir: &tempfile::TempDir) -> (SocketAddr, PathBuf) {
-    let key_file = dir.path().join("slack-front.key");
+    let key_file = dir.path().join("herdr-front.key");
     std::fs::write(&key_file, format!("{FRONT_KEY}\n")).unwrap();
     let fronts = format!(
-        "fronts:\n  slack:\n    remote:\n      key_file: {}\n  notify:\n    webhooks: true\n",
+        "fronts:\n  herdr:\n    remote:\n      key_file: {}\n  notify:\n    webhooks: true\n",
         key_file.display()
     );
     let keys = [
@@ -64,8 +62,8 @@ fn a_front_with_its_key_acts_for_its_own_identities_over_tls() {
     let (addr, ca) = serving_fronts(&dir);
     let got = front_asks(
         (addr, &ca),
-        ("slack", FRONT_KEY),
-        r#"{"cmd":"as","identity":"slack:T1:U1","request":{"cmd":"show"}}"#,
+        ("herdr", FRONT_KEY),
+        r#"{"cmd":"as","identity":"herdr:T1:U1","request":{"cmd":"show"}}"#,
     )
     .expect("answered");
     assert_eq!(got["class"], "ok", "{got}");
@@ -75,7 +73,7 @@ fn a_front_with_its_key_acts_for_its_own_identities_over_tls() {
 fn a_front_key_holder_over_tls_is_never_the_operator() {
     let dir = tempfile::tempdir().unwrap();
     let (addr, ca) = serving_fronts(&dir);
-    let front = ("slack", FRONT_KEY);
+    let front = ("herdr", FRONT_KEY);
     let bare = front_asks((addr, &ca), front, r#"{"cmd":"show"}"#).expect("answered");
     refused_for(&bare, "must assert an identity");
     let other = front_asks(
@@ -84,7 +82,7 @@ fn a_front_key_holder_over_tls_is_never_the_operator() {
         r#"{"cmd":"as","identity":"authgear:someone","request":{"cmd":"show"}}"#,
     )
     .expect("answered");
-    refused_for(&other, "may assert only slack:");
+    refused_for(&other, "may assert only herdr:");
 }
 
 #[test]
@@ -93,9 +91,9 @@ fn a_hello_is_refused_unless_its_key_is_that_fronts() {
     let (addr, ca) = serving_fronts(&dir);
     let show = r#"{"cmd":"show"}"#;
     for (front, why) in [
-        (("slack", "wrong"), "wrong key"),
-        (("slack", SERVICE_KEY), "the runner's key"),
-        (("slack", KEY), "the egress key"),
+        (("herdr", "wrong"), "wrong key"),
+        (("herdr", SERVICE_KEY), "the runner's key"),
+        (("herdr", KEY), "the egress key"),
         (("notify", FRONT_KEY), "another front's namespace"),
         (("nobody", FRONT_KEY), "no such front"),
     ] {
@@ -117,7 +115,7 @@ fn a_front_is_ready_with_its_key_and_refused_at_once_without_it() {
         cert: dir.path().join("ctl-client.pem"),
         key: dir.path().join("ctl-client.key"),
     };
-    let front = |key| Client::front(&format!("tls://{addr}"), &files, "slack", key).unwrap();
+    let front = |key| Client::front(&format!("tls://{addr}"), &files, "herdr", key).unwrap();
     front(FRONT_KEY).ready().unwrap();
     assert!(matches!(
         front("not-the-key").ready(),
@@ -139,9 +137,9 @@ fn a_front_key_is_not_a_runner_key() {
 fn a_missing_or_empty_front_key_file_stops_the_start() {
     let dir = tempfile::tempdir().unwrap();
     pki(dir.path(), "ctl", true);
-    let key_file = dir.path().join("slack-front.key");
+    let key_file = dir.path().join("herdr-front.key");
     let fronts = format!(
-        "fronts:\n  slack:\n    remote:\n      key_file: {}\n",
+        "fronts:\n  herdr:\n    remote:\n      key_file: {}\n",
         key_file.display()
     );
     let cfg = tls_config(dir.path(), &fronts);
@@ -150,7 +148,7 @@ fn a_missing_or_empty_front_key_file_stops_the_start() {
         panic!("started without the front's key file");
     };
     assert!(
-        stop.message.contains("fronts.slack.remote.key_file"),
+        stop.message.contains("fronts.herdr.remote.key_file"),
         "{}",
         stop.message
     );
@@ -159,37 +157,4 @@ fn a_missing_or_empty_front_key_file_stops_the_start() {
         panic!("started with an empty front key");
     };
     assert!(stop.message.contains("is empty"), "{}", stop.message);
-}
-
-#[test]
-fn a_remote_fronts_lease_needs_no_proxy_here_and_brings_the_ca() {
-    let dir = tempfile::tempdir().unwrap();
-    let key_file = dir.path().join("slack-front.key");
-    std::fs::write(&key_file, FRONT_KEY).unwrap();
-    let fronts = format!(
-        "fronts:\n  slack:\n    proxy_rules: [claude]\n    remote:\n      key_file: {}\n",
-        key_file.display()
-    );
-    let (running, addr, ca) = started(&dir, &fronts);
-    serve(running);
-    let front = ("slack", FRONT_KEY);
-    let ask = |request: &str| front_asks((addr, &ca), front, request).expect("answered");
-    let enrolled = ask(r#"{"cmd":"enroll","identity":"slack:T1:U1"}"#);
-    assert_eq!(enrolled["class"], "ok", "{enrolled}");
-    let set = serde_json::json!({
-        "cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": "sk-ant-oat01-x",
-    });
-    let set = ask(&set.to_string());
-    assert_eq!(set["class"], "ok", "{set}");
-    let status = ask(r#"{"cmd":"proxy-status","identity":"slack:T1:U1"}"#);
-    assert_eq!(status["value"]["running"], true, "{status}");
-    let lease = ask(r#"{"cmd":"proxy-lease","identity":"slack:T1:U1"}"#);
-    assert_eq!(lease["value"]["lease"], "granted", "{lease}");
-    let pem = lease["value"]["ca_pem"].as_str().unwrap_or_default();
-    assert!(pem.contains("CERTIFICATE"), "{lease}");
-    let socket = crate::Moor::front_proxy_socket(&dir.path().join("state"), "slack");
-    assert!(
-        !socket.exists(),
-        "no front Proxy runs here for a remote front"
-    );
 }

@@ -99,7 +99,7 @@ impl Vault for Store {
 }
 
 #[test]
-fn the_guidance_is_the_one_slack_gives() {
+fn the_guidance_is_the_one_herdr_gives() {
     assert!(guide("github").1.contains("`gh auth token`"));
     assert!(guide("claude").1.contains("`claude setup-token`"));
     assert_eq!(

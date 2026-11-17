@@ -14,16 +14,16 @@ use super::authz::{acting, World, A, B};
 use super::fronts::{ask, refused};
 use crate::ops::host_session::WORKDIR_OPERATOR_ONLY;
 
-/// The user id `identity` holds on `world`'s slack socket.
+/// The user id `identity` holds on `world`'s herdr socket.
 fn user_of(world: &World, identity: &str) -> i64 {
-    let who = ask(&world.slack(), &acting(identity, &json!({"cmd": "whoami"})));
+    let who = ask(&world.herdr(), &acting(identity, &json!({"cmd": "whoami"})));
     who["value"]["user"].as_i64().expect("user")
 }
 
 /// The workdir of a host Session `identity` opens with no workdir.
 fn opened_by(world: &World, identity: &str) -> (i64, PathBuf) {
     let opened = ask(
-        &world.slack(),
+        &world.herdr(),
         &acting(identity, &json!({"cmd": "open-host-session"})),
     );
     let session = opened["value"]["session"].as_i64().expect("session");
@@ -49,7 +49,7 @@ fn another_user_naming_a_workdir_is_refused_and_nothing_opens() {
     let world = World::new();
     let open = json!({"cmd": "open-host-session", "workdir": "/home/op"});
     refused(
-        &ask(&world.slack(), &acting(A, &open)),
+        &ask(&world.herdr(), &acting(A, &open)),
         WORKDIR_OPERATOR_ONLY,
     );
     let listed: Value = ask(&world.served.main, &json!({"cmd": "sessions"}));
@@ -90,7 +90,7 @@ fn two_users_and_two_sessions_never_share_a_workdir() {
 /// The Session `identity` gets from opening with `key` and no workdir.
 fn keyed(world: &World, identity: &str, key: &str) -> i64 {
     let open = json!({"cmd": "open-host-session", "key": key});
-    let opened = ask(&world.slack(), &acting(identity, &open));
+    let opened = ask(&world.herdr(), &acting(identity, &open));
     opened["value"]["session"].as_i64().expect("session")
 }
 
@@ -117,7 +117,7 @@ fn an_ended_sessions_key_opens_a_new_one() {
     let world = World::new();
     let first = keyed(&world, A, "C1/1.0");
     let end = json!({"cmd": "end-host-session", "session": first});
-    assert_eq!(ask(&world.slack(), &acting(A, &end))["class"], "ok");
+    assert_eq!(ask(&world.herdr(), &acting(A, &end))["class"], "ok");
     let second = keyed(&world, A, "C1/1.0");
     assert_ne!(second, first);
     assert_eq!(keyed(&world, A, "C1/1.0"), second);
@@ -128,7 +128,7 @@ fn a_key_out_of_bounds_is_refused() {
     let world = World::new();
     for key in [String::new(), "k".repeat(257)] {
         let open = json!({"cmd": "open-host-session", "key": key});
-        let got = ask(&world.slack(), &acting(A, &open));
+        let got = ask(&world.herdr(), &acting(A, &open));
         assert_eq!(got["class"], "usage", "{got}");
     }
 }
@@ -136,7 +136,7 @@ fn a_key_out_of_bounds_is_refused() {
 /// The error message of opening a host Session as `identity` with no workdir.
 fn open_fails(world: &World, identity: &str) -> String {
     let opened = ask(
-        &world.slack(),
+        &world.herdr(),
         &acting(identity, &json!({"cmd": "open-host-session"})),
     );
     let message = opened["error"]["message"].as_str().unwrap_or_default();
@@ -147,7 +147,7 @@ fn open_fails(world: &World, identity: &str) -> String {
 /// The ids of `identity`'s live host Sessions.
 fn live_hosts(world: &World, identity: &str) -> Vec<i64> {
     let listed = ask(
-        &world.slack(),
+        &world.herdr(),
         &acting(identity, &json!({"cmd": "sessions"})),
     );
     listed["value"]["sessions"]

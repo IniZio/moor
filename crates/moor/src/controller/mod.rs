@@ -4,7 +4,6 @@ pub mod attach;
 mod check;
 mod conn;
 mod drain;
-mod front_proxy;
 pub mod front_shim;
 mod fronts;
 mod hangup;
@@ -106,14 +105,12 @@ struct Running {
     fronts: Vec<(String, UnixListener)>,
     /// The machine runner's socket.
     runner: UnixListener,
-    /// The Proxy processes' ledger socket, and the front Proxy's key on it.
-    ledger: (UnixListener, Option<Arc<str>>),
+    /// The Proxy processes' ledger socket.
+    ledger: UnixListener,
     /// The ledger's TLS listener for the shared egress Proxy; none unless the config sets one.
     ledger_tls: Option<ledger::TlsLedger>,
     /// The fronts that have a command, not yet started.
     commands: Vec<fronts::Front>,
-    /// The front Proxy, not yet started; none when no front lists proxy rules.
-    proxy: Option<front_proxy::Plan>,
     /// The vault key, for the user requests.
     vault: Arc<Vault>,
     /// Holds the single-instance flock until the process exits.
@@ -145,9 +142,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
 
 /// `env` with the settings from `cfg` that requests read.
 fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
-    let env = env
-        .with_workflow_min_interval(cfg.workflow_min_interval())
-        .with_remote_fronts(cfg.remote_fronts());
+    let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
     crate::blobs::share(env.with_front_webhooks(cfg.webhook_fronts()), &cfg.blobs)
 }
 
@@ -198,31 +193,28 @@ fn start_until(
     lock::claim(&env, &wake, sink)?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
-    Moor::settle_keys(&env, &vault, front_ca(&cfg)).map_err(|message| Stop {
+    Moor::settle_keys(&env, &vault).map_err(|message| Stop {
         code: REFUSED,
         message,
     })?;
     let env = Moor::prepare_egress(env).map_err(refused)?;
-    let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
-    let env = configured(env, &cfg).map_err(refused)?;
+    let env = configured(env.with_vault_key(key), &cfg).map_err(refused)?;
     let lock = take_socket_lock(&socket)?;
-    Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
     let runner = peer::bind_runner(&env, &mut sockets)?;
     let ledger = peer::bind_ledger(&env, &mut sockets)?;
-    let commands = front_commands(&fronts, &cfg, proxy.as_ref(), &env, &socket).map_err(refused)?;
+    let commands = front_commands(&fronts, &cfg, &env, &socket).map_err(refused)?;
     sockets.finish().map_err(refused)?;
     let running = Running {
         socket,
         listener,
         fronts,
         runner,
-        ledger: (ledger, proxy.as_ref().map(|p| Arc::from(p.key()))),
+        ledger,
         ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref(), &cfg.fronts)
             .map_err(refused)?,
         commands,
-        proxy,
         vault: Arc::new(vault),
         _lock: lock,
         _state_lock: state_lock,
@@ -234,25 +226,16 @@ fn start_until(
     Ok((running, wake))
 }
 
-/// Whether any front in `cfg` has a Proxy, which needs the front CA.
-fn front_ca(cfg: &ControllerConfig) -> bool {
-    cfg.fronts.values().any(|f| !f.proxy_rules.is_empty())
-}
-
 /// The fronts in `cfg` that have a command, each on its socket in `fronts`.
 fn front_commands(
     fronts: &[(String, UnixListener)],
     cfg: &ControllerConfig,
-    proxy: Option<&front_proxy::Plan>,
     env: &Env,
     socket: &Path,
 ) -> Result<Vec<fronts::Front>, String> {
     fronts
         .iter()
-        .filter_map(|(ns, _)| {
-            let access = proxy.and_then(|p| p.access(ns));
-            fronts::Front::new(ns, cfg.fronts.get(ns)?, env, socket, access)
-        })
+        .filter_map(|(ns, _)| fronts::Front::new(ns, cfg.fronts.get(ns)?, env, socket))
         .collect()
 }
 
@@ -300,9 +283,8 @@ impl Running {
         program: (OsString, Vec<OsString>),
         sink: &Sink,
     ) -> fronts::Supervised {
-        let proxy = self.proxy.take().map(|plan| (program.0.clone(), plan));
         let shim = fronts::Shim::new(program);
-        fronts::supervise(std::mem::take(&mut self.commands), shim, proxy, sink)
+        fronts::supervise(std::mem::take(&mut self.commands), shim, sink)
     }
 
     /// Serves the controller socket, each front socket and the runner socket until `wake` turns readable, then
@@ -315,8 +297,7 @@ impl Running {
         }
         let runner = serve(peer::On::Runner);
         listeners.push((self.runner, Arc::clone(&runner)));
-        let (ledger, key) = self.ledger;
-        ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
+        ledger::serve_until_exit(self.ledger, (&self.env, &self.vault), sink);
         if let Some(tls) = self.ledger_tls {
             let loops = ledger::Loops {
                 runner,
