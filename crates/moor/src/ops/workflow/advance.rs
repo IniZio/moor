@@ -66,8 +66,13 @@ pub(super) fn finish_runs(
         let plan = store.run_plan(run.id, &w.prompt)?;
         let at_check = matches!(plan.step(at).map(|s| &s.kind), Some(StepKind::Check { .. }));
         // A check runs as soon as the agent is idle, so an agent that only just stopped is
-        // quiet enough for it. A step the agent works on waits for the longer quiet.
-        if verdict == RunVerdict::Running && !at_check {
+        // quiet enough for it. An approve step is the owner's to answer, so the run waits at
+        // once. A step the agent works on waits for the longer quiet.
+        let at_approve = matches!(
+            plan.step(at).map(|s| &s.kind),
+            Some(StepKind::Approve { .. })
+        );
+        if verdict == RunVerdict::Running && !at_check && !at_approve {
             continue;
         }
         let q = Quiet {

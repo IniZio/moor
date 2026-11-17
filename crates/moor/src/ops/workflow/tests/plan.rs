@@ -84,7 +84,9 @@ impl Rig {
 
 pub(super) fn step_of(state: &RunState) -> (String, u8) {
     match state {
-        RunState::Running { at, try_n, .. } => (at.to_string(), *try_n),
+        RunState::Running { at, try_n, .. } | RunState::Waiting { at, try_n, .. } => {
+            (at.to_string(), *try_n)
+        }
         other => panic!("not running: {other:?}"),
     }
 }

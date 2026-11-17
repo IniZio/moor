@@ -91,7 +91,7 @@ fn a_plan_that_is_not_json_is_refused() {
 }
 
 #[test]
-fn approve_steps_are_refused_until_moor_runs_them_and_check_steps_are_saved() {
+fn approve_and_check_steps_are_saved() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let req = planned(&[
@@ -99,18 +99,12 @@ fn approve_steps_are_refused_until_moor_runs_them_and_check_steps_are_saved() {
         json!({"id": "ask", "title": "Ask", "kind": "approve", "question": "ok?", "ok": "ship"}),
         ship(),
     ]);
-    let why = refusal(&f, &who, add(req, None));
-    assert!(!why.contains("step `gate`"), "{why}");
-    assert!(why.contains("step `ask` is a approve step"), "{why}");
-    assert_eq!(ok(&f, &who, cmd(WorkflowCmd::List))["workflows"], json!([]));
-
-    let only_check = planned(&[
-        json!({"id": "gate", "title": "Gate", "kind": "check", "command": "true", "ok": "ship"}),
-        ship(),
-    ]);
-    ok(&f, &who, add(only_check, None));
+    ok(&f, &who, add(req, None));
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
-    assert_eq!(listed["workflows"][0]["plan"]["steps"][0]["kind"], "check");
+    let steps = &listed["workflows"][0]["plan"]["steps"];
+    assert_eq!(steps[0]["kind"], "check");
+    assert_eq!(steps[1]["kind"], "approve");
+    assert_eq!(steps[1]["question"], "ok?");
 }
 
 #[test]

@@ -68,6 +68,8 @@ pub(crate) fn run(
     };
     let plan = store.run_plan(run.id, &w.prompt)?;
     let (history, _) = history_of(store, run.id, (at, try_n))?;
+    #[cfg(test)]
+    tests_hook::after_read(cx);
     let Some(ask) = plan.step(at).filter(|s| matches!(s.kind, StepKind::Approve { .. })) else {
         return Err(refused(format!("step {at} of the plan is not an approve step")));
     };
@@ -176,4 +178,29 @@ fn tell(cx: &Cx, store: &Store, id: BoxId, text: &str) -> Result<(), CommandErro
             "could not send the next step to the Box ({why}); nothing is recorded, answer again"
         ))
     })
+}
+
+/// A test seam between an answer's reading of the run and its move.
+#[cfg(test)]
+pub(super) mod tests_hook {
+    use std::cell::RefCell;
+
+    use crate::cx::Cx;
+
+    type Hook = Box<dyn FnOnce(&Cx)>;
+
+    thread_local! {
+        static AFTER_READ: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Runs `f` once, after the next reading of a run by an answer on this thread.
+    pub(in crate::ops::workflow) fn once_after_read(f: impl FnOnce(&Cx) + 'static) {
+        AFTER_READ.with(|h| *h.borrow_mut() = Some(Box::new(f)));
+    }
+
+    pub(super) fn after_read(cx: &Cx) {
+        if let Some(f) = AFTER_READ.with(|h| h.borrow_mut().take()) {
+            f(cx);
+        }
+    }
 }
