@@ -483,3 +483,50 @@ fn a_new_box_joins_the_queue_on_a_node_that_reports_memory() {
     assert_eq!(behind_the_queue(bound.clone(), &reporting(0)), bound);
     assert_eq!(behind_the_queue(bound.clone(), &silent(2)), bound);
 }
+
+/// The shared node `local` an operator enrolled with machine 12, as `moor node add` makes it.
+fn enrolled_shared() -> Node {
+    Node {
+        machine: Some(12),
+        ..node("local", Scope::Shared, &["linux"])
+    }
+}
+
+#[test]
+fn a_start_naming_no_node_lands_on_the_only_shared_node() {
+    assert_eq!(
+        run_without_shared(&[enrolled_shared()], &spec(&[], None)),
+        bound("local", Some(12))
+    );
+}
+
+#[test]
+fn a_start_naming_no_node_prefers_a_personal_node_over_a_shared_one() {
+    let nodes = [enrolled_shared(), mine("hv", 7, 100)];
+    assert_eq!(
+        run_without_shared(&nodes, &spec(&[], None)),
+        bound("hv", Some(7))
+    );
+}
+
+#[test]
+fn a_start_naming_no_node_waits_on_a_full_shared_node() {
+    let mut local = enrolled_shared();
+    local.max_boxes = Some(2);
+    local.used = 2;
+    assert_eq!(
+        run_without_shared(&[local], &spec(&[], None)),
+        Verdict::Pending {
+            node: name("local"),
+            reason: "local is full (2 of 2 Boxes); 0 Boxes ahead".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn a_start_naming_no_node_on_an_offline_fleet_refuses_saying_so() {
+    let mut local = enrolled_shared();
+    local.online = Online::Offline { since: NOW - 3600 };
+    let r = fail(run_without_shared(&[local], &spec(&[], None)));
+    assert_eq!(r, "local is offline for 1h: wait for it to come back");
+}

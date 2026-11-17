@@ -79,6 +79,7 @@ mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod setup_why;
+mod shared_node;
 mod size;
 mod state;
 mod step_timing;
