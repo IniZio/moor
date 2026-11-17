@@ -6,7 +6,7 @@ machine linked, and no machine op fails for longer than one redial.
 ## What a deploy does to machines today
 
 On 2026-11-06 the nightly deployed ten times between 02:19 and 06:50 UTC. Each
-deploy replaced the one pod that holds the controller, gate, runner, Slack and
+deploy replaced the one pod that holds the controller, gate, runner and
 notify. engine-03's agent logged `machine 1 is not linked` within a minute of
 every deploy, and its Boxes recorded, each time:
 
@@ -87,59 +87,6 @@ answers, instead of backing off.
 - The runner rolls on every nightly, since it shares the image tag. That is
   fine once a roll is a one-second relink.
 
-### Slack
-
-Slack leaves the controller pod for its own Deployment `<release>-slack`, one
-replica with a small PVC. `slack.separate`, default off, selects it. VM and host
-installs keep the unix sockets and the front Proxy the controller starts.
-
-```
-moor-slack, moor-slack mcp ──tls <release>-ledger:7443, hello{front, ns, key}──▶ controller
-Claude turn ──127.0.0.1, lease as proxy password──▶ forwarder in the Slack pod
-forwarder   ──wss <host>/egress, Authorization: Basic──▶ shared egress Proxy
-egress      ──ledger: FrontLeaseOf, FrontSecret, FrontCa──▶ controller
-Slack       ◀──Socket Mode, unacked events resent── Slack
-```
-
-Data shape:
-
-```
-fronts.<ns>.remote.key_file  controller config: the key this front's hello presents
-hello                        {"front":{"v":1,"ns":<ns>,"key":<key>}}, answered {"Ok":null} or refused
-lease token                  lease.<id>.<mac>, mac under the egress key; the store keeps its hash
-FrontLeaseOf(token_hash)     (front, user, rules), for a live lease only
-slack PVC                    slack.db, workdirs, proxy-ca.pem
-```
-
-| Decision | Reason |
-| --- | --- |
-| One replica, no standby, no lease | Socket Mode resends what nobody acked, so a short gap loses no event. |
-| `slack.db` stays SQLite on its own PVC | It is the front's own state. Nothing else reads it, and a store move buys nothing here. |
-| `Recreate`, not a rolling update | The volume is ReadWriteOnce and one process must write `slack.db`. |
-| Generic front hello on `ledger_tls` | Any front can use it, and moor core stays free of Slack nouns. |
-| A hello maps to `Caller::Front(ns)` | The connection then runs the front socket's handler, so authorisation has one path. A front key holder may assert only its own identities. |
-| Per-front key, separate from the runner's | A leaked front key cannot act as a runner, and a leaked runner key cannot act as a front. |
-| Key in a file, not the environment | The tool server starts with a cleared environment and names no secret in its arguments. |
-| Shared egress Proxy for the front's credentials | The Slack pod holds no user secret, and a Slack roll or a controller roll leaves the Proxy serving. |
-| Signed lease token | The Proxy checks it before it spends any ledger call, as it does a Box token. |
-| Forwarder sends `Authorization: Basic` | Ingress controllers may drop `Proxy-Authorization` as a hop-by-hop header. |
-| A controller start keeps a remote front's leases | That front did not restart with the controller. Its running turn still holds the lease. |
-
-**What a Slack roll costs (expected, not measured yet).** The old pod stops
-acking at SIGTERM and finishes its request in flight. Socket Mode reconnects in
-the new pod in about 15 s. Slack resends unacked events, so none is lost. A turn
-running at SIGTERM ends and its thread says so. "Post then record" can still
-post twice after a crash, as it can today.
-
-**What a controller roll costs Slack (expected, not measured yet).** The front's
-connections drop and redial with its 10 s backoff cap. A turn in flight keeps
-its lease, and the Proxy uses its last answers while the ledger is away.
-
-**The switch.** Turning the flag on starts `slack.db` fresh, with no copy.
-Existing threads lose their context and stop following their Boxes, open
-questions can no longer be answered from Slack, channels add their repos again,
-and workflows added earlier run on without reports in Slack.
-
 ## Data shape
 
 ```
@@ -162,7 +109,6 @@ count restarts with it and cannot order links across runners; `since` can.
 | No op replay | Exec is not idempotent. The controller already reports a cut link; a 30 s drain makes that rare. |
 | Holds stay in the runner that holds the link | The registry sends every call for a machine to one runner, so its count is the only count. A store lease would make every heavy call wait on the controller. |
 | Keep `runner.sock` for VM and host installs | One binary, one protocol; the socket is a transport choice behind the same wire. |
-| Slack is its own Deployment on a PVC of its own | See the Slack section. |
 
 ## Runner over the network
 
@@ -313,10 +259,6 @@ local runner. Deleted: `MOOR_STATE_DIR` in the command.
    the exec completes, and the agent shows `not linked` for at most one redial.
 10. **Proxy dials the holder.** `Hold` carries `runner_addr`; the Proxy dials
     it. Check: the runner-roll probe with two replicas fails no op.
-11. **Slack.** Front hello on `ledger_tls`, then the front Proxy through the
-    shared egress Proxy, then the `slack.separate` chart flag, default off.
-    Check: a front key holder over TLS cannot act as the operator, the render
-    with the flag off is byte-identical, and the k3s probe measures both rolls.
 
 ## Measured
 

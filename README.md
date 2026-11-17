@@ -2,7 +2,7 @@
 
 moor runs coding agents in Boxes. A Box is one piece of work. It has a branch
 of a GitHub repo, a VM to work in, and an agent working there. You hand it work
-from Claude Code or Slack and check on it from the same place. You get a pushed
+from Claude Code and check on it from the same place. You get a pushed
 branch and a pull request back.
 
 The agent never holds your Claude or GitHub token. A Proxy on the host adds
@@ -21,7 +21,7 @@ has nothing to leak.
 
 ```mermaid
 flowchart LR
-	P[You] -->|Claude Code, Slack| G[gate]
+	P[You] -->|Claude Code| G[gate]
 	G --> C[controller]
 	C --> N1[shared node]
 	C --> N2[your machine]
@@ -69,8 +69,7 @@ by what you came to do:
 - **Self-host.** [Choose an install](docs/install.md),
   [Set up the Box provider](docs/providers.md),
   [Run on one host](docs/deploy.md), [Kubernetes](docs/kubernetes.md),
-  [Sign-in with OIDC](docs/oidc.md), [Slack app](docs/slack.md),
-  [Upgrade and back up](docs/upgrade.md).
+  [Sign-in with OIDC](docs/oidc.md), [Upgrade and back up](docs/upgrade.md).
 - **Reference.** [CLI](docs/cli.md), [Configuration](docs/config.md),
   [Helm values](docs/helm.md), [MCP tools](docs/mcp.md),
   [Events](docs/events.md), [Fronts](docs/fronts.md),

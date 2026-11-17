@@ -27,7 +27,7 @@ Without arguments it installs `moor`, `moor-gate`, and `moor-egress-forward`.
 Name binaries to install others instead:
 
 ```sh
-curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor moor-gate moor-slack
+curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor moor-gate moor-listen
 ```
 
 | Binary | Who runs it |
@@ -35,7 +35,6 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 | `moor` | The operator. It is the controller, the dev CLI, and the local client for `moor login` and `moor listen`. |
 | `moor-gate` | The operator, for teammates to reach moor over HTTPS. |
 | `moor-egress-forward` | Nobody by hand. The controller delivers it into each Box. |
-| `moor-slack` | The operator, for the Slack front. |
 | `moor-machine-agent` | Each person who adds a machine. |
 | `moor-listen` | Anyone who wants event lines with a token of their own. |
 | `moor-herdr` | Installed by the herdr plugin, not by hand. |
@@ -48,8 +47,8 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 
 ## Use the release image
 
-`ghcr.io/inizio/moor` holds the controller, the gate, the Slack front, the
-webhook front, the machine runner, and crabbox. The Helm chart at
+`ghcr.io/inizio/moor` holds the controller, the gate, the webhook
+front, the machine runner, and crabbox. The Helm chart at
 `oci://ghcr.io/inizio/charts/moor` runs it. Each release publishes the chart
 and the image at the same version.
 

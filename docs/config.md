@@ -84,10 +84,10 @@ mcp_servers:
       Authorization: "Bearer ${linear-api-key}"
 ```
 
-A person adds servers of their own with `/moor mcp add` in Slack or
-`moor user mcp add`. Theirs replace a shared server of the same name. A server
-added without a key signs in over OAuth. The controller registers itself with
-each authorization server unless `oauth.clients` names a client for its host:
+A person adds servers of their own with `moor user mcp add`. Theirs replace a
+shared server of the same name. A server added without a key signs in over
+OAuth. The controller registers itself with each authorization server unless
+`oauth.clients` names a client for its host:
 
 ```yaml
 oauth:
@@ -100,8 +100,8 @@ oauth:
 ### Per-user agent profile
 
 A person names a GitHub repo as their agent profile with
-`moor user profile set https://github.com/OWNER/NAME[#REF]` or
-`/moor profile set`. Each new Box of theirs applies it. The repo may hold:
+`moor user profile set https://github.com/OWNER/NAME[#REF]`. Each new Box of
+theirs applies it. The repo may hold:
 
 | Path | What it does |
 | --- | --- |
@@ -310,8 +310,6 @@ same directory.
 | `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 
-The controller refuses a `slack` key. The Slack front is `moor-slack`, set up under `fronts`.
-
 ### `fronts`
 
 `fronts.<namespace>` gives one front its own socket at
@@ -332,7 +330,6 @@ fronts:
 | `state_dir` | none | The one directory the front may write. |
 | `read_only` | empty | Real paths outside the system directories that the front may read. |
 | `ports` | empty | TCP ports forwarded from the host's `127.0.0.1` to the front. |
-| `proxy_rules` | empty | Rules the front Proxy serves to the front. The only one is `claude`. |
 | `webhooks` | `false` | Whether the front delivers users' webhooks. |
 | `remote.key_file` | none | For a front in another pod, the key its hello presents to `ledger_tls`. |
 

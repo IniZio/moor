@@ -60,13 +60,6 @@ rule and the reason, never the token or the body. `box_status` then shows `stuck
 as `egress_refused` or `credential_withheld`, so you can tell a blocked agent
 from a slow one.
 
-## The Slack coordinator
-
-The coordinator in a Slack thread is a Claude Code turn on the controller
-host. It uses the same idea. Its requests go through a front Proxy, which adds
-the thread starter's `claude` secret. The turn itself holds no token, and it
-runs in a sandbox with no route out but that Proxy.
-
 ## What the Proxy does not protect
 
 The socket's permissions protect a Box only while it has its own network. A

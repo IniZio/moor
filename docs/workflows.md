@@ -6,7 +6,7 @@ several repos every morning.
 
 ## Add a workflow
 
-Ask Claude Code, or the Slack coordinator, in plain words:
+Ask Claude Code in plain words:
 
 ```text
 Every weekday at 9:00 London time, start a Box on acme/web and acme/api to
@@ -61,10 +61,6 @@ cause.
 - `list_workflow_runs` lists each change oldest first, with an outcome of
   `starting`, `started`, `finished`, `timed_out`, `skipped_overlap`, or
   `refused`. Pass the reply's `next` as `after` to get only newer changes.
-
-A workflow added in a Slack thread reports to Slack. Each run posts a new
-message in that channel, mentions you, and becomes the run's own thread. Reply
-there to steer the Box.
 
 ## Pause or remove a workflow
 

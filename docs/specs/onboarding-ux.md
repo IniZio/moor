@@ -83,7 +83,7 @@ Start fix-typo on acme/web?
 - **An offline personal node fails the start.** No fallback to shared. The front shows node state before the start, so the failure is no surprise.
 - **Account page in the gate.** A minimal page for secrets, machines and connect commands. Built with Vite and Preact, embedded in `moor-gate` with `rust-embed`. Design tokens live in one CSS file that the docs theme also uses.
 - **One capacity flag.** `--max-boxes` on `up`. `enroll --slots` goes.
-- **Node visibility in every front.** A `list_nodes` tool over MCP and the Slack coordinator, and the herdr picker gets a node field.
+- **Node visibility in every front.** A `list_nodes` tool over MCP, and the herdr picker gets a node field.
 - **Generic sign-in keys.** `authgear.*` becomes `oidc.*` in config and chart.
 - **Docs on Starlight, hosted on GitHub Pages.** Static output, Pagefind search with no setup, plain Markdown in `docs/`. Ships `llms.txt`.
 
@@ -97,7 +97,7 @@ Start fix-typo on acme/web?
 | 4 | No bootstrap command. | `moor up`. |
 | 5 | Provider stack built from source. | `crabbox-cloudhypervisor install`. |
 | 6 | Agent join needs flags twice, browser loopback and hand-run supervision. | `moor-machine-agent up`, pairing code, user service. |
-| 7 | Machines visible only in the dev CLI. Slack `/moor machine` prints a wrong command and no state. | `list_nodes` everywhere. Fix Slack. |
+| 7 | Machines visible only in the dev CLI. | `list_nodes` everywhere. |
 | 8 | Chart has `runner.enabled: false`. Agent retries forever against a server with no runner. | Default on. Agent exits with a clear message. |
 | 9 | A first-time teammate has no front yet and nowhere to start. | Account page in the gate. |
 | 10 | Docs repeat install, enroll and login steps up to 4 times. | Rewrite per the layout below. |
@@ -113,7 +113,7 @@ Get started
   Use a team moor                      tutorial, 5 steps
   Self-host on one machine             tutorial, 3 commands
 Use
-  Start and steer Boxes                how-to, tabs per front: Claude Code, herdr, Slack
+  Start and steer Boxes                how-to, tabs per front: Claude Code, herdr
   Add your machine                     how-to
   Set up a repo (.moor.yaml)           how-to
   Run Boxes on a schedule              how-to
@@ -123,7 +123,6 @@ Self-host
   One host                             how-to
   Kubernetes                           how-to
   Sign-in with OIDC                    how-to
-  Slack app                            how-to
   Upgrade and back up                  how-to
 Reference
   moor, moor-machine-agent CLI         generated

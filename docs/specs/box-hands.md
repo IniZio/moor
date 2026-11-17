@@ -59,8 +59,6 @@ Node      capacity
 - A Box stores the `.moor.yaml` text it was started from and reads that copy.
 - Claude's history sits in `~/.claude/projects` on the Box disk. Transcript
   archives reach the blob store after each turn but are never restored.
-- The Slack front keeps its own copy of Box state, branch and node, synced by
-  name.
 - A steer to an asleep Box with no live session is refused. Only `start` holds
   a prompt durably.
 - moor reads agent state from a hook file and pane text over ssh.
@@ -131,12 +129,8 @@ Each step ends in a run on a real Box.
    to the user and not sent again. Proof. Steer an asleep Box and a Box whose
    agent died. Each gets the message, and a crash between send and delete
    repeats it at most once.
-6. **Keyed Boxes, fronts without copies.** The controller resolves
-   `(front, conversation, n)` under a unique index. The Slack front drops its
-   copy of Box state, branch and node, and reads state from the controller's
-   event cursor. `slack.db` keeps the thread binding and the status message.
-   Proof. A Slack retry starts no second Box, and the thread shows the
-   controller's state.
+6. **Keyed Boxes.** The controller resolves `(front, conversation, n)` under a
+   unique index.
 7. **Event stream.** moor reads Claude Code's own status reports through `hc`.
    After a reconnect, `hc` flags the missed events and moor takes the state from
    `hc`'s snapshot. `hc` itself does not change. Proof. Kill the link mid-turn
@@ -158,7 +152,7 @@ Each step ends in a run on a real Box.
 ## Compared with
 
 Rivet, ax and agentrun each run agents in sandboxes. None runs Claude Code
-itself in a VM that a team steers from a thread. The table reads moor as it
+itself in a VM that a team steers. The table reads moor as it
 stands after the steps above. A cell names the step or the code behind it.
 
 | Dimension | moor after this charter | Rivet | ax | agentrun |
@@ -167,7 +161,7 @@ stands after the steps above. A cell names the step or the code behind it.
 | Durability of the conversation | Claude's own session files, archived each turn, restored, `--resume`. Step 2. | Transcript kept by the client. A lost sandbox gets the last events replayed as text. | None. One headless run. | Every turn and tool call committed. Not a Claude Code conversation. |
 | Recovery from VM loss | New hands from the checkpoint chain, session restored, same Box. Step 2. | Volume moves with the actor. Sandboxes are not swapped. | Revert to the last snapshot. A crashed agent leaves its job running. | A container per run. No snapshot. |
 | Interactivity and steering | Steer mid-turn, interrupt, inbox for an asleep Box. `ops/steer.rs`, step 5. | Prompt through the adapter, live events. | None. | A message waits for the turn to end. |
-| Human in the loop | Questions posted with buttons, `needs_input` events and webhooks. `docs/slack.md`. | Permission requests over RPC. The reference app auto-accepts edits. | None. | Needs-input webhooks. Workflows cannot wait on a person. |
+| Human in the loop | `needs_input` events and webhooks. `docs/events.md`. | Permission requests over RPC. The reference app auto-accepts edits. | None. | Needs-input webhooks. Workflows cannot wait on a person. |
 | Real Claude Code fidelity | Claude Code in its terminal under `hc`, with the profile's plugins and the user's MCP servers. `docs/config.md`. | Driven through an agent protocol adapter. | `claude --print`. | The SDK with its native tools off. |
 | Warm start | Checkpoint chain per user, repo, machine class and cache plan. `docs/nodes.md`. | Forks from database checkpoints. No sandbox warm start. | Snapshot restore. No warm pool. | None. |
 | Workflows and triggers | Cron with a floor, latest missed due fired once, skip while active, breaker after three refused or timed-out runs. `docs/workflows.md`. | Schedules per actor. A failed run is not retried. | None. | Cron, at, every and signed webhooks. Catch-up window, pause after five, cost cap. |
