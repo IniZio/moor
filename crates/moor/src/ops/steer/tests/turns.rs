@@ -94,7 +94,11 @@ fn two_steers_queued_while_busy_are_both_closed_by_the_following_idle() {
     let after = agent::at_turn(agent::idle(Ts::from_millis(2_000)), 2);
     f.engine.set_probes("agent-1", after);
     settle_once(&f);
-    assert_eq!(answered_steers(&f), [one, two], "each steer gets its turn_done");
+    assert_eq!(
+        answered_steers(&f),
+        [one, two],
+        "each steer gets its turn_done"
+    );
     assert!(f.cx.store().unwrap().sent(f.id).unwrap().is_empty());
 }
 
@@ -118,16 +122,14 @@ fn a_steer_sent_after_a_newer_row_is_not_closed_by_that_row_s_turn() {
             turn_before: Some(turn_before),
             status_before: None,
         };
-        let event = moor_core::domain::event::Event::Steered(
-            moor_core::domain::event::SteerSent {
-                session: "agent-1".to_owned(),
-                message: "m".to_owned(),
-                submit_retried: false,
-                turn_before: mark.turn_before,
-                status_before: None,
-                inbox: Some(row.get()),
-            },
-        );
+        let event = moor_core::domain::event::Event::Steered(moor_core::domain::event::SteerSent {
+            session: "agent-1".to_owned(),
+            message: "m".to_owned(),
+            submit_retried: false,
+            turn_before: mark.turn_before,
+            status_before: None,
+            inbox: Some(row.get()),
+        });
         store.confirm_sent(f.id, row, mark, &event).unwrap().1
     };
     // The newer row goes first, as a launch's own prompt does; the older one is typed while
