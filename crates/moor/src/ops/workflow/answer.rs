@@ -8,10 +8,12 @@
 
 use moor_core::decide::workflow::{answer_move, Move};
 use moor_core::name::ForgeRepo;
+use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
 use moor_core::workflow::{
-    Answer, HistoryEntry, Plan, RunOutcome, RunState, StepKind, WorkflowName, NOTE_MAX,
+    Answer, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
+    WorkflowName, WorkflowRun, NOTE_MAX,
 };
 use moor_core::{BoxId, ErrorKind};
 
@@ -31,6 +33,30 @@ fn usage(why: impl std::fmt::Display) -> CommandError {
     CommandError::new(ErrorKind::Usage, why.to_string())
 }
 
+/// A run waiting at an approve step, and the answer it is given.
+struct Asked<'a> {
+    /// The controller context.
+    cx: &'a Cx,
+    /// The store.
+    store: &'a Store,
+    /// The workflow.
+    w: &'a Workflow,
+    /// The run.
+    run: &'a WorkflowRun,
+    /// The run's Box.
+    box_id: BoxId,
+    /// The approve step and its try.
+    at: (&'a StepId, u8),
+    /// The run's frozen plan.
+    plan: &'a Plan,
+    /// The approve step.
+    ask: &'a Step,
+    /// Who answers, how, and with what note.
+    given: (UserId, Answer, Option<&'a str>),
+    /// Now.
+    now: Ts,
+}
+
 /// Answers the run of `user`'s workflow `workflow` for `repo` that waits at an approve step.
 pub(crate) fn run(
     cx: &Cx,
@@ -48,122 +74,182 @@ pub(crate) fn run(
     let Some(w) = store.workflow(user, &name)? else {
         return Err(refused(format!("no workflow named {name}")));
     };
-    let run = store
-        .open_workflow_runs(w.id)?
-        .into_iter()
-        .find(|r| r.repo == repo && matches!(r.state, RunState::Waiting { .. }));
-    let Some(run) = run else {
+    let waiting = store.open_workflow_runs(w.id)?.into_iter().find_map(|r| {
+        let RunState::Waiting {
+            box_id,
+            ref at,
+            try_n,
+            ..
+        } = r.state
+        else {
+            return None;
+        };
+        let at = at.clone();
+        (r.repo == repo).then_some((box_id, at, try_n, r))
+    });
+    let Some((box_id, at, try_n, run)) = waiting else {
         return Err(refused(format!(
             "no run of {name} for {repo} is waiting for an answer"
         )));
     };
-    let RunState::Waiting {
-        box_id,
-        ref at,
-        try_n,
-        ..
-    } = run.state
-    else {
-        return Err(refused("the run is not waiting"));
-    };
     let plan = store.run_plan(run.id, &w.prompt)?;
-    let (history, _) = history_of(store, run.id, (at, try_n))?;
+    let (history, _) = history_of(store, run.id, (&at, try_n))?;
     #[cfg(test)]
     tests_hook::after_read(cx);
-    let Some(ask) = plan.step(at).filter(|s| matches!(s.kind, StepKind::Approve { .. })) else {
-        return Err(refused(format!("step {at} of the plan is not an approve step")));
+    let Some(ask) = plan
+        .step(&at)
+        .filter(|s| matches!(s.kind, StepKind::Approve { .. }))
+    else {
+        return Err(refused(format!(
+            "step {at} of the plan is not an approve step"
+        )));
     };
-    let now = cx.clock().now();
-    let mut lines = vec![HistoryEntry::Answered {
-        step: at.clone(),
-        by: user,
-        answer,
-        note: note.map(str::to_owned),
-    }];
-    let key = (w.id, &run.repo, run.due_at);
-    let on = (at, try_n);
-    let moved = match answer_move(&plan, &history, answer) {
-        Move::Enter {
-            step,
-            try_n: next_try,
-            exhausted,
-        } => {
-            let Some(next) = plan.step(&step) else {
-                return Err(refused("the run's plan has no such step"));
-            };
-            lines.extend(
-                exhausted
-                    .into_iter()
-                    .map(|step| HistoryEntry::Exhausted { step }),
-            );
-            lines.push(HistoryEntry::Entered {
-                step: step.clone(),
-                try_n: next_try,
-            });
-            let to = if matches!(next.kind, StepKind::Approve { .. }) {
-                RunState::Waiting {
-                    box_id,
-                    at: step.clone(),
-                    try_n: next_try,
-                    since: now,
-                }
-            } else {
-                RunState::Running {
-                    box_id,
-                    at: step.clone(),
-                    try_n: next_try,
-                }
-            };
-            if matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. }) {
-                let text = Plan::answer_steer(ask, (answer, note), next);
-                tell(cx, store, box_id, &text)?;
-                lines.push(HistoryEntry::Sent {
-                    step: step.clone(),
-                    try_n: next_try,
-                });
-            }
-            let done = store.answer_workflow_run(key, on, &to, (&lines, now))?;
-            (done, format!("the run went on to step {step}"))
-        }
-        Move::Fail {
-            at: failed_at,
-            reason,
-            exhausted,
-        } => {
-            lines.extend(
-                exhausted
-                    .into_iter()
-                    .map(|step| HistoryEntry::Exhausted { step }),
-            );
-            let outcome = RunOutcome::Failed {
-                at: failed_at,
-                reason,
-            };
-            let done = store.end_waiting_run(key, on, (box_id, outcome), (&lines, now))?;
-            (done, "the run ended failed".to_owned())
-        }
-        Move::Declined { at: declined } => {
-            let outcome = RunOutcome::Declined { at: declined };
-            let done = store.end_waiting_run(key, on, (box_id, outcome), (&lines, now))?;
-            (done, "the run ended declined".to_owned())
-        }
-        Move::Wait
-        | Move::Remind
-        | Move::RunCheck
-        | Move::Ask
-        | Move::Delivered
-        | Move::Incomplete { .. } => return Err(refused("the run could not move on")),
+    let asked = Asked {
+        cx,
+        store,
+        w: &w,
+        run: &run,
+        box_id,
+        at: (&at, try_n),
+        plan: &plan,
+        ask,
+        given: (user, answer, note),
+        now: cx.clock().now(),
     };
-    if !moved.0 {
-        return Err(refused(
-            "the run moved while you answered: it was answered already, or it ended",
-        ));
-    }
+    let next = asked.apply(answer_move(&plan, &history, answer))?;
     Ok(WorkflowAnswerValue {
         workflow: name.to_string(),
         repo: repo.to_string(),
-        next: moved.1,
+        next,
     })
+}
+
+impl Asked<'_> {
+    /// The run's key.
+    const fn key(&self) -> (moor_core::workflow::WorkflowId, &ForgeRepo, Ts) {
+        (self.w.id, &self.run.repo, self.run.due_at)
+    }
+
+    /// The line for the answer itself.
+    fn answered(&self) -> HistoryEntry {
+        let (by, answer, note) = self.given;
+        HistoryEntry::Answered {
+            step: self.at.0.clone(),
+            by,
+            answer,
+            note: note.map(str::to_owned),
+        }
+    }
+
+    /// Makes `m`, the move the answer decided; what the run did, in a sentence.
+    fn apply(&self, m: Move) -> Result<String, CommandError> {
+        let (done, said) = match m {
+            Move::Enter {
+                step,
+                try_n,
+                exhausted,
+            } => (
+                self.go_on((step.clone(), try_n), exhausted)?,
+                format!("the run went on to step {step}"),
+            ),
+            Move::Fail {
+                at,
+                reason,
+                exhausted,
+            } => {
+                let lines = self.lines_with(exhausted);
+                let outcome = RunOutcome::Failed { at, reason };
+                (
+                    self.end(&lines, outcome)?,
+                    "the run ended failed".to_owned(),
+                )
+            }
+            Move::Declined { at } => (
+                self.end(&[self.answered()], RunOutcome::Declined { at })?,
+                "the run ended declined".to_owned(),
+            ),
+            Move::Wait
+            | Move::Remind
+            | Move::RunCheck
+            | Move::Ask
+            | Move::Delivered
+            | Move::Incomplete { .. } => return Err(refused("the run could not move on")),
+        };
+        if done {
+            Ok(said)
+        } else {
+            Err(refused(
+                "the run moved while you answered: it was answered already, or it ended",
+            ))
+        }
+    }
+
+    /// The answer's line, then a line for each step passed over for lack of tries.
+    fn lines_with(&self, exhausted: Vec<StepId>) -> Vec<HistoryEntry> {
+        let mut lines = vec![self.answered()];
+        lines.extend(
+            exhausted
+                .into_iter()
+                .map(|step| HistoryEntry::Exhausted { step }),
+        );
+        lines
+    }
+
+    /// Ends the run with `outcome`; false when it no longer waits at the step.
+    fn end(&self, lines: &[HistoryEntry], outcome: RunOutcome) -> Result<bool, CommandError> {
+        Ok(self.store.end_waiting_run(
+            self.key(),
+            self.at,
+            (self.box_id, outcome),
+            (lines, self.now),
+        )?)
+    }
+
+    /// Sends the run on to `step`, for its `try_n`th entry: waiting again at an approve step,
+    /// else running there, with the agent told first when the step is its to do. False when the
+    /// run no longer waits at the step.
+    fn go_on(
+        &self,
+        (step, try_n): (StepId, u8),
+        exhausted: Vec<StepId>,
+    ) -> Result<bool, CommandError> {
+        let Some(next) = self.plan.step(&step) else {
+            return Err(refused("the run's plan has no such step"));
+        };
+        let mut lines = self.lines_with(exhausted);
+        lines.push(HistoryEntry::Entered {
+            step: step.clone(),
+            try_n,
+        });
+        let box_id = self.box_id;
+        let to = if matches!(next.kind, StepKind::Approve { .. }) {
+            RunState::Waiting {
+                box_id,
+                at: step.clone(),
+                try_n,
+                since: self.now,
+            }
+        } else {
+            RunState::Running {
+                box_id,
+                at: step.clone(),
+                try_n,
+            }
+        };
+        if matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. }) {
+            let (_, answer, note) = self.given;
+            tell(
+                self.cx,
+                self.store,
+                box_id,
+                &Plan::answer_steer(self.ask, (answer, note), next),
+            )?;
+            lines.push(HistoryEntry::Sent { step, try_n });
+        }
+        Ok(self
+            .store
+            .answer_workflow_run(self.key(), self.at, &to, (&lines, self.now))?)
+    }
 }
 
 /// Steers the agent in Box `id` with `text`; a closed or missing Box is a refusal that records

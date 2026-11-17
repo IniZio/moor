@@ -129,11 +129,7 @@ impl Plan {
     /// The steer that sends the agent the step after an approve step, with the owner's answer
     /// and the note they left.
     #[must_use]
-    pub fn answer_steer(
-        ask: &Step,
-        (answer, note): (Answer, Option<&str>),
-        next: &Step,
-    ) -> String {
+    pub fn answer_steer(ask: &Step, (answer, note): (Answer, Option<&str>), next: &Step) -> String {
         let said = note
             .map(str::trim)
             .filter(|n| !n.is_empty())

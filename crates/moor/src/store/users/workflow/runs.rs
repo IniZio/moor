@@ -24,7 +24,7 @@ use crate::store::{Store, StoreError};
 
 /// A phase a run can move on from.
 #[derive(Debug, Clone, Copy)]
-enum Open {
+pub(super) enum Open {
     /// Claimed, its Box not yet recorded.
     Queued,
     /// At a step.
@@ -115,7 +115,7 @@ impl Store {
     /// `lines` are appended before the move's own line, in the same transaction. A move that
     /// enters a step passes the `Entered` line in `lines` and sets `own` false, so the line is
     /// not written twice.
-    fn move_run(
+    pub(super) fn move_run(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
         (from, to): (Open, &RunState),
@@ -176,57 +176,6 @@ impl Store {
             outcome,
         });
         self.move_run(key, (Open::Running, &to), (Some(on), lines, at, true))
-    }
-
-    /// Ends the run that waits at `on` with `outcome`, appending `lines` first. False, with
-    /// nothing changed, when the run is no longer waiting at exactly that step and try, so an
-    /// answer, an expiry and a lost Box settle once between them.
-    pub(crate) fn end_waiting_run(
-        &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
-        on: (&StepId, u8),
-        (box_id, outcome): (BoxId, RunOutcome),
-        (lines, at): (&[HistoryEntry], Ts),
-    ) -> Result<bool, StoreError> {
-        let to = RunState::Done(RunEnd::Ended {
-            box_id,
-            ended_at: at,
-            outcome,
-        });
-        self.move_run(key, (Open::Waiting, &to), (Some(on), lines, at, true))
-    }
-
-    /// Moves the running run, at `on`, to wait at the approve step `to`, appending `lines`, which
-    /// carry the `Entered` line. False, with nothing changed, when it is not running at exactly
-    /// `on`. `to` may be `on` itself, for a run that began at an approve step.
-    pub(crate) fn wait_workflow_run(
-        &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
-        (on, to): ((&StepId, u8), (&StepId, u8)),
-        box_id: BoxId,
-        (lines, at): (&[HistoryEntry], Ts),
-    ) -> Result<bool, StoreError> {
-        let state = RunState::Waiting {
-            box_id,
-            at: to.0.clone(),
-            try_n: to.1,
-            since: at,
-        };
-        self.move_run(key, (Open::Running, &state), (Some(on), lines, at, false))
-    }
-
-    /// Moves the run that waits at `on` to `to`, a step of the run: running there, or waiting
-    /// at another approve step. `lines` carry the `Answered` line and the `Entered` line. False,
-    /// with nothing changed, when the run no longer waits at exactly `on`, so two answers, or an
-    /// answer and an expiry, apply once.
-    pub(crate) fn answer_workflow_run(
-        &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
-        on: (&StepId, u8),
-        to: &RunState,
-        (lines, at): (&[HistoryEntry], Ts),
-    ) -> Result<bool, StoreError> {
-        self.move_run(key, (Open::Waiting, to), (Some(on), lines, at, false))
     }
 
     /// Refuses the run of `workflow` and `repo` due at `due_at` with `detail`, dropping its Box

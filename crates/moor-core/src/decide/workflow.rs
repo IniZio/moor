@@ -176,7 +176,8 @@ pub fn workflow_start_overdue(
 pub fn workflow_expired(
     workflow: &Workflow,
     open: &[WorkflowRun],
-    (agent_started, waited): (&dyn Fn(BoxId) -> Option<Ts>, &dyn Fn(RunId) -> i64),
+    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    waited: &dyn Fn(RunId) -> i64,
     now: Ts,
 ) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
@@ -264,12 +265,13 @@ const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict 
 mod advance;
 mod finished;
 mod gate;
-mod wait;
 #[cfg(test)]
 mod tests;
+mod wait;
 
 pub use advance::{
-    advance, answer_move, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
+    advance, answer_move, quiet_move, quiet_since, refusal_move, report_move, Event, Move,
+    CHECK_LOSSES,
 };
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
 pub use gate::code_gate;

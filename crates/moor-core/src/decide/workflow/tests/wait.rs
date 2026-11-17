@@ -1,11 +1,9 @@
 //! Tests for runs that wait for an answer: working time and the week without one.
 
-use super::{
-    daily, finished, repo, started, step, ts, waiting, workflow_expired, DAY, DAY0, HOUR,
-};
+use super::{daily, finished, repo, started, step, ts, waiting, workflow_expired, DAY, DAY0, HOUR};
 use crate::decide::workflow::{waited_millis, workflow_unanswered};
-use crate::user::UserId;
 use crate::seam::clock::Ts;
+use crate::user::UserId;
 use crate::workflow::{Answer, HistoryEntry, RunId, StepId, TimeoutMinutes};
 
 const MIN: i64 = 60_000;
@@ -59,13 +57,13 @@ fn the_timeout_clock_stops_while_a_run_waits_for_an_answer() {
     let agent = |_| Some(ts(DAY0));
     // 5 hours on the wall clock, 4.5 of them spent waiting, so 30 working minutes.
     let waited = |_: RunId| 270 * MIN;
-    let at = |ms: i64| workflow_expired(&w, &open, (&agent, &waited), ts(DAY0 + ms));
+    let at = |ms: i64| workflow_expired(&w, &open, &agent, &waited, ts(DAY0 + ms));
     assert!(at(300 * MIN).is_empty());
     assert!(at(329 * MIN).is_empty());
     assert_eq!(at(330 * MIN).len(), 1);
     // Without the waits the same run would be long expired.
     assert_eq!(
-        workflow_expired(&w, &open, (&agent, &|_| 0), ts(DAY0 + 300 * MIN)).len(),
+        workflow_expired(&w, &open, &agent, &|_| 0, ts(DAY0 + 300 * MIN)).len(),
         1
     );
 }
@@ -75,7 +73,7 @@ fn a_waiting_run_never_expires_on_the_timeout() {
     let w = daily();
     let open = [waiting("a/b", DAY0)];
     let agent = |_| Some(ts(DAY0));
-    assert!(workflow_expired(&w, &open, (&agent, &|_| 0), ts(DAY0 + 30 * DAY)).is_empty());
+    assert!(workflow_expired(&w, &open, &agent, &|_| 0, ts(DAY0 + 30 * DAY)).is_empty());
 }
 
 #[test]
@@ -88,6 +86,7 @@ fn a_wait_ends_after_seven_days_without_an_answer() {
     assert!(workflow_unanswered(&open, ts(DAY0 + 7 * DAY - 1)).is_empty());
     let late = workflow_unanswered(&open, ts(DAY0 + 7 * DAY));
     assert_eq!(late.len(), 1);
-    assert_eq!(late[0].repo, repo("a/b"));
-    assert_eq!(late[0].at, step());
+    let first = late.first().unwrap();
+    assert_eq!(first.repo, repo("a/b"));
+    assert_eq!(first.at, step());
 }

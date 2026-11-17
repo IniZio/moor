@@ -356,7 +356,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
     w.timeout = TimeoutMinutes::new(30).unwrap();
     let open = [started("a/b", DAY0, 7)];
     let agent = |_| Some(ts(DAY0));
-    let at = |ms| workflow_expired(&w, &open, (&agent, &|_| 0), ts(ms));
+    let at = |ms| workflow_expired(&w, &open, &agent, &|_| 0, ts(ms));
     assert!(at(DAY0 + 30 * 60_000 - 1).is_empty());
     let expiry = WorkflowExpiry {
         repo: repo("a/b"),
@@ -375,8 +375,11 @@ fn the_timeout_counts_from_the_agent_start_not_the_due_time() {
     let late = run("a/b", DAY0, DAY0 + HOUR, running(7));
     let agent = |_| Some(ts(DAY0 + HOUR));
     let ms = |m: i64| ts(DAY0 + HOUR + m * 60_000);
-    assert!(workflow_expired(&w, std::slice::from_ref(&late), (&agent, &|_| 0), ms(179)).is_empty());
-    assert_eq!(workflow_expired(&w, &[late], (&agent, &|_| 0), ms(180)).len(), 1);
+    assert!(workflow_expired(&w, std::slice::from_ref(&late), &agent, &|_| 0, ms(179)).is_empty());
+    assert_eq!(
+        workflow_expired(&w, &[late], &agent, &|_| 0, ms(180)).len(),
+        1
+    );
 }
 
 #[test]
@@ -390,14 +393,14 @@ fn only_running_runs_expire() {
         waiting("a/b", 4),
         run("a/b", 5, 5, RunState::Queued),
     ];
-    assert!(workflow_expired(&w, &runs, (&|_| Some(ts(0)), &|_| 0), ts(DAY0)).is_empty());
+    assert!(workflow_expired(&w, &runs, &|_| Some(ts(0)), &|_| 0, ts(DAY0)).is_empty());
 }
 
 #[test]
 fn a_run_whose_agent_never_started_does_not_expire() {
     let w = daily();
     let open = [started("a/b", DAY0, 7)];
-    assert!(workflow_expired(&w, &open, (&|_| None, &|_| 0), ts(DAY0 + 5 * DAY)).is_empty());
+    assert!(workflow_expired(&w, &open, &|_| None, &|_| 0, ts(DAY0 + 5 * DAY)).is_empty());
 }
 
 #[test]

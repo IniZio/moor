@@ -9,9 +9,7 @@
 
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
-use moor_core::workflow::{
-    Answer, Plan, RunEnd, RunOutcome, RunState, WorkflowId, WorkflowRun,
-};
+use moor_core::workflow::{Answer, Plan, RunEnd, RunOutcome, RunState, WorkflowId, WorkflowRun};
 use serde_json::json;
 
 use super::plan::{step_of, PROMPT};
@@ -83,12 +81,7 @@ impl Rig {
     ) -> Result<WorkflowAnswerValue, CommandError> {
         let store = self.cx.store().unwrap();
         let name = store.workflow_by_id(wid).unwrap().unwrap().name;
-        answer_run(
-            &self.cx,
-            store,
-            user,
-            (name.as_str(), "o/n", answer, note),
-        )
+        answer_run(&self.cx, store, user, (name.as_str(), "o/n", answer, note))
     }
 
     fn answer(&self, wid: WorkflowId, answer: Answer) -> Result<WorkflowAnswerValue, CommandError> {
@@ -99,7 +92,10 @@ impl Rig {
     fn queued(&self, wid: WorkflowId) -> String {
         let id = self.first(wid).state.box_id().unwrap();
         let rows = self.cx.store().unwrap().unsent(id).unwrap();
-        rows.into_iter().map(|r| r.text).collect::<Vec<_>>().join("\n")
+        rows.into_iter()
+            .map(|r| r.text)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -119,7 +115,10 @@ fn entering_an_approve_step_from_a_report_sets_waiting_and_the_box_is_left_to_sl
         panic!("{:?}", run.state);
     };
     assert_eq!((at.as_str(), try_n), ("ask", 1));
-    assert_eq!(r.lines_of(&run), ["queued", "entered", "reported", "entered"]);
+    assert_eq!(
+        r.lines_of(&run),
+        ["queued", "entered", "reported", "entered"]
+    );
     // The tick leaves it be, however long the Box sleeps.
     r.advance_to(FIRST_DUE + 2 * DAY);
     r.pass();
@@ -136,7 +135,11 @@ fn a_run_that_begins_at_an_approve_step_waits_from_the_tick() {
     r.pause(MIN);
     assert!(r.pass().is_empty());
     let run = r.first(wid);
-    assert!(matches!(run.state, RunState::Waiting { .. }), "{:?}", run.state);
+    assert!(
+        matches!(run.state, RunState::Waiting { .. }),
+        "{:?}",
+        run.state
+    );
     assert_eq!(r.lines_of(&run), ["queued", "entered"]);
 }
 
@@ -197,7 +200,11 @@ fn no_without_a_fail_edge_ends_the_run_declined_and_the_next_firing_is_not_held_
     r.advance_to(FIRST_DUE + DAY + 1_000);
     r.pass();
     let next = r.latest(wid);
-    assert!(matches!(next.state, RunState::Running { .. }), "{:?}", next.state);
+    assert!(
+        matches!(next.state, RunState::Running { .. }),
+        "{:?}",
+        next.state
+    );
 }
 
 trait ParseStep {
@@ -291,7 +298,12 @@ fn an_answer_racing_the_weeks_expiry_applies_once_and_the_expiry_wins_when_first
             .unwrap()
             .open_workflow_runs(WorkflowId::new(1))
             .unwrap();
-        let w = cx.store().unwrap().workflow_by_id(WorkflowId::new(1)).unwrap().unwrap();
+        let w = cx
+            .store()
+            .unwrap()
+            .workflow_by_id(WorkflowId::new(1))
+            .unwrap()
+            .unwrap();
         let now = cx.clock().now();
         super::super::settle::expire_runs(cx, cx.store().unwrap(), &w, now, &mut Vec::new())
             .unwrap();
@@ -338,5 +350,8 @@ fn a_closed_box_ends_a_waiting_run_incomplete() {
     )
     .unwrap();
     r.pass();
-    assert!(matches!(ended(&r.first(wid)), RunOutcome::Incomplete { .. }));
+    assert!(matches!(
+        ended(&r.first(wid)),
+        RunOutcome::Incomplete { .. }
+    ));
 }

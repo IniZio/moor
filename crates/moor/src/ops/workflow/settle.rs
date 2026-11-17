@@ -73,7 +73,7 @@ pub(super) fn expire_runs(
         let outcome = RunOutcome::Declined { at: u.at.clone() };
         store.end_waiting_run(key, (&u.at, u.try_n), (u.box_id, outcome), (&lines, now))?;
     }
-    for e in workflow_expired(w, &open, (&agent, &waited), now) {
+    for e in workflow_expired(w, &open, &agent, &waited, now) {
         if let Some(row) = store.box_row(e.box_id)? {
             let req = EndSessionReq {
                 box_name: row.name.as_str().to_owned(),

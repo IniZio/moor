@@ -47,9 +47,10 @@ pub fn workflow_unanswered(open: &[WorkflowRun], now: Ts) -> Vec<Unanswered> {
         .collect()
 }
 
-/// The milliseconds a run spent waiting for answers it has had: for each `Answered` line, the
-/// time since the same step was entered. A wait that is still going is not counted here; the
-/// clock of a waiting run is not read at all.
+/// The milliseconds a run spent in waits that were answered.
+///
+/// For each `Answered` line this counts the time since the same step was entered. A wait that is
+/// still going is not counted here, and the clock of a waiting run is not read at all.
 ///
 /// `lines` are the run's history, each with when it was written.
 #[must_use]
@@ -59,12 +60,16 @@ pub fn waited_millis(lines: &[(Ts, HistoryEntry)]) -> i64 {
         let HistoryEntry::Answered { step, .. } = line else {
             continue;
         };
-        let entered = lines.get(..i).unwrap_or_default().iter().rev().find_map(
-            |(when, e)| match e {
-                HistoryEntry::Entered { step: s, .. } if s == step => Some(*when),
-                _ => None,
-            },
-        );
+        let entered =
+            lines
+                .get(..i)
+                .unwrap_or_default()
+                .iter()
+                .rev()
+                .find_map(|(when, e)| match e {
+                    HistoryEntry::Entered { step: s, .. } if s == step => Some(*when),
+                    _ => None,
+                });
         if let Some(entered) = entered {
             total = total.saturating_add(at.as_millis().saturating_sub(entered.as_millis()));
         }
