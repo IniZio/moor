@@ -19,7 +19,6 @@ esac
 
 line=$(printf '%s' "$line" | sed -E 's#^source [^ ]+/shell-snapshots/[^ ]+ 2>/dev/null \|\| true#true#')
 
-# Claude's cwd file lives in the agent place's scratch, so it links to one under the shared /run/moor.
 cwdfile=$(printf '%s' "$line" | sed -nE "s#.*pwd -P >\\| '?([^' ]+)'?.*#\\1#p" | head -n 1)
 if [ -n "$cwdfile" ]; then
   find "$run/tmp" -maxdepth 1 -name 'cwd.*' -mmin +60 -delete 2>/dev/null
