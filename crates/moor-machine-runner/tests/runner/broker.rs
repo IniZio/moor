@@ -516,7 +516,7 @@ async fn a_box_stream_is_spliced_to_an_agent_that_serves_it_unread() {
         class: None,
         cache: None,
     };
-    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let mut conn = box_stream(&host).await;
     let mut said = box_answer(&mut conn, &open).await;
     if matches!(said, BoxAnswer::Note { .. }) {
         said = ops::read_line(&mut conn).await.unwrap();
@@ -536,7 +536,7 @@ async fn a_box_stream_is_spliced_to_an_agent_that_serves_it_unread() {
         stdin: false,
         tty: None,
     };
-    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let mut conn = box_stream(&host).await;
     assert_eq!(box_answer(&mut conn, &exec).await, BoxAnswer::Streaming);
     let mut buf = Vec::new();
     let mut out = String::new();
@@ -553,13 +553,27 @@ async fn a_box_stream_is_spliced_to_an_agent_that_serves_it_unread() {
     assert_eq!(out, "work\n");
 }
 
+/// A Box stream to the rig's machine, retrying the moment the runner lags the rig's "online".
+async fn box_stream(host: &Host) -> moor_client::link::reach::Conn {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match broker::boxes(&host.runner(), MACHINE_ID).await {
+            Ok(conn) => return conn,
+            Err(why) if why.contains("not linked") && Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(why) => panic!("{why}"),
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_that_provides_no_boxes_refuses_a_box_stream() {
     let host = Host::start();
     let list = BoxOp::List {
         controller: ControllerId::parse("1a2b3c4d").unwrap(),
     };
-    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let mut conn = box_stream(&host).await;
     let said = box_answer(&mut conn, &list).await;
     let BoxAnswer::Refused { reason } = said else {
         panic!("{said:?}");
@@ -572,7 +586,7 @@ async fn an_agent_that_provides_no_boxes_refuses_a_box_stream() {
 async fn a_box_stream_cannot_smuggle_any_other_op_past_the_agents_one_request() {
     let host = Host::boxes();
     let marker = host.home.join("ran");
-    let mut conn = broker::boxes(&host.runner(), MACHINE_ID).await.unwrap();
+    let mut conn = box_stream(&host).await;
     let exec = Op::Exec {
         box_id: 7,
         env: Vec::new(),
