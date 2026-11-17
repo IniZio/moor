@@ -217,6 +217,10 @@ pub struct MachineLink {
     /// Its agent's latest live memory report; none from an agent that never sent one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryReport>,
+    /// How its agent provides Boxes itself, such as `docker`, from the offer's Box offer; none for
+    /// an agent that provides none or predates it. For people to read, never branched on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provides: Option<String>,
 }
 
 /// A machine's host memory as its agent last reported it.

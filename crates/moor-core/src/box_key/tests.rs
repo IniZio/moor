@@ -138,6 +138,36 @@ fn slug_fits_crabbox_cap_for_any_id() {
 }
 
 #[test]
+fn a_machine_handle_names_its_machine_and_slug_and_parses_back() {
+    let ctl = ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]);
+    let seat = PoolSeat {
+        machine: 12,
+        controller: ctl,
+        inc: 3,
+    };
+    let handle = key(7).machine_handle(&seat);
+    assert_eq!(handle, "m12/moor-1a2b3c4d-7-h3");
+    assert_eq!(
+        parse_machine_handle(&handle),
+        Some((12, "moor-1a2b3c4d-7-h3"))
+    );
+}
+
+#[test]
+fn a_handle_of_another_driver_is_no_machine_handle() {
+    for other in [
+        "external/cbx_1",
+        "m/moor-1a2b3c4d-7",
+        "m012/moor-1a2b3c4d-7",
+        "m12/not-a-slug",
+        "cloudhypervisor@hv1/12/moor-1a2b3c4d-7",
+        "12/moor-1a2b3c4d-7",
+    ] {
+        assert_eq!(parse_machine_handle(other), None, "{other}");
+    }
+}
+
+#[test]
 fn session_ref_carries_the_id() {
     assert_eq!(BoxKey::new(BoxId::new(7)).session_ref(), "moor-7");
 }

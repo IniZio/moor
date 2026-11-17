@@ -22,9 +22,9 @@ use crate::rig::{Rig, MACHINE_ID};
 #[path = "../../../moor-machine-agent/tests/fake_crabbox/mod.rs"]
 mod fake_crabbox;
 
-struct Host {
-    rig: Rig,
-    home: PathBuf,
+pub(crate) struct Host {
+    pub(crate) rig: Rig,
+    pub(crate) home: PathBuf,
     agent: Option<tokio::runtime::Runtime>,
 }
 
@@ -111,7 +111,7 @@ impl Host {
     }
 
     /// A machine that provides fake Boxes instead of a pool, linked to the runner of `rig`.
-    fn boxes() -> Self {
+    pub(crate) fn boxes() -> Self {
         let mut rig = Rig::start();
         if let Some(agent) = rig.machine_agent.take() {
             agent.shutdown_background();
@@ -164,7 +164,7 @@ impl Host {
     }
 
     /// The runner as the controller on its host reaches it.
-    fn runner(&self) -> Runner {
+    pub(crate) fn runner(&self) -> Runner {
         Runner::Local(self.rig.dir().join("runner.sock"))
     }
 

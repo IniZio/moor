@@ -28,6 +28,7 @@ fn status_cmd(name: &str) -> UserCmd {
 /// Machine `machine_id`'s link, up or down.
 fn link(machine_id: i64, online: bool) -> MachineLink {
     MachineLink {
+        provides: None,
         machine_id,
         online,
         since: Ts::from_millis(1_000_000),

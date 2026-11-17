@@ -26,6 +26,7 @@ mod inbox_prompts;
 mod insertion_order;
 mod launch_facts;
 mod launch_fence;
+mod link_provides;
 mod link_runner;
 mod machine_boxes;
 mod pause_publish;
@@ -196,6 +197,10 @@ pub const STEPS: &[Step] = &[
     Step {
         name: "V82__box_config",
         write: box_config::write,
+    },
+    Step {
+        name: "V83__link_provides",
+        write: link_provides::write,
     },
 ];
 

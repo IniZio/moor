@@ -45,6 +45,7 @@ fn enroll(cx: &Cx, who: &str, machine: &str, online: bool) -> (UserId, MachineLi
     m.pool = Some("cloudhypervisor".to_owned());
     let machine_id = store.enroll_machine(user, &m).unwrap();
     let link = MachineLink {
+        provides: None,
         machine_id,
         online,
         since: Ts::from_millis(7_000),

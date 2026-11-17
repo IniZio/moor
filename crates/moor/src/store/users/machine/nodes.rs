@@ -105,6 +105,7 @@ fn machine_node(
         }),
         _ => None,
     };
+    let provides: Option<String> = r.get(16)?;
     Ok(NodeName::parse(&name).ok().map(|name| Node {
         name,
         scope: owner.map_or(Scope::Shared, |owner| Scope::Personal {
@@ -119,6 +120,7 @@ fn machine_node(
         used,
         waiting,
         memory,
+        provides,
     }))
 }
 
@@ -151,6 +153,7 @@ fn machine_select() -> SelectStatement {
                 MachineLinks::ReportedAt,
                 MachineLinks::DiskFreeMib,
                 MachineLinks::DiskTotalMib,
+                MachineLinks::Provides,
             ]
             .map(l),
         )
@@ -193,6 +196,7 @@ impl Store {
                     used: held(name),
                     waiting: pending(name),
                     memory: None,
+                    provides: None,
                 })
             })
             .collect();

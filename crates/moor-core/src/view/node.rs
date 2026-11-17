@@ -37,6 +37,9 @@ pub struct NodeView {
     pub owner: Option<UserId>,
     /// The runtime its Boxes run on.
     pub runtime: String,
+    /// How its agent provides Boxes itself, such as `docker`, when it says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provides: Option<String>,
     /// Whether its agent link is up; a shared node always is.
     pub online: bool,
     /// When an offline node went down, unix seconds.

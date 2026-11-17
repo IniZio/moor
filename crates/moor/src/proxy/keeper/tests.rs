@@ -357,6 +357,7 @@ fn tcp_runner() -> (String, Receiver<(String, TcpStream)>) {
 /// Records that the runner at `addr` holds machine `machine_id`'s link at `clock`'s now.
 fn link_row(w: &World, clock: &FakeClock, addr: &str, machine_id: i64) {
     let link = MachineLink {
+        provides: None,
         machine_id,
         online: true,
         since: clock.now(),

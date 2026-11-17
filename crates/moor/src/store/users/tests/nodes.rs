@@ -74,6 +74,7 @@ fn alice_with_machines(store: &Store) -> UserId {
             &crate::testing::runner(),
             false,
             &[MachineLink {
+                provides: None,
                 machine_id: up,
                 online: true,
                 since: Ts::from_millis(5),
@@ -252,4 +253,43 @@ fn a_user_machine_of_the_same_name_is_not_a_shared_one() {
     assert!(!store.user_machine_named("local").unwrap());
     let mine = store.user_machines(alice).unwrap();
     assert!(mine.iter().all(|m| m.name != "local"));
+}
+
+#[test]
+fn a_node_carries_how_its_agent_provides_boxes_until_a_link_says_otherwise() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let local = EnrolledMachine::parse("local", KEY, &[], 1)
+        .unwrap()
+        .with_pool(BOXES_HOST)
+        .unwrap();
+    let id = store.enroll_shared_machine(&local).unwrap();
+    let link = |provides: Option<&str>| MachineLink {
+        provides: provides.map(str::to_owned),
+        machine_id: id,
+        online: true,
+        since: Ts::from_millis(5),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
+        memory: None,
+    };
+    let provides = |store: &Store| {
+        let nodes = store.nodes(&BTreeMap::new()).unwrap();
+        find(&nodes, "local").provides.clone()
+    };
+    assert_eq!(provides(&store), None, "before any link");
+    for sent in [Some("docker"), None] {
+        let runner = crate::testing::runner();
+        let links = [link(sent)];
+        store
+            .set_machine_links(&runner, false, &links, store.now())
+            .unwrap();
+        assert_eq!(provides(&store).as_deref(), sent);
+    }
 }

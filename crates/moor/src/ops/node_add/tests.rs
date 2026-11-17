@@ -68,6 +68,7 @@ fn an_added_node_is_shared_offline_until_its_agent_links_and_online_after() {
     );
     assert_eq!(before.labels, ["linux"]);
     let link = MachineLink {
+        provides: None,
         machine_id: added.machine_id,
         online: true,
         since: Ts::from_millis(7_000),

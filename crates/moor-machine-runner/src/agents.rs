@@ -316,6 +316,7 @@ impl Links {
             cpus: offer.cpus,
             reserve_mib: offer.reserve_mib,
             memory: None,
+            provides: offer.boxes.map(|b| b.provides),
         };
         self.change(|held| {
             // Kept across a relink, so the node stays one that reports memory.

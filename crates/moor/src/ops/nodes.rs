@@ -112,6 +112,7 @@ fn view(
         scope,
         owner,
         runtime: node.runtime.clone(),
+        provides: node.provides.clone(),
         online,
         offline_since,
         used: node.used,

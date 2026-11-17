@@ -18,6 +18,7 @@ fn node(n: &str, scope: Scope, labels: &[&str]) -> Node {
         scope,
         machine: None,
         runtime: "crabbox".to_owned(),
+        provides: None,
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         max_boxes: None,
         online: Online::Online,

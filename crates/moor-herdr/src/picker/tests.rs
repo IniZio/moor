@@ -505,6 +505,7 @@ fn node(name: &str, scope: NodeScope, online: bool) -> NodeView {
         scope,
         owner: None,
         runtime: "cloudhypervisor".to_owned(),
+        provides: None,
         online,
         offline_since: (!online).then_some(0),
         used: 1,

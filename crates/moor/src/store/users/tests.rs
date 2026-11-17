@@ -327,6 +327,7 @@ fn a_link_keeps_its_agent_version_and_names_its_machine() {
     let m = EnrolledMachine::parse("host", key, &[], 1).unwrap();
     let machine_id = store.enroll_machine(alice, &m).unwrap();
     let link = MachineLink {
+        provides: None,
         machine_id,
         online: true,
         since: Ts::from_millis(5),
@@ -374,6 +375,7 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         store.enroll_machine(alice, &m).unwrap()
     });
     let link = |machine_id, online, since| MachineLink {
+        provides: None,
         machine_id,
         online,
         since: Ts::from_millis(since),

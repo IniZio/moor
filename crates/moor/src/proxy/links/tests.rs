@@ -92,6 +92,7 @@ fn enrolled(dir: &Path) -> (Store, Arc<FakeClock>, i64) {
 /// Records that runner `addr` holds machine `machine_id`'s link now.
 fn link(store: &Store, clock: &FakeClock, addr: &str, machine_id: i64) {
     let link = MachineLink {
+        provides: None,
         machine_id,
         online: true,
         since: clock.now(),

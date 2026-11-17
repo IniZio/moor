@@ -212,6 +212,7 @@ fn link_insert(
             MachineLinks::DiskFreeMib,
             MachineLinks::DiskTotalMib,
             MachineLinks::RunnerAddr,
+            MachineLinks::Provides,
         ])
         .values_panic([
             link.machine_id.into(),
@@ -240,6 +241,7 @@ fn link_insert(
                 .and_then(|m| m.disk_total_mib.and_then(|d| i64::try_from(d).ok()))
                 .into(),
             runner.as_str().into(),
+            link.provides.clone().into(),
         ])
         .take())
 }
@@ -259,7 +261,7 @@ fn is_enrolled(conn: &dyn Db, machine_id: i64) -> Result<bool, StoreError> {
 }
 
 /// The columns [`link_row`] reads, the machine's name, the runner holding the link, when it last
-/// reported and since when it drains, from the links and their machines.
+/// reported, since when it drains and how its agent provides Boxes (the last, at 21), from the links and their machines.
 fn link_select() -> SelectStatement {
     let link = |c| (MachineLinks::Table, c);
     Query::select()
@@ -291,6 +293,7 @@ fn link_select() -> SelectStatement {
                 MachineLinks::RunnerAddr,
                 MachineLinks::HeardAt,
                 MachineLinks::DrainingSince,
+                MachineLinks::Provides,
             ]
             .map(link),
         )
@@ -334,6 +337,7 @@ fn link_row(r: &db::Row<'_>) -> db::Result<MachineLink> {
             }),
             _ => None,
         },
+        provides: r.get(21)?,
     })
 }
 

@@ -3393,6 +3393,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "moor",
  "moor-client",
  "moor-core",
  "moor-machine-agent",

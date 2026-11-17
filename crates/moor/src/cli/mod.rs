@@ -3,6 +3,7 @@
 mod args;
 mod args_admin;
 mod args_probe;
+mod box_term;
 mod caller;
 mod exit;
 mod render_json;
@@ -17,6 +18,7 @@ use clap::error::ErrorKind as ClapKind;
 use moor_core::{ErrorKind, ErrorView, Request, Response, RunReq};
 
 use args::Action;
+pub use box_term::BoxTerm;
 pub(crate) use caller::caller_repo;
 pub use caller::{resolve, Resolved};
 
@@ -107,6 +109,13 @@ pub enum Parsed {
         machine_id: i64,
         /// The lease.
         slug: String,
+    },
+    /// Run a script in one place of a machine's Box on this terminal.
+    BoxTerm {
+        /// Global options.
+        opts: GlobalOpts,
+        /// What to run where.
+        term: BoxTerm,
     },
     /// Check the setup and print one line per check.
     Doctor {
@@ -203,6 +212,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
             machine_id,
             slug,
         },
+        Ok((opts, Action::BoxTerm(term))) => Parsed::BoxTerm { opts, term },
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
         Ok((opts, Action::Up { max_boxes })) => Parsed::Up { opts, max_boxes },
         Ok((opts, Action::Down)) => Parsed::Down { opts },

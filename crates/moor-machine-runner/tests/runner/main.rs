@@ -27,6 +27,7 @@ mod holds;
 mod hooks;
 mod key;
 mod linked;
+mod machines;
 mod missing;
 mod pull;
 mod relay;

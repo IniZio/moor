@@ -22,6 +22,10 @@ pub(super) enum AdminCmd {
     /// `ProxyCommand`.
     #[command(hide = true)]
     LinkDial(LinkDialArgs),
+    /// Open a terminal in one place of a Box that a machine provides, through its runner's links
+    /// broker, as the argv a pane runs.
+    #[command(hide = true)]
+    BoxTerm(BoxTermArgs),
     /// Run a JSON request read from stdin.
     Call,
     /// Print version information.
@@ -85,6 +89,33 @@ pub(super) struct LinkDialArgs {
     slug: String,
 }
 
+/// Arguments of `box-term`.
+#[derive(Debug, Args)]
+pub(super) struct BoxTermArgs {
+    /// The runner that holds the machine's link: its socket path, or `host:port`.
+    #[arg(long, value_name = "ADDR")]
+    runner: String,
+    /// The machine's id.
+    machine_id: i64,
+    /// The Box, `moor-<controller>-<id>`.
+    slug: String,
+    /// The place in the Box.
+    #[arg(long, value_enum)]
+    place: PlaceArg,
+    /// The shell script to run there.
+    #[arg(last = true, required = true, num_args = 1)]
+    script: Vec<String>,
+}
+
+/// A place in a Box, as `box-term` takes it.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(super) enum PlaceArg {
+    /// Where the agent runs.
+    Agent,
+    /// Where repos build.
+    Work,
+}
+
 /// Arguments of `controller serve`.
 #[derive(Debug, Args)]
 pub(super) struct ControllerServeArgs {
@@ -110,6 +141,16 @@ impl AdminCmd {
                 machine_id: a.machine_id,
                 slug: a.slug,
             },
+            Self::BoxTerm(a) => Action::BoxTerm(super::BoxTerm {
+                runner: a.runner,
+                machine_id: a.machine_id,
+                slug: a.slug,
+                place: match a.place {
+                    PlaceArg::Agent => moor_core::seam::driver::Place::Agent,
+                    PlaceArg::Work => moor_core::seam::driver::Place::Work,
+                },
+                script: a.script.concat(),
+            }),
             Self::Call => Action::CallStdin,
             Self::Version => Action::Request(Request::Version {}),
         }

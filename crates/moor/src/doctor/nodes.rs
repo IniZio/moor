@@ -42,6 +42,7 @@ pub(super) fn read(i: &Inputs<'_>) -> Read {
             scope: NodeScope::Shared,
             owner: None,
             runtime: n.runtime.clone(),
+            provides: None,
             online: true,
             offline_since: None,
             used: 0,

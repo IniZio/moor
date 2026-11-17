@@ -21,6 +21,7 @@ use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::{Crabbox, HostLists};
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
+use crate::adapters::machine::Machines;
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
@@ -197,7 +198,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     .sharing_no_probe(Arc::clone(&NO_PROBE))
     .sharing_host_lists(Arc::clone(&HOST_LISTS));
     let link_warning = crabbox.link_warning();
-    let driver: Arc<dyn Driver> = Arc::new(crabbox);
+    let machines = Machines::new(links::reach(links.clone()), links::moor_binary());
+    let driver: Arc<dyn Driver> = Arc::new(router::Routed { crabbox, machines });
     let engine = BoxAgent::new(Arc::clone(&driver), Arc::new(Claude));
     let proxy_host = proxy_host(env, &driver, &(Arc::clone(&clock) as Arc<dyn Clock>), &rng);
     let parts = CxParts {
@@ -248,6 +250,7 @@ mod egress;
 mod keepers;
 mod ledger;
 mod links;
+mod router;
 mod store_copy;
 pub use store_copy::copy_store;
 
