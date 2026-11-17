@@ -85,10 +85,11 @@ fn differs(repo: &ForgeRepo, stored: &str, file: &str) -> Option<String> {
     match (parse_repo(&label, stored), parse_repo(&label, file)) {
         (Ok(stored), Ok(file)) => {
             let keys = stored.changed_keys(&file);
-            (!keys.is_empty()).then(|| format!("differs from it in {}", keys.join(", ")))
+            (!keys.is_empty())
+                .then(|| format!("differs from the stored config in {}", keys.join(", ")))
         }
         (_, Err(_)) => Some("does not parse".to_owned()),
-        (Err(_), Ok(_)) => Some("differs from it".to_owned()),
+        (Err(_), Ok(_)) => Some("differs from the stored config".to_owned()),
     }
 }
 
