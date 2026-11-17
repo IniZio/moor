@@ -49,6 +49,7 @@ pub(super) fn run(workflow: WorkflowId, r: &str, due: i64, state: RunState) -> N
         due_at: Ts::from_millis(due),
         state,
         recorded_at: Ts::from_millis(due + 5),
+        plan: None,
     }
 }
 
@@ -60,6 +61,7 @@ fn recorded(run: &WorkflowRun) -> NewRun {
         due_at: run.due_at,
         state: run.state.clone(),
         recorded_at: run.recorded_at,
+        plan: None,
     }
 }
 

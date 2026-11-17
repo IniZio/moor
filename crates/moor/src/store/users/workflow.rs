@@ -5,18 +5,22 @@ use std::time::Duration;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::workflow::{
-    Plan, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName, WorkflowOrigin,
-    WorkflowSchedule, WorkflowState,
+    Plan, TimeoutMinutes, Workflow, WorkflowId, WorkflowName, WorkflowOrigin, WorkflowSchedule,
+    WorkflowState,
 };
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
+pub(crate) use put::Put;
+
 mod changes;
 mod history;
+mod pointer;
+mod put;
 mod row;
 mod runs;
 
-use crate::store::db::{self, Db, DbExt as _, OptionalExtension as _};
+use crate::store::db::{self, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
 
 /// A `workflows` row as read, before it is parsed.
@@ -55,10 +59,12 @@ struct WorkflowRow {
     config: Option<String>,
     /// `revision`.
     revision: i64,
+    /// `plan`, as JSON.
+    plan: Option<String>,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 17] = [
+const WORKFLOW_COLS: [Workflows; 18] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -76,6 +82,7 @@ const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Also,
     Workflows::Config,
     Workflows::Revision,
+    Workflows::Plan,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -103,6 +110,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         also: r.get(14)?,
         config: r.get(15)?,
         revision: r.get(16)?,
+        plan: r.get(17)?,
     })
 }
 
@@ -141,127 +149,23 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         }),
         created_at: Ts::from_millis(row.created_at),
         updated_at: Ts::from_millis(row.updated_at),
-        plan: Plan::single(&row.prompt),
+        plan: match &row.plan {
+            Some(json) => Plan::parse(json, &row.prompt).map_err(|e| {
+                corrupt(
+                    "plan",
+                    e.iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                )
+            })?,
+            None => Plan::single(&row.prompt),
+        },
         revision: u64::try_from(row.revision).map_err(|e| corrupt("revision", e))?,
     })
 }
 
-/// Inserts `def` as `owner`'s workflow and returns its id.
-fn insert_workflow(
-    conn: &dyn Db,
-    owner: UserId,
-    def: &WorkflowDef,
-    (repos, also): (String, String),
-    now: i64,
-) -> Result<i64, StoreError> {
-    Ok(conn.row(
-        Query::insert()
-            .into_table(Workflows::Table)
-            .columns([
-                Workflows::User,
-                Workflows::Name,
-                Workflows::Cron,
-                Workflows::Timezone,
-                Workflows::Repos,
-                Workflows::Also,
-                Workflows::Prompt,
-                Workflows::EnabledAt,
-                Workflows::TimeoutMinutes,
-                Workflows::CreatedAt,
-                Workflows::UpdatedAt,
-                Workflows::OriginFront,
-                Workflows::OriginKey,
-                Workflows::Config,
-            ])
-            .values_panic([
-                owner.get().into(),
-                def.name.as_str().into(),
-                def.schedule.expr().into(),
-                def.schedule.zone().into(),
-                repos.into(),
-                also.into(),
-                def.prompt.as_str().into(),
-                def.enabled.then_some(now).into(),
-                i64::from(def.timeout.minutes()).into(),
-                now.into(),
-                now.into(),
-                def.origin.as_ref().map(|o| o.front.as_str()).into(),
-                def.origin.as_ref().and_then(|o| o.key.as_deref()).into(),
-                def.config.as_deref().into(),
-            ])
-            .returning_col(Workflows::Id),
-        |r| r.get(0),
-    )?)
-}
-
 impl Store {
-    /// Stores `def` as `owner`'s workflow of its name, replacing the one already there, and
-    /// returns its id. A replaced workflow keeps its id, its runs and its creation time; it
-    /// counts as enabled since now unless it was enabled already. Enabling it clears the reason
-    /// the controller disabled it for; storing it disabled leaves that reason.
-    pub(crate) fn put_workflow(
-        &self,
-        owner: UserId,
-        def: &WorkflowDef,
-    ) -> Result<WorkflowId, StoreError> {
-        let now = self.now().as_millis();
-        let repos = serde_json::to_string(&def.repos)?;
-        let also = serde_json::to_string(&def.also)?;
-        let mut writer = self.writer();
-        let tx = writer.immediate()?;
-        let found: Option<(i64, Option<i64>, Option<String>)> = tx
-            .row(
-                Query::select()
-                    .columns([
-                        Workflows::Id,
-                        Workflows::EnabledAt,
-                        Workflows::DisabledReason,
-                    ])
-                    .from(Workflows::Table)
-                    .and_where(Expr::col(Workflows::User).eq(owner.get()))
-                    .and_where(Expr::col(Workflows::Name).eq(def.name.as_str())),
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?;
-        let id = if let Some((id, was_enabled_at, was_reason)) = found {
-            let enabled_at = def.enabled.then_some(was_enabled_at.unwrap_or(now));
-            let reason = if def.enabled { None } else { was_reason };
-            tx.run(
-                Query::update()
-                    .table(Workflows::Table)
-                    .value(Workflows::Cron, def.schedule.expr())
-                    .value(Workflows::Timezone, def.schedule.zone())
-                    .value(Workflows::Repos, repos)
-                    .value(Workflows::Also, also)
-                    .value(Workflows::Config, def.config.as_deref())
-                    .value(Workflows::Prompt, def.prompt.as_str())
-                    .value(Workflows::EnabledAt, enabled_at)
-                    .value(Workflows::DisabledReason, reason)
-                    .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
-                    .value(Workflows::UpdatedAt, now)
-                    .value(
-                        Workflows::Revision,
-                        Expr::col(Workflows::Revision).add(1_i64),
-                    )
-                    .value(
-                        Workflows::OriginFront,
-                        def.origin.as_ref().map(|o| o.front.as_str()),
-                    )
-                    .value(
-                        Workflows::OriginKey,
-                        def.origin.as_ref().and_then(|o| o.key.as_deref()),
-                    )
-                    .and_where(Expr::col(Workflows::Id).eq(id)),
-            )?;
-            id
-        } else {
-            insert_workflow(&tx, owner, def, (repos, also), now)?
-        };
-        tx.commit()?;
-        drop(writer);
-        Ok(WorkflowId::new(id))
-    }
-
     /// `owner`'s workflow `name`.
     pub(crate) fn workflow(
         &self,

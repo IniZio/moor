@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{StepId, WorkflowId};
+use super::{Plan, StepId, WorkflowId};
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 
@@ -222,6 +222,9 @@ pub struct NewRun {
     pub state: RunState,
     /// When it was recorded.
     pub recorded_at: Ts,
+    /// The workflow's plan, frozen with the claim; none for a run that never starts a Box and
+    /// for a workflow nobody planned.
+    pub plan: Option<Plan>,
 }
 
 /// What a firing records: one repo at one due time.

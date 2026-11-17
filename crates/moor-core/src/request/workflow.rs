@@ -33,6 +33,14 @@ pub struct WorkflowAddReq {
     /// Minutes a run may take before it is stopped; the default when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_minutes: Option<u32>,
+    /// The plan a run walks, as JSON text; none stores no plan, so a run delivers the prompt in
+    /// one step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// The revision of the stored workflow this replaces, as `list_workflows` shows it. The call
+    /// is refused when the workflow has been changed since. Not checked when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_revision: Option<u64>,
     /// A key the front that sends this uses to find the workflow's runs again. Only a front
     /// socket may send one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

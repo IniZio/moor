@@ -11,8 +11,9 @@ use moor_core::view::workflow::{
     WorkflowRunsValue, WorkflowView,
 };
 use moor_core::workflow::{
-    box_name, ChangeKind, RunEnd, RunOutcome, RunState, TimeoutMinutes, Workflow, WorkflowDef,
-    WorkflowName, WorkflowOrigin, WorkflowRun, WorkflowSchedule,
+    box_name, ChangeKind, Plan, PlanError, PromptHash, RunEnd, RunOutcome, RunState, StepKind,
+    TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin, WorkflowRun,
+    WorkflowSchedule,
 };
 use moor_core::ErrorKind;
 
@@ -20,7 +21,7 @@ use super::to_value;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::box_config;
-use crate::store::Store;
+use crate::store::{Put, Store};
 
 /// Changes `workflow-runs` returns when the request names no limit.
 const DEFAULT_LIMIT: u32 = 50;
@@ -48,6 +49,8 @@ pub(super) fn run(
                 name: name.to_string(),
                 changed,
                 next_due: None,
+                revision: None,
+                plan: Vec::new(),
             })
         }
         WorkflowCmd::SetEnabled { name, enabled } => set_enabled(store, user, name, *enabled, now),
@@ -112,7 +115,15 @@ fn add(
         _ => None,
     };
     def.config = override_text(req.config.clone());
-    store.put_workflow(user, &def)?;
+    def.plan = req
+        .plan
+        .as_deref()
+        .map(|text| parse_plan(text, &req.prompt))
+        .transpose()?;
+    let revision = match store.put_workflow_at(user, &def, req.expected_revision)? {
+        Put::Written { revision, .. } => revision,
+        Put::Stale { current } => return Err(stale(&name, current, req.expected_revision)),
+    };
     to_value(&WorkflowChangeValue {
         name: name.to_string(),
         changed: true,
@@ -120,7 +131,56 @@ fn add(
             .schedule
             .first_after(cx.clock().now())
             .map(Ts::as_millis),
+        revision: Some(revision),
+        plan: def.plan.as_ref().map(Plan::outline).unwrap_or_default(),
     })
+}
+
+/// The plan in `text`, made for `prompt`, or a refusal that lists every error in it.
+fn parse_plan(text: &str, prompt: &str) -> Result<Plan, CommandError> {
+    let refuse = |errors: Vec<PlanError>| {
+        let lines: Vec<String> = errors.iter().map(|e| format!("- {e}")).collect();
+        usage(format!(
+            "the plan has {} error{}, so nothing was saved:\n{}",
+            lines.len(),
+            if lines.len() == 1 { "" } else { "s" },
+            lines.join("\n")
+        ))
+    };
+    let plan = Plan::parse(text, prompt).map_err(refuse)?;
+    // moor does not run check or approve steps yet, so a plan with one would be walked past it.
+    let unrun: Vec<PlanError> = plan
+        .steps()
+        .filter(|s| matches!(s.kind, StepKind::Check { .. } | StepKind::Approve { .. }))
+        .map(|s| {
+            PlanError::Json(format!(
+                "step `{}` is a {} step, which moor does not run yet; use work and deliver steps",
+                s.id,
+                s.kind.name()
+            ))
+        })
+        .collect();
+    if unrun.is_empty() {
+        Ok(plan)
+    } else {
+        Err(refuse(unrun))
+    }
+}
+
+/// The refusal for a write whose `expected_revision` is not the stored one.
+fn stale(name: &WorkflowName, current: Option<u64>, wanted: Option<u64>) -> CommandError {
+    let now = current.map_or_else(
+        || "does not exist".to_owned(),
+        |r| format!("is at revision {r}"),
+    );
+    CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "workflow {name} {now}, not revision {}: it changed after you read it",
+            wanted.unwrap_or_default()
+        ),
+    )
+    .with_hint("read it again with list_workflows, apply your change to what it shows, and add it with that revision")
 }
 
 /// `workflow-set-enabled`.
@@ -146,6 +206,8 @@ fn set_enabled(
         name: name.to_string(),
         changed: true,
         next_due,
+        revision: None,
+        plan: Vec::new(),
     })
 }
 
@@ -182,6 +244,11 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
         next_due: enabled
             .then(|| w.schedule.first_after(now).map(Ts::as_millis))
             .flatten(),
+        plan: (!w.plan.is_single_of(&w.prompt))
+            .then(|| serde_json::to_value(w.plan.to_doc()).ok())
+            .flatten(),
+        plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
+        revision: w.revision,
         last_runs,
     }
 }

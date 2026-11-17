@@ -28,12 +28,47 @@ The agent calls `add_workflow` with these values:
   Box](repo.md#override-for-one-box).
 - `prompt`, what each Box's agent is asked to do.
 - `timeout_minutes`, optional, 180 by default.
+- `plan`, optional, the steps of the run. See [Give a run a plan](#give-a-run-a-plan).
+- `expected_revision`, optional, the `revision` that `list_workflows` showed.
+  The call is refused when the workflow changed after you read it.
 
 A cron that can fire twice within an hour is refused.
 
 Each run starts a Box as you, with your secrets and your repo access. Its
 agent can push branches and open pull requests. It cannot merge them. The Box
 is named `<repo>/w<id>-<workflow>-<due time>`, with the due time in UTC.
+
+## Give a run a plan
+
+Without a plan, a run is one step: the prompt. A plan splits the job into steps
+that you review before they run. Your agent writes the plan in the same
+`add_workflow` call, as a `steps` list:
+
+- A `work` step is something the agent does. It names the evidence files the
+  agent leaves in `.moor/artifacts/`, as flat names such as `report.md` or a
+  prefix such as `before-*`.
+- A `deliver` step is the last one: the pull request, message or file the
+  prompt asks for. It ends the run, so it has no `ok` or `fail`.
+- Every other step has an `ok` edge to the id of the next step, and may have a
+  `fail` edge. Every step must lead on to a deliver step.
+- `max_tries`, 1 to 5, caps how often a run may enter a step. A step entered
+  more often follows its `fail` edge, or fails the run when it has none.
+
+moor saves nothing until the plan is valid, and it lists every error at once.
+The reply shows the stored plan as numbered steps next to the new `revision`.
+Ask for changes in plain words, and the agent sends the plan again with that
+revision. Keep the ids of steps that did not change, so a run's history stays
+attached to them.
+
+A run freezes the plan when it fires, so an edit never changes a run in
+flight. The Box is first told the prompt, the number of steps and the first
+step. When its agent goes quiet, moor sends it the next step, and the run is
+done when it goes quiet at the last one. `list_workflows` shows the plan and
+`plan_stale` when the prompt changed after the plan was made. A stale plan
+still runs. Adding a workflow again without a `plan` removes its plan.
+
+`check` and `approve` steps are part of the plan format, and moor refuses them
+until it runs them.
 
 ## Know when a run fires
 

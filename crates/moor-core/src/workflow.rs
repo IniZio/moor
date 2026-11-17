@@ -168,6 +168,8 @@ pub struct WorkflowDef {
     pub timeout: TimeoutMinutes,
     /// The front that created it, if one did.
     pub origin: Option<WorkflowOrigin>,
+    /// The steps a run walks; none stores no plan, which reads back as [`Plan::single`].
+    pub plan: Option<Plan>,
 }
 
 impl WorkflowDef {
@@ -204,6 +206,7 @@ impl WorkflowDef {
             enabled,
             timeout,
             origin: None,
+            plan: None,
         })
     }
 
@@ -266,6 +269,8 @@ pub struct Workflow {
 mod box_name;
 mod history;
 mod plan;
+#[cfg(test)]
+mod plan_tests;
 mod run;
 #[cfg(test)]
 mod run_tests;
@@ -275,7 +280,10 @@ mod tests;
 
 pub use box_name::box_name;
 pub use history::HistoryEntry;
-pub use plan::{Plan, PromptHash, Step, StepId, StepKind, Tries};
+pub use plan::{
+    Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, Step, StepDoc, StepId,
+    StepKind, Tries,
+};
 pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowRun};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 

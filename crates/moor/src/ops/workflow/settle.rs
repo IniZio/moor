@@ -1,13 +1,13 @@
 //! Settling the started runs of a workflow: finished, refused or expired.
 
 use moor_core::decide::workflow::{
-    run_verdict, workflow_expired, workflow_start_overdue, RunBoxFacts, RunVerdict, START_LIMIT,
+    workflow_expired, workflow_start_overdue, RunBoxFacts, START_LIMIT,
 };
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
 use moor_core::view::LaunchFailure;
-use moor_core::workflow::{box_name, RunOutcome, RunState, Workflow};
+use moor_core::workflow::{box_name, RunOutcome, Workflow};
 
 use crate::cx::Cx;
 use crate::ops::{close, end_session};
@@ -37,33 +37,6 @@ pub(super) fn broken_detail(row: &BoxRow) -> String {
         row.name.as_str(),
         row.lifecycle.as_str()
     )
-}
-
-/// Settles each started run of `w` whose Box is over: finished, or refused when no agent can
-/// run in it until a person acts. The Box stays open for inspection and nothing retries it.
-pub(super) fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), StoreError> {
-    for run in store.open_workflow_runs(w.id)? {
-        let RunState::Running { box_id, .. } = run.state else {
-            continue;
-        };
-        let row = store.box_row(box_id)?;
-        let key = (w.id, &run.repo, run.due_at);
-        match run_verdict(row.as_ref().map(box_facts).as_ref(), now) {
-            RunVerdict::Running => {}
-            RunVerdict::Finished => {
-                let delivered = RunOutcome::Delivered {
-                    result: String::new(),
-                };
-                store.end_workflow_run(key, (box_id, delivered), now)?;
-            }
-            RunVerdict::Broken => {
-                if let Some(row) = &row {
-                    store.refuse_run(key, (&broken_detail(row), false), now)?;
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Ends the agent session of each started run whose agent has worked past its timeout, keeps the Box, and records the

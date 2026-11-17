@@ -512,6 +512,7 @@ fn skips_between_failures_do_not_hide_the_breaker_streak() {
             due_at: Ts::from_millis(due),
             state,
             recorded_at: Ts::from_millis(due),
+            plan: None,
         };
         assert!(store.record_workflow_run(&run).unwrap());
     };
@@ -566,5 +567,6 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
 }
 
 mod also;
+mod plan;
 mod previous;
 mod start_limit;

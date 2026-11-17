@@ -7,27 +7,21 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{
-    run_verdict, workflow_breaker, workflow_due, PriorRun, RunVerdict, WorkflowRepoFacts,
-    WorkflowVerdict,
+    run_verdict, workflow_breaker, workflow_due, RunVerdict, WorkflowVerdict,
 };
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
-use moor_core::workflow::{
-    box_name, NewRun, RunEnd, RunOutcome, RunState, StepId, Workflow, WorkflowId, WorkflowRun,
-};
+use moor_core::workflow::{box_name, NewRun, Plan, RunEnd, RunState, StepId, Workflow, WorkflowId};
 use moor_core::{BoxId, BoxName, StartReq};
 
 use crate::cx::Cx;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
+use advance::finish_runs;
+use facts::history;
 use previous::close_previous;
-use settle::{
-    box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs, finish_runs,
-};
-
-/// How many of a repo's latest unskipped runs the breaker reads; it needs only a streak of 3.
-const HISTORY: u64 = 20;
+use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
 
 /// One claimed firing, ready to start a Box.
 #[derive(Debug, Clone)]
@@ -93,7 +87,7 @@ fn tick_one(
         .store()
         .map_err(|e| StoreError::Invalid(e.error.to_string()))?;
     let now = cx.clock().now();
-    finish_runs(store, w, now)?;
+    finish_runs(cx, store, w, now, out)?;
     expire_runs(cx, store, w, now, out)?;
     enforce_start_limit(cx, store, w, now, out)?;
     let history = history(store, w)?;
@@ -114,7 +108,7 @@ fn tick_one(
                     &v.repo,
                     due_at,
                     now,
-                    RunState::Done(RunEnd::SkippedOverlap),
+                    (RunState::Done(RunEnd::SkippedOverlap), None),
                 )?;
             }
             WorkflowVerdict::Start { due_at } => {
@@ -125,95 +119,6 @@ fn tick_one(
     Ok(())
 }
 
-/// What the tick reads of a workflow's runs.
-struct History {
-    /// Each repo's latest run of any kind, which sets its latest due time.
-    latest: Vec<WorkflowRun>,
-    /// Each repo's latest run that was a real attempt, however many skips and refusals followed.
-    real: Vec<WorkflowRun>,
-    /// Each repo's latest runs that were not skipped, for the breaker.
-    unskipped: Vec<WorkflowRun>,
-}
-
-impl History {
-    /// The decider's facts: each repo's latest due time and its latest real run. Skipped and
-    /// refused runs are looked through, so a skip does not unblock the next firing.
-    fn facts(&self, store: &Store) -> Result<Vec<WorkflowRepoFacts>, StoreError> {
-        let mut facts = Vec::new();
-        for run in &self.latest {
-            let prior = match self
-                .real
-                .iter()
-                .find(|r| r.repo == run.repo)
-                .and_then(|r| real_run(&r.state))
-            {
-                Some(Real::Prior(p)) => Some(p),
-                Some(Real::TimedOut(id)) => Some(PriorRun::TimedOut {
-                    box_open: box_is_open(store, id)?,
-                }),
-                None => None,
-            };
-            facts.push(WorkflowRepoFacts {
-                repo: run.repo.clone(),
-                last_due: Some(run.due_at),
-                prior,
-            });
-        }
-        Ok(facts)
-    }
-}
-
-/// A run that is a real attempt, as the decider sees it.
-enum Real {
-    /// Settled without looking at a Box.
-    Prior(PriorRun),
-    /// Timed out; its Box decides.
-    TimedOut(BoxId),
-}
-
-/// `state` as a real attempt; none for a skipped or refused run. A run that waits counts as
-/// started, and every ending but a timeout as finished: only a timeout keeps its Box in the way.
-const fn real_run(state: &RunState) -> Option<Real> {
-    match state {
-        RunState::Queued => Some(Real::Prior(PriorRun::Starting)),
-        RunState::Running { .. } | RunState::Waiting { .. } => Some(Real::Prior(PriorRun::Started)),
-        RunState::Done(RunEnd::Ended {
-            box_id, outcome, ..
-        }) => match outcome {
-            RunOutcome::TimedOut { .. } => Some(Real::TimedOut(*box_id)),
-            RunOutcome::Delivered { .. }
-            | RunOutcome::Failed { .. }
-            | RunOutcome::Incomplete { .. }
-            | RunOutcome::Declined { .. } => Some(Real::Prior(PriorRun::Finished)),
-        },
-        RunState::Done(RunEnd::SkippedOverlap | RunEnd::Refused { .. }) => None,
-    }
-}
-
-/// Reads what the tick needs of `w`'s runs, each query independent of how many skips there are.
-fn history(store: &Store, w: &Workflow) -> Result<History, StoreError> {
-    let mut h = History {
-        latest: Vec::new(),
-        real: Vec::new(),
-        unskipped: Vec::new(),
-    };
-    for repo in &w.repos {
-        h.latest.extend(store.recent_workflow_runs(w.id, repo, 1)?);
-        h.real.extend(store.latest_real_run(w.id, repo)?);
-        h.unskipped
-            .extend(store.recent_unskipped_runs(w.id, repo, HISTORY)?);
-    }
-    Ok(h)
-}
-
-/// Whether Box `id` exists and is neither closed nor rejected.
-fn box_is_open(store: &Store, id: BoxId) -> Result<bool, StoreError> {
-    use moor_core::domain::box_state::BoxLifecycle;
-    Ok(store
-        .box_row(id)?
-        .is_some_and(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)))
-}
-
 /// Records a run that never starts a Box; a repeated record changes nothing.
 fn record(
     store: &Store,
@@ -221,7 +126,7 @@ fn record(
     repo: &ForgeRepo,
     due_at: Ts,
     now: Ts,
-    state: RunState,
+    (state, plan): (RunState, Option<Plan>),
 ) -> Result<bool, StoreError> {
     store.record_workflow_run(&NewRun {
         workflow: w.id,
@@ -229,6 +134,7 @@ fn record(
         due_at,
         state,
         recorded_at: now,
+        plan,
     })
 }
 
@@ -248,7 +154,7 @@ fn claim(
             repo,
             due_at,
             now,
-            RunState::Done(RunEnd::Refused { detail }),
+            (RunState::Done(RunEnd::Refused { detail }), None),
         )
         .map(|_| ())
     };
@@ -259,7 +165,15 @@ fn claim(
     let Some(identity) = store.identities(w.owner)?.into_iter().next() else {
         return refuse("the owner has no identity to start a Box as".to_owned());
     };
-    if record(store, w, repo, due_at, now, RunState::Queued)? {
+    // A workflow nobody planned freezes none, and its Box gets the bare prompt as it always has.
+    let planned = !w.plan.is_single_of(&w.prompt);
+    let frozen = planned.then(|| w.plan.clone());
+    let prompt = if planned {
+        w.plan.start_prompt(&w.prompt)
+    } else {
+        w.prompt.clone()
+    };
+    if record(store, w, repo, due_at, now, (RunState::Queued, frozen))? {
         launch(StartJob {
             workflow: w.id,
             owner: w.owner,
@@ -269,7 +183,7 @@ fn claim(
             config: w.config.clone(),
             due_at,
             name,
-            prompt: w.prompt.clone(),
+            prompt,
             first_step: w.plan.first().id.clone(),
         });
     }
@@ -374,7 +288,9 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
                 }),
                 _ => RunState::Running {
                     box_id: row.id,
-                    at: w.plan.first().id.clone(),
+                    at: store
+                        .run_plan(run.id, &w.prompt)
+                        .map_or_else(|_| w.plan.first().id.clone(), |p| p.first().id.clone()),
                     try_n: 1,
                 },
             },
@@ -393,6 +309,8 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
     out
 }
 
+mod advance;
+mod facts;
 mod previous;
 mod settle;
 #[cfg(test)]

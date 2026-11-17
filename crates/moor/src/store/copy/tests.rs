@@ -253,6 +253,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
         due_at: Ts::from_millis(due),
         state: RunState::Done(RunEnd::SkippedOverlap),
         recorded_at: Ts::from_millis(due),
+        plan: None,
     };
     source.record_workflow_run(&run(1)).unwrap();
     source.record_workflow_run(&run(2)).unwrap();
