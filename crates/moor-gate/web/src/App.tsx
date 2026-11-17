@@ -3,11 +3,25 @@ import { useEffect, useState } from 'preact/hooks';
 import { type Account, load, signOut, SignedOut } from './api';
 import { Connect } from './Connect';
 import { Machines } from './Machines';
+import { Repos } from './Repos';
 import { Secrets } from './Secrets';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
 
+/** The repo the address names, `#/repos/owner/name`; `''` for the repos page with none; null for the account. */
+function repoOf(hash: string): string | null {
+	const rest = hash.replace(/^#\/?/, '');
+	if (rest === 'repos') return '';
+	return rest.startsWith('repos/') ? decodeURI(rest.slice('repos/'.length)) : null;
+}
+
 export function App() {
+	const [hash, setHash] = useState(location.hash);
+	useEffect(() => {
+		const onChange = () => setHash(location.hash);
+		addEventListener('hashchange', onChange);
+		return () => removeEventListener('hashchange', onChange);
+	}, []);
 	const [state, setState] = useState<State>({ at: 'loading' });
 	const refresh = () =>
 		load().then(
@@ -37,17 +51,28 @@ export function App() {
 	if (state.at === 'loading') return <main aria-busy="true"><h1>moor</h1></main>;
 
 	const { account } = state;
+	const repo = repoOf(hash);
 	const leave = () => signOut(account.csrf).then(() => setState({ at: 'out' }));
 	return (
 		<main>
 			<header>
 				<h1>moor</h1>
+				<nav>
+					<a href="#/" aria-current={repo === null ? 'page' : undefined}>Account</a>
+					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
+				</nav>
 				<span class="muted">{account.email}</span>
 				<button class="quiet" onClick={leave}>Sign out</button>
 			</header>
-			<Secrets account={account} onLinked={refresh} />
-			<Machines machines={account.machines} serverUrl={account.connect.server_url} />
-			<Connect url={account.connect.mcp_url} />
+			{repo === null ? (
+				<>
+					<Secrets account={account} onLinked={refresh} />
+					<Machines machines={account.machines} serverUrl={account.connect.server_url} />
+					<Connect url={account.connect.mcp_url} />
+				</>
+			) : (
+				<Repos csrf={account.csrf} repo={repo === '' ? null : repo} />
+			)}
 		</main>
 	);
 }
