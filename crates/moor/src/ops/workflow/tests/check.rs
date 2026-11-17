@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use moor_core::config::UserConfig;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{ExecOutcome, Place};
+use moor_core::seam::driver::{DriverError, ExecOutcome, Place};
 use moor_core::workflow::{
     Plan, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
     WorkflowSchedule,
@@ -22,6 +22,7 @@ use serde_json::json;
 use super::plan::{step_of, PROMPT};
 use super::{repo, rig, rig_driving, tick, Rig, FIRST_DUE};
 use crate::testing::cx::REQUESTER_USER;
+use crate::testing::driver::FakeDriver;
 
 fn plan_of(steps: &[serde_json::Value]) -> Plan {
     Plan::parse(&json!({ "steps": steps }).to_string(), PROMPT).unwrap()
@@ -71,6 +72,91 @@ impl Rig {
             .map(|l| l.entry)
             .collect()
     }
+}
+
+fn cut() -> DriverError {
+    DriverError::Transport {
+        stderr_tail: "the stream ended before the command did".to_owned(),
+    }
+}
+
+/// Runs a gate whose exec ends as `tune` says, to the line the first check writes.
+fn first_line(tune: impl FnOnce(FakeDriver) -> FakeDriver) -> serde_json::Value {
+    let r = rig_driving(UserConfig::default(), tune);
+    let id = r.started(plan_of(&[audit(), gate("echo probe", 1, None), ship()]));
+    r.idle_then_pass(id);
+    r.pass();
+    r.lines(id)[3].clone()
+}
+
+#[test]
+fn a_machine_that_is_not_linked_is_a_lost_stream() {
+    let line = first_line(|d| {
+        d.exec_fails_once_when(
+            "probe",
+            DriverError::Unavailable("machine 1 is not linked".to_owned()),
+        )
+    });
+    assert_eq!(line["kind"], "check_lost", "{line}");
+}
+
+#[test]
+fn a_cut_transport_is_a_lost_stream() {
+    let line = first_line(|d| d.exec_fails_once_when("probe", cut()));
+    assert_eq!(line["kind"], "check_lost", "{line}");
+}
+
+#[test]
+fn a_driver_error_that_is_no_cut_fails_the_check_with_its_reason() {
+    for err in [
+        DriverError::Timeout(std::time::Duration::from_secs(5)),
+        DriverError::Unavailable("provider is down".to_owned()),
+        DriverError::Failed {
+            summary: "the box command is empty".to_owned(),
+        },
+    ] {
+        let line = first_line(|d| d.exec_fails_once_when("probe", err.clone()));
+        assert_eq!(line["kind"], "checked", "{err:?}: {line}");
+        assert_eq!(line["exit"], -2, "{line}");
+        let tail = line["tail"].as_str().unwrap();
+        assert!(tail.contains("did not run to a result"), "{tail}");
+        assert!(tail.contains(&err.to_string()), "{err:?}: {tail}");
+    }
+}
+
+#[test]
+fn an_interrupted_command_with_no_deadline_fails_the_check_and_is_not_lost() {
+    let line = first_line(|d| d.exec_ends_once_when("probe", ExecOutcome::Interrupted));
+    assert_eq!(line["kind"], "checked", "{line}");
+    assert_eq!(line["exit"], -2, "{line}");
+    let tail = line["tail"].as_str().unwrap();
+    assert!(tail.contains("interrupted before it exited"), "{tail}");
+}
+
+#[test]
+fn a_tick_that_read_history_before_a_finished_check_does_not_run_it_again() {
+    let r = rig();
+    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
+    r.idle_then_pass(id);
+    let first = RefCell::new(Vec::new());
+    tick(
+        &r.cx,
+        (&|_| {}, &|job| first.borrow_mut().push(job)),
+        &|| false,
+    );
+    assert_eq!(first.borrow().len(), 1);
+    // The check finishes while the next tick is between its history read and its claim: its
+    // line is written and its flight dropped.
+    let finished = RefCell::new(first.into_inner());
+
+    let _hook = super::super::advance::tests_hook::on_history(move |cx| {
+        for job in finished.borrow_mut().drain(..) {
+            crate::ops::workflow::run_check(cx, &job);
+        }
+    });
+    let second = RefCell::new(0_usize);
+    tick(&r.cx, (&|_| {}, &|_| *second.borrow_mut() += 1), &|| false);
+    assert_eq!(*second.borrow(), 0);
 }
 
 #[test]
@@ -181,7 +267,7 @@ fn a_fix_and_check_loop_runs_out_of_tries_and_the_run_fails() {
 #[test]
 fn a_lost_stream_is_no_result_and_the_next_tick_runs_the_check_again() {
     let r = rig_driving(UserConfig::default(), |d| {
-        d.exec_ends_once_when("lost-once", ExecOutcome::Interrupted)
+        d.exec_fails_once_when("lost-once", cut())
     });
     let id = r.started(plan_of(&[audit(), gate("echo lost-once", 1, None), ship()]));
     r.idle_then_pass(id);
@@ -200,7 +286,7 @@ fn a_lost_stream_is_no_result_and_the_next_tick_runs_the_check_again() {
 #[test]
 fn two_lost_streams_in_one_try_follow_fail() {
     let r = rig_driving(UserConfig::default(), |d| {
-        d.exec_ends_when("lost-always", ExecOutcome::Interrupted)
+        d.exec_fails_when("lost-always", cut())
     });
     let id = r.started(plan_of(&[
         audit(),

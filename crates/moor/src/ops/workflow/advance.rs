@@ -72,6 +72,9 @@ pub(super) fn finish_runs(
     Ok(())
 }
 
+/// A check of the run is already running.
+struct CheckRunning;
+
 /// Whether `row` is a Box that can still be steered.
 fn open(row: Option<&BoxRow>) -> Option<&BoxRow> {
     row.filter(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected))
@@ -133,6 +136,17 @@ impl Quiet<'_> {
         Ok((history, steered))
     }
 
+    /// The claim a tick at a check step holds while it settles: an error when a check of the
+    /// run is already running, none at a step that is no check.
+    fn claim_for(&self, at_check: bool) -> Result<Option<Flight>, CheckRunning> {
+        if !at_check {
+            return Ok(None);
+        }
+        Flight::claim(self.cx, self.run.id)
+            .map(Some)
+            .ok_or(CheckRunning)
+    }
+
     /// What the run's standing means now, and the move it makes.
     fn settle(
         &self,
@@ -140,14 +154,22 @@ impl Quiet<'_> {
         box_id: BoxId,
         (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
     ) -> Result<(), StoreError> {
+        let step = plan.step(self.at.0);
+        let at_check = matches!(step.map(|s| &s.kind), Some(StepKind::Check { .. }));
+        // The claim comes before the history is read: a check thread writes its `Checked` line
+        // and only then drops its flight, so a tick that holds the claim reads every line a
+        // finished check wrote. Claiming after the read could start the same check twice.
+        let Ok(flight) = self.claim_for(at_check) else {
+            return Ok(());
+        };
         let (history, steered) = self.history()?;
+        #[cfg(test)]
+        tests_hook::after_history(self.cx);
         let facts = open(self.row).map(box_facts);
         let event = match &facts {
             Some(f) if f.session == SessionState::Ended => Event::Ended,
             _ => Event::Idle,
         };
-        let step = plan.step(self.at.0);
-        let at_check = matches!(step.map(|s| &s.kind), Some(StepKind::Check { .. }));
         let m = advance(plan, &history, event);
         if let Some(f) = &facts {
             let waits = if at_check {
@@ -180,7 +202,9 @@ impl Quiet<'_> {
             }
             Move::Incomplete { at } => end(RunOutcome::Incomplete { at }),
             Move::Fail { at, reason, .. } => end(RunOutcome::Failed { at, reason }),
-            Move::RunCheck => self.start_check(plan, box_id, checks),
+            Move::RunCheck => flight.map_or(Ok(()), |flight| {
+                self.start_check(plan, box_id, (checks, flight))
+            }),
             Move::Remind => {
                 let Some(step) = step else { return Ok(()) };
                 self.remind(step, out)
@@ -194,17 +218,14 @@ impl Quiet<'_> {
     }
 
     /// Hands the check at the pointer to `checks`, with a deadline of the smaller of the run's
-    /// remaining timeout and [`CHECK_LIMIT`]. Nothing happens while it is running.
+    /// remaining timeout and [`CHECK_LIMIT`], under the `flight` the tick claimed.
     fn start_check(
         &self,
         plan: &Plan,
         box_id: BoxId,
-        checks: &dyn Fn(CheckJob),
+        (checks, flight): (&dyn Fn(CheckJob), Flight),
     ) -> Result<(), StoreError> {
         let Some(StepKind::Check { command, .. }) = plan.step(self.at.0).map(|s| &s.kind) else {
-            return Ok(());
-        };
-        let Some(flight) = Flight::claim(self.cx, self.run.id) else {
             return Ok(());
         };
         let spent = self.store.first_launch_at(box_id)?.map_or(0, |began| {
@@ -335,4 +356,40 @@ fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
     cx.for_box(row.user, || steer::run(cx, &req))
         .map(|_| ())
         .map_err(|e| e.error.to_string())
+}
+
+/// A test seam between the tick's history read and the rest of its settling.
+#[cfg(test)]
+pub(super) mod tests_hook {
+    use std::cell::RefCell;
+
+    use crate::cx::Cx;
+
+    type Hook = Box<dyn Fn(&Cx)>;
+
+    thread_local! {
+        static AFTER_HISTORY: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Runs `f` after each history read of this thread, until the returned guard drops.
+    pub(in crate::ops::workflow) fn on_history(f: impl Fn(&Cx) + 'static) -> Guard {
+        AFTER_HISTORY.with(|h| *h.borrow_mut() = Some(Box::new(f)));
+        Guard
+    }
+
+    pub(super) fn after_history(cx: &Cx) {
+        let hook = AFTER_HISTORY.with(|h| h.borrow_mut().take());
+        if let Some(f) = hook {
+            f(cx);
+            AFTER_HISTORY.with(|h| *h.borrow_mut() = Some(f));
+        }
+    }
+
+    pub(in crate::ops::workflow) struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            AFTER_HISTORY.with(|h| *h.borrow_mut() = None);
+        }
+    }
 }

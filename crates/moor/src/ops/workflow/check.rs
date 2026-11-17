@@ -2,7 +2,8 @@
 //! result is a history line the next tick reads.
 //!
 //! The act comes first and its line after, so a controller that stops in between runs the check
-//! again. A cut stream is no result: it is recorded as `CheckLost`, and the decider reruns it.
+//! again. A cut link is no result: it is recorded as `CheckLost`, and the decider reruns it. Any
+//! other error is a check that did not pass, with its reason in the `Checked` line.
 
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -14,12 +15,14 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::name::ForgeRepo;
 use moor_core::request::BoxTarget;
 use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
 use moor_core::workflow::{HistoryEntry, RunId, StepId, WorkflowId};
 use moor_core::{BoxId, ExecReq};
 
 use crate::cx::Cx;
+use crate::error::CommandError;
 use crate::ops::exec;
 
 /// The longest a check may run, however long the run has left.
@@ -30,6 +33,9 @@ pub(crate) const TAIL_BYTES: usize = 4096;
 
 /// What the history records for a check stopped at its deadline, which has no exit code.
 const DEADLINE_EXIT: i32 = -1;
+
+/// What the history records for a check that never got a result and was not cut off by the link.
+const NOT_RUN_EXIT: i32 = -2;
 
 /// A check to run: the step, the Box and the deadline.
 pub(crate) struct CheckJob {
@@ -113,12 +119,35 @@ impl Tail {
     }
 }
 
-/// The history line for a check that ended as `view` says, or whose exec failed to start when
-/// `view` is none. Only an exit code or the deadline is a result; anything else is a lost stream.
-fn outcome_line(job: &CheckJob, view: Option<ExecView>, tail: &Tail) -> HistoryEntry {
+/// Whether `e` is the link to the machine failing, so the command's fate is unknown: the driver's
+/// transport error, or a machine that is not linked.
+fn link_cut(e: &CommandError) -> bool {
+    match e.error.downcast_ref::<DriverError>() {
+        Some(DriverError::Transport { .. }) => true,
+        Some(DriverError::Unavailable(why)) => why.contains("not linked"),
+        _ => e.error.to_string().contains("is not linked"),
+    }
+}
+
+/// The history line for a check that ended as `ran` says. An exit code or the deadline is a
+/// result, and a cut link is a lost stream to run again. Every other end is a check that did not
+/// pass, whose reason the line keeps.
+fn outcome_line(job: &CheckJob, ran: Result<ExecView, &CommandError>, tail: &Tail) -> HistoryEntry {
     let (step, try_n) = (job.at.0.clone(), job.at.1);
-    match view {
-        Some(ExecView {
+    let not_run = |why: String| HistoryEntry::Checked {
+        step: step.clone(),
+        try_n,
+        exit: NOT_RUN_EXIT,
+        tail: format!("{}\n[moor: {why}]", tail.text()),
+    };
+    match ran {
+        Err(e) if link_cut(e) => HistoryEntry::CheckLost { step, try_n },
+        Err(e) => not_run(format!("the check did not run to a result: {}", e.error)),
+        Ok(ExecView {
+            exit: None,
+            timed_out: false,
+        }) => not_run("the check was interrupted before it exited".to_owned()),
+        Ok(ExecView {
             exit: Some(exit), ..
         }) => HistoryEntry::Checked {
             step,
@@ -126,7 +155,7 @@ fn outcome_line(job: &CheckJob, view: Option<ExecView>, tail: &Tail) -> HistoryE
             exit,
             tail: tail.text(),
         },
-        Some(ExecView {
+        Ok(ExecView {
             timed_out: true, ..
         }) => HistoryEntry::Checked {
             step,
@@ -138,7 +167,6 @@ fn outcome_line(job: &CheckJob, view: Option<ExecView>, tail: &Tail) -> HistoryE
                 job.timeout_secs
             ),
         },
-        _ => HistoryEntry::CheckLost { step, try_n },
     }
 }
 
@@ -180,7 +208,7 @@ pub(crate) fn run_check(cx: &Cx, job: &CheckJob) -> Vec<String> {
             e.error
         ));
     }
-    let line = outcome_line(job, ran.ok(), &tail);
+    let line = outcome_line(job, ran.as_ref().map(|v| *v), &tail);
     let (from, key) = (&job.at, (job.workflow, &job.repo, job.due_at));
     let at = ((&from.0, from.1), (&from.0, from.1));
     if let Err(e) = store.step_workflow_run(key, at, (&[line], cx.clock().now())) {
@@ -188,4 +216,37 @@ pub(crate) fn run_check(cx: &Cx, job: &CheckJob) -> Vec<String> {
     }
     out.extend(cx.take_warnings().into_iter().map(|w| w.message));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use moor_core::seam::driver::DriverError;
+    use moor_core::ErrorKind;
+
+    use super::{link_cut, CommandError};
+
+    fn failed(why: &str) -> CommandError {
+        CommandError::new(ErrorKind::Failed, why.to_owned())
+    }
+
+    #[test]
+    fn only_a_cut_link_is_lost() {
+        let transport = DriverError::Transport {
+            stderr_tail: String::new(),
+        };
+        assert!(link_cut(&CommandError::new(ErrorKind::Failed, transport)));
+        assert!(link_cut(&failed(
+            "box provider unavailable: machine 1 is not linked"
+        )));
+        for why in [
+            "the Proxy could not start: no port; retry once it starts",
+            "Box 3 is busy with another command; waited 30s",
+            "store: database is locked",
+            "no open Box 3",
+        ] {
+            assert!(!link_cut(&failed(why)), "{why}");
+        }
+        let timeout = DriverError::Timeout(std::time::Duration::from_secs(1));
+        assert!(!link_cut(&CommandError::new(ErrorKind::Failed, timeout)));
+    }
 }
