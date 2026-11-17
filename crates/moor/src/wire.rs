@@ -127,6 +127,42 @@ pub(crate) fn schema_warning(env: &Env) -> Option<String> {
     Some(ahead_warning(found, known))
 }
 
+/// Runs the one-time import of the repo configs Boxes carried before configs lived in the store,
+/// and returns the lines to log: what it imported, each repo it left out, or why it could not
+/// run. An env with no store imports nothing.
+pub(crate) fn import_repo_configs(env: &Env) -> Vec<String> {
+    let Some(store) = env.shared::<Store>() else {
+        return Vec::new();
+    };
+    let done = match store.import_repo_configs() {
+        Ok(done) => done,
+        Err(e) => {
+            return vec![format!(
+                "could not import the repo configs of earlier Boxes: {e}"
+            )]
+        }
+    };
+    let mut lines = Vec::new();
+    if !done.stored.is_empty() {
+        let repos = done
+            .stored
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        lines.push(format!(
+            "imported the repo config of {} from their newest Box: {}",
+            repos.len(),
+            repos.join(", ")
+        ));
+    }
+    for (repo, why) in done.skipped {
+        lines.push(format!(
+            "left out the config of {repo}, which no longer parses: {why}"
+        ));
+    }
+    lines
+}
+
 /// The warning for a store a newer build migrated to `found`, past this build's `known`.
 fn ahead_warning(found: i64, known: i64) -> String {
     format!(

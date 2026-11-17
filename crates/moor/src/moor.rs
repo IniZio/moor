@@ -66,6 +66,11 @@ impl Moor {
         wire::schema_warning(env)
     }
 
+    /// Imports the repo configs earlier Boxes carried, once; the lines to log.
+    pub(crate) fn import_repo_configs(env: &Env) -> Vec<String> {
+        wire::import_repo_configs(env)
+    }
+
     /// Settles the controller's keys in the store and the state dir.
     pub(crate) fn settle_keys(env: &Env, vault: &Vault) -> Result<(), String> {
         wire::settle_keys(env, vault)
