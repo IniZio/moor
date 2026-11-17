@@ -42,6 +42,27 @@ pub(crate) fn run_id(attempt: i64, workdir: &BoxPath) -> i64 {
     -i64::try_from(u64::from_le_bytes(bytes) >> 2).unwrap_or(0) - 1
 }
 
+/// [`attach`], and the position of the last line reported started: the one running when the
+/// follow ended, 0 before any line began.
+pub(super) fn follow(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    proxy: Option<&BoxProxy>,
+    (run, output): (i64, &Path),
+    on_line: &(dyn Fn(ExtraEvent) + Sync),
+) -> (Result<Result<ExecOutcome, Failure>, Left>, u32) {
+    let running = AtomicU32::new(0);
+    let track = |e: ExtraEvent| {
+        if let ExtraEvent::SetupLineStarted { index, .. } = e {
+            running.fetch_max(index, Ordering::SeqCst);
+        }
+        on_line(e);
+    };
+    let result = attach(cx, site, cfg, proxy, (run, output), &track);
+    (result, running.into_inner())
+}
+
 /// Builds the setup environment, then attaches to run `run`, which launches the script once,
 /// until the run ends, its output into `output`. A cut channel attaches again and reads the
 /// log from its start, so only lines not reported yet reach `on_line`. A run given up on while
@@ -50,7 +71,7 @@ pub(crate) fn run_id(attempt: i64, workdir: &BoxPath) -> i64 {
 /// While the Box cannot be reached the follower attaches again for up to two minutes, then
 /// reports [`Left::LinkLost`]. Once this process drains it stops following and leaves the run
 /// to the next process: [`Left::Released`].
-pub(super) fn attach(
+fn attach(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,
@@ -89,12 +110,19 @@ pub(super) fn attach(
             if reached_the_box(output) {
                 unreachable_since = None;
             }
+            let gap_began = unreachable_since.is_none();
             let since = *unreachable_since.get_or_insert_with(|| cx.clock().instant());
             if let Err(left_it) = keep_waiting(cx, since, reason, left) {
                 if matches!(left_it, Left::LinkLost(_)) {
                     let _ = cx.driver().cancel_run(site.handle, run, CANCEL_GRACE_SECS);
                 }
                 return Err(left_it);
+            }
+            if gap_began {
+                on_line(ExtraEvent::SetupReattached {
+                    index: reported.started.load(Ordering::SeqCst),
+                    why: reason.to_owned(),
+                });
             }
             cx.clock().sleep(REFOLLOW_AFTER);
             continue;

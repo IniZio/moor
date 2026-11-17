@@ -58,6 +58,9 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::SetupLineStarted { index, total, line } => {
                 Self::Timing(TimingEvent::SetupLineStarted { index, total, line })
             }
+            ExtraEvent::SetupReattached { index, why } => {
+                Self::Timing(TimingEvent::SetupReattached { index, why })
+            }
             ExtraEvent::SetupLineFinished {
                 index,
                 total,

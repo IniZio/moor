@@ -16,7 +16,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 
-use attach::attach;
+use attach::follow;
 pub(crate) use attach::run_id;
 pub(crate) use link::{await_reachable, Released, LINK_WAIT};
 use link::{link_lost, Left};
@@ -154,13 +154,18 @@ pub(crate) fn run_setup(
     };
     let started = cx.clock().instant();
     let output = log_dir.join(OUTPUT_FILE);
-    let result = attach(cx, &site, cfg, proxy, (run, &output), on_line);
+    let (result, running) = follow(cx, &site, cfg, proxy, (run, &output), on_line);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let result = match result {
         Ok(result) => result,
         Err(Left::Released) => return Err(Released),
-        Err(Left::LinkLost(reason)) => return Ok(link_lost(cx, &reason, ms)),
+        Err(Left::LinkLost(reason)) => {
+            let line = running
+                .checked_sub(1)
+                .and_then(|i| cfg.setup.get(usize::try_from(i).ok()?));
+            return Ok(link_lost(cx, &reason, ms, line.map(String::as_str)));
+        }
     };
     if let Some(stop) = read_stop(&output) {
         return Ok(did_not_run(cx, stop, exit_code(&result), ms));
@@ -184,7 +189,7 @@ pub(crate) fn run_setup(
         FORCED_CLOSE.to_owned()
     } else {
         cfg.setup
-            .get(failed_step(&log, cfg.setup.len()))
+            .get(failed_step(&log, running, cfg.setup.len()))
             .cloned()
             .unwrap_or_default()
     };
@@ -362,12 +367,14 @@ fn discard(path: &Path) {
     }
 }
 
-/// Index of the failing step: the last one the log announced, else the first.
-fn failed_step(log: &str, steps: usize) -> usize {
+/// Index of the failing step: the last one the log announced or `running` reported started, else
+/// the first.
+fn failed_step(log: &str, running: u32, steps: usize) -> usize {
     let announced = log
         .lines()
         .filter(|l| l.starts_with("moor setup: $ "))
-        .count();
+        .count()
+        .max(usize::try_from(running).unwrap_or(0));
     announced.clamp(1, steps.max(1)) - 1
 }
 

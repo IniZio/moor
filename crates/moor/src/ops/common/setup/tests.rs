@@ -26,6 +26,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 
 mod lines;
+mod link_drop;
 mod output;
 mod proxy;
 mod warning;
