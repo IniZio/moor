@@ -196,6 +196,7 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::AgentRateLimited { .. }
             | Event::ProxyCredentialRejected { .. }
             | Event::ProxyCredentialRecovered { .. }
+            | Event::EgressSeen { .. }
             | Event::Idled
             | Event::Busy
             | Event::Asleep { .. }

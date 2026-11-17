@@ -363,6 +363,15 @@ fn all_events() -> Vec<Event> {
         Event::Timing(TimingEvent::AcquireReattached {
             why: s("box provider unavailable: the stream ended: unexpected end of file"),
         }),
+        Event::EgressSeen {
+            hosts: vec![crate::domain::egress::EgressRow {
+                host: s("example.com"),
+                port: 443,
+                path: crate::domain::egress::EgressPath::Proxied,
+                first_seen: 1_000,
+                count: 1,
+            }],
+        },
     ]
 }
 
@@ -380,7 +389,7 @@ fn asserted_kinds_are_the_frozen_twenty() {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 94);
+    assert_eq!(all.len(), 95);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

@@ -198,4 +198,5 @@ fn a_park_for_hands_the_box_replaced_keeps_the_slot_and_logs_the_stale_write() {
     assert!(String::from_utf8_lossy(&w.log.lock().unwrap()).contains("stale_hands_write"));
 }
 
+mod egress;
 mod host;

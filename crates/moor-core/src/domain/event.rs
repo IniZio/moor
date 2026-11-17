@@ -301,6 +301,11 @@ pub enum Event {
         /// The credential rule that works again.
         rule: String,
     },
+    /// The Box reached hosts it had not reached before, or a count changed.
+    EgressSeen {
+        /// The rows that are new or whose count changed.
+        hosts: Vec<crate::domain::egress::EgressRow>,
+    },
     /// The agent's pane ended while the agent kept running on the Box.
     AgentLinkLost {
         /// The pane that ended.

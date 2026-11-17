@@ -104,5 +104,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Access(AccessEvent::PortForwardRefused { .. }) => 91,
         Event::Timing(TimingEvent::SetupReattached { .. }) => 92,
         Event::Timing(TimingEvent::AcquireReattached { .. }) => 93,
+        Event::EgressSeen { .. } => 94,
     }
 }

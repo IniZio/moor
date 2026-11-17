@@ -1,4 +1,5 @@
-//! What the controller keeps for each open Box: the user's machine the Box holds.
+//! What the controller keeps for each open Box: the user's machine the Box holds, and the hosts
+//! it reached.
 //!
 //! One thread per Box ticks every [`TICK`]. It follows the Box's handle, grants and frees the
 //! machine's slot, and lets everything go once the Box closes. Nothing outlives the controller:
@@ -9,6 +10,7 @@
 //! [`Keepers::end`] waits for while the Box is open: once it returns, the ended keeper does
 //! nothing.
 
+mod egress;
 mod host;
 mod machine;
 #[cfg(test)]
@@ -84,6 +86,8 @@ pub(crate) struct Kept {
     busy: Mutex<()>,
     /// Set to end its thread.
     stop: AtomicBool,
+    /// The hosts the Box reached, as its events carry them.
+    egress: Mutex<egress::Egress>,
 }
 
 /// Every keeper this controller runs.
@@ -187,6 +191,7 @@ impl Kept {
             }),
             busy: Mutex::new(()),
             stop: AtomicBool::new(false),
+            egress: Mutex::default(),
         }
     }
 
@@ -212,11 +217,14 @@ impl Kept {
         if self.stopped() {
             return false;
         }
-        let parked = self.follow(view.handle, view.inc);
+        let parked = self.follow(view.handle.clone(), view.inc);
         if parked {
             self.sleep_machine();
         } else {
             self.grant_machine();
+            if let Some(handle) = &view.handle {
+                self.read_egress(handle);
+            }
         }
         drop(busy);
         true
