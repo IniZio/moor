@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+run=/run/moor
+rm -f "$run/agent.ready"
+mkdir -p "$run/bin" "$run/tmp" "$run/ssh"
+[ -f "$run/ssh/id" ] || ssh-keygen -q -t ed25519 -N '' -f "$run/ssh/id"
+for f in moor-work-init box-rebuild; do
+  cp "/usr/local/lib/moor/$f" "$run/bin/$f.new"
+  chmod 755 "$run/bin/$f.new"
+  mv -f "$run/bin/$f.new" "$run/bin/$f"
+done
+touch "$run/notes"
+git config --global --add safe.directory '*'
+touch "$run/agent.ready"
+exec sleep infinity

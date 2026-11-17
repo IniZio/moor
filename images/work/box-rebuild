@@ -1,0 +1,22 @@
+#!/bin/bash
+# Asks moor for a fresh work place. It runs in the work place, where Claude's Bash runs, and
+# makes the work place exit 75, the code that tells moor the exit was asked for.
+#
+#   box-rebuild [--clean] [REASON...]
+#
+# Without --clean the fresh work place starts from the state right after setup. With --clean it
+# starts from the stock image and setup is owed again. The workdir, the caches and both homes
+# are kept either way.
+set -eu
+run=/run/moor
+clean=
+if [ "${1:-}" = --clean ]; then clean=clean; shift; fi
+reason=${*:-no reason given}
+
+if [ -n "$clean" ]; then
+  echo "moor: asked for a fresh Box from the stock image; setup runs again. The workdir and caches are kept."
+else
+  echo "moor: asked for a fresh Box. It comes back as it was right after setup, with the workdir and caches kept."
+fi
+printf '%s\n%s\n' "${clean:-keep}" "$reason" > "$run/rebuild.tmp"
+mv -f "$run/rebuild.tmp" "$run/rebuild"
