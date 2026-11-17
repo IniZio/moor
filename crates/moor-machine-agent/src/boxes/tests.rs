@@ -564,5 +564,5 @@ async fn a_machine_that_provides_boxes_offers_them_with_the_protocol_it_speaks()
         (moor_client::link::boxes::PROTOCOL, "fake")
     );
     assert_eq!(crate::offered(&machine, None).await, None);
-    assert!(crate::Host::named("docker", rig.home.path()).is_err());
+    assert!(crate::Host::named("crabbox", rig.home.path()).is_err());
 }
