@@ -45,8 +45,6 @@ const CALL: Duration = Duration::from_mins(2);
 const GONE: i32 = 4;
 /// The variable that caps the size of crabbox's cache store, in GB.
 const CACHE_CAP: &str = "CRABBOX_CACHE_STORE_MAX_GB";
-/// Asks crabbox's pause to save the lease's caches.
-const PAUSE_PUBLISH: &str = "CRABBOX_PAUSE_PUBLISH";
 /// Bytes of crabbox's stderr an error quotes, from the end.
 const TAIL: usize = 2048;
 
@@ -237,8 +235,7 @@ async fn act(
             return Ok(Answer::Done);
         }
         Verb::Info => return reach::info(lease).await,
-        Verb::Pause => return pause(lease, &[]).await,
-        Verb::PausePublish => return pause(lease, &[(PAUSE_PUBLISH, "1".to_owned())]).await,
+        Verb::Pause | Verb::PausePublish => return pause(lease).await,
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
             // A stop while the VM boots finds no lease yet, and the boot then leaves one behind.

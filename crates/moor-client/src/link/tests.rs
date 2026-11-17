@@ -92,6 +92,12 @@ fn an_offer_from_an_agent_that_still_says_checkpoints_reads_and_drops_them() {
 }
 
 #[test]
+fn a_lease_verb_from_a_controller_that_still_saves_caches_at_pause_reads() {
+    let verb: super::lease::Verb = serde_json::from_value(json!("pause-publish")).unwrap();
+    assert_eq!(verb, super::lease::Verb::PausePublish);
+}
+
+#[test]
 fn a_report_without_the_per_box_list_reads_as_empty_and_writes_none() {
     let opened = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2}});
     let opened: super::Opened = serde_json::from_value(opened).unwrap();
