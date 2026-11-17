@@ -42,6 +42,27 @@ pub(crate) fn run_id(attempt: i64, workdir: &BoxPath) -> i64 {
     -i64::try_from(u64::from_le_bytes(bytes) >> 2).unwrap_or(0) - 1
 }
 
+/// [`attach`], and the position of the last line reported started: the one running when the
+/// follow ended, 0 before any line began.
+pub(super) fn follow(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    proxy: Option<&BoxProxy>,
+    (run, output): (i64, &Path),
+    on_line: &(dyn Fn(ExtraEvent) + Sync),
+) -> (Result<Result<ExecOutcome, Failure>, Left>, u32) {
+    let running = AtomicU32::new(0);
+    let track = |e: ExtraEvent| {
+        if let ExtraEvent::SetupLineStarted { index, .. } = e {
+            running.fetch_max(index, Ordering::SeqCst);
+        }
+        on_line(e);
+    };
+    let result = attach(cx, site, cfg, proxy, (run, output), &track);
+    (result, running.into_inner())
+}
+
 /// Builds the setup environment, then attaches to run `run`, which launches the script once,
 /// until the run ends, its output into `output`. A cut channel attaches again and reads the
 /// log from its start, so only lines not reported yet reach `on_line`. A run given up on while
@@ -50,7 +71,7 @@ pub(crate) fn run_id(attempt: i64, workdir: &BoxPath) -> i64 {
 /// While the Box cannot be reached the follower attaches again for up to two minutes, then
 /// reports [`Left::LinkLost`]. Once this process drains it stops following and leaves the run
 /// to the next process: [`Left::Released`].
-pub(super) fn attach(
+fn attach(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,

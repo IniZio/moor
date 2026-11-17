@@ -4,7 +4,6 @@ use std::fmt::Write as _;
 use std::fs::{DirBuilder, Permissions};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
@@ -17,7 +16,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 
-use attach::attach;
+use attach::follow;
 pub(crate) use attach::run_id;
 pub(crate) use link::{await_reachable, Released, LINK_WAIT};
 use link::{link_lost, Left};
@@ -205,27 +204,6 @@ pub(crate) fn run_setup(
         ms,
         tail,
     })
-}
-
-/// [`attach`], and the position of the last line reported started: the one running when the
-/// follow ended, 0 before any line began.
-fn follow(
-    cx: &Cx,
-    site: &Site<'_>,
-    cfg: &BoxSettings,
-    proxy: Option<&BoxProxy>,
-    (run, output): (i64, &Path),
-    on_line: &(dyn Fn(ExtraEvent) + Sync),
-) -> (Result<Result<ExecOutcome, Failure>, Left>, u32) {
-    let running = AtomicU32::new(0);
-    let track = |e: ExtraEvent| {
-        if let ExtraEvent::SetupLineStarted { index, .. } = e {
-            running.fetch_max(index, Ordering::SeqCst);
-        }
-        on_line(e);
-    };
-    let result = attach(cx, site, cfg, proxy, (run, output), &track);
-    (result, running.into_inner())
 }
 
 /// A setup the prelude stopped at `stop` before any line ran.
