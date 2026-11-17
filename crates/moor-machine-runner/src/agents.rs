@@ -92,6 +92,18 @@ impl Agents {
 }
 
 impl Agents {
+    /// The JSON list of the Boxes machine `machine_id` provides and how each is, as its agent
+    /// last reported it, unparsed; none when it reported none or is offline.
+    #[must_use]
+    pub fn box_health(&self, machine_id: i64) -> Option<String> {
+        let held = self
+            .links
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        held.get(&machine_id)?.box_health.clone()
+    }
+
     /// The machines whose agents hold a link now.
     pub(crate) fn online(&self) -> Vec<i64> {
         let held = self
@@ -261,6 +273,9 @@ struct Held {
     link: MachineLink,
     /// The host memory its Boxes hold by its latest report; none before one, or once it is down.
     box_memory: Vec<BoxHostMemory>,
+    /// The health of the Boxes the machine provides, as its latest report said it, unparsed; a
+    /// controller reads it, so the runner learns no Box type; none before one, or once it is down.
+    box_health: Option<String>,
     /// Which link set it, so an older link ending leaves a newer one online.
     generation: u64,
     /// Dropping it ends the link that set it.
@@ -314,6 +329,7 @@ impl Links {
                 Held {
                     link,
                     box_memory: Vec::new(),
+                    box_health: None,
                     generation,
                     end: Some(end),
                     asks: Some(ask),
@@ -335,6 +351,7 @@ impl Links {
                 h.link.online = false;
                 h.link.since = now();
                 h.box_memory.clear();
+                h.box_health = None;
                 h.end = None;
                 h.asks = None;
                 h.tell = None;
@@ -352,6 +369,7 @@ impl Links {
                 h.link.mem_mib = Some(report.mem_total_mib);
                 h.link.memory = Some(memory::received(report));
                 h.box_memory = memory::box_memory(machine_id, report);
+                h.box_health = memory::box_health(report);
             }
         });
     }

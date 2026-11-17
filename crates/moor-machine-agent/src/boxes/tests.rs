@@ -557,3 +557,18 @@ async fn an_exec_without_a_command_is_refused() {
     };
     assert!(matches!(rig.one(&op).await, BoxAnswer::Refused { .. }));
 }
+
+#[tokio::test]
+async fn a_machine_that_provides_boxes_offers_them_with_the_protocol_it_speaks() {
+    let rig = rig();
+    let host = crate::Host::named("fake", rig.home.path()).unwrap();
+    let machine = crate::Machine::from_env();
+    let offer = crate::offered(&machine, Some(&host)).await.unwrap();
+    let boxes = offer.boxes.unwrap();
+    assert_eq!(
+        (boxes.protocol, boxes.provides.as_str()),
+        (moor_client::link::boxes::PROTOCOL, "fake")
+    );
+    assert_eq!(crate::offered(&machine, None).await, None);
+    assert!(crate::Host::named("docker", rig.home.path()).is_err());
+}
