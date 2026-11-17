@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::Place;
@@ -35,6 +36,10 @@ pub(crate) struct FakeProvider {
     root: PathBuf,
     /// The Boxes there are.
     boxes: Mutex<BTreeMap<Slug, Fake>>,
+    /// Opens finish only while they can read it.
+    gate: tokio::sync::RwLock<()>,
+    /// How many opens go on now, and the most that ever went on at once.
+    opening: (AtomicU32, AtomicU32),
 }
 
 impl FakeProvider {
@@ -43,7 +48,21 @@ impl FakeProvider {
         Self {
             root,
             boxes: Mutex::default(),
+            gate: tokio::sync::RwLock::default(),
+            opening: (AtomicU32::new(0), AtomicU32::new(0)),
         }
+    }
+
+    /// Holds every open short of finishing until the guard drops.
+    #[cfg(test)]
+    pub(crate) async fn hold_opens(&self) -> tokio::sync::RwLockWriteGuard<'_, ()> {
+        self.gate.write().await
+    }
+
+    /// The most opens that ever went on at once.
+    #[cfg(test)]
+    pub(crate) fn most_opens_at_once(&self) -> u32 {
+        self.opening.1.load(Ordering::SeqCst)
     }
 
     /// The Boxes there are.
@@ -86,6 +105,10 @@ impl BoxProvider for FakeProvider {
 
     async fn open(&self, slug: &Slug, _spec: &Spec, note: &Notes) -> Result<String, ProvideError> {
         note.say("making the fake Box");
+        let now = self.opening.0.fetch_add(1, Ordering::SeqCst) + 1;
+        self.opening.1.fetch_max(now, Ordering::SeqCst);
+        drop(self.gate.read().await);
+        self.opening.0.fetch_sub(1, Ordering::SeqCst);
         let workdir = self.workdir(slug);
         let dir = self.root.join(slug.as_str());
         for place in [&workdir, &dir.join("agent-home"), &dir.join("work-home")] {
