@@ -70,8 +70,9 @@ impl Rig {
             .into_iter()
             .filter(|e| e.kind == "egress_seen")
             .map(|e| {
-                e.payload["hosts"]
-                    .as_array()
+                e.payload
+                    .get("hosts")
+                    .and_then(Value::as_array)
                     .unwrap()
                     .iter()
                     .map(|h| format!("{} {} {}", h["host"], h["port"], h["path"]))

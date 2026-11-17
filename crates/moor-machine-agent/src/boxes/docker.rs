@@ -22,6 +22,7 @@ use names::Names;
 
 mod args;
 mod cli;
+mod egress;
 #[cfg(test)]
 mod live;
 mod names;
@@ -77,6 +78,8 @@ pub(crate) struct Docker {
     settings: Arc<Settings>,
     /// One at a time may create the network.
     network: Arc<tokio::sync::Mutex<()>>,
+    /// The hosts each Box reached.
+    egress: Arc<egress::Watches>,
 }
 
 impl Docker {
@@ -85,6 +88,7 @@ impl Docker {
         Self {
             settings: Arc::new(Settings::new(images, network.unwrap_or(NETWORK))),
             network: Arc::default(),
+            egress: Arc::default(),
         }
     }
 
@@ -125,6 +129,11 @@ impl Docker {
         let fresh = self.start_agent(slug, &names, create.is_some()).await?;
         // A running agent place may be one an open cut off by a restart made, not ready yet.
         self.await_agent(&names).await?;
+        if fresh {
+            // A new network namespace records direct connections from before the work place
+            // starts. Only a log, so a Box starts without it.
+            drop(egress::read_sets(&self.settings.agent_image, &names).await);
+        }
         match (Cli::state(&names.work).await?, create) {
             (Some(State::Running), _) if fresh => {
                 Cli::ok(["restart", "-t", STOP_SECONDS, &names.work]).await?;
@@ -359,8 +368,13 @@ impl BoxProvider for Docker {
         ])
         .await?;
         let mut boxes = Vec::new();
-        for (slug, (agent, work)) in parse_ps(&listed) {
+        let listed = parse_ps(&listed);
+        self.egress
+            .keep_only(&listed.keys().cloned().collect::<Vec<_>>());
+        for (slug, (agent, work)) in listed {
             let oom_kills = if agent == PlaceState::Up {
+                self.egress
+                    .read_when_due(&slug, &self.settings.agent_image);
                 self.oom_kills(&Names::of(&slug)).await
             } else {
                 0

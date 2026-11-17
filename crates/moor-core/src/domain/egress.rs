@@ -66,6 +66,12 @@ impl EgressTally {
         *n = n.saturating_add(count);
     }
 
+    /// Whether it holds the row of `host` on `port` by `path`.
+    #[must_use]
+    pub fn contains(&self, host: &str, port: u16, path: EgressPath) -> bool {
+        self.0.contains_key(&(host.to_owned(), port, path))
+    }
+
     /// The rows, ordered by host, port and path.
     #[must_use]
     pub fn rows(&self) -> Vec<EgressRow> {

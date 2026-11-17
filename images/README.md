@@ -30,6 +30,7 @@ The script `tools/box-smoke.sh` builds both images and starts a Box from them. I
 | `box.env` | machine agent | `export` lines. Every login shell in either place reads them, and dockerd starts with them. |
 | `ca.pem` | machine agent | Trusted in the work place's system store. |
 | `notes` | machine agent | One note per line. `box-shell` prints each unseen line to stderr, once, before the command. |
+| `egress.json` | machine agent | The hosts the Box reached, one row per host, port and path. See [the egress log](../docs/specs/egress-log.md). |
 | `oom` | work init | Count of OOM kills in the work place's cgroup. Only grows, also across work place restarts. |
 | `rebuild`, `rebuild.asked` | `box-rebuild`, work init | `keep` or `clean`, then the reason. Work init renames `rebuild` to `rebuild.asked` as it exits 75. The provider clears it. |
 | `tmp/` | | `TMPDIR` in both places, because Claude writes the command's cwd file there and reads it in the agent place. |
@@ -53,6 +54,11 @@ The agent place owns it. Restarting the agent place gives it a new namespace. Th
 The network must carry the MTU of the host's route to the internet (a tailscale route is 1280),
 or large packets vanish. `moor-work-init` sets the inner dockerd's MTU to the MTU of `eth0`, so
 creating the Docker network with the probed MTU is enough.
+
+The namespace holds the nftables table `inet moor_egress`, which records each new connection that
+skips tinyproxy and never blocks one. The machine agent installs it and reads it with a short-lived
+helper from the agent image, run with `--network container:<agent>`, `--cap-drop ALL` and
+`--cap-add NET_ADMIN`, so the agent image carries `nft`.
 
 ## `moor-work-init`
 
