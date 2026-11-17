@@ -91,9 +91,10 @@ fronts:
 ```
 
 Enable `moor-front@notify.socket` and restart the controller, as for the gate.
-`moor-notify` and `moor-machine-runner` come in the release image, not as
-release binaries. On a host, build each from a checkout, such as with
-`cargo install --path crates/moor-notify`.
+`moor-notify` comes in the release image, not as a release binary. On a host,
+build it from a checkout, such as with `cargo install --path crates/moor-notify`.
+`moor-machine-runner` is a release binary, and the install script puts it in
+`~/.local/bin` with `moor`.
 
 ## Take machines from teammates
 

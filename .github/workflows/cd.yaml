@@ -9,6 +9,7 @@ on:
       - .releaserc.json
       - crates/moor-herdr/herdr/build.sh
       - crates/moor-machine-agent/Cargo.toml
+      - crates/moor-machine-runner/Cargo.toml
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -78,7 +79,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
-      BINS: moor moor-gate moor-egress-forward moor-listen moor-herdr moor-hc moor-machine-agent
+      BINS: moor moor-gate moor-egress-forward moor-listen moor-herdr moor-hc moor-machine-agent moor-machine-runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

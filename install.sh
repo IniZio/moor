@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install moor binaries from a GitHub release. Needs curl, tar and sha256sum or shasum.
-#   sh install.sh [--nightly] [binary...]     default: moor moor-gate moor-egress-forward
+#   sh install.sh [--nightly] [binary...]
+#     default: moor moor-gate moor-egress-forward moor-machine-agent moor-machine-runner
 # MOOR_VERSION pins a tag, MOOR_CHANNEL=nightly takes the newest prerelease,
 # MOOR_INSTALL_DIR sets the target directory (default ~/.local/bin).
 set -eu
@@ -24,7 +25,7 @@ for arg in "$@"; do
     *) bins="$bins $arg" ;;
   esac
 done
-[ -n "$bins" ] || bins=" moor moor-gate moor-egress-forward"
+[ -n "$bins" ] || bins=" moor moor-gate moor-egress-forward moor-machine-agent moor-machine-runner"
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
