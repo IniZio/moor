@@ -61,6 +61,13 @@ fn load_text(n: &Value) -> Option<String> {
     Some(format!("{used}/{cap}{mem}{disk}{held}{pressure}"))
 }
 
+/// What `node add` enrolled.
+pub(super) fn added_text(value: &Value) -> Option<String> {
+    let name = value.get("name")?.as_str()?;
+    let id = value.get("machine_id")?.as_i64()?;
+    Some(format!("shared node \"{name}\" is machine {id}\n"))
+}
+
 /// One line per node: name, scope, runtime, link state, used/capacity and labels.
 pub(super) fn list_text(value: &Value) -> Option<String> {
     let nodes = value.get("nodes")?.as_array()?;

@@ -85,8 +85,12 @@ pub struct MachineListValue {
 /// Value of `machine-keys`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineKeysValue {
-    /// Every enrolled machine, by id.
+    /// Every enrolled machine a user owns, by id.
     pub machines: Vec<MachineKey>,
+    /// Every machine the operator enrolled, which no user owns, by id. Kept apart from
+    /// `machines` so a runner that does not know it still reads that list whole.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared: Vec<SharedMachineKey>,
     /// The controller's id, which names its leases on pool hosts other controllers share.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<ControllerId>,
@@ -99,6 +103,17 @@ pub struct MachineKey {
     pub machine_id: i64,
     /// The user that owns it.
     pub user: UserId,
+    /// The machine's name.
+    pub name: String,
+    /// The agent's ed25519 public key as an OpenSSH line.
+    pub pubkey: String,
+}
+
+/// A machine the operator enrolled, which no user owns, and the key its agent signs with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharedMachineKey {
+    /// The machine's id.
+    pub machine_id: i64,
     /// The machine's name.
     pub name: String,
     /// The agent's ed25519 public key as an OpenSSH line.

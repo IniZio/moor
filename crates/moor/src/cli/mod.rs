@@ -114,6 +114,13 @@ pub enum Parsed {
         /// Global options.
         opts: GlobalOpts,
     },
+    /// Enroll a machine agent on this host as a shared node.
+    NodeAdd {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The node and where its agent lives.
+        add: crate::node_add::Add,
+    },
     /// Print the event stream as JSON lines.
     Events {
         /// Global options.
@@ -186,6 +193,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
         Ok((opts, Action::Up { max_boxes })) => Parsed::Up { opts, max_boxes },
         Ok((opts, Action::Down)) => Parsed::Down { opts },
+        Ok((opts, Action::NodeAdd(add))) => Parsed::NodeAdd { opts, add },
         Ok((
             opts,
             Action::Events {

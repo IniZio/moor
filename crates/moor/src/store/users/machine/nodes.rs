@@ -1,5 +1,5 @@
-//! Every node the scheduler can see: the operator's shared nodes and each enrolled machine that
-//! offers a runtime.
+//! Every node the scheduler can see: the operator's configured shared nodes and each enrolled
+//! machine that offers a runtime, whether a user owns it or the operator enrolled it as shared.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -66,9 +66,10 @@ fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
     Ok((live, pending, starting))
 }
 
-/// One personal node from a `user_machines_v2` row joined with its link; `load` gives a node's
-/// live, pending and setting-up Boxes by name.
-fn personal(
+/// One machine's node from a `user_machines_v2` row joined with its link; personal when a user
+/// owns the machine, shared when none does. `load` gives a node's live, pending and setting-up
+/// Boxes by name.
+fn machine_node(
     r: &crate::store::db::Row<'_>,
     load: &dyn Fn(&str) -> (usize, usize, usize),
 ) -> Result<Option<Node>, StoreError> {
@@ -84,7 +85,7 @@ fn personal(
             since: since.unwrap_or(enrolled_at) / 1000,
         },
     };
-    let (machine_id, owner) = (r.get(0)?, UserId::new(r.get(1)?));
+    let (machine_id, owner) = (r.get(0)?, r.get::<_, Option<i64>>(1)?.map(UserId::new));
     let max_boxes = r.get::<_, Option<u32>>(8)?.map(|m| m as usize);
     let (used, waiting, starting) = load(&name);
     let mib = |i: usize| {
@@ -106,11 +107,11 @@ fn personal(
     };
     Ok(NodeName::parse(&name).ok().map(|name| Node {
         name,
-        scope: Scope::Personal {
+        scope: owner.map_or(Scope::Shared, |owner| Scope::Personal {
             owner,
-            machine_id,
             enrolled_at: enrolled_at / 1000,
-        },
+        }),
+        machine: Some(machine_id),
         runtime,
         labels,
         max_boxes,
@@ -121,8 +122,9 @@ fn personal(
     }))
 }
 
-/// The personal nodes [`personal`] reads: each pooled machine with its link, if it has one.
-fn personal_select() -> SelectStatement {
+/// The nodes [`machine_node`] reads: each machine that offers a runtime, with its link if it has
+/// one.
+fn machine_select() -> SelectStatement {
     let m = |c| (UserMachinesV2::Table, c);
     let l = |c| (MachineLinks::Table, c);
     Query::select()
@@ -164,11 +166,11 @@ fn personal_select() -> SelectStatement {
 }
 
 impl Store {
-    /// The `shared` nodes and every personal node, with the Boxes holding a slot on or pending
-    /// for each.
+    /// The `shared` nodes and a node for every machine that offers a runtime, with the Boxes
+    /// holding a slot on or pending for each.
     ///
-    /// A personal node is named for its machine; a machine whose name is not a valid node name
-    /// is left out.
+    /// A machine's node is named for it; a machine whose name is not a valid node name is left
+    /// out.
     pub(crate) fn nodes(
         &self,
         shared: &BTreeMap<String, NodeConfig>,
@@ -183,6 +185,7 @@ impl Store {
                 Some(Node {
                     name: NodeName::parse(name).ok()?,
                     scope: Scope::Shared,
+                    machine: None,
                     runtime: cfg.runtime.clone(),
                     labels: cfg.labels.clone(),
                     max_boxes: cfg.max_boxes.map(|m| m.get() as usize),
@@ -193,8 +196,8 @@ impl Store {
                 })
             })
             .collect();
-        let rows = conn.rows(personal_select(), |r| {
-            personal(r, &|n| {
+        let rows = conn.rows(machine_select(), |r| {
+            machine_node(r, &|n| {
                 (held(n), pending(n), starting.get(n).copied().unwrap_or(0))
             })
         })?;

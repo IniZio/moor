@@ -19,8 +19,6 @@ pub enum Scope {
     Personal {
         /// The owning user.
         owner: UserId,
-        /// The enrolled machine behind the node.
-        machine_id: i64,
         /// Enrollment time, unix seconds.
         enrolled_at: i64,
     },
@@ -45,6 +43,9 @@ pub struct Node {
     pub name: NodeName,
     /// Who may use it.
     pub scope: Scope,
+    /// The enrolled machine behind the node: a personal node's, or a shared node an operator
+    /// enrolled; none for a shared node the config names.
+    pub machine: Option<i64>,
     /// The runtime its Boxes run on.
     pub runtime: String,
     /// Labels a Box may require.
@@ -79,7 +80,7 @@ pub enum Verdict {
         node: NodeName,
         /// Its runtime.
         runtime: String,
-        /// The machine behind a personal node.
+        /// The machine behind the node, when it has one.
         machine_id: Option<i64>,
     },
     /// The node is full; the Box waits for it.
@@ -221,12 +222,8 @@ fn ordered<'a>(nodes: &[&'a Node], requester: UserId, default: Option<&NodeName>
         .filter(|n| owned_by(n, requester))
         .collect();
     mine.sort_by_key(|n| match n.scope {
-        Scope::Personal {
-            machine_id,
-            enrolled_at,
-            ..
-        } => (enrolled_at, machine_id),
-        Scope::Shared => (i64::MAX, i64::MAX),
+        Scope::Personal { enrolled_at, .. } => (enrolled_at, n.machine),
+        Scope::Shared => (i64::MAX, None),
     });
     let mut shared: Vec<&Node> = nodes
         .iter()
@@ -294,10 +291,7 @@ fn bind(n: &Node) -> Verdict {
     Verdict::Bind {
         node: n.name.clone(),
         runtime: n.runtime.clone(),
-        machine_id: match n.scope {
-            Scope::Personal { machine_id, .. } => Some(machine_id),
-            Scope::Shared => None,
-        },
+        machine_id: n.machine,
     }
 }
 

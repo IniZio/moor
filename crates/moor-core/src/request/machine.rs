@@ -32,6 +32,20 @@ pub struct MachineEnrollReq {
     pub pool: Option<String>,
 }
 
+/// Arguments of `node-add`: the operator adds or replaces a shared node's machine, which no user
+/// owns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeAddReq {
+    /// The node's name, which is its machine's.
+    pub name: String,
+    /// The agent's ed25519 public key as an OpenSSH line.
+    pub pubkey: String,
+    /// The machine's labels.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+}
+
 /// Arguments of `machine-links`: the runner's whole view of which enrolled machines hold a
 /// link, sent again on every change so the stored view converges on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ use moor_core::name::BoxId;
 use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport, RunnerAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use moor_core::view::user::MachineKey;
+use moor_core::view::user::{MachineKey, SharedMachineKey};
 use moor_schema::tables::{MachineBoxMemory, MachineLinks, UserMachinesV2};
 use sea_query::{
     Asterisk, Expr, ExprTrait as _, Func, InsertStatement, Order, Query, SelectStatement,
@@ -20,7 +20,7 @@ use crate::store::{Store, StoreError};
 mod route;
 
 impl Store {
-    /// Every enrolled machine with the key its agent signs with, by id.
+    /// Every machine a user owns, with the key its agent signs with, by id.
     pub(crate) fn machine_keys(&self) -> Result<Vec<MachineKey>, StoreError> {
         let conn = self.reader()?;
         let rows = conn.rows(
@@ -32,6 +32,7 @@ impl Store {
                     UserMachinesV2::Pubkey,
                 ])
                 .from(UserMachinesV2::Table)
+                .and_where(Expr::col(UserMachinesV2::User).is_not_null())
                 .order_by(UserMachinesV2::MachineId, Order::Asc),
             |r| {
                 Ok::<_, db::Error>(MachineKey {
@@ -39,6 +40,31 @@ impl Store {
                     user: UserId::new(r.get(1)?),
                     name: r.get(2)?,
                     pubkey: r.get(3)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Every machine the operator enrolled, which no user owns, with the key its agent signs
+    /// with, by id.
+    pub(crate) fn shared_machine_keys(&self) -> Result<Vec<SharedMachineKey>, StoreError> {
+        let conn = self.reader()?;
+        let rows = conn.rows(
+            Query::select()
+                .columns([
+                    UserMachinesV2::MachineId,
+                    UserMachinesV2::Name,
+                    UserMachinesV2::Pubkey,
+                ])
+                .from(UserMachinesV2::Table)
+                .and_where(Expr::col(UserMachinesV2::User).is_null())
+                .order_by(UserMachinesV2::MachineId, Order::Asc),
+            |r| {
+                Ok::<_, db::Error>(SharedMachineKey {
+                    machine_id: r.get(0)?,
+                    name: r.get(1)?,
+                    pubkey: r.get(2)?,
                 })
             },
         )?;

@@ -549,6 +549,32 @@ fn node_ls_asks_for_the_callers_nodes() {
 }
 
 #[test]
+fn node_add_takes_a_name_an_agent_home_a_runner_and_labels() {
+    let (_, Action::NodeAdd(add)) = run(&[
+        "node",
+        "add",
+        "local",
+        "--agent-home",
+        "/srv/agent",
+        "--runner",
+        "127.0.0.1:7701",
+        "--label",
+        "linux",
+        "--label",
+        "big",
+    ])
+    .expect("node add parses") else {
+        unreachable!("node add is its own action");
+    };
+    assert_eq!(add.name, "local");
+    assert_eq!(add.agent_home, std::path::Path::new("/srv/agent"));
+    assert_eq!(add.runner, "127.0.0.1:7701");
+    assert_eq!(add.labels, ["linux", "big"]);
+    assert!(run(&["node", "add", "local", "--runner", "127.0.0.1:7701"]).is_err());
+    assert!(run(&["node", "add", "local", "--agent-home", "/srv/agent"]).is_err());
+}
+
+#[test]
 fn start_node_flag() {
     assert!(matches!(
         req(&["start", "t", "--node", "hv"]),
