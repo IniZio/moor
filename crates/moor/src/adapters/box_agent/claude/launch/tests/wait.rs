@@ -49,6 +49,18 @@ fn a_shell_holding_an_output_file_is_running() {
 }
 
 #[test]
+fn a_shell_carried_by_ssh_into_the_work_place_is_running() {
+    let t = TempDir::new().unwrap();
+    let proc = table(t.path(), &["/dev/null"]);
+    symlink(
+        "/run/moor/tmp/claude-1000/p/s/tasks/b1.output",
+        proc.join("100/fd/2"),
+    )
+    .unwrap();
+    assert_eq!(check(&proc), "running");
+}
+
+#[test]
 fn no_shell_holding_an_output_file_is_none() {
     let t = TempDir::new().unwrap();
     let proc = table(t.path(), &["/tmp/x.log", "/tmp/tasks/b1.log"]);
