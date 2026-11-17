@@ -85,6 +85,17 @@ pub struct WorkflowView {
     /// The next time it is due, in Unix milliseconds; none while disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_due: Option<i64>,
+    /// The plan each run walks, as `add_workflow` takes it; none when the workflow has none and
+    /// each run delivers the prompt in one step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<serde_json::Value>,
+    /// Whether the plan was made from a different prompt than the one the workflow has now. A
+    /// stale plan still runs.
+    #[serde(default)]
+    pub plan_stale: bool,
+    /// Counts the writes of the workflow; send it as `expected_revision` to change it.
+    #[serde(default)]
+    pub revision: u64,
     /// The latest run of each repo that has one.
     pub last_runs: Vec<LastRunView>,
 }
@@ -106,6 +117,13 @@ pub struct WorkflowChangeValue {
     /// The next time it is due, in Unix milliseconds, when it is enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_due: Option<i64>,
+    /// After a `workflow-add`: the revision stored, to send as `expected_revision` next time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+    /// After a `workflow-add`: the stored plan as a numbered list, for its author to review
+    /// next to the prompt; empty when the workflow has no plan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<String>,
 }
 
 /// One entry of the change stream `workflow-runs` returns.

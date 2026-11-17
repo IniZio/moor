@@ -16,6 +16,18 @@ pub enum HistoryEntry {
         /// How often the run has entered it.
         try_n: u8,
     },
+    /// The step's instructions reached the agent, in a steer.
+    Sent {
+        /// The step.
+        step: StepId,
+        /// The try they were sent for.
+        try_n: u8,
+    },
+    /// The step was entered more often than its `max_tries` and followed its fail edge.
+    Exhausted {
+        /// The step.
+        step: StepId,
+    },
     /// No Box was started, because the previous run's Box was still open.
     Skipped,
     /// The start was refused, or no agent could run in the Box.

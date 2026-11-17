@@ -62,6 +62,8 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
         config: None,
         prompt: "p".to_owned(),
         timeout_minutes: None,
+        plan: None,
+        expected_revision: None,
         origin_key: Some("k".to_owned()),
     };
     let add = UserCmd::Workflow(WorkflowCmd::Add {

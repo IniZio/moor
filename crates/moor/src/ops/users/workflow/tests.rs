@@ -29,6 +29,8 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         config: None,
         prompt: "fix what is broken".to_owned(),
         timeout_minutes: None,
+        plan: None,
+        expected_revision: None,
         origin_key: None,
     }
 }
@@ -238,6 +240,7 @@ fn record(f: &Fixture, who: &Identity, state: RunState, due: i64) -> WorkflowId 
         due_at: Ts::from_millis(due),
         state,
         recorded_at: Ts::from_millis(due),
+        plan: None,
     };
     store.record_workflow_run(&run).unwrap();
     w.id
@@ -395,3 +398,5 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
     assert!(listed["workflows"][0]["last_runs"][0].get("box").is_none());
 }
+
+mod plan;

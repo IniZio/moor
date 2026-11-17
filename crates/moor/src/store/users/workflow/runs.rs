@@ -7,7 +7,7 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    HistoryEntry, NewRun, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
+    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -55,6 +55,7 @@ impl Store {
     pub(crate) fn record_workflow_run(&self, run: &NewRun) -> Result<bool, StoreError> {
         let cols = state_cols(&run.state);
         let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
+        let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
         let key = (run.workflow, &run.repo, run.due_at);
         self.numbered(|tx, seq| {
             let inserted = tx.run(
@@ -74,6 +75,7 @@ impl Store {
                         WorkflowRuns::TryN,
                         WorkflowRuns::WaitingSince,
                         WorkflowRuns::EndedStep,
+                        WorkflowRuns::Plan,
                     ])
                     .values_panic([
                         run.workflow.get().into(),
@@ -89,6 +91,7 @@ impl Store {
                         cols.try_n.into(),
                         cols.waiting_since.into(),
                         cols.ended_step.clone().into(),
+                        plan.clone().into(),
                     ])
                     .on_conflict(OnConflict::new().do_nothing().to_owned()),
             )?;

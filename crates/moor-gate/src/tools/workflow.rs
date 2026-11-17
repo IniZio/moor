@@ -6,6 +6,7 @@ use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowEnableReq, WorkflowRemoveReq,
     WorkflowRunsReq,
 };
+use moor_core::workflow::PlanDoc;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -40,6 +41,18 @@ struct AddArgs {
     prompt: String,
     /// Minutes a run may take before it is stopped, 1 to 720; 180 when left out.
     timeout_minutes: Option<u32>,
+    /// The plan a run walks, as an object with a `steps` list; see the tool description for how
+    /// to write one. None when left out, and each run then delivers the prompt in one step.
+    #[schemars(schema_with = "plan_schema")]
+    plan: Option<serde_json::Value>,
+    /// The `revision` `list_workflows` showed for the workflow you are replacing. The call is
+    /// refused when the workflow has changed since. Leave it out for a new workflow.
+    expected_revision: Option<u64>,
+}
+
+/// The JSON Schema of a plan, which `add_workflow` checks the argument against.
+fn plan_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    generator.subschema_for::<Option<PlanDoc>>()
 }
 
 /// Arguments of the tools that name one workflow.
@@ -78,7 +91,36 @@ impl Tools {
                        and a run past timeout_minutes is stopped. Three failed runs in a row for \
                        a repo disable the workflow. A cron that can fire closer together than the \
                        controller's minimum gap, an hour unless configured, is refused. Adding \
-                       an existing name replaces it. Needs the moor:write scope."
+                       an existing name replaces it, plan included: send the whole plan again, \
+                       and pass the revision you read as expected_revision, so a change made \
+                       since is not overwritten. \
+                       \
+                       Write a plan for any job with more than one finish line; a prompt with no \
+                       plan runs as one step. Turn the prompt into `plan.steps`, a short list \
+                       the author reviews: one step per finish line. Use `work` steps for what \
+                       the agent does, each with the evidence files it leaves in \
+                       .moor/artifacts/ (flat names such as `report.md`, or a prefix such as \
+                       `before-*`), and a final `deliver` step for the pull request, message or \
+                       file the prompt asks for. A `deliver` step has no `ok` or `fail` and ends \
+                       the run; every other step needs an `ok` edge to a step id, and every step \
+                       must lead on to a deliver step. A `fail` edge goes to the step to run \
+                       when a step cannot be done; without one the run fails. Give a work step \
+                       that loops back `max_tries`, 1 to 5. `check` steps (moor runs a command \
+                       and reads its exit code) and `approve` steps (the owner says yes or no) \
+                       are in the schema but moor does not run them yet, so they are refused. \
+                       Use a check step later for anything a command can decide, and an approve \
+                       step before anything risky the prompt names. When you change an \
+                       existing workflow, read its plan with list_workflows and keep the ids of \
+                       the steps that did not change, so run history stays attached to them. \
+                       Leave `made_from` out of a plan you wrote for the prompt you send; \
+                       list_workflows reports `plan_stale` when the prompt changed after the \
+                       plan was made. Read get_repo_config first, and say in your reply when a \
+                       step needs a host or credential the repo does not grant; moor does not \
+                       judge that. Nothing is saved until the plan is valid: every error is \
+                       listed at once, so fix them all and call again. The reply lists the \
+                       stored plan as numbered steps and the new revision. Show the numbered \
+                       steps to the author next to the prompt, and change them on request with \
+                       another call. Needs the moor:write scope."
     )]
     async fn add_workflow(
         &self,
@@ -95,6 +137,12 @@ impl Tools {
             config: override_text(args.config),
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
+            // A model may send the plan as an object or as the JSON text of one.
+            plan: args.plan.map(|p| match p {
+                serde_json::Value::String(text) => text,
+                other => other.to_string(),
+            }),
+            expected_revision: args.expected_revision,
             origin_key: None,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
@@ -102,7 +150,8 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron, time zone, repos, also repos, prompt, timeout, whether each \
+        description = "List your workflows: cron, time zone, repos, also repos, prompt, plan (with \
+                       plan_stale when the prompt changed after it was made), revision, timeout, whether each \
                        is enabled, why it was disabled if the controller disabled it, its next \
                        due time and the latest run of each repo with its outcome and Box. Needs \
                        the moor:read scope."

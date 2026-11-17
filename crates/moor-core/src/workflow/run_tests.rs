@@ -1,4 +1,10 @@
 //! Tests for plans, run states and history lines.
+#![allow(
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::cognitive_complexity,
+    reason = "test assertions index JSON values and panic on a wrong shape"
+)]
 
 use super::{
     HistoryEntry, Plan, PromptHash, RunEnd, RunOutcome, RunPhase, RunState, StepId, StepKind,
@@ -29,7 +35,9 @@ fn a_workflow_nobody_planned_has_one_deliver_step_made_from_its_prompt() {
     assert!(!plan.edited);
     assert_eq!(plan.made_from, PromptHash::of("update the dependencies"));
     assert_ne!(plan.made_from, PromptHash::of("something else"));
-    let StepKind::Deliver { instructions, .. } = &plan.first().kind;
+    let StepKind::Deliver { instructions, .. } = &plan.first().kind else {
+        panic!("the single plan delivers");
+    };
     assert_eq!(instructions, "update the dependencies");
 }
 

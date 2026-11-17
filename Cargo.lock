@@ -3233,6 +3233,7 @@ dependencies = [
  "jiff",
  "moor-testkit",
  "rustix",
+ "schemars 1.2.3",
  "serde",
  "serde-saphyr",
  "serde_json",

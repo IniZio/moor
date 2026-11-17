@@ -254,8 +254,10 @@ const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict 
     }
 }
 
+mod advance;
 mod finished;
 #[cfg(test)]
 mod tests;
 
+pub use advance::{quiet_move, quiet_since, QuietMove};
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
