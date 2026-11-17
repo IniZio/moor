@@ -1,6 +1,5 @@
 //! Store rows to the core views.
 
-
 use moor_core::activity::AgentState;
 use moor_core::config::UserConfig;
 use moor_core::domain::hands::HandsState;

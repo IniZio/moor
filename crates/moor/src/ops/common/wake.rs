@@ -2,7 +2,6 @@
 //!
 //! The caller holds the Box's turn and passes a row read after taking it.
 
-
 use moor_core::decide::reconcile::STOPPED_REASON;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields};

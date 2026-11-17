@@ -193,4 +193,3 @@ fn wake_refuses_while_another_op_holds_the_box_lock() {
     assert!(err.error.to_string().contains("box busy"), "{}", err.error);
     assert_eq!(wakes(&f), 0);
 }
-

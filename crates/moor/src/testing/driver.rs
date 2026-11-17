@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, HandlesListing, Place, Released, RunEnd,
-    SleepOutcome, StepDone,
+    ExecOutcome, ExecSpec, Followed, HandlesListing, Place, Released, RunEnd, SleepOutcome,
+    StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -174,7 +174,6 @@ impl Driver for FakeDriver {
     fn list_handles(&self, handles: &[BoxHandle]) -> Result<HandlesListing, DriverError> {
         self.listed_handles(handles)
     }
-
 
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
         let mut s = self.st();

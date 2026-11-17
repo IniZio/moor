@@ -7,9 +7,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::name::{BoxPath, ProviderId};
-use crate::seam::driver::{
-    AcquireReq, Acquired, BoxListing, DriverCaps, Released, SleepOutcome,
-};
+use crate::seam::driver::{AcquireReq, Acquired, BoxListing, DriverCaps, Released, SleepOutcome};
 
 struct Scripted {
     exec_codes: Vec<i32>,

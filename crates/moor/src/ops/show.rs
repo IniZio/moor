@@ -1,7 +1,6 @@
 //! `show`: reconcile, then report Boxes, one Box's detail and its events.
 //! Each Box's agent is read once per command; a named Box reads only its own.
 
-
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
@@ -14,9 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
 use crate::ops::common::target::{self, Rule};
-use crate::ops::common::view::{
-    agent_view, box_view_with_run, event_view, rfc3339,
-};
+use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc3339};
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
 

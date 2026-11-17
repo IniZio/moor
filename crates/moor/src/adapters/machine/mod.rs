@@ -15,8 +15,8 @@ use moor_core::box_key::{parse_machine_handle, parse_pool_slug, BoxKey, Controll
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, Forwards, HandlesListing, Launched, Place,
-    Released, RunEnd, SleepOutcome, StepDone,
+    ExecOutcome, ExecSpec, Followed, Forwards, HandlesListing, Launched, Place, Released, RunEnd,
+    SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 

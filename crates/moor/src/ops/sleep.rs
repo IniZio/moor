@@ -2,7 +2,6 @@
 //!
 //! Holds the Box's turn for the call. Works from Idle, or from Working when no run is in flight.
 
-
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, Wanted};
 use moor_core::domain::hands::HandsInput;

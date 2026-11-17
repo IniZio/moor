@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-
 /// The only error shape Driver adapters return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverError {

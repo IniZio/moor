@@ -239,16 +239,10 @@ fn display_names_file_and_key_path() {
 
 #[test]
 fn zero_counts_are_rejected_by_type() {
-    for (doc, path) in [
-        (
-            "nodes: {c: {runtime: x, max_boxes: 0}}",
-            "nodes.c.max_boxes",
-        ),
-    ] {
-        let e = err(doc);
-        assert_eq!(e.path, path, "{doc}: {e}");
-        assert!(e.reason.contains("nonzero"), "{doc}: {e}");
-    }
+    let doc = "nodes: {c: {runtime: x, max_boxes: 0}}";
+    let e = err(doc);
+    assert_eq!(e.path, "nodes.c.max_boxes", "{doc}: {e}");
+    assert!(e.reason.contains("nonzero"), "{doc}: {e}");
 }
 
 #[test]
