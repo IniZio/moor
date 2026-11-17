@@ -18,6 +18,7 @@ impl FakeDriver {
         {
             let mut s = self.st();
             s.note(format!("exec_piped {}", handle.as_str()));
+            s.placed.push(("exec_piped", spec.place));
             s.execs.push((
                 handle.clone(),
                 spec.clone(),

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::seam::driver::{Driver as _, DriverError};
+use moor_core::seam::driver::{Driver as _, DriverError, Place};
 use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
@@ -32,7 +32,7 @@ impl ProxyHost for ReadsHome {
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         let handle = spec.box_handle.as_ref().expect("a Box to deliver to");
         self.driver
-            .peek_file(handle, &environ())
+            .peek_file(handle, Place::Agent, &environ())
             .map_err(|e| ProxyHostError::Failed(format!("cannot find the Box user's home: {e}")))?;
         self.host.ensure(spec)
     }

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::seam::driver::{
-    BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, SleepOutcome, StepDone,
+    BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Place, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath};
@@ -221,6 +221,7 @@ impl FakeDriver {
         &self,
         handle: &BoxHandle,
         connect: &[String],
+        place: Place,
         steps: &[BoxStep],
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
@@ -233,7 +234,7 @@ impl FakeDriver {
         }
         let mut out = Vec::new();
         for step in steps {
-            let done = self.run_step(handle, step, deadline);
+            let done = self.run_step(handle, place, step, deadline);
             let stop = match &done {
                 Err(_) => true,
                 Ok(StepDone::Ran { outcome, .. }) => *outcome != ExecOutcome::Exited { code: 0 },
@@ -251,21 +252,20 @@ impl FakeDriver {
     fn run_step(
         &self,
         handle: &BoxHandle,
+        place: Place,
         step: &BoxStep,
         deadline: Deadline,
     ) -> Result<StepDone, DriverError> {
         match step {
-            BoxStep::Peek(path) => self.peek_file(handle, path).map(StepDone::Peeked),
+            BoxStep::Peek(path) => self.peek_file(handle, place, path).map(StepDone::Peeked),
             BoxStep::Put { path, bytes, mode } => self
-                .put_file(handle, path, bytes, *mode)
+                .put_file(handle, place, path, bytes, *mode)
                 .map(|()| StepDone::Put),
             BoxStep::Run(script) => {
-                let spec = ExecSpec {
-                    argv: vec!["sh".to_owned(), "-c".to_owned(), script.clone()],
-                    env: vec![],
-                    cwd: None,
-                    output: None,
-                };
+                let spec = ExecSpec::new(
+                    place,
+                    vec!["sh".to_owned(), "-c".to_owned(), script.clone()],
+                );
                 let outcome = self.exec(handle, &spec, deadline)?;
                 let mut s = self.st();
                 let stdout = if script.contains(".moor/artifacts") {

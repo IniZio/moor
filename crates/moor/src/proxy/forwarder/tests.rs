@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::{AcquireReq, Driver, Place};
 use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
@@ -96,7 +96,13 @@ fn rig() -> Rig {
         .handle;
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     driver
-        .put_file(&handle, &environ, b"PATH=/bin\0HOME=/home/box\0", 0o400)
+        .put_file(
+            &handle,
+            Place::Agent,
+            &environ,
+            b"PATH=/bin\0HOME=/home/box\0",
+            0o400,
+        )
         .unwrap();
     let binary = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(binary.path(), b"forwarder-bytes").unwrap();

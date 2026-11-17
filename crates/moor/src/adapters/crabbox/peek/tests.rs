@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{Driver, DriverError};
+use moor_core::seam::driver::{Driver, DriverError, Place};
 use moor_core::seam::proc::{Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
 
@@ -20,6 +20,7 @@ fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
 fn peek(c: &Crabbox, rel: &str) -> Result<Option<String>, DriverError> {
     c.peek_file(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::under("/work", rel).unwrap(),
     )
 }
@@ -226,6 +227,7 @@ fn static_provider_target_lookup_carries_box_env() {
     scripted(&p, Reply::Ok("x".to_owned()));
     c.peek_file(
         &BoxHandle::new("ssh/b1"),
+        Place::Work,
         &BoxPath::under("/work", "a").unwrap(),
     )
     .unwrap();
@@ -276,6 +278,7 @@ fn peek_slow(handle: &str) -> Result<Option<String>, DriverError> {
     };
     Crabbox::fake(Arc::new(slow)).peek_file(
         &BoxHandle::new(handle),
+        Place::Work,
         &BoxPath::under("/work", "a").unwrap(),
     )
 }
@@ -303,6 +306,7 @@ fn lookups(p: &ScriptedProc) -> usize {
 fn peek_of(c: &Crabbox, handle: &str) -> Result<Option<String>, DriverError> {
     c.peek_file(
         &BoxHandle::new(handle),
+        Place::Work,
         &BoxPath::under("/work", "a").unwrap(),
     )
 }
@@ -313,7 +317,9 @@ fn one_driver_looks_a_lease_up_once() {
     scripted(&p, Reply::Ok("x".to_owned()));
     peek(&c, "a").unwrap();
     peek(&c, "b").unwrap();
-    let argv = c.connect_argv(&BoxHandle::new("p/box")).unwrap();
+    let argv = c
+        .connect_argv(&BoxHandle::new("p/box"), Place::Work)
+        .unwrap();
     assert_eq!(argv.first().map(String::as_str), Some("ssh"));
     assert_eq!(lookups(&p), 1);
 }

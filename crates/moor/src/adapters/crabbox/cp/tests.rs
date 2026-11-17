@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{Driver, DriverError};
+use moor_core::seam::driver::{Driver, DriverError, Place};
 use moor_core::seam::proc::Tool;
 
 use crate::adapters::crabbox::tests::fake_ssh::{handle, lab, Lab};
@@ -34,7 +34,7 @@ impl Lab {
 
     fn copy(&self, from: &Path, to: &Path) -> Result<(), DriverError> {
         let from = BoxPath::restore(from.to_str().unwrap()).unwrap();
-        self.cb.copy_out(&handle(), &from, to)
+        self.cb.copy_out(&handle(), Place::Work, &from, to)
     }
 }
 
@@ -282,6 +282,7 @@ fn a_large_file_is_written_as_it_streams_not_held_in_memory() {
     let to = host.path().join("big.bin");
     c.copy_out(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore("/work/big.bin").unwrap(),
         &to,
     )
@@ -306,6 +307,7 @@ fn a_failure_hides_the_box_stderr() {
     let host = tempfile::tempdir().unwrap();
     let got = c.copy_out(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore("/work/a.txt").unwrap(),
         &host.path().join("a.txt"),
     );
@@ -345,7 +347,9 @@ fn a_source_with_a_trailing_slash_copies_as_its_last_component() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("a.txt"), "a").unwrap();
     let from = BoxPath::restore(&format!("{}/", dir.display())).unwrap();
-    lab.cb.copy_out(&handle(), &from, &lab.host()).unwrap();
+    lab.cb
+        .copy_out(&handle(), Place::Work, &from, &lab.host())
+        .unwrap();
     assert_eq!(
         fs::read_to_string(lab.host().join("out/a.txt")).unwrap(),
         "a"
@@ -410,6 +414,7 @@ fn copy_archive(from: &str, bytes: Vec<u8>, host: &Path) -> Result<(), DriverErr
     p.on(Tool::Ssh, &[], Reply::Bytes(bytes));
     c.copy_out(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore(from).unwrap(),
         host,
     )
@@ -474,6 +479,7 @@ fn a_box_without_tar_is_unsupported() {
     let host = tempfile::tempdir().unwrap();
     let got = c.copy_out(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore("/work/a.txt").unwrap(),
         &host.path().join("a.txt"),
     );

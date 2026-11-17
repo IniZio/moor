@@ -5,7 +5,7 @@ use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::Driver;
+use moor_core::seam::driver::{Driver, Place};
 
 use super::super::{Deps, Keepers, KeptProxy};
 use super::World;
@@ -63,7 +63,13 @@ fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it(
         .unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     w.driver
-        .put_file(&w.handle(), &environ, b"HOME=/home/box\0", 0o400)
+        .put_file(
+            &w.handle(),
+            Place::Agent,
+            &environ,
+            b"HOME=/home/box\0",
+            0o400,
+        )
         .unwrap();
     let host = kept_proxy(&w);
     let spec = ProxySpec {
@@ -106,7 +112,13 @@ fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
     let w = World::new([]);
     let environ = moor_core::BoxPath::restore("/proc/self/environ").unwrap();
     w.driver
-        .put_file(&w.handle(), &environ, b"HOME=/home/box\0", 0o400)
+        .put_file(
+            &w.handle(),
+            Place::Agent,
+            &environ,
+            b"HOME=/home/box\0",
+            0o400,
+        )
         .unwrap();
     let socket = w.socket();
     drop(UnixListener::bind(&socket).unwrap());

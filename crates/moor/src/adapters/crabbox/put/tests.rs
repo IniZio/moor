@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{Driver, DriverError};
+use moor_core::seam::driver::{Driver, DriverError, Place};
 use moor_core::seam::proc::Tool;
 
 use crate::adapters::crabbox::Crabbox;
@@ -14,6 +14,7 @@ const SECRET: &[u8] = b"token-123 it's $(x)\n";
 fn put(p: &Arc<ScriptedProc>, path: &str) -> Result<(), DriverError> {
     Crabbox::fake(p.clone()).put_file(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore(path).unwrap(),
         SECRET,
         0o600,
@@ -185,6 +186,7 @@ fn slept_during_put(p: &Arc<ScriptedProc>) -> (Result<(), DriverError>, Duration
     driver.version_ok.set(()).unwrap();
     let put = driver.put_file(
         &BoxHandle::new("p/box"),
+        Place::Work,
         &BoxPath::restore("/h/f").unwrap(),
         SECRET,
         0o600,

@@ -1,5 +1,6 @@
 //! Tests for the composition root.
 
+use moor_core::seam::driver::Place;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -94,7 +95,7 @@ fn wired_drivers_share_one_short_control_socket_for_a_deep_state_dir() {
     for _ in 0..2 {
         let cx = build(&env).unwrap();
         assert_eq!(cx.take_warnings(), []);
-        cx.driver().peek_file(&handle, &path).unwrap();
+        cx.driver().peek_file(&handle, Place::Work, &path).unwrap();
     }
     let log = std::fs::read_to_string(dir.path().join("ssh.log")).unwrap();
     let sockets: Vec<&str> = log
@@ -145,7 +146,7 @@ fn freshly_wired_drivers_share_one_answer_to_crabbox_ssh_help() {
         build(&env)
             .unwrap()
             .driver()
-            .peek_file(&handle, &path)
+            .peek_file(&handle, Place::Work, &path)
             .unwrap();
     }
     let asked = std::fs::read_to_string(&helps).map_or(0, |s| s.lines().count());

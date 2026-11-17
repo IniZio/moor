@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_client::link::lease::{Answer, Boot, Verb};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use tempfile::TempDir;
 
@@ -159,7 +159,7 @@ impl Rig {
     fn run(&self, script: &str) -> String {
         let steps = [BoxStep::Run(script.to_owned())];
         let deadline = Deadline(Duration::from_secs(20));
-        let done = self.cb.batch(&handle(), &[], &steps, deadline);
+        let done = self.cb.batch(&handle(), &[], Place::Work, &steps, deadline);
         let done = done.into_iter().next();
         let exited_0 = matches!(
             &done,

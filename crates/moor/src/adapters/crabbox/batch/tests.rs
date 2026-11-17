@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::{script, stdin_bytes};
@@ -48,6 +48,7 @@ fn batch(p: &Arc<ScriptedProc>, connect: &[String], steps: &[BoxStep]) -> Result
     Crabbox::fake(p.clone()).batch(
         &BoxHandle::new("p/box"),
         connect,
+        Place::Work,
         steps,
         Deadline(Duration::from_secs(60)),
     )

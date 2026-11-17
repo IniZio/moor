@@ -14,7 +14,7 @@ use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::cache::{CacheLayers, CachePlan, CacheSalt};
 use moor_core::config::parse_repo;
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Released, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Place, Released, SleepOutcome};
 use moor_core::user::UserId;
 
 use super::PoolHosts;
@@ -163,7 +163,7 @@ fn acquire_warms_up_lets_the_key_in_and_builds_its_own_words() {
     assert!(!key.contains("PRIVATE"), "only the public key leaves");
     assert_eq!(asked[1].1.as_deref(), Some("moor-1a2b3c4d-9101"));
 
-    let words = cb.connect_argv(&handle()).unwrap().join(" ");
+    let words = cb.connect_argv(&handle(), Place::Work).unwrap().join(" ");
     for want in [
         "IdentitiesOnly=yes",
         "StrictHostKeyChecking=yes",
@@ -230,7 +230,7 @@ fn every_later_op_reaches_the_machine_its_handle_names() {
     let on_seven = BoxHandle::new("external@hv/7/moor-1a2b3c4d-9101");
     cb.sleep(&on_seven).unwrap();
     cb.release(&on_seven).unwrap();
-    cb.connect_argv(&on_seven).unwrap();
+    cb.connect_argv(&on_seven, Place::Work).unwrap();
     assert_eq!(*host.machines.lock().unwrap(), [7, 7, 7]);
 }
 

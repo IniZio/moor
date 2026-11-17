@@ -141,7 +141,10 @@ impl FakeDriver {
         run: i64,
         spec: &ExecSpec,
     ) -> Result<Launched, DriverError> {
-        self.st().runs.launches.push((h.clone(), spec.clone()));
+        let mut s = self.st();
+        s.placed.push(("launch_run", spec.place));
+        s.runs.launches.push((h.clone(), spec.clone()));
+        drop(s);
         let b = self.local(format!("launch_run {} {run}", h.as_str()))?;
         let fail = self.st().runs.fail_launch.take();
         if let Some(e) = fail {

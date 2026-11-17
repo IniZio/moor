@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{Driver, DriverError};
+use moor_core::seam::driver::{Driver, DriverError, Place};
 use moor_core::seam::proc::Tool;
 
 use crate::adapters::crabbox::Crabbox;
@@ -10,7 +10,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 const SSH_LINE: &str = "ssh -i '/k/id' -o 'StrictHostKeyChecking=yes' -p '22' 'u@10.0.0.1'\n";
 
 fn connect(p: &Arc<ScriptedProc>) -> Result<Vec<String>, DriverError> {
-    Crabbox::fake(p.clone()).connect_argv(&BoxHandle::new("p/box"))
+    Crabbox::fake(p.clone()).connect_argv(&BoxHandle::new("p/box"), Place::Work)
 }
 
 #[test]

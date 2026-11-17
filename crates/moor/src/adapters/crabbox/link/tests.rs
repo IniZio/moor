@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{BoxStep, Driver, DriverError};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, Place};
 use moor_core::seam::proc::{Deadline, Tool};
 use tempfile::TempDir;
 
@@ -205,7 +205,7 @@ impl Lab {
 
     fn read(&self, name: &str) -> Result<Option<String>, DriverError> {
         let path = BoxPath::under("/work", &format!(".moor/{name}")).unwrap();
-        self.driver().peek_file(&handle(), &path)
+        self.driver().peek_file(&handle(), Place::Work, &path)
     }
 
     fn stream(&self) -> Result<(), DriverError> {
@@ -221,7 +221,9 @@ impl Lab {
     fn batch(&self) -> Result<(), DriverError> {
         let steps = [BoxStep::Run("true".to_owned())];
         let deadline = Deadline(Duration::from_secs(5));
-        let done = self.driver().batch(&handle(), &[], &steps, deadline);
+        let done = self
+            .driver()
+            .batch(&handle(), &[], Place::Work, &steps, deadline);
         done.into_iter().next().unwrap().map(drop)
     }
 
@@ -279,6 +281,7 @@ fn every_short_call_shares_the_connection() {
     lab.probe_tick().unwrap();
     let put = lab.driver().put_file(
         &handle(),
+        Place::Work,
         &BoxPath::restore("/work/f").unwrap(),
         b"x",
         0o600,
@@ -409,7 +412,7 @@ fn two_state_dirs_never_share_a_master() {
     lab.probe_tick().unwrap();
     let other = lab.driver_in(lab.state.with_file_name("other"));
     let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
-    other.peek_file(&handle(), &path).unwrap();
+    other.peek_file(&handle(), Place::Work, &path).unwrap();
     assert_eq!(lab.connects(), 2, "one master per state dir");
 }
 
@@ -424,7 +427,7 @@ fn assert_unshared(lab: &Lab, driver: &Crabbox) {
     );
     let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
     for _ in 0..2 {
-        let read = driver.peek_file(&handle(), &path);
+        let read = driver.peek_file(&handle(), Place::Work, &path);
         assert_eq!(read.unwrap().as_deref(), Some(HOOK));
     }
     assert_eq!(lab.connects(), 2, "one connection per call");
