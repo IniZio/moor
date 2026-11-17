@@ -20,6 +20,8 @@ pub(crate) struct Link {
     pub(crate) open: mpsc::Sender<Asked>,
     /// The Boxes listening now, across links.
     pub(crate) boxes: Arc<Boxes>,
+    /// The Boxes the machine provides, when it does.
+    pub(crate) host: Option<crate::Host>,
 }
 
 /// The Boxes with a listen up, at most the machine's slots of them.

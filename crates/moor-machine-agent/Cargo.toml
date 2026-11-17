@@ -20,7 +20,13 @@ clap = { version = "4", features = ["derive", "env"] }
 flate2 = "1"
 minisign-verify = "0.2"
 self-replace = "1"
-rustix = { version = "1", features = ["fs", "process", "system"] }
+rustix = { version = "1", features = [
+  "fs",
+  "process",
+  "pty",
+  "system",
+  "termios",
+] }
 semver = "1"
 sha2 = "0.10"
 tar = "0.4"
@@ -45,6 +51,9 @@ tokio = { version = "1", features = [
   "signal",
   "sync",
 ] }
+
+[features]
+fake-boxes = []
 
 [dev-dependencies]
 minisign = "0.7"

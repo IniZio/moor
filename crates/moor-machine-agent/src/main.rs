@@ -11,7 +11,9 @@ use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::service::Manager;
 use moor_machine_agent::up::{self, down, Runtime, Up};
-use moor_machine_agent::{run_with, state_dir, until_stopped, update, Ended, Machine, Pool};
+use moor_machine_agent::{
+    run_hosting, state_dir, until_stopped, update, Ended, Host, Machine, Pool,
+};
 
 /// Command line.
 #[derive(Parser)]
@@ -41,6 +43,10 @@ enum Command {
         /// Run `exec` scripts the server sends; without it they are refused.
         #[arg(long, conflicts_with = "runtime")]
         allow_exec: bool,
+        /// Provide Boxes of this kind and expose only Boxes; this build has `fake` for tests when
+        /// built with the `fake-boxes` feature, and no other yet.
+        #[arg(long, value_name = "KIND", conflicts_with_all = ["runtime", "allow_exec"])]
+        boxes: Option<String>,
         /// When the server needs another release, install it and restart in place.
         #[arg(long)]
         auto_update: bool,
@@ -184,8 +190,9 @@ fn main() -> ExitCode {
             pool,
             cache_gb,
             allow_exec,
+            boxes,
             auto_update,
-        } => run_here(pool, cache_gb, allow_exec, auto_update),
+        } => run_here(pool, cache_gb, (allow_exec, boxes), auto_update),
         Command::Update { version } => return update_here(&version),
         Command::Lease {
             verb,
@@ -215,7 +222,7 @@ fn main() -> ExitCode {
 fn run_here(
     pool: PoolFlags,
     cache_gb: Option<u32>,
-    allow_exec: bool,
+    (allow_exec, boxes): (bool, Option<String>),
     auto_update: bool,
 ) -> Result<(), String> {
     let machine = Machine {
@@ -223,10 +230,14 @@ fn run_here(
         allow_exec,
         ..Machine::from_env()
     };
+    let host = boxes
+        .map(|kind| Host::named(&kind, &machine.home))
+        .transpose()?;
     let rt = runtime()?;
-    let ended = rt.block_on(until_stopped(run_with(
+    let ended = rt.block_on(until_stopped(run_hosting(
         &state_dir(),
         machine,
+        host,
         auto_update,
         &|line| say(line),
     )));

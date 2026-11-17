@@ -6,6 +6,7 @@ use moor_client::link::ops;
 use moor_client::link::{self, Opened, Report};
 
 use super::Pool;
+use crate::Host;
 
 /// The host's total memory from `/proc/meminfo`; none off Linux.
 pub(super) fn host_mem_mib() -> Option<u64> {
@@ -53,12 +54,13 @@ fn avg10(psi: &str, line: &str) -> Option<f64> {
 }
 
 /// Sends a [`report`] of `proc` on `stream` now and every [`link::REPORT_EVERY`] until it closes,
-/// with the memory `pool`'s leases hold when its provider says.
+/// with the memory `pool`'s leases hold when its provider says, and the health of the Boxes
+/// `host` provides.
 pub(crate) async fn send_reports<W>(
     mut stream: W,
     proc: &Path,
     home: Option<&Path>,
-    pool: Option<&Pool>,
+    (pool, host): (Option<&Pool>, Option<&Host>),
 ) where
     W: tokio::io::AsyncWrite + Unpin + Send,
 {
@@ -74,6 +76,9 @@ pub(crate) async fn send_reports<W>(
             report.boxes = super::box_memory(home, pool).await.unwrap_or_default();
         }
         first = false;
+        if let Some(host) = host {
+            report.box_health = health(host).await;
+        }
         if ops::write_line(&mut stream, &Opened::Report { report })
             .await
             .is_err()
@@ -81,6 +86,15 @@ pub(crate) async fn send_reports<W>(
             return;
         }
     }
+}
+
+/// Each Box `host` provides, as the report carries it.
+async fn health(host: &Host) -> Vec<serde_json::Value> {
+    let reports = host.reports().await;
+    reports
+        .iter()
+        .filter_map(|r| serde_json::to_value(r).ok())
+        .collect()
 }
 
 /// The `key` line of a `/proc/meminfo` text, in MiB.
