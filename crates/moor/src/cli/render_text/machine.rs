@@ -43,29 +43,12 @@ pub(super) fn status_text(value: &Value) -> Option<String> {
         None => writeln!(out, "disk:    unknown"),
     }
     .ok()?;
-    if let Some(pool) = value.get("pool").filter(|p| !p.is_null()) {
-        pool_text(pool, &mut out)?;
-    }
     let recent = value.get("recent")?.as_array()?;
     let _ = writeln!(out, "recent:  {} ops", recent.len());
     for op in recent.iter().rev() {
         op_line(op, &mut out)?;
     }
     Some(out)
-}
-
-/// The provider, crabbox version and leases of a pool host.
-fn pool_text(pool: &Value, out: &mut String) -> Option<()> {
-    let _ = writeln!(out, "pool:    {}", pool.get("provider")?.as_str()?);
-    let _ = writeln!(out, "crabbox: {}", pool.get("crabbox")?.as_str()?);
-    if let Some(e) = pool.get("error").and_then(Value::as_str) {
-        let _ = writeln!(out, "leases:  not listed: {e}");
-    }
-    for lease in pool.get("leases")?.as_array()? {
-        let slug = lease.get("slug")?.as_str()?;
-        let _ = writeln!(out, "lease:   {slug} {}", lease.get("state")?.as_str()?);
-    }
-    Some(())
 }
 
 /// `time op target ok|error`, indented under the recent heading.

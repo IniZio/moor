@@ -4,17 +4,7 @@
 # build next month produce the same tools.
 
 ARG RUST_IMAGE=rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
-ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9
 ARG NODE_IMAGE=node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
-
-# The -moor line of crabbox: moor refuses any other build. The tag names the crabbox version
-# the commit was released as.
-ARG CRABBOX_REPO=https://github.com/IniZio/crabbox.git
-ARG CRABBOX_COMMIT=ee5e5205c9d95f54f7420bed587bc88b91efeeb4
-ARG CRABBOX_VERSION=0.79.1-moor.17
-
-ARG AGENT37_REPO=https://github.com/IniZio/crabbox-agent37.git
-ARG AGENT37_COMMIT=507f3ce84580ee014a24b8f166101cda56f4f376
 
 ARG CLAUDE_CODE_VERSION=2.1.312
 
@@ -22,41 +12,17 @@ ARG CLAUDE_CODE_VERSION=2.1.312
 ARG CARGO_CHEF_VERSION=0.1.78
 
 
-# The -moor crabbox build, from a pinned commit.
-FROM ${GO_IMAGE} AS crabbox
-ARG CRABBOX_REPO CRABBOX_COMMIT CRABBOX_VERSION
-ENV GOTOOLCHAIN=local CGO_ENABLED=0
-RUN git init -q /src \
- && git -C /src fetch -q --depth 1 "$CRABBOX_REPO" "$CRABBOX_COMMIT" \
- && git -C /src checkout -q FETCH_HEAD
-WORKDIR /src
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath \
-      -ldflags "-s -w -X github.com/openclaw/crabbox/internal/cli.version=${CRABBOX_VERSION}" \
-      -o /out/crabbox ./cmd/crabbox
-
-
-# moor's own binaries and the agent37 provider.
+# moor's own binaries.
 FROM ${RUST_IMAGE} AS rust
-ARG AGENT37_REPO AGENT37_COMMIT
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git musl-tools pkg-config \
  && rm -rf /var/lib/apt/lists/* \
  && rustup target add "$(uname -m)-unknown-linux-musl"
 
-RUN git init -q /agent37 \
- && git -C /agent37 fetch -q --depth 1 "$AGENT37_REPO" "$AGENT37_COMMIT" \
- && git -C /agent37 checkout -q FETCH_HEAD
-
 ARG CARGO_CHEF_VERSION
 RUN cargo install --locked "cargo-chef@${CARGO_CHEF_VERSION}"
 
 ENV CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/build/target
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/agent37-target \
-    cd /agent37 && CARGO_TARGET_DIR=/agent37-target cargo build --release --locked \
- && install -D /agent37-target/release/crabbox-agent37 /out/crabbox-agent37
-
 WORKDIR /build
 
 
@@ -108,8 +74,6 @@ RUN apt-get update \
  && install -d -o 10001 -g 10001 -m 0700 /var/lib/moor \
  && install -d -m 0755 /etc/moor
 
-COPY --from=crabbox /out/crabbox /usr/local/bin/
-COPY --from=rust /out/crabbox-agent37 /usr/local/bin/
 COPY --from=build /out/ /usr/local/bin/
 
 ENV HOME=/var/lib/moor \

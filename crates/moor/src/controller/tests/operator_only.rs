@@ -20,8 +20,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
-        | "machine-list" | "machine-keys" | "node-list" | "provider-ready" | "webhook-list"
-        | "close-failed" | "workflow-list" | "workflow-runs" => {
+        | "machine-list" | "machine-keys" | "node-list" | "webhook-list" | "close-failed"
+        | "workflow-list" | "workflow-runs" => {
             json!({"cmd": kind})
         }
         "repo-config-get" => json!({"cmd": kind, "repo": "o/n"}),

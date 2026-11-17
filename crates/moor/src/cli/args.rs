@@ -65,16 +65,6 @@ pub(super) enum Action {
         /// The Postgres URL to copy into.
         to: String,
     },
-    /// Hidden `link-dial --runner <addr> <machine-id> <slug>`: bridge stdio to a pool lease's
-    /// sshd.
-    LinkDial {
-        /// The runner that holds the pool host's link.
-        runner: String,
-        /// The pool host's machine id.
-        machine_id: i64,
-        /// The lease.
-        slug: String,
-    },
     /// Hidden `box-term --runner <addr> <machine-id> <slug> --place <place> -- <script>`: run a
     /// script in one place of a machine's Box on this terminal.
     BoxTerm(super::BoxTerm),

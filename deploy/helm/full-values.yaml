@@ -1,11 +1,6 @@
 # Layered on required-values.yaml: every optional block on, so each template branch renders.
 image:
   tag: "1.2.3"
-crabbox:
-  config:
-    external:
-      command: /usr/local/bin/crabbox-agent37
-  sshKey: example-ssh-key
 database:
   url: postgres://example:example@db.example.com:5432/moor
   readers: 8
@@ -15,8 +10,6 @@ controller:
     cloud: {runtime: external, max_boxes: 1}
     spare: {runtime: external, max_boxes: 2}
   defaultNode: cloud
-  drivers:
-    external: {strip_env: [EXAMPLE]}
   resources: {limits: {memory: 2Gi}}
   extraEnv:
     - {name: EXAMPLE, value: "1"}

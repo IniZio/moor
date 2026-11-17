@@ -525,24 +525,21 @@ fn machine_ls_shows_each_machines_link_and_version() {
 }
 
 #[test]
-fn machine_status_lists_fields_leases_and_recent_ops_newest_first() {
+fn machine_status_lists_fields_and_recent_ops_newest_first() {
     let v = json!({
         "version": "1.2.3", "protocol": 2, "os": "linux", "arch": "x86_64",
         "free_disk_gb": 40,
-        "pool": {"provider": "cloudhypervisor", "crabbox": "crabbox 0.9",
-                 "leases": [{"slug": "moor-7", "state": "running"}]},
         "recent": [
-            {"op": "lease", "target": "moor-7", "at": 0},
-            {"op": "dial", "target": "moor-7", "error": "no vm", "at": 60},
+            {"op": "exec", "target": "7", "at": 0},
+            {"op": "sync", "target": "7", "error": "no space", "at": 60},
         ],
     });
     let (out, _) = render(&Response::ok("machine-status", Some(v)), false);
     assert_eq!(
         out,
         "version: 1.2.3 (protocol 2)\nos:      linux x86_64\ndisk:    40 GB free\n\
-         pool:    cloudhypervisor\ncrabbox: crabbox 0.9\nlease:   moor-7 running\n\
-         recent:  2 ops\n  1970-01-01T00:01:00Z dial moor-7 error: no vm\n  \
-         1970-01-01T00:00:00Z lease moor-7 ok\n"
+         recent:  2 ops\n  1970-01-01T00:01:00Z sync 7 error: no space\n  \
+         1970-01-01T00:00:00Z exec 7 ok\n"
     );
 }
 

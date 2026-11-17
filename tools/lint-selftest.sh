@@ -97,12 +97,6 @@ MD
 removed_names removed-names-flag-root-md fail NOTES.md <<'MD'
 moor run demo --trust-moor-yaml
 MD
-removed_names removed-names-flag-crabbox-adapter pass crates/moor/src/adapters/crabbox/exec.rs <<'RS'
-fn f(c: &mut Command) { c.arg("--no-sync"); }
-RS
-removed_names removed-names-flag-other-crabbox-dir fail crates/moor/src/ops/crabbox/run.rs <<'RS'
-fn f(c: &mut Command) { c.arg("--no-sync"); }
-RS
 
 exec_env exec-env-shorthand fail <<'RS'
 fn f(env: Vec<(String, String)>) {

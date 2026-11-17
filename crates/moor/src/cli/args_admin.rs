@@ -18,10 +18,6 @@ pub(super) enum AdminCmd {
     /// State store commands.
     #[command(subcommand)]
     Store(StoreCmd),
-    /// Bridge stdin/stdout to a pool lease's sshd over its host's link, as an ssh
-    /// `ProxyCommand`.
-    #[command(hide = true)]
-    LinkDial(LinkDialArgs),
     /// Open a terminal in one place of a Box that a machine provides, through its runner's links
     /// broker, as the argv a pane runs.
     #[command(hide = true)]
@@ -77,18 +73,6 @@ pub(super) struct ControllerAttachArgs {
     socket: Option<PathBuf>,
 }
 
-/// Arguments of `link-dial`.
-#[derive(Debug, Args)]
-pub(super) struct LinkDialArgs {
-    /// The runner that holds the pool host's link: its socket path, or `host:port`.
-    #[arg(long, value_name = "ADDR")]
-    runner: String,
-    /// The pool host's machine id.
-    machine_id: i64,
-    /// The lease, `moor-<controller>-<id>`.
-    slug: String,
-}
-
 /// Arguments of `box-term`.
 #[derive(Debug, Args)]
 pub(super) struct BoxTermArgs {
@@ -136,11 +120,6 @@ impl AdminCmd {
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
             Self::Store(StoreCmd::Migrate) => Action::StoreMigrate,
             Self::Store(StoreCmd::Copy(a)) => Action::StoreCopy { to: a.to },
-            Self::LinkDial(a) => Action::LinkDial {
-                runner: a.runner,
-                machine_id: a.machine_id,
-                slug: a.slug,
-            },
             Self::BoxTerm(a) => Action::BoxTerm(super::BoxTerm {
                 runner: a.runner,
                 machine_id: a.machine_id,

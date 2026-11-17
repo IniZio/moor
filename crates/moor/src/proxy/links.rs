@@ -1,5 +1,5 @@
 //! The controller reaches its users' machines through the machine runner that holds each
-//! one's link, as its link row names it, and dials a pool lease's VM with `moor link-dial`.
+//! one's link, as its link row names it.
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -7,10 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_client::link::broker;
-use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_client::link::reach::{self, Runner, Service, StdConn};
 use moor_client::link::status::Status;
-use moor_core::boxscript::quote;
 use moor_core::seam::clock::Clock;
 
 use crate::runner_dir;
@@ -27,15 +25,7 @@ pub(crate) struct Runners {
     clock: Arc<dyn Clock>,
     /// The machine service key a runner across the network checks.
     key: Option<String>,
-    /// This moor binary, which `link-dial` runs as.
-    moor: PathBuf,
-    /// How long a host has to answer a list of its leases.
-    list_within: Duration,
 }
-
-/// How long a host has to answer a list. Its agent gives `crabbox list` two minutes; past this
-/// the list fails, so the host is asked again on a later pass rather than never.
-const LIST_WITHIN: Duration = Duration::from_mins(3);
 
 impl Runners {
     /// The runners of the controller under `state_dir`, routed by the links `store` records and
@@ -51,8 +41,6 @@ impl Runners {
             store,
             clock,
             key: key.map(str::to_owned),
-            moor: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moor")),
-            list_within: LIST_WITHIN,
         }
     }
 
@@ -76,43 +64,6 @@ impl Runners {
         Runner::at(&self.addr(machine_id)?, self.key.as_deref())
     }
 
-    /// Asks machine `machine_id`'s agent to run `verb` on lease `slug`, installing `key` for
-    /// an authorize and booting with `boot` on a warmup.
-    ///
-    /// # Errors
-    /// The broker or the agent's failure.
-    pub(crate) fn lease(
-        &self,
-        machine_id: i64,
-        verb: Verb,
-        slug: Option<&str>,
-        key: Option<&str>,
-        boot: &Boot,
-    ) -> Result<Answer, String> {
-        let runner = self.runner(machine_id)?;
-        match (verb, slug, key) {
-            (Verb::Authorize, Some(slug), Some(key)) => {
-                blocking(broker::authorize(&runner, machine_id, slug, key))
-            }
-            (Verb::Authorize, ..) => Err("an authorize needs a lease and a key".to_owned()),
-            (Verb::List, ..) => {
-                let within = self.list_within;
-                blocking(async move {
-                    let listed = broker::lease(&runner, machine_id, verb, None, Boot::default());
-                    tokio::time::timeout(within, listed)
-                        .await
-                        .unwrap_or_else(|_| {
-                            Err(format!(
-                                "machine {machine_id} did not answer a list within {}s",
-                                within.as_secs()
-                            ))
-                        })
-                })
-            }
-            _ => blocking(broker::lease(&runner, machine_id, verb, slug, boot.clone())),
-        }
-    }
-
     /// Machine `machine_id`'s agent status.
     ///
     /// # Errors
@@ -121,66 +72,6 @@ impl Runners {
         let runner = self.runner(machine_id)?;
         blocking(broker::status(&runner, machine_id))
     }
-
-    /// The ssh `ProxyCommand` that reaches lease `slug`'s VM on machine `machine_id` through
-    /// the runner that holds its link now; ssh hands it the key from its environment.
-    ///
-    /// # Errors
-    /// No runner holds the machine's link.
-    pub(crate) fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String> {
-        let addr = self.addr(machine_id)?;
-        Ok(format!(
-            "{} link-dial --runner {} {machine_id} {slug}",
-            word(&self.moor.to_string_lossy()),
-            word(&addr)
-        ))
-    }
-}
-
-/// A blocking stream to the sshd of lease `slug` on machine `machine_id` through `runner`,
-/// found within `timeout_secs` when given.
-///
-/// # Errors
-/// The broker or the agent's failure.
-pub(crate) fn dial(
-    runner: &Runner,
-    machine_id: i64,
-    slug: &str,
-    timeout_secs: Option<u64>,
-) -> Result<StdConn, String> {
-    blocking(async {
-        let conn = broker::dial(runner, machine_id, slug, timeout_secs).await?;
-        reach::into_blocking(conn).map_err(|e| e.to_string())
-    })
-}
-
-/// A blocking stream to port `port` of lease `slug`'s VM on machine `machine_id` through `runner`.
-///
-/// # Errors
-/// The broker or the agent's failure.
-pub(crate) fn port(
-    runner: &Runner,
-    machine_id: i64,
-    slug: &str,
-    port: u16,
-) -> Result<StdConn, String> {
-    blocking(async {
-        let conn = broker::port(runner, machine_id, slug, port).await?;
-        reach::into_blocking(conn).map_err(|e| e.to_string())
-    })
-}
-
-/// Whether anything listens on port `port` of lease `slug`'s VM on machine `machine_id`.
-///
-/// # Errors
-/// The broker or the agent's failure.
-pub(crate) fn listens(
-    runner: &Runner,
-    machine_id: i64,
-    slug: &str,
-    port: u16,
-) -> Result<bool, String> {
-    blocking(broker::listens(runner, machine_id, slug, port))
 }
 
 /// A blocking connection to `runner` for `service`, its hello sent, given up after `within`.
@@ -214,11 +105,6 @@ fn blocking<T: Send>(call: impl Future<Output = Result<T, String>> + Send) -> Re
         .join()
         .unwrap_or_else(|_| Err("the links broker call panicked".to_owned()))
     })
-}
-
-/// `s` as one shell word that ssh's `ProxyCommand` token expansion leaves alone.
-fn word(s: &str) -> String {
-    quote(s).replace('%', "%%")
 }
 
 #[cfg(test)]

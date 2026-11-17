@@ -328,15 +328,6 @@ impl Running {
             self.serve_until(&wake, &Arc::new(Drain::default()), &sink);
         });
     }
-
-    /// Serves on a thread until a byte is written to the returned socket, then drains; the
-    /// thread ends when the controller would exit.
-    fn serve_until_signalled(self, sink: Sink) -> (UnixStream, std::thread::JoinHandle<()>) {
-        let (wake, signal) = UnixStream::pair().expect("wake pair");
-        let serving =
-            std::thread::spawn(move || self.serve_until(&wake, &Arc::new(Drain::default()), &sink));
-        (signal, serving)
-    }
 }
 
 /// Serves one connection on the listener `on`.

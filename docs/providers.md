@@ -30,21 +30,3 @@ contract.
 docker info
 moor doctor
 ```
-
-## crabbox (being removed)
-
-moor used to get each Box's VM from crabbox and a crabbox provider. That path
-is being removed, and a machine that offers Docker Boxes replaces it. A shared
-node in the controller's user config still names a crabbox provider until the
-removal lands:
-
-```yaml
-nodes:
-  ci:
-    runtime: external
-    max_boxes: 5
-```
-
-[Configuration](config.md#nodes) has every node key. This page no longer
-explains how to set a crabbox provider up. Move that host to Docker instead:
-install Docker, then pair its agent with `up`.

@@ -30,12 +30,6 @@ pub(crate) fn settle(store: &Store, vault: &Vault, state_dir: &Path) -> Result<(
     install_ssh(&pool, &bundle)
 }
 
-/// An ssh key in `state_dir`'s pool dir, for a test driver with no store.
-#[cfg(test)]
-pub(crate) fn scratch_ssh_key(state_dir: &Path) {
-    import_ssh(&pool_dir(state_dir)).expect("a scratch ssh key");
-}
-
 /// The value under `label`, opened; `import` supplies one only when none is kept.
 fn resolve(
     store: &Store,

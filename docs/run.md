@@ -61,10 +61,6 @@ If a line warns that the controller stops when you log out, run
 To skip the prompts in step 4, set `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN`
 before you run `moor up`.
 
-If `moor up` says the user config still has the node `local`, an earlier
-release wrote it for crabbox. Delete `nodes.local` from
-`~/.config/moor/config.yaml` and rerun.
-
 ## 3. Check the node
 
 ```sh

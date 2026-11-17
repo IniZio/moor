@@ -55,9 +55,6 @@ data:
         host: machine.moor.internal
         upstream: 127.0.0.1:7700
     {{- end }}
-    {{- with .Values.controller.drivers }}
-    drivers: {{- toYaml . | nindent 6 }}
-    {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

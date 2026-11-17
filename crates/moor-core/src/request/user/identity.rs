@@ -35,7 +35,6 @@ impl Request {
             | Self::NodeList(AsReq { identity })
             | Self::NodeSettingsGet(NodeSettingsGetReq { identity, .. })
             | Self::NodeSettingsSet(NodeSettingsSetReq { identity, .. })
-            | Self::ProviderReady(AsReq { identity })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::MachineStatus(MachineStatusReq { identity, .. })
             | Self::MachineEnroll(MachineEnrollReq { identity, .. })

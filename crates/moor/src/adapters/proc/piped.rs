@@ -20,7 +20,6 @@ impl SystemProc {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(ProcError::Spawn)?;
-        self.trace.started(spec);
         pump(child, preamble, pipes).map_err(ProcError::Spawn)
     }
 }

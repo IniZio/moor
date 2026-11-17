@@ -43,13 +43,11 @@ fn only_base_env_and_extra_reach_child() {
 }
 
 #[test]
-fn only_crabbox_gets_container_env() {
+fn children_get_no_container_or_token_env() {
     let dir = TempDir::new().unwrap();
     let body = r#"echo "$CRABBOX_FOO|$DOCKER_HOST|$GH_TOKEN|$GITHUB_TOKEN|$ANTHROPIC_API_KEY|$CLAUDE_CODE_OAUTH_TOKEN""#;
-    let crabbox = script(dir.path(), "crabbox", body);
     let git = script(dir.path(), "git", body);
     let p = proc_with(vec![
-        ("MOOR_CRABBOX_BIN", crabbox),
         ("MOOR_GIT_BIN", git),
         ("CRABBOX_FOO", "c".into()),
         ("DOCKER_HOST", "unix:///d.sock".into()),
@@ -58,8 +56,6 @@ fn only_crabbox_gets_container_env() {
         ("ANTHROPIC_API_KEY", "leak".into()),
         ("CLAUDE_CODE_OAUTH_TOKEN", "leak".into()),
     ]);
-    let crab = ProcSpec::new(Tool::Crabbox, Deadline(Duration::from_secs(5)));
-    assert_eq!(p.run(&crab).unwrap().stdout.trim(), "c|unix:///d.sock||||");
     assert_eq!(p.run(&spec(5)).unwrap().stdout.trim(), "|||||");
 }
 
@@ -246,21 +242,13 @@ fn alive_sees_own_pid_and_rejects_absent_ones() {
 }
 
 #[test]
-fn crabbox_grace_ignores_the_deadline() {
+fn the_grace_is_capped_by_the_deadline() {
     assert_eq!(
-        super::grace::grace_for(Tool::Crabbox, Duration::from_secs(1)),
-        Duration::from_secs(35)
-    );
-}
-
-#[test]
-fn other_tools_grace_is_capped_by_the_deadline() {
-    assert_eq!(
-        super::grace::grace_for(Tool::Ssh, Duration::from_secs(1)),
+        super::grace::grace_for(Duration::from_secs(1)),
         Duration::from_secs(1)
     );
     assert_eq!(
-        super::grace::grace_for(Tool::Ssh, Duration::from_secs(60)),
+        super::grace::grace_for(Duration::from_secs(60)),
         Duration::from_secs(2)
     );
 }

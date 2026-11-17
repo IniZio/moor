@@ -10,7 +10,6 @@ use moor_core::seam::rng::Rng;
 use zeroize::Zeroizing;
 
 use super::parts;
-use crate::adapters::sockets::socket_dir;
 use crate::env::Env;
 use crate::proxy::keeper::{Deps, KeptProxy, NoProxyHost, KEEPERS};
 use crate::proxy::links::Runners;
@@ -23,7 +22,7 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     let Some(store) = env.shared::<Store>() else {
         return Vec::new();
     };
-    let (parts, _) = match parts(env, socket_dir()) {
+    let parts = match parts(env) {
         Ok(parts) => parts,
         Err(e) => return vec![e.error.to_string()],
     };

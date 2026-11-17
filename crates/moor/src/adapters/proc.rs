@@ -25,7 +25,6 @@ use grace::{terminate, GRACE};
 use signal::{is_group_leader, send_group, signal_group, to_pid};
 use stdin::stdin_for;
 pub(crate) use stream::leave_signals_to_controller;
-use trace::Trace;
 
 /// Poll interval while waiting for a child.
 const POLL: Duration = Duration::from_millis(10);
@@ -38,8 +37,7 @@ const TAIL: usize = 2048;
 const DRAIN_GRACE: Duration = Duration::from_millis(500);
 
 /// Every tool, for program resolution at construction.
-const TOOLS: [Tool; 8] = [
-    Tool::Crabbox,
+const TOOLS: [Tool; 7] = [
     Tool::Herdr,
     Tool::Agent,
     Tool::Ssh,
@@ -52,8 +50,6 @@ const TOOLS: [Tool; 8] = [
 /// Program paths from config `tools.*`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ToolPaths {
-    /// Crabbox program.
-    pub crabbox: Option<PathBuf>,
     /// Herdr program.
     pub herdr: Option<PathBuf>,
     /// Agent engine program.
@@ -68,7 +64,6 @@ impl ToolPaths {
     /// Configured path for `tool`, if any.
     const fn get(&self, tool: Tool) -> Option<&PathBuf> {
         match tool {
-            Tool::Crabbox => self.crabbox.as_ref(),
             Tool::Herdr => self.herdr.as_ref(),
             Tool::Agent => self.claude.as_ref(),
             Tool::Ssh => self.ssh.as_ref(),
@@ -85,8 +80,6 @@ pub(crate) struct SystemProc {
     env: Snapshot,
     /// Resolved program per tool.
     programs: Vec<(Tool, OsString)>,
-    /// Opt-in per-call crabbox timing.
-    trace: Trace,
     /// The stop flag of the request; a streamed child stops once it is set.
     cancel: Cancel,
 }
@@ -98,7 +91,6 @@ impl SystemProc {
         Self {
             env: Snapshot::new(env),
             programs,
-            trace: Trace::new(env),
             cancel: env.cancel().clone(),
         }
     }
@@ -115,7 +107,7 @@ impl SystemProc {
     fn command(&self, spec: &ProcSpec) -> Command {
         let mut cmd = Command::new(self.program(spec.tool));
         cmd.args(&spec.args).env_clear().process_group(0);
-        self.env.apply(&mut cmd, spec.tool);
+        self.env.apply(&mut cmd);
         cmd.envs(spec.env.extra.iter().map(|(k, v)| (k, v)));
         if let Some(cwd) = &spec.cwd {
             cmd.current_dir(cwd);
@@ -256,7 +248,7 @@ impl SystemProc {
                 Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
             }
             if !watched || drx.try_recv().is_ok() {
-                terminate(pid, &rx, spec.tool, limit).map_err(ProcError::Spawn)?;
+                terminate(pid, &rx, limit).map_err(ProcError::Spawn)?;
                 wait_eof(&erx, etx);
                 hand_over();
                 return Err(ProcError::Timeout {
@@ -293,16 +285,14 @@ impl Proc for SystemProc {
     }
 
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
-        self.trace.timed(spec, || {
-            let (status, out, err) = self.exec(spec, None)?;
-            finish(status, &out, &err)
-        })
+        let (status, out, err) = self.exec(spec, None)?;
+        finish(status, &out, &err)
     }
 
     /// Stdout that hit the capture cap is [`ProcError::Spawn`] (an I/O error),
     /// never a truncated secret.
     fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
-        self.trace.timed(spec, || self.secret(spec))
+        self.secret(spec)
     }
 
     fn run_watched(
@@ -310,10 +300,8 @@ impl Proc for SystemProc {
         spec: &ProcSpec,
         line: &mut dyn FnMut(&str),
     ) -> Result<ProcOutput, ProcError> {
-        self.trace.timed(spec, || {
-            let (status, out, err) = self.exec(spec, Some(line))?;
-            finish(status, &out, &err)
-        })
+        let (status, out, err) = self.exec(spec, Some(line))?;
+        finish(status, &out, &err)
     }
 
     fn run_reading(
@@ -321,11 +309,11 @@ impl Proc for SystemProc {
         spec: &ProcSpec,
         read: &mut dyn FnMut(&mut dyn Read),
     ) -> Result<(), ProcError> {
-        self.trace.timed(spec, || self.reading(spec, read))
+        self.reading(spec, read)
     }
 
     fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
-        self.trace.timed(spec, || self.stream_forwarding(spec, out))
+        self.stream_forwarding(spec, out)
     }
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {
         let mut cmd = self.command(spec);
@@ -334,7 +322,6 @@ impl Proc for SystemProc {
             .stderr(Stdio::null());
         let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         thread::spawn(move || drop(child.wait()));
-        self.trace.started(spec);
         Ok(())
     }
 
@@ -344,11 +331,10 @@ impl Proc for SystemProc {
 
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
         self.spawn_long_lived(spec)
-            .inspect(|_| self.trace.started(spec))
     }
 
     fn spawn_daemon(&self, spec: &ProcSpec, log: &Path) -> Result<u32, ProcError> {
-        self.daemon(spec, log).inspect(|_| self.trace.started(spec))
+        self.daemon(spec, log)
     }
 
     fn signal_group(&self, pgid: u32, sig: GroupSignal) -> Result<(), ProcError> {
@@ -382,4 +368,3 @@ mod stdin;
 mod stream;
 #[cfg(test)]
 mod tests;
-mod trace;

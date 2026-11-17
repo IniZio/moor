@@ -198,7 +198,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::NodeList(_)
         | Request::NodeSettingsGet(_)
         | Request::NodeSettingsSet(_)
-        | Request::ProviderReady(_)
         | Request::MachineStatus(_)
         | Request::As(_)
         | Request::Version {} => None,

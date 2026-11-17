@@ -17,8 +17,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
-use super::lease;
-
 /// Longest request or answer line.
 const MAX_LINE: usize = 1 << 20;
 /// Bytes of output kept, from the end.
@@ -122,43 +120,6 @@ pub enum Op {
         /// Machine ports, at most [`crate::forward::MAX_PORTS`].
         ports: Vec<u16>,
     },
-    /// Act on a pool lease; only a pool host serves it.
-    Lease {
-        /// What to do.
-        verb: lease::Verb,
-        /// `moor-<controller>-<id>`; none for a list.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        slug: Option<String>,
-        /// The OpenSSH public key an authorize lets in; none for every other verb.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        key: Option<String>,
-        /// The cache volumes a warmup mounts; none for every other verb.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache: Option<lease::Cache>,
-        /// The machine class a warmup boots; none for every other verb.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        class: Option<String>,
-    },
-    /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
-    Dial {
-        /// `moor-<controller>-<id>`.
-        slug: String,
-        /// How long the caller waits for the VM's sshd; the agent's own limit when none.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        timeout_secs: Option<u64>,
-    },
-    /// Carry the stream to and from `port` on the loopback of a pool lease's VM, through a
-    /// tunnel the agent keeps; only a pool host serves it. With `probe` set it carries no bytes:
-    /// it answers whether anything listens there.
-    Port {
-        /// `moor-<controller>-<id>`.
-        slug: String,
-        /// The port in the VM.
-        port: u16,
-        /// Only ask whether anything listens.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        probe: bool,
-    },
     /// Remove the folders of every Box not in `keep`, after its `release` hook; a pool host
     /// instead stops the leases of Boxes not in `keep`.
     Sweep {
@@ -189,10 +150,8 @@ pub enum Op {
 pub enum Reply {
     /// The exec or hook ended.
     Ran(Ran),
-    /// The relay runs, or the dial or port reached the VM; its bytes follow on the stream.
+    /// The relay runs; its bytes follow on the stream.
     Started,
-    /// What a lease request came to.
-    Leased(lease::Answer),
     /// The machine has no such hook or relay.
     Missing,
     /// The pulled file's `bytes` follow on the stream.
@@ -200,10 +159,6 @@ pub enum Reply {
         /// Its length.
         bytes: u64,
     },
-    /// Something listens on the probed port of the VM.
-    Reachable,
-    /// Nothing listens on the probed port of the VM.
-    Unreachable,
     /// Every port of the listen is bound; the agent holds them until the stream closes.
     Listening,
     /// The agent's state.

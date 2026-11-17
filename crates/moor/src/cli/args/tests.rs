@@ -471,17 +471,6 @@ fn controller_attach_socket_is_optional() {
 }
 
 #[test]
-fn link_dial_takes_a_runner_a_machine_id_and_a_slug() {
-    assert!(matches!(
-        run(&["link-dial", "--runner", "10.0.0.7:7701", "12", "moor-7"]),
-        Ok((_, Action::LinkDial { runner, machine_id: 12, slug, }))
-            if slug == "moor-7" && runner == "10.0.0.7:7701"
-    ));
-    assert!(run(&["link-dial", "--runner", "/r.sock", "hv1", "moor-7"]).is_err());
-    assert!(run(&["link-dial", "12", "moor-7"]).is_err(), "no runner");
-}
-
-#[test]
 fn removed_verbs_are_errors() {
     assert!(run(&["pane", "x"]).is_err());
     assert!(run(&["reports", "x"]).is_err());

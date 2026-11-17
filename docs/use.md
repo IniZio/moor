@@ -85,9 +85,6 @@ registered redirect is `http://localhost:5177` works. Ctrl-C ends the forward.
 - Traffic in the last 10 minutes keeps the Box awake. An open forward with no
   traffic does not.
 - Only the Box's own user can forward. The Box must run on a node.
-- On a node whose crabbox-cloudhypervisor adapter is older than v0.2.2, a Box can
-  reach the host's loopback, so other Boxes there can reach a forward's tunnel.
-  Update the adapter to v0.2.2 or later on every node that serves forwards.
 
 ## Next
 

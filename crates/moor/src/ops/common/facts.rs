@@ -95,7 +95,7 @@ pub(crate) fn require_reverse_tunnel(
         ErrorKind::Refused,
         format!("provider {provider} lacks the reverse_tunnel capability the Box needs to reach the Proxy"),
     )
-    .with_hint("choose a provider with reverse tunnel support (for crabbox, one that offers the ssh feature)"))
+    .with_hint("choose a provider with reverse tunnel support"))
 }
 
 #[cfg(test)]

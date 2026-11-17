@@ -34,8 +34,8 @@ spec:
         runAsUser: {{ $uid }}
         runAsGroup: {{ $uid }}
         fsGroup: {{ $uid }}
-        # Always re-adds g+rwx to every file on each mount; crabbox refuses state its group can reach,
-        # so state is also mounted by subPath, below the group-writable volume root.
+        # Always re-adds g+rwx to every file on each mount, so state is also mounted by subPath,
+        # below the group-writable volume root.
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
@@ -76,10 +76,6 @@ spec:
             - |
               cp /src/config/controller.yaml /src/config/config.yaml /var/lib/moor/config/
               install -m 0600 /src/secrets/vault.key /var/lib/moor/config/vault.key
-              install -m 0600 /src/secrets/agent37-token /var/lib/moor/config/agent37.key
-              for f in crabbox.yaml box-ssh-key; do
-                if [ -e "/src/secrets/$f" ]; then install -m 0600 "/src/secrets/$f" "/var/lib/moor/config/$f"; fi
-              done
               {{- if .Values.egress.enabled }}
               install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /src/egress/ledger-ca.pem /var/lib/moor/config/
               {{- end }}
@@ -106,7 +102,6 @@ spec:
           securityContext: {{- include "moor.shimSecurity" . | nindent 12 }}
           # Every front reads /etc, so the vault key and provider keys live outside it.
           command: [moor, controller, serve, --config, /var/lib/moor/config/controller.yaml]
-          # crabbox trusts CRABBOX_CONFIG only outside its working dir, which it treats as the repository.
           workingDir: /var/lib/moor/pv/state
           env:
             - name: MOOR_CONFIG
@@ -116,11 +111,6 @@ spec:
             # Without it the CLI in the pod runs requests in process instead of asking the controller.
             - name: MOOR_CONTROLLER
               value: /var/lib/moor/pv/state/controller.sock
-            # moor passes crabbox only CRABBOX_* and XDG_CONFIG_HOME; leases and per-lease keys must outlive the pod.
-            - name: CRABBOX_CONFIG
-              value: /var/lib/moor/config/crabbox.yaml
-            - name: XDG_CONFIG_HOME
-              value: /var/lib/moor/pv/state/xdg-config
             {{- if .Values.blobs.s3 }}
             - name: MOOR_BLOBS_ACCESS_KEY_ID
               valueFrom:

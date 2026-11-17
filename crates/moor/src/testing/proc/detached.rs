@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_core::seam::proc::{ProcSpec, Stdin};
+use moor_core::seam::proc::ProcSpec;
 
 use super::{Call, ScriptedProc};
 
@@ -37,10 +37,6 @@ pub(super) fn call_of(spec: &ProcSpec) -> Call {
         env: spec.env.extra.clone(),
         cwd: spec.cwd.clone(),
         deadline: spec.deadline,
-        stdin: match &spec.stdin {
-            Stdin::Bytes(b) => b.clone(),
-            _ => Vec::new(),
-        },
     }
 }
 

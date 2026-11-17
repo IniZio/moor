@@ -223,7 +223,6 @@ mod ledger_socket;
 mod ledger_tls;
 mod machine_hold;
 mod operator_only;
-mod run_cancel;
 mod run_grant;
 mod run_output;
 mod runner_socket;

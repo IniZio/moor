@@ -245,8 +245,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "node-list"
         | "node-add"
         | "node-settings-get"
-        | "node-settings-set"
-        | "provider-ready" => return Names::Nothing,
+        | "node-settings-set" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

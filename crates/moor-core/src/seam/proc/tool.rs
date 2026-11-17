@@ -3,8 +3,6 @@
 /// An external program moor may run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
-    /// The crabbox driver hub.
-    Crabbox,
     /// The herdr surface.
     Herdr,
     /// The agent engine program (claude today).
@@ -26,7 +24,6 @@ impl Tool {
     #[must_use]
     pub const fn bin_var(self) -> &'static str {
         match self {
-            Self::Crabbox => "MOOR_CRABBOX_BIN",
             Self::Herdr => "MOOR_HERDR_BIN",
             Self::Agent => "MOOR_CLAUDE_BIN",
             Self::Ssh => "MOOR_SSH_BIN",
@@ -41,7 +38,6 @@ impl Tool {
     #[must_use]
     pub const fn program(self) -> &'static str {
         match self {
-            Self::Crabbox => "crabbox",
             Self::Herdr => "herdr",
             Self::Agent => "claude",
             Self::Ssh => "ssh",

@@ -48,7 +48,6 @@ pub(crate) async fn status(machine: &Machine, recent: &Recent) -> Status {
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         free_disk_gb: free_gb(&machine.home).await,
-        pool: None,
         recent: recent.list(),
     }
 }
@@ -124,7 +123,6 @@ mod tests {
         assert_eq!(status.version, crate::VERSION);
         assert_eq!(status.os, std::env::consts::OS);
         assert!(status.free_disk_gb.is_some());
-        assert_eq!(status.pool, None);
         assert_eq!(status.recent.len(), 1);
     }
 }

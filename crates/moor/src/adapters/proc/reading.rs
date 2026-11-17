@@ -40,7 +40,7 @@ impl SystemProc {
         thread::spawn(move || {
             let r = match rx.recv_timeout(limit) {
                 Ok(st) => st.map_err(ProcError::Spawn),
-                Err(RecvTimeoutError::Timeout) => terminate(pid, &rx, tool, limit)
+                Err(RecvTimeoutError::Timeout) => terminate(pid, &rx, limit)
                     .map_err(ProcError::Spawn)
                     .and(Err(ProcError::Timeout { tool, after: limit })),
                 Err(RecvTimeoutError::Disconnected) => Err(ProcError::Spawn(gone())),

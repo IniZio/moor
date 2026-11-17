@@ -127,7 +127,6 @@ impl Request {
             | Self::NodeAdd(_)
             | Self::NodeSettingsGet(_)
             | Self::NodeSettingsSet(_)
-            | Self::ProviderReady(_)
             | Self::MachineStatus(_)
             | Self::MachineKeys {}
             | Self::MachineLinks(_)

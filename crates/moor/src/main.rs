@@ -83,19 +83,6 @@ fn main() -> ExitCode {
         Parsed::Forward { opts, spec } => {
             return moor::client::forward::run(&scoped(env, &opts), &spec)
         }
-        Parsed::LinkDial {
-            opts,
-            runner,
-            machine_id,
-            slug,
-        } => {
-            let env = scoped(env, &opts);
-            return ExitCode::from(moor::link_dial::on_stdio(
-                &env,
-                &runner,
-                (machine_id, &slug),
-            ));
-        }
         Parsed::BoxTerm { opts, term } => return run_box_term(&scoped(env, &opts), &term),
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Up { opts } => return run_up(&scoped(env, &opts), &opts),
