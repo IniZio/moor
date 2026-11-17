@@ -71,6 +71,7 @@ fn started(w: &World) -> BoxId {
 fn start_req() -> StartReq {
     StartReq {
         cold: false,
+        config: None,
         name: name(),
         prompt: None,
         issue: None,
@@ -90,6 +91,7 @@ fn start_req() -> StartReq {
 fn started_with(w: &World, prompt: Option<&str>) -> BoxId {
     let req = StartReq {
         cold: false,
+        config: None,
         name: name(),
         prompt: prompt.map(str::to_owned),
         issue: None,

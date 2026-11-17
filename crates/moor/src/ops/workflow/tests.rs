@@ -190,6 +190,7 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
         &r.cx,
         &moor_core::StartReq {
             cold: false,
+            config: None,
             name: job.name.clone(),
             prompt: Some(job.prompt.clone()),
             issue: None,
@@ -227,6 +228,7 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
         &r.cx,
         &moor_core::StartReq {
             cold: false,
+            config: None,
             name: job.name.clone(),
             prompt: Some(job.prompt.clone()),
             issue: None,

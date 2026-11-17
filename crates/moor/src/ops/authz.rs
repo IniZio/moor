@@ -155,6 +155,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Show(_)
         | Request::Inspect(_)
         | Request::Close(_)
+        | Request::BoxConfigSet(_)
         | Request::Sleep(_)
         | Request::Wake(_)
         | Request::Retry(_)

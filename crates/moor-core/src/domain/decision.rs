@@ -97,6 +97,8 @@ pub struct SpecFields {
     pub branch: Option<String>,
     /// Labels the Box's node must carry.
     pub labels: Vec<String>,
+    /// The override text laid over the repo config for this Box; `None` for none.
+    pub config: Option<String>,
 }
 
 /// A Box that does not exist yet.

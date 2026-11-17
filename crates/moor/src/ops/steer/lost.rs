@@ -19,6 +19,7 @@ pub(super) fn lost(row: &BoxRow) -> bool {
 pub(super) fn bring_back(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let req = StartReq {
         cold: false,
+        config: None,
         name: row.name.clone(),
         prompt: None,
         issue: None,

@@ -82,6 +82,7 @@ fn box_limit(n: u32) -> UserConfig {
 fn req(name: &str) -> StartReq {
     StartReq {
         cold: false,
+        config: None,
         name: BoxName::parse_allow_bare(name).unwrap(),
         prompt: None,
         issue: None,

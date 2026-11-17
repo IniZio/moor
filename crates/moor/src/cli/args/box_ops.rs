@@ -1,7 +1,8 @@
 //! Arguments of the Box-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
-use moor_core::request::CloseFailedReq;
+use moor_core::config::override_text;
+use moor_core::request::{BoxConfigSetReq, CloseFailedReq};
 use moor_core::{BoxName, BoxReq, CloseReq, CpReq};
 
 use super::box_name;
@@ -74,5 +75,39 @@ pub(super) struct BoxArg {
 impl From<BoxArg> for BoxReq {
     fn from(a: BoxArg) -> Self {
         Self { box_name: a.name }
+    }
+}
+
+/// Arguments of `box-config`.
+#[derive(Debug, Args)]
+pub(super) struct BoxConfigArgs {
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    pub(super) name: BoxName,
+    /// The Box's whole override, as a partial `.moor.yaml`; `-` reads stdin.
+    #[arg(
+        long = "file",
+        short = 'f',
+        value_name = "FILE",
+        default_value = "-",
+        value_parser = super::config_text,
+        conflicts_with = "remove"
+    )]
+    pub(super) text: String,
+    /// Remove the Box's override, so it reads its repo's config alone.
+    #[arg(long)]
+    pub(super) remove: bool,
+}
+
+impl From<BoxConfigArgs> for BoxConfigSetReq {
+    fn from(a: BoxConfigArgs) -> Self {
+        Self {
+            box_name: a.name,
+            config: if a.remove {
+                None
+            } else {
+                override_text(Some(a.text))
+            },
+        }
     }
 }

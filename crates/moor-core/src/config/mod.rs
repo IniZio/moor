@@ -11,7 +11,9 @@ mod user;
 
 pub use blobs::{BlobsConfig, S3Blobs};
 pub use controller::{parse_controller, ControllerConfig, FrontEntry, LedgerTls, RemoteFront};
-pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine, RepoOverride};
+pub use repo::{
+    override_text, parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine, RepoOverride,
+};
 
 pub use user::{
     box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,

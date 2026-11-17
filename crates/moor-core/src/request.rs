@@ -10,7 +10,7 @@ pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod attach;
 pub use attach::AttachReq;
 mod basic;
-pub use basic::{BoxReq, CloseFailedReq, CloseReq, GateReq};
+pub use basic::{BoxConfigSetReq, BoxReq, CloseFailedReq, CloseReq, GateReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod env;
@@ -100,6 +100,8 @@ pub enum Request {
     /// Run the machine runner's rsync in the Box with its stdio streamed both ways over this
     /// connection. It takes over the connection: the controller socket closes it after the answer.
     BoxRsync(BoxRsyncReq),
+    /// Replace a Box's config override, or remove it.
+    BoxConfigSet(BoxConfigSetReq),
     /// Sleep a box.
     Sleep(BoxReq),
     /// Wake a box.
@@ -256,6 +258,11 @@ pub struct StartReq {
     /// Repos the Box clones beside `repo`, in order; `box.also` in the user config when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub also: Option<Vec<ForgeRepo>>,
+    /// A partial repo config, in the `.moor.yaml` format, laid over the repo's config for this
+    /// Box only. Left out of the JSON when absent, so an older controller that refuses unknown
+    /// fields still takes a start that has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
     /// Parent Session of the Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,

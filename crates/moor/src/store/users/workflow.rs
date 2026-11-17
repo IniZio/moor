@@ -49,10 +49,12 @@ struct WorkflowRow {
     origin_front: Option<String>,
     /// `origin_key`.
     origin_key: Option<String>,
+    /// `config`.
+    config: Option<String>,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 15] = [
+const WORKFLOW_COLS: [Workflows; 16] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -68,6 +70,7 @@ const WORKFLOW_COLS: [Workflows; 15] = [
     Workflows::OriginFront,
     Workflows::OriginKey,
     Workflows::Also,
+    Workflows::Config,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -93,6 +96,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         origin_front: r.get(12)?,
         origin_key: r.get(13)?,
         also: r.get(14)?,
+        config: r.get(15)?,
     })
 }
 
@@ -114,6 +118,7 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         .map_err(|e| corrupt("schedule", e))?,
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
         also: serde_json::from_str(&row.also).map_err(|e| corrupt("also", e))?,
+        config: row.config,
         prompt: row.prompt,
         state: row.enabled_at.map_or(
             WorkflowState::Disabled {
@@ -158,6 +163,7 @@ fn insert_workflow(
                 Workflows::UpdatedAt,
                 Workflows::OriginFront,
                 Workflows::OriginKey,
+                Workflows::Config,
             ])
             .values_panic([
                 owner.get().into(),
@@ -173,6 +179,7 @@ fn insert_workflow(
                 now.into(),
                 def.origin.as_ref().map(|o| o.front.as_str()).into(),
                 def.origin.as_ref().and_then(|o| o.key.as_deref()).into(),
+                def.config.as_deref().into(),
             ])
             .returning_col(Workflows::Id),
         |r| r.get(0),
@@ -218,6 +225,7 @@ impl Store {
                     .value(Workflows::Timezone, def.schedule.zone())
                     .value(Workflows::Repos, repos)
                     .value(Workflows::Also, also)
+                    .value(Workflows::Config, def.config.as_deref())
                     .value(Workflows::Prompt, def.prompt.as_str())
                     .value(Workflows::EnabledAt, enabled_at)
                     .value(Workflows::DisabledReason, reason)

@@ -23,6 +23,9 @@ The agent calls `add_workflow` with these values:
   own, so its agent can read and push to them too. Each must be a repo you can
   push to, and no two repos of one Box may share a name. None by default: the
   controller's `box.also` never applies to a workflow.
+- `config`, optional, a partial repo config in YAML that every Box starts
+  with, laid over the repo's own. See [Override for one
+  Box](repo.md#override-for-one-box).
 - `prompt`, what each Box's agent is asked to do.
 - `timeout_minutes`, optional, 180 by default.
 

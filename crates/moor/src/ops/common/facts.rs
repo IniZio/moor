@@ -1,6 +1,6 @@
 //! Facts every Box op needs, built once per command.
 
-use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig};
+use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig, RepoOverride};
 use moor_core::domain::decision::BoxRepo;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::ProviderId;
@@ -23,21 +23,40 @@ pub(crate) fn settings_of(
     Ok(resolved(cx, repo_config(cx, row)?.as_ref(), flags))
 }
 
-/// The repo config of `row`'s repo, parsed; `None` for a Box whose repo has none.
+/// The repo config of `row`'s repo with the Box's own override laid over it, parsed; `None` for
+/// a Box whose repo has none and that has no override.
 ///
 /// # Errors
 /// A stored text that does not parse.
 pub(crate) fn repo_config(cx: &Cx, row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
-    repo_config_of(cx, row.repo.as_ref(), row.base.as_deref())
+    let over = cx.store()?.box_config_override(row.id)?;
+    repo_config_of(cx, row.repo.as_ref(), row.base.as_deref(), over.as_deref())
 }
 
-/// The repo config of `repo`, parsed. A config stored for the repo wins, so an edit reaches
-/// Boxes already running; a repo with none uses the `.moor.yaml` read at `base`. An error names
-/// the text it came from.
+/// The repo config of `repo`, parsed, with `over` laid over it. A config stored for the repo
+/// wins over the `.moor.yaml` read at `base`, so an edit reaches Boxes already running; a repo
+/// with neither has an empty config, which `over` still lays over. An error names the text it
+/// came from.
 ///
 /// # Errors
 /// A text that does not parse, or a store failure.
 pub(crate) fn repo_config_of(
+    cx: &Cx,
+    repo: Option<&BoxRepo>,
+    base: Option<&str>,
+    over: Option<&str>,
+) -> Result<Option<RepoConfig>, CommandError> {
+    let stored = stored_config_of(cx, repo, base)?;
+    let Some(text) = over.filter(|t| !t.trim().is_empty()) else {
+        return Ok(stored);
+    };
+    let whose = repo.map_or_else(|| "Box".to_owned(), |r| r.repo.to_string());
+    let over = RepoOverride::parse(&format!("{whose}:box config"), text)?;
+    Ok(Some(over.over(stored.unwrap_or_default())))
+}
+
+/// The config the store or the repo's file holds for `repo`, before any override.
+fn stored_config_of(
     cx: &Cx,
     repo: Option<&BoxRepo>,
     base: Option<&str>,

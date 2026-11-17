@@ -47,6 +47,9 @@ pub struct WorkflowView {
     /// The repos each of its Boxes clones beside its own.
     #[serde(default)]
     pub also: Vec<String>,
+    /// The partial repo config laid over the repo's for each of its Boxes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
     /// Its prompt.
     pub prompt: String,
     /// Whether it fires.

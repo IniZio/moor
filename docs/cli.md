@@ -60,6 +60,7 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 | `--base REF` | The ref to branch from. The default is the repo's default branch. |
 | `--node NAME` | A node of yours, or a shared one, in place of your default. |
 | `--model MODEL` | The agent model. |
+| `--config FILE` | A partial repo config for this Box only, laid over the repo's. `-` reads stdin. See [Override for one Box](repo.md#override-for-one-box). |
 | `--no-agent` | Start no agent. |
 | `--resume` | Resume the agent's stored session. |
 | `--parent ID` | The parent Session. The default is `MOOR_SESSION`. |
@@ -109,6 +110,7 @@ These act as your local identity through the controller.
 | `moor user webhook setup ID`, `finish ID`, `ls`, `rm ID` | Shows the setup with its key, finishes it, lists, or removes. |
 | `moor whoami` | Shows your identity, its user, and the user's linked identities. |
 | `moor node ls` | Lists the shared nodes and yours, with their load. |
+| `moor box-config NAME` | Replaces an open Box's config override with `--file FILE`, or stdin, or removes it with `--remove`. |
 | `moor repo config get OWNER/NAME` | Prints the repo's stored config as YAML; `--json` adds its revision and last editor. |
 | `moor repo config set OWNER/NAME` | Replaces the config with `--file FILE`, or stdin. It needs push access to the repo. `--expected-revision N` refuses a write after someone else's save. |
 

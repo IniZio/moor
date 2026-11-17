@@ -25,6 +25,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         timezone: tz.to_owned(),
         repos: vec!["o/n".to_owned()],
         also: Vec::new(),
+        config: None,
         prompt: "fix what is broken".to_owned(),
         timeout_minutes: None,
         origin_key: None,

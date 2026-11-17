@@ -94,6 +94,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
         "repo-config-get" => repo_config::get_text(value),
         "repo-config-set" => repo_config::set_line(value),
+        "box-config-set" => repo_config::box_line(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
         "open-host-session" | "update-host-session" | "end-host-session" => {

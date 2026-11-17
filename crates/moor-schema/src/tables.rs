@@ -46,7 +46,7 @@ tables! {
     UserWebhooks { Id, User, Url, Events, Key, CreatedAt, LastOkAt, FailingSince, LastError, State,
         Header, HeaderValue }
     Boxes { Id, Name, Repo, RepoConfig, AuthorName, AuthorEmail, User, Issue, Base, Branch,
-        CreatedAt, NodeLabels, OtherRepos }
+        CreatedAt, NodeLabels, OtherRepos, ConfigOverride }
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
         ResumeFirstAt, UpdatedAt, ArchiveDue, Wanted, WantedForce, WantedReason, WantedAt, Effect,
@@ -87,7 +87,7 @@ tables! {
     MachineBoxes { BoxId, MachineId, Slot, Reach, Facts, Prepared, SuspendedAt, Evicted,
         UpdatedAt, Inc }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
-        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also }
+        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also, Config }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
         RecordedAt, Seq }
     WorkflowSeq { Id, N }

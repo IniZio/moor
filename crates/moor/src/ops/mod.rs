@@ -10,6 +10,7 @@ pub(crate) mod artifacts;
 pub(crate) mod attach;
 pub(crate) mod authz;
 mod binding;
+pub(crate) mod box_config;
 pub(crate) mod box_rsync;
 mod close;
 pub(crate) mod close_failed;
@@ -129,6 +130,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Env(r) => to_value(&env::run(cx, &r)?),
         Request::RepoConfigGet(r) => to_value(&repo_config::get(cx, &r)?),
         Request::RepoConfigSet(r) => to_value(&repo_config::set(cx, &r)?),
+        Request::BoxConfigSet(r) => to_value(&box_config::set(cx, &r)?),
         Request::Run(r) => to_value(&run::run(cx, &r)?),
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),

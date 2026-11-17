@@ -153,6 +153,8 @@ pub struct WorkflowDef {
     /// The repos each started Box clones beside its own; none of them shares a name with
     /// another or with a repo above.
     pub also: Vec<ForgeRepo>,
+    /// A partial repo config laid over the repo's for each Box it starts; `None` for none.
+    pub config: Option<String>,
     /// The opaque prompt each started Box gets.
     pub prompt: String,
     /// Whether it should fire.
@@ -192,6 +194,7 @@ impl WorkflowDef {
             schedule,
             repos,
             also: Vec::new(),
+            config: None,
             prompt: prompt.to_owned(),
             enabled,
             timeout,
@@ -235,6 +238,8 @@ pub struct Workflow {
     pub repos: Vec<ForgeRepo>,
     /// The repos each started Box clones beside its own.
     pub also: Vec<ForgeRepo>,
+    /// A partial repo config laid over the repo's for each Box it starts.
+    pub config: Option<String>,
     /// The opaque prompt each started Box gets.
     pub prompt: String,
     /// Whether it fires.
