@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use moor_core::name::BoxPath;
 
-use super::{clear_lines, export_lines, profile_lines, ROOT_SANDBOX_VAR};
+use super::{export_lines, profile_lines, ROOT_SANDBOX_VAR};
 
 fn pair(n: &str, v: &str) -> (String, String) {
     (n.to_owned(), v.to_owned())
@@ -24,64 +24,6 @@ fn sh(script: &str, env: &[(&str, &str)]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).expect("utf8")
-}
-
-#[test]
-fn clear_lines_are_two_lines_naming_what_they_clear() {
-    let lines = clear_lines();
-    let [gate, loop_line] = lines.as_slice() else {
-        unreachable!("{lines:?}");
-    };
-    assert_eq!(
-        gate,
-        "unset child child_identity child_pid command_umask gate run_dir state token"
-    );
-    assert!(loop_line.contains("NSC_"));
-}
-
-#[test]
-fn clear_lines_drop_crabbox_names_and_keep_the_rest() {
-    let script = format!(
-        "PATH=/usr/bin:/bin; export PATH; {}; env",
-        clear_lines().join("; ")
-    );
-    let out = sh(
-        &script,
-        &[
-            ("PATH", "/usr/bin:/bin"),
-            ("child", "1"),
-            ("child_identity", "1"),
-            ("child_pid", "1"),
-            ("command_umask", "1"),
-            ("gate", "1"),
-            ("run_dir", "1"),
-            ("state", "1"),
-            ("NSC_X", "1"),
-            ("TOKEN", "1"),
-            ("Token", "1"),
-            ("token", "1"),
-            ("KEEP_ME", "1"),
-            ("GH_TOKEN", "1"),
-        ],
-    );
-    let names: Vec<&str> = out.lines().filter_map(|l| l.split('=').next()).collect();
-    for gone in [
-        "child",
-        "child_identity",
-        "child_pid",
-        "command_umask",
-        "gate",
-        "run_dir",
-        "state",
-        "NSC_X",
-        "TOKEN",
-        "Token",
-        "token",
-    ] {
-        assert!(!names.contains(&gone), "{gone} survived:\n{out}");
-    }
-    assert!(names.contains(&"KEEP_ME"));
-    assert!(names.contains(&"GH_TOKEN"));
 }
 
 #[test]

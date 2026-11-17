@@ -1,7 +1,7 @@
 use super::last_sentence;
 
 #[test]
-fn crabbox_refusal_passes_whole() {
+fn a_tool_refusal_passes_whole() {
     let said = "provider=external refuses repository-configured external.connection.ssh.trustProviderOutput with inherited credentials; set the same provider-output contract in trusted user config to explicitly approve the credential destination";
     assert_eq!(
         last_sentence(&format!("note\n{said}\n\n")).as_deref(),

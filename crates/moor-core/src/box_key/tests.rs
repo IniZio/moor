@@ -125,7 +125,7 @@ fn a_reused_name_gets_another_branch() {
 }
 
 #[test]
-fn slug_fits_crabbox_cap_for_any_id() {
+fn slug_fits_its_cap_for_any_id() {
     for id in [0, 1, 7, 123_456_789, i64::MAX] {
         let slug = key(id).slug("a1b2c3");
         assert!(slug.len() <= 41, "{slug}");

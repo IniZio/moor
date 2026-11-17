@@ -105,7 +105,7 @@ fn accepted_docs() {
     let docs = [
         "box: {size: small}",
         "box: {size: xlarge}\nnodes: {x: {runtime: custom-provider}}",
-        "drivers: {crabbox: {strip_env: [A]}}",
+        "drivers: {docker: {strip_env: [A]}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
@@ -137,7 +137,7 @@ fn rejected_docs_with_paths() {
             "drivers.x.sleep_after_minutes",
         ),
         ("dotfiles: {nope: 1}", "dotfiles.nope"),
-        ("drivers: {crabbox: {nope: 1}}", "drivers.crabbox.nope"),
+        ("drivers: {docker: {nope: 1}}", "drivers.docker.nope"),
         (
             "mcp_servers: {m: {command: x, nope: 1}}",
             "mcp_servers.m.nope",

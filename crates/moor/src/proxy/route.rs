@@ -3,9 +3,6 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
-use moor_core::box_key::is_machine_handle;
-use moor_core::BoxHandle;
-
 use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_LISTEN, EGRESS_URL};
 
 /// The controller's own shared egress Proxy socket, under the state dir.
@@ -19,12 +16,12 @@ pub(crate) enum EgressRoute {
         /// The `wss://` address of its `/egress`.
         url: String,
     },
-    /// The controller's own shared Proxy on `socket`, which each Box reaches over its tunnel.
+    /// The controller's own shared Proxy on `socket`, which each Box dials as `moor-host`.
     Local {
         /// The socket it listens on.
         socket: PathBuf,
-        /// The private address of this host it also listens on, which a machine's Box dials as
-        /// `moor-host`; `None` when no Box of a Docker machine may be served.
+        /// The private address of this host it also listens on, which a Box dials as
+        /// `moor-host`; `None` when no Box may be served.
         host: Option<SocketAddr>,
     },
 }
@@ -73,33 +70,26 @@ impl EgressRoute {
         }
     }
 
-    /// The address the forwarder of the Box at `handle`, whose tunnel listens on `box_port`,
-    /// dials. A machine's Box has no tunnel: it dials the controller's Proxy as `moor-host`.
+    /// The address each Box's forwarder dials. A Box on the controller's own Proxy dials it as
+    /// `moor-host`.
     ///
     /// # Errors
-    /// A machine's Box on the local route, and no [`EGRESS_LISTEN`] address to dial.
-    pub(crate) fn upstream(
-        &self,
-        handle: Option<&BoxHandle>,
-        box_port: u16,
-    ) -> Result<String, String> {
+    /// The local route and no [`EGRESS_LISTEN`] address to dial.
+    pub(crate) fn upstream(&self) -> Result<String, String> {
         Ok(match self {
             Self::Direct { url } => url.clone(),
-            Self::Local { host, .. } if handle.is_some_and(|h| is_machine_handle(h.as_str())) => {
+            Self::Local { host, .. } => {
                 let host = host.ok_or_else(|| {
                     format!(
-                        "a machine's Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"
+                        "a Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"
                     )
                 })?;
                 format!("ws://moor-host:{}{}", host.port(), super::egress::PATH)
             }
-            Self::Local { .. } => {
-                format!("ws://127.0.0.1:{box_port}{}", super::egress::PATH)
-            }
         })
     }
 
-    /// The socket each Box's tunnel reaches, on the local route.
+    /// The socket the controller's own Proxy listens on, on the local route.
     pub(crate) fn socket(&self) -> Option<&Path> {
         match self {
             Self::Local { socket, .. } => Some(socket),

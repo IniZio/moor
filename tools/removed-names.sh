@@ -32,6 +32,8 @@ names=(
   moor_yaml moorYaml
   MOOR_CRABBOX_BIN MOOR_TRACE_CRABBOX link_dial ProviderReady provider_ready
   PoolHosts PoolPorts HostLists
+  reverse_tunnel local_tunnel TunnelHandle LocalTunnel TunnelFailure require_reverse_tunnel tend_tunnel
+  SleepKind hide_unsupported_sleep lookup_timeout_secs
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.

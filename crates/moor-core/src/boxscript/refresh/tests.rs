@@ -226,9 +226,6 @@ fn the_previous_sessions_files_refs_stash_and_reflog_are_gone() {
     o.git(&t.join("nested"), &["init", "-q"]);
     std::fs::write(t.join("nested/n"), "n").unwrap();
     std::fs::write(t.join(".moor/brief"), "old brief").unwrap();
-    std::fs::create_dir_all(t.join(".crabbox")).unwrap();
-    std::fs::write(t.join(".crabbox/lease"), "old").unwrap();
-    std::fs::write(t.join(".crabbox-sealed"), "").unwrap();
     tree_git(&o, &["branch", "scratch"]);
     std::fs::write(t.join("a.txt"), "stashed\n").unwrap();
     tree_git(&o, &["stash", "-q"]);
@@ -236,13 +233,7 @@ fn the_previous_sessions_files_refs_stash_and_reflog_are_gone() {
     ok(&o, BOX2, &o.base);
     clean_on(&o, &o.base);
     assert_eq!(read(&o, "b.txt"), "unchanged\n");
-    for gone in [
-        "u.txt",
-        "nested",
-        ".crabbox",
-        ".crabbox-sealed",
-        ".moor/brief",
-    ] {
+    for gone in ["u.txt", "nested", ".moor/brief"] {
         assert!(!t.join(gone).exists(), "{gone} is left");
     }
     assert_eq!(Origin::entries(&t.join(".moor")), ["tree"]);
@@ -250,7 +241,6 @@ fn the_previous_sessions_files_refs_stash_and_reflog_are_gone() {
     let stash = o.try_git(&t, &["rev-parse", "-q", "--verify", "refs/stash"]);
     assert!(!stash.status.success(), "the stash is gone");
     assert_eq!(tree_git(&o, &["reflog", "show", "--all"]), "");
-    tree_git(&o, &["check-ignore", "-q", ".crabbox-sealed"]);
 }
 
 #[test]

@@ -62,7 +62,7 @@ pub struct Report {
     /// Size of that filesystem, in MiB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_total_mib: Option<u64>,
-    /// The memory the host's VMs hold, for each lease whose provider says; leases it cannot tell
+    /// The memory the host's VMs hold, for each lease whoseprovider says; leases it cannot tell
     /// are left out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boxes: Vec<BoxMemory>,
@@ -80,7 +80,7 @@ pub struct BoxMemory {
     pub slug: String,
     /// MiB of the host the VM holds; 0 when it is suspended to disk.
     pub host_memory_mib: u64,
-    /// MiB of the host a suspended VM needs to resume; none when its provider does not say.
+    /// MiB of the host a suspended VM needs to resume; none when itsprovider does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_memory_mib: Option<u64>,
 }
@@ -102,14 +102,10 @@ pub enum Opened {
 /// What a Box-hosting machine reports about itself in its hello.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Offer {
-    /// The most Boxes it will hold at once, as an agent before the node setting offered. Read and
-    /// ignored: a node's cap is its setting in the controller.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_boxes: Option<u32>,
     /// The disk, in GB, it sets aside for caches; reported, not enforced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_gb: Option<u32>,
-    /// What its crabbox provider supports, such as `cache-volume`.
+    /// What its provider supports, such as `cache-volume`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
     /// The host's total memory, in MiB.

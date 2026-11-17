@@ -42,7 +42,7 @@ fn setup_and_identity_run_in_the_probed_workdir_not_one_built_from_the_handle() 
     assert!(!setup.is_empty());
     assert!(setup.iter().all(|c| c.as_deref() == Some(want)));
     // Identity sets global git config, which does not depend on cwd, so it
-    // may run in crabbox's own workdir (no cwd).
+    // may run in the Box's own workdir (no cwd).
     assert!(!identity.is_empty());
     assert!(identity
         .iter()

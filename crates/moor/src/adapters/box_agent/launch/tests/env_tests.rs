@@ -1,4 +1,4 @@
-//! The agent runs without a sandbox: the script clears the crabbox names and sets the agent's own.
+//! The agent runs without a sandbox: the script sets the agent's own environment.
 
 use super::*;
 
@@ -35,63 +35,6 @@ fn a_launch_puts_no_sandbox_tool_or_profile_on_the_box() {
     agent(&d).launch(&req_with_proxy()).unwrap();
     for put in d.puts() {
         assert!(!put.1.as_str().contains("nono"), "{}", put.1.as_str());
-    }
-}
-
-#[test]
-fn the_crabbox_gate_names_are_unset_before_the_agent_starts() {
-    for script in [
-        script_for(ENVIRON, req),
-        script_for(ENVIRON, req_with_proxy),
-    ] {
-        let agent = agent_at(&script);
-        let clear: Vec<&str> = script
-            .lines()
-            .filter(|l| l.contains("child_identity") || l.contains("NSC_"))
-            .collect();
-        let first = clear.first().expect(&script);
-        assert!(script.find(first).unwrap() < agent, "{script}");
-        let out = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(format!("{}\nenv", clear.join("\n")))
-            .env_clear()
-            .envs([
-                ("PATH", "/usr/bin:/bin"),
-                ("child", "1"),
-                ("child_identity", "1"),
-                ("child_pid", "1"),
-                ("command_umask", "1"),
-                ("gate", "1"),
-                ("run_dir", "1"),
-                ("state", "1"),
-                ("token", "1"),
-                ("TOKEN", "1"),
-                ("NSC_TOKEN", "1"),
-                ("NSC_ENDPOINT", "1"),
-                ("KEEP_ME", "1"),
-                ("GH_TOKEN", "1"),
-            ])
-            .output()
-            .unwrap();
-        let env = String::from_utf8(out.stdout).unwrap();
-        let names: Vec<&str> = env.lines().filter_map(|l| l.split('=').next()).collect();
-        for gone in [
-            "child",
-            "child_identity",
-            "child_pid",
-            "command_umask",
-            "gate",
-            "run_dir",
-            "state",
-            "token",
-            "TOKEN",
-            "NSC_TOKEN",
-            "NSC_ENDPOINT",
-        ] {
-            assert!(!names.contains(&gone), "{gone} survived: {env}");
-        }
-        assert!(names.contains(&"KEEP_ME"), "{env}");
-        assert!(names.contains(&"GH_TOKEN"), "{env}");
     }
 }
 

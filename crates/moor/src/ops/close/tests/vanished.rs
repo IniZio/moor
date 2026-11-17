@@ -7,7 +7,7 @@ use super::teardown::{exec_calls, fx_yaml, YAML};
 use super::{box_state, is_working, req, row, run, RAW};
 use crate::testing::driver::FakeDriver;
 
-/// A Box whose machine the provider no longer lists, and whose release fails the way crabbox
+/// A Box whose machine the provider no longer lists, and whose release fails the way a provider
 /// fails to stop a vanished machine.
 fn vanished() -> super::Fx {
     vanished_with(FakeDriver::new())

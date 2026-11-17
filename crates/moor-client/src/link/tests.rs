@@ -24,7 +24,6 @@ fn a_hello_with_an_offer_round_trips() {
         machine_id: 7,
         version: "0.1.0".to_owned(),
         offer: Some(Box::new(Offer {
-            max_boxes: Some(4),
             cache_gb: Some(20),
             features: vec!["cache-volume".to_owned()],
             mem_mib: Some(31_232),
@@ -34,7 +33,7 @@ fn a_hello_with_an_offer_round_trips() {
         })),
     };
     let text = serde_json::to_string(&frame).unwrap();
-    assert!(text.contains("\"max_boxes\":4"), "{text}");
+    assert!(text.contains("\"cache_gb\":20"), "{text}");
     assert!(text.contains("\"mem_mib\":31232"), "{text}");
     let back: Frame = serde_json::from_str(&text).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), text);
@@ -78,14 +77,13 @@ fn an_offer_from_an_agent_that_still_says_checkpoints_reads_and_drops_them() {
         "max_boxes": 4,
         "features": ["workspace-checkpoint", "workspace-fork"],
         "checkpoints": true,
-        "checkpoints_off": "crabbox doctor failed: x",
+        "checkpoints_off": "docker info failed: x",
     }}});
     let frame: Frame = serde_json::from_value(hello).unwrap();
     let Frame::Hello { offer, .. } = frame else {
         panic!("not a hello: {frame:?}");
     };
     let offer = offer.unwrap();
-    assert_eq!(offer.max_boxes, Some(4));
     assert_eq!(
         serde_json::to_value(&offer).unwrap().get("checkpoints"),
         None
@@ -145,10 +143,10 @@ fn a_report_from_an_older_agent_has_no_resume_memory() {
 #[test]
 fn an_offer_and_a_report_that_say_nothing_of_boxes_are_what_they_were() {
     let offer = Offer {
-        max_boxes: Some(2),
+        cache_gb: Some(2),
         ..Offer::default()
     };
-    assert_eq!(serde_json::to_string(&offer).unwrap(), r#"{"max_boxes":2}"#);
+    assert_eq!(serde_json::to_string(&offer).unwrap(), r#"{"cache_gb":2}"#);
     let report = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2}});
     let opened: super::Opened = serde_json::from_value(report).unwrap();
     let text = serde_json::to_string(&opened).unwrap();

@@ -66,7 +66,7 @@ pub struct MachineView {
     pub labels: Vec<String>,
     /// How many Boxes may hold it at once.
     pub capacity: u16,
-    /// The crabbox provider it offers Boxes on, when it hosts a Box pool.
+    /// The provider it offers Boxes on, when it hosts a Box pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<String>,
     /// Its agent's link: online or not, since when, and the agent's release. None until its
