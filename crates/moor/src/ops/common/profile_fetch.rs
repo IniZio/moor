@@ -102,7 +102,8 @@ fn plugin_installs(
     })
 }
 
-/// Fetches the profile into the Box and runs its `setup.sh`; whether both went well.
+/// Fetches the profile into the Box and runs its `setup.sh` in each place it was fetched to, Work
+/// first; whether all of it went well. A place whose setup failed is named in its own event.
 fn fetch_and_setup(
     cx: &Cx,
     store: &Store,
@@ -143,25 +144,50 @@ fn fetch_and_setup(
         failed(cx, store, id, ProfileStep::Fetch, detail)?;
         return Ok(false);
     }
-    let setup_log = cx
-        .state_dir()
-        .map(|d| log_dir(d, id).join("profile-setup.log"))
-        .map_err(|e| e.error.to_string());
-    match setup_log.and_then(|log| {
-        run(
-            cx,
-            (&site, Place::Work),
-            (cfg, proxy),
-            (setup_script(), &log),
-            ("profile setup.sh", SETUP_DEADLINE),
-        )
-    }) {
-        Ok(()) => Ok(true),
-        Err(detail) => {
+    setups(cx, store, &site, id, (cfg, proxy), places)
+}
+
+/// Runs the checkout's `setup.sh` in each of `places` in turn; a place that failed is recorded
+/// under its own name and the rest still run. Whether all went well.
+fn setups(
+    cx: &Cx,
+    store: &Store,
+    site: &Site<'_>,
+    id: BoxId,
+    (cfg, proxy): (&BoxSettings, Option<&BoxProxy>),
+    places: &[(Place, &str)],
+) -> Result<bool, CommandError> {
+    let mut all_ok = true;
+    for &(place, name) in places {
+        let file = if place == Place::Work {
+            "profile-setup.log".to_owned()
+        } else {
+            format!("profile-setup-{name}.log")
+        };
+        let setup_log = cx
+            .state_dir()
+            .map(|d| log_dir(d, id).join(file))
+            .map_err(|e| e.error.to_string());
+        let ran = setup_log.and_then(|log| {
+            run(
+                cx,
+                (site, place),
+                (cfg, proxy),
+                (setup_script(), &log),
+                ("profile setup.sh", SETUP_DEADLINE),
+            )
+        });
+        if let Err(detail) = ran {
+            let detail = if places.len() > 1 {
+                format!("in the {name} place: {detail}")
+            } else {
+                detail
+            };
             failed(cx, store, id, ProfileStep::Setup, detail)?;
-            Ok(false)
+            all_ok = false;
         }
     }
+    Ok(all_ok)
 }
 
 /// Runs `script` in `place` in the Box, logging to `log`; the error says why it failed.

@@ -8,7 +8,7 @@ use super::setup::{kinds, warning_codes};
 use super::*;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{ExecOutcome, Place};
 
 pub(super) const HEAD: &str = "1111111111111111111111111111111111111111";
 const PIN: &str = "2222222222222222222222222222222222222222";
@@ -282,4 +282,56 @@ fn a_relaunch_reuses_the_stored_commit_without_reading_the_forge() {
     let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
     assert_eq!(got.sha.as_str(), HEAD);
     assert!(git_paths(&fake).contains(&"POST /*/*.git/git-upload-pack".to_owned()));
+}
+
+/// The places of every exec that ran the profile's `setup.sh`, in order.
+fn setup_places(w: &World) -> Vec<Place> {
+    w.driver
+        .execs()
+        .into_iter()
+        .filter(|(_, spec, _)| spec.argv.join(" ").contains("sh setup.sh"))
+        .map(|(_, spec, _)| spec.place)
+        .collect()
+}
+
+#[test]
+fn a_machine_box_runs_the_profile_setup_in_work_then_agent() {
+    let w = answering(FakeDriver::new().machine_handles(), None, HEAD, None);
+    set_profile(&w, None);
+    let id = started(&w);
+    assert_eq!(setup_places(&w), [Place::Work, Place::Agent]);
+    assert!(!profile_events(&w, id)
+        .iter()
+        .any(|(k, _)| k == "profile_failed"));
+}
+
+#[test]
+fn a_machine_box_records_the_place_whose_setup_failed() {
+    let driver = FakeDriver::new()
+        .machine_handles()
+        .exec_ends_once_when("sh setup.sh", ExecOutcome::Exited { code: 0 })
+        .exec_ends_once_when("sh setup.sh", ExecOutcome::Exited { code: 3 });
+    let w = answering(driver, None, HEAD, None);
+    set_profile(&w, None);
+    let id = started(&w);
+    let failures: Vec<_> = profile_events(&w, id)
+        .into_iter()
+        .filter(|(k, _)| k == "profile_failed")
+        .collect();
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    let payload = &failures.first().unwrap().1;
+    assert_eq!(payload.get("step"), Some(&serde_json::json!("setup")));
+    let detail = payload.get("detail").and_then(serde_json::Value::as_str);
+    assert!(
+        detail.is_some_and(|d| d.starts_with("in the agent place: exit 3")),
+        "{detail:?}"
+    );
+}
+
+#[test]
+fn a_non_machine_box_runs_the_profile_setup_in_work_only() {
+    let w = world_answering(None, HEAD, None);
+    set_profile(&w, None);
+    started(&w);
+    assert_eq!(setup_places(&w), [Place::Work]);
 }

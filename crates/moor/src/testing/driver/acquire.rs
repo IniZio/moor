@@ -4,7 +4,7 @@ use moor_core::seam::driver::{AcquireReq, Acquired, BoxListing, DriverError};
 use moor_core::{BoxHandle, ProviderId};
 
 use super::script::layout;
-use super::FakeDriver;
+use super::{FakeDriver, State};
 
 /// The acquire that goes on when its caller is cut off, as a pool host's does.
 #[derive(Default)]
@@ -17,6 +17,17 @@ pub(super) struct Flight {
     pub(super) adopt_errors: Vec<DriverError>,
 }
 
+impl State {
+    /// The handle of Box number `n`.
+    pub(super) fn handle_named(&self, n: u32) -> String {
+        if self.machine_handles {
+            format!("m1/moor-0000abcd-{n}")
+        } else {
+            format!("box-{n}")
+        }
+    }
+}
+
 impl FakeDriver {
     /// A new Box for `req`, or the failure set up for it.
     pub(super) fn acquired(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
@@ -26,7 +37,7 @@ impl FakeDriver {
             return Err(e);
         }
         s.next += 1;
-        let id = format!("box-{}", s.next);
+        let id = s.handle_named(s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
         s.cache.plans.push(req.cache.clone());
@@ -49,7 +60,7 @@ impl FakeDriver {
         if !s.flight.goes_on {
             return Ok(());
         }
-        let planned = format!("box-{}", s.next + 1);
+        let planned = s.handle_named(s.next + 1);
         if s.flight.at.as_deref() == Some(planned.as_str()) {
             return Err(DriverError::Failed {
                 summary: format!(
