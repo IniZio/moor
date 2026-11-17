@@ -51,6 +51,19 @@ pub struct Output {
     pub code: u8,
 }
 
+/// What `node add` asks for, as parsed.
+#[derive(Debug)]
+pub struct NodeAddSpec {
+    /// The node's name.
+    pub name: String,
+    /// The `HOME` the agent runs under.
+    pub agent_home: std::path::PathBuf,
+    /// Where the runner takes agent links.
+    pub runner: String,
+    /// The labels a Box may require of the node.
+    pub labels: Vec<String>,
+}
+
 /// Result of parsing argv.
 #[derive(Debug)]
 pub enum Parsed {
@@ -113,6 +126,13 @@ pub enum Parsed {
     Down {
         /// Global options.
         opts: GlobalOpts,
+    },
+    /// Enroll a machine agent on this host as a shared node.
+    NodeAdd {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The node and where its agent lives.
+        add: NodeAddSpec,
     },
     /// Print the event stream as JSON lines.
     Events {
@@ -186,6 +206,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
         Ok((opts, Action::Up { max_boxes })) => Parsed::Up { opts, max_boxes },
         Ok((opts, Action::Down)) => Parsed::Down { opts },
+        Ok((opts, Action::NodeAdd(add))) => Parsed::NodeAdd { opts, add },
         Ok((
             opts,
             Action::Events {

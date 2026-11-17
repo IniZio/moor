@@ -17,7 +17,7 @@ pub use user::{
     box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,
     ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, MachinePick,
     MachineService, MachinesConfig, McpServer, NodeConfig, OAuthCallback, OAuthClient, OAuthConfig,
-    ToolsConfig, UserConfig, UserMachine, UserMcp, DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
+    ToolsConfig, UserConfig, UserMachine, UserMcp, BOXES_HOST, DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
 };
 
 pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};

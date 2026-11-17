@@ -1,0 +1,144 @@
+#!/bin/bash
+set -u
+run=/run/moor
+pidfile=/run/moor-work-init.pid
+ca_dst=/usr/local/share/ca-certificates/moor-ca.crt
+user=agent
+uid=1000
+
+# Docker starts this as PID 1 unless the provider passed --init. A shell does not reap, so hand
+# over to tini when there is one; tini passes the exit code on.
+if [ $$ -eq 1 ] && [ "${1:-}" != --env ] && command -v tini >/dev/null; then
+  exec tini -g -- "$0" "$@"
+fi
+
+log() { echo "moor-work-init: $*" >&2; }
+
+# Installs or removes the Box's CA so the system store, and with it Docker pulls, trusts it.
+install_ca() {
+  if [ -s "$run/ca.pem" ]; then
+    mkdir -p "$(dirname "$ca_dst")"
+    cmp -s "$run/ca.pem" "$ca_dst" || cp "$run/ca.pem" "$ca_dst"
+    update-ca-certificates >/dev/null 2>&1 || log "update-ca-certificates failed"
+  elif [ -e "$ca_dst" ]; then
+    rm -f "$ca_dst"
+    update-ca-certificates --fresh >/dev/null 2>&1 || true
+  fi
+}
+
+write_profile() {
+  cat > /etc/profile.d/00-moor.sh <<'PROFILE'
+case ":$PATH:" in *:/run/moor/bin:*) ;; *) PATH=/run/moor/bin:$PATH ;; esac
+export PATH
+if [ -f /run/moor/box.env ]; then . /run/moor/box.env; fi
+PROFILE
+  chmod 644 /etc/profile.d/00-moor.sh
+}
+
+dockerd_pid=
+start_dockerd() {
+  command -v dockerd >/dev/null && [ -w /sys/fs/cgroup ] || return 0
+  local mtu=${MOOR_MTU:-$(cat /sys/class/net/eth0/mtu 2>/dev/null || echo 1500)}
+  mkdir -p /etc/docker
+  printf '{"mtu": %s, "default-network-opts": {"bridge": {"com.docker.network.driver.mtu": "%s"}}}\n' "$mtu" "$mtu" > /etc/docker/daemon.json
+  rm -rf /var/run/docker.pid /run/docker /run/containerd
+  # dockerd runs with the Box env, so its pulls go through the Box's proxy.
+  ( [ -f "$run/box.env" ] && . "$run/box.env"; exec dockerd >/var/log/dockerd.log 2>&1 ) &
+  dockerd_pid=$!
+}
+
+stop_dockerd() {
+  [ -n "$dockerd_pid" ] || return 0
+  kill "$dockerd_pid" 2>/dev/null || return 0
+  for _ in $(seq 1 80); do kill -0 "$dockerd_pid" 2>/dev/null || break; sleep 0.1; done
+  kill -KILL "$dockerd_pid" 2>/dev/null || true
+  wait "$dockerd_pid" 2>/dev/null || true
+  dockerd_pid=
+}
+
+if [ "${1:-}" = --env ]; then
+  pid=$(cat "$pidfile" 2>/dev/null) && kill -0 "$pid" 2>/dev/null || exit 0
+  kill -USR2 "$pid"
+  exit 0
+fi
+
+# The agent place makes the key before the work place starts; wait out a slow start.
+for _ in $(seq 1 120); do [ -s "$run/ssh/id.pub" ] && break; sleep 0.5; done
+[ -s "$run/ssh/id.pub" ] || { log "no $run/ssh/id.pub: the agent place did not start"; exit 1; }
+
+rm -f "$run/work.ready"
+echo $$ > "$pidfile"
+
+# The Box user owns the workdir the places share, so both places' files belong to one uid.
+if ! id "$user" >/dev/null 2>&1; then
+  groupadd --gid "$uid" "$user" 2>/dev/null || true
+  useradd --uid "$uid" --gid "$uid" --create-home --shell /bin/bash --password '*' "$user" || { log "cannot create $user"; exit 1; }
+  getent group docker >/dev/null && usermod -aG docker "$user"
+  if [ -d /etc/sudoers.d ]; then
+    echo "$user ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$user"
+    chmod 0440 "/etc/sudoers.d/$user"
+  fi
+fi
+home=$(getent passwd "$user" | cut -d: -f6)
+mkdir -p "$home"
+chown "$uid:$uid" "$home" 2>/dev/null || true
+
+write_profile
+install_ca
+start_dockerd
+
+mkdir -p "$home/.ssh" /run/sshd
+cp "$run/ssh/id.pub" "$home/.ssh/authorized_keys"
+chown -R "$uid:$uid" "$home/.ssh"
+chmod 700 "$home/.ssh" && chmod 600 "$home/.ssh/authorized_keys"
+[ -f /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -q -A
+
+/usr/sbin/sshd -D -e -p 2222 -o ListenAddress=127.0.0.1 \
+  -o PasswordAuthentication=no -o PermitRootLogin=no -o AcceptEnv=none \
+  -o AllowUsers="$user" -o PrintMotd=no -o PrintLastLog=no &
+sshd_pid=$!
+
+oom_base=$(cat "$run/oom" 2>/dev/null || echo 0)
+case $oom_base in '' | *[!0-9]*) oom_base=0 ;; esac
+oom_seen=-1
+mirror_oom() {
+  local now
+  now=$(sed -n 's/^oom_kill //p' /sys/fs/cgroup/memory.events 2>/dev/null) || return 0
+  [ -n "$now" ] || return 0
+  now=$((oom_base + now))
+  [ "$now" -eq "$oom_seen" ] && return 0
+  echo "$now" > "$run/oom.tmp" && mv -f "$run/oom.tmp" "$run/oom"
+  oom_seen=$now
+}
+
+reload_env() {
+  write_profile
+  install_ca
+  stop_dockerd
+  start_dockerd
+}
+
+cleanup() {
+  trap '' EXIT
+  kill "$sshd_pid" 2>/dev/null
+  stop_dockerd
+  rm -f "$run/work.ready" "$pidfile"
+}
+trap cleanup EXIT
+trap 'exit 75' USR1
+trap reload_env USR2
+trap 'exit 143' TERM INT
+
+mirror_oom
+touch "$run/work.ready"
+while kill -0 "$sshd_pid" 2>/dev/null; do
+  mirror_oom
+  if [ -e "$run/rebuild" ]; then
+    mv -f "$run/rebuild" "$run/rebuild.asked"
+    exit 75
+  fi
+  sleep 1 &
+  wait $!
+done
+log "sshd ended"
+exit 1

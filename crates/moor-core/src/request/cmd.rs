@@ -69,6 +69,7 @@ impl Request {
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::NodeList(_) => "node-list",
+            Self::NodeAdd(_) => "node-add",
             Self::ProviderReady(_) => "provider-ready",
             Self::MachineStatus(_) => "machine-status",
             Self::MachineKeys {} => "machine-keys",

@@ -34,6 +34,7 @@ mod repo_config;
 mod resume_memory;
 mod said_at;
 mod session_archive;
+mod shared_machines;
 mod suspend_check;
 pub mod tables;
 mod vm_inc;
@@ -184,7 +185,11 @@ pub const STEPS: &[Step] = &[
         write: drop_checkpoints::write,
     },
     Step {
-        name: "V80__repo_config",
+        name: "V80__shared_machines",
+        write: shared_machines::write,
+    },
+    Step {
+        name: "V81__repo_config",
         write: repo_config::write,
     },
 ];

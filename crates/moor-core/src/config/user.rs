@@ -30,7 +30,9 @@ pub use creds::McpServer;
 pub use driver::DriverConfig;
 use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
-pub use machine::{pick_machine, unslot_ports, EnrolledMachine, MachinePick, UserMachine};
+pub use machine::{
+    pick_machine, unslot_ports, EnrolledMachine, MachinePick, UserMachine, BOXES_HOST,
+};
 pub use nodes::NodeConfig;
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};

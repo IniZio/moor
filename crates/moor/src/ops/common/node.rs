@@ -69,16 +69,16 @@ pub(crate) fn runtime_id(node: &Node) -> ProviderId {
     }
 }
 
-/// The machine seat a Box on `node` takes, for a personal node.
+/// The machine seat a Box on `node` takes, for a node with a machine behind it.
 fn seat(store: &Store, node: &Node, inc: i64) -> Result<Option<PoolSeat>, CommandError> {
-    match node.scope {
-        Scope::Shared => Ok(None),
-        Scope::Personal { machine_id, .. } => Ok(Some(PoolSeat {
-            machine: machine_id,
-            controller: store.controller_id()?,
-            inc,
-        })),
-    }
+    let Some(machine) = node.machine else {
+        return Ok(None);
+    };
+    Ok(Some(PoolSeat {
+        machine,
+        controller: store.controller_id()?,
+        inc,
+    }))
 }
 
 /// The node `row` was placed on, if it still exists.
@@ -124,7 +124,8 @@ pub(crate) fn seat_of(
     seat_at(cx, store, row, row.hands_inc())
 }
 
-/// The machine seat hands `inc` of Box `row` take on its recorded node, for a personal node.
+/// The machine seat hands `inc` of Box `row` take on its recorded node, for a node with a
+/// machine behind it.
 pub(crate) fn seat_at(
     cx: &Cx,
     store: &Store,
@@ -140,7 +141,7 @@ pub(crate) struct Bound {
     pub(crate) provider: ProviderId,
     /// Its capabilities.
     pub(crate) caps: DriverCaps,
-    /// The machine of a personal node.
+    /// The machine of a node with one.
     pub(crate) seat: Option<PoolSeat>,
 }
 
@@ -271,9 +272,7 @@ fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &HandsRow) -> Opt
             .ok()
             .filter(|_| slug.starts_with("moor-"));
         if let Some(machine) = machine {
-            return personal(
-                &|n| matches!(n.scope, Scope::Personal { machine_id, .. } if machine_id == machine),
-            );
+            return personal(&|n| n.machine == Some(machine));
         }
     }
     let same: Vec<&Node> = all

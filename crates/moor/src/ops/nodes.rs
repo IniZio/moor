@@ -25,8 +25,8 @@ pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
     Ok(cx.store()?.nodes(&shared)?)
 }
 
-/// `machine-links`: records one runner's agent links, relieves each personal node under memory pressure,
-/// then starts the Boxes pending on each personal node whose link is up.
+/// `machine-links`: records one runner's agent links, relieves each machine's node under memory
+/// pressure, then starts the Boxes pending on each machine's node whose link is up.
 ///
 /// # Errors
 /// A store failure.
@@ -42,7 +42,7 @@ pub(crate) fn set_links(
         cx.clock().now(),
     )?;
     for node in all(cx)? {
-        let Scope::Personal { machine_id, .. } = node.scope else {
+        let Some(machine_id) = node.machine else {
             continue;
         };
         let Some(link) = links
@@ -144,10 +144,7 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
         nodes: nodes
             .iter()
             .map(|n| {
-                let boxes = match n.scope {
-                    Scope::Personal { machine_id, .. } => held.get(&machine_id).copied(),
-                    Scope::Shared => None,
-                };
+                let boxes = n.machine.and_then(|m| held.get(&m).copied());
                 let low = cx
                     .store()
                     .and_then(|s| Ok(s.pressure(&n.name)?))

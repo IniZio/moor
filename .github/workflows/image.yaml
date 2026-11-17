@@ -10,6 +10,8 @@ on:
       - Cargo.lock
       - rust-toolchain.toml
       - crates/**
+      - images/**
+      - tools/box-smoke.sh
       - .github/workflows/image.yaml
 
 concurrency:
@@ -43,3 +45,38 @@ jobs:
           # Read-only: the release build in cd.yaml owns the cache, so a pull request cannot
           # push the 10 GB Actions cache over its limit and evict everything.
           cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache
+
+  # The Box images build and, started together on the runner's Docker, pass the smoke script.
+  boxes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: images/agent/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: moor-agent:ci
+          cache-from: type=registry,ref=ghcr.io/inizio/moor-agent:buildcache
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: images/work
+          platforms: linux/amd64
+          load: true
+          tags: moor-work:ci
+          cache-from: type=registry,ref=ghcr.io/inizio/moor-work:buildcache
+      - name: Smoke a Box from the two images
+        env:
+          BOX_SMOKE_AGENT_IMAGE: moor-agent:ci
+          BOX_SMOKE_WORK_IMAGE: moor-work:ci
+        run: tools/box-smoke.sh

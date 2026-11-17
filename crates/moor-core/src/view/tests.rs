@@ -503,3 +503,43 @@ fn the_unfinished_turn_shows_on_the_wire_only_when_set() {
         Some(&json!(true))
     );
 }
+
+/// `machine-keys` as a runner before shared machines read it: one strict list of owned machines.
+#[derive(Debug, serde::Deserialize)]
+struct KeysBeforeSharedMachines {
+    machines: Vec<crate::view::user::MachineKey>,
+    #[serde(default)]
+    controller: Option<crate::box_key::ControllerId>,
+}
+
+#[test]
+fn a_machine_keys_answer_with_shared_machines_still_parses_for_a_runner_that_does_not_know_them() {
+    use crate::view::user::{MachineKey, MachineKeysValue, SharedMachineKey};
+    let answer = MachineKeysValue {
+        machines: vec![MachineKey {
+            machine_id: 1,
+            user: crate::user::UserId::new(5),
+            name: "mini".into(),
+            pubkey: "ssh-ed25519 AAAA".into(),
+        }],
+        shared: vec![SharedMachineKey {
+            machine_id: 2,
+            name: "local".into(),
+            pubkey: "ssh-ed25519 BBBB".into(),
+        }],
+        controller: None,
+    };
+    let wire = serde_json::to_value(&answer).unwrap();
+    let old: KeysBeforeSharedMachines = serde_json::from_value(wire).unwrap();
+    assert_eq!(old.machines, answer.machines);
+    assert_eq!(old.controller, None);
+}
+
+#[test]
+fn a_machine_keys_answer_without_shared_machines_is_the_old_wire_and_reads_as_none() {
+    use crate::view::user::MachineKeysValue;
+    let wire = json!({"machines": []});
+    let value: MachineKeysValue = serde_json::from_value(wire.clone()).unwrap();
+    assert!(value.shared.is_empty());
+    assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+}

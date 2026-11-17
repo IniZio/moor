@@ -27,6 +27,10 @@ pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which 
 pub(crate) const KEYS_OPERATOR_ONLY: &str =
     "machine-keys lists every user's machine keys, which is operator-only";
 
+/// The refusal for a `node-add` from anyone but the operator: it enrolls a machine for every user.
+pub(crate) const NODE_ADD_OPERATOR_ONLY: &str =
+    "node-add enrolls a shared node for every user, which is operator-only";
+
 /// The refusal for a `machine-links` from anyone but the operator: it spans every user.
 pub(crate) const LINKS_OPERATOR_ONLY: &str =
     "machine-links records every user's machine links, which is operator-only";
@@ -129,6 +133,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::BoxRsync(_) => Some(RSYNC_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),
+        Request::NodeAdd(_) => Some(NODE_ADD_OPERATOR_ONLY),
         Request::MachineLinks(_) => Some(LINKS_OPERATOR_ONLY),
         Request::MachineBox(_) => Some(BOXES_OPERATOR_ONLY),
         Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),

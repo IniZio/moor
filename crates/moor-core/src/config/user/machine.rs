@@ -6,6 +6,10 @@ pub use pick::{pick_machine, unslot_ports, MachinePick};
 
 mod pick;
 
+/// The `pool` of a machine whose agent provides Boxes itself, not through a crabbox provider.
+/// A node reads it as the machine's runtime, and a machine with any `pool` hosts Boxes.
+pub const BOXES_HOST: &str = "boxes";
+
 /// Longest machine name.
 const NAME_MAX: usize = 64;
 /// Longest label.

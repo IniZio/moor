@@ -77,6 +77,86 @@ impl Store {
         )?)
     }
 
+    /// Adds the shared machine `machine`, which no user owns, replacing the key, labels and
+    /// capacity of the shared machine of the same name; the machine's id, which a replacement
+    /// keeps.
+    pub(crate) fn enroll_shared_machine(
+        &self,
+        machine: &EnrolledMachine,
+    ) -> Result<i64, StoreError> {
+        let now = self.now().as_millis();
+        let labels = serde_json::to_string(&machine.labels)
+            .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        let found: Option<i64> = tx
+            .row(
+                Query::select()
+                    .column(UserMachinesV2::MachineId)
+                    .from(UserMachinesV2::Table)
+                    .and_where(Expr::col(UserMachinesV2::User).is_null())
+                    .and_where(Expr::col(UserMachinesV2::Name).eq(machine.name.as_str())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        let id = if let Some(id) = found {
+            tx.run(
+                Query::update()
+                    .table(UserMachinesV2::Table)
+                    .value(UserMachinesV2::Pubkey, machine.pubkey.as_str())
+                    .value(UserMachinesV2::Labels, labels)
+                    .value(UserMachinesV2::Capacity, machine.capacity)
+                    .value(UserMachinesV2::PoolProvider, machine.pool.as_deref())
+                    .value(UserMachinesV2::EnrolledAt, now)
+                    .and_where(Expr::col(UserMachinesV2::MachineId).eq(id)),
+            )?;
+            id
+        } else {
+            tx.row(
+                Query::insert()
+                    .into_table(UserMachinesV2::Table)
+                    .columns([
+                        UserMachinesV2::Name,
+                        UserMachinesV2::Pubkey,
+                        UserMachinesV2::Labels,
+                        UserMachinesV2::Capacity,
+                        UserMachinesV2::PoolProvider,
+                        UserMachinesV2::EnrolledAt,
+                    ])
+                    .values_panic([
+                        machine.name.as_str().into(),
+                        machine.pubkey.as_str().into(),
+                        labels.into(),
+                        machine.capacity.into(),
+                        machine.pool.as_deref().into(),
+                        now.into(),
+                    ])
+                    .returning_col(UserMachinesV2::MachineId),
+                |r| r.get(0),
+            )?
+        };
+        tx.commit()?;
+        drop(conn);
+        Ok(id)
+    }
+
+    /// Whether any user owns a machine named `name`.
+    pub(crate) fn user_machine_named(&self, name: &str) -> Result<bool, StoreError> {
+        let found = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(UserMachinesV2::MachineId)
+                    .from(UserMachinesV2::Table)
+                    .and_where(Expr::col(UserMachinesV2::User).is_not_null())
+                    .and_where(Expr::col(UserMachinesV2::Name).eq(name))
+                    .limit(1),
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()?;
+        Ok(found.is_some())
+    }
+
     /// Removes `user`'s machine `name`; true when there was one.
     pub(crate) fn delete_user_machine(&self, user: UserId, name: &str) -> Result<bool, StoreError> {
         let gone = self.writer().run(
