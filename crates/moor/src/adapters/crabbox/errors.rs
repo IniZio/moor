@@ -2,8 +2,8 @@
 //!
 //! crabbox never prints JSON errors: the message is free text on stderr and
 //! the exit code is coarse. Raw text is read for classification; only the
-//! generic acquire, release, checkpoint and provider lookup failures carry a short stderr
-//! tail. A failed acquire, release or checkpoint also logs the plain words of each stderr line
+//! generic acquire, release and provider lookup failures carry a short stderr
+//! tail. A failed acquire or release also logs the plain words of each stderr line
 //! moor kept, which is the last 2 KiB.
 
 use std::fmt::Write as _;
@@ -33,8 +33,6 @@ pub(super) enum Op {
     Wake,
     /// Touching a Box's lease.
     Touch,
-    /// Saving a Box's checkpoint.
-    Checkpoint,
 }
 
 impl Op {
@@ -49,7 +47,6 @@ impl Op {
             Self::Target => "box ssh target lookup",
             Self::Sleep => "box sleep",
             Self::Wake => "box wake",
-            Self::Checkpoint => "box checkpoint",
         }
     }
 }
@@ -218,7 +215,7 @@ fn stderr_suffix(op: Op, stderr: &str) -> String {
     if matches!(op, Op::List) {
         return last_sentence(stderr).map_or_else(String::new, |s| format!(": {s}"));
     }
-    if !matches!(op, Op::Acquire | Op::Release | Op::Caps | Op::Checkpoint) {
+    if !matches!(op, Op::Acquire | Op::Release | Op::Caps) {
         return String::new();
     }
     let line = one_line(stderr);
@@ -231,9 +228,9 @@ fn stderr_suffix(op: Op, stderr: &str) -> String {
 
 pub(super) use tail::one_line;
 
-/// The plain words of each stderr line a failed acquire, release or checkpoint left, for the log.
+/// The plain words of each stderr line a failed acquire or release left, for the log.
 pub(super) fn stderr_record(op: Op, provider: Option<&str>, e: &ProcError) -> Option<String> {
-    if !matches!(op, Op::Acquire | Op::Release | Op::Checkpoint) {
+    if !matches!(op, Op::Acquire | Op::Release) {
         return None;
     }
     let ProcError::NonZero {
@@ -344,20 +341,6 @@ fn routing_refusal(stderr: &str) -> Option<DriverError> {
     Some(DriverError::Misconfigured {
         summary: format!("crabbox refused its external routing directory: {line}; {fix}"),
     })
-}
-
-/// Words the provider prints when a fork finds its checkpoint was never finished.
-const UNFINISHED: &str = "was never finished";
-
-/// `e` as [`DriverError::UnfinishedCheckpoint`] when a failed fork says its checkpoint was never
-/// finished; crabbox has no other way to say so.
-pub(super) fn unfinished_fork(e: DriverError) -> DriverError {
-    match e {
-        DriverError::Failed { summary } if summary.to_lowercase().contains(UNFINISHED) => {
-            DriverError::UnfinishedCheckpoint { summary }
-        }
-        e => e,
-    }
 }
 
 /// Error for output moor cannot read.

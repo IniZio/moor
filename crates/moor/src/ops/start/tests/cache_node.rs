@@ -16,7 +16,7 @@ fn cold_reasons(w: &World) -> Vec<String> {
         .unwrap()
         .unwrap()
         .id;
-    super::warm::events(w, id, "cache_cold")
+    super::events::events(w, id, "cache_cold")
         .iter()
         .map(|p| p["reason"].as_str().unwrap().to_owned())
         .collect()
@@ -54,7 +54,6 @@ fn a_personal_node_whose_link_drops_before_the_plan_records_why_the_box_is_cold(
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
-        warm_starts: None,
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![link])).unwrap();
@@ -108,7 +107,6 @@ fn a_personal_node_saves_at_a_pause_only_when_its_online_agent_reports_it() {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
-        warm_starts: None,
         memory: None,
     };
     nodes::set_links(&w.cx, &crate::testing::one_runner(vec![offline])).unwrap();

@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use super::super::{at_base, clone_script, left_out_submodules, script, Checkout, SUBMODULE_GIT};
-use crate::boxscript::refresh::{outcome, refresh_script, refresh_with, Work};
+use super::super::{clone_script, left_out_submodules, script, Checkout, SUBMODULE_GIT};
+use crate::boxscript::refresh::{outcome, refresh_script};
 use crate::testgit::{Origin, BRANCH};
 
 fn repo(o: &Origin, name: &str) -> PathBuf {
@@ -164,10 +164,6 @@ fn a_fresh_clone_leaves_submodules_initialised_nested_too() {
         o.git(&o.tree(), &["symbolic-ref", "--short", "HEAD"]),
         BRANCH
     );
-    assert!(
-        at_base(&text),
-        "a clean tree with submodules is the base: {text}"
-    );
 }
 
 #[test]
@@ -206,10 +202,6 @@ fn a_broken_submodule_leaves_a_usable_tree_its_siblings_and_a_warning() {
     assert_eq!(
         o.git(&o.tree(), &["symbolic-ref", "--short", "HEAD"]),
         BRANCH
-    );
-    assert!(
-        !at_base(&text),
-        "a tree missing a submodule must not be saved as the base: {text}"
     );
 }
 
@@ -435,34 +427,3 @@ fn a_refresh_moves_an_initialised_ssh_submodule_to_its_new_commit() {
     assert_eq!(read(&o, "lib/s.txt"), "moved\n");
 }
 
-#[test]
-fn a_fork_at_its_own_commit_keeps_what_a_line_left_untracked_in_a_submodule() {
-    let o = Origin::new("keep-in-sub");
-    let sub = repo(&o, "native");
-    let first = o.git(&sub, &["rev-parse", "HEAD"]);
-    add_link_at(&o, "lib", "git@github.com:acme/native.git", &first);
-    let base = publish(&o);
-    let (vars, _) = fake_https(&o, &sub);
-    let vars = borrowed(&vars);
-    let url = o.url();
-    let c = Checkout {
-        url: &url,
-        base: &base,
-        branch: BRANCH,
-    };
-    let both = format!(
-        "{}{}",
-        refresh_script(&c, "moor-1-aaaaaa"),
-        clone_script(&c)
-    );
-    run(&o, &both, &vars);
-    std::fs::write(o.tree().join("lib/loose"), "made\n").unwrap();
-    let keeping = format!(
-        "{}{}",
-        refresh_with(&c, "moor-2-bbbbbb", Work::Keep),
-        clone_script(&c)
-    );
-    let (_, text) = run(&o, &keeping, &vars);
-    assert_eq!(outcome(&text), Some("refreshed"), "{text}");
-    assert_eq!(read(&o, "lib/loose"), "made\n");
-}

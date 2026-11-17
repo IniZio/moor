@@ -320,7 +320,6 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
         model: None,
         node: None,
         no_agent: false,
-        cold: false,
         resume: false,
         repo: Some(job.repo.clone()),
         also: Some(job.also.clone()),

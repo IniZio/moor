@@ -6,7 +6,7 @@ use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-use moor_client::link::lease::{Answer, Boot, CheckpointAct, Verb};
+use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind};
@@ -15,7 +15,6 @@ use super::{handle_of, pin, split_handle, Crabbox};
 pub(super) use lost::cancel;
 use lost::{lost_or_failed, undone};
 
-pub(super) mod checkpoints;
 pub(super) mod forward;
 mod lost;
 mod power;
@@ -37,11 +36,6 @@ pub(crate) trait PoolHosts: Send + Sync {
         key: Option<&str>,
         boot: &Boot,
     ) -> Result<Answer, String>;
-    /// Asks machine `machine_id` to act on its checkpoints.
-    fn checkpoint(&self, machine_id: i64, act: CheckpointAct) -> Result<Answer, String> {
-        let _ = (machine_id, act);
-        Err("this seam reaches no checkpoints".to_owned())
-    }
     /// The ssh `ProxyCommand` that dials `slug`'s sshd on machine `machine_id`.
     fn dial_command(&self, machine_id: i64, slug: &str) -> Result<String, String>;
 }
@@ -131,7 +125,7 @@ pub(super) fn is_pool_provider(provider: &ProviderId) -> bool {
 }
 
 /// A pool VM pauses and resumes through its host, and its reverse tunnel is ssh over moor's own
-/// words; no cache volume reaches it yet, and its agent's offer says whether checkpoints do.
+/// words; no cache volume reaches it yet.
 pub(super) const CAPS: DriverCaps = DriverCaps {
     sleep: SleepKind::Suspend,
     wake: true,
@@ -139,7 +133,6 @@ pub(super) const CAPS: DriverCaps = DriverCaps {
     has_workdir: true,
     cache_volumes: false,
     cache_save_on_pause: false,
-    checkpoints: true,
 };
 
 impl Crabbox {

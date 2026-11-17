@@ -25,7 +25,6 @@ pub(super) fn bring_back(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         model: None,
         node: None,
         no_agent: false,
-        cold: false,
         resume: false,
         repo: None,
         parent: None,

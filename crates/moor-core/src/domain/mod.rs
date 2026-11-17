@@ -7,7 +7,6 @@ pub mod decision;
 pub mod event;
 pub mod hands;
 pub mod inbox;
-pub mod layers;
 pub mod session_state;
 pub mod turn;
 

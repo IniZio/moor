@@ -56,7 +56,6 @@ fn enroll(cx: &Cx, who: &str, machine: &str, online: bool) -> (UserId, MachineLi
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
-        warm_starts: None,
         memory: None,
     };
     (user, link)

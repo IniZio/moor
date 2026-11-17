@@ -19,9 +19,6 @@ pub(super) struct StartArgs {
     pub(super) base: Option<String>,
     /// A node `list_nodes` shows you; omit to start on the node `list_nodes` says a start picks.
     pub(super) node: Option<String>,
-    /// Set the Box up from scratch, past any setup kept from earlier Boxes; false by default.
-    #[serde(default)]
-    pub(super) cold: Option<bool>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.
     pub(super) wait: Option<bool>,

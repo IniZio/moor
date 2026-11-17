@@ -30,10 +30,11 @@ const CANCEL_GRACE_SECS: u32 = 5;
 
 /// The id of the detached run that holds one setup script in the Box: the same for every
 /// attach to one start's script, so a restarted controller follows the run it left. `attempt`
-/// names the start, `workdir` the tree and `place` the line of a script run line by line.
-pub(crate) fn run_id(attempt: i64, workdir: &BoxPath, place: Option<(u32, u32)>) -> i64 {
+/// names the start and `workdir` the tree. The key ends in `None`, as it did when a script could
+/// run line by line, so a run an older controller launched is still found.
+pub(crate) fn run_id(attempt: i64, workdir: &BoxPath) -> i64 {
     use sha2::{Digest as _, Sha256};
-    let key = format!("{attempt}\n{}\n{place:?}", workdir.as_str());
+    let key = format!("{attempt}\n{}\nNone", workdir.as_str());
     let digest = Sha256::digest(key.as_bytes());
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(digest.get(..8).unwrap_or(&[0; 8]));

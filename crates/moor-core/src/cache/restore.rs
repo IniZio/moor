@@ -6,8 +6,8 @@ use crate::boxscript::quote;
 /// What the script prints on stdout, before `<name>: <why>`, for a volume it emptied.
 pub const EMPTIED: &str = "moor: cache emptied ";
 
-/// Present once the script has finished. It lives on the root disk, which a new Box gets fresh and
-/// a checkpoint's fork inherits along with its volumes, so live data is never cleaned twice.
+/// Present once the script has finished. It lives on the root disk, which a new Box gets fresh, so
+/// live data is never cleaned twice.
 const STAMP: &str = "$HOME/.moor/cache-restored";
 
 /// Empties each directory given, through `sudo -n` where the login user cannot.

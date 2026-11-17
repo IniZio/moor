@@ -110,7 +110,6 @@ pub(super) fn finish_steps(
         dotfiles: after.dotfiles,
         work_tree: None,
         install_failed,
-        warm_disk: None,
     })
 }
 

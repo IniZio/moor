@@ -1,6 +1,6 @@
 //! Real work trees for the Driver fake: each Box is a directory, its commands run there under
-//! `/bin/sh`, a checkpoint is a copy of it and a fork is a copy of that. So a test sees what a Box's
-//! disk really holds after moor's scripts ran with real git, without a VM.
+//! `/bin/sh`. So a test sees what a Box's disk really holds after moor's scripts ran with real git,
+//! without a VM.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use super::{FakeDriver, State};
 /// Where the Boxes live and what stands for GitHub.
 #[derive(Clone)]
 pub(super) struct Trees {
-    /// Holds `<handle>/{repo,home}` and `ckpt/<id>`.
+    /// Holds `<handle>/{repo,home}`.
     root: PathBuf,
     /// The URL that stands for `https://github.com/` in a Box's commands, ending in `/`.
     remote: String,
@@ -30,15 +30,6 @@ fn failed(what: &str, e: impl std::fmt::Display) -> DriverError {
     }
 }
 
-/// Copies `from` to `to`, keeping modes and links.
-fn copy(from: &Path, to: &Path) -> Result<(), DriverError> {
-    let done = Command::new("cp").arg("-a").arg(from).arg(to).status();
-    match done {
-        Ok(s) if s.success() => Ok(()),
-        other => Err(failed("cp", format!("{other:?}"))),
-    }
-}
-
 impl Trees {
     pub(super) fn acquired(&self, handle: &str) -> Result<(), DriverError> {
         let dir = self.root.join(handle);
@@ -46,17 +37,7 @@ impl Trees {
         moor_testkit::write_host_guards(&dir.join("home/bin")).map_err(|e| failed("guards", e))
     }
 
-    pub(super) fn saved(&self, handle: &str, id: &str) -> Result<(), DriverError> {
-        let dir = self.root.join("ckpt");
-        std::fs::create_dir_all(&dir).map_err(|e| failed("mkdir", e))?;
-        copy(&self.root.join(handle), &dir.join(id))
-    }
-
-    pub(super) fn forked(&self, id: &str, handle: &str) -> Result<(), DriverError> {
-        copy(&self.root.join("ckpt").join(id), &self.root.join(handle))
-    }
-
-    /// Runs `spec` in the Box's tree, whatever path its disk was saved under. The prelude is left
+    /// Runs `spec` in the Box's tree. The prelude is left
     /// out, since it sets up the Proxy this host has none of.
     pub(super) fn exec(&self, handle: &str, spec: &ExecSpec) -> Result<ExecOutcome, DriverError> {
         let line = match spec.argv.as_slice() {

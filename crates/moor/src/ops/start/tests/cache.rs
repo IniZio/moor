@@ -34,7 +34,7 @@ fn cache_warnings(w: &World) -> Vec<String> {
 
 /// The `cache_cold` payloads of the Box a start made.
 fn cold_events(w: &World, v: &StartView) -> Vec<serde_json::Value> {
-    super::warm::events(w, BoxId::new(v.boxed.id), "cache_cold")
+    super::events::events(w, BoxId::new(v.boxed.id), "cache_cold")
 }
 
 fn reasons(w: &World, v: &StartView) -> Vec<String> {
@@ -238,7 +238,7 @@ fn an_emptied_volume_warns_and_records_and_the_box_starts() {
         "cache volume docker was emptied: blob abc does not match its hash; the Box goes on \
          without it"
     );
-    let events = super::warm::events(&w, BoxId::new(view.boxed.id), "cache_emptied");
+    let events = super::events::events(&w, BoxId::new(view.boxed.id), "cache_emptied");
     assert_eq!(
         events,
         [json!({"volume": "docker", "reason": "blob abc does not match its hash"})]

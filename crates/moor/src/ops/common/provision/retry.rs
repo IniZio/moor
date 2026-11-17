@@ -14,15 +14,15 @@ use moor_core::config::Flags;
 use moor_core::BoxId;
 
 use super::interrupted::{launch_was_cut, release_warned};
-use super::lease::planned_root;
+use super::lease::{planned_root, release_left};
 use super::rerun::{finish_steps, record_interrupted};
-use super::{layers, recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
+use super::{recorded_workdir, reread, run_and_record, Entry, Provisioned, SetupTarget};
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::close;
 use crate::ops::common::facts::settings_of;
-use crate::ops::common::{cache, setup};
+use crate::ops::common::setup;
 use crate::ops::start::{launch_after_retry, queued_or};
 use crate::store::{BoxRow, Store};
 
@@ -64,7 +64,7 @@ pub(super) fn retry_in_box(
         .lifecycle(BoxLifecycleInput::Retry)
         .effect(EffectChange::Next(Effect::Setup));
     store.apply(begin)?;
-    set_up_in_machine(cx, store, row, cfg, Fork::New)
+    set_up_in_machine(cx, store, row, cfg)
 }
 
 /// Picks up the start a controller restart cut off in Box `id`, which [`super::interrupted::settle`]
@@ -74,7 +74,7 @@ pub(super) fn retry_in_box(
 /// holds one.
 pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let _turn = cx.turn_unless_held(id, Cmd::Resume)?;
-    layers::release_left(cx, store, id)?;
+    release_left(cx, store, id)?;
     let row = super::reread(store, id)?;
     let wanted = row
         .wanted
@@ -188,8 +188,8 @@ fn follow_setup(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned, Com
     if let Some((handle, _)) = machine(row) {
         setup::await_reachable(cx, handle)?;
     }
-    let fork = cut_fork(cx, store, row)?;
-    match set_up_in_machine(cx, store, row, &cfg, fork) {
+    release_cut_fork(cx, store, row)?;
+    match set_up_in_machine(cx, store, row, &cfg) {
         Ok(done) => Ok(done),
         // The effect stays, so the next process claims this setup again.
         Err(e) if cx.env().draining().is_cancelled() => Err(e),
@@ -222,27 +222,13 @@ fn finish_cut_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Provisioned,
     }
 }
 
-/// What a retried setup does about a fork onto a checkpoint.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Fork {
-    /// Runs in the machine the Box holds.
-    No,
-    /// Forks the nearest checkpoint first.
-    New,
-    /// Takes over the fork an earlier process left going.
-    Adopt,
-}
-
-/// What became of a retry fork an earlier process left: taken over when its host keeps it going,
-/// else released, as nothing else would.
-fn cut_fork(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Fork, CommandError> {
+/// Releases the machine a retry an earlier controller version cut off was still forking, which no
+/// Box holds, and drops its lease record.
+fn release_cut_fork(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let held = row.hands.as_ref().and_then(|b| b.handle.as_ref());
     let Some(planned) = planned_root(store, row.id)?.filter(|p| Some(p) != held) else {
-        return Ok(Fork::No);
+        return Ok(());
     };
-    if cx.driver().acquire_outlives_caller(&planned) {
-        return Ok(Fork::Adopt);
-    }
     if release_warned(cx, store, row, &planned) {
         for lease in store.leases(row.id)? {
             if lease.key == planned.as_str() {
@@ -250,45 +236,27 @@ fn cut_fork(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Fork, CommandError> 
             }
         }
     }
-    Ok(Fork::No)
+    Ok(())
 }
 
-/// Runs the clone, setup and dotfiles in the machine `row` holds, then marks it ready; `fork`
-/// first moves a retried Box onto the checkpoint nearest its failed line.
+/// Runs the clone, setup and dotfiles in the machine `row` holds, then marks it ready.
 fn set_up_in_machine(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     cfg: &BoxSettings,
-    fork: Fork,
 ) -> Result<Provisioned, CommandError> {
     let (Some((handle, workdir)), Some(held)) = (machine(row), row.hands.as_ref()) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
     };
-    let provider = held.provider.as_str();
-    let plan = cache::derived(cx, store, row, cfg, &held.provider);
-    let mut layered = layers::plan(cx, store, row, provider, cfg, &plan);
-    let forked = match layered.as_mut() {
-        Some(layered) if fork != Fork::No => {
-            layers::stand_on_rerun(store, row.id, layered)?;
-            let adopt = fork == Fork::Adopt;
-            layers::resume(cx, store, row, cfg, (layered, adopt))?
-        }
-        Some(layered) => {
-            layers::stand_on_warm_start(store, row.id, layered)?;
-            None
-        }
-        None => None,
-    };
     let log_dir = setup::log_dir(cx.state_dir()?, row.id);
     let target = SetupTarget {
-        handle: forked.as_ref().unwrap_or(handle),
-        provider,
+        handle,
+        provider: held.provider.as_str(),
         workdir: &workdir,
         repo: row.repo.as_ref(),
         log_dir: &log_dir,
         tree_of: None,
-        layered: layered.as_ref(),
     };
     let inc = reread(store, row.id)?.hands_inc();
     run_and_record(cx, store, (row.id, inc), true, &target, cfg)

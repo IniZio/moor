@@ -40,11 +40,6 @@ pub enum DriverError {
         /// Last lines crabbox or ssh wrote to stderr, as one line.
         stderr_tail: String,
     },
-    /// The checkpoint asked for was never finished, so no Box can start from it while it stays.
-    UnfinishedCheckpoint {
-        /// What the provider said.
-        summary: String,
-    },
     /// A setting or file permission on this host makes the provider refuse; a retry cannot help.
     Misconfigured {
         /// What is wrong and how to fix it.

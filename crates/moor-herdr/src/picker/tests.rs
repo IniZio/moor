@@ -516,7 +516,6 @@ fn node(name: &str, scope: NodeScope, online: bool) -> NodeView {
         mem_psi_centi: None,
         mem_report_age_secs: None,
         pressure_since: None,
-        warm_starts: None,
         box_memory_mib: None,
         labels: Vec::new(),
     }

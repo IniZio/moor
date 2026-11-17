@@ -40,7 +40,6 @@ pub(crate) mod artifacts;
 mod bindings;
 mod box_node;
 pub(crate) mod box_profile;
-pub(crate) mod checkpoints;
 pub(crate) mod controller_lock;
 pub(crate) mod copy;
 pub(crate) mod db;

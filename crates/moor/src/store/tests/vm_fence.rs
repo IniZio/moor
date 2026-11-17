@@ -4,16 +4,12 @@
 
 use moor_core::config::UserMachine;
 use moor_core::domain::hands::HandsInc;
-use moor_core::domain::layers::LayerKey;
 use moor_core::request::{BoxHostMemory, BoxStage, MachineBox};
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::{Identity, UserId};
-use moor_core::{BoxHandle, BoxId, ProviderId};
-use moor_schema::tables::SetupCheckpointPins as Pins;
-use sea_query::{Expr, ExprTrait as _, Order, Query};
+use moor_core::{BoxHandle, BoxId};
 
 use super::{new_box, open};
-use crate::store::db::DbExt as _;
 use crate::store::{Fence, Store, StoreError};
 use crate::testing::rng::FakeRng;
 
@@ -146,42 +142,4 @@ fn memory_reported_for_replaced_hands_is_dropped_and_returned_as_stale() {
         [held(late), held(unnamed), held(current)],
         [None, Some(200), Some(300)]
     );
-}
-
-/// The keys of the layers Box `id` stands on, by key.
-fn pinned(store: &Store, id: BoxId) -> Vec<String> {
-    let rows = store
-        .writer()
-        .rows(
-            Query::select()
-                .column(Pins::LayerKey)
-                .from(Pins::Table)
-                .and_where(Expr::col(Pins::BoxId).eq(id.get()))
-                .order_by(Pins::LayerKey, Order::Asc),
-            |r| r.get(0),
-        )
-        .unwrap();
-    rows.collect::<Result<_, _>>().unwrap()
-}
-
-#[test]
-fn a_layer_saved_on_replaced_hands_pins_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let id = replaced(&store, "a");
-    let provider = ProviderId::new("p");
-    let key = |c: &str| LayerKey::restore(c.repeat(64)).unwrap();
-
-    assert!(is_stale(
-        &store.pin_checkpoint((id, Some(OLD)), &provider, &key("a"), 1),
-        id
-    ));
-    store
-        .pin_checkpoint((id, Some(NEW)), &provider, &key("b"), 1)
-        .unwrap();
-    store
-        .pin_checkpoint((id, None), &provider, &key("c"), 0)
-        .unwrap();
-
-    assert_eq!(pinned(&store, id), ["b".repeat(64), "c".repeat(64)]);
 }

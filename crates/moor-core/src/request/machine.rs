@@ -163,23 +163,12 @@ pub struct BoxHostMemory {
     pub inc: Option<i64>,
 }
 
-/// Whether a machine's agent serves checkpoints, which a warm start needs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "state", deny_unknown_fields)]
-pub enum WarmStarts {
-    /// It does.
-    On,
-    /// It does not.
-    Off {
-        /// Why, in words for its owner.
-        why: String,
-    },
-}
-
 /// Whether an enrolled machine's agent holds a link to the runner, since when, and what it
 /// speaks.
+///
+/// It reads past keys it does not know, so a runner one release older, which still sends
+/// `warm_starts`, stays linked to this controller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MachineLink {
     /// The enrolled machine.
     pub machine_id: i64,
@@ -211,9 +200,6 @@ pub struct MachineLink {
     /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reserve_mib: Option<u64>,
-    /// Whether its agent serves checkpoints; none from an agent that never said.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub warm_starts: Option<WarmStarts>,
     /// Its agent's latest live memory report; none from an agent that never sent one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryReport>,

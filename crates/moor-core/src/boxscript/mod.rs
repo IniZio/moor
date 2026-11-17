@@ -9,7 +9,6 @@ pub mod refresh;
 pub mod resources;
 pub mod setup;
 pub mod teardown;
-pub mod warm_disk;
 
 #[cfg(test)]
 mod tests;

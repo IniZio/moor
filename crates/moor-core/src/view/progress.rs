@@ -3,8 +3,6 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::domain::layers::WarmDisk;
-
 /// How many of a Box's latest events the card reads.
 pub const EVENTS: u32 = 40;
 
@@ -94,17 +92,6 @@ pub fn latest(events: &[Happened]) -> Option<String> {
     events.iter().rev().find_map(|e| step(&e.kind, &e.payload))
 }
 
-/// A `checkpoint_evicted` event as a step.
-fn checkpoint_evicted(payload: &Value) -> String {
-    let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
-    format!(
-        "deleted setup checkpoint {} of {} ({}) for disk",
-        text("checkpoint"),
-        text("repo"),
-        text("reason")
-    )
-}
-
 /// Event `kind` as a step, or `None` for one that says nothing about getting the Box up.
 fn step(kind: &str, payload: &Value) -> Option<String> {
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
@@ -128,20 +115,11 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "box_failed" => format!("machine failed: {}", text("error")),
         "setting_up" => "setting up".to_owned(),
         "cloned" => format!("cloned{}", took()),
-        "warm_started" | "warm_rerun" | "warm_rerun_failed" => warm_step(kind, payload),
-        "cold_asked" => "setting up from scratch, as asked".to_owned(),
         "cache_cold" => format!("starting without cache volumes: {}", text("detail")),
         "cache_emptied" => format!(
             "emptied cache volume {}: {}",
             text("volume"),
             text("reason")
-        ),
-        "checkpoint_taken" => checkpoint_taken(payload),
-        "checkpoint_evicted" => checkpoint_evicted(payload),
-        "warm_start_failed" => format!(
-            "could not start from setup checkpoint {}: {}; setting up from scratch",
-            num(payload, "layer"),
-            text("error")
         ),
         "setup_finished" if payload.get("ok").and_then(Value::as_bool) == Some(false) => {
             format!("setup finished with failures{}", took())
@@ -237,21 +215,6 @@ fn setup_line(kind: &str, payload: &Value) -> Option<String> {
     })
 }
 
-/// A setup checkpoint taken, or failed, and the time it paused the Box.
-fn checkpoint_taken(payload: &Value) -> String {
-    let layer = num(payload, "layer");
-    let took = span(num(payload, "duration_ms") / 1000);
-    payload.get("error").and_then(Value::as_str).map_or_else(
-        || format!("took setup checkpoint {layer} in {took}"),
-        |error| format!("setup checkpoint {layer} failed after {took}: {error}"),
-    )
-}
-
-/// The number at `key` in `payload`; 0 when there is none.
-fn num(payload: &Value, key: &str) -> u64 {
-    payload.get(key).and_then(Value::as_u64).unwrap_or_default()
-}
-
 /// A setup line's place in the list, as `3/6`.
 fn position(payload: &Value) -> String {
     let n = |key: &str| payload.get(key).and_then(Value::as_u64).unwrap_or_default();
@@ -279,30 +242,6 @@ fn unix(ts: &str) -> Option<i64> {
     let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
     let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
     Some(days * 86_400 + secs)
-}
-
-/// The words for a warm start's event `kind`.
-fn warm_step(kind: &str, payload: &Value) -> String {
-    let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
-    match kind {
-        "warm_rerun" => WarmDisk::deserialize(payload)
-            .map_or_else(|_| "ran every setup line again".to_owned(), |d| d.note()),
-        "warm_rerun_failed" => format!(
-            "setup line failed over a checkpoint: {}; setting up from scratch",
-            text("line")
-        ),
-        _ => {
-            let saved = span(num(payload, "saved_ms") / 1000);
-            let place = format!("{}/{}", num(payload, "layer"), num(payload, "layers"));
-            if payload.get("rerun_from").is_some_and(Value::is_string) {
-                format!(
-                    "started from setup checkpoint {place} of another commit, running its lines"
-                )
-            } else {
-                format!("started from setup checkpoint {place}, skipping {saved} of setup")
-            }
-        }
-    }
 }
 
 #[cfg(test)]

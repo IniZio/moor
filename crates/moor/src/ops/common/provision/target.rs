@@ -7,8 +7,6 @@ use moor_core::seam::driver::Acquired;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxHandle, BoxPath};
 
-use super::layers::Layered;
-
 /// Where setup runs: the freshly acquired Box, the repo it clones and where its setup log is kept.
 pub(super) struct SetupTarget<'a> {
     /// The Box setup runs in.
@@ -23,8 +21,6 @@ pub(super) struct SetupTarget<'a> {
     pub(super) log_dir: &'a Path,
     /// The listed repo whose tree this is, named on its setup steps; `None` for the primary's.
     pub(super) tree_of: Option<&'a ForgeRepo>,
-    /// The primary repo's setup layers, when its lines run in checkpointed layers.
-    pub(super) layered: Option<&'a Layered>,
 }
 
 impl<'a> SetupTarget<'a> {
@@ -34,7 +30,6 @@ impl<'a> SetupTarget<'a> {
         provider: &'a str,
         repo: Option<&'a BoxRepo>,
         log_dir: &'a Path,
-        layered: Option<&'a Layered>,
     ) -> Self {
         Self {
             handle: &got.handle,
@@ -43,15 +38,6 @@ impl<'a> SetupTarget<'a> {
             repo,
             log_dir,
             tree_of: None,
-            layered,
-        }
-    }
-
-    /// This target, keeping its layers only when `keep`.
-    pub(super) fn keeping_layers(&self, keep: bool) -> Self {
-        Self {
-            layered: self.layered.filter(|_| keep),
-            ..*self
         }
     }
 }

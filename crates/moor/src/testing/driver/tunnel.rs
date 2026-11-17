@@ -146,7 +146,6 @@ impl FakeDriver {
             has_workdir: true,
             cache_volumes: st.cache.on,
             cache_save_on_pause: st.cache.saves_on_pause,
-            checkpoints: st.layers.on,
         }
     }
 

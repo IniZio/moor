@@ -3,7 +3,6 @@
 mod batch;
 mod cache;
 mod caps;
-mod checkpoint;
 mod connect;
 mod cp;
 mod deadlines;
@@ -39,8 +38,8 @@ use moor_core::box_key::WORK_ROOT;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
-    DriverError, ExecOutcome, ExecSpec, Followed, Forked, HandlesListing, Launched, LocalTunnel,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps,
+    DriverError, ExecOutcome, ExecSpec, Followed, HandlesListing, Launched, LocalTunnel,
     PausePublish, Released, RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcSpec, Tool};
@@ -86,15 +85,13 @@ pub(crate) struct Crabbox {
     links: Option<link::Dirs>,
     /// `<state>/leases`, which holds each lease's dir; none when moor keeps no state.
     leases: Option<PathBuf>,
-    /// The cache dir a provider on this host keeps its checkpoints under; none when unknown.
-    checkpoint_dir: Option<PathBuf>,
     /// How pool hosts are reached; none when this controller reaches none.
     pool_hosts: Option<Arc<dyn PoolHosts>>,
     /// How a pool Box's ports are reached; none when this controller reaches none.
     pool_ports: Option<Arc<dyn PoolPorts>>,
     /// The pool hosts' lists in flight and which hosts last went unanswered; may be shared.
     host_lists: Arc<pool::HostLists>,
-    /// Where a failed acquire, release or checkpoint writes its stderr: moor's own stderr.
+    /// Where a failed acquire or release writes its stderr: moor's own stderr.
     failure_log: Arc<Mutex<dyn std::io::Write + Send>>,
     /// Keeps a test driver's state dir alive.
     #[cfg(test)]
@@ -117,7 +114,6 @@ impl Crabbox {
             targets: Mutex::new(HashMap::new()),
             links: None,
             leases: None,
-            checkpoint_dir: None,
             pool_hosts: None,
             pool_ports: None,
             host_lists: Arc::default(),
@@ -362,22 +358,6 @@ impl Driver for Crabbox {
 
     fn touch(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         touch::heartbeat(self, handle)
-    }
-
-    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
-        checkpoint::create(self, handle, name)
-    }
-
-    fn fork(&self, id: &str, req: &AcquireReq) -> Result<Forked, DriverError> {
-        checkpoint::fork(self, id, req)
-    }
-
-    fn delete_checkpoint(&self, home: &ProviderId, id: &str) -> Result<(), DriverError> {
-        checkpoint::delete(self, home, id)
-    }
-
-    fn checkpoint_disk(&self, provider: &ProviderId) -> Result<checkpoint::Disk, DriverError> {
-        checkpoint::disk(self, provider)
     }
 
     fn reverse_tunnel(

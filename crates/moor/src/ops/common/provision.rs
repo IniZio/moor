@@ -8,7 +8,7 @@ use moor_core::domain::decision::{
     Decision, Effect, EffectChange, ExtraEvent, Field, Fields, HandsFields,
 };
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError};
+use moor_core::seam::driver::{AcquireReq, DriverError};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxPath, ErrorKind, ProviderId};
 
@@ -174,9 +174,16 @@ pub(crate) fn provision(
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     let provider = req.provider.as_str();
-    let mut layered = layers::plan(cx, store, &acquiring, provider, cfg, &req.cache);
-    let acquired = machine_for(cx, store, id, entry, &req, layered.as_mut())?;
     let forced = || cx.env().cancel().is_cancelled();
+    let acquired = if forced() {
+        Err(DriverError::Failed {
+            summary: setup::FORCED_CLOSE.to_owned(),
+        })
+    } else if entry == Entry::Adopt {
+        adopt_timed(cx, store, id, &req)
+    } else {
+        acquire_timed(cx, store, id, &req)
+    };
     match acquired {
         // Whatever it made is the forced close's to release.
         _ if forced() => Err(forced_out(store, (id, inc), entry, &planned)?),
@@ -187,7 +194,7 @@ pub(crate) fn provision(
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
             let repo = started.repo.as_ref();
-            let target = SetupTarget::new(&got, provider, repo, &log_dir, layered.as_ref());
+            let target = SetupTarget::new(&got, provider, repo, &log_dir);
             let done = run_and_record(cx, store, (id, inc), entry.sets_up(), &target, cfg)?;
             // A Box a forced close is waiting on gets no agent.
             if cx.env().cancel().is_cancelled() {
@@ -201,38 +208,6 @@ pub(crate) fn provision(
         }
         Err(e) => Err(failed(cx, store, (id, inc), entry, &req, e)),
     }
-}
-
-/// Gets Box `id` its machine for `req`: from a kept layer, else by the acquire `entry` calls for. A
-/// forced close already asked for gets it none.
-fn machine_for(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    entry: Entry,
-    req: &AcquireReq,
-    layered: Option<&mut layers::Layered>,
-) -> Result<Result<Acquired, DriverError>, CommandError> {
-    let forced = || cx.env().cancel().is_cancelled();
-    let warm = match layered {
-        Some(layered) if entry != Entry::Adopt && !forced() => {
-            layers::warm(cx, store, id, req, layered)?
-        }
-        _ => None,
-    };
-    let acquire = if entry == Entry::Adopt {
-        adopt_timed
-    } else {
-        acquire_timed
-    };
-    Ok(warm.unwrap_or_else(|| {
-        if forced() {
-            return Err(DriverError::Failed {
-                summary: setup::FORCED_CLOSE.to_owned(),
-            });
-        }
-        acquire(cx, store, id, req)
-    }))
 }
 
 /// What the driver is asked for `started` on `provider`.
@@ -280,20 +255,11 @@ fn run_and_record(
 ) -> Result<Provisioned, CommandError> {
     guest::await_guest(cx, store, id, target.handle)?;
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
-    let on_fork = target;
-    let (target, reran, stale) = &warm_rerun::after_clone(target, &cloned);
-    let (target, reran, stale) = (target, *reran, *stale);
-    layers::after_clone(cx, store, target, cloned.ms);
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     record_delivered(cx, store, (id, inc), cfg, cloned.delivered)?;
-    let warm_disk = warm_rerun::record_disk(store, id, (stale, reran.is_some()), &cloned)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
-    let retries = run.failed() && reran.is_some() && !cx.env().cancel().is_cancelled();
-    if let Some(layered) = on_fork.layered.filter(|_| retries) {
-        return warm_rerun::cold_again(cx, store, id, advance, on_fork, layered, cfg, &run);
-    }
     if !run.failed() {
         store.apply(Decision::new(id).set(Fields {
             setup_failed_at: Field::Clear,
@@ -301,14 +267,7 @@ fn run_and_record(
             ..Fields::default()
         }))?;
     }
-    let (dotfiles, installed) = steps_after_lines(
-        cx,
-        store,
-        id,
-        (on_fork, target, cloned.at_base),
-        (cfg, &proxy),
-        &run,
-    )?;
+    let (dotfiles, installed) = steps_after_lines(cx, store, id, target, (cfg, &proxy), &run)?;
     let mut done = dotfiles_noted(id, &dotfiles);
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {
@@ -334,7 +293,6 @@ fn run_and_record(
         dotfiles,
         work_tree: cloned.work_tree,
         install_failed,
-        warm_disk,
     })
 }
 
@@ -350,12 +308,9 @@ mod acquired;
 mod after_lines;
 mod clone;
 mod delivered;
-mod disk;
 mod entry;
-pub(crate) use disk::relieve_disk;
 mod failed;
 pub(crate) mod interrupted;
-mod layers;
 mod lease;
 mod others;
 mod outcome;
@@ -364,8 +319,6 @@ mod rerun;
 mod retry;
 mod setup_run;
 mod target;
-mod warm_rerun;
 mod why;
-pub(crate) use warm_rerun::warm_disk_note;
 #[cfg(test)]
 mod tests;

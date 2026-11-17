@@ -132,15 +132,8 @@ pub const EVENT_KINDS: &[&str] = &[
     "step_finished",
     "setup_line_started",
     "setup_line_finished",
-    "warm_started",
-    "cold_asked",
-    "warm_rerun",
-    "warm_rerun_failed",
-    "warm_start_failed",
     "cache_cold",
     "cache_emptied",
-    "checkpoint_taken",
-    "checkpoint_evicted",
 ];
 
 impl Event {
