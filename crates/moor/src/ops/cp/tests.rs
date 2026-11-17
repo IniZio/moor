@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFiel
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Place};
 use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};
 
 use super::run;
@@ -122,6 +122,7 @@ fn relative_source_resolves_against_the_box_workdir() {
     let f = fx();
     run(&f.cx, &req("out/a.txt", "a.txt")).unwrap();
     assert_eq!(f.driver.copies().len(), 1);
+    assert_eq!(f.driver.places("copy_out"), [Place::Work]);
     assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/repo/out/a.txt");
 }
 

@@ -85,7 +85,7 @@ fn plugin_installs(
     timed(cx, store, id, PostCloneStep::Plugins, || {
         let ran = run(
             cx,
-            site,
+            (site, Place::Agent),
             env,
             (script, &log),
             ("profile plugins", SETUP_DEADLINE),
@@ -123,7 +123,7 @@ fn fetch_and_setup(
     let fetched = fetch_log.map_err(|e| e.error.to_string()).and_then(|log| {
         run(
             cx,
-            &site,
+            (&site, Place::Work),
             (cfg, proxy),
             (script, &log),
             ("profile fetch", FETCH_DEADLINE),
@@ -140,7 +140,7 @@ fn fetch_and_setup(
     match setup_log.and_then(|log| {
         run(
             cx,
-            &site,
+            (&site, Place::Work),
             (cfg, proxy),
             (setup_script(), &log),
             ("profile setup.sh", SETUP_DEADLINE),
@@ -154,16 +154,16 @@ fn fetch_and_setup(
     }
 }
 
-/// Runs `script` in the Box, logging to `log`; the error says why it failed.
+/// Runs `script` in `place` in the Box, logging to `log`; the error says why it failed.
 fn run(
     cx: &Cx,
-    site: &Site<'_>,
+    (site, place): (&Site<'_>, Place),
     (cfg, proxy): (&BoxSettings, Option<&BoxProxy>),
     (script, log): (String, &Path),
     limit: (&str, Duration),
 ) -> Result<(), String> {
     private_log(log).map_err(|e| format!("could not create the log: {e}"))?;
-    let reason = match agent_install::run(cx, site, cfg, proxy, script, log, limit) {
+    let reason = match agent_install::run(cx, site, place, cfg, proxy, script, log, limit) {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
@@ -225,7 +225,7 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     let path = BoxPath::under(place.1.as_str(), FAILURES_FILE);
     let read = path.map_err(|e| e.to_string()).and_then(|p| {
         cx.driver()
-            .peek_file(&place.0, Place::Work, &p)
+            .peek_file(&place.0, Place::Agent, &p)
             .map_err(|e| e.to_string())
     });
     let text = match read {

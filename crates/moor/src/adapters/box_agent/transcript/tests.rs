@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::agent_adapter::NOTHING_TO_ARCHIVE;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, Place};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
@@ -59,6 +59,7 @@ fn archives_in_the_workdir_then_streams_the_archive_over_the_batch() {
     assert!(script.contains(".moor/transcripts.tgz"));
     assert_eq!(std::fs::read(&dest).unwrap(), b"abc");
     assert!(d.copies().is_empty());
+    assert!(d.all_in(Place::Agent));
 }
 
 #[test]

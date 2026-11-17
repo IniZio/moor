@@ -11,7 +11,7 @@ use std::time::Duration;
 use moor_core::activity::{BlockKind, Life, Note, Probe, Question, Status, WaitCheck};
 use moor_core::name::NameError;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, EnvVar, Key, LaunchCtx, PromptMatch};
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::{AcquireReq, Driver, Place};
 use moor_core::seam::engine::{Engine, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
@@ -310,6 +310,7 @@ fn the_read_is_bounded_by_the_probe_deadline() {
     let short = Deadline(Duration::from_millis(700));
     agent(&d).probe(&session(), short);
     assert_eq!(d.batch_deadlines(), [short]);
+    assert_eq!(d.places("batch"), [Place::Agent]);
 }
 
 #[test]

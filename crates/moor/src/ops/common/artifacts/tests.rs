@@ -9,7 +9,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, Place};
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
 use sha2::{Digest, Sha256};
 
@@ -167,6 +167,8 @@ fn unchanged_file_is_not_copied_again() {
     f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 0);
     assert_eq!(f.driver.copies().len(), 1);
+    assert_eq!(f.driver.places("copy_out"), [Place::Agent]);
+    assert_eq!(f.driver.places("batch"), [Place::Agent; 2]);
     assert_eq!(versions(&f).len(), 1);
 }
 

@@ -1,5 +1,6 @@
 //! The profile's own `setup.sh` runs once per new Box, after the fetch, and never fails the start.
 
+use moor_core::seam::driver::Place;
 use std::time::Duration;
 
 use moor_core::seam::driver::ExecOutcome;
@@ -81,6 +82,17 @@ fn setup_sh_runs_from_the_checkout_with_a_log_and_the_ten_minute_deadline() {
         .into_iter()
         .find(|(_, s, _)| s.argv.join(" ").contains("git fetch"));
     assert_eq!(Some(env), fetch_env.map(|(_, s, _)| s.env));
+    let profile_places: Vec<Place> = w
+        .driver
+        .execs()
+        .iter()
+        .filter(|(_, s, _)| {
+            let argv = s.argv.join(" ");
+            argv.contains(MARK) || argv.contains("git fetch")
+        })
+        .map(|(_, s, _)| s.place)
+        .collect();
+    assert_eq!(profile_places, [Place::Work; 2], "fetch and setup.sh");
     assert!(profile_failures(&w, id).is_empty());
 }
 

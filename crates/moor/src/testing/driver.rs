@@ -19,7 +19,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 pub(crate) use runs::{eventually, live_in_group, reaped_pid};
 pub(crate) use script::{is_clone_exec, PutCall};
-use script::{layout, write_bytes, write_log, CopyCall, ExecHook, PeekCall};
+use script::{layout, write_log, CopyCall, ExecHook, PeekCall};
 pub(crate) use tunnel::{TunnelReply, LOCAL_PORT_OFFSET};
 
 #[derive(Default)]
@@ -242,31 +242,7 @@ impl Driver for FakeDriver {
         from: &BoxPath,
         to: &Path,
     ) -> Result<(), DriverError> {
-        self.run_copy_out_hook();
-        let mut s = self.st();
-        s.note(format!("copy_out {}", handle.as_str()));
-        s.placed.push(("copy_out", place));
-        s.copies
-            .push((handle.clone(), from.clone(), to.to_path_buf()));
-        if !s.live.iter().any(|h| h == handle.as_str()) {
-            return Err(DriverError::NotFound);
-        }
-        if let Some(e) = s.fail_copy_out.take() {
-            return Err(e);
-        }
-        if let Some(trees) = s.trees.clone() {
-            let rel = from.as_str().rsplit("/repo/").next().unwrap_or_default();
-            return trees.copy_out(handle.as_str(), rel, to);
-        }
-        if let Some(target) = &s.copy_symlink {
-            let _ = std::fs::remove_file(to);
-            return std::os::unix::fs::symlink(target, to).map_err(|e| DriverError::Failed {
-                summary: format!("cannot place a symlink: {e}"),
-            });
-        }
-        s.copy_content
-            .as_deref()
-            .map_or(Ok(()), |bytes| write_bytes(to, bytes))
+        self.copy(handle, place, from, to)
     }
 
     fn peek_file(

@@ -7,7 +7,7 @@ use moor_core::activity::Probe;
 use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::agent_adapter::AgentInstall;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::engine::EngineError;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
@@ -90,6 +90,12 @@ fn the_install_runs_after_setup_and_dotfiles_with_the_proxy_and_a_deadline() {
     assert_eq!(engine.launches().len(), 1);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 3, "clone, setup, install");
+    let placed: Vec<Place> = execs.iter().map(|e| e.1.place).collect();
+    assert_eq!(
+        placed,
+        [Place::Work, Place::Work, Place::Agent],
+        "the install puts the agent in the agent place"
+    );
     let (_, spec, deadline) = execs.last().unwrap();
     assert_eq!(unwrapped(spec.argv.clone()), ["sh", "-c", SCRIPT]);
     assert!(spec

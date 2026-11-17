@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, Place};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
@@ -124,6 +124,7 @@ fn text_is_sent_through_herdr_core_in_one_command() {
         "{script}"
     );
     assert_eq!(d.batch_connects().len(), 1);
+    assert_eq!(d.places("batch"), [Place::Agent]);
 }
 
 #[test]

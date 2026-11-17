@@ -6,6 +6,7 @@ use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::HandsInc;
 use moor_core::seam::driver::ExecSpec;
+use moor_core::seam::driver::Place;
 use moor_core::{BoxHandle, BoxPath};
 
 use super::{command, ready, ready_yaml, req, Fx, SHA};
@@ -69,6 +70,7 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
     let setup = setup_spec(&f);
     run(&f.cx, &req(&["make deps"])).unwrap();
     let (_, spec) = f.driver.launches().remove(0);
+    assert_eq!((setup.place, spec.place), (Place::Work, Place::Work));
     assert_eq!(command(&spec.argv), shell_argv("make deps"));
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
     assert_eq!(spec.env, setup.env);

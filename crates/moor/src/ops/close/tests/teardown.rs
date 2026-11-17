@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::ErrorKind;
 
@@ -49,6 +49,7 @@ fn teardown_runs_as_one_unsynced_script_before_release() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
     let spec = only_exec(&f);
+    assert_eq!(spec.place, Place::Work);
     assert!(matches!(spec.argv.as_slice(), [.., sh, c, script]
         if sh == "sh" && c == "-c" && script.contains("echo bye") && script.contains("rm -rf cache")));
     assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));

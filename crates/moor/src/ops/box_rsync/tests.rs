@@ -1,5 +1,6 @@
 //! `box-rsync` against the fake Driver, which runs the Box's `rsync --server` on the host.
 
+use moor_core::seam::driver::Place;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -140,6 +141,7 @@ fn a_mirror_copies_the_work_tree_and_deletes_what_left_it() {
         }
     );
     assert!(ok, "the rsync client succeeded");
+    assert_eq!(f.run.driver.places("exec_piped"), [Place::Work]);
     let copied = std::fs::read_to_string(mirror.join("src/a.rs")).unwrap();
     assert_eq!(copied, "fn a() {}");
     assert!(!mirror.join("stale").exists());

@@ -5,6 +5,7 @@
 )]
 
 use super::*;
+use moor_core::seam::driver::Place;
 
 #[test]
 fn a_launch_without_a_proxy_installs_nothing() {
@@ -23,7 +24,9 @@ fn a_failed_put_removes_the_cred_dir() {
     let d = driver(FakeDriver::new().fail_put(DriverError::NotFound));
     let out = agent(&d).launch(&req_with_proxy());
     assert!(matches!(out, Err(EngineError::Failed { .. })));
-    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
+    let (_, rm, _) = d.execs().pop().unwrap();
+    assert_eq!(rm.argv, ["rm", "-rf", CRED, TMP]);
+    assert_eq!(rm.place, Place::Agent);
 }
 
 #[test]

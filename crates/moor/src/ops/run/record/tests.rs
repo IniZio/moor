@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::record::{head_script, record_script, HEAD_FILE, HEAD_MOVED};
 use moor_core::boxscript::{command_line, quote};
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::{BoxPath, ErrorKind, GateReq, RunReq};
 
 use crate::error::CommandError;
@@ -93,6 +93,7 @@ fn a_record_run_is_stored_under_the_box_head() {
     let f = clean();
     let head = box_sha(&f);
     let v = run(&f.cx, &record_req(&["true"])).unwrap();
+    assert_eq!(f.driver.places("batch"), [Place::Work]);
     assert_eq!(v.sha.as_deref(), Some(head.as_str()));
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(

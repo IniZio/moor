@@ -5,6 +5,7 @@ use super::relaunch::{gone, session};
 use super::setup::warning_codes;
 use super::*;
 use crate::testing::engine::FakeEngine;
+use moor_core::seam::driver::Place;
 
 /// Starts a Box with a profile, then relaunches it once the Box's failures file holds `failures`;
 /// returns the `detail` of each failed install and the warning codes of the relaunch.
@@ -29,6 +30,7 @@ fn relaunch_with(failures: Option<&str>) -> (Vec<String>, Vec<String>) {
     gone(&engine);
     w.cx.take_warnings();
     run(&w.cx, &req("demo")).unwrap();
+    assert!(w.driver.op_in("peek_file", Place::Agent));
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let details = events
         .into_iter()
