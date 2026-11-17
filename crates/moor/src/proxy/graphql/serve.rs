@@ -16,7 +16,7 @@ use super::repo_ids::{gate_id, IdGate};
 use super::route::{classify, Route};
 use super::tunnel::{dial, parse_authority, splice};
 use super::upstream::TlsStream;
-use super::{Shared, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
+use super::{Shared, WithheldRequest, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
 use crate::proxy::chain;
 use crate::proxy::guard::Route as Path;
 
@@ -199,11 +199,16 @@ fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Fl
             let relay = Relay::Checked(&linked);
             forward(shared, client, up, &asked, &Payload::Raw(&body), relay)
         }
-        Gate::Anonymous(body, reason) => {
+        Gate::Anonymous(body, reason, query) => {
             // The one place a request leaves without its credential. GitHub
             // answers the placeholder with 401, which clients read as a bad
             // token. No `Authorization` gets 403, which they read as a rate limit.
-            shared.withhold(&head.method, "/graphql", &reason);
+            shared.withhold(WithheldRequest {
+                method: head.method.clone(),
+                path: "/graphql".to_owned(),
+                reason,
+                query,
+            });
             let bare = without_credential(
                 head,
                 &shared.credential_headers,
@@ -239,7 +244,12 @@ fn repo_id(
             forward(shared, client, up, head, &Payload::Stream(f), Relay::Plain)
         }
         IdGate::Anonymous(reason) => {
-            shared.withhold(&head.method, &head.target, reason);
+            shared.withhold(WithheldRequest {
+                method: head.method.clone(),
+                path: head.target.clone(),
+                reason: reason.to_owned(),
+                query: None,
+            });
             let bare = without_credential(
                 head,
                 &shared.credential_headers,

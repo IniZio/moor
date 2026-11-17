@@ -36,6 +36,30 @@ fn a_redacted_reason_keeps_names_and_hides_values() {
 }
 
 #[test]
+fn a_refused_search_keeps_its_shape_and_hides_its_values() {
+    let query = r"query($q: String!) { search(query: $q, type: ISSUE, first: 1) { issueCount } }";
+    let refused = |q: &str| match verdict(query, &json!({ "q": q })) {
+        Verdict::Deny(reason) => reason.query().map(str::to_owned),
+        other => unreachable!("expected deny for {q}, got {other:?}"),
+    };
+    assert_eq!(
+        refused("( author:hunter2 ) repo:IniZio/moor state:open type:pr hunter2").as_deref(),
+        Some("( author:… ) repo:{repo} state:open type:pr …"),
+    );
+    assert_eq!(
+        refused("repo:victim/secrets OR org:victim").as_deref(),
+        Some("repo:… OR org:…"),
+    );
+    let long = format!("repo:IniZio/moor {}", "label:x ".repeat(100));
+    let capped = refused(&format!("{long} OR")).unwrap_or_default();
+    assert!(capped.chars().count() <= 200, "{capped}");
+    match verdict(r#"{ viewer { email } }"#, &json!({})) {
+        Verdict::Deny(reason) => assert_eq!(reason.query(), None),
+        other => unreachable!("expected deny, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_backtick_inside_a_value_cannot_unredact_it() {
     for (query, vars) in [
         (r#"{ "a`TERM`b" }"#, json!({})),

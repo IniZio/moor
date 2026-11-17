@@ -35,7 +35,15 @@ pub(crate) trait EgressSink {
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
     /// the credential, with its templated shape when one is sound, and why.
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str);
+    fn withheld(
+        &self,
+        host: &str,
+        rule: &str,
+        method: &str,
+        shape: Option<&str>,
+        reason: &str,
+        query: Option<&str>,
+    );
     /// Records, once, that further distinct withheld requests are not reported.
     fn withheld_overflow(&self);
     /// The status of the open limit on `rule` recorded earlier, if any.
@@ -71,7 +79,7 @@ const MAX_WITHHELD: usize = 256;
 #[derive(Default)]
 struct Reported {
     /// `(rule, method, shape, reason)` already reported.
-    keys: BTreeSet<(String, String, Option<String>, String)>,
+    keys: BTreeSet<(String, String, Option<String>, String, Option<String>)>,
     /// Whether the overflow line has been written.
     overflowed: bool,
 }
@@ -138,6 +146,7 @@ impl Withheld {
             method: method.to_owned(),
             path: event.path.clone().unwrap_or_else(|| "/".to_owned()),
             reason: NO_MATCH.to_owned(),
+            query: None,
         };
         self.record(host, rule, &request, sink);
     }
@@ -170,12 +179,13 @@ impl Withheld {
         self.limits.excuse(host, status);
     }
 
-    /// Reports one withheld request once per `(rule, method, shape, reason)`.
+    /// Reports one withheld request once per `(rule, method, shape, reason, query)`.
     fn record(&self, host: &str, rule: &str, request: &WithheldRequest, sink: &dyn EgressSink) {
         let WithheldRequest {
             method,
             path,
             reason,
+            query,
         } = request;
         if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
             return;
@@ -189,6 +199,7 @@ impl Withheld {
             method.to_owned(),
             shape.clone(),
             reason.to_owned(),
+            query.clone(),
         );
         let mut seen = self
             .seen
@@ -206,7 +217,14 @@ impl Withheld {
         }
         seen.keys.insert(key);
         drop(seen);
-        sink.withheld(host, rule, method, shape.as_deref(), reason);
+        sink.withheld(
+            host,
+            rule,
+            method,
+            shape.as_deref(),
+            reason,
+            query.as_deref(),
+        );
     }
 }
 
@@ -267,13 +285,22 @@ impl EgressSink for BoxSink<'_> {
         self.ledger.record_event(&event);
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, reason: &str) {
+    fn withheld(
+        &self,
+        host: &str,
+        rule: &str,
+        method: &str,
+        shape: Option<&str>,
+        reason: &str,
+        query: Option<&str>,
+    ) {
         let event = Event::CredentialWithheld {
             host: host.to_owned(),
             rule: rule.to_owned(),
             method: method.to_owned(),
             shape: shape.map(str::to_owned),
             reason: Some(reason.to_owned()),
+            query: query.map(str::to_owned),
         };
         self.ledger.record_event(&event);
     }

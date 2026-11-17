@@ -65,19 +65,42 @@ impl NodeId {
 
 /// Why a request is refused; the text names the offending field or limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reason(String);
+pub struct Reason {
+    /// The reason text.
+    text: String,
+    /// The refused search query with its values hidden, when a search was refused.
+    query: Option<String>,
+}
 
 impl Reason {
     /// Returns the reason text.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.text
+    }
+
+    /// The refused search query, safe to record: grouping, operators, qualifier names and
+    /// fixed values stay, every other value is `…`, and the text is at most 200 characters.
+    #[must_use]
+    pub fn query(&self) -> Option<&str> {
+        self.query.as_deref()
     }
 
     /// Wraps a reason. A value not known to be a GraphQL name goes in through [`shown`], so
     /// the only backticks left are the ones the text puts around names and values.
     pub(crate) fn new(text: impl Into<String>) -> Self {
-        Self(text.into())
+        Self {
+            text: text.into(),
+            query: None,
+        }
+    }
+
+    /// The reason with the masked search query it refused.
+    pub(crate) fn with_query(self, query: String) -> Self {
+        Self {
+            query: Some(query),
+            ..self
+        }
     }
 
     /// The reason safe to record: a backticked span stays only when it is a GraphQL name
@@ -86,7 +109,7 @@ impl Reason {
     #[must_use]
     pub fn redacted(&self) -> String {
         let mut out = String::new();
-        for (i, part) in self.0.split('`').enumerate() {
+        for (i, part) in self.text.split('`').enumerate() {
             if i % 2 == 0 {
                 out.push_str(part);
             } else if is_name_path(part) {

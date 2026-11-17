@@ -53,7 +53,15 @@ impl EgressSink for Recorder {
         self.0.lock().unwrap().push(format!("failed {rule}"));
     }
 
-    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>, _: &str) {
+    fn withheld(
+        &self,
+        host: &str,
+        rule: &str,
+        method: &str,
+        shape: Option<&str>,
+        _: &str,
+        _: Option<&str>,
+    ) {
         self.0
             .lock()
             .unwrap()
