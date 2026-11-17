@@ -3372,7 +3372,6 @@ dependencies = [
  "self-replace",
  "semver",
  "serde",
- "serde-saphyr",
  "serde_json",
  "sha2 0.10.9",
  "ssh-key",
