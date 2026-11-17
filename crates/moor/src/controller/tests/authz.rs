@@ -243,7 +243,9 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "proxy-release"
         | "proxy-status"
         | "node-list"
-        | "node-add" => return Names::Nothing,
+        | "node-add"
+        | "node-settings-get"
+        | "node-settings-set" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

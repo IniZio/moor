@@ -26,13 +26,15 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         }
         "repo-config-get" => json!({"cmd": kind, "repo": "o/n"}),
         "repo-config-set" => json!({"cmd": kind, "repo": "o/n", "text": "setup: [make]\n"}),
+        "node-settings-set" => json!({"cmd": kind, "name": "n", "max_boxes": "clear"}),
         "machine-links" => json!({"cmd": kind, "runner": "/run/runner.sock", "links": []}),
         "machine-box" => json!({"cmd": kind, "op": {"get": {"box_id": 1}}}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "herdr", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
-        "secret-delete" | "mcp-remove" | "machine-remove" | "machine-status" => {
+        "secret-delete" | "mcp-remove" | "machine-remove" | "machine-status"
+        | "node-settings-get" => {
             json!({"cmd": kind, "name": "n"})
         }
         "machine-enroll" | "node-add" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),

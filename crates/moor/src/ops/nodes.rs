@@ -98,6 +98,7 @@ fn view(
     pressure_since: Option<i64>,
     disk_low: bool,
     box_memory_mib: Option<u64>,
+    (revision, editable): (u64, bool),
 ) -> NodeView {
     let (scope, owner) = match &node.scope {
         Scope::Shared => (NodeScope::Shared, None),
@@ -126,6 +127,18 @@ fn view(
         pressure_since,
         box_memory_mib,
         labels: node.labels.clone(),
+        revision,
+        editable,
+    }
+}
+
+/// Whether `viewer` may change `node`'s settings: its owner for a personal node, the operator for
+/// a shared one a machine provides.
+fn editable(node: &Node, viewer: Viewer) -> bool {
+    match (&node.scope, viewer) {
+        (Scope::Personal { owner, .. }, Viewer::User(me)) => *owner == me,
+        (Scope::Shared, Viewer::Operator) => node.machine.is_some(),
+        _ => false,
     }
 }
 
@@ -138,6 +151,7 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
     nodes.sort_by_key(|n| (matches!(n.scope, Scope::Personal { .. }), n.name.clone()));
     let since = cx.store()?.pressure_since()?;
     let held = cx.store()?.box_memory_totals()?;
+    let revisions = cx.store()?.node_revisions()?;
     let start = pick(cx)?;
     Ok(NodeListValue {
         at: now(cx),
@@ -151,7 +165,9 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
                     .and_then(|s| Ok(s.pressure(&n.name)?))
                     .is_ok_and(|p| p.readings.last().is_some_and(|r| r.disk_low));
                 let since = since.get(n.name.as_str()).copied();
-                view(n, now(cx), since, low, boxes)
+                let revision = n.machine.and_then(|m| revisions.get(&m).copied());
+                let edit = (revision.unwrap_or(0), editable(n, cx.viewer()));
+                view(n, now(cx), since, low, boxes, edit)
             })
             .collect(),
     })

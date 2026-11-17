@@ -9,13 +9,14 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::name::NodeName;
-use moor_core::request::MachineLink;
+use moor_core::request::{CapEdit, MachineLink};
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::view::user::SharedMachineKey;
 use moor_core::{BoxId, BoxName, ProviderId};
 
 use crate::store::tests::{new_box, open};
+use crate::store::users::machine::Change;
 use crate::store::Store;
 
 const KEY: &str =
@@ -80,7 +81,7 @@ fn alice_with_machines(store: &Store) -> UserId {
                 since: Ts::from_millis(5),
                 version: None,
                 protocol: None,
-                max_boxes: Some(4),
+                max_boxes: None,
                 cache_gb: None,
                 features: Vec::new(),
                 mem_mib: None,
@@ -90,6 +91,14 @@ fn alice_with_machines(store: &Store) -> UserId {
             }],
             store.now(),
         )
+        .unwrap();
+    let node = store.node_settings(Some(alice), "mini").unwrap().unwrap();
+    let change = Change {
+        max_boxes: CapEdit::Set(NonZeroU32::new(4).unwrap()),
+        labels: None,
+    };
+    store
+        .set_node_settings(&node, "mini", &change, "test", Some(0))
         .unwrap();
     alice
 }

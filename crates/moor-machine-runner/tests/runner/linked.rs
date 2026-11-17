@@ -126,8 +126,7 @@ fn a_holder_only_request_is_misdirected_unless_this_runner_holds_the_link() {
 #[test]
 fn a_machine_whose_agent_dropped_its_link_is_reported_offline() {
     let mut m = Linked::start(&[]);
-    m.rig.machine_agent.take().unwrap().shutdown_background();
-    m.rig.online(false);
+    m.rig.stop_agent();
     let err = m.call("exec", json!({"command": "true"})).unwrap_err();
     assert!(err.contains("machine minion is offline"), "{err}");
     assert!(!m.ssh_ran());

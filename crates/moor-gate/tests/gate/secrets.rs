@@ -13,6 +13,7 @@ use moor_testkit::oidc::{now, Issuer};
 use serde_json::{json, Value};
 
 use super::login::get;
+use super::nodes::{self, Settings};
 use super::repos::{self, Configs};
 use super::CLIENT_ID;
 
@@ -27,6 +28,8 @@ pub(super) struct World {
     pub(super) vault: Arc<Mutex<Vault>>,
     /// The repo configs the controller holds.
     pub(super) configs: Arc<Mutex<Configs>>,
+    /// The settings of the node `hv` the controller holds.
+    pub(super) node: Arc<Mutex<Settings>>,
     _dir: tempfile::TempDir,
 }
 
@@ -46,12 +49,12 @@ fn err(message: &str, detail: Option<ErrorDetail>) -> Response {
 
 /// What the controller answers `inner` from `who`; `first` is what a new user starts with.
 fn answer(
-    state: (&mut Vault, &mut Configs),
+    state: (&mut Vault, &mut Configs, &mut Settings),
     first: &[(&str, &str)],
     who: &str,
     inner: &Value,
 ) -> Response {
-    let (vault, configs) = state;
+    let (vault, configs, node) = state;
     match inner["cmd"].as_str().unwrap_or_default() {
         "enroll" => {
             vault.entry(who.to_owned()).or_insert_with(|| {
@@ -77,16 +80,11 @@ fn answer(
                 .unwrap_or_default();
             Response::ok("x", Some(json!({"names": names})))
         }
-        "node-list" => Response::ok("x", Some(nodes())),
+        "node-list" => Response::ok("x", Some(nodes::list(node))),
+        "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
         "start-needs" | "start" => needs(vault, who, inner),
         cmd => repos::answer(configs, cmd, who, inner),
     }
-}
-
-/// The answer to `node-list`: one personal node, online with room.
-fn nodes() -> Value {
-    json!({"nodes": [{"name": "hv", "scope": "personal", "runtime": "cloud-hypervisor",
-        "online": true, "used": 1, "waiting": 0, "max_boxes": 4, "labels": []}], "at": 100})
 }
 
 /// The answer to `start-needs`, or the refusal of a `start` missing secrets.
@@ -119,11 +117,12 @@ type Kept = (
     Arc<Mutex<Vec<Value>>>,
     Arc<Mutex<Vault>>,
     Arc<Mutex<Configs>>,
+    Arc<Mutex<Settings>>,
 );
 
 /// Answers the requests on `stream` until it closes.
 fn serve(stream: &UnixStream, first: &[(&str, &str)], kept: &Kept) {
-    let (seen, vault, configs) = kept;
+    let (seen, vault, configs, node) = kept;
     let mut reply = stream.try_clone().unwrap();
     for line in BufReader::new(stream).lines().map_while(Result::ok) {
         let frame: Value = serde_json::from_str(&line).unwrap();
@@ -140,7 +139,11 @@ fn serve(stream: &UnixStream, first: &[(&str, &str)], kept: &Kept) {
         seen.lock()
             .unwrap()
             .push(json!({"who": who, "request": logged}));
-        let state = (&mut *vault.lock().unwrap(), &mut *configs.lock().unwrap());
+        let state = (
+            &mut *vault.lock().unwrap(),
+            &mut *configs.lock().unwrap(),
+            &mut *node.lock().unwrap(),
+        );
         let envelope = answer(state, first, who, inner);
         let out = json!({"frame": "response", "id": frame["id"], "envelope": envelope});
         writeln!(reply, "{out}").unwrap();
@@ -154,8 +157,18 @@ pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)])
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
     let listener = UnixListener::bind(&socket).unwrap();
-    let (seen, vault, configs) = (Arc::default(), Arc::default(), Arc::default());
-    let kept = (Arc::clone(&seen), Arc::clone(&vault), Arc::clone(&configs));
+    let (seen, vault, configs, node) = (
+        Arc::default(),
+        Arc::default(),
+        Arc::default(),
+        Arc::default(),
+    );
+    let kept = (
+        Arc::clone(&seen),
+        Arc::clone(&vault),
+        Arc::clone(&configs),
+        Arc::clone(&node),
+    );
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let kept = kept.clone();
@@ -184,6 +197,7 @@ pub(super) fn world(login: bool, first: &'static [(&'static str, &'static str)])
         seen,
         vault,
         configs,
+        node,
         _dir: dir,
     }
 }

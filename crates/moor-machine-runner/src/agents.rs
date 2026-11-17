@@ -309,7 +309,7 @@ impl Links {
             since: now(),
             version: Some(version),
             protocol: None,
-            max_boxes: offer.max_boxes,
+            max_boxes: None,
             cache_gb: offer.cache_gb,
             features: offer.features,
             mem_mib: offer.mem_mib,

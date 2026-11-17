@@ -34,7 +34,7 @@ A machine serves in one of two ways:
 4. Open the link on any device, sign in, check that the code matches, and add
    the machine. The code lasts 10 minutes.
 
-5. Wait for `linked: NAME, N Box slots`. `up` has installed a user service
+5. Wait for `linked: NAME`. `up` has installed a user service
    that keeps the agent running, a systemd user unit on Linux or a launch
    agent on macOS. It runs as you, so you manage it without root:
    `systemctl --user status moor-machine-agent`.
@@ -56,6 +56,14 @@ it. A user who can run Docker is already root on the host, and a privileged
 container is root with fewer fences. Pair a machine only if you accept that for
 your own Boxes. Nobody else's Box runs on it. `up` says this each time it runs.
 
+### How many Boxes
+
+The machine has no cap by default. Free memory decides, and a start that does
+not fit waits. To cap it or to change its labels later, use the Machines
+section of the account page, `moor node set NAME --max-boxes N`, or the
+`set_node_settings` tool. `--no-cap` removes a cap. A change applies to the
+next start.
+
 ### Options
 
 Rerun `up` with new flags to change them. It keeps the pairing.
@@ -63,8 +71,7 @@ Rerun `up` with new flags to change them. It keeps the pairing.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--name NAME` | the host name | The machine's name, unique among your machines. |
-| `--max-boxes N` | 4 | The most Boxes the machine holds at once. Free memory may allow fewer. |
-| `--labels a,b` | none | Labels a repo can ask for in `node.labels`. |
+| `--labels a,b` | none | The labels it starts with, which a repo can ask for in `node.labels`. Edit them later as above. |
 | `--agent-image IMAGE` | this release's | The agent place's image, for development. |
 | `--work-image IMAGE` | this release's | The work place's image. A repo that needs other tools builds on it. |
 

@@ -56,6 +56,8 @@ pub(super) fn read(i: &Inputs<'_>) -> Read {
             pressure_since: None,
             box_memory_mib: None,
             labels: n.labels.clone(),
+            revision: 0,
+            editable: false,
         })
         .collect();
     Read {

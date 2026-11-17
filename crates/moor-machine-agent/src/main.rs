@@ -77,9 +77,6 @@ struct UpFlags {
     /// The images Docker Boxes are made from.
     #[command(flatten)]
     images: ImageFlags,
-    /// The most Boxes this machine holds at once; memory may allow fewer.
-    #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..))]
-    max_boxes: u16,
 }
 
 /// Brings this machine to linked as `flags` say.
@@ -98,7 +95,6 @@ fn up_here(flags: UpFlags) -> ExitCode {
         server: flags.server,
         name: flags.name.unwrap_or_else(host_name),
         labels: flags.labels,
-        max_boxes: flags.max_boxes,
         runtime,
     };
     done(up::up(

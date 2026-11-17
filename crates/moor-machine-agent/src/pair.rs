@@ -10,6 +10,10 @@ use serde_json::json;
 
 use crate::{key, private_dir, takes_no_machines, write_private, State, KEY};
 
+/// The slots a pairing asks for. A machine that makes Boxes has no cap of its own, since a node's
+/// cap is its setting in the controller, so this sizes only the slots a tool machine's Boxes take.
+const SLOTS: u16 = 4;
+
 /// What a pairing asks the server for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ask {
@@ -17,8 +21,6 @@ pub struct Ask {
     pub name: String,
     /// The machine's labels.
     pub labels: Vec<String>,
-    /// How many Boxes may hold the machine at once.
-    pub max_boxes: u16,
     /// What the machine hosts: `boxes` when it makes Boxes itself; none for a machine that runs
     /// `exec` scripts instead.
     pub pool: Option<String>,
@@ -83,7 +85,7 @@ pub fn pair(
         .map_err(|e| format!("cannot encode the public key: {e}"))?;
     let http = Http::new();
     let body = json!({"pubkey": pubkey, "name": ask.name, "labels": ask.labels,
-        "slots": ask.max_boxes, "pool": ask.pool});
+        "slots": SLOTS, "pool": ask.pool});
     let started: Started = http
         .post_json_found(&format!("{server}/machines/pair"), &body)?
         .ok_or_else(|| takes_no_machines(server))?;

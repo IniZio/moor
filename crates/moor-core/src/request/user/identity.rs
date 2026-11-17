@@ -6,8 +6,8 @@ use super::{
     WebhookSetupShowReq,
 };
 use crate::request::{
-    MachineEnrollReq, MachineRemoveReq, MachineStatusReq, RepoConfigGetReq, RepoConfigSetReq,
-    Request, StartReq,
+    MachineEnrollReq, MachineRemoveReq, MachineStatusReq, NodeSettingsGetReq, NodeSettingsSetReq,
+    RepoConfigGetReq, RepoConfigSetReq, Request, StartReq,
 };
 use crate::user::Identity;
 
@@ -33,6 +33,8 @@ impl Request {
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
             | Self::NodeList(AsReq { identity })
+            | Self::NodeSettingsGet(NodeSettingsGetReq { identity, .. })
+            | Self::NodeSettingsSet(NodeSettingsSetReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::MachineStatus(MachineStatusReq { identity, .. })
             | Self::MachineEnroll(MachineEnrollReq { identity, .. })

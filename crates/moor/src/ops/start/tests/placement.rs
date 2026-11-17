@@ -3,11 +3,12 @@
 use super::{req, world_with, World};
 use crate::cx::Cx;
 use crate::ops::{close, nodes, start};
+use crate::store::Change;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::domain::hands::HandsInc;
-use moor_core::request::MachineLink;
+use moor_core::request::{CapEdit, MachineLink};
 use moor_core::seam::clock::Ts;
 use moor_core::view::StartView;
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
@@ -22,7 +23,7 @@ fn world() -> World {
     world_with(FakeDriver::new(), parse_user("config.yaml", yaml).unwrap())
 }
 
-/// Enrolls the requester's machine `name` offering `cloudhypervisor`, linked when `online` is set.
+/// Enrolls the requester's machine `name` on `cloudhypervisor`, capped, linked if `online`.
 fn enrolled(w: &World, name: &str, online: Option<bool>, max_boxes: Option<u32>) -> i64 {
     let store = w.cx.store().unwrap();
     let m = EnrolledMachine::parse(name, KEY, &[], 2)
@@ -30,13 +31,26 @@ fn enrolled(w: &World, name: &str, online: Option<bool>, max_boxes: Option<u32>)
         .with_pool("cloudhypervisor")
         .unwrap();
     let machine_id = store.enroll_machine(REQUESTER_USER, &m).unwrap();
+    if let Some(n) = max_boxes.and_then(std::num::NonZeroU32::new) {
+        let node = store
+            .node_settings(Some(REQUESTER_USER), name)
+            .unwrap()
+            .unwrap();
+        let change = Change {
+            max_boxes: CapEdit::Set(n),
+            labels: None,
+        };
+        store
+            .set_node_settings(&node, name, &change, "test", None)
+            .unwrap();
+    }
     if let Some(online) = online {
-        link(w, machine_id, online, max_boxes);
+        link(w, machine_id, online);
     }
     machine_id
 }
 
-fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
+fn link(w: &World, machine_id: i64, online: bool) {
     let link = MachineLink {
         provides: None,
         machine_id,
@@ -44,7 +58,7 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         since: Ts::from_millis(1),
         version: None,
         protocol: None,
-        max_boxes,
+        max_boxes: None,
         cache_gb: None,
         features: Vec::new(),
         mem_mib: None,
@@ -152,7 +166,7 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
     let waiter = start::run(&w.cx, &req("waiter")).unwrap();
     assert!(waiter.queued);
     assert_eq!(node_of(&w, &waiter).as_deref(), Some("hv"));
-    link(&w, hv, false, Some(1));
+    link(&w, hv, false);
     let store = w.cx.store().unwrap();
     store
         .apply(
@@ -166,7 +180,7 @@ fn a_link_coming_up_starts_the_boxes_pending_on_its_node() {
         .box_row(BoxId::new(waiter.boxed.id))
         .unwrap()
         .is_some_and(|r| r.hands.is_none()));
-    link(&w, hv, true, Some(1));
+    link(&w, hv, true);
     let row = store.box_row(BoxId::new(waiter.boxed.id)).unwrap().unwrap();
     assert_eq!(
         row.hands.map(|b| b.provider.as_str().to_owned()).as_deref(),
@@ -438,7 +452,7 @@ fn a_report_older_than_a_minute_makes_a_start_wait() {
 fn a_node_whose_agent_never_reports_memory_admits_by_count() {
     let w = world();
     let hv = enrolled(&w, "hv", Some(true), Some(1));
-    link(&w, hv, true, Some(1));
+    link(&w, hv, true);
     started(&w, "a");
     assert!(waits(&w, "b").1.contains("is full"));
 }

@@ -125,6 +125,8 @@ impl Request {
             | Self::MachineList(_)
             | Self::NodeList(_)
             | Self::NodeAdd(_)
+            | Self::NodeSettingsGet(_)
+            | Self::NodeSettingsSet(_)
             | Self::MachineStatus(_)
             | Self::MachineKeys {}
             | Self::MachineLinks(_)

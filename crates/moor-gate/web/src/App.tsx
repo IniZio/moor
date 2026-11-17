@@ -67,7 +67,12 @@ export function App() {
 			{repo === null ? (
 				<>
 					<Secrets account={account} onLinked={refresh} />
-					<Machines machines={account.machines} serverUrl={account.connect.server_url} />
+					<Machines
+						csrf={account.csrf}
+						machines={account.machines}
+						serverUrl={account.connect.server_url}
+						onChanged={refresh}
+					/>
 					<Connect url={account.connect.mcp_url} />
 				</>
 			) : (

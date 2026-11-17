@@ -141,11 +141,10 @@ fn machine_select() -> SelectStatement {
             ]
             .map(m),
         )
+        .columns([MachineLinks::Online, MachineLinks::Since].map(l))
+        .column(m(UserMachinesV2::MaxBoxes))
         .columns(
             [
-                MachineLinks::Online,
-                MachineLinks::Since,
-                MachineLinks::MaxBoxes,
                 MachineLinks::MemMib,
                 MachineLinks::ReserveMib,
                 MachineLinks::MemAvailableMib,

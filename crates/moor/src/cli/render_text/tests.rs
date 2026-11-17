@@ -555,7 +555,7 @@ fn node_ls_shows_scope_link_load_and_labels() {
     assert_eq!(
         out,
         "fast  shared  static  online  1/4  2 waiting  big,gpu\n\
-         mini  personal  cloudhypervisor  offline since 1970-01-01T00:00:00Z  0/-\n"
+         mini  personal  cloudhypervisor  offline since 1970-01-01T00:00:00Z  0 (no cap)\n"
     );
     let (none, _) = render(
         &Response::ok("node-list", Some(json!({"nodes": []}))),
@@ -577,16 +577,20 @@ fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
     };
     assert_eq!(
         node(Some(6349)),
-        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 6.2 GiB\n"
+        "mini  personal  cloudhypervisor  online  2 (no cap)  Boxes hold 6.2 GiB\n"
     );
     assert_eq!(
         node(Some(0)),
-        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 0 GiB\n"
+        "mini  personal  cloudhypervisor  online  2 (no cap)  Boxes hold 0 GiB\n"
     );
-    assert_eq!(node(None), "mini  personal  cloudhypervisor  online  2/-\n");
+    assert_eq!(
+        node(None),
+        "mini  personal  cloudhypervisor  online  2 (no cap)\n"
+    );
 }
 
 mod hints;
+mod node_set;
 mod provides;
 mod repo_config;
 mod steer;
