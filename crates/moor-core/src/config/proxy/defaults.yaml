@@ -31,6 +31,8 @@ github-api:
     - "GET|POST /repos/{repo}/pulls/*/reviews"
     - "POST|DELETE /repos/{repo}/pulls/*/requested_reviewers"
     - "PUT /repos/{repo}/pulls/*/update-branch"
+    - "GET /repos/{repo}/issues"
+    - "GET /repos/{repo}/issues/**"
     - "GET|POST /repos/{repo}/issues/*/comments"
     - "GET /repos/{repo}/commits/*/check-runs"
     - "GET /repos/{repo}/commits/*/status"
