@@ -1,4 +1,5 @@
-//! The store's migrations. A new step adds one `mod` line and one `step` line.
+//! The store's migrations. A new step adds one `mod` line and one `step` line, so two branches
+//! that each add one merge line by line (see `.gitattributes`).
 
 use moor_migrate::Step;
 
