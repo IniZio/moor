@@ -36,6 +36,7 @@ moor::adapters::git	moor::adapters::proc
 moor::adapters::sockets	
 moor::adapters::crabbox	moor::adapters::proc,moor::adapters::sockets,moor::keys
 moor::adapters::box_agent	
+moor::adapters::machine	moor::env
 moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env
 moor::config_load	moor::env,moor::error
@@ -50,6 +51,6 @@ moor::ops	moor::blobs,moor::vault,moor::cx,moor::store,moor::error,moor::failpoi
 moor::moor	moor::vault,moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
 extern:nono_proxy	moor::proxy
 extern:nono	moor::proxy, moor::controller::front_shim
-extern:tokio	moor::proxy, moor::blobs::object
+extern:tokio	moor::proxy, moor::blobs::object, moor::adapters::machine
 extern:object_store	moor::blobs::object
 extern:webpki_roots	moor::proxy

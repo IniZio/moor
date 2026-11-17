@@ -13,6 +13,7 @@ use moor_core::{
 use super::{parse_ignoring_env as parse, Action};
 use crate::cli::GlobalOpts;
 
+mod box_term;
 mod events;
 mod repo;
 

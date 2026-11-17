@@ -90,6 +90,15 @@ fn canonical(text: &str) -> Option<i64> {
     (n.to_string() == text).then_some(n)
 }
 
+/// The machine and slug a [`BoxKey::machine_handle`] names; `None` for any other text, so a
+/// handle of another driver is never taken for one.
+#[must_use]
+pub fn parse_machine_handle(handle: &str) -> Option<(i64, &str)> {
+    let (machine, slug) = handle.strip_prefix('m')?.split_once('/')?;
+    let machine = canonical(machine)?;
+    parse_pool_slug(slug).map(|_| (machine, slug))
+}
+
 /// Derives a Box's internal identifiers from its id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoxKey(BoxId);
@@ -140,6 +149,17 @@ impl BoxKey {
         } else {
             format!("moor-{controller}-{id}")
         }
+    }
+
+    /// The handle of the Box on a machine whose agent provides Boxes itself: `m{machine}/` and
+    /// the lease slug of `seat`'s hands. [`parse_machine_handle`] reads it back.
+    #[must_use]
+    pub fn machine_handle(self, seat: &PoolSeat) -> String {
+        format!(
+            "m{}/{}",
+            seat.machine,
+            self.pool_slug(&seat.controller, seat.inc)
+        )
     }
 
     /// The credential directory under the Box home, `.moor-cred-{id}-{nonce}`.

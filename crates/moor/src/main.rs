@@ -96,6 +96,7 @@ fn main() -> ExitCode {
                 (machine_id, &slug),
             ));
         }
+        Parsed::BoxTerm { opts, term } => return run_box_term(&scoped(env, &opts), &term),
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Up { opts, max_boxes } => return run_up(&scoped(env, &opts), &opts, max_boxes),
         Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
@@ -111,6 +112,12 @@ fn main() -> ExitCode {
         }
     };
     emit(&output)
+}
+
+/// Runs `moor box-term` with this process's terminal.
+fn run_box_term(env: &Env, term: &moor::cli::BoxTerm) -> ExitCode {
+    let at = (term.runner.as_str(), term.machine_id, term.slug.as_str());
+    ExitCode::from(moor::box_term(env, at, term.place, &term.script))
 }
 
 /// Runs `moor controller attach` with this process's stdio.

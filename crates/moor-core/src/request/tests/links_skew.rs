@@ -57,7 +57,7 @@ fn a_link_that_provides_nothing_is_written_as_an_older_runner_wrote_it() {
 #[test]
 fn a_link_that_provides_boxes_is_still_read_by_a_controller_that_ignores_unknown_keys() {
     let wire = serde_json::to_value(link(Some("docker"))).unwrap();
-    assert_eq!(wire["provides"], "docker");
+    assert_eq!(wire.get("provides"), Some(&json!("docker")));
     let older: OlderLink = serde_json::from_value(wire).unwrap();
     assert_eq!(
         (older.machine_id, older.online, older.max_boxes),
@@ -76,5 +76,6 @@ fn a_report_of_a_link_that_provides_boxes_adds_no_key_a_strict_controller_would_
         .collect();
     assert_eq!(keys, ["runner", "links"]);
     let back: MachineLinksReq = serde_json::from_value(wire).unwrap();
-    assert_eq!(back.links[0].provides.as_deref(), Some("docker"));
+    let provides = back.links.first().and_then(|l| l.provides.as_deref());
+    assert_eq!(provides, Some("docker"));
 }

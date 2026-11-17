@@ -75,6 +75,9 @@ pub(super) enum Action {
         /// The lease.
         slug: String,
     },
+    /// Hidden `box-term --runner <addr> <machine-id> <slug> --place <place> -- <script>`: run a
+    /// script in one place of a machine's Box on this terminal.
+    BoxTerm(super::BoxTerm),
     /// `exec`: run a command with its stdio streamed; the flag forwards a terminal's stdin.
     Exec(moor_core::ExecReq, bool),
     /// `forward`: serve a Box's port on this computer's loopback until interrupted.
