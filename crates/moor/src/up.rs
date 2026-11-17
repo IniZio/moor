@@ -10,7 +10,6 @@ mod service;
 mod tests;
 
 use std::io::{BufRead, Write};
-use std::num::NonZeroU32;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
@@ -38,7 +37,6 @@ const NEXT: &str = "moor start hello --repo OWNER/NAME --prompt \"Say hello and 
 pub fn up(
     env: &Env,
     opts: &GlobalOpts,
-    _max_boxes: Option<NonZeroU32>,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
     prompt: &mut dyn Write,

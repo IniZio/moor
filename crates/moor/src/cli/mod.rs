@@ -128,8 +128,6 @@ pub enum Parsed {
     Up {
         /// Global options.
         opts: GlobalOpts,
-        /// The local node's cap on live Boxes.
-        max_boxes: Option<std::num::NonZeroU32>,
     },
     /// Stop and remove the controller service.
     Down {
@@ -214,7 +212,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         },
         Ok((opts, Action::BoxTerm(term))) => Parsed::BoxTerm { opts, term },
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
-        Ok((opts, Action::Up { max_boxes })) => Parsed::Up { opts, max_boxes },
+        Ok((opts, Action::Up)) => Parsed::Up { opts },
         Ok((opts, Action::Down)) => Parsed::Down { opts },
         Ok((opts, Action::NodeAdd(add))) => Parsed::NodeAdd { opts, add },
         Ok((

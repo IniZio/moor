@@ -90,10 +90,7 @@ pub(super) enum Action {
         public_url: Option<String>,
     },
     /// `up`: set this host up as a controller with a local node.
-    Up {
-        /// The node's cap on live Boxes; sized from memory when absent.
-        max_boxes: Option<std::num::NonZeroU32>,
-    },
+    Up,
     /// `down`: stop the controller's user service and remove it.
     Down,
     /// `node add`: enroll a machine agent on this host as a shared node.
@@ -194,7 +191,7 @@ enum Cmd {
     #[command(subcommand)]
     Repo(RepoCli),
     /// Set this host up: controller service, local node, your user and its secrets.
-    Up(UpArgs),
+    Up,
     /// Stop and remove the controller service; config, state and secrets stay.
     Down,
     /// Check the setup after install and say how to fix what is wrong.
@@ -251,9 +248,7 @@ impl Cmd {
             Self::User(u) => u.into_action(),
             Self::Node(n) => n.into_action(),
             Self::Repo(r) => Action::Request(r.into_request()),
-            Self::Up(a) => Action::Up {
-                max_boxes: a.max_boxes,
-            },
+            Self::Up => Action::Up,
             Self::Down => Action::Down,
             Self::Doctor(a) => Action::Doctor {
                 public_url: a.public_url,
@@ -264,15 +259,6 @@ impl Cmd {
             Self::Admin(a) => a.into_action(),
         }
     }
-}
-
-/// Arguments of `up`.
-#[derive(Debug, Args)]
-struct UpArgs {
-    /// The most Boxes the local node runs at once; one per 4 GiB of memory beyond the first
-    /// 4 GiB when absent.
-    #[arg(long, value_name = "N")]
-    max_boxes: Option<std::num::NonZeroU32>,
 }
 
 /// Arguments of `doctor`.
