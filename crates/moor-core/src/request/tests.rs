@@ -17,6 +17,7 @@ fn with_args() -> Vec<Request> {
     vec![
         Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
+            cold: false,
             name: n("a"),
             prompt: Some("g".into()),
             issue: None,
@@ -413,8 +414,19 @@ fn open_session_parent_parses_and_defaults_none() {
 }
 
 #[test]
+fn a_start_from_an_older_client_that_asks_for_cold_still_parses_and_is_never_sent_on() {
+    let r: Request = serde_json::from_value(json!({"cmd": "start", "name": "t", "cold": true}))
+        .expect("an older client's --cold parses");
+    let Request::Start(start) = r else {
+        panic!("not a start")
+    };
+    assert!(!serde_json::to_string(&start).expect("ser").contains("cold"));
+}
+
+#[test]
 fn parent_is_omitted_when_none() {
     let start = StartReq {
+        cold: false,
         name: n("x"),
         prompt: None,
         issue: None,

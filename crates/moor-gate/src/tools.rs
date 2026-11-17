@@ -61,8 +61,8 @@ impl Tools {
         description = "List the nodes you may start Boxes on: each one's name, whether it is \
                        yours or shared, its runtime, whether it is online or since when it is \
                        offline, the Boxes on it and max_boxes when it caps them (no max_boxes: \
-                       free memory decides), its free memory and whether warm starts are on, \
-                       plus start: the node a start_box with no node would use now and \
+                       free memory decides), its free memory, plus \
+                       start: the node a start_box with no node would use now and \
                        whether it starts, waits or is refused. Call this before \
                        start_box when the person names no node, and tell them where the Box \
                        will go; an offline personal node refuses the start and never falls \

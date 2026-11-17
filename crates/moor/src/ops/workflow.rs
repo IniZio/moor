@@ -313,6 +313,7 @@ fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> WorkflowOutcome {
         Err(e) => return refused(e.to_string()),
     }
     let req = StartReq {
+        cold: false,
         name: job.name.clone(),
         prompt: Some(job.prompt.clone()),
         issue: None,
