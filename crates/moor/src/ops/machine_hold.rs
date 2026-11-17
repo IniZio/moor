@@ -32,7 +32,7 @@ pub(crate) fn run(cx: &Cx, req: &MachineHoldReq) -> Result<HoldValue, CommandErr
             "the Box acts for no user, so it has no machines",
         )
     })?;
-    let repo = repo_config(&row)?;
+    let repo = repo_config(cx, &row)?;
     let want = repo.as_ref().and_then(|r| r.machine.as_ref());
     let exclude = want.map_or_else(Vec::new, |w| {
         sync_excludes(&w.sync, &cx.config().machines.sync)

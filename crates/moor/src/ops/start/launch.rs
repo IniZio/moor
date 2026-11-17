@@ -329,7 +329,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         resume: None,
         issue: row.issue.clone(),
         setup_exit,
-        repo_notes: repo_config(row).ok().flatten().and_then(|c| c.brief),
+        repo_notes: repo_config(cx, row).ok().flatten().and_then(|c| c.brief),
         shape: b.delivered,
         model: None,
         nonce: nonce(cx.rng()),

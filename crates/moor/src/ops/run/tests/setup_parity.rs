@@ -25,7 +25,7 @@ fn with_env_yaml() -> Fx {
 /// The spec setup would exec for this Box's machine.
 fn setup_spec(f: &Fx) -> ExecSpec {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    let repo = repo_config(&row).unwrap();
+    let repo = repo_config(&f.cx, &row).unwrap();
     let cfg = resolved(&f.cx, repo.as_ref(), &Flags::default());
     let boxed = row.hands.unwrap();
     let workdir = recorded_workdir(boxed.workdir.as_deref().unwrap()).unwrap();

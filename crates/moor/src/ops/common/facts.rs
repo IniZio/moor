@@ -10,8 +10,8 @@ use crate::error::CommandError;
 use crate::store::BoxRow;
 use moor_core::ErrorKind;
 
-/// Settings for one command on `row`: user config from Cx, the `.moor.yaml` stored when the Box
-/// started, then flags.
+/// Settings for one command on `row`: user config from Cx, the repo's config as the store holds
+/// it now, then flags.
 ///
 /// # Errors
 /// A stored repo config that no longer parses.
@@ -20,29 +20,39 @@ pub(crate) fn settings_of(
     row: &BoxRow,
     flags: &Flags,
 ) -> Result<BoxSettings, CommandError> {
-    Ok(resolved(cx, repo_config(row)?.as_ref(), flags))
+    Ok(resolved(cx, repo_config(cx, row)?.as_ref(), flags))
 }
 
-/// The `.moor.yaml` stored with `row`, parsed; `None` for a Box whose base has none.
+/// The repo config of `row`'s repo, parsed; `None` for a Box whose repo has none.
 ///
 /// # Errors
 /// A stored text that does not parse.
-pub(crate) fn repo_config(row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
-    repo_config_of(row.repo.as_ref(), row.base.as_deref())
+pub(crate) fn repo_config(cx: &Cx, row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
+    repo_config_of(cx, row.repo.as_ref(), row.base.as_deref())
 }
 
-/// The `.moor.yaml` of `repo` read at `base`, parsed; named `OWNER/NAME@BASE:.moor.yaml` in errors.
+/// The repo config of `repo`, parsed. A config stored for the repo wins, so an edit reaches
+/// Boxes already running; a repo with none uses the `.moor.yaml` read at `base`. An error names
+/// the text it came from.
 ///
 /// # Errors
-/// A text that does not parse.
+/// A text that does not parse, or a store failure.
 pub(crate) fn repo_config_of(
+    cx: &Cx,
     repo: Option<&BoxRepo>,
     base: Option<&str>,
 ) -> Result<Option<RepoConfig>, CommandError> {
-    let Some((repo, text)) = repo.and_then(|r| Some((&r.repo, r.moor_yaml.as_deref()?))) else {
+    let Some(repo) = repo else {
         return Ok(None);
     };
-    let file = format!("{repo}@{}:.moor.yaml", base.unwrap_or("base"));
+    if let Some(stored) = cx.store()?.repo_config(&repo.repo)? {
+        let file = format!("{}:repo config (revision {})", repo.repo, stored.revision);
+        return Ok(Some(parse_repo(&file, &stored.text)?));
+    }
+    let Some(text) = repo.moor_yaml.as_deref() else {
+        return Ok(None);
+    };
+    let file = format!("{}@{}:.moor.yaml", repo.repo, base.unwrap_or("base"));
     Ok(Some(parse_repo(&file, text)?))
 }
 

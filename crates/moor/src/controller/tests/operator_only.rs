@@ -24,6 +24,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         | "close-failed" | "workflow-list" | "workflow-runs" => {
             json!({"cmd": kind})
         }
+        "repo-config-get" => json!({"cmd": kind, "repo": "o/n"}),
+        "repo-config-set" => json!({"cmd": kind, "repo": "o/n", "text": "setup: [make]\n"}),
         "machine-links" => json!({"cmd": kind, "runner": "/run/runner.sock", "links": []}),
         "machine-box" => json!({"cmd": kind, "op": {"get": {"box_id": 1}}}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
