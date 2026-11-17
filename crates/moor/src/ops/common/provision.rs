@@ -319,6 +319,6 @@ mod rerun;
 mod retry;
 mod setup_run;
 mod target;
-mod why;
 #[cfg(test)]
 mod tests;
+mod why;

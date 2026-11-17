@@ -13,7 +13,6 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, plan, ProxyPlan};
 
-
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
     /// The Proxy's address and credentials inside the Box.

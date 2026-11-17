@@ -351,5 +351,9 @@ fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_runs_the_lines_again_in_t
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-2"))));
     assert_eq!(acquires(&w), 2, "the retry relaunches nothing");
     let on_new = setup_execs(&w).into_iter().filter(|(h, _)| h == "box-2");
-    assert_eq!(on_new.count(), 2, "the relaunch's failed run, then the retry's");
+    assert_eq!(
+        on_new.count(),
+        2,
+        "the relaunch's failed run, then the retry's"
+    );
 }

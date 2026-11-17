@@ -154,7 +154,10 @@ pub(super) fn clone_with_proxy(
 fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
-    let refresh = kept.work_tree().is_some().then(|| target.handle.as_str().to_owned());
+    let refresh = kept
+        .work_tree()
+        .is_some()
+        .then(|| target.handle.as_str().to_owned());
     Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),

@@ -86,7 +86,10 @@ fn an_offer_from_an_agent_that_still_says_checkpoints_reads_and_drops_them() {
     };
     let offer = offer.unwrap();
     assert_eq!(offer.max_boxes, Some(4));
-    assert_eq!(serde_json::to_value(&offer).unwrap().get("checkpoints"), None);
+    assert_eq!(
+        serde_json::to_value(&offer).unwrap().get("checkpoints"),
+        None
+    );
 }
 
 #[test]

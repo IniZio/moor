@@ -2,7 +2,6 @@
 
 use serde::Serialize;
 
-
 /// A step after the clone whose time the Box's events tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

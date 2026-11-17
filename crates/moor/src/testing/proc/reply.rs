@@ -95,9 +95,7 @@ impl ScriptedProc {
         let (stdout, end): (Box<dyn Read + Send>, Result<(), ProcError>) = match self
             .pick(spec, &args)?
         {
-            Some(Reply::Ok(out)) => {
-                (Box::new(std::io::Cursor::new(out.into_bytes())), Ok(()))
-            }
+            Some(Reply::Ok(out)) => (Box::new(std::io::Cursor::new(out.into_bytes())), Ok(())),
             Some(Reply::Bytes(b)) => (Box::new(std::io::Cursor::new(b)), Ok(())),
             Some(Reply::Reader(open)) => (open(), Ok(())),
             Some(Reply::Fail {

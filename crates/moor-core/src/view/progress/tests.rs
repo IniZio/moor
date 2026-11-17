@@ -248,4 +248,3 @@ fn a_cold_cache_reads_as_a_step_and_is_not_a_failure() {
         ))
     );
 }
-
