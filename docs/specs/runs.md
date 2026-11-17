@@ -526,7 +526,11 @@ The controller runs a check when the pointer is at it and the agent is quiet,
 so nothing edits the work tree under the check. It uses the existing exec op
 ([`moor/src/ops/exec.rs`](https://github.com/IniZio/moor/blob/8d10b84d2f70ea0e8f9473243e68c5cb5c096b2f/crates/moor/src/ops/exec.rs)) in the Box's work place. The deadline is the
 smaller of the run's remaining timeout and 30 minutes. Exit 0 follows `ok`.
-Anything else, a timeout included, follows `fail`. The last 4 KiB of output
+Any other exit code, or the deadline passing, follows `fail`. A lost stream is
+not a result. A machine agent restart cuts open exec streams, and the command
+goes on in the work place. The controller appends `CheckLost` and runs the
+check again on the next tick, so a check command must be safe to repeat. Two
+lost streams in one try follow `fail`. The last 4 KiB of output
 goes into the `Checked` line. Then the controller steers the agent with the
 result and the next step's instructions, unless the next step is another
 check.
