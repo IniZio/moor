@@ -20,7 +20,8 @@ pub enum Verb {
     Info,
     /// Pause the VM, keeping its disk and memory.
     Pause,
-    /// Pause the VM, and let its provider save the lease's cache volumes.
+    /// What a controller from before caches stopped being saved at pause asks. It is read and
+    /// served as [`Verb::Pause`], and a controller no longer sends it.
     PausePublish,
     /// Resume a paused VM.
     Resume,
