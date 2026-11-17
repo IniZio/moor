@@ -159,6 +159,42 @@ fn pull_request_on_an_unlisted_repo_leaves_without_a_credential() {
     a.stop();
 }
 
+/// The reads a deps-check workflow makes on each repo it reviews.
+const DEPS_CHECK_READS: &[&str] = &[
+    "pulls?state=open",
+    "dependabot/alerts?state=open&per_page=100",
+    "commits/main/check-runs",
+    "actions/runs?branch=main",
+];
+
+/// Sends `GET path` on `api.github.com` with the Box placeholder; whether it carried the credential.
+fn get_credentialed(a: &Also, path: &str) -> bool {
+    let before = a.rig.seen().len();
+    a.rig
+        .client()
+        .get(&format!("https://api.github.com{path}"))
+        .header("Authorization", "token placeholder-not-real")
+        .call()
+        .ok();
+    let seen = a.rig.seen();
+    let sent = seen
+        .get(before)
+        .unwrap_or_else(|| unreachable!("{path}: {seen:?}"));
+    sent.authorization.as_deref() == Some(format!("token {SECRET}").as_str())
+}
+
+#[test]
+fn deps_check_reads_carry_the_credential_on_each_listed_repo_only() {
+    let a = also();
+    for read in DEPS_CHECK_READS {
+        for (name, listed) in [("app", true), ("lib", true), ("other", false)] {
+            let path = format!("/repos/o/{name}/{read}");
+            assert_eq!(get_credentialed(&a, &path), listed, "{path}");
+        }
+    }
+    a.stop();
+}
+
 #[test]
 fn graphql_scope_covers_each_listed_repo_and_no_other() {
     let a = also();
