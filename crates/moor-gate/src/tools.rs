@@ -319,6 +319,17 @@ pub(crate) fn act_as(
     send(controller, person, request, Reply::AsIs)
 }
 
+/// Enrolls `person`, then runs `request` as them; the controller's reply as is, refusal or not,
+/// for a caller that acts on the kind of refusal.
+pub(crate) fn ask_as(
+    controller: &Client,
+    person: &Person,
+    request: ControllerRequest,
+) -> Result<ControllerResponse, String> {
+    enroll(controller, person)?;
+    call(controller, person, request)
+}
+
 /// Makes `person` a moor user if they are not one yet.
 fn enroll(client: &Client, person: &Person) -> Result<(), String> {
     let enroll = ControllerRequest::Enroll(EnrollReq {

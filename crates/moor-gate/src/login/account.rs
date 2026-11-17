@@ -13,6 +13,7 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use super::repos;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
@@ -32,6 +33,9 @@ const SECRETS: &str = "/account/api/secrets/";
 
 /// The largest secret write the page reads.
 const BODY_MAX: usize = 8192;
+
+/// The repo config routes: this alone lists the repos, this and `owner/name` reads and writes one.
+const REPOS: &str = "/account/api/repos";
 
 /// Headers on the app page: its own script and styles, requests to itself, nothing framing it
 /// and nothing cached.
@@ -89,6 +93,19 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
             file(&mut stream, p.trim_start_matches("/account/"), "");
         }
         ("GET", API, Some(session)) => show(&mut stream, gate, login, &session),
+        ("GET", REPOS, Some(session)) => repos::list(&mut stream, gate, &session),
+        ("GET", p, Some(session)) if repos::named(p).is_some() => {
+            repos::read(&mut stream, gate, &session, p);
+        }
+        ("PUT", p, session) if repos::named(p).is_some() => {
+            let body = read_body(&mut stream, req.leftover, req.length, repos::BODY_MAX);
+            match session {
+                Some(session) => {
+                    repos::write(&mut stream, gate, &session, req.csrf, p, body.as_deref());
+                }
+                None => signed_out(&mut stream),
+            }
+        }
         ("PUT", p, session) if p.starts_with(SECRETS) => {
             // Read the body before any answer: closing on unread bytes resets the connection
             // and the browser never sees the status.
@@ -105,7 +122,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
 }
 
 /// Answers `401`, which the app takes as the end of the session.
-fn signed_out(stream: &mut TcpStream) {
+pub(super) fn signed_out(stream: &mut TcpStream) {
     json(
         stream,
         "401 Unauthorized",
@@ -137,7 +154,7 @@ fn file(stream: &mut TcpStream, name: &str, headers: &str) {
 }
 
 /// Writes `value` as a JSON response that no cache keeps.
-fn json(stream: &mut TcpStream, status: &str, value: &serde_json::Value) {
+pub(super) fn json(stream: &mut TcpStream, status: &str, value: &serde_json::Value) {
     let body = value.to_string();
     let _ = write!(
         stream,
@@ -147,7 +164,7 @@ fn json(stream: &mut TcpStream, status: &str, value: &serde_json::Value) {
 }
 
 /// Answers a failed controller call, logging why.
-fn failed(stream: &mut TcpStream, what: &str, why: &str) {
+pub(super) fn failed(stream: &mut TcpStream, what: &str, why: &str) {
     log(&format!("the account page's {what} failed: {why}"));
     json(stream, "502 Bad Gateway", &json!({"error": why}));
 }

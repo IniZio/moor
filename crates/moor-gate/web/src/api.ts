@@ -21,14 +21,29 @@ const AccountSchema = v.object({
 	connect: v.object({ mcp_url: v.nullable(v.string()), server_url: v.string() }),
 });
 
+const RepoConfigSchema = v.object({
+	repo: v.string(),
+	text: v.nullish(v.string()),
+	revision: v.number(),
+	edited_by: v.nullish(v.string()),
+	edited_at: v.nullish(v.string()),
+	can_edit: v.boolean(),
+});
+
+const RepoListSchema = v.object({ repos: v.array(v.string()) });
+
 const FailureSchema = v.object({ error: v.string() });
 
 export type Secret = v.InferOutput<typeof SecretSchema>;
 export type Node = v.InferOutput<typeof NodeSchema>;
+export type RepoConfig = v.InferOutput<typeof RepoConfigSchema>;
 export type Account = v.InferOutput<typeof AccountSchema>;
 
 /** Thrown when the session ended; the page offers sign-in again. */
 export class SignedOut extends Error {}
+
+/** Thrown when a save was made against a revision that is no longer the stored one. */
+export class Conflict extends Error {}
 
 /** The gate's answer parsed as `schema`, or why it is not one. */
 async function answer<T extends v.GenericSchema>(res: Response, schema: T): Promise<v.InferOutput<T>> {
@@ -36,7 +51,8 @@ async function answer<T extends v.GenericSchema>(res: Response, schema: T): Prom
 	const body: unknown = await res.json().catch(() => null);
 	if (!res.ok) {
 		const failure = v.safeParse(FailureSchema, body);
-		throw new Error(failure.success ? failure.output.error : `The gate answered ${res.status}.`);
+		const why = failure.success ? failure.output.error : `The gate answered ${res.status}.`;
+		throw res.status === 409 ? new Conflict(why) : new Error(why);
 	}
 	return v.parse(schema, body);
 }
@@ -60,4 +76,27 @@ export async function signOut(csrf: string): Promise<void> {
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 		body: new URLSearchParams({ csrf }),
 	});
+}
+
+/** `owner/name` as a URL path, each part encoded. */
+function repoPath(repo: string): string {
+	return `/account/api/repos/${repo.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+export async function repoList(): Promise<string[]> {
+	return (await answer(await fetch('/account/api/repos'), RepoListSchema)).repos;
+}
+
+export async function repoGet(repo: string): Promise<RepoConfig> {
+	return answer(await fetch(repoPath(repo)), RepoConfigSchema);
+}
+
+/** Replaces the repo's config, against the revision the page read. */
+export async function repoSet(csrf: string, repo: string, text: string, revision: number): Promise<RepoConfig> {
+	const res = await fetch(repoPath(repo), {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ text, revision }),
+	});
+	return answer(res, RepoConfigSchema);
 }

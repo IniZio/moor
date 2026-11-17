@@ -4,6 +4,7 @@
 
 pub(crate) mod account;
 pub(crate) mod pair;
+mod repos;
 pub(crate) mod routes;
 mod seal;
 pub(crate) mod secrets;
