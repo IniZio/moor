@@ -27,6 +27,7 @@ mod failed;
 mod inspect;
 mod listen;
 mod reply;
+mod repo_config;
 mod start;
 mod webhook;
 mod workflow;

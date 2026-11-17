@@ -6,7 +6,7 @@ means every key takes its default.
 | File | Who writes it | Where it is |
 | --- | --- | --- |
 | [User config](#user-config) | The operator, or `moor up` | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `~/.config/moor/config.yaml` |
-| [`.moor.yaml`](#mooryaml) | The repo | The repo root, read through GitHub at the Box's base commit |
+| [Repo config](#mooryaml) | Anyone who can push to the repo | Stored in moor and edited with `moor repo config`; a repo's `.moor.yaml` is imported on its first start |
 | [Controller config](#controller-config) | The operator, or `moor up` | The path given to `moor controller serve --config` |
 
 The controller reads the user config of the host user it runs as. On a team
@@ -217,8 +217,9 @@ groups it started with. End such a setup with
 `sudo -n systemctl restart user@$(id -u).service`, or do not rely on the new
 group.
 
-moor reads the file at the Box's base commit and keeps that copy for the Box's
-life. [Set up a repo](repo.md) shows the keys in use.
+moor keeps this config per repo, in its store, and a start imports a repo's
+`.moor.yaml` once. [Set up a repo](repo.md) shows the keys in use and says
+which changes reach a running Box.
 
 ### Cache volumes
 

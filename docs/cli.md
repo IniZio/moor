@@ -109,6 +109,8 @@ These act as your local identity through the controller.
 | `moor user webhook setup ID`, `finish ID`, `ls`, `rm ID` | Shows the setup with its key, finishes it, lists, or removes. |
 | `moor whoami` | Shows your identity, its user, and the user's linked identities. |
 | `moor node ls` | Lists the shared nodes and yours, with their load. |
+| `moor repo config get OWNER/NAME` | Prints the repo's stored config as YAML; `--json` adds its revision and last editor. |
+| `moor repo config set OWNER/NAME` | Replaces the config with `--file FILE`, or stdin. It needs push access to the repo. `--expected-revision N` refuses a write after someone else's save. |
 
 ### The host
 

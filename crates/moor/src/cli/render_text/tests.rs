@@ -590,4 +590,5 @@ fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
 }
 
 mod hints;
+mod repo_config;
 mod steer;
