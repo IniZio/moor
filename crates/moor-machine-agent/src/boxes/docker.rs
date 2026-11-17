@@ -129,8 +129,6 @@ impl Docker {
         // A running agent place may be one an open cut off by a restart made, not ready yet.
         self.await_agent(&names).await?;
         if fresh {
-            // A new network namespace records direct connections from before the work place
-            // starts. Only a log, so a Box starts without it.
             drop(egress::read_sets(&self.settings.agent_image, &names).await);
         }
         match (Cli::state(&names.work).await?, create) {
