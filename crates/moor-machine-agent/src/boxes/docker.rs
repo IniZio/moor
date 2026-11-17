@@ -16,7 +16,7 @@ use tokio::process::Command;
 
 use super::provider::{BoxProvider, Env, Notes, Observed, PlaceState, ProvideError, Spec};
 use super::Slug;
-use args::{agent_run, work_memory_mib, work_run, PLACE_LABEL, SLUG_LABEL, WORKDIR};
+use args::{agent_run, kvm_gid, work_memory_mib, work_run, PLACE_LABEL, SLUG_LABEL, WORKDIR};
 use cli::{Cli, State};
 use names::Names;
 
@@ -136,7 +136,7 @@ impl Docker {
             }
             (None, Some(spec)) => {
                 let mem = work_memory_mib(spec.class.as_deref());
-                Cli::ok(work_run(&self.settings, slug, &names, mem)).await?;
+                Cli::ok(work_run(&self.settings, slug, &names, mem, kvm_gid())).await?;
             }
             (None, None) => return Err(ProvideError::Missing),
         }

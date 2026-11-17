@@ -48,13 +48,38 @@ pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names) -> Vec<String> {
     a
 }
 
+/// The host's KVM device.
+const KVM: &str = "/dev/kvm";
+
+/// The group that owns the host's `/dev/kvm`; none when the host has no such device. The gid is
+/// the host's, so the work image cannot know it.
+pub(super) fn kvm_gid() -> Option<u32> {
+    gid_of(std::path::Path::new(KVM))
+}
+
+/// The group that owns `device`, when it exists.
+pub(super) fn gid_of(device: &std::path::Path) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(device).ok().map(|m| m.gid())
+}
+
 /// The argv, after `docker`, that starts the work place: privileged, in the agent place's network
-/// namespace, with Docker of its own inside.
-pub(super) fn work_run(s: &Settings, slug: &Slug, n: &Names, mem_mib: u64) -> Vec<String> {
+/// namespace, with Docker of its own inside. With `kvm_gid` the Box user joins that group, so
+/// it can open the host's `/dev/kvm`.
+pub(super) fn work_run(
+    s: &Settings,
+    slug: &Slug,
+    n: &Names,
+    mem_mib: u64,
+    kvm_gid: Option<u32>,
+) -> Vec<String> {
     let mem = format!("{mem_mib}m");
     let mut a = owned(["run", "-d", "--name", &n.work]);
     a.extend(owned(["--network", &format!("container:{}", n.agent)]));
     a.extend(owned(["--privileged", "--restart", "no"]));
+    if let Some(gid) = kvm_gid {
+        a.extend(owned(["--group-add", &gid.to_string()]));
+    }
     a.extend(owned(["--memory", &mem, "--memory-swap", &mem]));
     a.extend(owned([
         "--label",

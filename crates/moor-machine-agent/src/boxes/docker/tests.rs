@@ -7,7 +7,7 @@
     reason = "tests assert on fixed fixtures"
 )]
 
-use super::args::{agent_run, work_memory_mib, work_run};
+use super::args::{agent_run, gid_of, work_memory_mib, work_run};
 use super::names::Names;
 use super::{net, Images, Settings};
 use crate::boxes::Slug;
@@ -68,13 +68,28 @@ fn the_agent_place_is_unprivileged_and_never_restarted_by_docker() {
 #[test]
 fn the_work_place_joins_the_agent_places_network_and_is_privileged() {
     let n = Names::of(&slug());
-    let w = work_run(&settings(), &slug(), &n, 4096).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, None).join(" ");
     assert!(w.contains("--network container:moor-3b3b3b3b-9001-agent"));
     assert!(w.contains("--privileged --restart no"));
     assert!(w.contains("--memory 4096m --memory-swap 4096m"));
     assert!(w.contains("-v moor-3b3b3b3b-9001-docker:/var/lib/docker"));
     assert!(!w.contains("--hostname"));
     assert!(w.ends_with(" work:dev"));
+    assert!(!w.contains("--group-add"));
+}
+
+#[test]
+fn the_work_place_joins_the_group_of_a_hosts_kvm_device() {
+    let n = Names::of(&slug());
+    let w = work_run(&settings(), &slug(), &n, 4096, Some(994)).join(" ");
+    assert!(w.contains("--privileged --restart no --group-add 994 --memory"));
+}
+
+#[test]
+fn a_device_the_host_lacks_has_no_group() {
+    let dir = std::env::temp_dir();
+    assert_eq!(gid_of(&dir.join("moor-no-such-kvm-device")), None);
+    assert!(gid_of(&dir).is_some());
 }
 
 #[test]
