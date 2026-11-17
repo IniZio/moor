@@ -26,8 +26,6 @@ use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-mod fake_crabbox;
-
 const MACHINE: i64 = 7;
 
 struct World {
@@ -102,6 +100,7 @@ fn agent_dir(w: &World, machine_id: i64, key: &PrivateKey) -> tempfile::TempDir 
         owner: "ada@example.com".to_owned(),
         name: "minion".to_owned(),
         slots: 1,
+        pool: None,
     };
     std::fs::write(
         dir.path().join("state.json"),
@@ -264,21 +263,15 @@ async fn run_before_up_says_to_run_up() {
 
 /// An agent for machine 7 linked to `w`'s runner, its home and hooks under `home`.
 async fn linked(w: &World, home: &Path) -> tempfile::TempDir {
-    linked_as(w, home, None, true).await
+    linked_as(w, home, true).await
 }
 
-/// Links an agent serving `pool`, or no pool, from `home`.
-async fn linked_as(
-    w: &World,
-    home: &Path,
-    pool: Option<moor_machine_agent::Pool>,
-    allow_exec: bool,
-) -> tempfile::TempDir {
+/// Links an agent from `home`, running `exec` scripts when `allow_exec`.
+async fn linked_as(w: &World, home: &Path, allow_exec: bool) -> tempfile::TempDir {
     let machine = moor_machine_agent::Machine {
         home: home.to_owned(),
         shell: "/bin/sh".into(),
         hooks: home.join("hooks"),
-        pool,
         allow_exec,
         sweep_grace: Duration::ZERO,
     };
@@ -335,7 +328,7 @@ async fn exec_runs_in_the_box_dir_with_its_env() {
 #[tokio::test(flavor = "multi_thread")]
 async fn exec_is_refused_unless_the_agent_was_started_with_allow_exec() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
-    let _agent = linked_as(&w, home.path(), None, false).await;
+    let _agent = linked_as(&w, home.path(), false).await;
     let marker = home.path().join("ran");
     let op = json!({"op": "exec", "box_id": 7, "env": [], "timeout_secs": 30,
         "script": format!("touch {}", marker.display())});
@@ -475,56 +468,14 @@ async fn poll<T>(mut f: impl FnMut() -> Option<T>) -> T {
     }
 }
 
-/// Links a pool host serving provider `fake` with the fake crabbox in `home`.
-async fn pool_host(w: &World, home: &Path) -> tempfile::TempDir {
-    let pool = moor_machine_agent::Pool {
-        provider: "fake".to_owned(),
-        max: None,
-        reserve_mib: None,
-        cache_gb: None,
-        crabbox: fake_crabbox::install(home),
-    };
-    linked_as(w, home, Some(pool), false).await
-}
-
 fn refused(reply: &Reply) -> bool {
     matches!(reply, Reply::Refused { .. })
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_pool_host_refuses_every_op_but_lease_and_dial() {
-    let (w, home) = (world().await, tempfile::tempdir().unwrap());
-    let _agent = pool_host(&w, home.path()).await;
-    let marker = home.path().join("ran");
-    let ops = [
-        json!({"op": "exec", "box_id": 7, "env": [], "script": format!("touch {}", marker.display()),
-            "timeout_secs": 30}),
-        json!({"op": "hook", "box_id": 7, "hook": "prepare", "env": [], "timeout_secs": 30}),
-        json!({"op": "relay", "box_id": 7, "name": "r", "env": []}),
-        json!({"op": "sync", "box_id": 7, "argv": ["rsync", "--server", "."]}),
-        json!({"op": "pull", "box_id": 7, "path": "x"}),
-        json!({"op": "listen", "box_id": 7, "listen": 1, "ports": [8080]}),
-        json!({"op": "remove", "box_id": 3}),
-    ];
-    std::fs::create_dir_all(home.path().join("moor/3")).unwrap();
-    for op in &ops {
-        let reply = ask(&w, op).await.1;
-        assert!(refused(&reply), "{op}: {reply:?}");
-    }
-    assert!(!marker.exists());
-    let swept = swept(ask(&w, &json!({"op": "sweep", "keep": []})).await.1);
-    assert_eq!((swept.removed, swept.errors), (vec![], vec![]));
-    assert!(
-        home.path().join("moor/3").is_dir(),
-        "a pool host sweeps nothing"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_machine_that_is_no_pool_host_refuses_lease_and_dial() {
+async fn a_machine_refuses_lease_and_dial() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     let _agent = linked(&w, home.path()).await;
-    fake_crabbox::install(home.path());
     for op in [
         json!({"op": "lease", "verb": "list"}),
         json!({"op": "dial", "slug": "moor-1a2b3c4d-7"}),
@@ -532,63 +483,11 @@ async fn a_machine_that_is_no_pool_host_refuses_lease_and_dial() {
         let reply = ask(&w, &op).await.1;
         assert!(refused(&reply), "{op}: {reply:?}");
     }
-    assert_eq!(fake_crabbox::calls(home.path()), "");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_lease_uses_the_hosts_provider_and_a_request_cannot_name_one() {
-    let (w, home) = (world().await, tempfile::tempdir().unwrap());
-    let _agent = pool_host(&w, home.path()).await;
-    let named =
-        json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7", "provider": "evil"});
-    assert!(refused(&ask(&w, &named).await.1));
-    assert_eq!(fake_crabbox::calls(home.path()), "");
-    let op = json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7"});
-    let reply = ask(&w, &op).await.1;
-    assert_eq!(reply, Reply::Leased(moor_client::link::lease::Answer::Done));
-    assert!(fake_crabbox::calls(home.path())
-        .ends_with(" warmup --provider fake --slug moor-1a2b3c4d-7\n"));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_dial_carries_the_stream_to_the_vms_sshd_and_back() {
-    let (w, home) = (world().await, tempfile::tempdir().unwrap());
-    let _agent = pool_host(&w, home.path()).await;
-    let warmup = json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7"});
-    assert!(!refused(&ask(&w, &warmup).await.1));
-    let (mut ch, reply) = ask(&w, &json!({"op": "dial", "slug": "moor-1a2b3c4d-7"})).await;
-    assert_eq!(reply, Reply::Started);
-    ch.write_all(b"SSH-2.0-hello\n").await.unwrap();
-    let mut back = [0u8; 14];
-    tokio::time::timeout(Duration::from_secs(10), ch.read_exact(&mut back))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(&back, b"SSH-2.0-hello\n");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_call_on_a_lease_never_warmed_leaves_no_dir_on_the_host() {
-    let (w, home) = (world().await, tempfile::tempdir().unwrap());
-    let _agent = pool_host(&w, home.path()).await;
-    let info = json!({"op": "lease", "verb": "info", "slug": "moor-1a2b3c4d-7"});
-    ask(&w, &info).await;
-    let stop = json!({"op": "lease", "verb": "stop", "slug": "moor-1a2b3c4d-7"});
-    assert_eq!(
-        ask(&w, &stop).await.1,
-        Reply::Leased(moor_client::link::lease::Answer::Done)
-    );
-    assert!(!home.path().join("moor-pool/moor-1a2b3c4d-7").exists());
 }
 
 #[path = "link/hello.rs"]
 mod hello;
-#[path = "link/pool_dial.rs"]
-mod pool_dial;
-#[path = "link/pool_sweep.rs"]
-mod pool_sweep;
 #[path = "link/relink.rs"]
 mod relink;
 #[path = "link/sweep.rs"]
 mod sweep;
-use sweep::swept;

@@ -49,6 +49,7 @@ pub(super) fn start_agent(
         owner: "ada@example.com".to_owned(),
         name: "minion".to_owned(),
         slots: 1,
+        pool: None,
     };
     let json = serde_json::to_string(&state).unwrap();
     std::fs::write(state_dir.join("state.json"), json).unwrap();
@@ -58,7 +59,6 @@ pub(super) fn start_agent(
         home: remote.to_path_buf(),
         shell,
         hooks: hooks_dir(dir),
-        pool: None,
         allow_exec: true,
         sweep_grace,
     };

@@ -66,7 +66,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
     let (near, mut far) = tokio::io::duplex(4096);
     let sending = tokio::spawn({
         let dir = dir.clone();
-        async move { send_reports(near, &dir, None, (None, None)).await }
+        async move { send_reports(near, &dir, None, None).await }
     });
     let first: Opened = read_line(&mut far).await.unwrap();
     assert_eq!(
@@ -126,7 +126,7 @@ async fn a_report_lists_the_health_of_the_boxes_a_host_provides() {
     let (near, mut far) = tokio::io::duplex(4096);
     let sending = tokio::spawn({
         let dir = dir.clone();
-        async move { send_reports(near, &dir, None, (None, Some(&host))).await }
+        async move { send_reports(near, &dir, None, Some(&host)).await }
     });
     let Opened::Report { report } = read_line(&mut far).await.unwrap() else {
         unreachable!("not a report");

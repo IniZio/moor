@@ -176,12 +176,10 @@ success, else `{kind, message, hints, context}`.
 
 | Command | What it does |
 | --- | --- |
-| `up --server URL` | Pairs the machine, checks its provider, and installs a user service that runs the agent. Rerun it to apply new flags. |
+| `up --server URL` | Pairs the machine, checks that Docker works, and installs a user service that runs the agent. Rerun it to apply new flags. |
 | `down` | Stops and removes the user service. The machine stays paired. |
 | `run` | Keeps the machine linked to its server. The user service runs it. |
 | `update --version VERSION` | Installs a release in place, after checking its checksum and signature. |
-| `lease VERB [SLUG]` | Runs a lease verb on this host and prints JSON. For debugging. |
-| `dial SLUG` | Carries stdin and stdout to a lease's sshd, as an ssh `ProxyCommand`. |
 
 `up` flags:
 
@@ -190,15 +188,11 @@ success, else `{kind, message, hints, context}`.
 | `--server URL` | `MOOR_SERVER` | The moor server. |
 | `--name NAME` | the host name | The machine's name. |
 | `--labels a,b` | none | Labels a Box can ask for. |
-| `--runtime PROVIDER` | crabbox's provider | Offer Boxes through this crabbox provider. |
 | `--max-boxes N` | 4 | The most Boxes held at once. |
 | `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |
-| `--crabbox PATH` | `crabbox` | The crabbox program. |
+| `--agent-image IMAGE` | this release's | The image of a Box's agent place. `MOOR_AGENT_IMAGE` also sets it. |
+| `--work-image IMAGE` | this release's | The image of a Box's work place. `MOOR_WORK_IMAGE` also sets it. |
 
-`run` also takes these flags:
-
-| Flag | Effect |
-| --- | --- |
-| `--reserve-mib MIB` | Memory kept for the host. 4096 plus a tenth of the host's memory by default. |
-| `--cache-gb GB` | Disk that caches may use. |
-| `--auto-update` | Install the release the server names, then restart. |
+`run` takes `--allow-exec`, `--agent-image`, `--work-image`, and
+`--auto-update`, which installs the release the server names, then restarts.
+The user service runs it with the image flags `up` was given.

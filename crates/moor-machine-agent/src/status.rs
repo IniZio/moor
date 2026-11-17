@@ -6,15 +6,12 @@ use std::process::Stdio;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_client::link::status::{
-    clip, PoolStatus, Served, Status, MAX_CRABBOX, MAX_ERROR, MAX_RECENT,
-};
+use moor_client::link::status::{clip, Served, Status, MAX_ERROR, MAX_RECENT};
 use tokio::process::Command;
 
-use crate::pool::{self, Pool};
 use crate::serve::Machine;
 
-/// How long `df` or `crabbox --version` may take.
+/// How long `df` may take.
 const PROBE: Duration = Duration::from_secs(10);
 
 /// The last [`MAX_RECENT`] ops served, oldest first.
@@ -46,37 +43,13 @@ impl Recent {
 
 /// `machine`'s status, with the ops in `recent`.
 pub(crate) async fn status(machine: &Machine, recent: &Recent) -> Status {
-    let pool = match &machine.pool {
-        Some(pool) => Some(pool_status(&machine.home, pool).await),
-        None => None,
-    };
     Status {
         version: crate::VERSION.to_owned(),
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         free_disk_gb: free_gb(&machine.home).await,
-        pool,
+        pool: None,
         recent: recent.list(),
-    }
-}
-
-/// A pool host's provider, crabbox release and leases.
-async fn pool_status(home: &Path, pool: &Pool) -> PoolStatus {
-    let mut version = Command::new(&pool.crabbox);
-    version.arg("--version");
-    let crabbox = match probe(version).await {
-        Ok(out) => clip(out.lines().next().unwrap_or_default(), MAX_CRABBOX),
-        Err(e) => clip(&format!("cannot run crabbox --version: {e}"), MAX_CRABBOX),
-    };
-    let (leases, error) = match pool::list(home, pool).await {
-        Ok(leases) => (leases, None),
-        Err(e) => (Vec::new(), Some(clip(&e, MAX_ERROR))),
-    };
-    PoolStatus {
-        provider: pool.provider.clone(),
-        crabbox,
-        leases,
-        error,
     }
 }
 
@@ -118,12 +91,11 @@ mod tests {
 
     use super::*;
 
-    fn machine(pool: Option<Pool>) -> Machine {
+    fn machine() -> Machine {
         Machine {
             home: std::env::temp_dir(),
             shell: PathBuf::from("/bin/sh"),
             hooks: PathBuf::from("/nonexistent"),
-            pool,
             allow_exec: false,
             sweep_grace: std::time::Duration::ZERO,
         }
@@ -148,36 +120,11 @@ mod tests {
     async fn an_ordinary_machine_reports_no_pool() {
         let recent = Recent::default();
         recent.record("hook", Some("7".to_owned()), None);
-        let status = status(&machine(None), &recent).await;
+        let status = status(&machine(), &recent).await;
         assert_eq!(status.version, crate::VERSION);
         assert_eq!(status.os, std::env::consts::OS);
         assert!(status.free_disk_gb.is_some());
         assert_eq!(status.pool, None);
         assert_eq!(status.recent.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn a_pool_host_reports_its_provider_and_crabbox() {
-        let dir = tempfile::tempdir().unwrap();
-        let crabbox = dir.path().join("crabbox");
-        let long = "v".repeat(300);
-        let script = format!(
-            "#!/bin/sh\ncase \"$1\" in --version) echo 'crabbox {long}'; echo second;; *) echo '[]';; esac\n"
-        );
-        moor_testkit::write_executable(&crabbox, script).unwrap();
-        let pool = Pool {
-            provider: "fake".to_owned(),
-            max: None,
-            reserve_mib: None,
-            cache_gb: None,
-            crabbox,
-        };
-        let status = status(&machine(Some(pool)), &Recent::default()).await;
-        let pool = status.pool.unwrap();
-        assert_eq!(pool.provider, "fake");
-        assert!(pool.crabbox.starts_with("crabbox vvv"), "{}", pool.crabbox);
-        assert_eq!(pool.crabbox.chars().count(), MAX_CRABBOX);
-        assert_eq!(pool.error, None);
-        assert!(pool.leases.is_empty());
     }
 }

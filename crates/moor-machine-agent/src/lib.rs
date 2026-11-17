@@ -14,7 +14,6 @@ use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 
 pub use crate::boxes::{Host, Images};
-pub use crate::pool::Pool;
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 
@@ -25,8 +24,8 @@ mod held;
 pub mod linked;
 mod listen;
 pub mod pair;
-pub mod pool;
 mod release;
+mod report;
 mod serve;
 pub mod service;
 mod status;
@@ -35,7 +34,6 @@ mod sweep;
 pub mod up;
 mod upgrade;
 
-pub use pool::kill_tunnels;
 pub use stop::{until_stopped, Ended};
 
 /// What the agent keeps after pairing.
@@ -51,6 +49,10 @@ pub struct State {
     pub name: String,
     /// How many Boxes may hold the machine at once.
     pub slots: u16,
+    /// What the machine was paired to host (`boxes`); none for an `exec` machine and for the
+    /// pairings of earlier releases.
+    #[serde(default)]
+    pub pool: Option<String>,
 }
 
 /// The private key file, OpenSSH format.
@@ -196,7 +198,7 @@ async fn keep_linked(
     let mut relinked: Option<tokio::time::Instant> = None;
     let mut ever_linked = false;
     loop {
-        let (why, handing_over) = match connect(own, machine).await {
+        let (why, handing_over) = match connect(own).await {
             Ok((carried, theirs)) => {
                 tell.send_replace(theirs);
                 ever_linked = true;
@@ -269,7 +271,7 @@ pub(crate) fn takes_no_machines(server: &str) -> String {
 
 /// Dials `state`'s server and proves the machine with `key`; the link, once it is up, and the
 /// server's release.
-async fn connect(own: &Own, machine: &Machine) -> Result<(link::Carried, String), Turned> {
+async fn connect(own: &Own) -> Result<(link::Carried, String), Turned> {
     let (state, key) = (&own.state, &own.key);
     let mut ws = link::dial_found(&state.server)
         .await
@@ -278,7 +280,7 @@ async fn connect(own: &Own, machine: &Machine) -> Result<(link::Carried, String)
     let hello = Frame::Hello {
         machine_id: state.machine_id,
         version: VERSION.to_owned(),
-        offer: offered(machine, own.host.as_ref()).await.map(Box::new),
+        offer: offered(own.host.as_ref()).map(Box::new),
     };
     link::send(&mut ws, &hello).await.map_err(Turned::Failed)?;
     let nonce = match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
@@ -303,13 +305,18 @@ async fn connect(own: &Own, machine: &Machine) -> Result<(link::Carried, String)
     }
 }
 
-/// What the machine offers: its pool's, with the Boxes its `host` provides.
-async fn offered(machine: &Machine, host: Option<&Host>) -> Option<link::Offer> {
-    let mut offer = pool::offer(machine).await;
-    if let Some(host) = host {
-        offer.get_or_insert_with(link::Offer::default).boxes = Some(host.offer());
-    }
-    offer
+/// What the machine offers: its memory and cpus, with the Boxes its `host` provides; nothing
+/// when it provides none.
+fn offered(host: Option<&Host>) -> Option<link::Offer> {
+    let host = host?;
+    Some(link::Offer {
+        mem_mib: report::host_mem_mib(),
+        cpus: std::thread::available_parallelism()
+            .ok()
+            .and_then(|n| u32::try_from(n.get()).ok()),
+        boxes: Some(host.offer()),
+        ..link::Offer::default()
+    })
 }
 
 /// What the server's `frame` in place of the next handshake step means.

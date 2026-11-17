@@ -1,15 +1,14 @@
-//! The host's memory: its total for the offer, and the live reports the agent sends.
+//! The host's memory and disk: its total for the offer, and the live reports the agent sends.
 
 use std::path::Path;
 
 use moor_client::link::ops;
 use moor_client::link::{self, Opened, Report};
 
-use super::Pool;
 use crate::Host;
 
 /// The host's total memory from `/proc/meminfo`; none off Linux.
-pub(super) fn host_mem_mib() -> Option<u64> {
+pub(crate) fn host_mem_mib() -> Option<u64> {
     let info = std::fs::read_to_string("/proc/meminfo").ok()?;
     mem_total_mib(&info)
 }
@@ -37,7 +36,7 @@ fn report(proc: &Path, home: Option<&Path>) -> Option<Report> {
 }
 
 /// Free and total MiB of the filesystem holding `home`; none when it cannot be read.
-pub(super) fn disk_mib(home: &Path) -> Option<(u64, u64)> {
+fn disk_mib(home: &Path) -> Option<(u64, u64)> {
     let fs = rustix::fs::statvfs(home).ok()?;
     let mib = |blocks: u64| blocks.saturating_mul(fs.f_frsize) / (1024 * 1024);
     Some((mib(fs.f_bavail), mib(fs.f_blocks)))
@@ -54,28 +53,21 @@ fn avg10(psi: &str, line: &str) -> Option<f64> {
 }
 
 /// Sends a [`report`] of `proc` on `stream` now and every [`link::REPORT_EVERY`] until it closes,
-/// with the memory `pool`'s leases hold when its provider says, and the health of the Boxes
-/// `host` provides.
+/// with the health of the Boxes `host` provides.
 pub(crate) async fn send_reports<W>(
     mut stream: W,
     proc: &Path,
     home: Option<&Path>,
-    (pool, host): (Option<&Pool>, Option<&Host>),
+    host: Option<&Host>,
 ) where
     W: tokio::io::AsyncWrite + Unpin + Send,
 {
     let mut tick = tokio::time::interval(link::REPORT_EVERY);
-    let mut first = true;
     loop {
         tick.tick().await;
         let Some(mut report) = self::report(proc, home) else {
             continue;
         };
-        // Linking runs no `crabbox` call: the first report carries no Box memory.
-        if let (false, Some(home), Some(pool)) = (first, home, pool) {
-            report.boxes = super::box_memory(home, pool).await.unwrap_or_default();
-        }
-        first = false;
         if let Some(host) = host {
             report.box_health = health(host).await;
         }

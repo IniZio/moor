@@ -1,7 +1,5 @@
 //! Stopping the agent when the host asks.
 
-use crate::pool;
-
 /// How work run by [`until_stopped`] ended.
 pub enum Ended<T> {
     /// The work finished with this.
@@ -10,8 +8,7 @@ pub enum Ended<T> {
     Stopped(&'static str),
 }
 
-/// Runs `work` until it ends or the host asks the agent to stop with SIGTERM or SIGINT. A stop
-/// ends every boot going on before it returns, so no crabbox outlives the agent.
+/// Runs `work` until it ends or the host asks the agent to stop with SIGTERM or SIGINT.
 ///
 /// # Errors
 /// `work` failed, or the agent cannot watch for those signals.
@@ -29,6 +26,5 @@ pub async fn until_stopped<T>(
         _ = term.recv() => "SIGTERM",
         _ = int.recv() => "SIGINT",
     };
-    pool::stop_boots().await;
     Ok(Ended::Stopped(asked))
 }

@@ -1,6 +1,6 @@
 //! What the agent does with each stream the runner opens: an exec, a hook, or a relay, in the
-//! Box's dir under this account's home; a sweep of closed Boxes' dirs; a lease or dial on a
-//! pool host; or a status.
+//! Box's dir under this account's home; a sweep of closed Boxes' dirs; a Box request on a
+//! machine that provides Boxes; or a status.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -15,7 +15,6 @@ use tokio::process::Command;
 use crate::busy::Busy;
 use crate::files;
 use crate::listen::{self, Link};
-use crate::pool::{self, Pool};
 use crate::status::{self, Recent};
 use crate::sweep;
 
@@ -34,8 +33,6 @@ pub struct Machine {
     pub shell: PathBuf,
     /// `prepare`, `suspend`, `release`, and `relays/<name>`.
     pub hooks: PathBuf,
-    /// The pool it serves, when it is a pool host.
-    pub pool: Option<Pool>,
     /// Whether it runs `exec` scripts; off unless the operator asked for it.
     pub allow_exec: bool,
     /// How old a Box's folders must be before a sweep may remove them.
@@ -53,7 +50,6 @@ impl Machine {
             shell: std::env::var_os("SHELL").map_or_else(|| "/bin/sh".into(), PathBuf::from),
             hooks: config.join("moor-machine-agent/hooks"),
             home,
-            pool: None,
             allow_exec: false,
             sweep_grace: sweep::GRACE,
         }
@@ -72,8 +68,8 @@ impl Machine {
 
 /// Serves the request that opens `ch`, when this machine's mode allows it, and notes it in
 /// `recent`. Every agent serves a status, which is read-only; past that, this match is the
-/// allow-list: a pool host serves only lease and dial, any other machine everything else, and
-/// `exec` only when it was started with `--allow-exec`. `busy` is named for the op.
+/// allow-list: a Box request is served when the machine provides Boxes, and `exec` only when it
+/// was started with `--allow-exec`. `busy` is named for the op.
 pub(crate) async fn serve(
     machine: &Machine,
     link: &Link,
@@ -90,11 +86,6 @@ pub(crate) async fn serve(
     if op == Op::Status {
         let reply = Reply::Status(Box::new(status::status(machine, recent).await));
         return end(ch, reply).await;
-    }
-    if let (Some(pool), Op::Sweep { keep, controller }) = (&machine.pool, &op) {
-        let (home, grace) = (&machine.home, machine.sweep_grace);
-        let swept = pool::sweep(home, pool, controller.as_ref(), keep, grace).await;
-        return end(ch, Reply::Swept(swept)).await;
     }
     let (name, target) = (kind(&op), target(&op));
     let failed = dispatch(machine, link, ch, op).await;
@@ -113,29 +104,25 @@ async fn serve_boxes(host: Option<&crate::Host>, mut ch: Channel) {
 
 /// Serves `op` when this machine's mode allows it; why it failed.
 async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
-    match (machine.pool.as_ref(), op) {
-        (_, Op::Boxes) => {
+    match op {
+        Op::Boxes => {
             serve_boxes(link.host.as_ref(), ch).await;
             None
         }
-        (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. } | Op::Port { .. })) => {
-            serve_pool(&machine.home, pool, ch, op).await
-        }
-        (
-            None,
-            op @ (Op::Exec { .. }
-            | Op::Hook { .. }
-            | Op::Relay { .. }
-            | Op::Sync { .. }
-            | Op::Pull { .. }
-            | Op::Listen { .. }
-            | Op::Sweep { .. }
-            | Op::Remove { .. }),
-        ) if machine.allow_exec || !matches!(op, Op::Exec { .. }) => {
+        op @ (Op::Exec { .. }
+        | Op::Hook { .. }
+        | Op::Relay { .. }
+        | Op::Sync { .. }
+        | Op::Pull { .. }
+        | Op::Listen { .. }
+        | Op::Sweep { .. }
+        | Op::Remove { .. })
+            if machine.allow_exec || !matches!(op, Op::Exec { .. }) =>
+        {
             serve_machine(machine, link, ch, op).await
         }
-        (pool, op) => {
-            let why = not_served(pool.is_some(), &op);
+        op => {
+            let why = not_served(&op);
             end(ch, refused(why.clone())).await;
             Some(why)
         }
@@ -143,43 +130,16 @@ async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option
 }
 
 /// Why this machine does not serve `op`.
-fn not_served(pool_host: bool, op: &Op) -> String {
-    match (pool_host, op) {
-        (true, _) => format!("a pool host does not serve {}", kind(op)),
-        (false, Op::Exec { .. }) => {
+fn not_served(op: &Op) -> String {
+    match op {
+        Op::Exec { .. } => {
             "this machine was not started with --allow-exec, so it does not serve exec".to_owned()
         }
-        (false, _) => format!(
-            "this machine is not a pool host, so it does not serve {}",
-            kind(op)
-        ),
+        _ => format!("this machine does not serve {}", kind(op)),
     }
 }
 
-/// Serves a lease or a dial for `pool`; why it failed.
-async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
-    let reply = match op {
-        op @ Op::Lease { .. } => pool::lease_op(home, pool, op).await,
-        Op::Port { slug, port, probe } => {
-            return pool::serve_port((home, pool), ch, (&slug, port), probe).await;
-        }
-        Op::Dial { slug, timeout_secs } => {
-            match pool::dial(home, pool, &slug, timeout_secs.map(Duration::from_secs)).await {
-                Ok(sshd) => {
-                    pool::carry(ch, sshd).await;
-                    return None;
-                }
-                Err(reason) => refused(reason),
-            }
-        }
-        other => refused(format!("{} is not a pool op", kind(&other))),
-    };
-    let failed = refusal(&reply);
-    end(ch, reply).await;
-    failed
-}
-
-/// Serves an op of a machine that is not a pool host; why it was refused.
+/// Serves an op of a tool machine; why it was refused.
 async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match op {
         Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,

@@ -8,7 +8,7 @@ use moor_client::link::{self, Frame};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::{busy, listen, pool, serve, status, Host, Machine, Pool};
+use crate::{busy, listen, report, serve, status, Host, Machine};
 
 /// How a held link ended.
 pub(crate) enum Ended {
@@ -27,10 +27,9 @@ pub(crate) async fn hold(
     recent: &Arc<status::Recent>,
 ) -> Ended {
     let (open, asks) = mpsc::channel(16);
-    let reporting = (machine.pool.is_some() || host.is_some()).then(|| {
+    let reporting = host.is_some().then(|| {
         let what = Reporting {
             home: machine.home.clone(),
-            pool: machine.pool.clone(),
             host: host.cloned(),
         };
         tokio::spawn(report_on(open.clone(), what))
@@ -102,8 +101,6 @@ async fn relink(mut heard: mpsc::Receiver<Frame>) {
 struct Reporting {
     /// The account's home, whose disk the report measures.
     home: PathBuf,
-    /// The pool whose leases' memory the report lists.
-    pool: Option<Pool>,
     /// The Boxes whose health the report lists.
     host: Option<Host>,
 }
@@ -115,7 +112,7 @@ async fn report_on(open: mpsc::Sender<link::Asked>, what: Reporting) {
         return;
     }
     if let Ok(Ok(stream)) = opened.await {
-        let (home, pool, host) = (&what.home, what.pool.as_ref(), what.host.as_ref());
-        pool::send_reports(stream, Path::new("/proc"), Some(home), (pool, host)).await;
+        let (home, host) = (&what.home, what.host.as_ref());
+        report::send_reports(stream, Path::new("/proc"), Some(home), host).await;
     }
 }

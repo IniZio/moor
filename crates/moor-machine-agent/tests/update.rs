@@ -249,6 +249,7 @@ fn enrolled(dir: &Path, server: &str) -> PathBuf {
         owner: "ada@example.com".to_owned(),
         name: "minion".to_owned(),
         slots: 1,
+        pool: None,
     };
     fs::write(
         home.join("state.json"),
@@ -363,7 +364,7 @@ async fn welcoming_server(
                 }
                 let carried = link::carry(ws, link::KEEPALIVE);
                 let (ask, asks) = mpsc::channel(4);
-                let _ = links.send(Opener(ask, carried.tell));
+                let _ = links.send(Opener(ask));
                 let mode = link::Mode::Server;
                 link::drive(carried.socket, mode, asks, drop, std::future::pending()).await;
             });
@@ -373,7 +374,7 @@ async fn welcoming_server(
 }
 
 /// Opens streams to one linked agent, and sends it frames.
-struct Opener(mpsc::Sender<link::Asked>, mpsc::Sender<Frame>);
+struct Opener(mpsc::Sender<link::Asked>);
 
 impl Opener {
     /// A new stream carrying `op`.
@@ -385,15 +386,6 @@ impl Opener {
         ch
     }
 }
-
-/// A crabbox whose warmup claims its slug and waits for `$HOME/go`, or for its home to go.
-const SLOW_WARMUP: &str = r#"#!/bin/sh
-case "$1" in
-  warmup) touch "$HOME/claimed"
-    while [ -d "$HOME" ] && [ ! -e "$HOME/go" ]; do sleep 0.02; done ;;
-  list) echo '[]' ;;
-esac
-"#;
 
 /// A script release that writes what it was started as to `marker`.
 fn marking(marker: &Path) -> String {
@@ -419,58 +411,6 @@ fn logged(path: &Path) -> String {
 fn spawn(mut cmd: Command, log: &Path) -> ChildGuard {
     cmd.stderr(fs::File::create(log).unwrap());
     ChildGuard::new(cmd.spawn().unwrap())
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_linked_agent_updates_in_the_background_and_restarts_once_its_boot_ends() {
-    let dir = tempfile::tempdir().unwrap();
-    let (mirror, exe) = (dir.path().join("mirror"), agent_copy(dir.path()));
-    let (home, marker) = (dir.path().join("home"), dir.path().join("marker"));
-    fs::create_dir_all(&home).unwrap();
-    let crabbox = home.join("crabbox");
-    moor_testkit::write_executable(&crabbox, SLOW_WARMUP).unwrap();
-    let release = marking(&marker);
-    publish(&mirror, "9.9.9", release.as_bytes(), None);
-    let (server, mut links) = welcoming_server(&[env!("CARGO_PKG_VERSION"), "9.9.9"]).await;
-    let crabbox = crabbox.to_str().unwrap();
-    let args = [
-        "run",
-        "--runtime",
-        "fake",
-        "--crabbox",
-        crabbox,
-        "--auto-update",
-    ];
-    let mut cmd = agent(&exe, &mirror, &args);
-    cmd.env("XDG_STATE_HOME", enrolled(dir.path(), &server))
-        .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", home.join(".config"));
-    let log = dir.path().join("agent.log");
-    let _agent = spawn(cmd, &log);
-    let old = links.recv().await.unwrap();
-
-    let warmup = json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7"});
-    let ch = old.send(warmup).await;
-    until("crabbox claims the slug", || home.join("claimed").exists()).await;
-    drop(ch);
-    old.1.send(Frame::Relink {}).await.unwrap();
-    let opener = links.recv().await.unwrap();
-    until("the release is swapped in", || {
-        fs::read(&exe).unwrap() == release.as_bytes()
-    })
-    .await;
-    let mut status = opener.send(json!({"op": "status"})).await;
-    let reply: ops::Reply = ops::read_line(&mut status).await.unwrap();
-    assert!(matches!(reply, ops::Reply::Status(_)), "{reply:?}");
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    assert!(!marker.exists(), "restarted mid-boot: {}", logged(&log));
-
-    fs::write(home.join("go"), "").unwrap();
-    until("the agent restarts", || marker.exists()).await;
-    assert_eq!(
-        fs::read_to_string(&marker).unwrap(),
-        format!("9.9.9 {}\n", args.join(" "))
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
