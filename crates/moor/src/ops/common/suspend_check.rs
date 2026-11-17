@@ -17,30 +17,40 @@ use crate::ops::common::boxwork::{probe_within, BoxWork};
 use crate::ops::common::node::now;
 use crate::ops::common::stale::unless_stale;
 use crate::ops::common::{artifacts, reports};
-use crate::store::{BoxRow, Store, SuspendCheck};
+use crate::store::{BoxRow, Store, StoreError, SuspendCheck};
 
 /// Longest a suspend waits to learn what the Box holds.
 const CHECK_WITHIN: Duration = Duration::from_secs(10);
 
 /// Records what Box `id` holds, or that nothing is known of it when it is not `settled`, the check
-/// cannot answer, or memory is too short to spend time asking. Never stops the suspend that follows.
+/// cannot answer, or memory is too short to spend time asking. Failing to learn what it holds never
+/// stops the suspend that follows. False when the Box's hands `inc` were replaced, which also
+/// stops it: nothing is recorded and the suspend would reach a machine the Box no longer has.
 ///
 /// A row can read quiet only because the sleep marked it so, hence `settled`. Work could write
 /// between the check and the snapshot, and a stored clean lets a close delete the Box unwoken.
-pub(crate) fn record(cx: &Cx, store: &Store, (id, inc): (BoxId, HandsInc), settled: bool) {
+///
+/// # Errors
+/// A [`StoreError`] when the answer cannot be written.
+pub(crate) fn record(
+    cx: &Cx,
+    store: &Store,
+    (id, inc): (BoxId, HandsInc),
+    settled: bool,
+) -> Result<bool, StoreError> {
     let answer = if settled {
         answer(cx, store, id)
     } else {
         Ok(None)
     };
-    let answer =
-        answer.and_then(|check| Ok(unless_stale(cx, store.set_suspend_check((id, inc), check))?));
-    if let Err(e) = answer {
+    let answer = answer.unwrap_or_else(|e| {
         cx.warn(Warning {
             code: "suspend_check_failed".to_owned(),
             message: format!("cannot record what Box {} holds: {}", id.get(), e.error),
         });
-    }
+        None
+    });
+    Ok(unless_stale(cx, store.set_suspend_check((id, inc), answer))?.is_some())
 }
 
 /// What the Box says it holds, unless memory is critical on its node.

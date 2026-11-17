@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, ProviderId};
-use moor_core::seam::driver::{Driver, DriverError, PausePublish, SleepKind, SleepOutcome};
+use moor_core::seam::driver::{Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::proc::ProcSpec;
 
 use super::errors::Op;
@@ -15,20 +15,13 @@ use super::{split_handle, target_args, Crabbox};
 /// Time allowed for one pause or resume.
 const PAUSE_DEADLINE: Duration = Duration::from_mins(2);
 
-/// Asks crabbox's pause to save the lease's caches.
-const PAUSE_PUBLISH: &str = "CRABBOX_PAUSE_PUBLISH";
-
 /// Reason given when no provider is named in the handle.
 const NO_PROVIDER: &str = "the box has no known provider, so moor cannot tell how it sleeps";
 
 /// Sleeps the Box as its provider's facts allow.
-pub(super) fn sleep(
-    cb: &Crabbox,
-    handle: &BoxHandle,
-    publish: PausePublish,
-) -> Result<SleepOutcome, DriverError> {
+pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
     if super::pool::is_pool(handle) {
-        return super::pool::sleep(cb, handle, publish);
+        return super::pool::sleep(cb, handle);
     }
     let Some(provider) = split_handle(handle).0 else {
         return Ok(SleepOutcome::CannotSleep(NO_PROVIDER.to_owned()));
@@ -52,10 +45,6 @@ pub(super) fn sleep(
         ))),
         SleepKind::Suspend => {
             let spec = spec(cb, "pause", handle)?;
-            let spec = match publish {
-                PausePublish::Allowed => spec.env(PAUSE_PUBLISH, "1"),
-                PausePublish::Denied => spec,
-            };
             cb.call(Op::Sleep, split_handle(handle).0, &spec)?;
             Ok(SleepOutcome::Slept)
         }

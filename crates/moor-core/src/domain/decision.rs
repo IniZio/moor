@@ -5,7 +5,6 @@ mod extra;
 mod wanted;
 
 use super::box_state::BoxLifecycleInput;
-use super::cache_save::CacheSave;
 use super::hands::{HandsInc, HandsInput};
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, LaunchId, ProviderId};
@@ -175,8 +174,6 @@ pub struct Decision {
     pub requester: Option<UserId>,
     /// Name the inserted Box's branch from its new id, for a Decision that inserts a box.
     pub branch_by_id: bool,
-    /// What the sleep this Decision records decided about the caches, for its `asleep` event.
-    pub cache_save: Option<CacheSave>,
     /// Why the setup failure this Decision records happened, for its `setup_failed` event.
     pub setup_why: Option<String>,
 }
@@ -209,7 +206,6 @@ impl Decision {
             parent_session: None,
             requester: None,
             branch_by_id: false,
-            cache_save: None,
             setup_why: None,
         }
     }
@@ -225,13 +221,6 @@ impl Decision {
     #[must_use]
     pub fn lifecycle(mut self, i: BoxLifecycleInput) -> Self {
         self.lifecycle_input = Some(i);
-        self
-    }
-
-    /// Sets what the sleep this Decision records decided about the caches.
-    #[must_use]
-    pub const fn cache_save(mut self, save: Option<CacheSave>) -> Self {
-        self.cache_save = save;
         self
     }
 

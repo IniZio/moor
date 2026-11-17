@@ -396,3 +396,21 @@ fn close_events_carry_their_refusal_and_read_back_from_their_json() {
         Event::Close(CloseEvent::CachesNotSaved)
     );
 }
+
+/// A sleep stored while caches were saved at pause carried a `cache_save` field; it reads back
+/// without it, and the event is written without it.
+#[test]
+fn an_asleep_row_from_before_caches_stopped_saving_at_pause_still_reads() {
+    let stored = serde_json::json!({"kind": "asleep", "auto": true,
+        "cache_save": {"state": "denied", "reason": "agent_unread"}});
+    let read = serde_json::from_value::<Event>(stored).unwrap();
+    let want = Event::Asleep {
+        auto: true,
+        reason: None,
+    };
+    assert_eq!(read, want);
+    assert_eq!(
+        serde_json::to_value(&want).unwrap(),
+        serde_json::json!({"kind": "asleep", "auto": true})
+    );
+}

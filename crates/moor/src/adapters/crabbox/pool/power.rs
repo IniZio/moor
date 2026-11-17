@@ -2,7 +2,7 @@
 
 use moor_client::link::lease::{Answer, Verb};
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{DriverError, PausePublish, SleepOutcome};
+use moor_core::seam::driver::{DriverError, SleepOutcome};
 
 use super::{split_handle, unexpected, Crabbox};
 
@@ -10,19 +10,14 @@ use super::{split_handle, unexpected, Crabbox};
 pub(in crate::adapters::crabbox) fn sleep(
     cb: &Crabbox,
     handle: &BoxHandle,
-    publish: PausePublish,
 ) -> Result<SleepOutcome, DriverError> {
-    let verb = match publish {
-        PausePublish::Allowed => Verb::PausePublish,
-        PausePublish::Denied => Verb::Pause,
-    };
-    match cb.placed(handle)?.ask(verb, None)? {
+    match cb.placed(handle)?.ask(Verb::Pause, None)? {
         Answer::Done => Ok(SleepOutcome::Slept),
         Answer::Unsupported => Ok(SleepOutcome::CannotSleep(format!(
             "provider {} cannot sleep a box",
             split_handle(handle).0.unwrap_or_default()
         ))),
-        other => Err(unexpected(verb, &other)),
+        other => Err(unexpected(Verb::Pause, &other)),
     }
 }
 

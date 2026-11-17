@@ -203,18 +203,13 @@ fn release_stops_and_a_gone_lease_counts_as_deleted() {
 #[test]
 fn sleep_and_wake_pause_and_resume_or_say_they_cannot() {
     let (host, cb) = rig();
-    assert_eq!(
-        cb.sleep(&handle(), moor_core::seam::driver::PausePublish::Denied)
-            .unwrap(),
-        SleepOutcome::Slept
-    );
+    assert_eq!(cb.sleep(&handle()).unwrap(), SleepOutcome::Slept);
     cb.wake(&handle()).unwrap();
     assert_eq!(host.verbs(), [Verb::Pause, Verb::Resume]);
     host.answer(Verb::Pause, Ok(Answer::Unsupported));
     host.answer(Verb::Resume, Ok(Answer::Unsupported));
     assert!(matches!(
-        cb.sleep(&handle(), moor_core::seam::driver::PausePublish::Denied)
-            .unwrap(),
+        cb.sleep(&handle()).unwrap(),
         SleepOutcome::CannotSleep(_)
     ));
     assert!(matches!(
@@ -233,8 +228,7 @@ fn the_planned_handle_names_the_host_machine() {
 fn every_later_op_reaches_the_machine_its_handle_names() {
     let (host, cb) = rig();
     let on_seven = BoxHandle::new("external@hv/7/moor-1a2b3c4d-9101");
-    cb.sleep(&on_seven, moor_core::seam::driver::PausePublish::Denied)
-        .unwrap();
+    cb.sleep(&on_seven).unwrap();
     cb.release(&on_seven).unwrap();
     cb.connect_argv(&on_seven).unwrap();
     assert_eq!(*host.machines.lock().unwrap(), [7, 7, 7]);
@@ -445,15 +439,13 @@ mod listing;
 mod tunnel;
 
 #[test]
-fn an_allowed_sleep_asks_the_host_to_pause_and_publish() {
-    use moor_core::seam::driver::PausePublish::{Allowed, Denied};
+fn a_sleep_asks_the_host_to_pause_and_nothing_more() {
     let (host, cb) = rig();
-    assert_eq!(cb.sleep(&handle(), Allowed).unwrap(), SleepOutcome::Slept);
-    assert_eq!(cb.sleep(&handle(), Denied).unwrap(), SleepOutcome::Slept);
-    assert_eq!(host.verbs(), [Verb::PausePublish, Verb::Pause]);
-    host.answer(Verb::PausePublish, Ok(Answer::Unsupported));
+    assert_eq!(cb.sleep(&handle()).unwrap(), SleepOutcome::Slept);
+    assert_eq!(host.verbs(), [Verb::Pause]);
+    host.answer(Verb::Pause, Ok(Answer::Unsupported));
     assert!(matches!(
-        cb.sleep(&handle(), Allowed).unwrap(),
+        cb.sleep(&handle()).unwrap(),
         SleepOutcome::CannotSleep(_)
     ));
 }

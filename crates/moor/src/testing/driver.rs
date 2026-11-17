@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, HandlesListing, PausePublish, Released, RunEnd, SleepKind,
-    SleepOutcome, StepDone,
+    ExecOutcome, ExecSpec, Followed, HandlesListing, Released, RunEnd, SleepKind, SleepOutcome,
+    StepDone,
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -351,8 +351,8 @@ impl Driver for FakeDriver {
         self.local_cancel(h, run, grace)
     }
 
-    fn sleep(&self, h: &BoxHandle, publish: PausePublish) -> Result<SleepOutcome, DriverError> {
-        self.local_sleep(h, publish)
+    fn sleep(&self, h: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        self.local_sleep(h)
     }
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {

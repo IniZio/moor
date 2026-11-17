@@ -1,23 +1,19 @@
 //! A Box's cache volumes: the plan its acquire carries and its provisioning derives again.
 
 use moor_core::cache::{AgentCache, CacheLayers, CachePlan, Origin};
-use moor_core::config::{BoxSettings, DriverConfig, Flags};
-use moor_core::domain::cache_save::{CacheSave, CacheSaveDenied};
+use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::user::UserId;
 use moor_core::{ProviderId, Warning};
 
 use crate::cx::Cx;
-use crate::ops::common::facts::settings_of;
 use crate::ops::common::node::seat_of;
 use crate::ops::common::step;
 use crate::store::{BoxRow, Store};
 
 /// The feature a machine's agent reports when its crabbox mounts cache volumes.
 const CACHE_VOLUME: &str = "cache-volume";
-/// The feature a machine's agent reports when a pause can save the lease's cache volumes.
-const CACHE_SAVE_ON_PAUSE: &str = "cache-save-on-pause";
 
 /// Why a Box whose plan holds volumes starts without them.
 #[derive(Clone, Copy)]
@@ -123,51 +119,6 @@ fn machine_features(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Optio
         .into_iter()
         .find(|(_, l)| l.machine_id == seat.machine)?;
     link.online.then_some(link.features)
-}
-
-/// Ok when the provider under `row` can save cache volumes while the Box sleeps; why not otherwise.
-pub(crate) fn saves_on_pause(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CacheSaveDenied> {
-    let boxed = row.hands.as_ref().ok_or(CacheSaveDenied::NoFeature)?;
-    let reports = if boxed.provider.host().is_some() {
-        row.user
-            .and_then(|user| machine_features(cx, store, row, user))
-            .ok_or(CacheSaveDenied::MachineOffline)?
-            .iter()
-            .any(|f| f == CACHE_SAVE_ON_PAUSE)
-    } else {
-        cx.driver()
-            .caps(&boxed.provider)
-            .is_ok_and(|caps| caps.cache_save_on_pause)
-    };
-    reports.then_some(()).ok_or(CacheSaveDenied::NoFeature)
-}
-
-/// What a sleep of `row` decides about its caches, where `settled` says whether its agent's work is
-/// done. A Box with no volumes on a provider that cannot save any has nothing to decide.
-pub(crate) fn save_decision(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    settled: Result<(), CacheSaveDenied>,
-) -> Option<CacheSave> {
-    let denied = |reason| CacheSave::Denied { reason };
-    match saves_on_pause(cx, store, row) {
-        Ok(()) => Some(settled.map_or_else(denied, |()| CacheSave::Allowed)),
-        Err(CacheSaveDenied::NoFeature) if !holds_volumes(cx, store, row) => None,
-        Err(reason) => Some(denied(reason)),
-    }
-}
-
-/// Whether `row`'s plan holds any volumes.
-fn holds_volumes(cx: &Cx, store: &Store, row: &BoxRow) -> bool {
-    let Some(boxed) = row.hands.as_ref() else {
-        return false;
-    };
-    settings_of(cx, row, &Flags::default()).is_ok_and(|cfg| {
-        !derived(cx, store, row, &cfg, &boxed.provider)
-            .volumes()
-            .is_empty()
-    })
 }
 
 /// The plan for `row` on `provider`, or why the Box starts cold. A Box with no volumes to keep is

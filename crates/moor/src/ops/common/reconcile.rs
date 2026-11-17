@@ -4,7 +4,7 @@ use moor_core::decide::reconcile::{reconcile, reconcile_answered, BoxFact, STOPP
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::hands::{HandsInput, HandsState};
-use moor_core::seam::driver::{DriverError, PausePublish};
+use moor_core::seam::driver::DriverError;
 use moor_core::{BoxId, ProviderId, Warning};
 
 use crate::adapters::proc::plain::last_sentence;
@@ -190,7 +190,6 @@ fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
         return;
     }
     let _ = store.set_suspend_check(at, None);
-    let _ = store.set_pause_publish(at, PausePublish::Denied);
     if row.session.is_quiet() {
         noted(cx, store.apply(d));
         return;
