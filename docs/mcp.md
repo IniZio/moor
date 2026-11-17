@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repo`; optional `also`, `name`, `prompt`, `base`, `node`, `cold`, `wait` |
+| `start_box` | `repo`; optional `also`, `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |
@@ -45,7 +45,7 @@ token's audience.
 | `set_workflow_enabled` | `name`, `enabled` |
 
 - `list_nodes` gives each node's name, scope, runtime, online state, Boxes,
-  `max_boxes`, free memory, and whether warm starts are on. Its `start` field
+  `max_boxes`, and free memory. Its `start` field
   names the node a start with no `node` would use.
 - `start_box` takes repos as `owner/name`. It refuses before it creates
   anything when you lack a secret, and links the account page. It

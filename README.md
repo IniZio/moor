@@ -51,9 +51,8 @@ A Box has its own disk, processes, and ports, so two agents never step on each
 other's checkout or dev server. Closing a Box throws all of that away. Work
 that was pushed stays on GitHub.
 
-The expensive parts carry over between Boxes of the same repo. A later Box
-starts from a saved setup and from kept caches, so it skips most of the clone
-and install. [Scheduling](docs/scheduling.md) covers how that works.
+Kept caches carry over between Boxes of the same repo, so a later Box skips
+most of the clone and install. [Scheduling](docs/scheduling.md) covers how that works.
 
 ## Documentation
 

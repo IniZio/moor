@@ -60,7 +60,6 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 | `--base REF` | The ref to branch from. The default is the repo's default branch. |
 | `--node NAME` | A node of yours, or a shared one, in place of your default. |
 | `--model MODEL` | The agent model. |
-| `--cold` | Set up from scratch, past any saved setup. |
 | `--no-agent` | Start no agent. |
 | `--resume` | Resume the agent's stored session. |
 | `--parent ID` | The parent Session. The default is `MOOR_SESSION`. |

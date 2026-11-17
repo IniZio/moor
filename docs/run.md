@@ -53,7 +53,7 @@ before you run `moor up`.
 moor node ls
 ```
 
-You see the `local` node, its runtime, and whether warm starts are on.
+You see the `local` node, and its runtime.
 `moor up` sizes it at one Box per 4 GiB of memory beyond the first 4 GiB. Pass
 `moor up --max-boxes N` to set another cap.
 
