@@ -196,7 +196,8 @@ pub struct MachineLink {
     /// The link protocol it spoke.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protocol: Option<u32>,
-    /// The most Boxes its agent said it will hold.
+    /// The most Boxes an older agent said it will hold. Kept for skew and never read: a node's
+    /// cap is its setting in the controller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_boxes: Option<u32>,
     /// The cache disk, in GB, its agent set aside.

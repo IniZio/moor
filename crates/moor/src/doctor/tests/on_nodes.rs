@@ -25,6 +25,8 @@ fn node(name: &str) -> NodeView {
         pressure_since: None,
         box_memory_mib: None,
         labels: Vec::new(),
+        revision: 0,
+        editable: false,
     }
 }
 

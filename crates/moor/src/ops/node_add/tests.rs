@@ -87,7 +87,11 @@ fn an_added_node_is_shared_offline_until_its_agent_links_and_online_after() {
         .set_machine_links(&crate::testing::runner(), false, &[link], cx.clock().now())
         .unwrap();
     let after = node(&cx);
-    assert_eq!((after.online, after.max_boxes), (true, Some(4)));
+    assert_eq!(
+        (after.online, after.max_boxes),
+        (true, None),
+        "the cap an agent offers is not the node's cap"
+    );
 }
 
 #[test]

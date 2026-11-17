@@ -16,6 +16,6 @@ fn node_ls_shows_how_the_agent_provides_boxes_in_place_of_the_runtime() {
     let (out, _) = render(&Response::ok("node-list", Some(v)), false);
     assert_eq!(
         out,
-        "local  shared  docker  online  1/4\nmini  personal  cloudhypervisor  online  0/-\n"
+        "local  shared  docker  online  1/4\nmini  personal  cloudhypervisor  online  0 (no cap)\n"
     );
 }

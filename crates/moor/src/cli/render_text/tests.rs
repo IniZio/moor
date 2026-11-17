@@ -558,7 +558,7 @@ fn node_ls_shows_scope_link_load_and_labels() {
     assert_eq!(
         out,
         "fast  shared  static  online  1/4  2 waiting  big,gpu\n\
-         mini  personal  cloudhypervisor  offline since 1970-01-01T00:00:00Z  0/-\n"
+         mini  personal  cloudhypervisor  offline since 1970-01-01T00:00:00Z  0 (no cap)\n"
     );
     let (none, _) = render(
         &Response::ok("node-list", Some(json!({"nodes": []}))),
@@ -580,13 +580,33 @@ fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
     };
     assert_eq!(
         node(Some(6349)),
-        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 6.2 GiB\n"
+        "mini  personal  cloudhypervisor  online  2 (no cap)  Boxes hold 6.2 GiB\n"
     );
     assert_eq!(
         node(Some(0)),
-        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 0 GiB\n"
+        "mini  personal  cloudhypervisor  online  2 (no cap)  Boxes hold 0 GiB\n"
     );
-    assert_eq!(node(None), "mini  personal  cloudhypervisor  online  2/-\n");
+    assert_eq!(
+        node(None),
+        "mini  personal  cloudhypervisor  online  2 (no cap)\n"
+    );
+}
+
+#[test]
+fn node_set_says_the_cap_labels_and_revision_left() {
+    let say = |max: serde_json::Value, labels: serde_json::Value| {
+        let v = json!({"name": "mini", "scope": "personal", "max_boxes": max, "labels": labels,
+            "revision": 2, "can_edit": true});
+        render(&Response::ok("node-settings-set", Some(v)), false).0
+    };
+    assert_eq!(
+        say(json!(3), json!(["gpu", "big"])),
+        "mini: at most 3 Boxes, labels gpu,big (revision 2)\n"
+    );
+    assert_eq!(
+        say(json!(null), json!([])),
+        "mini: no cap, no labels (revision 2)\n"
+    );
 }
 
 mod hints;

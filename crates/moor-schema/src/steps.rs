@@ -28,6 +28,7 @@ mod launch_fence;
 mod link_provides;
 mod link_runner;
 mod machine_boxes;
+mod node_settings;
 mod pause_publish;
 mod proxy_key;
 mod proxy_state;
@@ -86,4 +87,5 @@ pub const STEPS: &[Step] = &[
     step("V81__repo_config", repo_config::write),
     step("V82__box_config", box_config::write),
     step("V83__link_provides", link_provides::write),
+    step("V84__node_settings", node_settings::write),
 ];

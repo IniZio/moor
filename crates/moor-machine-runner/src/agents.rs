@@ -309,7 +309,8 @@ impl Links {
             since: now(),
             version: Some(version),
             protocol: None,
-            max_boxes: offer.max_boxes,
+            // A cap is the node's setting in the controller; an agent's old offer of one is ignored.
+            max_boxes: None,
             cache_gb: offer.cache_gb,
             features: offer.features,
             mem_mib: offer.mem_mib,
