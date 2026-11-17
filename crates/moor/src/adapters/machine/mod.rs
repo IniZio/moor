@@ -6,9 +6,8 @@
 //! on one stream, and everything past open, sleep, wake, close, list and exec (files, batches,
 //! detached runs) is composed over exec in [`over_exec`].
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use moor_client::link::boxes::{BoxAnswer, BoxOp, ReportState};
 use moor_client::link::reach::Runner;
@@ -23,6 +22,7 @@ use moor_core::seam::proc::{Deadline, Pipes};
 
 use stream::{ask, blocking, failed, open, unreached};
 
+mod env;
 mod exec;
 mod over_exec;
 mod stream;
@@ -44,13 +44,9 @@ pub struct Machines {
     reach: Arc<dyn Reach>,
     /// This moor binary, which `box-term` runs as.
     moor: PathBuf,
-    /// The environment each Box was last given by [`Driver::set_env`], by slug. Setting it
-    /// restarts the work place's Docker, so an unchanged environment is not sent again.
-    env_sent: Mutex<HashMap<String, SentEnv>>,
+    /// What [`Driver::set_env`] last sent each Box, by slug, since a send restarts its Docker.
+    env_sent: Mutex<std::collections::HashMap<String, env::SentEnv>>,
 }
-
-/// The environment of a Box as the machine holds it: variables and the CA.
-type SentEnv = (Vec<(String, String)>, Option<String>);
 
 impl Machines {
     /// The driver reaching machines through `reach`, whose terminals run `moor box-term` of the
@@ -68,11 +64,6 @@ impl Machines {
     fn seat(handle: &BoxHandle) -> Result<(i64, &str), DriverError> {
         parse_machine_handle(handle.as_str())
             .ok_or_else(|| failed(format!("{} is no Box of a machine", handle.as_str())))
-    }
-
-    /// The environments sent so far.
-    fn sent(&self) -> std::sync::MutexGuard<'_, HashMap<String, SentEnv>> {
-        self.env_sent.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The runner holding `machine`'s link.
@@ -185,9 +176,7 @@ impl Driver for Machines {
             slug: slug.to_owned(),
         };
         let answer = self.call(machine, &op, &mut |_| {});
-        if matches!(answer, Ok(BoxAnswer::Done | BoxAnswer::Gone)) {
-            self.sent().remove(slug);
-        }
+        env::forget_closed(self, slug, &answer);
         match answer? {
             BoxAnswer::Done => Ok(Released::Deleted),
             BoxAnswer::Gone => Ok(Released::AlreadyGone),
@@ -389,24 +378,7 @@ impl Driver for Machines {
         vars: &[(String, String)],
         ca_pem: Option<&str>,
     ) -> Result<(), DriverError> {
-        let (machine, slug) = Self::seat(handle)?;
-        let want: SentEnv = (vars.to_vec(), ca_pem.map(str::to_owned));
-        if self.sent().get(slug) == Some(&want) {
-            return Ok(());
-        }
-        let op = BoxOp::Env {
-            slug: slug.to_owned(),
-            vars: want.0.clone(),
-            ca_pem: want.1.clone(),
-        };
-        match self.call(machine, &op, &mut |_| {})? {
-            BoxAnswer::Done => {
-                self.sent().insert(slug.to_owned(), want);
-                Ok(())
-            }
-            BoxAnswer::Gone => Err(DriverError::NotFound),
-            other => Err(unexpected(&other)),
-        }
+        env::send(self, handle, vars, ca_pem)
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {

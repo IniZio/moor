@@ -61,7 +61,9 @@ fn an_empty_script_after_probes_and_exits_zero() {
 #[test]
 fn a_cgroup_limit_below_meminfo_is_what_the_probe_reports() {
     let out = Command::new("sh").arg("-c").arg(PROBE).output().unwrap();
-    let got = parse(&String::from_utf8(out.stdout).unwrap()).unwrap().mem_mib;
+    let got = parse(&String::from_utf8(out.stdout).unwrap())
+        .unwrap()
+        .mem_mib;
     let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap();
     let total = meminfo
         .lines()
@@ -73,7 +75,7 @@ fn a_cgroup_limit_below_meminfo_is_what_the_probe_reports() {
     let limit = std::fs::read_to_string("/sys/fs/cgroup/memory.max")
         .ok()
         .and_then(|l| l.trim().parse::<u64>().ok())
-        .map(|b| b / 1048576)
+        .map(|b| b / 1_048_576)
         .filter(|l| *l > 0);
     if let Some(limit) = limit.filter(|l| *l < total) {
         assert_eq!(got, limit);

@@ -190,6 +190,25 @@ pub(crate) struct Server {
     warmer: Option<std::thread::JoinHandle<()>>,
 }
 
+/// Starts the thread that tends `shared`'s Boxes every `every` while `on` is set.
+fn spawn_tender(
+    on: &Arc<AtomicBool>,
+    shared: &Arc<Shared>,
+    clock: Arc<dyn Clock>,
+    every: Duration,
+) -> Result<std::thread::JoinHandle<()>, String> {
+    let (on, shared) = (Arc::clone(on), Arc::clone(shared));
+    std::thread::Builder::new()
+        .name("moor-egress-tend".to_owned())
+        .spawn(move || {
+            while on.load(Ordering::Acquire) {
+                clock.sleep(every);
+                shared.boxes.tend();
+            }
+        })
+        .map_err(|e| format!("cannot start tending: {e}"))
+}
+
 impl Server {
     /// Binds `cfg.listen` and starts serving.
     pub(crate) fn start(cfg: Config) -> Result<Self, String> {
@@ -224,24 +243,12 @@ impl Server {
             .chain(also)
             .map(|l| {
                 let stop = Arc::new(Notify::new());
-                let task = runtime.spawn(accept(l, Arc::clone(&shared), Arc::clone(&stop)));
-                (stop, task)
+                let serving = runtime.spawn(accept(l, Arc::clone(&shared), Arc::clone(&stop)));
+                (stop, serving)
             })
             .collect();
         let tending = Arc::new(AtomicBool::new(true));
-        let (on, boxes) = (Arc::clone(&tending), Arc::clone(&shared));
-        let thread = std::thread::Builder::new()
-            .name("moor-egress-tend".to_owned())
-            .spawn({
-                let clock = Arc::clone(&clock);
-                move || {
-                    while on.load(Ordering::Acquire) {
-                        clock.sleep(every);
-                        boxes.boxes.tend();
-                    }
-                }
-            })
-            .map_err(|e| format!("cannot start tending: {e}"))?;
+        let thread = spawn_tender(&tending, &shared, Arc::clone(&clock), every)?;
         let warmer = warm
             .map(|warm| {
                 let (on, shared) = (Arc::clone(&tending), Arc::clone(&shared));
@@ -296,8 +303,8 @@ impl Server {
             stop.notify_one();
         }
         let left = self.runtime.block_on(async move {
-            for (_, task) in accepting {
-                drop(task.await);
+            for (_, serving) in accepting {
+                drop(serving.await);
             }
             let waited = tokio::time::timeout(grace, async {
                 while shared.open.load(Ordering::Acquire) > 0 {
