@@ -45,7 +45,12 @@ fn a_curl_through_the_proxy_is_recorded_as_proxied_and_a_credential_host_as_cred
             row("deb.debian.org", 80, EgressPath::Proxied, 1),
             row("example.com", 443, EgressPath::Proxied, 1),
             row("example.net", 8080, EgressPath::Proxied, 1),
-            row("objects.githubusercontent.com", 443, EgressPath::Credential, 1),
+            row(
+                "objects.githubusercontent.com",
+                443,
+                EgressPath::Credential,
+                1
+            ),
         ]
     );
     assert!(w.rows().iter().all(|r| !r.host.contains("token")));
@@ -73,7 +78,10 @@ fn a_line_still_being_written_waits_for_the_next_read() {
 
 #[test]
 fn other_lines_name_no_host() {
-    assert_eq!(request("INFO ... opensock: opening connection to example.com:443"), None);
+    assert_eq!(
+        request("INFO ... opensock: opening connection to example.com:443"),
+        None
+    );
     assert_eq!(request(&line("GET /relative/path")), None);
     assert_eq!(
         request(&line("CONNECT [2606:4700::1]:443")),
@@ -137,7 +145,11 @@ fn a_resumed_tally_does_not_count_what_its_file_already_holds() {
         count: 4,
     }];
     let mut w = Watch::resumed(held);
-    let log = [line("CONNECT pypi.org:443"), line("CONNECT files.pythonhosted.org:443")].concat();
+    let log = [
+        line("CONNECT pypi.org:443"),
+        line("CONNECT files.pythonhosted.org:443"),
+    ]
+    .concat();
     w.take_log(CONF, &log, 5);
     assert_eq!(
         seen(&w),

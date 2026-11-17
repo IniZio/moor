@@ -60,7 +60,11 @@ impl Watch {
     /// read stopped, against tinyproxy's config `conf`. Returns the bytes it counted.
     pub(super) fn take_log(&mut self, conf: &str, chunk: &str, at: u64) -> usize {
         let (whole, _) = chunk.rsplit_once('\n').unwrap_or_default();
-        let used = if chunk.contains('\n') { whole.len() + 1 } else { 0 };
+        let used = if chunk.contains('\n') {
+            whole.len() + 1
+        } else {
+            0
+        };
         let upstreams = upstreams(conf);
         for (host, port) in whole.lines().filter_map(request) {
             let path = if upstreams.iter().any(|u| matches_host(u, &host)) {
@@ -148,7 +152,10 @@ fn matches_host(pattern: &str, host: &str) -> bool {
 /// document per line.
 pub(super) fn set_elements(listed: &str) -> Vec<(String, u16, u64)> {
     let mut out = Vec::new();
-    for doc in listed.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
+    for doc in listed
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+    {
         let items = doc.pointer("/nftables").and_then(Value::as_array);
         let sets = items.into_iter().flatten();
         let elems = sets.filter_map(|i| i.pointer("/set/elem").and_then(Value::as_array));
@@ -217,12 +224,32 @@ nft -j list set {TABLE} seen6
 
 /// Runs the helper against the Box `names` from `image`: the table is in place afterwards, and
 /// its sets' elements are returned.
-pub(super) async fn read_sets(image: &str, names: &Names) -> Result<Vec<(String, u16, u64)>, String> {
+pub(super) async fn read_sets(
+    image: &str,
+    names: &Names,
+) -> Result<Vec<(String, u16, u64)>, String> {
     let netns = format!("container:{}", names.agent);
     let script = helper_script();
     let args = [
-        "run", "--rm", "--network", &netns, "--pid", &netns, "--cgroupns", "host", "--cap-drop",
-        "ALL", "--cap-add", "NET_ADMIN", "--user", "0", "--entrypoint", "sh", image, "-c", &script,
+        "run",
+        "--rm",
+        "--network",
+        &netns,
+        "--pid",
+        &netns,
+        "--cgroupns",
+        "host",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--user",
+        "0",
+        "--entrypoint",
+        "sh",
+        image,
+        "-c",
+        &script,
     ];
     Cli::ok(args)
         .await
@@ -267,7 +294,7 @@ async fn read_log(watch: &mut Watch, names: &Names, at: u64) -> Result<(), Strin
     Ok(())
 }
 
-/// Every Box's watch, each read by one task at a time.
+/// Every Box's watch, each with at most one read running.
 #[derive(Default)]
 pub(super) struct Watches(Mutex<BTreeMap<Slug, Arc<tokio::sync::Mutex<Option<Watch>>>>>);
 
