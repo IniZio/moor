@@ -55,7 +55,7 @@ oom() { sed -n "s/^oom_kill //p" /sys/fs/cgroup/memory.events 2>/dev/null || cat
 before=$(oom)
 before=${before:-0}
 parent=$PPID
-setsid bash -lc "$2" <&0 &
+setsid bash -lc ". /run/moor/agent.env 2>/dev/null; $2" <&0 &
 child=$!
 ( while kill -0 "$parent" 2>/dev/null; do sleep 1; done
   kill -TERM -- "-$child" 2>/dev/null; sleep 3; kill -KILL -- "-$child" 2>/dev/null ) &
