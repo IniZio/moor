@@ -118,7 +118,6 @@ fn fetch_and_setup(
         workdir: None,
     };
     let script = fetch_script(&url, profile.sha.as_str());
-    // A machine's Box has a home per place, and Claude's profile writers read the Agent one.
     let places: &[(Place, &str)] = if is_machine_handle(handle.as_str()) {
         &[(Place::Work, "work"), (Place::Agent, "agent")]
     } else {
