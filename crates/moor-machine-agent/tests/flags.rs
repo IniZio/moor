@@ -18,9 +18,14 @@ fn agent(args: &[&str]) -> (bool, String) {
 #[test]
 fn the_crabbox_flags_are_unknown() {
     for flag in ["--runtime", "--crabbox", "--cache-gb", "--max-boxes"] {
-        let (ok, err) = agent(&["run", flag, "x"]);
-        assert!(!ok);
-        assert!(err.contains("unexpected argument"), "{flag}: {err}");
+        for command in ["run", "up"] {
+            let (ok, err) = agent(&[command, flag, "x"]);
+            assert!(!ok);
+            assert!(
+                err.contains("unexpected argument"),
+                "{command} {flag}: {err}"
+            );
+        }
     }
 }
 
