@@ -262,16 +262,20 @@ fn egress_hosts(config: UserConfig) -> Vec<String> {
 }
 
 #[test]
-fn the_machine_service_host_goes_through_the_proxy_when_configured() {
-    let mut config = UserConfig::default();
-    config.machines.service = Some(moor_core::config::MachineService {
-        host: "machine.moor.internal".to_owned(),
-        upstream: "127.0.0.1:7700".parse().unwrap(),
-    });
-    assert!(egress_hosts(config).contains(&"machine.moor.internal".to_owned()));
+fn each_served_host_goes_through_the_proxy_only_when_configured() {
+    let config = moor_core::config::parse_user(
+        "u.yaml",
+        "machines: {service: {upstream: '127.0.0.1:7700'}}\n\
+         moor_service: {upstream: '127.0.0.1:8444'}",
+    )
+    .unwrap();
+    let hosts = egress_hosts(config);
+    for host in ["machine.moor.internal", "moor.moor.internal"] {
+        assert!(hosts.contains(&host.to_owned()), "{host}: {hosts:?}");
+    }
     let hosts = egress_hosts(UserConfig::default());
     assert!(
-        !hosts.contains(&"machine.moor.internal".to_owned()),
+        !hosts.iter().any(|h| h.ends_with(".moor.internal")),
         "{hosts:?}"
     );
 }

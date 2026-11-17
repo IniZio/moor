@@ -1,30 +1,36 @@
-//! A tunnel to the machine service: one plain request, sent to the runner that holds the Box's
-//! machine's link when the ledger names one, else to the service.
+//! A tunnel to a host the Proxy serves: one plain request, stripped of the `X-Moor-*` headers the
+//! Box sent and stamped with the Proxy's own, sent to the service's upstream. The upstream's name
+//! is looked up on each connection and dialled only when every address it has is loopback or
+//! private, so no config or DNS answer can send a Box's identity off to a public address.
 //!
-//! A holder that cannot be dialled, or that answers 421 because the link moved, costs one
-//! more read of the ledger and one more try before the Box sees an error.
+//! A request for the machine service goes to the runner that holds the Box's machine's link when
+//! the ledger names one. A holder that cannot be dialled, or that answers 421 because the link
+//! moved, costs one more read of the ledger and one more try before the Box sees an error.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
+use moor_core::config::{reachable, Served};
 use tokio::io::AsyncWriteExt as _;
-use tokio::net::TcpStream;
+use tokio::net::{lookup_host, TcpStream};
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use super::super::boxes::Route;
-use super::super::MachineRoute;
+use super::super::ServedRoute;
 use super::{
     answer, authority_ok, read_head, refuse, relay, upgrade, ws_head, Open, Peer, HEAD_TIMEOUT,
     MAX_MESSAGE,
 };
-use crate::proxy::front::{hold_or_missing, plain_request, Hold};
+use crate::proxy::front::{hold_headers, hold_or_missing, plain_request, Hold};
 
 #[cfg(test)]
 mod tests;
 
-/// How long the machine service gets to accept a connection before the tunnel is a 502.
+/// How long a served host's upstream gets to be looked up, and to accept a connection, before
+/// the tunnel is a 502.
 const MACHINE_DIAL: Duration = Duration::from_secs(3);
 /// How long a runner may take no byte of a request before the Box gets a 502. The clock runs only
 /// while a write waits on the runner, so a Box's slow upload never starts it. A live runner
@@ -37,18 +43,23 @@ const HOLDER_ONLY: &str = "X-Moor-Holder-Only";
 const MISDIRECTED: u16 = 421;
 /// Why the Box gets a 502 when no runner could be reached for its request.
 const NOT_ANSWERING: &str = "the machine service is not answering";
+/// Why the Box gets a 502 when a served host's upstream does not answer.
+const DOWN: &str = "the service is not answering";
+/// Why the Box gets a 502 when a served host's upstream names an address off this host's network.
+const PUBLIC: &str = "the service's upstream is not a loopback or private address";
 /// Why the Box gets a 502 when the runner went away before answering; the call may have run,
 /// so it is not sent again.
 const LOST: &str = "the machine runner went away before answering; the call may have run";
 
-/// The machine service, reached for one request.
+/// A served host, reached for one request.
 struct Reached {
     /// The connection.
     stream: TcpStream,
     /// The address dialled.
     addr: String,
-    /// What the Box held when the ledger was asked.
-    hold: Hold,
+    /// The `X-Moor-*` headers the request carries: for the machine service, what the Box held
+    /// when the ledger was asked.
+    own: Option<Vec<(&'static str, String)>>,
     /// Whether it is the holder the ledger named on its first answer, which may still be
     /// asked again.
     holder: bool,
@@ -74,16 +85,17 @@ struct Plain {
     body: Vec<u8>,
 }
 
-/// Dials the machine service for the Box of `ask`, upgrades the connection and relays the
-/// plain request and its answer.
+/// Dials the served host for the Box of `ask`, upgrades the connection and relays the plain
+/// request and its answer.
 pub(super) async fn tunnel<S: Peer>(
     mut stream: S,
-    service: &MachineRoute,
+    service: &ServedRoute,
     ask: &Open,
     route: &Route,
 ) {
-    let Some(reached) = reach(service, route).await else {
-        return answer(&mut stream, 502, "the machine service is not answering").await;
+    let reached = match reach(service, route).await {
+        Ok(reached) => reached,
+        Err(why) => return answer(&mut stream, 502, why).await,
     };
     let Some(mut ws) = upgrade(stream, &ask.key).await else {
         return;
@@ -91,7 +103,12 @@ pub(super) async fn tunnel<S: Peer>(
     let Some((head, body)) = ws_head(&mut ws).await else {
         return;
     };
-    let Some(request) = marked(&head, &ask.target, &reached.hold, service.key.as_deref()) else {
+    let Some(request) = marked(
+        &head,
+        &ask.target,
+        reached.own.as_deref(),
+        service.key.as_deref(),
+    ) else {
         return refuse(&mut ws).await;
     };
     let plain = Plain {
@@ -108,7 +125,7 @@ async fn deliver<S: Peer>(
     mut ws: WebSocketStream<S>,
     reached: Reached,
     mut plain: Plain,
-    service: &MachineRoute,
+    service: &ServedRoute,
     asked: (&Open, &Route),
 ) {
     let mut upstream = reached.stream;
@@ -130,7 +147,7 @@ async fn deliver<S: Peer>(
 async fn hand_off(
     upstream: &mut TcpStream,
     plain: &mut Plain,
-    service: &MachineRoute,
+    service: &ServedRoute,
     asked: (&Open, &Route),
     failed: &str,
 ) -> Result<Option<Vec<u8>>, &'static str> {
@@ -149,20 +166,30 @@ async fn hand_off(
 /// After the holder at `failed` said it holds no link: what the ledger names now, dialled, and
 /// `head` marked with what the Box holds now.
 async fn elsewhere(
-    service: &MachineRoute,
+    service: &ServedRoute,
     asked: (&Open, &Route),
     failed: &str,
     head: &[u8],
 ) -> Option<(TcpStream, Vec<u8>)> {
     let (ask, route) = asked;
-    let again = reask(service, route, failed).await?;
-    let request = marked(head, &ask.target, &again.hold, service.key.as_deref())?;
+    let again = reask(service, route, failed).await.ok()?;
+    let request = marked(
+        head,
+        &ask.target,
+        again.own.as_deref(),
+        service.key.as_deref(),
+    )?;
     Some((again.stream, request))
 }
 
-/// The plain request `head` for `target` in origin form, marked with `hold` and `key`.
-fn marked(head: &[u8], target: &str, hold: &Hold, key: Option<&str>) -> Option<Vec<u8>> {
-    let request = plain_request(head, target, Some(hold))?;
+/// The plain request `head` for `target` in origin form, marked with `own` and `key`.
+fn marked(
+    head: &[u8],
+    target: &str,
+    own: Option<&[(&'static str, String)]>,
+    key: Option<&str>,
+) -> Option<Vec<u8>> {
+    let request = plain_request(head, target, Some(own?))?;
     Some(match key {
         Some(key) => with_header(&request, "X-Moor-Service-Key", key),
         None => request,
@@ -185,24 +212,34 @@ async fn try_holder(upstream: &mut TcpStream, request: &[u8], body: &[u8]) -> Tr
     }
 }
 
-/// The runner holding the Box's machine's link when the ledger names one it can dial, else the
-/// machine service; a holder that cannot be dialled sends the Proxy back to the ledger once.
-async fn reach(service: &MachineRoute, route: &Route) -> Option<Reached> {
+/// The served host's upstream, or for the machine service the runner holding the Box's
+/// machine's link when the ledger names one it can dial; a holder that cannot be dialled sends
+/// the Proxy back to the ledger once. Why the Box gets a 502 when none answers.
+async fn reach(service: &ServedRoute, route: &Route) -> Result<Reached, &'static str> {
     let ledger = &route.served.ledger;
+    if service.served != Served::Machine {
+        let own = vec![("X-Moor-Box", ledger.box_id().get().to_string())];
+        return Ok(Reached {
+            stream: dial_upstream(&service.upstream).await?,
+            addr: service.upstream.clone(),
+            own: Some(own),
+            holder: false,
+        });
+    }
     let hold = tokio::task::block_in_place(|| hold_or_missing(ledger));
     let Some(addr) = holder(service, &hold) else {
-        return Some(Reached {
-            stream: dial(&service.upstream).await?,
+        return Ok(Reached {
+            stream: dial_upstream(&service.upstream).await?,
             addr: service.upstream.clone(),
-            hold,
+            own: hold_headers(&hold),
             holder: false,
         });
     };
     match dial(&addr).await {
-        Some(stream) => Some(Reached {
+        Some(stream) => Ok(Reached {
             stream,
             addr,
-            hold,
+            own: hold_headers(&hold),
             holder: true,
         }),
         None => reask(service, route, &addr).await,
@@ -211,27 +248,57 @@ async fn reach(service: &MachineRoute, route: &Route) -> Option<Reached> {
 
 /// Asks the ledger again, without the holder at `failed` that just failed, and dials the holder
 /// it names now; the service when it names none or the same one.
-async fn reask(service: &MachineRoute, route: &Route, failed: &str) -> Option<Reached> {
+async fn reask(
+    service: &ServedRoute,
+    route: &Route,
+    failed: &str,
+) -> Result<Reached, &'static str> {
     let ledger = &route.served.ledger;
     let hold = tokio::task::block_in_place(|| {
         ledger.forget_holder();
         hold_or_missing(ledger)
     });
-    let addr = holder(service, &hold)
-        .filter(|addr| addr != failed)
-        .unwrap_or_else(|| service.upstream.clone());
-    Some(Reached {
-        stream: dial(&addr).await?,
+    let own = hold_headers(&hold);
+    let addr = holder(service, &hold).filter(|addr| addr != failed);
+    let Some(addr) = addr else {
+        return Ok(Reached {
+            stream: dial_upstream(&service.upstream).await?,
+            addr: service.upstream.clone(),
+            own,
+            holder: false,
+        });
+    };
+    Ok(Reached {
+        stream: dial(&addr).await.ok_or(NOT_ANSWERING)?,
         addr,
-        hold,
+        own,
         holder: false,
     })
+}
+
+/// A connection to a served host's `upstream`, looked up now and dialled only when every
+/// address it names is loopback or private.
+async fn dial_upstream(upstream: &str) -> Result<TcpStream, &'static str> {
+    let addrs: Vec<SocketAddr> = timeout(MACHINE_DIAL, lookup_host(upstream))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .ok_or(DOWN)?
+        .collect();
+    if addrs.is_empty() || !addrs.iter().all(|a| reachable(a.ip())) {
+        return Err(PUBLIC);
+    }
+    timeout(MACHINE_DIAL, TcpStream::connect(addrs.as_slice()))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .ok_or(DOWN)
 }
 
 /// The MCP address of the runner `hold` names, on the service's port: every runner serves MCP
 /// on the port the service forwards to, and advertises only its links address. None for a
 /// runner reached over a socket on this host, which the service already names.
-fn holder(service: &MachineRoute, hold: &Hold) -> Option<String> {
+fn holder(service: &ServedRoute, hold: &Hold) -> Option<String> {
     let Hold::Held(slot) = hold else {
         return None;
     };

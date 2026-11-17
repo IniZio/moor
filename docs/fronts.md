@@ -32,7 +32,8 @@ The Box-facing listener serves one MCP server, `moor`, with one tool,
 `report_step`. The Proxy routes `moor.moor.internal` to it and stamps
 `X-Moor-Box`, which the listener trusts as the Box's identity. The gate's entry
 in the controller config needs `step_reports: true`, and the user config's
-`moor_service: {}` gives every Box the server.
+`moor_service: {upstream: <listener>}` routes the host and gives every Box the
+server.
 
 Over `--controller`, a request waits up to 30 s for the controller, then gets
 `503` with `Retry-After: 5`. At most 512 requests wait on one gate.
