@@ -1,7 +1,7 @@
 /* The app layer: a dense reading of the moorland tokens for the portal. ui/tokens.css stays the docs scale. */
-@font-face { font-family: 'Figtree Variable'; src: url(./fonts/figtree-latin-wght-normal.woff2) format('woff2'); font-weight: 300 900; font-display: swap; }
-@font-face { font-family: 'Bricolage Grotesque Variable'; src: url(./fonts/bricolage-grotesque-latin-wght-normal.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
-@font-face { font-family: 'JetBrains Mono Variable'; src: url(./fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2'); font-weight: 100 800; font-display: swap; }
+@font-face { font-family: 'Figtree Variable'; src: url(../fonts/figtree-latin-wght-normal.woff2) format('woff2'); font-weight: 300 900; font-display: swap; }
+@font-face { font-family: 'Bricolage Grotesque Variable'; src: url(../fonts/bricolage-grotesque-latin-wght-normal.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono Variable'; src: url(../fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2'); font-weight: 100 800; font-display: swap; }
 
 :root {
 	--app-text: 0.875rem;
