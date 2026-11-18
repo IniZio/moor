@@ -258,7 +258,7 @@ fn woken(
         d = d.hands_input(row.hands_inc(), HandsInput::Wake);
     }
     d.set(Fields {
-        state_reason: if row.lifecycle == BoxLifecycle::Pending {
+        state_reason: if row_asleep || row.lifecycle == BoxLifecycle::Pending {
             Field::Clear
         } else {
             Field::Keep

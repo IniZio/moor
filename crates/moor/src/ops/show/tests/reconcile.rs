@@ -96,6 +96,10 @@ fn reconcile_sleeps_a_quiet_box_whose_places_died_saying_why() {
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     let why = format!("it stopped on its machine: {DIED}");
     assert_eq!(row.state_reason.as_deref(), Some(why.as_str()));
+    crate::ops::common::wake::wake_and_revive(&cx, store, &row).unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.state_reason, None, "a woken Box keeps no down reason");
 }
 
 #[test]

@@ -80,3 +80,27 @@ async fn a_box_asleep_on_request_is_never_listed_down() {
         (ReportState::Asleep, None)
     );
 }
+
+#[tokio::test]
+async fn a_box_a_verb_works_on_is_never_listed_down() {
+    let rig = rig();
+    rig.opened().await;
+    std::fs::write(rig.home.path().join("fake").join(SLUG).join("died"), "143").unwrap();
+    let held = rig.boxes.provider.hold_opens().await;
+    let mut reopen = rig.ask(&open()).await;
+    let said = ops::read_line::<_, BoxAnswer>(&mut reopen).await.unwrap();
+    assert!(matches!(said, BoxAnswer::Note { .. }), "{said:?}");
+    let BoxAnswer::Listed { boxes } = rig
+        .one(&BoxOp::List {
+            controller: ControllerId::parse("1a2b3c4d").unwrap(),
+        })
+        .await
+    else {
+        panic!("not listed");
+    };
+    assert_eq!(
+        (boxes[0].state.clone(), boxes[0].down.clone()),
+        (ReportState::Mending, None)
+    );
+    drop(held);
+}
