@@ -19,6 +19,8 @@ pub struct ApprovalView {
     pub workflow: String,
     /// The run's id.
     pub run: i64,
+    /// The step's title, from the run's frozen plan.
+    pub step: String,
     /// What the step asks its owner.
     pub question: String,
 }

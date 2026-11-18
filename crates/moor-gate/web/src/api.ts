@@ -317,7 +317,7 @@ const NeedsSchema = v.object({
 	picks: v.array(PickSchema),
 	other: v.nullish(v.number()),
 	/** For an approve card: the workflow run its yes or no goes to. */
-	approve: v.nullish(v.object({ workflow: v.string(), run: v.number() })),
+	approve: v.nullish(v.object({ workflow: v.string(), run: v.number(), step: v.string() })),
 });
 
 const BoxRowSchema = v.object({
@@ -344,6 +344,8 @@ const EntrySchema = v.object({
 	kind: v.string(),
 	class: EntryClassSchema,
 	text: v.string(),
+	/** For a workflow run's first message: the title of the step it starts at. */
+	step: v.nullish(v.string()),
 });
 
 const EvidenceSchema = v.object({

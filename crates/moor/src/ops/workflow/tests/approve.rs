@@ -489,4 +489,5 @@ fn a_box_whose_run_waits_at_an_approve_step_shows_its_question_and_needs_you() {
     );
     let target = needs.approve.unwrap();
     assert_eq!(target.run, run.id.get());
+    assert_eq!(target.step, "Ask");
 }
