@@ -38,6 +38,7 @@ fn sample_box() -> BoxView {
         attention: Vec::new(),
         held_machine: None,
         said: None,
+        progress: None,
     }
 }
 
@@ -167,6 +168,7 @@ fn show_view_keys_match_wire_shape() {
             path: "p".into(),
         }]),
         artifacts: None,
+        timeline: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -189,6 +191,7 @@ fn show_view_absent_sections_are_null() {
         pane: None,
         reports: None,
         artifacts: None,
+        timeline: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -207,6 +210,7 @@ fn show_view_single_box_omits_boxes() {
         pane: None,
         reports: None,
         artifacts: None,
+        timeline: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),

@@ -52,6 +52,15 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::RelaunchCapped { count, window_secs } => {
                 Self::RelaunchCapped { count, window_secs }
             }
+            ExtraEvent::DeathCapped {
+                count,
+                window_secs,
+                reason,
+            } => Self::Stall(StallEvent::DeathCapped {
+                count,
+                window_secs,
+                reason,
+            }),
             ExtraEvent::Relaunched { prompt, cause } => Self::Relaunched { prompt, cause },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line, why: None },
             ExtraEvent::SetupFinished { ms, ok } => {

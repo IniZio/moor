@@ -490,6 +490,7 @@ mod login;
 mod mcp;
 mod nodes;
 mod pair;
+mod portal;
 mod repos;
 mod secrets;
 mod setup;

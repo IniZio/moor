@@ -137,6 +137,16 @@ in_agent sh -c "mkdir -p /home/agent/.moor-tmp-bs01 && rm -f /home/agent/.moor-t
 in_agent box-shell "$claude_line" >/dev/null 2>&1
 check "a Bash-tool line leaves its cwd where Claude reads it in the agent place" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs01/claude-bs01-cwd 2>&1)"
 
+bash_tool() {
+  local id=$1 cmd=$2 tmp=/home/agent/.moor-tmp-bs03
+  in_agent sh -c "mkdir -p $tmp && rm -f $tmp/claude-$id-cwd"
+  docker exec -w /home/agent/moor "$agent" box-shell "source /home/agent/.claude/shell-snapshots/snapshot-bash-3.sh 2>/dev/null || true && { \\builtin shopt -u extglob || \\builtin setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval '$cmd' < /dev/null && pwd -P >| $tmp/claude-$id-cwd" 2>&1
+  echo "exit=$?"
+}
+check "a Bash-tool line of two lines exits 0 and prints nothing else" "exit=0" "$(bash_tool bs03 $'cd /home/agent/moor\ntrue')"
+check "a Bash-tool line leaves its cwd under the agent's TMPDIR" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs03/claude-bs03-cwd 2>&1)"
+check "a failing Bash-tool line exits with its own code" "exit=3" "$(bash_tool bs04 '(exit 3)')"
+
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"
 

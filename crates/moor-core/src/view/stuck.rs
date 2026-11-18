@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use super::progress::Happened;
 use super::StuckView;
+use crate::domain::deaths;
 
 /// Kinds after which an earlier stuck event no longer counts.
 const CLEARS: &[&str] = &[
@@ -20,7 +21,7 @@ const CLEARS: &[&str] = &[
 
 /// The newest stuck event that nothing since has cleared, `events` oldest first.
 ///
-/// A finished setup line clears only a withheld credential, which setup downloads
+/// A wake clears only capped deaths: a person waking the Box is what ends them. A finished setup line clears only a withheld credential, which setup downloads
 /// raise while still making progress. An `egress_recovered` clears only the `egress_aborted` events for its own host, so
 /// an older stuck event still uncleared can show again.
 #[must_use]
@@ -32,6 +33,8 @@ pub fn stuck_of(events: &[Happened]) -> Option<StuckView> {
             open.clear();
         } else if kind == "setup_line_finished" {
             open.retain(|o| o.kind != "credential_withheld");
+        } else if kind == "woke" {
+            open.retain(|o| o.kind != "death_capped");
         } else if kind == "egress_recovered" {
             let host = text(&e.payload, "host").map(bare_host);
             open.retain(|o| {
@@ -72,7 +75,8 @@ fn signal(kind: &str) -> Option<&str> {
         | "proxy_credential_failed"
         | "agent_rate_limited"
         | "agent_unreachable"
-        | "agent_link_lost" => Some(kind),
+        | "agent_link_lost"
+        | "death_capped" => Some(kind),
         _ => None,
     }
 }
@@ -123,6 +127,11 @@ fn detail(kind: &str, p: &Value) -> String {
             (Some(n), Some(e)) => Some(format!("unreachable after {n} tries: {e}")),
             _ => text(p, "error").map(str::to_owned),
         },
+        "death_capped" => number(p, "count")
+            .zip(text(p, "reason"))
+            .map(|(count, why)| {
+                deaths::sentence(usize::try_from(count).unwrap_or(usize::MAX), why)
+            }),
         "agent_link_lost" => text(p, "pane").map(|pane| {
             p.get("exit").and_then(Value::as_i64).map_or_else(
                 || format!("pane {pane} ended"),

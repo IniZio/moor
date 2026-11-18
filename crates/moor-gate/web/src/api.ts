@@ -297,3 +297,62 @@ export async function runAnswer(csrf: string, name: string, id: number, yes: boo
 	});
 	return answer(res, RunSchema);
 }
+
+const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
+
+const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
+
+const BoxRowSchema = v.object({
+	box: v.string(),
+	repo: v.nullish(v.string()),
+	branch: v.nullish(v.string()),
+	base: v.nullish(v.string()),
+	prompt: v.nullish(v.string()),
+	state: ProgressSchema,
+	stale: v.boolean(),
+	line: v.string(),
+	last_event_at: v.nullish(v.string()),
+	updated_at: v.string(),
+	pr: v.nullable(PrSchema),
+});
+
+const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
+
+const EntrySchema = v.object({
+	id: v.number(),
+	at: v.string(),
+	kind: v.string(),
+	class: EntryClassSchema,
+	text: v.string(),
+});
+
+const EvidenceSchema = v.object({
+	name: v.string(),
+	version: v.number(),
+	kind: v.string(),
+	content_type: v.string(),
+	size: v.number(),
+	created_at: v.string(),
+	image: v.boolean(),
+	href: v.string(),
+});
+
+const BoxDetailSchema = v.object({
+	...BoxRowSchema.entries,
+	timeline: v.array(EntrySchema),
+	artifacts: v.array(EvidenceSchema),
+});
+
+export type Progress = v.InferOutput<typeof ProgressSchema>;
+export type BoxRow = v.InferOutput<typeof BoxRowSchema>;
+export type BoxDetail = v.InferOutput<typeof BoxDetailSchema>;
+export type Entry = v.InferOutput<typeof EntrySchema>;
+export type Evidence = v.InferOutput<typeof EvidenceSchema>;
+
+export async function boxList(): Promise<BoxRow[]> {
+	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
+}
+
+export async function boxGet(box: string): Promise<BoxDetail> {
+	return answer(await fetch(`/account/api/box?box=${encodeURIComponent(box)}`), BoxDetailSchema);
+}

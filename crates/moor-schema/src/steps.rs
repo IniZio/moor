@@ -8,6 +8,7 @@ use crate::step;
 mod agent_reads;
 mod baseline;
 mod box_config;
+mod box_deaths;
 mod box_hands;
 mod box_inbox;
 mod box_state;
@@ -94,4 +95,5 @@ pub const STEPS: &[Step] = &[
     step("V85__workflow_plans", workflow_plans::write),
     step("V86__machine_pairings", machine_pairings::write),
     step("V87__workflow_run_trigger", workflow_run_trigger::write),
+    step("V88__box_deaths", box_deaths::write),
 ];

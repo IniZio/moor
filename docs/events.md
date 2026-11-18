@@ -16,6 +16,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `launch_timed_out` | ✓ | The agent did not start within `box.launch_timeout`. |
 | `sleep_held` | | A Box past `box.max_awake` stays awake because its agent is working or waits on a background job. `data.reason` is `working` or `background_job`, and `data.awake_for_secs` how long the Box has been awake. Recorded once for each hold. |
 | `relaunch_capped` | ✓ | The agent ended 3 times in 10 minutes, so moor stopped restarting it. |
+| `death_capped` | ✓ | The Box's places died 3 times in 30 minutes, so moor stopped resuming it on its own. The Box sleeps and `box_status` shows it `stuck`. `data` has `count`, `window_secs` and `reason`, how the last places ended. A wake or a message brings it back and counts again from none. |
 | `box_failed` | ✓ | The Box's VM could not be made. |
 | `disk_lost` | ✓ | The Box's VM was gone and a new, empty one replaced it. Work that was not pushed is lost. |
 | `session_lost` | ✓ | The new VM could not get back the agent's conversation, so the agent started without it. `data.reason` says why. A prompt it was working on is not sent again. |
@@ -87,6 +88,7 @@ listener prints the events it missed.
 | --- | --- |
 | `moor: box NAME EVENT: SAID` | An `idled`, `needs_input`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped`, or `closed` event. `SAID` is the first line of the agent's message, cut at 200 characters. |
 | `moor: box NAME run_failed: WORKFLOW (REPO) OUTCOME at STEP: REASON LINK` | `run_failed`, and `run_waiting` as `run_waiting: WORKFLOW (REPO) asks: QUESTION LINK`. |
+| `moor: box NAME death_capped: DETAIL` | `death_capped`. `DETAIL` says how often the machine stopped and how the last one ended. |
 | `moor: box NAME stalled: no progress for N min while DOING` | `agent_stalled`. |
 | `moor: box NAME resumed after N min` | `agent_resumed`. |
 | `moor: box NAME disk_lost: ...` | `disk_lost`, and `session_restored` and `session_lost` in the same shape. |

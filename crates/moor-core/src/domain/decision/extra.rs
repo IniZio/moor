@@ -84,6 +84,15 @@ pub enum ExtraEvent {
         /// The window, in seconds.
         window_secs: u64,
     },
+    /// The Box's places died again and again, so moor stopped resuming it on its own.
+    DeathCapped {
+        /// Deaths within the window.
+        count: usize,
+        /// The window, in seconds.
+        window_secs: u64,
+        /// How the places of the last death ended.
+        reason: String,
+    },
     /// The agent was started again after it ended.
     Relaunched {
         /// The prompt the new session works on.

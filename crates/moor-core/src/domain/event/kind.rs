@@ -79,6 +79,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "launch_timed_out",
     "sleep_held",
     "relaunch_capped",
+    "death_capped",
     "relaunched",
     "checked",
     "run_started",

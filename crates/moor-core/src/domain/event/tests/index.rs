@@ -108,5 +108,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Workflow(WorkflowEvent::RunWaiting { .. }) => 95,
         Event::Workflow(WorkflowEvent::RunFailed { .. }) => 96,
         Event::Stall(StallEvent::SleepHeld { .. }) => 97,
+        Event::Stall(StallEvent::DeathCapped { .. }) => 98,
     }
 }

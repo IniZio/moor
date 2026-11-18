@@ -83,6 +83,7 @@ fn add_replies_with_an_id_waiting_for_setup_and_never_a_key() {
             "session_failed",
             "launch_timed_out",
             "relaunch_capped",
+            "death_capped",
             "disk_lost",
             "session_lost",
             "box_failed",

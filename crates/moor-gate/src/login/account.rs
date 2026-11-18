@@ -16,7 +16,7 @@ use serde_json::json;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
-use super::{nodes, repos, workflows};
+use super::{nodes, portal, repos, workflows};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Rebuilt by `make web`.
@@ -39,7 +39,7 @@ const REPOS: &str = "/account/api/repos";
 
 /// Headers on the app page: its own script and styles, requests to itself, nothing framing it
 /// and nothing cached.
-const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
+const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
 
 /// Whether `path` belongs to the account page.
 pub(crate) fn serves(path: &str) -> bool {
@@ -96,6 +96,10 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", REPOS, Some(session)) => repos::list(&mut stream, gate, &session),
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
+        }
+        ("GET", p, Some(session)) if portal::serves(p) => {
+            let query = req.target.split_once('?').map_or("", |(_, q)| q);
+            portal::serve(&mut stream, gate, &session, (p, query));
         }
         (method, p, session) if workflows::route(p).is_some() => {
             let query = req.target.split_once('?').map_or("", |(_, q)| q);

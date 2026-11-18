@@ -5,6 +5,7 @@
 pub(crate) mod account;
 mod nodes;
 pub(crate) mod pair;
+mod portal;
 mod repos;
 pub(crate) mod routes;
 mod seal;
