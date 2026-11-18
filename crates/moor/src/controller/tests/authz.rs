@@ -235,6 +235,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "workflow-runs"
         | "workflow-run-list"
         | "workflow-answer"
+        | "workflow-run-now"
         | "webhook-claim"
         | "webhook-report"
         | "step-report"

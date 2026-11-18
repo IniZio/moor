@@ -40,6 +40,10 @@ fn the_other_workflow_tools_send_their_requests() {
             "answer_run",
             json!({"workflow": "daily-fix", "repo": "o/n", "answer": "no", "note": "later"}),
         ),
+        (
+            "run_workflow",
+            json!({"name": "daily-fix", "repos": ["o/n"], "expected_revision": 3}),
+        ),
         ("list_workflow_runs", json!({"after": 12, "limit": 5})),
     ] {
         let result = m.call(&token, tool, args);
@@ -58,6 +62,8 @@ fn the_other_workflow_tools_send_their_requests() {
             json!({"cmd": "workflow-set-enabled", "name": "daily-fix", "enabled": false}),
             json!({"cmd": "workflow-answer", "workflow": "daily-fix", "repo": "o/n",
                 "answer": "no", "note": "later"}),
+            json!({"cmd": "workflow-run-now", "name": "daily-fix", "repos": ["o/n"],
+                "expected_revision": 3}),
             json!({"cmd": "workflow-runs", "after": 12, "limit": 5}),
         ]
     );
@@ -82,6 +88,7 @@ fn a_read_token_reads_but_cannot_change_workflows() {
             "answer_run",
             json!({"workflow": "n", "repo": "o/n", "answer": "yes"}),
         ),
+        ("run_workflow", json!({"name": "n"})),
     ] {
         let result = m.call(&token, tool, args);
         assert_eq!(result["isError"], true, "{tool}: {result}");

@@ -3,7 +3,7 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    Plan, RunEnd, RunId, RunOutcome, RunState, StepId, WorkflowId, WorkflowRun,
+    Plan, RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -59,10 +59,12 @@ pub(super) struct RunRow {
     pub(super) waiting_since: Option<i64>,
     /// `ended_step`.
     pub(super) ended_step: Option<String>,
+    /// `trigger`.
+    trigger: String,
 }
 
 /// The columns of a `workflow_runs` row, in the order [`read_run`] reads them.
-pub(super) const RUN_COLS: [WorkflowRuns; 12] = [
+pub(super) const RUN_COLS: [WorkflowRuns; 13] = [
     WorkflowRuns::Id,
     WorkflowRuns::Repo,
     WorkflowRuns::DueAt,
@@ -75,6 +77,7 @@ pub(super) const RUN_COLS: [WorkflowRuns; 12] = [
     WorkflowRuns::TryN,
     WorkflowRuns::WaitingSince,
     WorkflowRuns::EndedStep,
+    WorkflowRuns::Trigger,
 ];
 
 /// Reads one `workflow_runs` row whose columns start at `first`.
@@ -92,6 +95,7 @@ pub(super) fn read_run(r: &db::Row, first: usize) -> Result<RunRow, db::Error> {
         try_n: r.get(first + 9)?,
         waiting_since: r.get(first + 10)?,
         ended_step: r.get(first + 11)?,
+        trigger: r.get(first + 12)?,
     })
 }
 
@@ -168,6 +172,8 @@ pub(super) fn run_of(workflow: WorkflowId, row: &RunRow) -> Result<WorkflowRun, 
         due_at: Ts::from_millis(row.due_at),
         state,
         recorded_at: Ts::from_millis(row.recorded_at),
+        trigger: RunTrigger::from_name(&row.trigger)
+            .ok_or_else(|| corrupt("run trigger", &row.trigger))?,
     })
 }
 

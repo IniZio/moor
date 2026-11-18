@@ -1,6 +1,7 @@
 //! The controller's workflow pass, behind the `Moor` facade.
 
-use moor_core::user::Viewer;
+use moor_core::request::{UserCmd, WorkflowCmd};
+use moor_core::user::{Identity, Viewer};
 
 use super::Moor;
 use crate::env::Env;
@@ -24,6 +25,26 @@ impl Moor {
                 })
             }
             Err(e) => vec![e.error.to_string()],
+        }
+    }
+
+    /// This engine as `who`, seeing only their Boxes, when `cmd` starts a Box for them, which a
+    /// manual run does through the start the tick uses; else unchanged.
+    pub(crate) fn acting_for(self, cmd: &UserCmd, who: Option<&Identity>) -> Self {
+        match (cmd, who) {
+            (UserCmd::Workflow(WorkflowCmd::RunNow { .. }), Some(who)) => {
+                let user = self
+                    .cx
+                    .store()
+                    .ok()
+                    .and_then(|s| s.user_of(who).ok().flatten());
+                let moor = self.acting_as(who.clone());
+                match user {
+                    Some(u) => moor.viewing_as(Viewer::User(u)),
+                    None => moor,
+                }
+            }
+            _ => self,
         }
     }
 

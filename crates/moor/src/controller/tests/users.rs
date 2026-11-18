@@ -167,3 +167,20 @@ fn a_workflow_add_obeys_the_default_floor_and_takes_its_origin_from_the_socket()
         "only a front can send an origin_key",
     );
 }
+
+#[test]
+fn a_manual_run_starts_as_the_caller_not_as_a_request_without_one() {
+    let served = Served::start();
+    let herdr = served.front("herdr");
+    ask(&herdr, &json!({"cmd": "enroll", "identity": "herdr:U1"}));
+    let add = json!({"cmd": "workflow-add", "identity": "herdr:U1", "name": "daily",
+        "cron": "0 9 * * *", "timezone": "UTC", "repos": ["o/n"], "prompt": "fix"});
+    ask(&herdr, &add);
+    let run = json!({"cmd": "workflow-run-now", "identity": "herdr:U1", "name": "daily"});
+    let reply = ask(&herdr, &run);
+    assert_eq!(reply["class"], "ok", "{reply}");
+    let reason = reply["value"]["runs"][0]["reason"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(!reason.contains("only the controller socket"), "{reply}");
+}

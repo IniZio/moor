@@ -206,6 +206,7 @@ fn named(id: i64, workflow: &str, r: &str, due: i64) -> String {
         workflow,
         &repo(r),
         Ts::from_millis(due),
+        super::RunTrigger::Cron,
     )
     .unwrap()
     .as_str()

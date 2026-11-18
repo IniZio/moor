@@ -288,7 +288,7 @@ pub use plan::{
 pub use report::{
     Answer, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,
 };
-pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowRun};
+pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, WorkflowRun};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 
 /// One entry of a user's change stream, ordered by `seq` across runs and workflows.

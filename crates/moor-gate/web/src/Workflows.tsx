@@ -14,6 +14,7 @@ import {
 	workflowGet,
 	workflowList,
 	type WorkflowRow,
+	workflowRunNow,
 	workflowSet,
 } from './api';
 
@@ -75,7 +76,37 @@ function Failed({ error, retry }: { error: string; retry: () => void }) {
 	);
 }
 
-function Row({ w }: { w: WorkflowRow }) {
+function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo: string; onRan: () => void }) {
+	const [busy, setBusy] = useState(false);
+	const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+	const run = async () => {
+		setBusy(true);
+		setNote(null);
+		try {
+			const started = await workflowRunNow(csrf, name, repo);
+			setNote({ ok: true, text: started.box ? `Started in ${started.box}.` : 'Started.' });
+			onRan();
+		} catch (err) {
+			setNote({ ok: false, text: err instanceof Error ? reason(err) : 'Something went wrong.' });
+		}
+		setBusy(false);
+	};
+	return (
+		<li>
+			<span class="grow">{repo}</span>
+			<button type="button" disabled={busy} aria-label={`Run now for ${repo}`} onClick={() => void run()}>
+				Run now
+			</button>
+			{note && (
+				<span class={note.ok ? 'notice ok' : 'notice danger'} role={note.ok ? 'status' : 'alert'}>
+					{note.text}
+				</span>
+			)}
+		</li>
+	);
+}
+
+function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => void }) {
 	return (
 		<li>
 			<div class="row-head">
@@ -103,18 +134,21 @@ function Row({ w }: { w: WorkflowRow }) {
 				<dt>Next due</dt>
 				<dd>{w.enabled ? when(w.next_due) : (w.disabled_reason ?? 'disabled')}</dd>
 			</dl>
+			<ul class="run-now">
+				{w.repos.map((repo) => <RunNow key={repo} csrf={csrf} name={w.name} repo={repo} onRan={onRan} />)}
+			</ul>
 		</li>
 	);
 }
 
-function List() {
+function List({ csrf }: { csrf: string }) {
 	const { value, error, reload } = useLoad(workflowList, 'list');
 	if (error) return <Failed error={error} retry={reload} />;
 	if (!value) return <p class="muted" aria-busy="true">Loading workflows…</p>;
 	return value.length === 0 ? (
 		<p class="muted">No workflows yet. Add one with the <code>add_workflow</code> tool in Claude Code.</p>
 	) : (
-		<ul class="cards">{value.map((w) => <Row key={w.name} w={w} />)}</ul>
+		<ul class="cards">{value.map((w) => <Row key={w.name} w={w} csrf={csrf} onRan={() => void reload()} />)}</ul>
 	);
 }
 
@@ -257,6 +291,7 @@ function Runs({ flow }: { flow: Workflow | null }) {
 							<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
 								<StatusIcon status={r.status} />
 								<span class="grow">{r.repo}</span>
+								<span class="muted">{r.trigger}</span>
 								<span class="muted">{when(r.due_at)}</span>
 								<span class="muted">{duration(r.duration_ms)}</span>
 								<span class="outcome">{r.label}</span>
@@ -414,7 +449,7 @@ export function Workflows({ csrf, at }: { csrf: string; at: At }) {
 			{at.page === 'list' && (
 				<>
 					<h2>Workflows</h2>
-					<List />
+					<List csrf={csrf} />
 				</>
 			)}
 			{at.page === 'workflow' && <WorkflowPage csrf={csrf} name={at.name} />}

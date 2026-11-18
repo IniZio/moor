@@ -92,6 +92,37 @@ answer ends the run `declined` after 7 days, so the next firing is not skipped
 forever. A waiting run blocks the next firing like a running one, and a
 declined run neither counts toward the breaker nor resets it.
 
+## Run a workflow now
+
+Ask the agent to run a workflow once by hand, which calls
+`run_workflow(name, repos, expected_revision)`. You do not have to wait for the
+cron. It works on a disabled workflow too, so you can add one, disable it, run it
+until its plan is right, and enable it after.
+
+- `repos` defaults to every repo of the workflow. Each must be one of them.
+- `expected_revision` refuses the call when the workflow changed after you read
+  it, so the run tries the plan you reviewed.
+- The reply has one line per repo. A line says `started` with the Box name, or
+  `refused` with the reason.
+- The Workflows page of the account portal has a **Run now** button per repo.
+
+A run fired by hand is an ordinary run. It freezes the plan, starts a Box as you,
+walks the steps and has the workflow's timeout. `list_workflow_runs` shows it
+with `trigger` `manual`. Its Box is named
+`<repo>/w<id>-<workflow>-m<UTC time to the second>`, so it never shares a name
+with a cron run.
+
+How it sits beside the schedule:
+
+- A repo with an open run is refused with that run's Box, and nothing is
+  recorded. A run is open while it starts, works or waits for an answer. It is
+  also open after a timeout while its Box is open.
+- A cron run that comes due while a manual run is open is skipped, as for any
+  open run.
+- A manual run never swallows a due time the schedule missed.
+- A manual run that fails does not count toward the breaker. One that delivers
+  resets it, so a fix you proved by hand clears the earlier failures.
+
 ## Know when a run fires
 
 - A new or re-enabled workflow fires only for due times after that moment.
@@ -111,7 +142,7 @@ A missing secret or a full node can refuse a run. The refusal is recorded with
 its reason, and the run is not retried. The next due time is the next try.
 
 Three refused or timed-out runs in a row for one repo disable the workflow.
-`list_workflows` shows the reason. Ask to enable it again once you fix the
+Runs you fired by hand do not count. `list_workflows` shows the reason. Ask to enable it again once you fix the
 cause.
 
 ## Follow the runs
@@ -120,7 +151,7 @@ cause.
   per repo.
 - `list_workflow_runs` lists each change oldest first, with an outcome of
   `starting`, `started`, `finished`, `timed_out`, `skipped_overlap`, or
-  `refused`. Pass the reply's `next` as `after` to get only newer changes.
+  `refused`, and a `trigger` of `cron` or `manual`. Pass the reply's `next` as `after` to get only newer changes.
 
 ## Pause or remove a workflow
 

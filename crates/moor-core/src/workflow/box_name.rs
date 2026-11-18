@@ -1,6 +1,6 @@
 //! The name of the Box a workflow firing starts.
 
-use super::WorkflowId;
+use super::{RunTrigger, WorkflowId};
 use crate::name::{BoxName, ForgeRepo, NameError};
 use crate::seam::clock::Ts;
 
@@ -30,7 +30,9 @@ fn slug(text: &str, max: usize) -> String {
 /// The Box name for workflow `id`, called `workflow`, firing for `repo` at `due_at`.
 ///
 /// It is `<repo>/w<id>-<workflow>-<due as UTC yyyymmddhhmm>`. The id and the due time keep it
-/// unique per firing, and the workflow name is cut to fit.
+/// unique per firing, and the workflow name is cut to fit. A manual firing takes the clock
+/// to the second and an `m` before it, so it never shares a name with a cron firing due in
+/// the same minute.
 ///
 /// # Errors
 /// [`NameError`] when `due_at` is outside the years the clock can print.
@@ -39,12 +41,18 @@ pub fn box_name(
     workflow: &str,
     repo: &ForgeRepo,
     due_at: Ts,
+    trigger: RunTrigger,
 ) -> Result<BoxName, NameError> {
     let invalid = || NameError::BoxName(format!("{repo}@{}", due_at.as_millis()));
+    let (prefix, format) = match trigger {
+        RunTrigger::Cron => ("", "%Y%m%d%H%M"),
+        RunTrigger::Manual => ("m", "%Y%m%d%H%M%S"),
+    };
     let stamp = jiff::Timestamp::from_millisecond(due_at.as_millis())
         .map_err(|_| invalid())?
-        .strftime("%Y%m%d%H%M")
+        .strftime(format)
         .to_string();
+    let stamp = format!("{prefix}{stamp}");
     let head = format!("w{id}-");
     let room = PART_MAX.saturating_sub(head.len() + 1 + stamp.len());
     let label = format!("{head}{}-{stamp}", slug(workflow, room));

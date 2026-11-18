@@ -1,0 +1,167 @@
+//! Recording a firing: a cron one the tick claims, and a manual one a person asks for.
+//!
+//! Every write is one transaction in [`Store::numbered`], and those are serialized on the change
+//! counter, so a read in the transaction cannot be overtaken by another claim.
+
+use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::name::ForgeRepo;
+use moor_core::workflow::{
+    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
+};
+use moor_core::BoxId;
+use moor_schema::tables::{BoxState, WorkflowRuns};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
+
+use super::history::{append_history, run_id};
+use super::row::{read_run, run_of, state_cols, STARTED, STARTING, WAITING};
+use super::runs::real_run;
+use crate::store::db::{Db, DbExt as _, OptionalExtension as _};
+use crate::store::{Store, StoreError};
+
+/// What asking for a manual run came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ManualClaim {
+    /// The run is recorded.
+    Recorded,
+    /// A run of the repo is open, so nothing was recorded. It is that run.
+    Open(WorkflowRun),
+    /// A run of the repo already has that due time, so nothing was recorded.
+    Taken,
+}
+
+impl Store {
+    /// Records one firing. False, with nothing changed, when that workflow, repo and due time
+    /// already have one, so a firing repeated after a crash records once. The run's history
+    /// opens with the line for its state.
+    pub(crate) fn record_workflow_run(&self, run: &NewRun) -> Result<bool, StoreError> {
+        self.numbered(|tx, seq| insert(tx, seq, run))
+    }
+
+    /// Records a run its owner asked for, unless the repo has a run open, which is looked for in
+    /// the transaction that inserts the row. A read before the write would race the tick, which
+    /// could claim a cron run with another due time in between, and the unique key on workflow,
+    /// repo and due time would not stop two runs of one repo.
+    pub(crate) fn claim_manual_run(&self, run: &NewRun) -> Result<ManualClaim, StoreError> {
+        let mut open = None;
+        let recorded = self.numbered(|tx, seq| {
+            open = blocking(tx, run.workflow, &run.repo)?;
+            if open.is_some() {
+                return Ok(0);
+            }
+            insert(tx, seq, run)
+        })?;
+        Ok(match (recorded, open) {
+            (true, _) => ManualClaim::Recorded,
+            (false, Some(run)) => ManualClaim::Open(run),
+            (false, None) => ManualClaim::Taken,
+        })
+    }
+}
+
+/// Inserts `run` and the first line of its history; the rows inserted, none when it exists.
+fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
+    let cols = state_cols(&run.state);
+    let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
+    let inserted = tx.run(
+        Query::insert()
+            .into_table(WorkflowRuns::Table)
+            .columns([
+                WorkflowRuns::Workflow,
+                WorkflowRuns::Repo,
+                WorkflowRuns::DueAt,
+                WorkflowRuns::Box,
+                WorkflowRuns::Outcome,
+                WorkflowRuns::Detail,
+                WorkflowRuns::EndedAt,
+                WorkflowRuns::RecordedAt,
+                WorkflowRuns::Seq,
+                WorkflowRuns::Step,
+                WorkflowRuns::TryN,
+                WorkflowRuns::WaitingSince,
+                WorkflowRuns::EndedStep,
+                WorkflowRuns::Plan,
+                WorkflowRuns::Trigger,
+            ])
+            .values_panic([
+                run.workflow.get().into(),
+                run.repo.to_string().into(),
+                run.due_at.as_millis().into(),
+                cols.box_id.into(),
+                run.state.tag().into(),
+                cols.detail.clone().into(),
+                cols.ended_at.into(),
+                run.recorded_at.as_millis().into(),
+                seq.into(),
+                cols.step.clone().into(),
+                cols.try_n.into(),
+                cols.waiting_since.into(),
+                cols.ended_step.into(),
+                plan.into(),
+                run.trigger.as_str().into(),
+            ])
+            .on_conflict(OnConflict::new().do_nothing().to_owned()),
+    )?;
+    if inserted == 1 {
+        let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
+        let key = (run.workflow, &run.repo, run.due_at);
+        append_history(tx, run_id(tx, key)?, run.recorded_at, &entry)?;
+    }
+    Ok(inserted)
+}
+
+/// The run that keeps another from starting in `repo`: one that is claimed, working or waiting,
+/// whenever it was due, else the latest real run when it timed out and its Box is still open.
+fn blocking(
+    tx: &dyn Db,
+    workflow: WorkflowId,
+    repo: &ForgeRepo,
+) -> Result<Option<WorkflowRun>, StoreError> {
+    let open = tx
+        .rows(
+            Query::select()
+                .columns(super::row::RUN_COLS)
+                .from(WorkflowRuns::Table)
+                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTING, STARTED, WAITING]))
+                .order_by(WorkflowRuns::Id, Order::Desc)
+                .limit(1),
+            |r| read_run(r, 0),
+        )?
+        .map(|row| run_of(workflow, &row?))
+        .next()
+        .transpose()?;
+    if open.is_some() {
+        return Ok(open);
+    }
+    let Some(last) = real_run(tx, workflow, repo)? else {
+        return Ok(None);
+    };
+    let RunState::Done(RunEnd::Ended {
+        box_id,
+        outcome: RunOutcome::TimedOut { .. },
+        ..
+    }) = last.state
+    else {
+        return Ok(None);
+    };
+    Ok(box_open(tx, box_id)?.then_some(last))
+}
+
+/// Whether Box `id` exists and is neither closed nor rejected, read in `tx`.
+fn box_open(tx: &dyn Db, id: BoxId) -> Result<bool, StoreError> {
+    let found: Option<i64> = tx
+        .row(
+            Query::select()
+                .column(BoxState::Box)
+                .from(BoxState::Table)
+                .and_where(Expr::col(BoxState::Box).eq(id.get()))
+                .and_where(Expr::col(BoxState::State).is_not_in([
+                    BoxLifecycle::Closed.as_str(),
+                    BoxLifecycle::Rejected.as_str(),
+                ])),
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(found.is_some())
+}

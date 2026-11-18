@@ -25,6 +25,7 @@ mod shared_machines;
 mod sqlite;
 mod vm_inc;
 mod workflow_plans;
+mod workflow_run_trigger;
 
 /// The steps before the one `name`s, and that step, rendered for `backend`.
 fn before_and_step(name: &str, backend: Backend) -> (String, String) {

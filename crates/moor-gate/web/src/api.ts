@@ -164,6 +164,7 @@ const RunRowSchema = v.object({
 	id: v.number(),
 	repo: v.string(),
 	due_at: v.number(),
+	trigger: v.string(),
 	started_at: v.nullish(v.number()),
 	duration_ms: v.nullish(v.number()),
 	status: StatusSchema,
@@ -245,6 +246,18 @@ export async function workflowList(): Promise<WorkflowRow[]> {
 
 export async function workflowGet(name: string): Promise<Workflow> {
 	return answer(await fetch(workflowPath(name)), WorkflowSchema);
+}
+
+const RunNowSchema = v.object({ status: v.string(), box: v.nullable(v.string()) });
+
+/** Fires the workflow once, now, for one repo. A repo with an open run is refused as a conflict. */
+export async function workflowRunNow(csrf: string, name: string, repo: string) {
+	const res = await fetch(`${workflowPath(name)}/run`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ repo }),
+	});
+	return answer(res, RunNowSchema);
 }
 
 /** Replaces a workflow's prompt and plan, against the revision the page read. */

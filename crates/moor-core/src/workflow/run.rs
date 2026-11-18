@@ -33,6 +33,35 @@ impl fmt::Display for RunId {
     }
 }
 
+/// What fired a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    /// The workflow's schedule came due.
+    Cron,
+    /// Its owner asked for one run now.
+    Manual,
+}
+
+impl RunTrigger {
+    /// The name the store and `list_workflow_runs` give it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cron => "cron",
+            Self::Manual => "manual",
+        }
+    }
+
+    /// The trigger a stored name stands for.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        [Self::Cron, Self::Manual]
+            .into_iter()
+            .find(|t| t.as_str() == name)
+    }
+}
+
 /// Where one due time for one repo stands.
 ///
 /// The phase and the outcome are kept apart, so a run in flight has no outcome and a run that
@@ -225,6 +254,8 @@ pub struct NewRun {
     /// The workflow's plan, frozen with the claim; none for a run that never starts a Box and
     /// for a workflow nobody planned.
     pub plan: Option<Plan>,
+    /// What fired it.
+    pub trigger: RunTrigger,
 }
 
 /// What a firing records: one repo at one due time.
@@ -242,4 +273,6 @@ pub struct WorkflowRun {
     pub state: RunState,
     /// When it was recorded, which for a started run is when it started.
     pub recorded_at: Ts,
+    /// What fired it.
+    pub trigger: RunTrigger,
 }

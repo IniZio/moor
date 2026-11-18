@@ -14,10 +14,12 @@ use moor_core::view::workflow::{
 use serde_json::{json, Value};
 
 mod download;
+mod now;
 mod run;
 mod save;
 
 pub(super) use download::artifact;
+pub(super) use now::run_now;
 pub(super) use run::{answer, run};
 pub(super) use save::write;
 
@@ -49,6 +51,8 @@ pub(super) enum Route<'a> {
     Run(&'a str, i64),
     /// The answer to the approve step one run waits at.
     Answer(&'a str, i64),
+    /// A run of the workflow fired now.
+    RunNow(&'a str),
     /// One artifact's bytes.
     Artifact,
 }
@@ -67,6 +71,7 @@ pub(super) fn route(path: &str) -> Option<Route<'_>> {
         [name] if !name.is_empty() => Some(Route::One(name)),
         [name, "runs", id] => Some(Route::Run(name, id.parse().ok()?)),
         [name, "runs", id, "answer"] => Some(Route::Answer(name, id.parse().ok()?)),
+        [name, "run"] => Some(Route::RunNow(name)),
         _ => None,
     }
 }
@@ -216,6 +221,7 @@ fn run_row(row: &RunRowView) -> Value {
         "id": row.id,
         "repo": run.repo,
         "due_at": run.due_at,
+        "trigger": run.trigger,
         "started_at": started,
         "duration_ms": duration,
         "status": status(&run.phase, &run.outcome),

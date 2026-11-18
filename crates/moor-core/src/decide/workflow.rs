@@ -3,7 +3,7 @@
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 use crate::workflow::{
-    RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
+    RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId, Workflow, WorkflowRun, WorkflowState,
     BREAKER_STREAK,
 };
 
@@ -12,9 +12,11 @@ use crate::workflow::{
 pub struct WorkflowRepoFacts {
     /// The repo.
     pub repo: ForgeRepo,
-    /// The due time of the latest recorded firing, whatever came of it.
+    /// The due time of the latest recorded cron firing, whatever came of it. A run fired by hand
+    /// is left out, so it never swallows a due time the schedule missed.
     pub last_due: Option<Ts>,
-    /// The latest run that was a real attempt, looking through skipped and refused ones.
+    /// The latest run of any trigger that was a real attempt, looking through skipped and refused
+    /// ones.
     pub prior: Option<PriorRun>,
 }
 
@@ -135,6 +137,8 @@ pub struct StartBreach {
     pub box_id: Option<BoxId>,
     /// Whether the run only claimed its firing so far.
     pub claimed_only: bool,
+    /// What fired the run, which its planned Box is named by.
+    pub trigger: RunTrigger,
 }
 
 /// When a Box's agent first started, if it did.
@@ -175,6 +179,7 @@ pub fn workflow_start_overdue(
                 due_at: run.due_at,
                 box_id,
                 claimed_only,
+                trigger: run.trigger,
             })
         })
         .collect()
@@ -230,8 +235,10 @@ pub struct WorkflowDisable {
 ///
 /// Only runs due since the workflow was last enabled count, so re-enabling restarts the count. A
 /// skipped run neither counts nor resets the streak, and a run still in flight is not concluded,
-/// so it does neither either. A delivered run resets it, and a declined one does neither. Nothing
-/// retries a failed run; the next firing is the only retry.
+/// so it does neither either. A delivered run resets it, and a declined one does neither. A run
+/// fired by hand counts only when it delivers: its failure is the author's try at a fix, so it
+/// neither adds to the streak nor resets it. Nothing retries a failed run; the next firing is the
+/// only retry.
 #[must_use]
 pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<WorkflowDisable> {
     let WorkflowState::Enabled { since } = workflow.state else {
@@ -245,12 +252,13 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
         mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
         let mut streak = 0;
         for run in mine {
+            let counts = run.trigger == RunTrigger::Cron;
             match &run.state {
-                RunState::Done(RunEnd::Refused { .. }) => streak += 1,
+                RunState::Done(RunEnd::Refused { .. }) => streak += usize::from(counts),
                 RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
                     RunOutcome::Failed { .. }
                     | RunOutcome::Incomplete { .. }
-                    | RunOutcome::TimedOut { .. } => streak += 1,
+                    | RunOutcome::TimedOut { .. } => streak += usize::from(counts),
                     RunOutcome::Delivered { .. } => break,
                     RunOutcome::Declined { .. } => {}
                 },

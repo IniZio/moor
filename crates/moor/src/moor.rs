@@ -244,7 +244,7 @@ impl Moor {
     /// Run a user request as the identity `caller` may assert, `asserted` or its own; any
     /// other identity is refused.
     pub(crate) fn call_user(
-        &self,
+        self,
         caller: &Result<Caller, String>,
         asserted: Option<&Identity>,
         vault: &Vault,
@@ -267,9 +267,10 @@ impl Moor {
             })
             .map_err(|why| CommandError::new(ErrorKind::Refused, why));
         let cmd = &with_origin(cmd, caller);
-        match who.and_then(|who| ops::users::run(&self.cx, vault, &who, cmd)) {
-            Ok(value) => Response::ok(name, Some(value)).with_warnings(self.cx.take_warnings()),
-            Err(e) => e.into_response(name, self.cx.take_warnings()),
+        let moor = self.acting_for(cmd, who.as_ref().ok());
+        match who.and_then(|who| ops::users::run(&moor.cx, vault, &who, cmd)) {
+            Ok(value) => Response::ok(name, Some(value)).with_warnings(moor.cx.take_warnings()),
+            Err(e) => e.into_response(name, moor.cx.take_warnings()),
         }
     }
 
