@@ -88,6 +88,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
             json(stream, "200 OK", &json!({"workflows": rows}));
         }
         Err(Failure::Reply(reply)) => answered(stream, &reply),
+        Err(Failure::Missing) => not_found(stream),
         Err(Failure::Other(why)) => failed(stream, "workflow list", &why),
     }
 }
@@ -96,8 +97,31 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
 enum Failure {
     /// The controller said no.
     Reply(Box<ControllerResponse>),
+    /// There is no such workflow of the person's: it does not exist or is someone else's, which
+    /// the page is never told apart.
+    Missing,
     /// It could not be asked, or its answer was unreadable.
     Other(String),
+}
+
+impl Failure {
+    /// Reads a refusal of a read or write of one named workflow as `Missing`: every workflow
+    /// the controller shows a person is theirs, so a refusal is no such workflow of theirs.
+    fn own<T>(result: Result<T, Self>) -> Result<T, Self> {
+        match result {
+            Err(Self::Reply(reply)) if reply.class == ExitClass::Refused => Err(Self::Missing),
+            other => other,
+        }
+    }
+}
+
+/// Answers `404` for a workflow that is not the person's.
+fn not_found(stream: &mut TcpStream) {
+    json(
+        stream,
+        "404 Not Found",
+        &json!({"error": "no such workflow"}),
+    );
 }
 
 /// The value of `request`, asked as the session's person.
@@ -207,17 +231,18 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, name:
     match detail(gate, session, &name) {
         Ok(view) => json(stream, "200 OK", &view),
         Err(Failure::Reply(reply)) => answered(stream, &reply),
+        Err(Failure::Missing) => not_found(stream),
         Err(Failure::Other(why)) => failed(stream, "workflow read", &why),
     }
 }
 
 /// The workflow `name` and its latest runs, as the page reads them.
 fn detail(gate: &Gate, session: &Session, name: &str) -> Result<Value, Failure> {
-    let all = workflows(gate, session)?;
+    let all = Failure::own(workflows(gate, session))?;
     let Some(w) = all.into_iter().find(|w| w.name == name) else {
-        return Err(Failure::Other(format!("no workflow named {name}")));
+        return Err(Failure::Missing);
     };
-    let listed = value_of::<WorkflowRunListValue>(
+    let listed = Failure::own(value_of::<WorkflowRunListValue>(
         gate,
         session,
         ControllerRequest::WorkflowRunList(WorkflowRunListReq {
@@ -226,7 +251,7 @@ fn detail(gate: &Gate, session: &Session, name: &str) -> Result<Value, Failure> 
             run: None,
             limit: None,
         }),
-    )?;
+    ))?;
     let runs: Vec<Value> = listed.runs.iter().map(run_row).collect();
     let edited = w
         .plan

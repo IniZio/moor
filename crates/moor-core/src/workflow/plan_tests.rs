@@ -334,6 +334,23 @@ fn text_that_is_not_a_plan_is_one_error() {
 }
 
 #[test]
+fn a_plan_that_is_a_bare_list_is_told_to_be_an_object_with_steps() {
+    let errs = Plan::parse(r#"[{"id": "a"}]"#, PROMPT).unwrap_err();
+    let said = errs[0].to_string();
+    assert!(said.contains("object with a `steps` list"), "{said}");
+    assert!(!said.contains("expected a sequence"), "{said}");
+}
+
+#[test]
+fn the_first_prompt_says_where_report_step_lives_and_how_to_load_it() {
+    let text = parse(&[deliver("a")]).unwrap().start_prompt("do it");
+    assert!(
+        text.contains("`moor` MCP server") && text.contains("ToolSearch"),
+        "{text}"
+    );
+}
+
+#[test]
 fn made_from_marks_a_plan_stale_and_comes_from_the_prompt_when_absent() {
     let plan = parse(&[deliver("a")]).unwrap();
     assert_eq!(plan.made_from, PromptHash::of(PROMPT));

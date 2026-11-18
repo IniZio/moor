@@ -23,8 +23,15 @@ impl Plan {
     /// # Errors
     /// Every [`PlanError`] the plan has; one [`PlanError::Json`] when the text is not a plan.
     pub fn parse(text: &str, prompt: &str) -> Result<Self, Vec<PlanError>> {
-        let doc: PlanDoc =
-            serde_json::from_str(text).map_err(|e| vec![PlanError::Json(e.to_string())])?;
+        let json = |e: String| vec![PlanError::Json(e)];
+        let value: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| json(e.to_string()))?;
+        if !value.is_object() {
+            return Err(json(
+                "a plan is an object with a `steps` list, like {\"steps\": [...]}".to_owned(),
+            ));
+        }
+        let doc: PlanDoc = serde_json::from_value(value).map_err(|e| json(e.to_string()))?;
         Self::from_doc(&doc, prompt)
     }
 

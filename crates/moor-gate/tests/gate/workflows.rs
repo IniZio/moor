@@ -527,9 +527,9 @@ fn only_the_owner_answers_and_a_forged_page_or_a_bad_answer_is_refused() {
         "/account/api/workflows/weekly-deps/runs/7",
         Some(&bob),
     );
-    assert_eq!(read.status, 403, "{}", read.body);
+    assert_eq!(read.status, 404, "{}", read.body);
     let reply = answer_run(&w, &bob, "yes", true);
-    assert_eq!(reply.status, 403, "{}", reply.body);
+    assert_eq!(reply.status, 404, "{}", reply.body);
     assert!(!w.cmds().contains(&"workflow-answer".to_owned()));
     let alice = as_user(&w, "alice-12");
     assert_eq!(answer_run(&w, &alice, "yes", false).status, 403);
@@ -574,4 +574,21 @@ fn an_unknown_run_is_not_found() {
         Some(&cookie),
     );
     assert_eq!(reply.status, 404, "{}", reply.body);
+}
+
+#[test]
+fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
+    let w = world(true, &[]);
+    let bob = as_user(&w, "bob-15");
+    let body = json!({"prompt": "p", "plan": plan_text(), "revision": 3});
+    let put = put(&w, &bob, &body);
+    assert_eq!(put.status, 404, "{}", put.body);
+    let read = get(&w.addr, "/account/api/workflows/weekly-deps", Some(&bob));
+    assert_eq!(read.status, 404, "{}", read.body);
+    assert!(!w.cmds().contains(&"workflow-add".to_owned()));
+    let alice = as_user(&w, "alice-15");
+    let mine = get(&w.addr, "/account/api/workflows/weekly-deps", Some(&alice));
+    assert_eq!(mine.status, 200, "{}", mine.body);
+    let unknown = get(&w.addr, "/account/api/workflows/nope", Some(&alice));
+    assert_eq!(unknown.status, 404, "{}", unknown.body);
 }

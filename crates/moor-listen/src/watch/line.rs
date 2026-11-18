@@ -26,6 +26,13 @@ const WORTH: &[&str] = &[
 /// Longest the line's agent text runs.
 pub(super) const SAID: usize = 200;
 
+/// The first line of agent or owner text, trimmed and cut to [`SAID`] characters; none when it
+/// is empty.
+pub(super) fn said(text: &str) -> Option<String> {
+    let first = text.lines().next()?.trim();
+    (!first.is_empty()).then(|| first.chars().take(SAID).collect())
+}
+
 /// The newest event worth a line. The turn that stops on a question also ends idle; that idle
 /// is the question, not news.
 pub(super) fn newest_worth(events: &[Value]) -> Option<&Value> {
@@ -117,18 +124,19 @@ pub(super) fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Opti
 /// for other kinds.
 pub(super) fn run_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
     let text = |key| payload?.get(key)?.as_str();
+    let said = |key| text(key).map(|t| said(t).unwrap_or_default());
     let (workflow, repo, link) = (text("workflow")?, text("repo")?, text("link")?);
     match kind {
         "run_waiting" => Some(format!(
             "moor: box {name} run_waiting: {workflow} ({repo}) asks: {} {link}",
-            text("question")?
+            said("question")?
         )),
         "run_failed" => {
             let at = text("step").map_or_else(String::new, |s| format!(" at {s}"));
             Some(format!(
                 "moor: box {name} run_failed: {workflow} ({repo}) {}{at}: {} {link}",
                 text("outcome")?,
-                text("reason")?
+                said("reason")?
             ))
         }
         _ => None,

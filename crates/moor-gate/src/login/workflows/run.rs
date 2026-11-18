@@ -10,7 +10,7 @@ use moor_core::workflow::Answer;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use super::{decode, label, span, status, value_of, Failure, TAIL_MAX};
+use super::{decode, label, not_found, span, status, value_of, Failure, TAIL_MAX};
 use crate::login::account::{failed, json};
 use crate::login::repos::answered;
 use crate::login::{check_csrf, Session};
@@ -33,6 +33,7 @@ pub(crate) fn run(stream: &mut TcpStream, gate: &Gate, session: &Session, name: 
         Ok(Some(view)) => json(stream, "200 OK", &view),
         Ok(None) => json(stream, "404 Not Found", &json!({"error": "no such run"})),
         Err(Failure::Reply(reply)) => answered(stream, &reply),
+        Err(Failure::Missing) => not_found(stream),
         Err(Failure::Other(why)) => failed(stream, "run read", &why),
     }
 }
@@ -44,7 +45,7 @@ fn one_run_row(
     name: &str,
     id: i64,
 ) -> Result<Option<RunRowView>, Failure> {
-    let listed = value_of::<WorkflowRunListValue>(
+    let listed = Failure::own(value_of::<WorkflowRunListValue>(
         gate,
         session,
         ControllerRequest::WorkflowRunList(WorkflowRunListReq {
@@ -53,7 +54,7 @@ fn one_run_row(
             run: Some(id),
             limit: Some(1),
         }),
-    )?;
+    ))?;
     Ok(listed.runs.into_iter().find(|r| r.id == id))
 }
 
@@ -338,6 +339,7 @@ pub(crate) fn answer(
         Ok(Some(row)) => row,
         Ok(None) => return json(stream, "404 Not Found", &json!({"error": "no such run"})),
         Err(Failure::Reply(reply)) => return answered(stream, &reply),
+        Err(Failure::Missing) => return not_found(stream),
         Err(Failure::Other(why)) => return failed(stream, "run read", &why),
     };
     if row.run.phase != "waiting" {
