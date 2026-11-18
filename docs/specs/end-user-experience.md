@@ -106,7 +106,7 @@ Settled · 18  ▸
 ```
 
 - Each row shows state, repo, title, the one line that matters now, age and owner.
-- "Settled" holds tasks whose PR merged or closed, or that were closed. It is folded by default, as in thinkrail.
+- "Settled" holds tasks whose PR merged or closed, tasks that were closed, and done tasks idle for 7 days. It is folded by default, as in thinkrail. A row's Keep active option holds it out of Settled.
 - Filters cover mine or everyone's, repo and workflow. Mine is the default.
 - ⌘K opens a switcher with needs-you tasks first.
 
