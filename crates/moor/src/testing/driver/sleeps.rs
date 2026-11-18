@@ -32,6 +32,8 @@ impl FakeDriver {
         if let Some(e) = s.fail_wake.take() {
             return Err(e);
         }
+        s.stopped.retain(|h| h != handle.as_str());
+        s.down.retain(|(h, _)| h != handle.as_str());
         let hook = s.on_wake.clone();
         drop(s);
         if let Some(hook) = hook {
