@@ -152,13 +152,49 @@ Why this design:
 - It keeps the Box protocol unchanged. The controller sends allow lists and
   never Docker verbs.
 
-To check in a prototype before the PR:
+### What the prototype showed
 
-- The inner `dockerd` honours `HTTP_PROXY` for pulls, and its containers
-  reach the egress container.
-- The link from `moor-egress-forward` to the Proxy still works from the new
-  position.
-- The cost of one more container per Box, in start time and memory.
+A throwaway prototype on a shared node tested the design with stock images, on
+2026-11-18. It holds, with these changes:
+
+- **Isolate the gateway.** A plain `--internal` network still lets the Box
+  reach the host's own services at the gateway address, including sshd. Create
+  the network with `--ipv6` and
+  `com.docker.network.bridge.gateway_mode_ipv4=isolated` and
+  `com.docker.network.bridge.gateway_mode_ipv6=isolated`. With IPv4 alone,
+  root in the Box turns IPv6 on and reaches the host over link-local.
+- **Name the proxy by IP.** Inner containers resolve through public DNS, which
+  the Box cannot reach, so the name `egress` fails there. Pin the egress
+  container's IP and use it everywhere.
+- **Hand the proxy to inner Docker.** The work place writes `proxies` into
+  `~/.docker/config.json` with that IP, so inner containers and builds get it.
+  dockerd gets it too, for pulls.
+- **Exempt Compose service names.** Traffic between Compose services goes to
+  the proxy and is refused unless `noProxy` lists the service names.
+- **Set the host route's MTU on both bridges.**
+- **Record port refusals.** tinyproxy logs no refusal line for a refused port,
+  so a request with no `Established` line counts as refused.
+- **Restart to revoke.** A reload applies a new allow list in about 0.4 s, but
+  a tunnel already open stays up. Restart the egress container, about 0.3 s,
+  when a removal must apply at once.
+- **Configure the tools that ignore `HTTP_PROXY`.** The JVM, Gradle and
+  sdkmanager need `JAVA_TOOL_OPTIONS` or their own proxy flags. The Android
+  emulator needs `adb shell settings put global http_proxy`, so it sends host
+  names, not bare IP addresses.
+
+Root in the privileged work place could not get out by changing routes or
+flushing the firewall. The egress container costs about 0.3 s per Box start
+and 2 MB of memory.
+
+Still to check:
+
+- the link from `moor-egress-forward` to the Proxy from the new position;
+- `apk` and `npm` through the proxy, beyond curl;
+- the emulator and Gradle settings, on a real Android run.
+
+The pilot's records show why the inner Docker settings matter. Of 291
+destinations, 113 outside a Box's own containers were dialled directly. They
+include DNS, time servers, the PyPI CDN and Google's Android hosts.
 
 ### Presets
 
