@@ -167,7 +167,7 @@ A throwaway prototype on a shared node tested the design with stock images, on
   the Box cannot reach, so the name `egress` fails there. Pin the egress
   container's IP and use it everywhere.
 - **Hand the proxy to inner Docker.** The work place writes `proxies` into
-  `~/.docker/config.json` with that IP, so inner containers and builds get it.
+  the Docker client config of the Box user, with that IP, so inner containers and builds get it.
   dockerd gets it too, for pulls.
 - **Exempt Compose service names.** Traffic between Compose services goes to
   the proxy and is refused unless `noProxy` lists the service names.
@@ -188,9 +188,9 @@ and 2 MB of memory.
 
 Still to check:
 
-- the link from `moor-egress-forward` to the Proxy from the new position;
-- `apk` and `npm` through the proxy, beyond curl;
-- the emulator and Gradle settings, on a real Android run.
+- The link from `moor-egress-forward` to the Proxy, from the new position.
+- `apk` and `npm` through the proxy. Only curl and busybox wget were tried.
+- The emulator and Gradle settings, on a real Android run.
 
 The pilot's records show why the inner Docker settings matter. Of 291
 destinations, 113 outside a Box's own containers were dialled directly. They
