@@ -77,7 +77,7 @@ impl CloneStep {
 /// reads it as an option.
 ///
 /// `git clone` needs an empty directory, so a workdir with no `.git` is cloned into a temp dir
-/// under `.moor/` whose
+/// under `.moor/`, after the partial clones of runs that were cut off are removed, whose
 /// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
 /// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
 /// and the script stops at the clone step. `.moor/` is excluded so moor's files never show as
@@ -109,7 +109,7 @@ case {branch} in -*) echo 'the branch starts with -' >&2; exit {checkout};; esac
 if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   if [ ! -d .git ]; then
     tmp=.moor/clone.$$
-    rm -rf -- "$tmp" && mkdir -p -- "$tmp" || exit {clone}
+    rm -rf -- .moor/clone.* && mkdir -p -- "$tmp" || exit {clone}
     git clone -q --filter=blob:none --no-checkout -- {url} "$tmp" && mv -- "$tmp/.git" .git &&
       [ ! -e .git/.git ]
     cloned=$?
@@ -170,11 +170,28 @@ moor_submodules() {{
     )
 }
 
-/// `script` run so that no other copy of it runs alongside in the same place: a copy a lost link
-/// left running is waited for, so a rerun finds its work done instead of racing it.
+/// Seconds a run waits for an earlier copy before it goes on unlocked: as long as a clone exec
+/// may take.
+const LOCK_WAIT_SECS: u64 = 30 * 60;
+
+/// `script` run with no other copy of it alongside in the same directory.
+///
+/// A copy a lost link left running in the Box is waited for, so a rerun finds its work done
+/// instead of racing it. The lock is a `flock` on a file in `~/.moor` named after the directory, held until the
+/// copy and every process it started have ended. A Box with no `flock` or no writable home runs
+/// unlocked, and a wait longer than a clone exec may take goes on unlocked.
 #[must_use]
 pub fn one_at_a_time(script: &str) -> String {
-    script.to_owned()
+    let secs = LOCK_WAIT_SECS;
+    format!(
+        r#"moor_lock="$HOME/.moor/clone-$(pwd -P | cksum | cut -d ' ' -f 1).lock"
+mkdir -p -- "$HOME/.moor" 2>/dev/null && : >>"$moor_lock" 2>/dev/null || moor_lock=/dev/null
+(
+[ "$moor_lock" = /dev/null ] || ! command -v flock >/dev/null 2>&1 || flock -w {secs} 9 || :
+{script}
+) 9>>"$moor_lock"
+"#
+    )
 }
 
 #[cfg(test)]

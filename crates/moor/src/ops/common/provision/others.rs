@@ -1,6 +1,8 @@
 //! The repos a Box lists after its primary one: each cloned into its own work tree and set up there.
 
-use moor_core::boxscript::clone::{clone_script, left_out_submodules, Checkout, CloneStep};
+use moor_core::boxscript::clone::{
+    clone_script, left_out_submodules, one_at_a_time, Checkout, CloneStep,
+};
 use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
@@ -152,7 +154,7 @@ fn prepare_clone(
     let script = format!(
         "mkdir -p -- {dir} && cd -- {dir} || exit {}\n{}",
         CloneStep::Clone as i32,
-        clone_script(&checkout)
+        one_at_a_time(&clone_script(&checkout))
     );
     let site = Site {
         handle: at.handle,
@@ -167,7 +169,8 @@ fn prepare_clone(
     )
     .env(exec.vars())
     .cwd(exec.cwd())
-    .output(log.clone().map(Output::Log));
+    .output(log.clone().map(Output::Log))
+    .repeatable();
     Ok(CloneJob {
         spec,
         deadline: exec.deadline(),

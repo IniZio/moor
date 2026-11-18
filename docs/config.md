@@ -116,8 +116,9 @@ theirs applies it. The repo may hold:
 | `codex/config.toml` | Merged into `~/.codex/config.toml`. |
 | `setup.sh` | Runs once per new Box, as the Box user, within 10 minutes. |
 
-If the profile cannot be fetched or its plugins fail to install, setup fails
-with the reason. The agent does not start.
+Each marketplace and plugin install is tried up to three times, 10 and then 30
+seconds apart. If the profile cannot be fetched or a plugin still fails to
+install, setup fails with the reason. The agent does not start.
 `moor retry NAME` runs the setup again. A failed setup script is only a warning.
 
 An agent's `env` sets variables its process starts with. `{home}` and

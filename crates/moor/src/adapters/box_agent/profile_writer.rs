@@ -79,6 +79,18 @@ pub(crate) use moor_core::boxscript::profile::FAILURES_FILE;
 pub(crate) const FAIL_FN: &str =
     r#"fail() { echo "moor: profile: $1 exit $2" >&2; printf '%s exit %s\n' "$1" "$2" >> "$f"; }"#;
 
+/// Runs a command up to three times, 10 s and then 30 s apart, and returns its last exit code: an
+/// install reaches upstream, which can fail for a moment, and adding a marketplace or plugin that
+/// is there already changes nothing.
+pub(crate) const RETRY_FN: &str = r#"moor_retry() {
+  for moor_pause in 10 30 -; do
+    "$@" && return 0
+    moor_code=$?
+    [ "$moor_pause" = - ] && return "$moor_code"
+    sleep "$moor_pause"
+  done
+}"#;
+
 /// Copies each person skill under `$1`, replacing one of the same name. A directory without a
 /// `SKILL.md` is not a skill.
 pub(crate) const COPY_SKILLS: &str = r#"for s in "$d"/skills/*/; do

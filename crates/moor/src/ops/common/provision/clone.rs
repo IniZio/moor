@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, one_at_a_time, Checkout, CloneStep};
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};
@@ -208,7 +208,8 @@ impl<'a> Job<'a> {
 /// it reported, or the reason it failed with the log's tail.
 ///
 /// The probe runs after the clone and the exec still exits with the clone's code, so a failed clone
-/// reports as before.
+/// reports as before. Every part converges on a rerun and a copy left running is waited for, so a
+/// lost machine link is waited out and the exec asked again.
 fn clone(
     cx: &Cx,
     store: &Store,
@@ -238,7 +239,7 @@ fn clone(
         script.push_str(&plan.refresh_text());
         script.push_str(&clone_script(&plan.checkout()));
     }
-    let script = resources::after(&script);
+    let script = resources::after(&one_at_a_time(&script));
     let site = Site {
         handle: target.handle,
         provider: target.provider,
@@ -254,7 +255,8 @@ fn clone(
     )
     .env(exec.vars())
     .cwd(exec.cwd())
-    .output(log.clone().map(Output::Log));
+    .output(log.clone().map(Output::Log))
+    .repeatable();
     let clock = cx.clock();
     let started = clock.instant();
     let outcome = cx.driver().exec(target.handle, &spec, exec.deadline());

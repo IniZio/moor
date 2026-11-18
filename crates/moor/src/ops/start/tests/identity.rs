@@ -37,13 +37,19 @@ fn script(spec: &ExecSpec) -> String {
     spec.argv.last().cloned().unwrap_or_default()
 }
 
+/// What the clone exec runs once no other copy of it runs alongside.
+fn locked(text: &str) -> &str {
+    text.split_once(" 9 || :\n")
+        .map_or(text, |(_, inner)| inner)
+}
+
 #[test]
 fn identity_is_set_inside_the_clone_exec_before_the_clone() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a, b]\n", FakeDriver::new());
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(clones(&w).len(), 1);
     let text = first_script(&w);
-    let (identity, clone) = text.split_at(identity_lines("Ann Dev", "a@x.io").len());
+    let (identity, clone) = locked(&text).split_at(identity_lines("Ann Dev", "a@x.io").len());
     assert_eq!(identity, identity_lines("Ann Dev", "a@x.io"));
     assert!(
         clone.starts_with("export GIT_TERMINAL_PROMPT=0\n"),
@@ -56,7 +62,10 @@ fn identity_is_set_inside_the_clone_exec_before_the_clone() {
 fn without_an_author_the_clone_exec_only_clones() {
     let (w, _) = start_as(("", ""), "setup: [a]\n", FakeDriver::new());
     let text = first_script(&w);
-    assert!(text.starts_with("export GIT_TERMINAL_PROMPT=0\n"), "{text}");
+    assert!(
+        locked(&text).starts_with("export GIT_TERMINAL_PROMPT=0\n"),
+        "{text}"
+    );
     assert!(!text.contains("git config --global"), "{text}");
 }
 
