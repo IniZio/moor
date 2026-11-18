@@ -1,3 +1,20 @@
+{{- if and (include "moor.stepReports" .) .Values.egress.enabled }}
+{{- $kept := (lookup "v1" "Secret" .Release.Namespace (printf "%s-service-key" .Release.Name)).data | default dict -}}
+{{- $key := get $kept "service-key" | b64dec | default (randAlphaNum 32) -}}
+# What the egress pods send in X-Moor-Service-Key to the Box listener, which trusts the Box
+# headers only from a request that carries it. Kept across upgrades so a roll never splits the two.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-service-key
+  labels: {{- include "moor.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  service-key: {{ $key | quote }}
+---
+{{- end }}
 {{- if and .Values.gate.enabled .Values.gate.login }}
 {{- $kept := (lookup "v1" "Secret" .Release.Namespace (printf "%s-gate" .Release.Name)).data | default dict -}}
 {{- $key := .Values.gate.cookieKey | default (get $kept "cookie-key" | b64dec) | default (randAlphaNum 64) -}}

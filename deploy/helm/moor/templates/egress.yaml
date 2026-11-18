@@ -160,6 +160,11 @@ spec:
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-egress, key: machine-service-key }
             {{- end }}
+            {{- if include "moor.stepReports" . }}
+            - name: MOOR_SERVICE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-service-key, key: service-key }
+            {{- end }}
           ports:
             - { name: egress, containerPort: {{ .Values.egress.port }} }
           # The Proxy stops accepting at SIGTERM; until the Service and ingress drop the pod,
