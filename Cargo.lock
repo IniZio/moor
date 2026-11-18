@@ -3293,6 +3293,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "signal-hook 0.4.4",
+ "subtle",
  "tempfile",
  "tokio",
  "tokio-util",

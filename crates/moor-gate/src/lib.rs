@@ -29,7 +29,7 @@ mod streams;
 mod token;
 mod tools;
 
-pub use boxes::{Boxes, BOX_HEADER, DEFAULT_BOX_LISTEN};
+pub use boxes::{Boxes, BOX_HEADER, DEFAULT_BOX_LISTEN, SERVICE_KEY_ENV, SERVICE_KEY_HEADER};
 pub use login::Login;
 pub use mcp::Mcp;
 pub use token::{Person, Verifier};
