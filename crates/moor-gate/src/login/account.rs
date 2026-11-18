@@ -39,7 +39,7 @@ const REPOS: &str = "/account/api/repos";
 
 /// Headers on the app page: its own script and styles, requests to itself, nothing framing it
 /// and nothing cached.
-const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
+const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
 
 /// Whether `path` belongs to the account page.
 pub(crate) fn serves(path: &str) -> bool {
@@ -215,6 +215,7 @@ fn file(stream: &mut TcpStream, name: &str, headers: &str) {
     let kind = match name.rsplit('.').next() {
         Some("js") => "text/javascript",
         Some("css") => "text/css",
+        Some("woff2") => "font/woff2",
         _ => "text/html; charset=utf-8",
     };
     let cache = if headers.is_empty() {

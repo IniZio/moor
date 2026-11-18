@@ -12,9 +12,10 @@ import {
 	repoList,
 	SignedOut,
 } from './api';
+import { Markdown } from './Markdown';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
-const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
+export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
 	needs_you: { word: 'needs you', glyph: '●', tone: 'needs' },
 	working: { word: 'working', glyph: '◐', tone: 'working' },
 	setting_up: { word: 'setting up', glyph: '◌', tone: 'working' },
@@ -49,12 +50,6 @@ function groupOf(t: BoxRow, now: number): Group {
 	}
 }
 
-/** The title a Box goes by: the first line of what it was asked. */
-function titleOf(t: { prompt?: string | null; box: string }): string {
-	const line = (t.prompt ?? '').split('\n').find((l) => l.trim()) ?? t.box;
-	return line.length > 64 ? `${line.slice(0, 63)}…` : line;
-}
-
 function age(iso: string | null | undefined, now: number): string {
 	const at = iso ? Date.parse(iso) : NaN;
 	if (Number.isNaN(at)) return '';
@@ -66,7 +61,7 @@ function age(iso: string | null | undefined, now: number): string {
 }
 
 /** Loads on mount and every few seconds while the page is open; keeps the last answer on a failed poll. */
-function usePoll<T>(load: () => Promise<T>, key: string) {
+export function usePoll<T>(load: () => Promise<T>, key: string) {
 	const [value, setValue] = useState<T | null>(null);
 	const [error, setError] = useState('');
 	const [now, setNow] = useState(Date.now());
@@ -97,7 +92,7 @@ function usePoll<T>(load: () => Promise<T>, key: string) {
 	return { value, error, now };
 }
 
-function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
+export function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
 	const s = STATES[state];
 	return (
 		<span class={`t-glyph t-${s.tone}${stale ? ' t-stale' : ''}`} role="img" aria-label={s.word} title={s.word}>
@@ -112,7 +107,7 @@ function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
 			<span class="t-repo t-mono">{t.repo ?? ''}</span>
-			<span class="t-title">{titleOf(t)}</span>
+			<span class="t-title">{t.title}</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
 				{t.state === 'failed' && <span class="t-failword">failed </span>}
@@ -139,7 +134,7 @@ function useRowKeys() {
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {
 			const tag = (document.activeElement as HTMLElement | null)?.tagName;
-			if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA') return;
+			if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || document.querySelector('dialog[open]')) return;
 			if (e.key !== 'j' && e.key !== 'k') return;
 			const rows = [...document.querySelectorAll<HTMLElement>('[data-row]')];
 			if (!rows.length) return;
@@ -151,8 +146,15 @@ function useRowKeys() {
 	}, []);
 }
 
-export function Home() {
-	const { value, error, now } = usePoll(boxList, 'home');
+export type Boxes = ReturnType<typeof useBoxes>;
+
+/** The person's Boxes, one poll the whole page shares: the list, the switcher and the Inbox count. */
+export function useBoxes() {
+	return usePoll(boxList, 'home');
+}
+
+export function Home({ boxes }: { boxes: Boxes }) {
+	const { value, error, now } = boxes;
 	useRowKeys();
 	if (!value) {
 		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
@@ -163,7 +165,7 @@ export function Home() {
 		<div class="t-home">
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<p class="t-hint muted">
-				Your tasks · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
+				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
 			</p>
 			<Section label="Needs you" tone="needs" rows={by('needs')} now={now} empty="Nothing needs you." />
 			<Section label="Working" tone="working" rows={by('working')} now={now} empty="Nothing is running." />
@@ -175,7 +177,7 @@ export function Home() {
 				</summary>
 				{settled.map((t) => <Row t={t} now={now} key={t.box} quiet />)}
 			</details>
-			{!value.length && <p class="t-empty">No tasks yet. Start one from Claude Code with the moor tools.</p>}
+			{!value.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
 		</div>
 	);
 }
@@ -266,7 +268,9 @@ function Line({ e }: { e: Entry }) {
 				<div class="t-ev">
 					<span class="t-who">Agent</span>
 					<span class="t-when">{clock(e.at)}</span>
-					<span class="t-what t-say">{e.text}</span>
+					<div class="t-what t-say">
+						<Markdown text={e.text} />
+					</div>
 				</div>
 			);
 	}
@@ -349,7 +353,7 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 				<div class="t-crumbs">
 					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
 					<span class="t-sep">▸</span>
-					<b>{titleOf(value)}</b>
+					<b>{value.title}</b>
 					<span class="t-sep">▸</span>
 					<span class="t-mono muted">{value.branch ?? value.box}</span>
 					<span class="grow" />
@@ -490,7 +494,9 @@ export function NewBox({ account }: { account: Account }) {
 						</select>
 					</label>
 					<span class="grow" />
-					<button type="submit" disabled={!ready}>{busy ? 'Starting…' : 'Start'}</button>
+					<button class="btn primary" type="submit" disabled={!ready}>
+						{busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
+					</button>
 				</div>
 			</form>
 			{error && <p class="notice danger" role="alert">{error}</p>}

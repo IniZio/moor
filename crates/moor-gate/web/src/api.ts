@@ -308,6 +308,7 @@ const BoxRowSchema = v.object({
 	branch: v.nullish(v.string()),
 	base: v.nullish(v.string()),
 	prompt: v.nullish(v.string()),
+	title: v.string(),
 	state: ProgressSchema,
 	stale: v.boolean(),
 	line: v.string(),

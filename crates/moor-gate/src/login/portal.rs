@@ -121,6 +121,7 @@ fn summary(row: &Row) -> Option<Value> {
         "branch": row.branch,
         "base": row.base,
         "prompt": row.prompt,
+        "title": progress.title,
         "state": progress.state,
         "stale": progress.stale,
         "line": progress.line,
