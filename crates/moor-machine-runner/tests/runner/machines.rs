@@ -307,7 +307,9 @@ fn a_box_is_given_an_env_once_across_the_requests_of_one_controller() {
     request().set_env(&got.handle, &moved, Some("ca")).unwrap();
     assert_eq!(machines(&host).release(&got.handle), Ok(Released::Deleted));
     let again = opened(&request(), 48);
-    request().set_env(&again.handle, &moved, Some("ca")).unwrap();
+    request()
+        .set_env(&again.handle, &moved, Some("ca"))
+        .unwrap();
     let (_, out) = run(&request(), &host, &again, Place::Work, "echo $HTTPS_PROXY");
     assert_eq!(out.trim(), "http://127.0.0.1:3129");
     assert_eq!(request().release(&again.handle), Ok(Released::Deleted));
