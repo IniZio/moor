@@ -35,8 +35,8 @@ moor-web v6 to v8 were rejected on 2026-10-27. They were built before an intervi
 Dropped surfaces:
 
 - **The herdr front**, its picker, panel and Box cards. The browser terminal replaces it.
-- **The moor-hc bridge for teammates.** It existed to reach a Box's session from a terminal. The browser terminal replaces it. Proposed, see open question 1.
-- **The moor plugin's local event listener.** Events reach Claude Code over the HTTP MCP connection instead. Proposed, see open question 2.
+- **The moor-hc bridge for teammates.** It existed to reach a Box's session from a terminal. It goes once the browser terminal ships.
+- **The moor plugin's local event listener.** Events reach Claude Code over the HTTP MCP connection instead.
 
 ## References
 
@@ -67,8 +67,7 @@ What not to copy:
 
 ## The words
 
-A person sees four nouns. **Task** is what they asked for. **Box** is the computer a task runs in. **Workflow** is a task on a schedule. **Run** is one firing of a workflow. The portal says "task" wherever a person starts or reviews work, and "Box" only where the computer matters. That covers the terminal, size, machine and sleep. See open question 3.
-
+A person sees four nouns. **Task** is what they asked for. **Box** is the computer a task runs in. **Workflow** is a task on a schedule. **Run** is one firing of a workflow. The portal says "task" wherever a person starts or reviews work, and "Box" only where the computer matters. That covers the terminal, size, machine and sleep.
 ## State
 
 Every surface shows the same states. The controller derives them from Box events, so no front computes its own.
@@ -210,19 +209,21 @@ A research pass on 2026-11-18 read origin/develop. Most screens need data moor a
 
 Each step ends in a check someone can rerun. The first step is useful alone.
 
-1. **Delete the herdr front.** In progress as its own PR.
-2. **Tasks in the portal.** The derived state, the Home list, the Task page with Timeline from events only, Evidence, and Start. Check. Start a task from the browser on the pilot fixture repo and see it reach done with a screenshot.
-3. **needs you.** The waiting card, answers from the web, the inbox, and default notifications. Check. A permission prompt answered in the browser unblocks the agent.
-4. **Terminal in the browser.** The signed-in WebSocket route and xterm.js. Check. Take over a working Box and type into Claude.
-5. **Receipts, Changes and the PR header.** Check. A turn's receipt matches the git diff in the Box.
-6. **Timeline from the transcript.** Check. Tool calls fold, and errors stay unfolded.
-7. **Workflows reworked.** Words for schedules, plan editor, Make this recurring.
-8. **Docs.** One getting-started page per role, written against the new portal.
+1. **Delete the herdr front.** PR #1496.
+2. **Mockup and design system.** A clickable mockup of Home and the Task page, with the reference screenshots beside it.
+3. **Tasks in the portal.** The derived state, the Home list, the Task page with Timeline from events only, Evidence, and Start. Check. Start a task from the browser on the pilot fixture repo and see it reach done with a screenshot.
+4. **needs you.** The waiting card, answers from the web, the inbox, and default notifications. Check. A permission prompt answered in the browser unblocks the agent.
+5. **Terminal in the browser.** The signed-in WebSocket route and xterm.js. Check. Take over a working Box and type into Claude.
+6. **Receipts, Changes and the PR header.** Check. A turn's receipt matches the git diff in the Box.
+7. **Timeline from the transcript.** Check. Tool calls fold, and errors stay unfolded.
+8. **Workflows reworked.** Words for schedules, plan editor, Make this recurring.
+9. **Docs.** One getting-started page per role, written against the new portal.
 
-## Open questions
+## Decided on 2026-11-18
 
-1. Should the moor-hc bridge go with the herdr front, once the browser terminal ships?
-2. Should events reach Claude Code over the MCP connection, so the moor plugin's local listener can go?
-3. Should the portal say "task" to people and keep "Box" for the computer?
-4. Should the herdr deletion merge before the browser terminal? Until step 4, a developer can step in only through the dev CLI.
-5. Should "Plan first" be offered for one-off tasks, or kept for workflows only?
+1. The moor-hc bridge goes once the browser terminal ships.
+2. Box events reach Claude Code over the MCP connection, and the moor plugin's local listener goes.
+3. The portal says "task" to people and keeps "Box" for the computer.
+4. The herdr front is removed now, before the browser terminal. It was not really used.
+5. "Plan first" is offered on one-off tasks, off by default.
+6. A clickable mockup of Home and the Task page comes before portal code, with the design system chosen alongside it. No Tailwind.
