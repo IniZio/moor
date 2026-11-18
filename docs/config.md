@@ -43,7 +43,7 @@ box:
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `nodes.<name>.runtime` | string | required | The crabbox provider the node's Boxes run on. |
+| `nodes.<name>.runtime` | string | required | The provider name the node's Boxes run on. |
 | `nodes.<name>.labels` | list of strings | none | Labels a repo may require. |
 | `nodes.<name>.max_boxes` | integer, at least 1 | unlimited | The most live Boxes on the node. Free memory may allow fewer. |
 
