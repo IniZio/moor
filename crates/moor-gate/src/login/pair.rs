@@ -1,26 +1,28 @@
 //! Pairing a machine by code, in the shape of OAuth's device authorization grant (RFC 8628):
 //! the agent posts its key to `/machines/pair` and gets a short code, its owner confirms the code
 //! at `/pair` behind browser sign-in, and the agent's poll at `/machines/pair/poll` gets the
-//! enrollment the confirm made. A code waits in this gate's memory, so pairing needs one gate.
+//! enrollment the confirm made. The controller keeps every code, so the agent's polls and the
+//! confirm may each land on a different gate replica.
 
-use std::collections::HashMap;
 use std::io::Read;
 use std::net::TcpStream;
-use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
+use moor_client::Client;
+use moor_core::request::{MachinePairReq, PairOp, Request as ControllerRequest};
+use moor_core::response::ExitClass;
+use moor_core::view::user::MachinePairValue;
 use oauth2::CsrfToken;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::{Login, RANDOM_BYTES};
 use crate::http::respond;
+use crate::Gate;
 
 pub(crate) mod page;
-#[cfg(test)]
-mod tests;
 
 /// The confirm page's path.
 pub(crate) const PATH: &str = "/pair";
@@ -31,8 +33,8 @@ const TTL: Duration = Duration::from_mins(10);
 /// Seconds the agent waits between polls.
 const INTERVAL_SECS: u64 = 5;
 
-/// The most codes waiting at once; more are refused until some are used or expire.
-const MOST_WAITING: usize = 256;
+/// Codes drawn before giving up when each is already taken.
+const TRIES: usize = 4;
 
 /// Letters a code is made of: no vowels, so no word, and none that reads as a digit.
 const ALPHABET: &[u8; 20] = b"BCDFGHJKLMNPQRSTVWXZ";
@@ -41,7 +43,7 @@ const ALPHABET: &[u8; 20] = b"BCDFGHJKLMNPQRSTVWXZ";
 const BODY_MAX: usize = 16 * 1024;
 
 /// What the agent asks to be enrolled as.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Ask {
     /// The agent's ed25519 public key as an OpenSSH line.
@@ -58,140 +60,22 @@ pub(crate) struct Ask {
     pool: Option<String>,
 }
 
-/// Where a code is.
-enum Stage {
-    /// Shown to the agent; nobody has confirmed it.
-    Waiting,
-    /// A confirm is enrolling the machine now.
-    Enrolling,
-    /// Enrolled; the controller's answer waits for the agent's next poll.
-    Enrolled(Value),
-}
-
-/// One code waiting to be confirmed or collected.
-struct Pairing {
-    /// The secret the agent polls with.
-    device_code: String,
-    /// What the agent asked for.
-    ask: Ask,
-    /// When the code stops working.
-    expires: SystemTime,
-    /// How far it got.
-    stage: Stage,
-}
-
-/// What a poll finds.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Polled {
-    /// Not confirmed yet.
-    Pending,
-    /// Unknown, expired or already collected.
-    Expired,
-    /// The controller's enrollment, handed out this once.
-    Enrolled(Value),
-}
-
-/// The codes this gate has handed out, by code.
-#[derive(Default)]
-pub(crate) struct Pairings(Mutex<HashMap<String, Pairing>>);
-
-impl Pairings {
-    /// Hands out a code for `ask`: the code and the device code the agent polls with; none
-    /// when too many wait.
-    pub(crate) fn start(&self, ask: Ask, now: SystemTime) -> Option<(String, String)> {
-        let device_code = CsrfToken::new_random_len(RANDOM_BYTES).into_secret();
-        let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        all.retain(|_, p| p.expires > now);
-        if all.len() >= MOST_WAITING {
-            return None;
-        }
-        let code = loop {
-            let code = user_code();
-            if !all.contains_key(&code) {
-                break code;
-            }
-        };
-        all.insert(
-            code.clone(),
-            Pairing {
-                device_code: device_code.clone(),
-                ask,
-                expires: now + TTL,
-                stage: Stage::Waiting,
-            },
-        );
-        drop(all);
-        Some((code, device_code))
+/// Sends `op` to the controller, which keeps every code so any gate replica can answer for
+/// it: where the code stands, or why the controller could not say.
+pub(crate) fn step(controller: &Client, op: PairOp) -> Result<MachinePairValue, String> {
+    let reply = controller
+        .request(
+            ControllerRequest::MachinePair(MachinePairReq { op }),
+            |_| {},
+        )
+        .map_err(|e| format!("moor could not be reached: {e}"))?;
+    if reply.class != ExitClass::Ok {
+        return Err(reply
+            .error
+            .map_or_else(|| "moor refused the pairing".to_owned(), |e| e.message));
     }
-
-    /// What `code` asks for, while it waits for a confirm.
-    pub(crate) fn waiting(&self, code: &str, now: SystemTime) -> Option<Ask> {
-        let all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        all.get(code)
-            .filter(|p| p.expires > now && matches!(p.stage, Stage::Waiting))
-            .map(|p| p.ask.clone())
-    }
-
-    /// Confirms `code` with `enroll`, which runs once at most per code; `None` when the code
-    /// is not waiting, else whether `enroll` worked. A failed enroll leaves the code waiting.
-    pub(crate) fn confirm(
-        &self,
-        code: &str,
-        now: SystemTime,
-        enroll: impl FnOnce(&Ask) -> Result<Value, String>,
-    ) -> Option<Result<Ask, String>> {
-        let ask = self.begin(code, now)?;
-        let enrolled = enroll(&ask);
-        let stage = enrolled
-            .as_ref()
-            .map_or(Stage::Waiting, |value| Stage::Enrolled(value.clone()));
-        if let Some(pairing) = self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_mut(code)
-        {
-            pairing.stage = stage;
-        }
-        Some(enrolled.map(|_| ask))
-    }
-
-    /// Moves `code` from waiting to enrolling: what it asks for, or `None` when it is not waiting.
-    fn begin(&self, code: &str, now: SystemTime) -> Option<Ask> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_mut(code)
-            .filter(|p| p.expires > now && matches!(p.stage, Stage::Waiting))
-            .map(|pairing| {
-                pairing.stage = Stage::Enrolling;
-                pairing.ask.clone()
-            })
-    }
-
-    /// What the agent polling with `device_code` gets; a collected answer is gone after.
-    pub(crate) fn poll(&self, device_code: &str, now: SystemTime) -> Polled {
-        let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(code) = all
-            .iter()
-            .find(|(_, p)| super::same(&p.device_code, device_code))
-            .map(|(code, _)| code.clone())
-        else {
-            return Polled::Expired;
-        };
-        match all.remove(&code) {
-            Some(p) if p.expires <= now => Polled::Expired,
-            Some(Pairing {
-                stage: Stage::Enrolled(value),
-                ..
-            }) => Polled::Enrolled(value),
-            Some(p) => {
-                all.insert(code, p);
-                Polled::Pending
-            }
-            None => Polled::Expired,
-        }
-    }
+    serde_json::from_value(reply.value.unwrap_or_default())
+        .map_err(|e| format!("moor answered in a shape the gate does not know: {e}"))
 }
 
 /// A fresh `XXXX-XXXX` code of [`ALPHABET`] letters, each drawn without bias.
@@ -232,13 +116,9 @@ pub(crate) fn agent(
     leftover: Vec<u8>,
     length: Option<usize>,
     path: &str,
+    gate: &Gate,
     login: Option<&Login>,
 ) {
-    #[allow(
-        clippy::disallowed_methods,
-        reason = "code expiry; the store takes the time as an argument"
-    )]
-    let now = SystemTime::now();
     let asked = read_json(&mut stream, leftover, length).and_then(|body| {
         if path == "/machines/pair" {
             serde_json::from_value(body).map(Asked::Pair)
@@ -253,8 +133,8 @@ pub(crate) fn agent(
             "501 Not Implemented",
             json!({"error": "this server pairs machines only with browser sign-in on; its operator must start the gate with --public-url"}),
         ),
-        (Ok(Asked::Pair(ask)), Some(login)) => start(login, ask, now),
-        (Ok(Asked::Poll(polled)), Some(login)) => poll(login, &polled.device_code, now),
+        (Ok(Asked::Pair(ask)), Some(login)) => start(&gate.controller, login, &ask),
+        (Ok(Asked::Poll(polled)), Some(_)) => poll(&gate.controller, polled.device_code),
     };
     respond(&mut stream, status, "application/json", &body.to_string());
 }
@@ -270,34 +150,67 @@ enum Asked {
 /// A poll's body.
 #[derive(Deserialize)]
 struct Poll {
-    /// The secret [`Pairings::start`] handed out.
+    /// The secret [`start`] handed out.
     device_code: String,
 }
 
-/// Hands out a code for `ask`.
-fn start(login: &Login, ask: Ask, now: SystemTime) -> (&'static str, Value) {
-    let Some((code, device_code)) = login.pairings.start(ask, now) else {
-        return (
-            "429 Too Many Requests",
-            json!({"error": "too many machines are pairing; try again in a few minutes"}),
-        );
+/// Hands out a code for `ask`, kept by the controller.
+fn start(controller: &Client, login: &Login, ask: &Ask) -> (&'static str, Value) {
+    let Ok(ask) = serde_json::to_value(ask) else {
+        return unreachable_controller("the pairing could not be encoded");
     };
-    let uri = format!("{}{PATH}", login.public);
-    (
-        "200 OK",
-        json!({"device_code": device_code, "user_code": code,
-            "verification_uri_complete": format!("{uri}?code={code}"), "verification_uri": uri,
-            "expires_in": TTL.as_secs(), "interval": INTERVAL_SECS}),
-    )
+    for _ in 0..TRIES {
+        let code = user_code();
+        let device_code = CsrfToken::new_random_len(RANDOM_BYTES).into_secret();
+        let op = PairOp::Start {
+            code: code.clone(),
+            device_code: device_code.clone(),
+            ask: ask.clone(),
+            ttl_secs: TTL.as_secs(),
+        };
+        match step(controller, op) {
+            Ok(MachinePairValue::Started) => {
+                let uri = format!("{}{PATH}", login.public);
+                return (
+                    "200 OK",
+                    json!({"device_code": device_code, "user_code": code,
+                        "verification_uri_complete": format!("{uri}?code={code}"),
+                        "verification_uri": uri, "expires_in": TTL.as_secs(),
+                        "interval": INTERVAL_SECS}),
+                );
+            }
+            Ok(MachinePairValue::Full) => {
+                return (
+                    "429 Too Many Requests",
+                    json!({"error": "too many machines are pairing; try again in a few minutes"}),
+                )
+            }
+            Ok(MachinePairValue::Taken) => {}
+            Ok(other) => return unreachable_controller(&format!("moor answered {other:?}")),
+            Err(why) => return unreachable_controller(&why),
+        }
+    }
+    unreachable_controller("every code drawn was taken")
 }
 
-/// Answers a poll the way RFC 8628's token endpoint does.
-fn poll(login: &Login, device_code: &str, now: SystemTime) -> (&'static str, Value) {
-    match login.pairings.poll(device_code, now) {
-        Polled::Enrolled(value) => ("200 OK", value),
-        Polled::Pending => ("400 Bad Request", json!({"error": "authorization_pending"})),
-        Polled::Expired => ("400 Bad Request", json!({"error": "expired_token"})),
+/// Answers a poll the way RFC 8628's token endpoint does. A controller that cannot answer is a
+/// `502`, never `expired_token`, so the agent does not take it for an expired code.
+fn poll(controller: &Client, device_code: String) -> (&'static str, Value) {
+    match step(controller, PairOp::Poll { device_code }) {
+        Ok(MachinePairValue::Enrolled { enrolled }) => ("200 OK", enrolled),
+        Ok(MachinePairValue::Pending) => {
+            ("400 Bad Request", json!({"error": "authorization_pending"}))
+        }
+        Ok(MachinePairValue::Gone) => ("400 Bad Request", json!({"error": "expired_token"})),
+        Ok(other) => unreachable_controller(&format!("moor answered {other:?}")),
+        Err(why) => unreachable_controller(&why),
     }
+}
+
+/// A `502` for a pairing the controller could not serve.
+fn unreachable_controller(why: &str) -> (&'static str, Value) {
+    crate::log(&format!("pairing a machine failed: {why}"));
+    ("502 Bad Gateway", json!({ "error": why }))
 }
 
 /// The JSON body, when it fits and arrives whole.

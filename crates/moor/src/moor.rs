@@ -332,6 +332,29 @@ impl Moor {
         }
     }
 
+    /// Run `machine-pair` for `caller`, which must be a front.
+    pub(crate) fn call_machine_pair(
+        &self,
+        caller: &Result<Caller, String>,
+        request: &Request,
+    ) -> Response {
+        let name = request.cmd();
+        let run = || {
+            ops::machine_pair::permit(caller)?;
+            let Request::MachinePair(req) = request else {
+                return Err(CommandError::new(
+                    ErrorKind::Internal,
+                    "not a machine-pair request",
+                ));
+            };
+            ops::machine_pair::run(self.cx.store()?, req)
+        };
+        match run() {
+            Ok(value) => Response::ok(name, Some(value)),
+            Err(e) => e.into_response(name, vec![]),
+        }
+    }
+
     /// Run `artifact-read`, passing the Artifact's bytes to `out` piece by piece, then answer
     /// with what was sent.
     pub fn read_artifact(

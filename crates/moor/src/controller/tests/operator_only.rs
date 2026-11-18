@@ -60,12 +60,14 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "box-rsync" => json!({"cmd": kind, "box": 1, "argv": ["rsync"]}),
         "machine-hold" => json!({"cmd": kind, "id": 1, "op": "release"}),
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
+        "machine-pair" => json!({"cmd": kind, "op": {"do": "show", "code": "BCDF-GHJK"}}),
         _ => return None,
     })
 }
 
 #[test]
-fn every_front_request_but_version_the_webhook_outbox_and_step_reports_must_assert_an_identity() {
+fn every_front_request_but_version_the_webhook_outbox_step_reports_and_pairing_must_assert_an_identity(
+) {
     let world = World::new();
     let herdr = world.herdr();
     let mut unknown = Vec::new();
@@ -87,6 +89,8 @@ fn every_front_request_but_version_the_webhook_outbox_and_step_reports_must_asse
             refused(&got, "`webhooks: true`");
         } else if kind == "step-report" {
             refused(&got, "`step_reports: true`");
+        } else if kind == "machine-pair" {
+            assert_eq!(got["value"], json!({"pairing": "gone"}), "{got}");
         } else {
             refused(&got, "the herdr front socket must assert an identity");
         }

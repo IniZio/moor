@@ -25,6 +25,7 @@ pub(crate) mod host_session;
 mod inspect;
 mod machine_box;
 pub(crate) mod machine_hold;
+pub(crate) mod machine_pair;
 mod node_add;
 mod node_settings;
 mod nodes;
@@ -112,6 +113,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::StepReport(_) => Err(CommandError::new(
             ErrorKind::Refused,
             authz::STEP_REPORT_FRONT_ONLY,
+        )),
+        Request::MachinePair(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            machine_pair::FRONT_ONLY,
         )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,

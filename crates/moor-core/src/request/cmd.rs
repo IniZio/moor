@@ -83,6 +83,7 @@ impl Request {
             Self::WebhookClaim(_) => "webhook-claim",
             Self::WebhookReport(_) => "webhook-report",
             Self::StepReport(_) => "step-report",
+            Self::MachinePair(_) => "machine-pair",
             Self::As(_) => "as",
             Self::Version {} => "version",
         }

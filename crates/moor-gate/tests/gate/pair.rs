@@ -1,6 +1,7 @@
 //! Pairing a machine by code: its agent asks at `/machines/pair`, a signed-in person confirms
 //! at `/pair`, and the agent's poll gets the controller's enrollment once.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
@@ -28,6 +29,61 @@ struct World {
     enrolled: Arc<Mutex<Vec<Value>>>,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
+}
+
+/// The controller's pairing codes, by code: the device code, the ask, the stage and the
+/// enrollment. Nothing expires here; the controller's own tests cover expiry.
+#[derive(Default)]
+struct Pairings(HashMap<String, (String, Value, &'static str, Value)>);
+
+impl Pairings {
+    /// Answers one `machine-pair` op the way the controller does.
+    fn step(&mut self, op: &Value) -> Value {
+        let code = op["code"].as_str().unwrap_or_default().to_owned();
+        let at = |s: &Self, stage| s.0.get(&code).filter(|p| p.2 == stage).map(|p| p.1.clone());
+        match op["do"].as_str().unwrap() {
+            "start" => {
+                let device = op["device_code"].as_str().unwrap().to_owned();
+                self.0
+                    .insert(code, (device, op["ask"].clone(), "waiting", Value::Null));
+                json!({"pairing": "started"})
+            }
+            "show" => at(self, "waiting").map_or_else(
+                || json!({"pairing": "gone"}),
+                |ask| json!({"pairing": "waiting", "ask": ask}),
+            ),
+            "claim" => match at(self, "waiting") {
+                Some(ask) => {
+                    self.0.get_mut(&code).unwrap().2 = "enrolling";
+                    json!({"pairing": "waiting", "ask": ask})
+                }
+                None => json!({"pairing": "gone"}),
+            },
+            "settle" => {
+                let p = self.0.get_mut(&code).unwrap();
+                p.2 = if op["enrolled"].is_null() {
+                    "waiting"
+                } else {
+                    "enrolled"
+                };
+                p.3 = op["enrolled"].clone();
+                json!({"pairing": "settled"})
+            }
+            "poll" => {
+                let device = op["device_code"].as_str().unwrap();
+                let found = self.0.iter().find(|(_, p)| p.0 == device);
+                match found.map(|(code, p)| (code.clone(), p.2)) {
+                    Some((code, "enrolled")) => {
+                        let enrolled = self.0.remove(&code).unwrap().3;
+                        json!({"pairing": "enrolled", "enrolled": enrolled})
+                    }
+                    Some(_) => json!({"pairing": "pending"}),
+                    None => json!({"pairing": "gone"}),
+                }
+            }
+            other => panic!("unknown machine-pair op {other}"),
+        }
+    }
 }
 
 /// One gate replica.
@@ -58,9 +114,11 @@ fn world_of(login: bool, replicas: usize) -> World {
     let listener = UnixListener::bind(&socket).unwrap();
     let enrolled: Arc<Mutex<Vec<Value>>> = Arc::default();
     let kept = Arc::clone(&enrolled);
+    let pairings: Arc<Mutex<Pairings>> = Arc::default();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let kept = Arc::clone(&kept);
+            let pairings = Arc::clone(&pairings);
             std::thread::spawn(move || {
                 let mut reply = stream.try_clone().unwrap();
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
@@ -70,7 +128,9 @@ fn world_of(login: bool, replicas: usize) -> World {
                         continue;
                     }
                     let inner = &frame["request"]["request"];
-                    let value = if inner["cmd"] == "machine-enroll" {
+                    let value = if frame["request"]["cmd"] == "machine-pair" {
+                        pairings.lock().unwrap().step(&frame["request"]["op"])
+                    } else if inner["cmd"] == "machine-enroll" {
                         kept.lock().unwrap().push(frame["request"].clone());
                         json!({"machine_id": 7, "name": inner["name"], "user": 1,
                             "owner": "alice@example.com", "capacity": inner["capacity"]})
@@ -336,4 +396,22 @@ fn a_code_one_replica_handed_out_is_confirmed_and_collected_on_another() {
         (400, json!({"error": "expired_token"})),
         "the answer is handed out once, whichever replica collects it"
     );
+}
+
+#[test]
+fn a_poll_the_controller_cannot_answer_is_a_bad_gateway_not_an_expired_code() {
+    let issuer = Issuer::start(CLIENT_ID);
+    let dir = tempfile::tempdir().unwrap();
+    let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = tcp.local_addr().unwrap().to_string();
+    let login = Arc::new(Login::with_keys(&format!("http://{addr}"), KEYS).unwrap());
+    let gate = Arc::new(Gate {
+        controller: moor_client::Client::new(dir.path().join("no-controller.sock")),
+        mcp: None,
+        verifier: Verifier::new(issuer.base, CLIENT_ID.to_owned(), None),
+    });
+    std::thread::spawn(move || moor_gate::serve_with(&tcp, &gate, Some(&login)));
+    let (status, answer) = Replica { addr }.poll(&json!("any"));
+    assert_eq!(status, 502, "{answer}");
+    assert_ne!(answer["error"], "expired_token");
 }

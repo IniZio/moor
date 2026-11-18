@@ -95,4 +95,5 @@ tables! {
     WorkflowRunHistory { Run, N, At, Entry }
     WorkflowSeq { Id, N }
     Repos { Repo, Config, Revision, EditedBy, EditedAt }
+    MachinePairings { Code, DeviceHash, Ask, Stage, Enrolled, ExpiresAt }
 }
