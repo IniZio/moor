@@ -40,7 +40,13 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
         ("show", None) => {
             let boxes = if mine {
                 vec![
-                    row("web/ask", "ready", "needs_you", "Allow npm run e2e?", Value::Null),
+                    row(
+                        "web/ask",
+                        "ready",
+                        "needs_you",
+                        "Allow npm run e2e?",
+                        Value::Null,
+                    ),
                     row(
                         "web/done",
                         "ready",
@@ -95,11 +101,19 @@ fn the_list_carries_the_state_the_controller_derived_and_a_pr_link_built_from_it
     let reply = get(&w.addr, "/account/api/tasks", Some(&cookie));
     assert_eq!(reply.status, 200, "{}", reply.body);
     let tasks = json_of(&reply)["tasks"].clone();
-    let states: Vec<&str> = tasks.as_array().unwrap().iter().map(|t| t["state"].as_str().unwrap()).collect();
+    let states: Vec<&str> = tasks
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["state"].as_str().unwrap())
+        .collect();
     assert_eq!(states, ["needs_you", "done"]);
     assert_eq!(tasks[0]["line"], "Allow npm run e2e?");
     assert_eq!(tasks[0]["pr"], Value::Null);
-    assert_eq!(tasks[1]["pr"]["url"], "https://github.com/acme/web/pull/212");
+    assert_eq!(
+        tasks[1]["pr"]["url"],
+        "https://github.com/acme/web/pull/212"
+    );
 }
 
 #[test]
@@ -118,7 +132,10 @@ fn one_task_has_its_timeline_and_artifacts_and_hostile_text_stays_inert_json() {
         art[0]["href"],
         "/account/api/task/artifact?box=web%2Fask&name=after.png&version=2"
     );
-    assert_eq!(art[1]["image"], false, "an SVG can carry script, so it is never inline");
+    assert_eq!(
+        art[1]["image"], false,
+        "an SVG can carry script, so it is never inline"
+    );
     assert!(art[1]["href"].as_str().unwrap().contains("x+y%26z.svg"));
 }
 
@@ -130,19 +147,31 @@ fn someone_elses_task_is_not_found_and_their_list_is_empty() {
     assert_eq!(reply.status, 404, "{}", reply.body);
     let list = get(&w.addr, "/account/api/tasks", Some(&cookie));
     assert_eq!(json_of(&list)["tasks"], json!([]));
-    let artifact = get(&w.addr, "/account/api/task/artifact?box=web%2Fask&name=after.png", Some(&cookie));
+    let artifact = get(
+        &w.addr,
+        "/account/api/task/artifact?box=web%2Fask&name=after.png",
+        Some(&cookie),
+    );
     assert_eq!(artifact.status, 404, "{}", artifact.body);
 }
 
 #[test]
 fn signed_out_gets_401_and_a_bad_request_gets_400() {
     let w = world(true, &[]);
-    for path in ["/account/api/tasks", "/account/api/task?box=web%2Fask", "/account/api/task/artifact?box=a&name=b"] {
+    for path in [
+        "/account/api/tasks",
+        "/account/api/task?box=web%2Fask",
+        "/account/api/task/artifact?box=a&name=b",
+    ] {
         assert_eq!(get(&w.addr, path, None).status, 401, "{path}");
     }
     let cookie = user(&w, "task-alice-4");
     assert_eq!(get(&w.addr, "/account/api/task", Some(&cookie)).status, 400);
-    let bad = get(&w.addr, "/account/api/task/artifact?box=web%2Fask&name=..%2Fx", Some(&cookie));
+    let bad = get(
+        &w.addr,
+        "/account/api/task/artifact?box=web%2Fask&name=..%2Fx",
+        Some(&cookie),
+    );
     assert_eq!(bad.status, 400, "{}", bad.body);
 }
 

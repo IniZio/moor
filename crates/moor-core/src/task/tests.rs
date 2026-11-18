@@ -30,7 +30,10 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
             cpus: None,
             mem_mib: None,
             asleep_since: None,
-            sleep: BoxSleepView { after: None, reason: None },
+            sleep: BoxSleepView {
+                after: None,
+                reason: None,
+            },
         }),
         agent: None,
         run: None,
@@ -57,7 +60,12 @@ fn agent(state: &str) -> AgentView {
 }
 
 fn ev(id: i64, kind: &str, ts: &str, payload: Value) -> EventView {
-    EventView { id, kind: kind.into(), payload, ts: ts.into() }
+    EventView {
+        id,
+        kind: kind.into(),
+        payload,
+        ts: ts.into(),
+    }
 }
 
 /// 2026-11-18T10:00:00Z in unix milliseconds.
@@ -107,14 +115,22 @@ fn a_question_needs_you_and_its_text_is_the_line() {
     a.question = Some("Allow npm run e2e?".into());
     b.agent = Some(a);
     let t = derive(&b, &[], ten());
-    assert_eq!((t.state, t.line.as_str()), (TaskState::NeedsYou, "Allow npm run e2e?"));
+    assert_eq!(
+        (t.state, t.line.as_str()),
+        (TaskState::NeedsYou, "Allow npm run e2e?")
+    );
 }
 
 #[test]
 fn a_question_missing_from_the_row_comes_from_the_event() {
     let mut b = row(BoxLifecycle::Ready, SessionState::Working);
     b.agent = Some(agent("needs_input"));
-    let e = [ev(1, "needs_input", "2026-11-18T09:59:00Z", json!({"question": "Deploy?"}))];
+    let e = [ev(
+        1,
+        "needs_input",
+        "2026-11-18T09:59:00Z",
+        json!({"question": "Deploy?"}),
+    )];
     assert_eq!(derive(&b, &e, ten()).line, "Deploy?");
 }
 
@@ -166,7 +182,12 @@ fn a_crashed_agent_and_a_failed_launch_fail_but_a_clean_exit_is_done() {
 #[test]
 fn a_failed_setup_says_why_from_the_events() {
     let b = row(BoxLifecycle::SetupFailed, SessionState::Starting);
-    let e = [ev(1, "setup_failed", "2026-11-18T09:59:00Z", json!({"line": "bun install exited 1"}))];
+    let e = [ev(
+        1,
+        "setup_failed",
+        "2026-11-18T09:59:00Z",
+        json!({"line": "bun install exited 1"}),
+    )];
     assert!(derive(&b, &e, ten()).line.contains("bun install exited 1"));
 }
 
@@ -180,36 +201,76 @@ fn a_setting_up_task_reads_its_latest_step() {
 #[test]
 fn only_a_working_task_goes_stale_after_thirty_minutes_without_an_event() {
     let mut b = row(BoxLifecycle::Ready, SessionState::Working);
-    let e = [ev(1, "agent_doing", "2026-11-18T09:30:00Z", json!({"text": "running cargo test"}))];
+    let e = [ev(
+        1,
+        "agent_doing",
+        "2026-11-18T09:30:00Z",
+        json!({"text": "running cargo test"}),
+    )];
     let fresh = derive(&b, &e, ten() - 1);
     assert!(!fresh.stale, "30 minutes exactly is not stale");
     let old = derive(&b, &e, ten() + 1000);
     assert!(old.stale);
     assert_eq!(old.line, "no event for 30m 01s · last: running cargo test");
     b.session_state = SessionState::Idle;
-    assert!(!derive(&b, &e, ten() + 3_600_000).stale, "a done task is quiet, not stale");
+    assert!(
+        !derive(&b, &e, ten() + 3_600_000).stale,
+        "a done task is quiet, not stale"
+    );
 }
 
 #[test]
 fn a_working_line_is_the_latest_tool_call_then_the_latest_message() {
     let b = row(BoxLifecycle::Ready, SessionState::Working);
-    let said = ev(1, "agent_said", "2026-11-18T09:58:00Z", json!({"text": "Looking.\nMore."}));
-    assert_eq!(derive(&b, std::slice::from_ref(&said), ten()).line, "Looking.");
-    let doing = ev(2, "agent_doing", "2026-11-18T09:59:00Z", json!({"text": "editing src/theme.ts"}));
-    assert_eq!(derive(&b, &[said, doing], ten()).line, "editing src/theme.ts");
+    let said = ev(
+        1,
+        "agent_said",
+        "2026-11-18T09:58:00Z",
+        json!({"text": "Looking.\nMore."}),
+    );
+    assert_eq!(
+        derive(&b, std::slice::from_ref(&said), ten()).line,
+        "Looking."
+    );
+    let doing = ev(
+        2,
+        "agent_doing",
+        "2026-11-18T09:59:00Z",
+        json!({"text": "editing src/theme.ts"}),
+    );
+    assert_eq!(
+        derive(&b, &[said, doing], ten()).line,
+        "editing src/theme.ts"
+    );
 }
 
 #[test]
 fn the_pr_link_comes_only_from_the_tasks_own_repos() {
     let b = row(BoxLifecycle::Ready, SessionState::Idle);
-    let said = |text: &str| ev(1, "agent_said", "2026-11-18T09:58:00Z", json!({"text": text}));
+    let said = |text: &str| {
+        ev(
+            1,
+            "agent_said",
+            "2026-11-18T09:58:00Z",
+            json!({"text": text}),
+        )
+    };
     let own = said("Opened https://github.com/acme/web/pull/212 for review.");
     let t = derive(&b, &[own], ten());
-    assert_eq!(t.pr, Some(PrLink { repo: "Acme/web".into(), number: 212 }));
+    assert_eq!(
+        t.pr,
+        Some(PrLink {
+            repo: "Acme/web".into(),
+            number: 212
+        })
+    );
     assert_eq!(t.line, "PR #212");
-    let other = said("See https://github.com/evil/web/pull/9 and https://github.com/acme/web/issues/3");
+    let other =
+        said("See https://github.com/evil/web/pull/9 and https://github.com/acme/web/issues/3");
     assert_eq!(derive(&b, &[other], ten()).pr, None);
-    let two = said("Closed https://github.com/acme/web/pull/1, opened https://github.com/acme/web/pull/2).");
+    let two = said(
+        "Closed https://github.com/acme/web/pull/1, opened https://github.com/acme/web/pull/2).",
+    );
     assert_eq!(derive(&b, &[two], ten()).pr.map(|p| p.number), Some(2));
 }
 
@@ -220,7 +281,10 @@ fn every_event_kind_is_classed_so_none_folds_by_accident() {
         .copied()
         .filter(|k| Class::of(k).is_none())
         .collect();
-    assert!(missing.is_empty(), "class these kinds in task/timeline.rs: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "class these kinds in task/timeline.rs: {missing:?}"
+    );
 }
 
 #[test]
@@ -228,10 +292,25 @@ fn the_timeline_hides_noise_keeps_errors_and_shows_an_unclassed_kind() {
     let events = [
         ev(1, "proxy_started", "t", json!({})),
         ev(2, "agent_doing", "t", json!({"text": "Read 2 files"})),
-        ev(3, "setup_failed", "t", json!({"line": "bun install exited 1"})),
+        ev(
+            3,
+            "setup_failed",
+            "t",
+            json!({"line": "bun install exited 1"}),
+        ),
         ev(4, "brand_new_kind", "t", json!({})),
-        ev(5, "artifact_published", "t", json!({"name": "after.png", "version": 2})),
-        ev(6, "turn_done", "t", json!({"steer": 1, "outcome": "needs_input"})),
+        ev(
+            5,
+            "artifact_published",
+            "t",
+            json!({"name": "after.png", "version": 2}),
+        ),
+        ev(
+            6,
+            "turn_done",
+            "t",
+            json!({"steer": 1, "outcome": "needs_input"}),
+        ),
     ];
     let t = timeline(&events);
     let seen: Vec<(i64, Class)> = t.iter().map(|e| (e.id, e.class)).collect();
@@ -245,10 +324,17 @@ fn the_timeline_hides_noise_keeps_errors_and_shows_an_unclassed_kind() {
             (6, Class::Turn)
         ]
     );
-    assert!(t.get(1).is_some_and(|e| e.text.contains("bun install exited 1")), "{t:?}");
+    assert!(
+        t.get(1)
+            .is_some_and(|e| e.text.contains("bun install exited 1")),
+        "{t:?}"
+    );
     assert_eq!(
         t.get(3).and_then(|e| e.artifact.clone()),
         Some(("after.png".to_owned(), 2))
     );
-    assert_eq!(t.get(4).map(|e| e.text.as_str()), Some("Turn ended (needs input)"));
+    assert_eq!(
+        t.get(4).map(|e| e.text.as_str()),
+        Some("Turn ended (needs input)")
+    );
 }

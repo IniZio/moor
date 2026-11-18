@@ -158,9 +158,8 @@ fn line_of(
     let said = || newest(events, "agent_said", "text").map(first_line);
     match state {
         TaskState::Queued => "waiting for a machine slot".to_owned(),
-        TaskState::SettingUp => {
-            latest(happened).map_or_else(|| "setting up".to_owned(), |s| format!("setting up · {s}"))
-        }
+        TaskState::SettingUp => latest(happened)
+            .map_or_else(|| "setting up".to_owned(), |s| format!("setting up · {s}")),
         TaskState::NeedsYou => b
             .agent
             .as_ref()
@@ -194,7 +193,11 @@ fn failure(b: &BoxView, events: &[Happened]) -> Option<String> {
         return Some(reason.text());
     }
     let why = crate::view::progress::failure(events)?;
-    Some(if why.contains("failed") { why } else { format!("failed: {why}") })
+    Some(if why.contains("failed") {
+        why
+    } else {
+        format!("failed: {why}")
+    })
 }
 
 /// The PR the newest agent message that names one of the task's repos' pulls points at.
@@ -237,7 +240,10 @@ fn pr_in(said: &str, repos: &[String]) -> Option<PrLink> {
         ) else {
             continue;
         };
-        found = Some(PrLink { repo: repo.clone(), number });
+        found = Some(PrLink {
+            repo: repo.clone(),
+            number,
+        });
     }
     found
 }

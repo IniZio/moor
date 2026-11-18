@@ -146,12 +146,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
     };
     match show(gate, session, all) {
         Ok(shown) => {
-            let rows: Vec<Value> = shown
-                .boxes
-                .iter()
-                .flatten()
-                .filter_map(summary)
-                .collect();
+            let rows: Vec<Value> = shown.boxes.iter().flatten().filter_map(summary).collect();
             json(stream, "200 OK", &json!({"tasks": rows}));
         }
         Err(Failure::Reply(reply)) => answered(stream, &reply),
@@ -288,7 +283,10 @@ fn head(stream: &mut TcpStream, record: &ArtifactView) -> std::io::Result<()> {
                 }
             })
             .collect();
-        ("application/octet-stream", format!("attachment; filename=\"{file}\""))
+        (
+            "application/octet-stream",
+            format!("attachment; filename=\"{file}\""),
+        )
     };
     write!(
         stream,
@@ -336,9 +334,16 @@ mod tests {
 
     #[test]
     fn svg_and_everything_else_is_a_download() {
-        for (name, kind) in [("a.svg", "image/svg+xml"), ("a.html", "text/html"), ("a b.png", "text/plain")] {
+        for (name, kind) in [
+            ("a.svg", "image/svg+xml"),
+            ("a.html", "text/html"),
+            ("a b.png", "text/plain"),
+        ] {
             let head = head_of(name, kind);
-            assert!(head.contains("Content-Type: application/octet-stream\r\n"), "{head}");
+            assert!(
+                head.contains("Content-Type: application/octet-stream\r\n"),
+                "{head}"
+            );
             assert!(head.contains("attachment; filename=\"a"), "{head}");
         }
     }

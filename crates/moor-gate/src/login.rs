@@ -10,9 +10,9 @@ pub(crate) mod routes;
 mod seal;
 pub(crate) mod secrets;
 pub(crate) mod setup;
+mod tasks;
 #[cfg(test)]
 mod tests;
-mod tasks;
 mod workflows;
 
 use std::sync::{Arc, Mutex, PoisonError};
