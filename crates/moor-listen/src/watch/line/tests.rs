@@ -33,15 +33,13 @@ fn both_run_kinds_are_worth_a_line() {
 }
 
 #[test]
-fn a_box_whose_machine_kept_dying_prints_how_often_and_how_the_last_one_ended() {
-    let capped =
-        json!({"count": 3, "window_secs": 1800, "reason": "the work place exited with code 137"});
+fn a_box_whose_machine_died_prints_how_it_ended() {
+    let capped = json!({"reason": "the work place exited with code 137"});
     assert_eq!(
         death_line("repo/a", "death_capped", Some(&capped)).as_deref(),
         Some(
-            "moor: box repo/a death_capped: its machine stopped 3 times in 30 min and moor \
-             stopped resuming it, wake it or message it to bring it back: the work place \
-             exited with code 137"
+            "moor: box repo/a death_capped: its machine stopped and moor did not resume it, \
+             wake it or message it to bring it back: the work place exited with code 137"
         )
     );
     assert_eq!(death_line("repo/a", "idled", Some(&capped)), None);

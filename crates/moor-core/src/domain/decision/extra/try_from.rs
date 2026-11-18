@@ -59,15 +59,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::RelaunchCapped { count, window_secs } => {
                 Ok(Self::RelaunchCapped { count, window_secs })
             }
-            Event::Stall(StallEvent::DeathCapped {
-                count,
-                window_secs,
-                reason,
-            }) => Ok(Self::DeathCapped {
-                count,
-                window_secs,
-                reason,
-            }),
+            Event::Stall(StallEvent::DeathCapped { reason }) => Ok(Self::DeathCapped { reason }),
             Event::Relaunched { prompt, cause } => Ok(Self::Relaunched { prompt, cause }),
             Event::SetupFailed { line, .. } => Ok(Self::SetupFailed { line }),
             Event::Timing(TimingEvent::SetupFinished { ms, ok }) => {

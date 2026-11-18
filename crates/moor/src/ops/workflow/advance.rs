@@ -19,7 +19,7 @@ use moor_core::{BoxId, SteerReq};
 
 use super::check::{CheckJob, Flight, CHECK_LIMIT};
 use super::facts::history_of;
-use super::settle::{box_facts, broken_detail};
+use super::settle::{box_facts, broken_detail, fail_death_capped};
 use crate::cx::Cx;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
@@ -61,6 +61,10 @@ pub(super) fn finish_runs(
                 let key = (w.id, &run.repo, run.due_at);
                 store.refuse_run(key, (&broken_detail(row), false), now)?;
             }
+            continue;
+        }
+        if verdict == RunVerdict::DeathCapped {
+            fail_death_capped(store, w, &run, (box_id, at, try_n), now)?;
             continue;
         }
         let plan = store.run_plan(run.id, &w.prompt)?;

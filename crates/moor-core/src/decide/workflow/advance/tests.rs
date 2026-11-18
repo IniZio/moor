@@ -148,6 +148,7 @@ fn facts(session: SessionState, idle_since: Option<i64>) -> RunBoxFacts {
         session,
         idle_since: idle_since.map(Ts::from_millis),
         launch_failed: false,
+        death_capped: false,
     }
 }
 

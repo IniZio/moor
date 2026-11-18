@@ -13,6 +13,7 @@ fn facts(lifecycle: BoxLifecycle, session: SessionState, idle_for_ms: Option<i64
         session,
         idle_since: idle_for_ms.map(|ms| Ts::from_millis(NOW - ms)),
         launch_failed: false,
+        death_capped: false,
     }
 }
 
@@ -149,4 +150,41 @@ fn a_failed_launch_is_broken_on_a_box_that_is_up_but_not_when_it_is_closed() {
         verdict(BoxLifecycle::Closed, SessionState::Ended, true),
         RunVerdict::Finished
     );
+}
+
+fn capped(lifecycle: BoxLifecycle, session: SessionState) -> RunVerdict {
+    let f = RunBoxFacts {
+        death_capped: true,
+        ..facts(lifecycle, session, Some(quiet_ms()))
+    };
+    run_verdict(Some(&f), Ts::from_millis(NOW))
+}
+
+#[test]
+fn a_box_moor_stopped_resuming_after_its_deaths_breaks_the_run_whatever_its_agent_says() {
+    for lifecycle in [BoxLifecycle::Ready, BoxLifecycle::Asleep] {
+        for session in SessionState::ALL {
+            assert_eq!(
+                capped(lifecycle, session),
+                RunVerdict::DeathCapped,
+                "{lifecycle:?} {session:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_closed_or_failed_box_keeps_its_own_verdict_when_deaths_were_capped() {
+    for session in SessionState::ALL {
+        assert_eq!(
+            capped(BoxLifecycle::Closed, session),
+            RunVerdict::Finished,
+            "{session:?}"
+        );
+        assert_eq!(
+            capped(BoxLifecycle::SetupFailed, session),
+            RunVerdict::Broken,
+            "{session:?}"
+        );
+    }
 }

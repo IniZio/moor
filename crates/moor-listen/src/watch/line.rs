@@ -91,18 +91,16 @@ pub(super) fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Opt
     }
 }
 
-/// The line for a Box whose machine kept dying, so moor stopped resuming it; none for other kinds.
+/// The line for a Box whose machine died, so moor did not resume it; none for other kinds.
 pub(super) fn death_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
     if kind != "death_capped" {
         return None;
     }
     let payload = payload?;
-    let count = payload.get("count")?.as_u64()?;
-    let mins = payload.get("window_secs")?.as_u64()? / 60;
     let why = payload.get("reason")?.as_str()?;
     Some(format!(
-        "moor: box {name} death_capped: its machine stopped {count} times in {mins} min and moor \
-         stopped resuming it, wake it or message it to bring it back: {why}"
+        "moor: box {name} death_capped: its machine stopped and moor did not resume it, wake it \
+         or message it to bring it back: {why}"
     ))
 }
 

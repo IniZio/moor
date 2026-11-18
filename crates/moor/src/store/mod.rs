@@ -53,7 +53,6 @@ pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
 mod inbox;
 pub(crate) use inbox::InboxRow;
-mod deaths;
 mod in_flight;
 mod init;
 mod launch_facts;

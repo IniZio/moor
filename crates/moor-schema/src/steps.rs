@@ -15,6 +15,7 @@ mod box_state;
 mod checkpoint_base;
 mod checkpoint_depth;
 mod checkpoint_stale;
+mod drop_box_deaths;
 mod drop_checkpoints;
 mod drop_panes;
 mod effect_backfill;
@@ -96,4 +97,5 @@ pub const STEPS: &[Step] = &[
     step("V86__machine_pairings", machine_pairings::write),
     step("V87__workflow_run_trigger", workflow_run_trigger::write),
     step("V88__box_deaths", box_deaths::write),
+    step("V89__drop_box_deaths", drop_box_deaths::write),
 ];

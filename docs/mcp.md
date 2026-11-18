@@ -90,8 +90,8 @@ token's audience.
 `credential_withheld`, `proxy_credential_failed`, `agent_rate_limited`,
 `agent_unreachable`, `agent_link_lost`, or `death_capped`. `stalled` means the agent
 reported busy and wrote nothing for ten minutes. The next sign of progress clears it.
-`death_capped` means the Box's places died 3 times in 30 minutes, so moor stopped
-resuming it on its own. Waking the Box or messaging it clears it.
+`death_capped` means the Box's places died, so moor did not resume it on its own.
+Waking the Box or messaging it clears it.
 The `egress_aborted` detail asks whether the Box clock is behind, because a
 guest clock behind the host makes the Proxy's certificates not yet valid.
 It clears once the Proxy allows a request to that host again.

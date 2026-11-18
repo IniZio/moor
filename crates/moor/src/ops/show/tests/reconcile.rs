@@ -58,7 +58,7 @@ fn reconcile_only_sleeps_a_quiet_box_its_host_stopped() {
 const DIED: &str = "the work place exited with code 143, not for memory";
 
 #[test]
-fn reconcile_queues_a_working_box_whose_places_died_to_resume_first_saying_why() {
+fn reconcile_leaves_a_working_box_whose_places_died_asleep_and_stuck_saying_why() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
@@ -68,14 +68,14 @@ fn reconcile_queues_a_working_box_whose_places_died_to_resume_first_saying_why()
     driver.die_behind(&row.hands.unwrap().handle.unwrap(), DIED);
     assert_eq!(box_state(&cx), HandsState::Asleep);
     let row = store.box_row(id).unwrap().unwrap();
-    assert_eq!(row.lifecycle, BoxLifecycle::Pending);
-    let why = format!("it stopped on its machine: {DIED}");
+    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    let why = format!("its machine stopped, so moor did not resume it: {DIED}");
     assert_eq!(row.state_reason.as_deref(), Some(why.as_str()));
-    assert!(store.resume_first(id).unwrap().is_some());
-    let said = store.newest_event_of(id, "asleep").unwrap().unwrap();
+    assert!(store.resume_first(id).unwrap().is_none());
+    let told = store.newest_event_of(id, "death_capped").unwrap().unwrap();
     assert_eq!(
-        said.payload.get("reason").and_then(|r| r.as_str()),
-        Some(why.as_str())
+        told.payload.get("reason").and_then(|r| r.as_str()),
+        Some(DIED)
     );
 }
 
