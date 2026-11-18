@@ -10,7 +10,7 @@ mod menu;
 mod stall;
 mod wait;
 
-pub use menu::{menu_line, menu_options};
+pub use menu::{menu_detail, menu_line, menu_options};
 pub use stall::{stalled_for, STALL_AFTER};
 pub use wait::{wait_overdue, WaitCheck};
 
@@ -30,6 +30,10 @@ pub enum AgentState {
         question: Option<String>,
         /// The menu choices on screen, in order; empty when there is no menu.
         options: Vec<String>,
+        /// Whether it asks for a permission or asks a question, when the agent said.
+        kind: Option<BlockKind>,
+        /// What the prompt shows above its menu, such as the command a permission is for.
+        detail: Option<String>,
     },
     /// Done and waiting for input.
     Idle,
@@ -262,6 +266,10 @@ fn blocked(kind: Option<BlockKind>, msg: Option<&str>, note: &Note, screen: &str
                 .map(str::to_owned)
         }),
         options: asked.map_or_else(|| menu_options(screen), |q| q.options.clone()),
+        kind,
+        detail: (kind == Some(BlockKind::Permission))
+            .then(|| menu_detail(screen))
+            .flatten(),
     }
 }
 

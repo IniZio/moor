@@ -309,6 +309,7 @@ fn steer_text_or_menu() {
             text: Some("go on".into()),
             menu: None,
             interrupt: false,
+            ask: None,
         })
     );
     assert_eq!(
@@ -318,6 +319,7 @@ fn steer_text_or_menu() {
             text: None,
             menu: Some(2),
             interrupt: false,
+            ask: None,
         })
     );
     assert_eq!(
@@ -326,7 +328,8 @@ fn steer_text_or_menu() {
             target: n("t1").into(),
             text: None,
             menu: None,
-            interrupt: true
+            interrupt: true,
+            ask: None
         })
     );
     assert!(run(&["steer", "t1"]).is_err());

@@ -179,6 +179,7 @@ fn a_steer_to_a_box_whose_hands_were_lost_is_queued_and_the_pass_brings_it_back(
         text: Some("carry on".to_owned()),
         menu: None,
         interrupt: false,
+        ask: None,
     };
 
     let sent = crate::ops::steer::run(&w.cx, &req).unwrap();

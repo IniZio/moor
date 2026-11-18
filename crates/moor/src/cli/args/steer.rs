@@ -34,6 +34,7 @@ impl From<SteerArgs> for SteerReq {
             text: a.text,
             menu: a.menu,
             interrupt: a.interrupt,
+            ask: None,
         }
     }
 }

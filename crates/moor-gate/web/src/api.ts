@@ -302,6 +302,22 @@ const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you
 
 const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
 
+const PickSchema = v.object({
+	n: v.number(),
+	label: v.string(),
+	role: v.picklist(['allow_once', 'allow_box', 'deny', 'choice']),
+});
+
+/** What the agent asks, as the controller derives it: the card a person answers. */
+const NeedsSchema = v.object({
+	id: v.string(),
+	kind: v.picklist(['permission', 'question']),
+	question: v.string(),
+	detail: v.nullish(v.string()),
+	picks: v.array(PickSchema),
+	other: v.nullish(v.number()),
+});
+
 const BoxRowSchema = v.object({
 	box: v.string(),
 	repo: v.nullish(v.string()),
@@ -315,6 +331,7 @@ const BoxRowSchema = v.object({
 	last_event_at: v.nullish(v.string()),
 	updated_at: v.string(),
 	pr: v.nullable(PrSchema),
+	needs: v.nullish(NeedsSchema),
 });
 
 const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
@@ -344,6 +361,8 @@ const BoxDetailSchema = v.object({
 	artifacts: v.array(EvidenceSchema),
 });
 
+export type Needs = v.InferOutput<typeof NeedsSchema>;
+export type Pick = v.InferOutput<typeof PickSchema>;
 export type Progress = v.InferOutput<typeof ProgressSchema>;
 export type BoxRow = v.InferOutput<typeof BoxRowSchema>;
 export type BoxDetail = v.InferOutput<typeof BoxDetailSchema>;
@@ -365,6 +384,16 @@ export async function boxStart(
 		body: JSON.stringify(body),
 	});
 	return (await answer(res, v.object({ box: v.string() }))).box;
+}
+
+/** Answers what a Box's agent asks: menu entry `n` of the prompt named `ask`. */
+export async function boxAnswer(csrf: string, box: string, ask: string, n: number, text?: string): Promise<void> {
+	const res = await fetch('/account/api/box/answer', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ box, ask, n, text }),
+	});
+	await answer(res, v.object({ answered: v.boolean() }));
 }
 
 export async function boxGet(box: string): Promise<BoxDetail> {

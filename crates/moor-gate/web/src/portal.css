@@ -149,6 +149,17 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-wait { border: 1.5px solid var(--moor-color-accent); background: var(--moor-color-accent-soft); border-radius: var(--moor-radius-md); padding: 0.85rem 1rem; margin-bottom: var(--moor-space-4); }
 .t-wait-h { font-weight: 650; color: var(--moor-color-accent); font-size: 0.8125rem; }
 .t-wait-q { font: var(--moor-weight-heading) 1.05rem/1.3 var(--moor-font-heading); margin: 0.35rem 0 0.5rem; overflow-wrap: anywhere; }
+.t-quote { margin: 0 0 0.6rem; padding: 0.5rem 0.7rem; background: var(--moor-color-bg-sunken); border-radius: var(--moor-radius-sm); font: var(--moor-text-sm)/1.4 var(--moor-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
+.t-wait-btns { display: flex; flex-wrap: wrap; gap: var(--moor-space-2); }
+.t-wait-own { display: flex; gap: var(--moor-space-2); margin-top: 0.6rem; }
+.t-wait-own input { flex: 1; min-width: 0; }
+.t-btn { background: var(--moor-color-accent); }
+.t-btn-deny, .t-btn-once { border: 1px solid var(--moor-color-accent); }
+.t-btn-once { background: transparent; color: var(--moor-color-accent); }
+.t-btn-once:hover:not(:disabled) { background: var(--moor-color-accent-soft); }
+/* Deny is destructive: a rust tint with rust text, readable on the card's heather in both themes. */
+.t-btn-deny { background: var(--moor-color-danger-soft); color: var(--moor-color-danger); border-color: var(--moor-color-danger); }
+.t-btn-deny:hover:not(:disabled) { background: color-mix(in srgb, var(--moor-color-danger) 22%, var(--moor-color-danger-soft)); }
 .t-stalebar { border: 1px solid var(--moor-color-warning); background: var(--moor-color-warning-soft); border-radius: var(--moor-radius-sm); padding: 0.45rem 0.7rem; margin: 0 0 var(--moor-space-3); }
 
 .t-events { display: grid; gap: 0.1rem; }

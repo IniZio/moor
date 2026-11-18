@@ -27,6 +27,8 @@ fn asking(q: &str) -> Reading {
     reading(AgentState::NeedsInput {
         question: Some(q.to_owned()),
         options: vec!["1. Yes".to_owned(), "2. No".to_owned()],
+        kind: None,
+        detail: None,
     })
 }
 
@@ -227,6 +229,8 @@ fn a_reading_waiting_on_a_prompt_or_first_run_screen_is_blocked() {
             state: AgentState::NeedsInput {
                 question: None,
                 options: Vec::new(),
+                kind: None,
+                detail: None,
             },
             source,
         };

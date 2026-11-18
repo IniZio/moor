@@ -204,6 +204,7 @@ fn an_agent_a_steer_relaunched_after_a_silent_wake_is_told_once_that_its_process
         text: Some("go on".to_owned()),
         menu: None,
         interrupt: false,
+        ask: None,
     };
     crate::ops::steer::run(&w.cx, &req).unwrap();
     crate::ops::inbox_pass(

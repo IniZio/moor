@@ -93,7 +93,7 @@ function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; ha
 							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
-					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home boxes={boxes} />}
+					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} /> : <Home boxes={boxes} />}
 				</>
 			) : repo === null ? (
 				<>

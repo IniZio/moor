@@ -22,6 +22,7 @@ use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
 
+mod answer;
 mod start;
 
 /// The events a Box page reads: the most the controller keeps in one window.
@@ -43,7 +44,7 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
         (
             "GET",
             "/account/api/boxes" | "/account/api/box" | "/account/api/box/artifact"
-        ) | ("POST", "/account/api/boxes")
+        ) | ("POST", "/account/api/boxes" | "/account/api/box/answer")
     )
 }
 
@@ -64,6 +65,9 @@ pub(super) fn serve(
         return signed_out(stream);
     };
     match (req.method, path) {
+        ("POST", "/account/api/box/answer") => {
+            answer::answer(stream, gate, login, session, req.csrf, body.as_deref());
+        }
         ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
         (_, "/account/api/boxes") => list(stream, gate, session),
         (_, "/account/api/box") => read(stream, gate, session, query),
@@ -128,6 +132,7 @@ fn summary(row: &Row) -> Option<Value> {
         "last_event_at": progress.last_event_at,
         "updated_at": row.updated_at,
         "pr": pr_json(progress.pr.as_ref()),
+        "needs": progress.needs,
     }))
 }
 

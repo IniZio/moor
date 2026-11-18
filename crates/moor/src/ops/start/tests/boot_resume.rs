@@ -52,6 +52,7 @@ fn resume_and_steer(w: &World) -> (Result<Delivery, CommandError>, (usize, usize
                 text: Some("hi".to_owned()),
                 menu: None,
                 interrupt: false,
+                ask: None,
             };
             steered
                 .send(steer::run(&request, &req).map(|v| v.delivery))
@@ -136,6 +137,7 @@ fn a_release_the_provider_holds_up_does_not_hold_up_serving() {
         text: Some("hi".to_owned()),
         menu: None,
         interrupt: false,
+        ask: None,
     };
     queued_for_setup(steer::run(&request, &req).map(|v| v.delivery));
     unblock.send(()).unwrap();

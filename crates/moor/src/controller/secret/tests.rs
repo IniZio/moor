@@ -119,6 +119,7 @@ fn steer() -> Request {
         text: Some("continue".into()),
         menu: None,
         interrupt: false,
+        ask: None,
     })
 }
 

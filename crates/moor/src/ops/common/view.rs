@@ -1,6 +1,6 @@
 //! Store rows to the core views.
 
-use moor_core::activity::AgentState;
+use moor_core::activity::{AgentState, BlockKind};
 use moor_core::config::UserConfig;
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
@@ -37,6 +37,8 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
             exit_code: None,
             question: None,
             options: Vec::new(),
+            kind: None,
+            detail: None,
             waiting_on: Vec::new(),
             reason: Some(failure.clone()),
         });
@@ -44,8 +46,23 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
     let activity = reading.activity.as_ref()?;
     let (exit_code, question, options) = match &activity.state {
         AgentState::Exited { code } => (*code, None, Vec::new()),
-        AgentState::NeedsInput { question, options } => (None, question.clone(), options.clone()),
+        AgentState::NeedsInput {
+            question, options, ..
+        } => (None, question.clone(), options.clone()),
         _ => (None, None, Vec::new()),
+    };
+    let (kind, detail) = match &activity.state {
+        AgentState::NeedsInput { kind, detail, .. } => (
+            kind.map(|k| {
+                match k {
+                    BlockKind::Permission => "permission",
+                    BlockKind::Question => "question",
+                }
+                .to_owned()
+            }),
+            detail.clone(),
+        ),
+        _ => (None, None),
     };
     let waiting_on = match &activity.state {
         AgentState::Waiting { on } => on.clone(),
@@ -59,6 +76,8 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         exit_code,
         question,
         options,
+        kind,
+        detail,
         waiting_on,
         reason: None,
     })

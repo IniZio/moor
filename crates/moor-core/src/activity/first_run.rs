@@ -9,6 +9,8 @@ pub(super) fn first_run_wait(name: &str) -> Activity {
         AgentState::NeedsInput {
             question: Some(format!("the agent stopped at its {name} screen")),
             options: Vec::new(),
+            kind: None,
+            detail: None,
         },
         Source::FirstRun,
     )

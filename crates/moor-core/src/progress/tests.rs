@@ -54,6 +54,8 @@ fn agent(state: &str) -> AgentView {
         exit_code: None,
         question: None,
         options: Vec::new(),
+        kind: None,
+        detail: None,
         waiting_on: Vec::new(),
         reason: None,
     }
@@ -410,4 +412,94 @@ fn derive_carries_the_title() {
     assert_eq!(derive(&b, &[], 0).title, "Fix the login typo");
     b.prompt = None;
     assert_eq!(derive(&b, &[], 0).title, "r/t");
+}
+
+fn asked(kind: &str, question: &str, options: &[&str]) -> BoxView {
+    let mut b = row(BoxLifecycle::Ready, SessionState::Working);
+    let mut a = agent("needs_input");
+    a.kind = Some(kind.into());
+    a.question = Some(question.into());
+    a.detail = Some("Bash command\n  npm run e2e".into());
+    a.options = options.iter().map(|o| (*o).to_owned()).collect();
+    b.agent = Some(a);
+    b
+}
+
+#[test]
+fn a_permission_card_quotes_the_command_and_names_each_button() {
+    let b = asked(
+        "permission",
+        "approve Bash: npm run e2e",
+        &[
+            "Yes",
+            "Yes, and don't ask again for npm run commands",
+            "No, and tell Claude what to do differently (esc)",
+        ],
+    );
+    let needs = derive(&b, &[], ten()).needs.unwrap();
+    assert_eq!(needs.kind, NeedKind::Permission);
+    assert_eq!(needs.detail.as_deref(), Some("Bash command\n  npm run e2e"));
+    let picks: Vec<(u32, Role)> = needs.picks.iter().map(|p| (p.n, p.role)).collect();
+    assert_eq!(
+        picks,
+        [(1, Role::AllowOnce), (2, Role::AllowBox), (3, Role::Deny)]
+    );
+}
+
+#[test]
+fn a_question_card_offers_its_options_as_plain_choices() {
+    let b = asked("question", "Which fruit?", &["Yes", "No"]);
+    let needs = derive(&b, &[], ten()).needs.unwrap();
+    assert_eq!(needs.kind, NeedKind::Question);
+    assert!(needs.picks.iter().all(|p| p.role == Role::Choice));
+    assert_eq!(needs.other, Some(3));
+    let permission = asked("permission", "approve Bash: ls", &["Yes", "No"]);
+    assert_eq!(derive(&permission, &[], ten()).needs.unwrap().other, None);
+}
+
+#[test]
+fn a_prompt_with_no_menu_gets_no_card_and_a_working_box_none() {
+    let b = asked("permission", "approve Bash: ls", &[]);
+    assert_eq!(derive(&b, &[], ten()).needs, None);
+    let mut w = asked("question", "Which?", &["A", "B"]);
+    w.agent = Some(agent("working"));
+    assert_eq!(derive(&w, &[], ten()).needs, None);
+}
+
+#[test]
+fn a_card_is_named_by_what_it_asks() {
+    let one = derive(&asked("question", "A?", &["x", "y"]), &[], ten()).needs;
+    let same = derive(&asked("question", "A?", &["x", "y"]), &[], ten()).needs;
+    let other = derive(&asked("question", "B?", &["x", "y"]), &[], ten()).needs;
+    assert_eq!(one.as_ref().map(|n| &n.id), same.as_ref().map(|n| &n.id));
+    assert_ne!(one.map(|n| n.id), other.map(|n| n.id));
+}
+
+#[test]
+fn the_summary_line_shows_no_markdown() {
+    let said = |text: &str| {
+        let b = row(BoxLifecycle::Ready, SessionState::Idle);
+        let e = [ev(
+            1,
+            "agent_said",
+            "2026-11-18T09:59:00Z",
+            json!({"text": text}),
+        )];
+        derive(&b, &e, ten()).line
+    };
+    let cases = [
+        ("## Done\nmore", "Done"),
+        ("**Fixed** the `login` typo", "Fixed the login typo"),
+        (
+            "- [PR #3](https://github.com/a/b/pull/3) is open",
+            "PR #3 is open",
+        ),
+        ("```\nls\n```\nreal text", "ls"),
+        ("1. First step", "First step"),
+        ("> quoted *note*", "quoted note"),
+        ("snake_case and 2*3 stay", "snake_case and 23 stay"),
+    ];
+    for (md, want) in cases {
+        assert_eq!(said(md), want, "{md}");
+    }
 }

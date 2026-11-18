@@ -10,7 +10,10 @@ use crate::domain::session_state::SessionState;
 use crate::view::progress::{latest, span, unix, Happened};
 use crate::view::{BoxView, EventView};
 
+mod markdown;
+mod needs;
 mod timeline;
+pub use needs::{ask_id, needs_of, NeedKind, Needs, Pick, Role};
 pub use timeline::{timeline, Class, TimelineEntry};
 mod title;
 pub use title::{title_of, TITLE_MAX};
@@ -65,6 +68,8 @@ pub struct ProgressView {
     pub last_event_at: Option<String>,
     /// The PR the agent named, newest first.
     pub pr: Option<PrLink>,
+    /// What the agent asks, when it waits at a menu a person can answer.
+    pub needs: Option<Needs>,
 }
 
 /// The Box `boxed` is at `now_ms` (unix milliseconds), given its events oldest first.
@@ -88,6 +93,9 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
         line: line_of(state, boxed, events, &happened, silent),
         last_event_at: events.last().map(|e| e.ts.clone()),
         pr: pr_of(boxed, events),
+        needs: (state == Progress::NeedsYou)
+            .then(|| boxed.agent.as_ref().and_then(needs_of))
+            .flatten(),
     }
 }
 
@@ -134,11 +142,12 @@ fn text<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.trim().is_empty())
 }
 
-/// The first line of `s`, cut to 140 characters.
+/// The first line of `s` that says something, as plain text cut to 140 characters. The agent
+/// writes markdown; a one-line summary shows none of it.
 fn first_line(s: &str) -> String {
-    let line = s.lines().find(|l| !l.trim().is_empty()).unwrap_or_default();
-    let mut out: String = line.trim().chars().take(140).collect();
-    if line.trim().chars().count() > 140 {
+    let line = markdown::first_plain_line(s);
+    let mut out: String = line.chars().take(140).collect();
+    if line.chars().count() > 140 {
         out.push('…');
     }
     out

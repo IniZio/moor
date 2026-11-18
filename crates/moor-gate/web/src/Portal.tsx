@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import {
 	type Account,
 	type BoxDetail,
+	boxAnswer,
 	boxGet,
 	boxList,
 	type BoxRow,
 	boxStart,
 	type Entry,
+	type Needs,
+	type Pick,
 	type Progress,
 	repoList,
 	SignedOut,
@@ -65,6 +68,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 	const [value, setValue] = useState<T | null>(null);
 	const [error, setError] = useState('');
 	const [now, setNow] = useState(Date.now());
+	const again = useRef<() => void>(() => undefined);
 	useEffect(() => {
 		let live = true;
 		const run = async () => {
@@ -80,6 +84,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 			}
 		};
 		setValue(null);
+		again.current = () => void run();
 		void run();
 		const timer = setInterval(() => {
 			if (!document.hidden) void run();
@@ -89,7 +94,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 			clearInterval(timer);
 		};
 	}, [key]);
-	return { value, error, now };
+	return { value, error, now, reload: () => again.current() };
 }
 
 export function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
@@ -329,8 +334,83 @@ export function tabOf(raw: string | undefined): Tab {
 	return TABS.find((t) => t === raw && !LATER[t]) ?? 'timeline';
 }
 
-export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
-	const { value, error, now } = usePoll(() => boxGet(box), `box:${box}`);
+/** The buttons a card shows: a permission has three fixed ones, a question has all its options. */
+export function buttonsOf(needs: Needs): { pick: Pick; word: string; tone: string }[] {
+	if (needs.kind === 'question') {
+		return needs.picks.map((pick) => ({ pick, word: pick.label, tone: 'choice' }));
+	}
+	const first = (role: Pick['role']) => needs.picks.find((p) => p.role === role);
+	const out = [
+		{ pick: first('deny'), word: 'Deny', tone: 'deny' },
+		{ pick: first('allow_once'), word: 'Allow once', tone: 'once' },
+		{ pick: first('allow_box'), word: 'Allow for this task', tone: 'box' },
+	];
+	return out.flatMap((b) => (b.pick ? [{ ...b, pick: b.pick }] : []));
+}
+
+/** The card for an agent that asks; the controller wrote what it says, the page only sends the pick. */
+function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState('');
+	const [typed, setTyped] = useState('');
+	const send = async (n: number, text?: string) => {
+		if (busy) return;
+		setBusy(true);
+		setError('');
+		try {
+			await boxAnswer(csrf, box, needs.id, n, text);
+			onSent();
+		} catch (e) {
+			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			onSent();
+		} finally {
+			setBusy(false);
+		}
+	};
+	const permission = needs.kind === 'permission';
+	return (
+		<div class="t-wait" role="region" aria-label="Your input is needed">
+			<div class="t-wait-h">{permission ? 'The agent asks permission' : 'Your input is needed'}</div>
+			<p class="t-wait-q">{needs.question}</p>
+			{needs.detail && <pre class="t-quote">{needs.detail}</pre>}
+			<div class="t-wait-btns">
+				{buttonsOf(needs).map(({ pick, word, tone }) => (
+					<button type="button" class={`t-btn t-btn-${tone}`} disabled={busy} onClick={() => void send(pick.n)} key={pick.n}>
+						{word}
+					</button>
+				))}
+			</div>
+			{needs.other != null && (
+				<form
+					class="t-wait-own"
+					onSubmit={(e) => {
+						e.preventDefault();
+						if (typed.trim() && needs.other != null) void send(needs.other, typed);
+					}}
+				>
+					<input
+						value={typed}
+						onInput={(e) => setTyped(e.currentTarget.value)}
+						placeholder="Or answer in your own words"
+						aria-label="Your own answer"
+						disabled={busy}
+					/>
+					<button type="submit" class="t-btn t-btn-once" disabled={busy || !typed.trim()}>
+						Send
+					</button>
+				</form>
+			)}
+			{error && (
+				<p class="notice danger" role="alert">
+					{error}
+				</p>
+			)}
+		</div>
+	);
+}
+
+export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: string }) {
+	const { value, error, now, reload } = usePoll(() => boxGet(box), `box:${box}`);
 	if (!value) {
 		return (
 			<div class="t-box">
@@ -385,13 +465,16 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 			</nav>
 			<div class="t-body">
 				<section>
-					{value.state === 'needs_you' && (
-						<div class="t-wait" role="region" aria-label="Your input is needed">
-							<div class="t-wait-h">Your input is needed</div>
-							<p class="t-wait-q">{value.line}</p>
-							<p class="muted">Answering from the web comes in a later step. Answer from Claude Code with send_to_box for now.</p>
-						</div>
-					)}
+					{value.state === 'needs_you' &&
+						(value.needs ? (
+							<NeedsCard box={box} needs={value.needs} csrf={csrf} onSent={reload} key={value.needs.id} />
+						) : (
+							<div class="t-wait" role="region" aria-label="Your input is needed">
+								<div class="t-wait-h">Your input is needed</div>
+								<p class="t-wait-q">{value.line}</p>
+								<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
+							</div>
+						))}
 					{value.stale && (
 						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
 					)}
