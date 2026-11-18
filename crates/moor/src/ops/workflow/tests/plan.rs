@@ -293,3 +293,56 @@ fn a_workflow_without_a_plan_starts_where_no_step_can_be_reported() {
         r.latest(id).state
     );
 }
+
+#[test]
+fn a_planned_run_with_no_front_to_report_through_is_refused_before_its_box() {
+    let mut r = rig();
+    r.cx =
+        r.cx.with_env(|e| e.with_front_step_reports(std::collections::BTreeSet::new()));
+    r.answer_repo();
+    let id = r.put_planned(Some(two_steps()));
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    let RunState::Done(RunEnd::Refused { detail }) = r.latest(id).state else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert!(detail.contains("step_reports"), "{detail}");
+    assert_eq!(r.open_boxes(), 0);
+}
+
+#[test]
+fn a_step_report_restarts_the_stall_clock_of_a_long_turn() {
+    use moor_core::activity::{Activity, AgentState, Life, Source, Status, Term};
+    use moor_core::seam::clock::Ts;
+
+    use crate::ops::common::activity::{settle, PaneLiveness, Reading};
+
+    let r = rig();
+    r.answer_repo();
+    let id = r.put_planned(Some(two_steps()));
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    let turn_began = r.cx.clock().now();
+    r.pause(9 * 60_000);
+    assert!(!r.report_current(id).error);
+    r.pause(2 * 60_000);
+    let working = Activity {
+        state: AgentState::Working,
+        source: Source::Status,
+    };
+    let mut reading = Reading::new(Some(working), PaneLiveness::Live, false, false);
+    reading.term = Some(Term {
+        life: Life::Live,
+        status: Some(Status::Working { doing: None }),
+        status_at: Some(Ts::from_millis(turn_began.as_millis())),
+        turn: 0,
+    });
+    let store = r.cx.store().unwrap();
+    let row = store.box_row(r.latest_box(id)).unwrap().unwrap();
+    settle(&r.cx, store, &row, &reading).unwrap();
+    let events = store.events(row.id, 200).unwrap();
+    assert!(
+        events.iter().all(|e| e.kind != "agent_stalled"),
+        "the report two minutes ago is activity"
+    );
+}
