@@ -29,7 +29,7 @@ impl Machines {
 }
 
 /// Whether `e` is the machine's link down or cut, so the call may not have reached it.
-pub(super) fn link_down(e: &DriverError) -> bool {
+pub(crate) fn link_down(e: &DriverError) -> bool {
     match e {
         DriverError::Unavailable(why) | DriverError::Transport { stderr_tail: why } => {
             broker::is_link_loss(why)

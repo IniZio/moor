@@ -4,8 +4,16 @@ use std::sync::Arc;
 
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 
+use moor_core::seam::proc::Deadline;
+use moor_core::BoxHandle;
+
 use super::script::ExecHook;
 use super::{FakeDriver, State};
+use crate::adapters::machine::link_down;
+
+/// How many times an exec safe to repeat is asked while its link stays down, standing in for
+/// the machine adapter's wait for the relink.
+pub(crate) const RELINK_ASKS: usize = 5;
 
 /// The per-command exec knobs.
 #[derive(Default)]
@@ -71,6 +79,24 @@ impl FakeDriver {
             .ends_once
             .push((needle.to_owned(), outcome));
         self
+    }
+
+    /// Runs `spec`, asked again while a lost link fails one marked safe to repeat, as the machine
+    /// adapter does, up to [`RELINK_ASKS`] asks.
+    pub(super) fn exec_relinked(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError> {
+        let mut asks = 1;
+        loop {
+            let got = self.exec_once(handle, spec, deadline);
+            match &got {
+                Err(e) if spec.repeatable && asks < RELINK_ASKS && link_down(e) => asks += 1,
+                _ => return got,
+            }
+        }
     }
 
     /// Runs `f` before every `exec` whose argv mentions `needle`, outside the Driver's lock.
