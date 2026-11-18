@@ -34,6 +34,7 @@ pub(super) fn box_facts(store: &Store, row: &BoxRow) -> Result<RunBoxFacts, Stor
         session: row.session,
         idle_since,
         launch_failed: row.launch_failure.is_some(),
+        death_capped: false,
     })
 }
 

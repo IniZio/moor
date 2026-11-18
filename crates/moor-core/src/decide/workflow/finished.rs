@@ -22,6 +22,9 @@ pub struct RunBoxFacts {
     pub idle_since: Option<Ts>,
     /// Whether the last agent launch failed and no later launch succeeded.
     pub launch_failed: bool,
+    /// Whether the Box's places died so often that moor stopped resuming it, and no wake has
+    /// come since.
+    pub death_capped: bool,
 }
 
 /// Where a started run stands.
@@ -33,6 +36,9 @@ pub enum RunVerdict {
     Finished,
     /// No agent can run in the Box until a person acts, so the run will never finish.
     Broken,
+    /// The Box's places kept dying, so moor stopped resuming it and only a person's wake brings
+    /// it back: the run will never finish.
+    DeathCapped,
 }
 
 /// Where the run whose Box has `facts`, or none when the Box is gone, stands at `now`.
