@@ -1,7 +1,8 @@
 //! `moor up` and `moor down`: set one host up as a controller with a local node.
 //!
 //! `up` goes from installed binaries to a running controller, an enrolled user and its secrets,
-//! and a local node whose machine agent makes Docker Boxes.
+//! a gate that serves `report_step` to the Boxes, and a local node whose machine agent makes
+//! Docker Boxes.
 //! Every step checks before it acts, so a rerun changes nothing and prints the same lines.
 
 mod files;
@@ -79,8 +80,6 @@ fn steps(
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
     let gate = gate::decide(env, &layout, &dir)?;
     found.iter().for_each(&mut say);
-    say(&files::controller(&layout, gate.runs())?);
-    say(&files::user(env, &layout)?);
     let key_file = match &gate {
         gate::Gate::Run(plan) => {
             gate::keep_key(plan)?;
@@ -88,6 +87,8 @@ fn steps(
         }
         gate::Gate::Left(_) => None,
     };
+    say(&files::controller(&layout, gate.runs())?);
+    say(&files::user(env, &layout)?);
     let unit = service::Unit::new(env, &layout, plan.egress, key_file)?;
     say(&service::install(&dir, &unit)?);
     if service::lingers(env) == Some(false) {
@@ -142,7 +143,7 @@ fn wait_for(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// Stops the controller, the local node's runner and agent, and removes their units; config, state and secrets stay.
+/// Stops the controller, the gate, the local node's runner and agent, and removes their units; config, state and secrets stay.
 pub fn down(env: &Env, out: &mut dyn Write) -> u8 {
     let result = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", ""))

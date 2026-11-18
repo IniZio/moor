@@ -62,8 +62,9 @@ impl Gate {
 
 /// Decides, before `up` writes anything, whether it runs the gate: not when the user config
 /// routes `moor_service` elsewhere, and not when the controller config has fronts that `up` did
-/// not write, which means the person runs their own gate. A gate unit `up` wrote earlier stays
-/// run.
+/// not write, which means the person runs their own gate. Whatever `up` wrote earlier, the
+/// key file or the gate unit, marks the fronts as its own, so an `up` that stopped part way
+/// resumes with the gate.
 ///
 /// # Errors
 /// The user config is invalid, or `moor-gate` is installed nowhere.
@@ -79,7 +80,9 @@ pub(super) fn decide(env: &Env, layout: &Layout, unit_dir: &Path) -> Result<Gate
         return Ok(Gate::Left("moor_service names a listener of your own"));
     }
     let controller = fs::read_to_string(&layout.controller_config).unwrap_or_default();
-    if has_key(&controller, "fronts") && !unit_dir.join(service::GATE).exists() {
+    let key_file = layout.state_dir.join(KEY_FILE);
+    let wrote_it = key_file.exists() || unit_dir.join(service::GATE).exists();
+    if has_key(&controller, "fronts") && !wrote_it {
         return Ok(Gate::Left("controller.yaml sets fronts of its own"));
     }
     let exe = binary(env, BIN).ok_or_else(|| {
@@ -91,7 +94,7 @@ pub(super) fn decide(env: &Env, layout: &Layout, unit_dir: &Path) -> Result<Gate
     })?;
     Ok(Gate::Run(Plan {
         exe,
-        key_file: layout.state_dir.join(KEY_FILE),
+        key_file,
         front_socket: front_dir::of(&layout.state_dir, NAMESPACE).join(front_dir::FRONT_SOCKET),
     }))
 }
