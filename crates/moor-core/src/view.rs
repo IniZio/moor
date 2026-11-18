@@ -5,6 +5,7 @@ pub mod attention;
 pub mod binding;
 pub mod box_config;
 pub mod close_failed;
+pub mod detail;
 pub mod env;
 pub mod forward;
 pub mod inspect;
@@ -24,6 +25,7 @@ use crate::domain::hands::HandsState;
 use crate::domain::session_state::SessionState;
 pub use attach::{AttachEnd, AttachView, ExecView};
 pub use attention::AttentionView;
+pub use detail::{ApprovalView, SaidView};
 pub use forward::{ForwardView, ForwardedView};
 pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
@@ -172,15 +174,9 @@ pub struct BoxView {
     /// The Box as a Box: its derived state and the line that matters now; set by `show`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<crate::progress::ProgressView>,
-}
-
-/// The newest `agent_said` event of a Box.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct SaidView {
-    /// What the agent said.
-    pub text: String,
-    /// RFC3339 UTC time it was recorded.
-    pub at: String,
+    /// The approve step of a workflow run that waits in this Box, on `show`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval: Option<ApprovalView>,
 }
 
 /// Outcome of the setup script.

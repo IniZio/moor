@@ -5,7 +5,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
 use moor_core::{ErrorKind, SteerReq};
 
-use super::{fx_with, menu, working};
+use super::{fx_with, menu, steered, working};
 use crate::ops::steer::run;
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
@@ -59,6 +59,29 @@ fn a_choice_naming_no_prompt_still_answers_whatever_is_asked() {
     let f = fx_with(FakeEngine::new().probes("agent-1", asking), true);
     run(&f.cx, &menu(1)).unwrap();
     assert_eq!(f.engine.steers(), [("agent-1".to_owned(), Steer::Menu(1))]);
+}
+
+#[test]
+fn the_you_row_of_a_choice_is_the_option_text_not_its_number() {
+    let asking = agent::asking("Which fruit?", &["Apple", "Banana"], Ts::from_millis(0));
+    let f = fx_with(FakeEngine::new().probes("agent-1", asking), true);
+    run(&f.cx, &menu(2)).unwrap();
+    assert_eq!(f.engine.steers(), [("agent-1".to_owned(), Steer::Menu(2))]);
+    let said: Vec<_> = steered(&f).iter().map(|p| p["message"].clone()).collect();
+    assert_eq!(said, [serde_json::json!("Banana")]);
+}
+
+#[test]
+fn the_you_row_of_a_typed_answer_is_what_the_person_wrote() {
+    let asking = agent::asking("Which fruit?", &["Apple", "Banana"], Ts::from_millis(0));
+    let f = fx_with(FakeEngine::new().probes("agent-1", asking), true);
+    let req = SteerReq {
+        text: Some("kiwi".to_owned()),
+        ..menu(3)
+    };
+    run(&f.cx, &req).unwrap();
+    let said: Vec<_> = steered(&f).iter().map(|p| p["message"].clone()).collect();
+    assert_eq!(said, [serde_json::json!("kiwi")]);
 }
 
 #[test]
