@@ -745,7 +745,7 @@ One migration adds a column to `workflow_runs`:
 | Overlap | Blocks the next cron firing while open, as any run does. Is refused, not skipped, when a run is open. |
 | `last_due` | Ignored. A manual run never swallows a missed due time. |
 | Overlap fact (`prior`) | Counted. A cron run that comes due while a manual run is open records `SkippedOverlap`. |
-| Breaker | A failure does not count. A delivery resets the streak, pending the owner (open question 9). |
+| Breaker | A failure does not count. A delivery resets the streak, so a fix proven by hand clears the earlier failures. |
 | Start limit, expiry, check and approve steps | As for a cron run. |
 | Notifications | As for a cron run. |
 | Cron floor | Does not apply. One open run per repo already bounds it. |
@@ -812,5 +812,5 @@ One migration adds a column to `workflow_runs`:
 9. **A manual delivery and the breaker.** An author sees two cron failures,
    fixes the plan, and proves the fix with a manual run that delivers. If
    manual runs never touch the streak, the next cron failure still trips the
-   breaker. Recommendation. A manual failure does not count, and a manual
-   delivery resets the streak. Owner to decide.
+   breaker. Decided by the owner. A manual failure does not count, and a
+   manual delivery resets the streak.
