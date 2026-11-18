@@ -1,10 +1,12 @@
 //! `moor up` and `moor down`: set one host up as a controller with a local node.
 //!
 //! `up` goes from installed binaries to a running controller, an enrolled user and its secrets,
-//! and a local node whose machine agent makes Docker Boxes.
+//! a gate that serves `report_step` to the Boxes, and a local node whose machine agent makes
+//! Docker Boxes.
 //! Every step checks before it acts, so a rerun changes nothing and prints the same lines.
 
 mod files;
+mod gate;
 mod node;
 mod secrets;
 mod service;
@@ -74,12 +76,20 @@ fn steps(
         )
     })?;
     let (plan, found) = node::plan(env, &layout)?;
-    found.iter().for_each(&mut say);
-    say(&files::controller(&layout)?);
-    say(&files::user(env, &layout)?);
     let dir = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
-    let unit = service::Unit::new(env, &layout, plan.egress)?;
+    let gate = gate::decide(env, &layout, &dir)?;
+    found.iter().for_each(&mut say);
+    let key_file = match &gate {
+        gate::Gate::Run(plan) => {
+            gate::keep_key(plan)?;
+            Some(plan.key_file.clone())
+        }
+        gate::Gate::Left(_) => None,
+    };
+    say(&files::controller(&layout, gate.runs())?);
+    say(&files::user(env, &layout)?);
+    let unit = service::Unit::new(env, &layout, plan.egress, key_file)?;
     say(&service::install(&dir, &unit)?);
     if service::lingers(env) == Some(false) {
         say(&Check::warn(
@@ -89,6 +99,7 @@ fn steps(
         ));
     }
     say(&wait_for(&layout)?);
+    say(&gate::converge(&dir, &gate)?);
     let target = Target::Socket(layout.socket.clone());
     let ask = |req: Request| -> Result<_, ClientError> {
         client::call(env, &target, &req, |_| {}, |_| {})
@@ -132,7 +143,7 @@ fn wait_for(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// Stops the controller, the local node's runner and agent, and removes their units; config, state and secrets stay.
+/// Stops the controller, the gate, the local node's runner and agent, and removes their units; config, state and secrets stay.
 pub fn down(env: &Env, out: &mut dyn Write) -> u8 {
     let result = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", ""))

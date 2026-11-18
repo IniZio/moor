@@ -25,7 +25,7 @@ const RUNNER_BIN: &str = "moor-machine-runner";
 /// The machine agent's executable.
 const AGENT_BIN: &str = "moor-machine-agent";
 /// How to get both when they are missing.
-const INSTALL: &str =
+pub(super) const INSTALL: &str =
     "run `curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh`";
 /// What `up` tells the person about the privileges Docker Boxes take.
 const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's work place runs with \
@@ -164,7 +164,7 @@ fn docker(args: &[&str]) -> Result<String, String> {
 }
 
 /// `name` beside this executable, else the first on `PATH`.
-fn binary(env: &Env, name: &str) -> Option<PathBuf> {
+pub(super) fn binary(env: &Env, name: &str) -> Option<PathBuf> {
     let beside = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|d| d.join(name)));
@@ -200,6 +200,7 @@ pub(crate) fn runner_unit(plan: &Plan, layout: &Layout, path: Option<&str>) -> S
         &plan.runner,
         &args,
         &env,
+        None,
     )
 }
 
@@ -229,6 +230,7 @@ pub(crate) fn agent_unit(plan: &Plan, home: &Path, env: &Env) -> String {
         &plan.agent,
         &["run".to_owned()],
         &vars,
+        None,
     )
 }
 

@@ -19,15 +19,19 @@ pub(super) fn launch_overdue(cx: &Cx, failure: &LaunchFailure, now: Ts) -> Optio
     (age >= limit.as_millis()).then_some(limit.as_secs())
 }
 
-/// Warns that the agent of `row` did not start in time and how to start it again.
+/// Warns that the agent of `row` did not start in time and how to start it again: with `--resume`
+/// only when it holds a session to resume, which the start refuses otherwise.
 pub(super) fn warn_launch_timed_out(cx: &Cx, row: &BoxRow, after_secs: u64) {
+    let resumable = row
+        .agent_session_id
+        .as_deref()
+        .is_some_and(|s| !s.is_empty());
+    let resume = if resumable { " --resume" } else { "" };
     cx.warn(Warning {
         code: "launch_timed_out".to_owned(),
         message: format!(
-            "the agent of {} did not start within {}s, so the Box now counts as quiet and may sleep; start it again with `moor start {} --resume`",
-            row.name.as_str(),
-            after_secs,
-            row.name.as_str()
+            "the agent of {name} did not start within {after_secs}s, so the Box now counts as quiet and may sleep; start it again with `moor start {name}{resume}`",
+            name = row.name.as_str(),
         ),
     });
 }

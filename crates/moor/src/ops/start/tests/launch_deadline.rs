@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::{parse_user, UserConfig};
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxId, StartReq};
 
@@ -83,12 +84,35 @@ fn a_failed_launch_reads_quiet_after_the_default_three_minutes_and_says_so_once(
     assert_eq!(timed_out(&w, id), [serde_json::json!({"after_secs": 180})]);
     let warnings = w.cx.take_warnings();
     let warned = warnings.iter().find(|x| x.code == "launch_timed_out");
+    let message = warned.map(|x| x.message.as_str()).unwrap_or_default();
     assert!(
-        warned.is_some_and(|x| x.message.contains("moor start demo --resume")),
+        message.ends_with("start it again with `moor start demo`"),
         "{warnings:?}"
     );
+    assert!(!message.contains("--resume"), "{warnings:?}");
     settle_now(&w, id);
     assert_eq!(timed_out(&w, id).len(), 1, "a second read adds no event");
+}
+
+#[test]
+fn a_failed_launch_whose_agent_registered_a_session_says_to_resume_it() {
+    let (w, clock, id) = failed_launch(UserConfig::default());
+    let set = Fields {
+        agent_session_id: Field::Set("agent-1".into()),
+        ..Fields::default()
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(set))
+        .unwrap();
+    clock.sleep(Duration::from_mins(4));
+    settle_now(&w, id);
+    let warnings = w.cx.take_warnings();
+    let resumes = warnings.iter().any(|x| {
+        x.message
+            .ends_with("start it again with `moor start demo --resume`")
+    });
+    assert!(resumes, "{warnings:?}");
 }
 
 #[test]

@@ -12,6 +12,8 @@ front of port 8443. You also need an OIDC client, as
 
 - `moor.socket` holds the controller socket, `~/.local/state/moor/controller.sock`.
 - `moor.service` runs `moor controller serve --config ~/.config/moor/controller.yaml`.
+- `moor-gate.service` runs `moor-gate` for Boxes only. It has no public
+  listener and no sign-in. It serves `report_step` at `127.0.0.1:8444`.
 
 systemd holds each socket, so a client that connects during a restart waits
 and gets its answer from the new controller. Each front gets a socket of its
@@ -40,11 +42,13 @@ units never bound.
 
 ## Add the gate
 
-1. Add the gate's front to `~/.config/moor/controller.yaml`:
+1. Check that `~/.config/moor/controller.yaml` has the gate's front. `moor up`
+   writes it, so a rerun adds it to a config from before:
 
    ```yaml
    fronts:
-     authgear: {}
+     authgear:
+       step_reports: true
    ```
 
 2. Enable its socket and restart the controller:
@@ -55,20 +59,26 @@ units never bound.
    systemctl --user restart moor.service
    ```
 
-3. Start the gate:
+3. Give `moor-gate.service` its public listener. A drop-in survives a rerun of
+   `moor up`, which rewrites the unit. Write
+   `~/.config/systemd/user/moor-gate.service.d/public.conf`:
 
-   ```sh
-   moor-gate \
-     --front-socket ~/.local/state/moor/fronts/authgear/front \
+   ```ini
+   [Service]
+   ExecStart=
+   ExecStart=%h/.local/bin/moor-gate \
+     --front-socket %S/moor/fronts/authgear/front \
      --issuer https://ISSUER \
      --client-id CLIENT_ID \
      --mcp-resource-url https://HOST/mcp \
      --public-url https://HOST
    ```
 
-   The gate listens on `0.0.0.0:8443` without TLS. Put your TLS ingress in
-   front of it, and let it hold a response stream open for hours. Run the gate
-   under your service manager so it restarts with the host.
+   Then run `systemctl --user daemon-reload` and
+   `systemctl --user restart moor-gate.service`. The gate still reads the
+   service key from `moor up`'s unit, and still serves Boxes at
+   `127.0.0.1:8444`. It listens on `0.0.0.0:8443` without TLS. Put your TLS
+   ingress in front of it, and let it hold a response stream open for hours.
 
 4. Check it from the host:
 
