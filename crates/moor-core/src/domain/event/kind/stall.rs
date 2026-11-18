@@ -1,5 +1,5 @@
 //! Events about an agent that stopped answering: a busy agent gone quiet and its return, or a
-//! held prompt it could not be given.
+//! held prompt it could not be given, and a Box kept awake past its cap by work.
 
 use serde::Serialize;
 
@@ -26,6 +26,13 @@ pub enum StallEvent {
         /// What went wrong.
         error: String,
     },
+    /// A Box past `box.max_awake` stays awake because its agent works or a background job runs.
+    SleepHeld {
+        /// Why: `working` or `background_job`.
+        reason: String,
+        /// Whole seconds the Box has been awake.
+        awake_for_secs: u64,
+    },
 }
 
 impl StallEvent {
@@ -36,6 +43,7 @@ impl StallEvent {
             Self::AgentStalled { .. } => "agent_stalled",
             Self::AgentResumed { .. } => "agent_resumed",
             Self::PromptNotGiven { .. } => "prompt_not_given",
+            Self::SleepHeld { .. } => "sleep_held",
         }
     }
 }

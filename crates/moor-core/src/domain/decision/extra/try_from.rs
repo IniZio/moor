@@ -49,6 +49,13 @@ impl TryFrom<Event> for ExtraEvent {
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
             Event::LaunchTimedOut { after_secs } => Ok(Self::LaunchTimedOut { after_secs }),
+            Event::Stall(StallEvent::SleepHeld {
+                reason,
+                awake_for_secs,
+            }) => Ok(Self::SleepHeld {
+                reason,
+                awake_for_secs,
+            }),
             Event::RelaunchCapped { count, window_secs } => {
                 Ok(Self::RelaunchCapped { count, window_secs })
             }

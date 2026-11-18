@@ -3,7 +3,8 @@
 //! Runs only where activity already settles Working and Idle. It never waits for the Box
 //! lock and never fails the caller.
 
-use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
+use moor_core::activity::AgentState;
+use moor_core::decide::sleep::{sleep_due, HoldReason, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, HandsFields, Wanted};
 use moor_core::domain::hands::{HandsInput, HandsState};
@@ -31,6 +32,8 @@ pub(crate) enum AgentRead {
     Plain,
     /// It waits on an unanswered prompt or a first-run screen.
     Blocked,
+    /// It ended its turn but waits on a background job it started.
+    Background,
     /// It could not be read, and may have started a turn since it went Idle.
     Unread,
 }
@@ -42,6 +45,12 @@ impl AgentRead {
             Self::Blocked
         } else if reading.unread() {
             Self::Unread
+        } else if reading
+            .activity
+            .as_ref()
+            .is_some_and(|a| matches!(a.state, AgentState::Waiting { .. }))
+        {
+            Self::Background
         } else {
             Self::Plain
         }
@@ -49,8 +58,9 @@ impl AgentRead {
 }
 
 /// Sleep the machine of Box `id` when it has been Idle for `box.sleep_after`, Idle for
-/// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`,
-/// going by `reading`. While its agent is unread, only the awake cap sleeps it.
+/// `box.sleep_after_blocked` while its agent is blocked on a prompt, or awake for `box.max_awake`
+/// while Idle, going by `reading`. A Box whose agent works, waits on a background job or is unread
+/// is held past `box.max_awake` and sleeps only at `box.max_awake_hard`.
 ///
 /// An op in flight, a Box that cannot be slept right now and a step the store refuses leave
 /// everything as it was. A step taken for the agent lands only while the launch `reading` probed
@@ -78,12 +88,14 @@ fn report(cx: &Cx, slept: Result<(), CommandError>) {
     }
 }
 
-/// Whether `row` has been Idle, or awake, long enough to sleep.
-fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, CommandError> {
+/// What auto-sleep does with `row`: sleep it when it has been Idle, or awake, long enough, hold it
+/// when it is past `box.max_awake` but busy, or leave it be.
+fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<Verdict, CommandError> {
     let config = &cx.config().box_;
     if cx.traffic().recent(row.id, cx.clock().now()) {
-        return Ok(false);
+        return Ok(Verdict::NotYet);
     }
+    let awake_since = store.awake_since(row.id)?;
     let facts = SleepFacts {
         lifecycle: row.lifecycle,
         session: if agent == AgentRead::Unread {
@@ -96,10 +108,34 @@ fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<bool, C
         after: config.sleep_after(),
         blocked: agent == AgentRead::Blocked,
         after_blocked: config.sleep_after_blocked(),
-        awake_since: store.awake_since(row.id)?,
+        awake_since,
         max_awake: config.max_awake(),
+        hard_ceiling: config.max_awake_hard(),
+        background_job: agent == AgentRead::Background,
     };
-    Ok(sleep_due(&facts) == SleepVerdict::Due)
+    let awake_for = awake_since.map_or(0, |t| {
+        u64::try_from(facts.now.as_millis().saturating_sub(t.as_millis()) / 1000).unwrap_or(0)
+    });
+    Ok(match sleep_due(&facts) {
+        SleepVerdict::Due => Verdict::Due(None),
+        SleepVerdict::DueAtCeiling => Verdict::Due(Some(CEILING_REASON)),
+        SleepVerdict::Held(why) => Verdict::Held(why, awake_for),
+        SleepVerdict::NotYet | SleepVerdict::NotIdle => Verdict::NotYet,
+    })
+}
+
+/// Why a sleep at `box.max_awake_hard` says it slept.
+const CEILING_REASON: &str = "max_awake_hard";
+
+/// What auto-sleep does with a Box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// Leave it alone.
+    NotYet,
+    /// Sleep it, with this reason when it is not for age.
+    Due(Option<&'static str>),
+    /// Past `box.max_awake` but kept awake, having been awake for this many seconds.
+    Held(HoldReason, u64),
 }
 
 /// Sleep the machine once the Box's turn is free and the Box is still due.
@@ -112,7 +148,7 @@ fn try_sleep(
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, store, &row, agent)? {
+    if due(cx, store, &row, agent)? == Verdict::NotYet {
         return Ok(());
     }
     let Some(_turn) = cx.try_turn(id, Cmd::Sleep) else {
@@ -121,14 +157,45 @@ fn try_sleep(
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, store, &row, agent)? {
-        return Ok(());
-    }
+    let why = match due(cx, store, &row, agent)? {
+        Verdict::NotYet => return Ok(()),
+        Verdict::Held(why, awake_for) => return note_held(cx, store, &row, why, awake_for),
+        Verdict::Due(why) => why,
+    };
     if row.hands.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
-    let sleep = || sleep_now(cx, store, &row, (agent, launch));
+    let sleep = || sleep_now(cx, store, &row, (agent, launch), why);
     crate::ops::common::wanted::parking(store, id, Wanted::Sleep, sleep).map(drop)
+}
+
+/// Records that `row` is past `box.max_awake` and stays awake for `why`, once for each hold: not
+/// again while the newest `sleep_held` of this awake stretch already says `why`.
+fn note_held(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    why: HoldReason,
+    awake_for_secs: u64,
+) -> Result<(), CommandError> {
+    let awake_since = store.awake_since(row.id)?;
+    let told = store
+        .last_event_of(row.id, "sleep_held")?
+        .is_some_and(|ev| {
+            awake_since.is_none_or(|t| ev.ts >= t)
+                && ev.payload.get("reason").and_then(|r| r.as_str()) == Some(why.as_str())
+        });
+    if !told {
+        let held = ExtraEvent::SleepHeld {
+            reason: why.as_str().to_owned(),
+            awake_for_secs,
+        };
+        match unless_stale(cx, store.apply(Decision::new(row.id).event(held))) {
+            Ok(_) | Err(StoreError::Illegal(_)) => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(())
 }
 
 /// Sleeps `row`, due to sleep, under its turn and records the outcome.
@@ -137,12 +204,13 @@ fn sleep_now(
     store: &Store,
     row: &BoxRow,
     (agent, launch): (AgentRead, Option<LaunchId>),
+    why: Option<&'static str>,
 ) -> Result<(), CommandError> {
     let id = row.id;
     let handle = sleep_handle(cx, row)?;
     let settled = agent != AgentRead::Unread && settled(cx, store, row)?;
     if !row.session.is_quiet() {
-        // Only the awake cap gets here; the sleep ends the agent's pane, so its Session is quiet.
+        // Only the hard ceiling gets here; the sleep ends the agent's pane, so its Session is quiet.
         let mut quiet = Decision::new(id).session(SessionInput::AgentQuiet);
         if let Some(launch) = launch {
             quiet = quiet.launch(launch);
@@ -156,15 +224,16 @@ fn sleep_now(
     let Some(slept) = sleep_parked(cx, store, row, &handle, settled)? else {
         return Ok(());
     };
-    match unless_stale(cx, store.apply(recorded(row, slept, cx.clock().now()))) {
+    match unless_stale(cx, store.apply(recorded(row, slept, cx.clock().now(), why))) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
 
-/// What records the sleep of `row` that came to `slept` at `now`. A sleep at the awake limit
-/// cuts a working agent, which `row`, read before its Session was made quiet, still shows.
-fn recorded(row: &BoxRow, slept: SleepOutcome, now: Ts) -> Decision {
+/// What records the sleep of `row` that came to `slept` at `now`, for `why` when it is not for
+/// age. A sleep at the hard ceiling cuts a working agent, which `row`, read before its Session
+/// was made quiet, still shows.
+fn recorded(row: &BoxRow, slept: SleepOutcome, now: Ts, why: Option<&'static str>) -> Decision {
     let at_work = (!row.session.is_quiet()).then_some(now.as_millis());
     let inc = row.hands_inc();
     let refusal = |sleep_reason| HandsFields {
@@ -175,7 +244,7 @@ fn recorded(row: &BoxRow, slept: SleepOutcome, now: Ts) -> Decision {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(row.id)
             .lifecycle(BoxLifecycleInput::Sleep {
                 auto: true,
-                reason: None,
+                reason: why.map(str::to_owned),
             })
             .hands_input(inc, HandsInput::Sleep)
             .hands(inc, refusal(Field::Clear))

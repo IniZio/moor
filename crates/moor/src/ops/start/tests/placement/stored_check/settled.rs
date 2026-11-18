@@ -102,7 +102,7 @@ fn a_run_in_flight_keeps_no_answer_even_when_the_agent_is_quiet() {
 }
 
 #[test]
-fn the_awake_cap_keeps_no_clean_answer() {
+fn the_hard_ceiling_keeps_no_clean_answer() {
     let (w, _) = live_world(32_768);
     let b = started(&w, "b");
     let (w, _) = agents_report(w, &[], &[b]);
@@ -111,7 +111,7 @@ fn the_awake_cap_keeps_no_clean_answer() {
     store
         .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
         .unwrap();
-    w.cx.clock().sleep(std::time::Duration::from_mins(120));
+    w.cx.clock().sleep(std::time::Duration::from_hours(12));
     autosleep::run(&w.cx, store, b, autosleep::AgentRead::Plain);
     assert_eq!(lifecycle(&w, b), Asleep);
     assert_eq!(stored(&w, b), None);
@@ -185,12 +185,12 @@ fn asking_an_idle_box_with_an_unread_agent_to_sleep_keeps_no_answer() {
 }
 
 #[test]
-fn the_awake_cap_of_an_idle_box_read_as_unread_keeps_no_answer() {
+fn the_hard_ceiling_of_an_idle_box_read_as_unread_keeps_no_answer() {
     let (w, _) = live_world(32_768);
     let b = started(&w, "b");
     idle(&w, b);
     holds(&w, b, CLEAN);
-    w.cx.clock().sleep(std::time::Duration::from_mins(120));
+    w.cx.clock().sleep(std::time::Duration::from_hours(12));
     let store = w.cx.store().unwrap();
     autosleep::run(&w.cx, store, b, autosleep::AgentRead::Unread);
     assert_eq!(lifecycle(&w, b), Asleep);

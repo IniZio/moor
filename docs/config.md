@@ -23,7 +23,8 @@ moor, that file holds the operator's defaults for everyone.
 | `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names none. |
 | `box.sleep_after` | duration, such as `45m` | `5m` | How long a Box stays idle before it sleeps. |
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box waits on an unanswered prompt before it sleeps. The shorter of the two applies. |
-| `box.max_awake` | duration | `2h` | How long a Box stays awake after a start or wake, even while its agent works. A message wakes it and the turn resumes. |
+| `box.max_awake` | duration | `2h` | How long a Box stays awake after a start or wake before an idle Box sleeps. A Box whose agent is mid-turn or waits on a background job is held past it, and moor records `sleep_held` once for each hold. |
+| `box.max_awake_hard` | duration | `12h` | How long a Box stays awake after a start or wake before it sleeps whatever it is doing. It is never shorter than `box.max_awake`. The `asleep` event names `max_awake_hard` as its reason. |
 | `box.launch_timeout` | duration | `3m` | How long the agent may take to start before moor records `launch_timed_out`. |
 
 ### Nodes

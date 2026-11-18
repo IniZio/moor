@@ -51,6 +51,9 @@ const DEFAULT_SLEEP_AFTER_BLOCKED: Duration = Duration::from_mins(5);
 /// Awake time before any Box sleeps when `box.max_awake` is unset.
 const DEFAULT_MAX_AWAKE: Duration = Duration::from_hours(2);
 
+/// Awake time after which any Box sleeps, working or not, when `box.max_awake_hard` is unset.
+const DEFAULT_MAX_AWAKE_HARD: Duration = Duration::from_hours(12);
+
 /// Label shown for [`DEFAULT_SLEEP_AFTER`].
 const DEFAULT_SLEEP_AFTER_LABEL: &str = "5m";
 
@@ -133,8 +136,10 @@ pub struct BoxConfig {
     pub sleep_after: Option<String>,
     /// Idle time before a Box waiting on a prompt or a first-run screen sleeps.
     pub sleep_after_blocked: Option<String>,
-    /// Awake time before any Box sleeps.
+    /// Awake time before an idle Box sleeps; a working Box is held past it.
     pub max_awake: Option<String>,
+    /// Awake time after which any Box sleeps, working or not.
+    pub max_awake_hard: Option<String>,
     /// Time an agent launch may take before the Box counts as quiet.
     pub launch_timeout: Option<String>,
     /// Repos a new Box clones beside its primary repo when the start names none.
@@ -166,10 +171,17 @@ impl BoxConfig {
         )
     }
 
-    /// Awake time before any Box sleeps: the configured value or the default.
+    /// Awake time before an idle Box sleeps: the configured value or the default.
     #[must_use]
     pub fn max_awake(&self) -> Duration {
         duration_or(self.max_awake.as_deref(), DEFAULT_MAX_AWAKE)
+    }
+
+    /// Awake time after which any Box sleeps: the configured value or the default, and never
+    /// less than [`Self::max_awake`], so a longer cap is not cut short by the default ceiling.
+    #[must_use]
+    pub fn max_awake_hard(&self) -> Duration {
+        duration_or(self.max_awake_hard.as_deref(), DEFAULT_MAX_AWAKE_HARD).max(self.max_awake())
     }
 
     /// The idle time as text: as configured (trimmed), or `5m` when unset.
@@ -199,6 +211,7 @@ impl BoxConfig {
             ("box.sleep_after", &self.sleep_after),
             ("box.sleep_after_blocked", &self.sleep_after_blocked),
             ("box.max_awake", &self.max_awake),
+            ("box.max_awake_hard", &self.max_awake_hard),
             ("box.launch_timeout", &self.launch_timeout),
         ] {
             if let Some(t) = value {

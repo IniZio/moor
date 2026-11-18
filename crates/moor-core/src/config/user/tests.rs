@@ -67,6 +67,17 @@ fn defaults() {
 }
 
 #[test]
+fn the_awake_ceiling_defaults_to_twelve_hours_and_never_undercuts_the_cap() {
+    let c = ok("box: {}");
+    assert_eq!(c.box_.max_awake(), Duration::from_hours(2));
+    assert_eq!(c.box_.max_awake_hard(), Duration::from_hours(12));
+    let c = ok("box: {max_awake: 2m, max_awake_hard: 5m}");
+    assert_eq!(c.box_.max_awake_hard(), Duration::from_mins(5));
+    let c = ok("box: {max_awake: 100h}");
+    assert_eq!(c.box_.max_awake_hard(), Duration::from_hours(100));
+}
+
+#[test]
 fn sleep_after_defaults_and_parses() {
     let c = UserConfig::default();
     assert_eq!(c.box_.sleep_after(), DEFAULT_SLEEP_AFTER);
