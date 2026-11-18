@@ -40,6 +40,13 @@ pub(super) fn forget_closed(m: &Machines, slug: &str, closed: &Result<BoxAnswer,
     }
 }
 
+/// Drops what was sent to the Box `handle` names before it is opened, as a new Box holds none.
+pub(super) fn forget_opened(m: &Machines, handle: &BoxHandle) {
+    if let Ok((_, slug)) = Machines::seat(handle) {
+        sent(m).remove(slug);
+    }
+}
+
 /// Gives the Box `handle` names its environment, unless the machine already holds it.
 pub(super) fn send(
     m: &Machines,

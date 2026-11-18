@@ -142,6 +142,7 @@ impl Driver for Machines {
         note: &mut dyn FnMut(&str),
     ) -> Result<Acquired, DriverError> {
         let (machine, op, handle) = Self::planned(req)?;
+        env::forget_opened(self, &handle);
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let answer = std::thread::scope(|s| {
             // A lost link is the caller's to wait out, as the open outlives it.
