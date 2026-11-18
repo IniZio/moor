@@ -134,3 +134,6 @@ pub(super) fn run_line(name: &str, kind: &str, payload: Option<&Value>) -> Optio
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

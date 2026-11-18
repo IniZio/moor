@@ -1,5 +1,5 @@
 //! The Box event a run's move writes when its owner should hear of it: a run that waits at an
-//! approve step, and a run that ended Failed, Incomplete, TimedOut or Refused. Success writes
+//! approve step, and a run that ended `Failed`, `Incomplete`, `TimedOut` or `Refused`. Success writes
 //! none, so delivered, declined and skipped runs stay silent.
 //!
 //! The event is written in the transaction of the compare-and-set that made the move, so a
@@ -81,12 +81,43 @@ pub(super) fn record(
                 question,
                 link,
             };
-            (Some(box_id.get()), event)
+            (box_id.get(), event)
         }
-        RunState::Done(RunEnd::Ended {
+        RunState::Done(end) => {
+            let Some((box_id, outcome, step, reason)) = failure(end, held) else {
+                return Ok(());
+            };
+            let event = WorkflowEvent::RunFailed {
+                workflow: name,
+                repo,
+                run,
+                outcome: outcome.to_owned(),
+                step,
+                reason,
+                link,
+            };
+            (box_id, event)
+        }
+        RunState::Queued | RunState::Running { .. } => return Ok(()),
+    };
+    if !box_exists(tx, box_id)? {
+        return Ok(());
+    }
+    insert_event(tx, BoxId::new(box_id), &Event::Workflow(event), at)?;
+    Ok(())
+}
+
+/// The Box, outcome name, step and reason of an end the owner hears of; none for a delivery, a
+/// decline, a skip, and a refusal that never had a Box.
+fn failure(end: &RunEnd, held: &Held) -> Option<(i64, &'static str, Option<String>, String)> {
+    match end {
+        RunEnd::Refused { detail } => {
+            Some((held.box_id?, "refused", held.step.clone(), detail.clone()))
+        }
+        RunEnd::Ended {
             box_id, outcome, ..
-        }) => {
-            let (kind, step, reason) = match outcome {
+        } => {
+            let (kind, at, reason) = match outcome {
                 RunOutcome::Failed { at, reason } => ("failed", at, reason.clone()),
                 RunOutcome::Incomplete { at } => (
                     "incomplete",
@@ -99,43 +130,12 @@ pub(super) fn record(
                     at,
                     "the run worked past its timeout".to_owned(),
                 ),
-                RunOutcome::Delivered { .. } | RunOutcome::Declined { .. } => return Ok(()),
+                RunOutcome::Delivered { .. } | RunOutcome::Declined { .. } => return None,
             };
-            let event = WorkflowEvent::RunFailed {
-                workflow: name,
-                repo,
-                run,
-                outcome: kind.to_owned(),
-                step: Some(step.as_str().to_owned()),
-                reason,
-                link,
-            };
-            (Some(box_id.get()), event)
+            Some((box_id.get(), kind, Some(at.as_str().to_owned()), reason))
         }
-        RunState::Done(RunEnd::Refused { detail }) => {
-            let event = WorkflowEvent::RunFailed {
-                workflow: name,
-                repo,
-                run,
-                outcome: "refused".to_owned(),
-                step: held.step.clone(),
-                reason: detail.clone(),
-                link,
-            };
-            (held.box_id, event)
-        }
-        RunState::Queued | RunState::Running { .. } | RunState::Done(RunEnd::SkippedOverlap) => {
-            return Ok(())
-        }
-    };
-    let Some(box_id) = box_id else {
-        return Ok(());
-    };
-    if !box_exists(tx, box_id)? {
-        return Ok(());
+        RunEnd::SkippedOverlap => None,
     }
-    insert_event(tx, BoxId::new(box_id), &Event::Workflow(event), at)?;
-    Ok(())
 }
 
 /// The name and prompt of workflow `id`.

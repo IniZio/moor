@@ -301,28 +301,6 @@ fn a_low_node_disk_prints_the_node_and_its_free_space() {
 }
 
 #[test]
-fn a_failed_and_a_waiting_run_print_the_reason_or_question_and_the_run_page() {
-    let world = world(&["repo/a"]);
-    let listen = world.listen();
-    world.wait_live(1);
-    let failed = json!({"workflow": "deps", "repo": "o/n", "run": 7, "outcome": "incomplete",
-        "step": "work", "reason": "the agent stopped", "link": "/workflows/deps/runs/7"});
-    world.happen_with("repo/a", 1, "run_failed", failed);
-    assert_eq!(
-        listen.line(),
-        "moor: box repo/a run_failed: deps (o/n) incomplete at work: the agent stopped \
-         /workflows/deps/runs/7"
-    );
-    let waiting = json!({"workflow": "deps", "repo": "o/n", "run": 8, "step": "ask",
-        "question": "ship it?", "link": "/workflows/deps/runs/8"});
-    world.happen_with("repo/a", 2, "run_waiting", waiting);
-    assert_eq!(
-        listen.line(),
-        "moor: box repo/a run_waiting: deps (o/n) asks: ship it? /workflows/deps/runs/8"
-    );
-}
-
-#[test]
 fn a_lost_disk_prints_what_is_gone() {
     let world = world(&["repo/a"]);
     let listen = world.listen();

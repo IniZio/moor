@@ -1,4 +1,4 @@
-//! A run that waits, or ends Failed, Incomplete, TimedOut or Refused, writes one event for its
+//! A run that waits, or ends `Failed`, `Incomplete`, `TimedOut` or `Refused`, writes one event for its
 //! owner's webhooks in the move that changed its state; success and repeats write none.
 #![allow(
     clippy::indexing_slicing,
@@ -118,6 +118,10 @@ impl World {
 }
 
 #[test]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "one scenario, asserted step by step"
+)]
 fn an_incomplete_run_gets_exactly_one_delivery_however_often_the_move_repeats() {
     let w = world();
     let alice = w.user("local:2000");
@@ -201,7 +205,9 @@ fn delivered_and_skipped_runs_send_nothing() {
         result: "done".to_owned(),
     };
     let at = Ts::from_millis(900);
-    let moved = w.store.end_workflow_run(key, (&on, 1), (boxed, ok), (&[], at));
+    let moved = w
+        .store
+        .end_workflow_run(key, (&on, 1), (boxed, ok), (&[], at));
     assert!(moved.unwrap());
     let skip = new_run(id, 200, crate::testing::runs::skipped(), None);
     assert!(w.store.record_workflow_run(&skip).unwrap());

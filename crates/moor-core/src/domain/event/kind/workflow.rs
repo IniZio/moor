@@ -28,7 +28,7 @@ pub enum WorkflowEvent {
         /// The run page, as a path on the portal.
         link: String,
     },
-    /// A run ended Failed, Incomplete, TimedOut or Refused.
+    /// A run ended Failed, Incomplete, `TimedOut` or Refused.
     RunFailed {
         /// The workflow's name.
         workflow: String,
