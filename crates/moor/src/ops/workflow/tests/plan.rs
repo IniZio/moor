@@ -255,3 +255,41 @@ fn a_box_that_is_gone_before_the_last_step_ends_the_run_incomplete() {
     };
     assert_eq!(at.as_str(), "audit");
 }
+
+/// A rig whose controller gives its Boxes no `moor` MCP server, so no agent can call
+/// `report_step`.
+fn unreportable() -> Rig {
+    let mut r = rig();
+    let mut config = r.cx.config().clone();
+    config.moor_service = None;
+    r.cx = r.cx.with_config(config);
+    r
+}
+
+#[test]
+fn a_planned_run_whose_agent_could_not_report_a_step_is_refused_before_its_box() {
+    let r = unreportable();
+    r.answer_repo();
+    let id = r.put_planned(Some(two_steps()));
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    let RunState::Done(RunEnd::Refused { detail }) = r.latest(id).state else {
+        panic!("{:?}", r.latest(id).state);
+    };
+    assert!(detail.contains("report_step"), "{detail}");
+    assert_eq!(r.open_boxes(), 0);
+}
+
+#[test]
+fn a_workflow_without_a_plan_starts_where_no_step_can_be_reported() {
+    let r = unreportable();
+    r.answer_repo();
+    let id = r.put_planned(None);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    assert!(
+        matches!(r.latest(id).state, RunState::Running { .. }),
+        "{:?}",
+        r.latest(id).state
+    );
+}
