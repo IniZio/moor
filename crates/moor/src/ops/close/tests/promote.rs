@@ -152,6 +152,7 @@ fn on_provider_node(cx: &Cx, id: BoxId, provider: &str) {
 
 fn start_req(name: &str) -> StartReq {
     StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
         name: BoxName::parse_allow_bare(name).unwrap(),

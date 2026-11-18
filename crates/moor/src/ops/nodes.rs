@@ -2,7 +2,7 @@
 
 use moor_core::decide::pressure::Reading;
 use moor_core::decide::schedule::{
-    behind_the_queue, schedule, BoxSpec, Node, Online, Scope, Verdict,
+    behind_the_queue, schedule, BoxSpec, Node, Online, Placement, Scope, Verdict,
 };
 use moor_core::request::MachineLinksReq;
 use moor_core::user::Viewer;
@@ -180,6 +180,7 @@ fn pick(cx: &Cx) -> Result<Option<StartPick>, CommandError> {
     };
     let (nodes, default) = crate::ops::common::node::nodes(cx)?;
     let spec = BoxSpec {
+        placement: Placement::FirstOnly,
         labels: Vec::new(),
         node: None,
     };

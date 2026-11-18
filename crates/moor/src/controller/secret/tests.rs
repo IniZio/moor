@@ -84,6 +84,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
 
 fn start() -> Request {
     Request::Start(StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
         name: BoxName::parse_allow_bare("demo").expect("name"),

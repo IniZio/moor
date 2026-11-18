@@ -1,6 +1,6 @@
 //! Tests for the node scheduler.
 
-use super::{behind_the_queue, schedule, BoxSpec, Memory, Node, Online, Scope, Verdict};
+use super::{behind_the_queue, schedule, BoxSpec, Memory, Node, Online, Placement, Scope, Verdict};
 use crate::name::NodeName;
 use crate::user::UserId;
 
@@ -48,6 +48,7 @@ fn ci() -> Node {
 
 fn spec(labels: &[&str], node: Option<&str>) -> BoxSpec {
     BoxSpec {
+        placement: Placement::FirstOnly,
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         node: node.map(name),
     }
@@ -544,3 +545,5 @@ fn an_offline_personal_node_names_the_online_shared_node_to_start_on() {
         "hv is offline for 1m: start moor-machine-agent on it, or start with --node local"
     );
 }
+
+mod first_online;

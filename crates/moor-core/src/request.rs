@@ -228,6 +228,26 @@ pub enum Request {
     Version {},
 }
 
+/// How far a start that names no node looks past its first candidate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Placement {
+    /// Only the first candidate is tried: offline, it refuses. A person starting a Box by hand.
+    #[default]
+    FirstOnly,
+    /// The first online candidate is taken, so a workflow firing is not stopped by a node that
+    /// is down.
+    FirstOnline,
+}
+
+impl Placement {
+    /// Whether this is the strict default, for leaving it out of the JSON.
+    #[must_use]
+    pub const fn is_first_only(&self) -> bool {
+        matches!(self, Self::FirstOnly)
+    }
+}
+
 /// Arguments of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -253,6 +273,10 @@ pub struct StartReq {
     /// One of the requester's nodes to run the Box on, in place of their default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
+    /// How far a start naming no node looks past its first candidate; left out of the JSON when
+    /// strict, so an older controller that refuses unknown fields still takes a manual start.
+    #[serde(default, skip_serializing_if = "Placement::is_first_only")]
+    pub placement: Placement,
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,

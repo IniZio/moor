@@ -2,6 +2,7 @@
 
 use clap::Args;
 use moor_core::config::override_text;
+use moor_core::decide::schedule::Placement;
 use moor_core::{BoxName, SessionId, StartReq};
 
 use super::box_name;
@@ -58,6 +59,7 @@ impl From<StartArgs> for StartReq {
     fn from(a: StartArgs) -> Self {
         Self {
             cold: false,
+            placement: Placement::FirstOnly,
             name: a.name,
             prompt: a.prompt,
             issue: a.issue,

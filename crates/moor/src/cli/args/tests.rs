@@ -67,6 +67,7 @@ fn start_with_all_flags() {
     assert_eq!(
         r,
         Request::Start(StartReq {
+            placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,
             name: n("t1"),

@@ -29,6 +29,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
     })?;
     Ok(ControllerRequest::Start(StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: override_text(args.config),
         name,
