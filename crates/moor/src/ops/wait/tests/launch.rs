@@ -111,9 +111,10 @@ fn a_fresh_agent_reads_starting_until_the_startup_grace_ends() {
     assert!(v.timed_out, "the first prompt's turn has not shown yet");
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
     assert_eq!(state(&cx, id), AgentState::Idle);
-    let v = run(&cx, &req(None, Some(5))).unwrap();
-    assert!(
-        !v.timed_out,
+    let e = run(&cx, &req(None, Some(5))).unwrap_err();
+    assert_eq!(
+        e.kind,
+        ErrorKind::Failed,
         "an agent idle at turn 0 past the grace never took its prompt"
     );
 }

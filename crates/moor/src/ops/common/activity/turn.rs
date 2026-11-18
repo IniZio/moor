@@ -4,15 +4,20 @@ use std::time::Duration;
 
 use moor_core::activity::{stalled_for, Activity, AgentState, Source, Status, STARTUP_GRACE};
 use moor_core::decide::turn::{turn_done, SteerMark, TermTurn, TurnFacts, TurnSignal};
+use moor_core::domain::decision::Field;
 use moor_core::domain::event::TurnOutcome;
 use moor_core::domain::inbox::{Delivery, SendMark};
 use moor_core::seam::clock::Ts;
+use moor_core::view::LaunchFailure;
 
 use super::{PaneLiveness, Reading};
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{BoxRow, InboxRow, Store};
+use crate::ops::common::stale::unless_stale;
+use crate::ops::common::view::rfc3339;
+use crate::ops::start::{launch_failure_json, record_launch_failure, LAUNCH_TAIL_LINES};
+use crate::store::{BoxRow, InboxRow, LaunchEnd, Store};
 
 /// Answer the last sent inbox row once its turn is over: delete it and every row sent before it,
 /// append a `turn_done` event for each, and make the Box's archive due.
@@ -31,14 +36,52 @@ pub(super) fn note_turn_done(
     let Some(open) = store.sent(row.id)?.pop() else {
         return Ok(false);
     };
-    let Some(outcome) = answer(reading, &open, now) else {
+    let Some((outcome, untaken)) = answer(reading, &open, now) else {
         return Ok(false);
     };
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
         return Ok(true);
     };
     store.answer(row.id, open.id, outcome)?;
+    if untaken {
+        fail_untaken(cx, store, row, reading, now)?;
+    }
     Ok(false)
+}
+
+/// Ends the launch of an agent that never took up its first prompt and records it as a failed
+/// launch, with the last lines of its screen, which show why when the agent refused the text.
+/// No turn will ever come of that prompt, so nothing should wait on one.
+fn fail_untaken(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    reading: &Reading,
+    now: Ts,
+) -> Result<(), CommandError> {
+    let Some(launch) = reading.launch else {
+        return Ok(());
+    };
+    let screen = reading.pane_text.as_deref().unwrap_or("");
+    let lines: Vec<&str> = screen.lines().filter(|l| !l.trim().is_empty()).collect();
+    let tail = lines
+        .get(lines.len().saturating_sub(LAUNCH_TAIL_LINES)..)
+        .unwrap_or_default()
+        .join("\n");
+    let failure = LaunchFailure {
+        step: "prompt".to_owned(),
+        message: format!(
+            "the agent never began on its first prompt in {} s; the agent may have refused it",
+            STARTUP_GRACE.as_secs()
+        ),
+        tail: Some(tail).filter(|t| !t.is_empty()),
+        at: rfc3339(now),
+    };
+    if unless_stale(cx, store.end_launch(row.id, launch, &LaunchEnd::default()))?.is_none() {
+        return Ok(());
+    }
+    let column = Field::Set(launch_failure_json(&failure)?);
+    record_launch_failure(store, row.id, column, Some(&failure))
 }
 
 /// Whether the last sent row's turn is still open by `reading`.
@@ -54,14 +97,15 @@ pub(crate) fn turn_open(
         .is_some_and(|open| answer(reading, open, now).is_none()))
 }
 
-/// The answer `reading` gives to sent row `open`, when its turn is over.
-fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
+/// The answer `reading` gives to sent row `open`, when its turn is over, and whether the row was
+/// a first prompt the agent never took up.
+fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<(TurnOutcome, bool)> {
     let Delivery::Sent { launch, at, mark } = open.delivery else {
         return None;
     };
     match reading.launch {
         Some(read) if read < launch => return None,
-        Some(read) if read > launch => return Some(TurnOutcome::Exited),
+        Some(read) if read > launch => return Some((TurnOutcome::Exited, false)),
         _ => {}
     }
     let facts = TurnFacts {
@@ -81,11 +125,17 @@ fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
         }),
         exited: reading.pane == PaneLiveness::Exited,
     };
-    turn_done(&facts)
+    let sent = Ts::from_millis(at);
+    let ended = turn_done(&facts)
         .map(|(_, outcome)| outcome)
-        .or_else(|| taken_into_running(reading, mark, Ts::from_millis(at), now))
-        .or_else(|| never_taken(reading, mark, Ts::from_millis(at), now))
-        .or_else(|| never_began(reading, Ts::from_millis(at), now))
+        .or_else(|| taken_into_running(reading, mark, sent, now));
+    if let Some(outcome) = ended {
+        return Some((outcome, false));
+    }
+    if let Some(outcome) = never_taken(reading, mark, sent, now) {
+        return Some((outcome, true));
+    }
+    never_began(reading, sent, now).map(|outcome| (outcome, false))
 }
 
 /// How long the agent must stay idle after the turn a steer was typed into ends before that turn

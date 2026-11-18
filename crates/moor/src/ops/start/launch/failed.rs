@@ -56,12 +56,12 @@ fn failure(cx: &Cx, e: &EngineError) -> LaunchFailure {
 }
 
 /// The failure as the JSON kept on the Box row.
-pub(in crate::ops::start) fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
+pub(crate) fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
     serde_json::to_string(f).map_err(|e| CommandError::new(moor_core::ErrorKind::Internal, e))
 }
 
 /// Writes the Box's launch failure column, with a `session_failed` event for a new failure.
-pub(in crate::ops::start) fn record(
+pub(crate) fn record(
     store: &Store,
     id: BoxId,
     column: Field<String>,
