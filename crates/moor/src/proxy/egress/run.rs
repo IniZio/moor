@@ -230,7 +230,7 @@ fn stop_flag(until_stdin_closes: bool) -> Result<Arc<AtomicBool>, String> {
 
 /// `route` with the key its service is sent: `MOOR_MACHINE_SERVICE_KEY` for the machine service,
 /// `MOOR_SERVICE_KEY` for moor's own. A machine key left empty is none; an empty moor key is
-/// refused, so a mis-set secret never leaves the Box listener unguarded.
+/// refused, so a wrongly set secret never leaves the Box listener unguarded.
 fn keyed(route: ServedRoute, env: &Env) -> Result<ServedRoute, String> {
     let (name, empty_ok) = match route.served {
         Served::Machine => (MACHINE_SERVICE_KEY, true),
