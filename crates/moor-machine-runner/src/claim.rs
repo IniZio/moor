@@ -4,6 +4,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use moor_client::link::reach::Runner as Holder;
 use moor_client::Client;
 use moor_core::request::{HoldOp, HoldValue, MachineHoldReq, Request};
 use moor_core::seam::clock::Ts;
@@ -16,7 +17,7 @@ use rmcp::{tool, tool_router, ErrorData, RoleServer};
 use serde::{Deserialize, Serialize};
 
 use crate::beat::Progress;
-use crate::caller::{Caller, Reach};
+use crate::caller::{service_key, Caller, Reach};
 use crate::hooks::Facts;
 use crate::Runner;
 
@@ -145,9 +146,16 @@ impl Runner {
             Ok(facts) => {
                 // Starting a relay takes seconds; started here, the client's re-list after the
                 // claim finds its tools at once instead of after a later call.
-                self.relays
-                    .tools(&caller, &facts, &crate::own_names())
-                    .await;
+                let machine_id = caller.reach.machine_id;
+                let link_held_here = self
+                    .agents
+                    .as_ref()
+                    .is_some_and(|a| a.online().contains(&machine_id));
+                if link_held_here {
+                    self.relays
+                        .tools(&caller, &facts, &crate::own_names())
+                        .await;
+                }
                 Ok(CallToolResult::structured(serde_json::json!(Claimed {
                     port_offset: 10 * u32::from(caller.slot),
                     machine: caller.machine,
@@ -188,11 +196,14 @@ async fn claim(
                 machine_id,
                 slot,
                 ports,
+                runner,
             } => {
                 let sync_exclude = Vec::new();
+                let holder = runner.and_then(|r| Holder::at(r.as_str(), service_key()).ok());
                 let reach = Reach {
                     machine_id,
                     machine: machine.clone(),
+                    holder,
                 };
                 let caller = Caller {
                     box_id: id,

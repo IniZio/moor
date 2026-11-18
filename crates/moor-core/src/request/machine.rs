@@ -346,6 +346,10 @@ pub enum HoldValue {
         slot: u16,
         /// The forwarded ports, moved by the slot.
         ports: Vec<u16>,
+        /// The runner that holds the machine's link, when one does; a runner without it runs the
+        /// claim's hooks through this one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runner: Option<RunnerAddr>,
     },
     /// The want is recorded; `position` counts from 1 among the user's waiters.
     Waiting {

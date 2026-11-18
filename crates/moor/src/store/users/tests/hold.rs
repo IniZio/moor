@@ -127,6 +127,7 @@ fn a_claim_on_a_free_machine_holds_slot_zero_with_the_repo_ports() {
         machine_id: r.mini,
         slot: 0,
         ports: vec![8081],
+        runner: None,
     };
     assert_eq!(got, want);
     assert_eq!(
@@ -290,6 +291,7 @@ fn a_claim_without_labels_skips_a_pool_host() {
             machine_id: r.mini,
             slot: 0,
             ports: Vec::new(),
+            runner: None,
         }
     );
 }

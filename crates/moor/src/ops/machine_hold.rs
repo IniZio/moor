@@ -37,7 +37,17 @@ pub(crate) fn run(cx: &Cx, req: &MachineHoldReq) -> Result<HoldValue, CommandErr
     let exclude = want.map_or_else(Vec::new, |w| {
         sync_excludes(&w.sync, &cx.config().machines.sync)
     });
-    Ok(store.hold_machine(req.id, user, &req.op, want, &exclude)?)
+    let mut value = store.hold_machine(req.id, user, &req.op, want, &exclude)?;
+    if let HoldValue::Held {
+        machine_id, runner, ..
+    } = &mut value
+    {
+        *runner = store
+            .machine_runner(*machine_id, store.now())
+            .ok()
+            .flatten();
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

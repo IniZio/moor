@@ -105,6 +105,18 @@ fn the_runner_socket_claims_a_machine_for_any_users_box() {
 }
 
 #[test]
+fn a_held_claim_names_the_runner_that_holds_the_machines_link() {
+    let h = Hold::new();
+    let a = h.new_box(A, "a");
+    let runner = h.served.runner();
+    let link = json!({"machine_id": 1, "online": true, "since": 1});
+    let report = json!({"cmd": "machine-links", "runner": "10.0.0.7:7702", "links": [link]});
+    assert_eq!(ask(&runner, &report)["class"], "ok");
+    let got = ask(&runner, &hold(a, &claim()));
+    assert_eq!(got["value"]["runner"], "10.0.0.7:7702", "{got}");
+}
+
+#[test]
 fn a_claim_on_a_full_machine_without_a_wait_is_refused_naming_the_holder() {
     let h = Hold::new();
     let (a, b) = (h.new_box(A, "a"), h.new_box(A, "b"));
@@ -256,6 +268,7 @@ fn a_request_and_its_values_round_trip_on_the_wire() {
             machine_id: 3,
             slot: 1,
             ports: vec![8090],
+            runner: Some(moor_core::request::RunnerAddr::new("10.0.0.7:7702")),
         },
         HoldValue::Waiting {
             position: 2,

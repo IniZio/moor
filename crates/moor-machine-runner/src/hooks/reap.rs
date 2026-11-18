@@ -56,6 +56,7 @@ impl Hooks {
         let Reach {
             machine_id,
             machine,
+            ..
         } = reach;
         let op = Op::Remove { box_id: id };
         match link::send(self.agents.as_ref(), machine, *machine_id, &op).await? {

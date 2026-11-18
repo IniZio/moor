@@ -73,6 +73,7 @@ impl Caller {
         let reach = Reach {
             machine_id,
             machine: machine.clone(),
+            holder: None,
         };
         let raw = header(SLOT)?;
         let slot = raw
@@ -140,6 +141,14 @@ pub(crate) struct Reach {
     pub(crate) machine_id: i64,
     /// Its name, for errors.
     pub(crate) machine: String,
+    /// The runner holding the link, for a claim that reached a runner without it; never kept.
+    #[serde(skip)]
+    pub(crate) holder: Option<moor_client::link::reach::Runner>,
+}
+
+/// The service key this runner checks, which it also presents to the runner holding a link.
+pub(crate) fn service_key() -> Option<&'static str> {
+    KEY.get().map(AsRef::as_ref)
 }
 
 /// The machine's enrolled id from the request headers, when its agent links in.
