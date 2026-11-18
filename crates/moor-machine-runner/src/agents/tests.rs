@@ -147,3 +147,28 @@ async fn a_draining_runner_says_so_with_every_report_after_and_tells_its_agents_
     assert_eq!(sent.runner.as_str(), "/run/runner.sock");
     assert_eq!(sent.links.len(), 1);
 }
+
+#[tokio::test]
+async fn a_link_whose_agent_goes_silent_reports_the_machine_offline_within_three_keepalives() {
+    let (links, mut rx) = links();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    let accepting = async {
+        let (tcp, _) = listener.accept().await.unwrap();
+        moor_client::link::accept(tcp).await.unwrap()
+    };
+    let (dialed, ws) = tokio::join!(moor_client::link::dial(&server), accepting);
+    // Never read, so the runner's pings go unanswered, as through a dead tunnel.
+    let _agent = dialed.unwrap();
+    let keepalive = std::time::Duration::from_millis(200);
+    let admitted = (5, "1.0.0".to_owned(), Offer::default());
+    let (links, routes) = (std::sync::Arc::new(links), std::sync::Arc::default());
+    tokio::spawn(super::held::hold_link(
+        ws, admitted, keepalive, links, routes,
+    ));
+    let online =
+        |online: bool| move |r: &MachineLinksReq| r.links.iter().any(|l| l.online == online);
+    rx.wait_for(online(true)).await.unwrap();
+    let offline = tokio::time::timeout(keepalive * 4, rx.wait_for(online(false))).await;
+    assert!(offline.is_ok(), "the machine still reads as online");
+}
