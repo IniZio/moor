@@ -15,20 +15,43 @@ use serde_json::{json, Value};
 use super::login::{csrf, get, send, sign_in, Reply};
 use super::CLIENT_ID;
 
+/// The cookie key every replica shares.
+const KEYS: &str = "a-cookie-key-every-replica-shares-0123456789";
+
 const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
 
 struct World {
-    addr: String,
+    /// The gates, each serving the same public URL with the same cookie key.
+    gates: Vec<Replica>,
     /// Every `machine-enroll` the controller got, with the identity it came as.
     enrolled: Arc<Mutex<Vec<Value>>>,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
 }
 
+/// One gate replica.
+struct Replica {
+    addr: String,
+}
+
+impl std::ops::Deref for World {
+    type Target = Replica;
+
+    fn deref(&self) -> &Replica {
+        &self.gates[0]
+    }
+}
+
 /// A gate in front of a controller that enrolls every machine as id 7; with browser sign-in
 /// when `login`.
 fn world(login: bool) -> World {
+    world_of(login, 1)
+}
+
+/// `replicas` gates in front of one controller that enrolls every machine as id 7, all sharing
+/// one public URL and one cookie key; with browser sign-in when `login`.
+fn world_of(login: bool, replicas: usize) -> World {
     let issuer = Issuer::start(CLIENT_ID);
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
@@ -61,24 +84,33 @@ fn world(login: bool) -> World {
             });
         }
     });
-    let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = tcp.local_addr().unwrap().to_string();
-    let login = login.then(|| Arc::new(Login::new(&format!("http://{addr}")).unwrap()));
-    let gate = Arc::new(Gate {
-        controller: moor_client::Client::new(socket),
-        mcp: None,
-        verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
-    });
-    std::thread::spawn(move || moor_gate::serve_with(&tcp, &gate, login.as_ref()));
+    let listeners: Vec<TcpListener> = (0..replicas)
+        .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
+        .collect();
+    let public = format!("http://{}", listeners[0].local_addr().unwrap());
+    let gates = listeners
+        .into_iter()
+        .map(|tcp| {
+            let addr = tcp.local_addr().unwrap().to_string();
+            let login = login.then(|| Arc::new(Login::with_keys(&public, KEYS).unwrap()));
+            let gate = Arc::new(Gate {
+                controller: moor_client::Client::new(socket.clone()),
+                mcp: None,
+                verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
+            });
+            std::thread::spawn(move || moor_gate::serve_with(&tcp, &gate, login.as_ref()));
+            Replica { addr }
+        })
+        .collect();
     World {
-        addr,
+        gates,
         enrolled,
         _issuer: issuer,
         _dir: dir,
     }
 }
 
-impl World {
+impl Replica {
     /// Posts `body` as JSON to `path`: the status and the JSON answer.
     fn post_json(&self, path: &str, body: &Value) -> (u16, Value) {
         let extra = "Content-Type: application/json\r\n";
@@ -118,7 +150,7 @@ fn target(url: &str) -> String {
 }
 
 /// Checks the code and URLs `asked` hands out, as RFC 8628 names them.
-fn assert_handed_out(w: &World, asked: &Value) {
+fn assert_handed_out(w: &Replica, asked: &Value) {
     let code = asked["user_code"].as_str().unwrap();
     assert!(
         code.len() == 9 && code.as_bytes()[4] == b'-',
@@ -148,7 +180,7 @@ fn assert_enrolled_once_as_alice(w: &World) {
 
 /// Opens `url` as a browser would: sent to sign in first, then shown the page. The session
 /// and the page.
-fn open_signed_in(w: &World, url: &str) -> (String, Reply) {
+fn open_signed_in(w: &Replica, url: &str) -> (String, Reply) {
     let page = target(url);
     let anonymous = get(&w.addr, &page, None);
     assert_eq!(anonymous.status, 302);
@@ -277,4 +309,31 @@ fn a_pairing_that_is_not_json_is_a_bad_request() {
     let w = world(true);
     let reply = send(&w.addr, "POST", "/machines/pair", "", "{");
     assert_eq!(reply.status, 400, "{}", reply.body);
+}
+
+#[test]
+fn a_code_one_replica_handed_out_is_confirmed_and_collected_on_another() {
+    let w = world_of(true, 2);
+    let (a, b) = (&w.gates[0], &w.gates[1]);
+    let asked = a.ask();
+    let code = asked["user_code"].as_str().unwrap();
+    assert_eq!(
+        b.poll(&asked["device_code"]),
+        (400, json!({"error": "authorization_pending"})),
+        "a poll that lands on the other replica still waits"
+    );
+
+    let session = sign_in(&b.addr);
+    let shown = get(&b.addr, &format!("/pair?code={code}"), Some(&session));
+    assert_eq!(shown.status, 200, "{}", shown.body);
+    let done = b.confirm(&session, &csrf(&shown), code);
+    assert_eq!(done.status, 200, "{}", done.body);
+    assert_enrolled_once_as_alice(&w);
+
+    assert_eq!(a.poll(&asked["device_code"]).0, 200);
+    assert_eq!(
+        b.poll(&asked["device_code"]),
+        (400, json!({"error": "expired_token"})),
+        "the answer is handed out once, whichever replica collects it"
+    );
 }
