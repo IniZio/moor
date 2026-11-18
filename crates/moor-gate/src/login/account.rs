@@ -16,7 +16,7 @@ use serde_json::json;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
-use super::{nodes, repos, tasks, workflows};
+use super::{nodes, portal, repos, workflows};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Rebuilt by `make web`.
@@ -97,9 +97,9 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
-        ("GET", p, Some(session)) if tasks::serves(p) => {
+        ("GET", p, Some(session)) if portal::serves(p) => {
             let query = req.target.split_once('?').map_or("", |(_, q)| q);
-            tasks::serve(&mut stream, gate, &session, (p, query));
+            portal::serve(&mut stream, gate, &session, (p, query));
         }
         (method, p, session) if workflows::route(p).is_some() => {
             let query = req.target.split_once('?').map_or("", |(_, q)| q);

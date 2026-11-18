@@ -1,4 +1,4 @@
-//! The task's timeline: what a person reads of a Box's events, each classed so a front folds
+//! The Box's timeline: what a person reads of a Box's events, each classed so a front folds
 //! the routine ones and never an error.
 
 use serde::Serialize;
@@ -53,6 +53,7 @@ impl Class {
             | "session_failed"
             | "launch_timed_out"
             | "relaunch_capped"
+            | "death_capped"
             | "agent_unreachable"
             | "agent_stalled"
             | "steer_cut"

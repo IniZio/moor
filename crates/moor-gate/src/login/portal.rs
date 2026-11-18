@@ -1,5 +1,5 @@
-//! The tasks pages' data: the signed-in person's Boxes as tasks, each with the state moor
-//! derives (the page never computes one), one task with its timeline and artifacts, and an
+//! The Boxes pages' data: the signed-in person's Boxes as Boxes, each with the state moor
+//! derives (the page never computes one), one Box with its timeline and artifacts, and an
 //! artifact's bytes. The controller decides whose Boxes a person sees, so a Box that is not
 //! theirs is a 404 here, never told apart from one that does not exist.
 
@@ -7,9 +7,9 @@ use std::io::Write as _;
 use std::net::TcpStream;
 
 use moor_core::name::BoxName;
+use moor_core::progress::{PrLink, ProgressView};
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
-use moor_core::task::{PrLink, TaskView};
 use moor_core::view::ArtifactView;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -21,7 +21,7 @@ use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
 
-/// The events a task page reads: the most the controller keeps in one window.
+/// The events a Box page reads: the most the controller keeps in one window.
 const EVENTS: u32 = 500;
 
 /// The most an artifact download holds in memory.
@@ -30,15 +30,15 @@ const DOWNLOAD_MAX: u64 = 32 * 1024 * 1024;
 /// Content types a page may show inline in an `<img>`. Never SVG: it can carry script.
 const IMAGES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-/// Whether `path` is a tasks route.
+/// Whether `path` is a Boxes route.
 pub(super) fn serves(path: &str) -> bool {
     matches!(
         path,
-        "/account/api/tasks" | "/account/api/task" | "/account/api/task/artifact"
+        "/account/api/boxes" | "/account/api/box" | "/account/api/box/artifact"
     )
 }
 
-/// Answers the tasks route `path` (see [`serves`]) for `session`, with the request's `query`.
+/// Answers the Boxes route `path` (see [`serves`]) for `session`, with the request's `query`.
 pub(super) fn serve(
     stream: &mut TcpStream,
     gate: &Gate,
@@ -46,8 +46,8 @@ pub(super) fn serve(
     (path, query): (&str, &str),
 ) {
     match path {
-        "/account/api/tasks" => list(stream, gate, session),
-        "/account/api/task" => read(stream, gate, session, query),
+        "/account/api/boxes" => list(stream, gate, session),
+        "/account/api/box" => read(stream, gate, session, query),
         _ => artifact(stream, gate, session, query),
     }
 }
@@ -63,12 +63,12 @@ struct Row {
     branch: Option<String>,
     /// The base ref.
     base: Option<String>,
-    /// What the task was asked.
+    /// What the Box was asked.
     prompt: Option<String>,
     /// RFC 3339 UTC last update.
     updated_at: String,
     /// The derived state.
-    task: Option<TaskView>,
+    progress: Option<ProgressView>,
 }
 
 /// What `show` sends, the parts a page reads.
@@ -93,21 +93,21 @@ fn pr_json(pr: Option<&PrLink>) -> Value {
     })
 }
 
-/// A task as a list row or the head of a task page.
+/// A Box as a list row or the head of a Box page.
 fn summary(row: &Row) -> Option<Value> {
-    let task = row.task.as_ref()?;
+    let progress = row.progress.as_ref()?;
     Some(json!({
         "box": row.name,
         "repo": row.repo,
         "branch": row.branch,
         "base": row.base,
         "prompt": row.prompt,
-        "state": task.state,
-        "stale": task.stale,
-        "line": task.line,
-        "last_event_at": task.last_event_at,
+        "state": progress.state,
+        "stale": progress.stale,
+        "line": progress.line,
+        "last_event_at": progress.last_event_at,
         "updated_at": row.updated_at,
-        "pr": pr_json(task.pr.as_ref()),
+        "pr": pr_json(progress.pr.as_ref()),
     }))
 }
 
@@ -134,7 +134,7 @@ enum Failure {
     Other(String),
 }
 
-/// Answers the person's open Boxes as tasks.
+/// Answers the person's open Boxes as Boxes.
 pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
     let all = ShowReq {
         target: None,
@@ -147,10 +147,10 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
     match show(gate, session, all) {
         Ok(shown) => {
             let rows: Vec<Value> = shown.boxes.iter().flatten().filter_map(summary).collect();
-            json(stream, "200 OK", &json!({"tasks": rows}));
+            json(stream, "200 OK", &json!({"boxes": rows}));
         }
         Err(Failure::Reply(reply)) => answered(stream, &reply),
-        Err(Failure::Other(why)) => failed(stream, "task list", &why),
+        Err(Failure::Other(why)) => failed(stream, "box list", &why),
     }
 }
 
@@ -168,13 +168,13 @@ fn href(boxed: &str, name: &str, version: u32) -> String {
         .append_pair("name", name)
         .append_pair("version", &version.to_string())
         .finish();
-    format!("/account/api/task/artifact?{query}")
+    format!("/account/api/box/artifact?{query}")
 }
 
-/// Answers one task: its head, timeline and artifacts.
+/// Answers one Box: its head, timeline and artifacts.
 pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query: &str) {
     let Some(name) = param(query, "box").and_then(|b| BoxName::parse_allow_bare(&b).ok()) else {
-        let why = json!({"error": "name a task"});
+        let why = json!({"error": "name a Box"});
         return json(stream, "400 Bad Request", &why);
     };
     let one = ShowReq {
@@ -187,15 +187,15 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
     };
     let shown = match show(gate, session, one) {
         Ok(shown) => shown,
-        // Every Box the controller shows a person is theirs, so a refusal is no such task.
+        // Every Box the controller shows a person is theirs, so a refusal is no such Box.
         Err(Failure::Reply(reply)) if reply.class != ExitClass::Usage => {
-            return json(stream, "404 Not Found", &json!({"error": "no such task"}));
+            return json(stream, "404 Not Found", &json!({"error": "no such Box"}));
         }
         Err(Failure::Reply(reply)) => return answered(stream, &reply),
-        Err(Failure::Other(why)) => return failed(stream, "task read", &why),
+        Err(Failure::Other(why)) => return failed(stream, "box read", &why),
     };
     let Some(mut view) = shown.boxed.as_ref().and_then(summary) else {
-        return json(stream, "404 Not Found", &json!({"error": "no such task"}));
+        return json(stream, "404 Not Found", &json!({"error": "no such Box"}));
     };
     let boxed = shown.boxed.as_ref().map_or("", |r| r.name.as_str());
     let artifacts: Vec<Value> = shown

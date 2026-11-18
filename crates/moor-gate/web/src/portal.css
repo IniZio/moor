@@ -1,6 +1,6 @@
-/* Tasks: the dense list and the task page. Own classes (t-), no inline styles (the page's CSP forbids them). */
+/* The Box list and the Box page. Own classes (t-), no inline styles (the page's CSP forbids them). */
 .t-mono { font-family: var(--moor-font-mono); font-size: var(--moor-text-xs); }
-.t-home, .t-task { font-size: 0.875rem; line-height: 1.45; }
+.t-home, .t-box { font-size: 0.875rem; line-height: 1.45; }
 kbd { font-size: 0.75rem; padding: 0 0.3rem; border: 1px solid var(--moor-color-border); border-bottom-width: 2px; border-radius: 4px; color: var(--moor-color-text-muted); background: var(--moor-color-bg-sunken); }
 .t-hint { margin: 0 0 var(--moor-space-4); }
 

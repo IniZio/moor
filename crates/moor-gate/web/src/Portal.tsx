@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Entry, SignedOut, type Task, taskGet, taskList, type TaskRow, type TaskState } from './api';
+import { type Entry, SignedOut, type BoxDetail, boxGet, boxList, type BoxRow, type Progress } from './api';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
-const STATES: Record<TaskState, { word: string; glyph: string; tone: string }> = {
+const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
 	needs_you: { word: 'needs you', glyph: '●', tone: 'needs' },
 	working: { word: 'working', glyph: '◐', tone: 'working' },
 	setting_up: { word: 'setting up', glyph: '◌', tone: 'working' },
@@ -17,13 +17,13 @@ const STATES: Record<TaskState, { word: string; glyph: string; tone: string }> =
 /** How often an open page asks again. */
 const POLL_MS = 4000;
 
-/** A done task idle this long moves to the Settled shelf. */
+/** A done Box idle this long moves to the Settled shelf. */
 const SETTLE_MS = 7 * 24 * 3600 * 1000;
 
-/** Which list a task sits in. */
+/** Which list a Box sits in. */
 type Group = 'needs' | 'working' | 'done' | 'settled';
 
-function groupOf(t: TaskRow, now: number): Group {
+function groupOf(t: BoxRow, now: number): Group {
 	switch (t.state) {
 		case 'needs_you':
 			return 'needs';
@@ -38,7 +38,7 @@ function groupOf(t: TaskRow, now: number): Group {
 	}
 }
 
-/** The title a task goes by: the first line of what it was asked. */
+/** The title a Box goes by: the first line of what it was asked. */
 function titleOf(t: { prompt?: string | null; box: string }): string {
 	const line = (t.prompt ?? '').split('\n').find((l) => l.trim()) ?? t.box;
 	return line.length > 64 ? `${line.slice(0, 63)}…` : line;
@@ -86,7 +86,7 @@ function usePoll<T>(load: () => Promise<T>, key: string) {
 	return { value, error, now };
 }
 
-function Glyph({ state, stale }: { state: TaskState; stale: boolean }) {
+function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
 	const s = STATES[state];
 	return (
 		<span class={`t-glyph t-${s.tone}${stale ? ' t-stale' : ''}`} role="img" aria-label={s.word} title={s.word}>
@@ -95,10 +95,10 @@ function Glyph({ state, stale }: { state: TaskState; stale: boolean }) {
 	);
 }
 
-function Row({ t, now, quiet }: { t: TaskRow; now: number; quiet?: boolean }) {
+function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 	const s = STATES[t.state];
 	return (
-		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/task/${encodeURIComponent(t.box)}`} data-row>
+		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
 			<span class="t-repo t-mono">{t.repo ?? ''}</span>
 			<span class="t-title">{titleOf(t)}</span>
@@ -112,7 +112,7 @@ function Row({ t, now, quiet }: { t: TaskRow; now: number; quiet?: boolean }) {
 	);
 }
 
-function Section({ label, tone, rows, now, empty }: { label: string; tone: string; rows: TaskRow[]; now: number; empty: string }) {
+function Section({ label, tone, rows, now, empty }: { label: string; tone: string; rows: BoxRow[]; now: number; empty: string }) {
 	return (
 		<section class={`t-grp t-grp-${tone}`}>
 			<h2>
@@ -141,10 +141,10 @@ function useRowKeys() {
 }
 
 export function Home() {
-	const { value, error, now } = usePoll(taskList, 'home');
+	const { value, error, now } = usePoll(boxList, 'home');
 	useRowKeys();
 	if (!value) {
-		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
+		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Boxes…</p>;
 	}
 	const by = (g: Group) => value.filter((t) => groupOf(t, now) === g);
 	const settled = by('settled');
@@ -152,7 +152,7 @@ export function Home() {
 		<div class="t-home">
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<p class="t-hint muted">
-				Your tasks · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
+				Your Boxes · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
 			</p>
 			<Section label="Needs you" tone="needs" rows={by('needs')} now={now} empty="Nothing needs you." />
 			<Section label="Working" tone="working" rows={by('working')} now={now} empty="Nothing is running." />
@@ -160,11 +160,11 @@ export function Home() {
 			<details class="t-settled">
 				<summary>
 					<span class="t-chev">▸</span> Settled · {settled.length}{' '}
-					<span class="muted">tasks closed, or done and quiet for 7 days</span>
+					<span class="muted">Boxes closed, or done and quiet for 7 days</span>
 				</summary>
 				{settled.map((t) => <Row t={t} now={now} key={t.box} quiet />)}
 			</details>
-			{!value.length && <p class="t-empty">No tasks yet. Start one from Claude Code with the moor tools.</p>}
+			{!value.length && <p class="t-empty">No Boxes yet. Start one from Claude Code with the moor tools.</p>}
 		</div>
 	);
 }
@@ -261,24 +261,24 @@ function Line({ e }: { e: Entry }) {
 	}
 }
 
-function Timeline({ task }: { task: Task }) {
-	if (!task.timeline.length) return <p class="t-empty">Nothing has happened yet.</p>;
+function Timeline({ detail }: { detail: BoxDetail }) {
+	if (!detail.timeline.length) return <p class="t-empty">Nothing has happened yet.</p>;
 	return (
 		<div class="t-events">
-			{blocks(task.timeline).map((b) =>
+			{blocks(detail.timeline).map((b) =>
 				b.kind === 'fold' ? <Fold entries={b.entries} key={b.entries[0]?.id} /> : <Line e={b.entry} key={b.entry.id} />,
 			)}
 		</div>
 	);
 }
 
-function EvidenceTab({ task }: { task: Task }) {
-	if (!task.artifacts.length) {
+function EvidenceTab({ detail }: { detail: BoxDetail }) {
+	if (!detail.artifacts.length) {
 		return <p class="t-empty">No evidence yet. Screenshots, videos, logs and step reports land here.</p>;
 	}
 	return (
 		<div class="t-gallery">
-			{task.artifacts.map((a) => (
+			{detail.artifacts.map((a) => (
 				<figure key={`${a.name}@${a.version}`}>
 					{a.image ? (
 						<a href={a.href} target="_blank" rel="noopener">
@@ -314,18 +314,18 @@ export function tabOf(raw: string | undefined): Tab {
 	return TABS.find((t) => t === raw && !LATER[t]) ?? 'timeline';
 }
 
-export function TaskPage({ box, tab }: { box: string; tab: Tab }) {
-	const { value, error, now } = usePoll(() => taskGet(box), `task:${box}`);
+export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
+	const { value, error, now } = usePoll(() => boxGet(box), `box:${box}`);
 	if (!value) {
 		return (
-			<div class="t-task">
-				<p><a href="#/">← Tasks</a></p>
-				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading task…</p>}
+			<div class="t-box">
+				<p><a href="#/">← Boxes</a></p>
+				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Box…</p>}
 			</div>
 		);
 	}
 	const s = STATES[value.state];
-	const base = `#/task/${encodeURIComponent(box)}`;
+	const base = `#/box/${encodeURIComponent(box)}`;
 	const label: Record<Tab, string> = {
 		timeline: 'Timeline',
 		terminal: 'Terminal',
@@ -333,10 +333,10 @@ export function TaskPage({ box, tab }: { box: string; tab: Tab }) {
 		evidence: `Evidence ${value.artifacts.length}`,
 	};
 	return (
-		<div class="t-task">
+		<div class="t-box">
 			<div class="t-thead">
 				<div class="t-crumbs">
-					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
+					<a class="t-mono" href="#/">{value.repo ?? 'boxes'}</a>
 					<span class="t-sep">▸</span>
 					<b>{titleOf(value)}</b>
 					<span class="t-sep">▸</span>
@@ -380,7 +380,7 @@ export function TaskPage({ box, tab }: { box: string; tab: Tab }) {
 					{value.stale && (
 						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
 					)}
-					{tab === 'evidence' ? <EvidenceTab task={value} /> : <Timeline task={value} />}
+					{tab === 'evidence' ? <EvidenceTab detail={value} /> : <Timeline detail={value} />}
 				</section>
 				<aside class="t-rail">
 					<h3>Now</h3>

@@ -1,5 +1,5 @@
-//! A task as a person sees it: one state derived from a Box's row and events, the line that
-//! matters now, a PR link and the timeline. Every front shows what [`derive`] says; none
+//! A Box as a person sees it: one state derived from a Box's row and events, the line that
+//! matters now, a PR link and the timeline. Every front shows what [`fn@derive`] says; none
 //! computes its own.
 
 use serde::{Deserialize, Serialize};
@@ -13,13 +13,13 @@ use crate::view::{BoxView, EventView};
 mod timeline;
 pub use timeline::{timeline, Class, TimelineEntry};
 
-/// How long a working task may go without an event before it shows a warning.
+/// How long a working Box may go without an event before it shows a warning.
 pub const STALE_AFTER_MS: i64 = 30 * 60 * 1000;
 
-/// Where a task is, in the words a person uses.
+/// Where a Box is, in the words a person uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskState {
+pub enum Progress {
     /// Waits for a free machine slot.
     Queued,
     /// Its machine is being acquired and set up.
@@ -34,25 +34,25 @@ pub enum TaskState {
     Asleep,
     /// The Box is closed.
     Closed,
-    /// Setup failed, the agent could not launch or crashed, or the task was refused.
+    /// Setup failed, the agent could not launch or crashed, or the Box was refused.
     Failed,
 }
 
-/// A GitHub pull request the agent named, on one of the task's own repos.
+/// A GitHub pull request the agent named, on one of the Box's own repos.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrLink {
-    /// `OWNER/NAME`, as the task's repo spells it.
+    /// `OWNER/NAME`, as the Box's repo spells it.
     pub repo: String,
     /// The pull request number.
     pub number: u64,
 }
 
-/// What a front shows of one task.
+/// What a front shows of one Box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskView {
+pub struct ProgressView {
     /// The derived state.
-    pub state: TaskState,
-    /// A working task with no event for [`STALE_AFTER_MS`].
+    pub state: Progress,
+    /// A working Box with no event for [`STALE_AFTER_MS`].
     pub stale: bool,
     /// The one line that matters now.
     pub line: String,
@@ -62,9 +62,9 @@ pub struct TaskView {
     pub pr: Option<PrLink>,
 }
 
-/// The task `boxed` is at `now_ms` (unix milliseconds), given its events oldest first.
+/// The Box `boxed` is at `now_ms` (unix milliseconds), given its events oldest first.
 #[must_use]
-pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> TaskView {
+pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressView {
     let state = state_of(boxed);
     let newest = events.last().and_then(|e| unix(&e.ts));
     let silent = newest.map(|s| now_ms - s * 1000);
@@ -76,9 +76,9 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> TaskView {
             ts: e.ts.clone(),
         })
         .collect();
-    TaskView {
+    ProgressView {
         state,
-        stale: state == TaskState::Working && silent.is_some_and(|s| s > STALE_AFTER_MS),
+        stale: state == Progress::Working && silent.is_some_and(|s| s > STALE_AFTER_MS),
         line: line_of(state, boxed, events, &happened, silent),
         last_event_at: events.last().map(|e| e.ts.clone()),
         pr: pr_of(boxed, events),
@@ -87,36 +87,36 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> TaskView {
 
 /// The state the Box's row says. Events never decide it: a window of them can miss the one that
 /// would.
-fn state_of(b: &BoxView) -> TaskState {
+fn state_of(b: &BoxView) -> Progress {
     match b.lifecycle {
-        BoxLifecycle::Closed => TaskState::Closed,
-        BoxLifecycle::Rejected | BoxLifecycle::SetupFailed => TaskState::Failed,
-        BoxLifecycle::Pending => TaskState::Queued,
-        BoxLifecycle::Checking | BoxLifecycle::SettingUp => TaskState::SettingUp,
-        BoxLifecycle::Asleep => TaskState::Asleep,
+        BoxLifecycle::Closed => Progress::Closed,
+        BoxLifecycle::Rejected | BoxLifecycle::SetupFailed => Progress::Failed,
+        BoxLifecycle::Pending => Progress::Queued,
+        BoxLifecycle::Checking | BoxLifecycle::SettingUp => Progress::SettingUp,
+        BoxLifecycle::Asleep => Progress::Asleep,
         BoxLifecycle::Ready => ready_state(b),
     }
 }
 
 /// The state of a Box whose machine is up.
-fn ready_state(b: &BoxView) -> TaskState {
+fn ready_state(b: &BoxView) -> Progress {
     let agent = b.agent.as_ref();
     match agent.map(|a| a.state.as_str()) {
-        Some("needs_input") => return TaskState::NeedsYou,
-        Some("failed") => return TaskState::Failed,
+        Some("needs_input") => return Progress::NeedsYou,
+        Some("failed") => return Progress::Failed,
         Some("exited") if agent.and_then(|a| a.exit_code).is_some_and(|c| c != 0) => {
-            return TaskState::Failed;
+            return Progress::Failed;
         }
         // It ended its turn but waits on work it started: still going.
-        Some("waiting") => return TaskState::Working,
+        Some("waiting") => return Progress::Working,
         _ => {}
     }
     if !b.attention.is_empty() {
-        return TaskState::NeedsYou;
+        return Progress::NeedsYou;
     }
     match b.session_state {
-        SessionState::Starting | SessionState::Working => TaskState::Working,
-        SessionState::Idle | SessionState::Ended => TaskState::Done,
+        SessionState::Starting | SessionState::Working => Progress::Working,
+        SessionState::Idle | SessionState::Ended => Progress::Done,
     }
 }
 
@@ -147,9 +147,9 @@ fn newest<'a>(events: &'a [EventView], kind: &str, key: &str) -> Option<&'a str>
         .find_map(|e| text(&e.payload, key))
 }
 
-/// The line for a task in `state`.
+/// The line for a Box in `state`.
 fn line_of(
-    state: TaskState,
+    state: Progress,
     b: &BoxView,
     events: &[EventView],
     happened: &[Happened],
@@ -157,17 +157,17 @@ fn line_of(
 ) -> String {
     let said = || newest(events, "agent_said", "text").map(first_line);
     match state {
-        TaskState::Queued => "waiting for a machine slot".to_owned(),
-        TaskState::SettingUp => latest(happened)
+        Progress::Queued => "waiting for a machine slot".to_owned(),
+        Progress::SettingUp => latest(happened)
             .map_or_else(|| "setting up".to_owned(), |s| format!("setting up · {s}")),
-        TaskState::NeedsYou => b
+        Progress::NeedsYou => b
             .agent
             .as_ref()
             .and_then(|a| a.question.clone())
             .or_else(|| newest(events, "needs_input", "question").map(str::to_owned))
             .or_else(|| b.attention.first().map(|a| a.message.clone()))
             .map_or_else(|| "needs your input".to_owned(), |q| first_line(&q)),
-        TaskState::Working => {
+        Progress::Working => {
             let doing = newest(events, "agent_doing", "text").map(first_line);
             let now = doing.or_else(said).unwrap_or_else(|| "working".to_owned());
             match silent.filter(|s| *s > STALE_AFTER_MS) {
@@ -175,19 +175,19 @@ fn line_of(
                 None => now,
             }
         }
-        TaskState::Done => match pr_of(b, events) {
+        Progress::Done => match pr_of(b, events) {
             Some(pr) => format!("PR #{}", pr.number),
             None => said().unwrap_or_else(|| "done".to_owned()),
         },
-        TaskState::Asleep => "asleep".to_owned(),
-        TaskState::Closed => "closed".to_owned(),
-        TaskState::Failed => failure(b, happened)
+        Progress::Asleep => "asleep".to_owned(),
+        Progress::Closed => "closed".to_owned(),
+        Progress::Failed => failure(b, happened)
             .or_else(|| b.state_reason.clone())
             .map_or_else(|| "failed".to_owned(), |why| first_line(&why)),
     }
 }
 
-/// Why a failed task failed: the agent's launch failure, else the latest failure event.
+/// Why a failed Box failed: the agent's launch failure, else the latest failure event.
 fn failure(b: &BoxView, events: &[Happened]) -> Option<String> {
     if let Some(reason) = b.agent.as_ref().and_then(|a| a.reason.as_ref()) {
         return Some(reason.text());
@@ -200,7 +200,7 @@ fn failure(b: &BoxView, events: &[Happened]) -> Option<String> {
     })
 }
 
-/// The PR the newest agent message that names one of the task's repos' pulls points at.
+/// The PR the newest agent message that names one of the Box's repos' pulls points at.
 fn pr_of(b: &BoxView, events: &[EventView]) -> Option<PrLink> {
     let repos: Vec<String> = b
         .repo

@@ -7,7 +7,7 @@ use moor_core::view::{
     ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, MachineHoldState, PaneView,
     ReportView, SaidView, ShowView,
 };
-use moor_core::{task, BoxId, ErrorKind, ShowReq};
+use moor_core::{progress, BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -17,8 +17,8 @@ use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc333
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
 
-/// Events a task's state and line are derived from.
-const TASK_EVENTS: usize = 200;
+/// Events a Box's state and line are derived from.
+const PROGRESS_EVENTS: usize = 200;
 
 /// Lines of the pane kept as the tail.
 const PANE_LINES: usize = 40;
@@ -158,11 +158,11 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         None
     };
     let recent: Vec<EventView> = store
-        .events(row.id, TASK_EVENTS)?
+        .events(row.id, PROGRESS_EVENTS)?
         .iter()
         .map(event_view)
         .collect();
-    detail.task = Some(task::derive(&detail, &recent, now.as_millis()));
+    detail.progress = Some(progress::derive(&detail, &recent, now.as_millis()));
     let events = match req.events {
         Some(n) => {
             let last = usize::try_from(n).unwrap_or(usize::MAX);
@@ -171,7 +171,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         }
         None => None,
     };
-    let timeline = events.as_deref().map(task::timeline);
+    let timeline = events.as_deref().map(progress::timeline);
     let artifacts = if req.artifacts {
         Some(artifacts_of(store, row.id)?)
     } else {
@@ -208,9 +208,9 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
         view.agent = agent_view(&reading);
         view.attention = attention(store, row.id)?;
-        let events = store.events(row.id, TASK_EVENTS)?;
+        let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
-        view.task = Some(task::derive(&view, &events, now.as_millis()));
+        view.progress = Some(progress::derive(&view, &events, now.as_millis()));
         boxes.push(view);
     }
     Ok(ShowView {

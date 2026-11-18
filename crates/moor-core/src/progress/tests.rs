@@ -1,4 +1,4 @@
-//! Tests for the derived task state, its line, the PR link and the timeline.
+//! Tests for the derived Box state, its line, the PR link and the timeline.
 
 use super::*;
 use crate::domain::event::EVENT_KINDS;
@@ -41,7 +41,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         attention: Vec::new(),
         held_machine: None,
         said: None,
-        task: None,
+        progress: None,
     }
 }
 
@@ -73,7 +73,7 @@ fn ten() -> i64 {
     unix("2026-11-18T10:00:00Z").unwrap() * 1000
 }
 
-fn state(b: &BoxView) -> TaskState {
+fn state(b: &BoxView) -> Progress {
     derive(b, &[], ten()).state
 }
 
@@ -81,13 +81,13 @@ fn state(b: &BoxView) -> TaskState {
 fn lifecycle_decides_the_states_before_the_agent() {
     use BoxLifecycle as L;
     let cases = [
-        (L::Pending, TaskState::Queued),
-        (L::Checking, TaskState::SettingUp),
-        (L::SettingUp, TaskState::SettingUp),
-        (L::SetupFailed, TaskState::Failed),
-        (L::Rejected, TaskState::Failed),
-        (L::Asleep, TaskState::Asleep),
-        (L::Closed, TaskState::Closed),
+        (L::Pending, Progress::Queued),
+        (L::Checking, Progress::SettingUp),
+        (L::SettingUp, Progress::SettingUp),
+        (L::SetupFailed, Progress::Failed),
+        (L::Rejected, Progress::Failed),
+        (L::Asleep, Progress::Asleep),
+        (L::Closed, Progress::Closed),
     ];
     for (lifecycle, want) in cases {
         let mut b = row(lifecycle, SessionState::Working);
@@ -99,13 +99,13 @@ fn lifecycle_decides_the_states_before_the_agent() {
 #[test]
 fn a_ready_box_follows_its_session_and_agent() {
     let mut b = row(BoxLifecycle::Ready, SessionState::Working);
-    assert_eq!(state(&b), TaskState::Working);
+    assert_eq!(state(&b), Progress::Working);
     b.session_state = SessionState::Starting;
-    assert_eq!(state(&b), TaskState::Working);
+    assert_eq!(state(&b), Progress::Working);
     b.session_state = SessionState::Idle;
-    assert_eq!(state(&b), TaskState::Done);
+    assert_eq!(state(&b), Progress::Done);
     b.session_state = SessionState::Ended;
-    assert_eq!(state(&b), TaskState::Done);
+    assert_eq!(state(&b), Progress::Done);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn a_question_needs_you_and_its_text_is_the_line() {
     let t = derive(&b, &[], ten());
     assert_eq!(
         (t.state, t.line.as_str()),
-        (TaskState::NeedsYou, "Allow npm run e2e?")
+        (Progress::NeedsYou, "Allow npm run e2e?")
     );
 }
 
@@ -145,7 +145,7 @@ fn an_open_credential_limit_needs_you() {
         message: "Claude account rate limited (429)".into(),
     }];
     let t = derive(&b, &[], ten());
-    assert_eq!(t.state, TaskState::NeedsYou);
+    assert_eq!(t.state, Progress::NeedsYou);
     assert_eq!(t.line, "Claude account rate limited (429)");
 }
 
@@ -153,7 +153,7 @@ fn an_open_credential_limit_needs_you() {
 fn an_agent_waiting_on_background_work_is_still_working() {
     let mut b = row(BoxLifecycle::Ready, SessionState::Idle);
     b.agent = Some(agent("waiting"));
-    assert_eq!(state(&b), TaskState::Working);
+    assert_eq!(state(&b), Progress::Working);
 }
 
 #[test]
@@ -162,10 +162,10 @@ fn a_crashed_agent_and_a_failed_launch_fail_but_a_clean_exit_is_done() {
     let mut a = agent("exited");
     a.exit_code = Some(1);
     b.agent = Some(a.clone());
-    assert_eq!(state(&b), TaskState::Failed);
+    assert_eq!(state(&b), Progress::Failed);
     a.exit_code = Some(0);
     b.agent = Some(a);
-    assert_eq!(state(&b), TaskState::Done);
+    assert_eq!(state(&b), Progress::Done);
     let mut a = agent("failed");
     a.reason = Some(LaunchFailure {
         step: "launch".into(),
@@ -175,7 +175,7 @@ fn a_crashed_agent_and_a_failed_launch_fail_but_a_clean_exit_is_done() {
     });
     b.agent = Some(a);
     let t = derive(&b, &[], ten());
-    assert_eq!(t.state, TaskState::Failed);
+    assert_eq!(t.state, Progress::Failed);
     assert!(t.line.contains("no claude"), "{}", t.line);
 }
 
@@ -192,14 +192,14 @@ fn a_failed_setup_says_why_from_the_events() {
 }
 
 #[test]
-fn a_setting_up_task_reads_its_latest_step() {
+fn a_setting_up_box_reads_its_latest_step() {
     let b = row(BoxLifecycle::SettingUp, SessionState::Starting);
     let e = [ev(1, "cloned", "2026-11-18T09:59:00Z", json!({"ms": 4000}))];
     assert_eq!(derive(&b, &e, ten()).line, "setting up · cloned in 4s");
 }
 
 #[test]
-fn only_a_working_task_goes_stale_after_thirty_minutes_without_an_event() {
+fn only_a_working_box_goes_stale_after_thirty_minutes_without_an_event() {
     let mut b = row(BoxLifecycle::Ready, SessionState::Working);
     let e = [ev(
         1,
@@ -215,7 +215,7 @@ fn only_a_working_task_goes_stale_after_thirty_minutes_without_an_event() {
     b.session_state = SessionState::Idle;
     assert!(
         !derive(&b, &e, ten() + 3_600_000).stale,
-        "a done task is quiet, not stale"
+        "a done Box is quiet, not stale"
     );
 }
 
@@ -245,7 +245,7 @@ fn a_working_line_is_the_latest_tool_call_then_the_latest_message() {
 }
 
 #[test]
-fn the_pr_link_comes_only_from_the_tasks_own_repos() {
+fn the_pr_link_comes_only_from_the_boxes_own_repos() {
     let b = row(BoxLifecycle::Ready, SessionState::Idle);
     let said = |text: &str| {
         ev(
@@ -283,7 +283,7 @@ fn every_event_kind_is_classed_so_none_folds_by_accident() {
         .collect();
     assert!(
         missing.is_empty(),
-        "class these kinds in task/timeline.rs: {missing:?}"
+        "class these kinds in progress/timeline.rs: {missing:?}"
     );
 }
 

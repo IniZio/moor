@@ -38,7 +38,7 @@ fn sample_box() -> BoxView {
         attention: Vec::new(),
         held_machine: None,
         said: None,
-        task: None,
+        progress: None,
     }
 }
 

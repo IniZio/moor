@@ -1,4 +1,4 @@
-//! The tasks routes under `/account/api/task`, against the testkit issuer and a fake controller
+//! The Boxes routes under `/account/api/box`, against the testkit issuer and a fake controller
 //! that holds two Boxes of `alice-sub`. The state is the controller's: the gate carries it.
 
 use moor_core::response::{ErrorKind, ErrorView, Response};
@@ -8,8 +8,8 @@ use super::login::{get, sign_in};
 use super::secrets::world;
 
 /// Accounts whose subject starts with this reach this fake; the others reach the shared one.
-pub(super) const PREFIX: &str = "task-";
-const OWNER: &str = "task-alice";
+pub(super) const PREFIX: &str = "portal-";
+const OWNER: &str = "portal-alice";
 const HOSTILE: &str = "<script>alert(1)</script>";
 
 fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value {
@@ -17,7 +17,7 @@ fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value
         "lifecycle": lifecycle, "session_state": "working", "state_reason": null,
         "base": "main", "branch": "moor/1-fix", "driver": null, "agent": null, "run": null,
         "updated_at": "2026-11-18T10:00:00Z",
-        "task": {"state": state, "stale": false, "line": line,
+        "progress": {"state": state, "stale": false, "line": line,
                  "last_event_at": "2026-11-18T10:00:00Z", "pr": pr}})
 }
 
@@ -97,40 +97,37 @@ fn json_of(reply: &super::login::Reply) -> Value {
 #[test]
 fn the_list_carries_the_state_the_controller_derived_and_a_pr_link_built_from_its_parts() {
     let w = world(true, &[]);
-    let cookie = user(&w, "task-alice-1");
-    let reply = get(&w.addr, "/account/api/tasks", Some(&cookie));
+    let cookie = user(&w, "portal-alice-1");
+    let reply = get(&w.addr, "/account/api/boxes", Some(&cookie));
     assert_eq!(reply.status, 200, "{}", reply.body);
-    let tasks = json_of(&reply)["tasks"].clone();
-    let states: Vec<&str> = tasks
+    let rows = json_of(&reply)["boxes"].clone();
+    let states: Vec<&str> = rows
         .as_array()
         .unwrap()
         .iter()
         .map(|t| t["state"].as_str().unwrap())
         .collect();
     assert_eq!(states, ["needs_you", "done"]);
-    assert_eq!(tasks[0]["line"], "Allow npm run e2e?");
-    assert_eq!(tasks[0]["pr"], Value::Null);
-    assert_eq!(
-        tasks[1]["pr"]["url"],
-        "https://github.com/acme/web/pull/212"
-    );
+    assert_eq!(rows[0]["line"], "Allow npm run e2e?");
+    assert_eq!(rows[0]["pr"], Value::Null);
+    assert_eq!(rows[1]["pr"]["url"], "https://github.com/acme/web/pull/212");
 }
 
 #[test]
-fn one_task_has_its_timeline_and_artifacts_and_hostile_text_stays_inert_json() {
+fn one_box_has_its_timeline_and_artifacts_and_hostile_text_stays_inert_json() {
     let w = world(true, &[]);
-    let cookie = user(&w, "task-alice-2");
-    let reply = get(&w.addr, "/account/api/task?box=web%2Fask", Some(&cookie));
+    let cookie = user(&w, "portal-alice-2");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fask", Some(&cookie));
     assert_eq!(reply.status, 200, "{}", reply.body);
     assert_eq!(reply.header("content-type"), Some("application/json"));
-    let task = json_of(&reply);
-    assert_eq!(task["line"], HOSTILE);
-    assert_eq!(task["timeline"][0]["text"], HOSTILE);
-    let art = task["artifacts"].as_array().unwrap();
+    let detail = json_of(&reply);
+    assert_eq!(detail["line"], HOSTILE);
+    assert_eq!(detail["timeline"][0]["text"], HOSTILE);
+    let art = detail["artifacts"].as_array().unwrap();
     assert_eq!(art[0]["image"], true);
     assert_eq!(
         art[0]["href"],
-        "/account/api/task/artifact?box=web%2Fask&name=after.png&version=2"
+        "/account/api/box/artifact?box=web%2Fask&name=after.png&version=2"
     );
     assert_eq!(
         art[1]["image"], false,
@@ -140,16 +137,16 @@ fn one_task_has_its_timeline_and_artifacts_and_hostile_text_stays_inert_json() {
 }
 
 #[test]
-fn someone_elses_task_is_not_found_and_their_list_is_empty() {
+fn someone_elses_box_is_not_found_and_their_list_is_empty() {
     let w = world(true, &[]);
-    let cookie = user(&w, "task-bob-3");
-    let reply = get(&w.addr, "/account/api/task?box=web%2Fask", Some(&cookie));
+    let cookie = user(&w, "portal-bob-3");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fask", Some(&cookie));
     assert_eq!(reply.status, 404, "{}", reply.body);
-    let list = get(&w.addr, "/account/api/tasks", Some(&cookie));
-    assert_eq!(json_of(&list)["tasks"], json!([]));
+    let list = get(&w.addr, "/account/api/boxes", Some(&cookie));
+    assert_eq!(json_of(&list)["boxes"], json!([]));
     let artifact = get(
         &w.addr,
-        "/account/api/task/artifact?box=web%2Fask&name=after.png",
+        "/account/api/box/artifact?box=web%2Fask&name=after.png",
         Some(&cookie),
     );
     assert_eq!(artifact.status, 404, "{}", artifact.body);
@@ -159,17 +156,17 @@ fn someone_elses_task_is_not_found_and_their_list_is_empty() {
 fn signed_out_gets_401_and_a_bad_request_gets_400() {
     let w = world(true, &[]);
     for path in [
-        "/account/api/tasks",
-        "/account/api/task?box=web%2Fask",
-        "/account/api/task/artifact?box=a&name=b",
+        "/account/api/boxes",
+        "/account/api/box?box=web%2Fask",
+        "/account/api/box/artifact?box=a&name=b",
     ] {
         assert_eq!(get(&w.addr, path, None).status, 401, "{path}");
     }
-    let cookie = user(&w, "task-alice-4");
-    assert_eq!(get(&w.addr, "/account/api/task", Some(&cookie)).status, 400);
+    let cookie = user(&w, "portal-alice-4");
+    assert_eq!(get(&w.addr, "/account/api/box", Some(&cookie)).status, 400);
     let bad = get(
         &w.addr,
-        "/account/api/task/artifact?box=web%2Fask&name=..%2Fx",
+        "/account/api/box/artifact?box=web%2Fask&name=..%2Fx",
         Some(&cookie),
     );
     assert_eq!(bad.status, 400, "{}", bad.body);
@@ -178,7 +175,7 @@ fn signed_out_gets_401_and_a_bad_request_gets_400() {
 #[test]
 fn the_app_page_may_show_images_from_itself_and_nothing_else() {
     let w = world(true, &[]);
-    let cookie = user(&w, "task-alice-5");
+    let cookie = user(&w, "portal-alice-5");
     let page = get(&w.addr, "/", Some(&cookie));
     let csp = page.header("content-security-policy").unwrap();
     assert!(csp.contains("img-src 'self';"), "{csp}");

@@ -298,17 +298,17 @@ export async function runAnswer(csrf: string, name: string, id: number, yes: boo
 	return answer(res, RunSchema);
 }
 
-const TaskStateSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
+const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
 
 const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
 
-const TaskRowSchema = v.object({
+const BoxRowSchema = v.object({
 	box: v.string(),
 	repo: v.nullish(v.string()),
 	branch: v.nullish(v.string()),
 	base: v.nullish(v.string()),
 	prompt: v.nullish(v.string()),
-	state: TaskStateSchema,
+	state: ProgressSchema,
 	stale: v.boolean(),
 	line: v.string(),
 	last_event_at: v.nullish(v.string()),
@@ -337,22 +337,22 @@ const EvidenceSchema = v.object({
 	href: v.string(),
 });
 
-const TaskSchema = v.object({
-	...TaskRowSchema.entries,
+const BoxDetailSchema = v.object({
+	...BoxRowSchema.entries,
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
 });
 
-export type TaskState = v.InferOutput<typeof TaskStateSchema>;
-export type TaskRow = v.InferOutput<typeof TaskRowSchema>;
-export type Task = v.InferOutput<typeof TaskSchema>;
+export type Progress = v.InferOutput<typeof ProgressSchema>;
+export type BoxRow = v.InferOutput<typeof BoxRowSchema>;
+export type BoxDetail = v.InferOutput<typeof BoxDetailSchema>;
 export type Entry = v.InferOutput<typeof EntrySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
 
-export async function taskList(): Promise<TaskRow[]> {
-	return (await answer(await fetch('/account/api/tasks'), v.object({ tasks: v.array(TaskRowSchema) }))).tasks;
+export async function boxList(): Promise<BoxRow[]> {
+	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
 }
 
-export async function taskGet(box: string): Promise<Task> {
-	return answer(await fetch(`/account/api/task?box=${encodeURIComponent(box)}`), TaskSchema);
+export async function boxGet(box: string): Promise<BoxDetail> {
+	return answer(await fetch(`/account/api/box?box=${encodeURIComponent(box)}`), BoxDetailSchema);
 }

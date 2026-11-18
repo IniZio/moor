@@ -146,7 +146,7 @@ pub(crate) fn box_view_with_run(
         attention: Vec::new(),
         held_machine: None,
         said: None,
-        task: None,
+        progress: None,
     }
 }
 
