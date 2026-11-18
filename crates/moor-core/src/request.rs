@@ -51,7 +51,7 @@ pub use user::{
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
-    WorkflowRunsReq,
+    WorkflowRunListReq, WorkflowRunsReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -185,6 +185,9 @@ pub enum Request {
     WorkflowSetEnabled(WorkflowEnableReq),
     /// The changes to the caller's user's workflow runs after a cursor, oldest first.
     WorkflowRuns(WorkflowRunsReq),
+    /// The latest runs of one of the caller's user's workflows, newest first, or one run with its
+    /// frozen plan.
+    WorkflowRunList(WorkflowRunListReq),
     /// Answer yes or no for the approve step one of the caller's user's runs waits at.
     WorkflowAnswer(WorkflowAnswerReq),
     /// Finish signing the caller's user in to one of their MCP servers.

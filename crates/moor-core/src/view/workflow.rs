@@ -186,3 +186,26 @@ pub struct StepReportValue {
     /// the reply before it reports again.
     pub error: bool,
 }
+
+/// One run of a workflow, as `workflow-run-list` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunRowView {
+    /// The run's id, to read it again alone.
+    pub id: i64,
+    /// The run.
+    #[serde(flatten)]
+    pub run: LastRunView,
+    /// The plan frozen into the run, when one run was asked for; a run before plans reads as
+    /// the single step of the prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<serde_json::Value>,
+}
+
+/// Value of `workflow-run-list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowRunListValue {
+    /// The workflow's name.
+    pub workflow: String,
+    /// The runs, newest first.
+    pub runs: Vec<RunRowView>,
+}

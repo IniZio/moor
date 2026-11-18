@@ -196,6 +196,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::WorkflowRemove(_)
         | Request::WorkflowSetEnabled(_)
         | Request::WorkflowRuns(_)
+        | Request::WorkflowRunList(_)
         | Request::WorkflowAnswer(_)
         | Request::McpOAuthFinish(_)
         | Request::MachineRemove(_)

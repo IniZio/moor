@@ -105,6 +105,23 @@ pub struct WorkflowRunsReq {
     pub limit: Option<u32>,
 }
 
+/// Arguments of `workflow-run-list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowRunListReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The workflow's name.
+    pub workflow: String,
+    /// One run, by the id a list showed, with its frozen plan; the latest runs when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<i64>,
+    /// Most runs to return; 30 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 /// A workflow request without its identity, as the controller runs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(
@@ -145,6 +162,15 @@ pub enum WorkflowCmd {
         /// What the owner adds.
         note: Option<String>,
     },
+    /// Read the latest runs of one workflow.
+    RunList {
+        /// The workflow's name.
+        workflow: String,
+        /// One run, by id.
+        run: Option<i64>,
+        /// Most runs to return.
+        limit: Option<u32>,
+    },
     /// Read changes to runs after a cursor.
     Runs {
         /// The cursor.
@@ -165,6 +191,7 @@ impl WorkflowCmd {
             Self::SetEnabled { .. } => "workflow-set-enabled",
             Self::Answer { .. } => "workflow-answer",
             Self::Runs { .. } => "workflow-runs",
+            Self::RunList { .. } => "workflow-run-list",
         }
     }
 }
@@ -205,6 +232,14 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
                 limit: r.limit,
             },
         ),
+        Request::WorkflowRunList(r) => (
+            r.identity,
+            WorkflowCmd::RunList {
+                workflow: r.workflow,
+                run: r.run,
+                limit: r.limit,
+            },
+        ),
         other => return Err(Box::new(other)),
     })
 }
@@ -217,6 +252,7 @@ pub(super) const fn own_identity(request: &Request) -> Option<&Identity> {
         | Request::WorkflowRemove(WorkflowRemoveReq { identity, .. })
         | Request::WorkflowSetEnabled(WorkflowEnableReq { identity, .. })
         | Request::WorkflowAnswer(WorkflowAnswerReq { identity, .. })
+        | Request::WorkflowRunList(WorkflowRunListReq { identity, .. })
         | Request::WorkflowRuns(WorkflowRunsReq { identity, .. }) => identity.as_ref(),
         _ => None,
     }

@@ -7,8 +7,8 @@ use moor_core::request::{WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::{
-    ChangeView, HistoryLineView, LastRunView, OriginView, WorkflowChangeValue, WorkflowListValue,
-    WorkflowRunsValue, WorkflowView,
+    ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowChangeValue,
+    WorkflowListValue, WorkflowRunListValue, WorkflowRunsValue, WorkflowView,
 };
 use moor_core::workflow::{
     box_name, ChangeKind, Plan, PlanError, PromptHash, RunEnd, RunOutcome, RunState,
@@ -25,6 +25,9 @@ use crate::store::{Put, Store};
 
 /// Changes `workflow-runs` returns when the request names no limit.
 const DEFAULT_LIMIT: u32 = 50;
+
+/// Runs `workflow-run-list` returns when the request names no limit.
+const DEFAULT_RUN_LIST: u32 = 30;
 
 /// Most changes `workflow-runs` returns at once.
 const MAX_LIMIT: u32 = 200;
@@ -66,6 +69,11 @@ pub(super) fn run(
             (workflow, repo, *answer, note.as_deref()),
         )?),
         WorkflowCmd::Runs { after, limit } => runs(store, user, *after, *limit),
+        WorkflowCmd::RunList {
+            workflow,
+            run,
+            limit,
+        } => run_list(store, user, workflow, *run, *limit),
     }
 }
 
@@ -336,6 +344,44 @@ fn runs(
         });
     }
     to_value(&WorkflowRunsValue { changes, next })
+}
+
+/// `workflow-run-list`: the latest runs of one workflow, or one run with its frozen plan.
+fn run_list(
+    store: &Store,
+    user: UserId,
+    workflow: &str,
+    only: Option<i64>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, CommandError> {
+    let name = parse_name(workflow)?;
+    let Some(w) = store.workflow(user, &name)? else {
+        return Err(CommandError::new(
+            ErrorKind::Refused,
+            format!("no workflow named {name}"),
+        ));
+    };
+    let limit = limit.unwrap_or(DEFAULT_RUN_LIST).clamp(1, MAX_LIMIT);
+    let mut runs = Vec::new();
+    for run in store.workflow_run_list(w.id, only, u64::from(limit))? {
+        let plan = match only {
+            Some(_) => Some(
+                serde_json::to_value(store.run_plan(run.id, &w.prompt)?.to_doc())
+                    .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?,
+            ),
+            None => None,
+        };
+        let view = run_view(store, name.as_str(), &run)?;
+        runs.push(RunRowView {
+            id: run.id.get(),
+            run: view,
+            plan,
+        });
+    }
+    to_value(&WorkflowRunListValue {
+        workflow: name.to_string(),
+        runs,
+    })
 }
 
 #[cfg(test)]

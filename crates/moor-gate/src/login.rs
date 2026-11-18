@@ -12,6 +12,7 @@ pub(crate) mod secrets;
 pub(crate) mod setup;
 #[cfg(test)]
 mod tests;
+mod workflows;
 
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
