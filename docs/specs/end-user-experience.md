@@ -154,7 +154,7 @@ PR: none yet                                                   [Stop] [⋯]
 - **Changes** is the diff against the base branch, file by file.
 - **Evidence** is the artifact gallery. It holds screenshots, videos, logs and step reports.
 - **The right rail** shows the plan's steps when there is one, and the background jobs.
-- **The waiting card** quotes the question. An answer covers once, or this task. "Always" belongs in repo settings, not on the card.
+- **The waiting card** quotes the question. An answer covers once, or this task. "Always" belongs in repo settings, not on the card. Sending a steer while the card is open denies the request and passes the message on, and the card says so.
 
 Only Stop sits in the header. Close is under ⋯ with a confirm. Steer and Interrupt both need a message, so they are two modes of the message box at the bottom.
 
