@@ -17,7 +17,7 @@ fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value
         "lifecycle": lifecycle, "session_state": "working", "state_reason": null,
         "base": "main", "branch": "moor/1-fix", "driver": null, "agent": null, "run": null,
         "updated_at": "2026-11-18T10:00:00Z",
-        "progress": {"state": state, "stale": false, "line": line,
+        "progress": {"title": "Fix the typo", "state": state, "stale": false, "line": line,
                  "last_event_at": "2026-11-18T10:00:00Z", "pr": pr}})
 }
 
@@ -108,6 +108,7 @@ fn the_list_carries_the_state_the_controller_derived_and_a_pr_link_built_from_it
         .map(|t| t["state"].as_str().unwrap())
         .collect();
     assert_eq!(states, ["needs_you", "done"]);
+    assert_eq!(rows[0]["title"], "Fix the typo");
     assert_eq!(rows[0]["line"], "Allow npm run e2e?");
     assert_eq!(rows[0]["pr"], Value::Null);
     assert_eq!(rows[1]["pr"]["url"], "https://github.com/acme/web/pull/212");
@@ -173,12 +174,13 @@ fn signed_out_gets_401_and_a_bad_request_gets_400() {
 }
 
 #[test]
-fn the_app_page_may_show_images_from_itself_and_nothing_else() {
+fn the_app_page_may_load_images_and_fonts_from_itself_and_nothing_else() {
     let w = world(true, &[]);
     let cookie = user(&w, "portal-alice-5");
     let page = get(&w.addr, "/", Some(&cookie));
     let csp = page.header("content-security-policy").unwrap();
     assert!(csp.contains("img-src 'self';"), "{csp}");
+    assert!(csp.contains("font-src 'self';"), "{csp}");
     assert!(csp.contains("default-src 'none'"), "{csp}");
 }
 
