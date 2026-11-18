@@ -89,6 +89,12 @@ impl FakeProvider {
         self.boxes().get(slug).is_some_and(|f| f.sealed)
     }
 
+    /// Whether `slug`'s places died under it, as a `died` file in its directory says: what a
+    /// `docker kill` from outside the agent leaves of a Box, for a test outside this crate.
+    fn died(&self, slug: &Slug) -> bool {
+        self.root.join(slug.as_str()).join("died").exists()
+    }
+
     /// Runs `change` on `slug`'s Box, if there is one.
     fn with(&self, slug: &Slug, change: impl FnOnce(&mut Fake)) -> Result<(), ProvideError> {
         self.boxes()
@@ -119,6 +125,7 @@ impl BoxProvider for FakeProvider {
     }
 
     async fn start(&self, slug: &Slug) -> Result<(), ProvideError> {
+        let _ = std::fs::remove_file(self.root.join(slug.as_str()).join("died"));
         self.with(slug, |fake| fake.awake = true)
     }
 
@@ -145,10 +152,11 @@ impl BoxProvider for FakeProvider {
         Ok(self
             .boxes()
             .iter()
-            .map(|(slug, fake)| Observed {
+            .map(|(slug, fake)| (slug, fake, fake.awake && !self.died(slug)))
+            .map(|(slug, fake, awake)| Observed {
                 slug: slug.clone(),
-                agent: up(fake.awake),
-                work: up(fake.awake && !fake.work_down),
+                agent: up(awake),
+                work: up(awake && !fake.work_down),
                 oom_kills: 0,
                 mem_mib: None,
             })
