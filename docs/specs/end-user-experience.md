@@ -206,6 +206,7 @@ A research pass on 2026-11-18 read origin/develop. Most screens need data moor a
 - One accent for "needs you", one for "working". Green and red only for diffs and checks. Errors and destructive buttons are the one exception, in the moorland rust colour.
 - The existing moorland tokens stay. Dark and light both ship.
 - The design system is our own CSS on those tokens, plus the browser's built-in dialog and popover elements. No Tailwind and no component library.
+- The portal's security policy gains `font-src 'self'` when the fonts ship in the bundle, and `img-src 'self'` when Evidence shows images. Both land in the first portal PR that needs them.
 - Keyboard first. ⌘K opens the switcher, j and k move, enter opens.
 
 ## Order
