@@ -338,6 +338,25 @@ async fn a_link_carrying_bulk_both_ways_keeps_moving_and_stays_up() {
 }
 
 #[tokio::test]
+async fn a_link_streaming_both_ways_for_many_keepalives_stays_up_and_says_nothing() {
+    let Linked {
+        near,
+        far,
+        mut server,
+        mut client,
+        mut said,
+        ..
+    } = linked(KEEPALIVE, KEEPALIVE).await;
+    let streaming = tokio::spawn(swap(near, usize::MAX));
+    let streamed = tokio::spawn(async move { swap(far.await, usize::MAX).await });
+    tokio::time::sleep(KEEPALIVE * 10).await;
+    assert!(server.try_recv().is_err(), "the server end ended");
+    assert!(client.try_recv().is_err(), "the client end ended");
+    assert!(said.try_recv().is_err(), "a busy link says nothing");
+    assert!(!streaming.is_finished() && !streamed.is_finished());
+}
+
+#[tokio::test]
 async fn an_idle_link_stays_up_even_when_one_end_pings_three_times_as_seldom() {
     let mut l = linked(KEEPALIVE, KEEPALIVE * 3).await;
     tokio::time::sleep(KEEPALIVE * 10).await;
