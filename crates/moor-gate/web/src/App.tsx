@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Account, load, signOut, SignedOut } from './api';
+import { type Account, inboxList, load, signOut, SignedOut } from './api';
 import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Repos } from './Repos';
 import { Secrets } from './Secrets';
-import { BoxPage, Home, NewBox, tabOf, useBoxes } from './Portal';
+import { BoxPage, Home, NewBox, tabOf, useBoxes, usePoll } from './Portal';
 import { TopBar } from './TopBar';
 import { Workflows, workflowsAt } from './Workflows';
 
@@ -72,6 +72,7 @@ export function App() {
 /** The signed-in page: the top bar, then the page the address names. */
 function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; hash: string; onSignedOut: () => void; onChanged: () => void }) {
 	const boxes = useBoxes();
+	const inbox = usePoll(inboxList, 'inbox');
 	const repo = repoOf(hash);
 	const flows = workflowsAt(hash);
 	const open = boxOf(hash);
@@ -82,7 +83,7 @@ function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; ha
 	const leave = () => signOut(account.csrf).then(onSignedOut);
 	return (
 		<>
-			<TopBar email={account.email} rows={boxes.value ?? []} onSignOut={() => void leave()} />
+			<TopBar email={account.email} csrf={account.csrf} rows={boxes.value ?? []} inbox={inbox} onSignOut={() => void leave()} />
 			<main class={flows ? 'wide' : composing ? 'app-new' : open ? 'app-box' : home ? 'app-home' : undefined}>
 			{flows ? (
 				<Workflows csrf={account.csrf} at={flows} />
