@@ -114,6 +114,7 @@ impl Request {
             | Self::WebhookSetupFinish(_)
             | Self::WebhookList(_)
             | Self::WebhookRemove(_)
+            | Self::Inbox(_)
             | Self::WorkflowAdd(_)
             | Self::WorkflowList(_)
             | Self::WorkflowRemove(_)

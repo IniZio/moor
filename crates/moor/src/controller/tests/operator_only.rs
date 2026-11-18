@@ -24,6 +24,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         | "workflow-list" | "workflow-runs" => {
             json!({"cmd": kind})
         }
+        "inbox" => json!({"cmd": kind, "op": "list"}),
         "repo-config-get" => json!({"cmd": kind, "repo": "o/n"}),
         "repo-config-set" => json!({"cmd": kind, "repo": "o/n", "text": "setup: [make]\n"}),
         "node-settings-set" => json!({"cmd": kind, "name": "n", "max_boxes": "clear"}),

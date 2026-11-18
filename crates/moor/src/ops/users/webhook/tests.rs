@@ -78,6 +78,8 @@ fn add_replies_with_an_id_waiting_for_setup_and_never_a_key() {
         json!([
             "idled",
             "needs_input",
+            "run_waiting",
+            "run_failed",
             "closed",
             "setup_failed",
             "session_failed",

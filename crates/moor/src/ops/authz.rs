@@ -192,6 +192,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::WebhookSetupFinish(_)
         | Request::WebhookList(_)
         | Request::WebhookRemove(_)
+        | Request::Inbox(_)
         | Request::WorkflowAdd(_)
         | Request::WorkflowList(_)
         | Request::WorkflowRemove(_)

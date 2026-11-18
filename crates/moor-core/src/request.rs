@@ -45,9 +45,9 @@ mod cmd;
 mod user;
 mod workflow;
 pub use user::{
-    ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
-    SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd, WebhookAddReq,
-    WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+    ActAsReq, AsReq, EnrollReq, InboxOp, InboxReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
+    ProfileSetReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+    WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
@@ -177,6 +177,8 @@ pub enum Request {
     WebhookList(AsReq),
     /// Remove one of the caller's user's webhooks.
     WebhookRemove(WebhookRemoveReq),
+    /// List the caller's user's inbox, or mark its items read.
+    Inbox(InboxReq),
     /// Add or replace one of the caller's user's workflows.
     WorkflowAdd(WorkflowAddReq),
     /// List the caller's user's workflows with their next due time and last runs.
