@@ -202,6 +202,7 @@ impl Store {
         let tx = writer.immediate()?;
         let changed = tx.run(update)?;
         tx.commit()?;
+        drop(writer);
         Ok(changed)
     }
 

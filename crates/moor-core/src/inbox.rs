@@ -86,10 +86,10 @@ pub fn entry_of(event_kind: &str, payload: &Value, box_title: &str) -> Option<En
     let kind = InboxKind::of_event(event_kind)?;
     let run = || {
         let workflow = field(payload, "workflow").unwrap_or("workflow");
-        match payload.get("run").and_then(Value::as_i64) {
-            Some(n) => format!("{workflow} (run {n})"),
-            None => workflow.to_owned(),
-        }
+        payload
+            .get("run")
+            .and_then(Value::as_i64)
+            .map_or_else(|| workflow.to_owned(), |n| format!("{workflow} (run {n})"))
     };
     Some(match kind {
         InboxKind::NeedsInput => Entry {

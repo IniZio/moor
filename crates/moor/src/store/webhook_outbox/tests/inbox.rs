@@ -110,6 +110,10 @@ fn reading_marks_only_the_callers_items_and_an_empty_list_marks_all() {
 }
 
 #[test]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "one scenario, asserted step by step"
+)]
 fn an_approve_wait_adds_one_row_and_stops_waiting_when_answered_and_a_failed_run_adds_one() {
     let w = world();
     let alice = w.user("local:2000");

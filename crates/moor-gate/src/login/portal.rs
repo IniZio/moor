@@ -23,6 +23,7 @@ use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
 
 mod answer;
+mod inbox;
 mod start;
 
 /// The events a Box page reads: the most the controller keeps in one window.
@@ -43,8 +44,14 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
         (method, path),
         (
             "GET",
-            "/account/api/boxes" | "/account/api/box" | "/account/api/box/artifact"
-        ) | ("POST", "/account/api/boxes" | "/account/api/box/answer")
+            "/account/api/boxes"
+                | "/account/api/box"
+                | "/account/api/box/artifact"
+                | "/account/api/inbox"
+        ) | (
+            "POST",
+            "/account/api/boxes" | "/account/api/box/answer" | "/account/api/inbox/read"
+        )
     )
 }
 
@@ -68,7 +75,11 @@ pub(super) fn serve(
         ("POST", "/account/api/box/answer") => {
             answer::answer(stream, gate, login, session, req.csrf, body.as_deref());
         }
+        ("POST", "/account/api/inbox/read") => {
+            inbox::read(stream, gate, session, req.csrf, body.as_deref());
+        }
         ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
+        (_, "/account/api/inbox") => inbox::list(stream, gate, session),
         (_, "/account/api/boxes") => list(stream, gate, session),
         (_, "/account/api/box") => read(stream, gate, session, query),
         _ => artifact(stream, gate, session, query),

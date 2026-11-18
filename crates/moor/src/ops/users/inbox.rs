@@ -61,16 +61,15 @@ fn facts_of(
     };
     match row.kind {
         InboxKind::NeedsInput => {
-            let (closed, marker) = match boxes.get(&row.box_id) {
-                Some(known) => *known,
-                None => {
-                    let closed = store
-                        .box_row(row.box_id)?
-                        .is_some_and(|b| b.lifecycle == BoxLifecycle::Closed);
-                    let marker = store.newest_question_marker(row.box_id)?;
-                    boxes.insert(row.box_id, (closed, marker));
-                    (closed, marker)
-                }
+            let (closed, marker) = if let Some(known) = boxes.get(&row.box_id) {
+                *known
+            } else {
+                let closed = store
+                    .box_row(row.box_id)?
+                    .is_some_and(|b| b.lifecycle == BoxLifecycle::Closed);
+                let marker = store.newest_question_marker(row.box_id)?;
+                boxes.insert(row.box_id, (closed, marker));
+                (closed, marker)
             };
             facts.box_closed = closed;
             facts.newest_marker = marker;
