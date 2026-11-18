@@ -34,6 +34,16 @@ fn a_call_made_while_the_link_is_down_is_asked_again_once_it_relinks() {
 }
 
 #[test]
+fn a_runner_out_of_reach_is_asked_again_once_it_answers() {
+    let away = DriverError::Unavailable(
+        "the machine runner at runner.invalid:7702 is unreachable: timed out".to_owned(),
+    );
+    let (got, calls) = ask(vec![away]);
+    assert_eq!(got.unwrap(), 7);
+    assert_eq!(calls, 2);
+}
+
+#[test]
 fn a_call_the_machine_refused_fails_at_once() {
     let refused = DriverError::Failed {
         summary: "machine 1 refused: no such Box".to_owned(),
