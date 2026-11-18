@@ -13,6 +13,7 @@ mod box_deaths;
 mod box_hands;
 mod box_inbox;
 mod box_state;
+mod drop_box_deaths;
 mod drop_checkpoints;
 mod effect_backfill;
 mod hands_ended;

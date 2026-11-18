@@ -8,6 +8,8 @@ use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
+use moor_core::workflow::HistoryEntry;
+use moor_core::BoxId;
 
 use super::{apply_read, Reading};
 use crate::cx::Cx;
@@ -39,8 +41,9 @@ pub(super) fn end_stale_wait(
     activity
 }
 
-/// Append `agent_stalled` when the agent has reported working with no change for the stall bound,
-/// and `agent_resumed` when its status changes after one.
+/// Append `agent_stalled` when the agent has reported working with no sign of activity for the
+/// stall bound, and `agent_resumed` at the first sign after one. A sign is a change of its status,
+/// a new doing line or a step report.
 ///
 /// A run in flight keeps the agent busy by itself, so it is never a stall. Neither is a Box whose
 /// agent could not be read: the agent behind a broken probe may be fine.
@@ -54,7 +57,7 @@ pub(super) fn note_stall(
     if reading.run_in_flight {
         return Ok(());
     }
-    let Some((term, at)) = reading
+    let Some((term, status_at)) = reading
         .term
         .as_ref()
         .and_then(|t| t.status_at.map(|at| (t, at)))
@@ -70,6 +73,10 @@ pub(super) fn note_stall(
             source: Source::Status,
         })
     );
+    if !working && !open {
+        return Ok(());
+    }
+    let at = last_active(store, row.id, status_at)?;
     let doing = match &term.status {
         Some(Status::Working { doing }) => doing.clone(),
         _ => None,
@@ -94,4 +101,28 @@ pub(super) fn note_stall(
         _ => {}
     }
     Ok(())
+}
+
+/// When Box `id`'s agent last showed activity: its status changed at `status_at`, its doing line
+/// last moved, or it last reported a step of the run it works on. A long turn keeps one status.
+fn last_active(store: &Store, id: BoxId, status_at: Ts) -> Result<Ts, CommandError> {
+    let doing = store.last_event_of(id, "agent_doing")?.map(|e| e.ts);
+    let reported = match store.running_run_of_box(id)? {
+        Some((_, run)) => store
+            .run_entries(run.id)?
+            .into_iter()
+            .rev()
+            .find(|(_, e)| {
+                matches!(
+                    e,
+                    HistoryEntry::Reported { .. } | HistoryEntry::GateRefused { .. }
+                )
+            })
+            .map(|(at, _)| at),
+        None => None,
+    };
+    Ok([doing, reported]
+        .into_iter()
+        .flatten()
+        .fold(status_at, Ts::max))
 }

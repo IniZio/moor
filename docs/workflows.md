@@ -141,6 +141,11 @@ that is refused, and its Box is closed. The run then has `timeout_minutes`
 from the agent's start. A run still working after that is stopped. Its Box
 stays open so you can look inside.
 
+When a Box's places die, moor does not resume the Box.
+Its run fails at its step at once, with the reason `death_capped` gives.
+The run does not follow the step's `fail` edge or try again, because either
+would wake the Box. The Box stays open so you can look inside.
+
 A missing secret or a full node can refuse a run. The refusal is recorded with
 its reason, and the run is not retried. The next due time is the next try.
 

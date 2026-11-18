@@ -176,9 +176,6 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
     }
     let workdir = resume_machine(cx, store, row, turn, box_asleep)?;
     store.apply(woken(row, (row_asleep, box_asleep), workdir))?;
-    if turn == Turn::JoinsQueue {
-        store.set_recent_deaths(row.id, &[])?;
-    }
     Ok(Woke {
         any: true,
         box_resumed: box_asleep,

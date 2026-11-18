@@ -47,7 +47,10 @@ mod watch;
 
 use response::{queued_view, set_agent, set_provisioned, view};
 
-pub(crate) use launch::{begin_seeded, queued_or};
+pub(crate) use launch::{
+    begin_seeded, queued_or, record as record_launch_failure, to_json as launch_failure_json,
+    TAIL_LINES as LAUNCH_TAIL_LINES,
+};
 pub(crate) use needs::run as needs;
 pub(crate) use revive::{
     capped, launch_after_retry, revivable, revive_after_wake, revive_for_steer, AfterWake,

@@ -22,6 +22,8 @@ pub struct RunBoxFacts {
     pub idle_since: Option<Ts>,
     /// Whether the last agent launch failed and no later launch succeeded.
     pub launch_failed: bool,
+    /// Whether the Box's places died and moor did not resume it, and no wake has come since.
+    pub death_capped: bool,
 }
 
 /// Where a started run stands.
@@ -33,18 +35,22 @@ pub enum RunVerdict {
     Finished,
     /// No agent can run in the Box until a person acts, so the run will never finish.
     Broken,
+    /// The Box's places died and moor did not resume it, so only a person's wake brings it back:
+    /// the run will never finish.
+    DeathCapped,
 }
 
 /// Where the run whose Box has `facts`, or none when the Box is gone, stands at `now`.
 ///
 /// It is Finished when the Box is gone or closed, when its agent exited, or when its Session has
 /// been Idle for [`QUIET_BEFORE_FINISHED`]. It is Broken when setup failed or the agent launch
-/// failed, since only a person retrying starts an agent then. Otherwise it is Running, which
+/// failed, since only a person retrying starts an agent then, and `DeathCapped` when moor did not
+/// resume a Box whose places died, whatever its agent last said. Otherwise it is Running, which
 /// includes a Box queued for a slot, one still setting up, and an agent that ended its turn to
 /// wait on background work.
 #[must_use]
 pub fn run_verdict(facts: Option<&RunBoxFacts>, now: Ts) -> RunVerdict {
-    use RunVerdict::{Broken, Finished, Running};
+    use RunVerdict::{Broken, DeathCapped, Finished, Running};
     let Some(f) = facts else { return Finished };
     match f.lifecycle {
         BoxLifecycle::Closed | BoxLifecycle::Rejected => return Finished,
@@ -56,6 +62,9 @@ pub fn run_verdict(facts: Option<&RunBoxFacts>, now: Ts) -> RunVerdict {
     }
     if f.launch_failed {
         return Broken;
+    }
+    if f.death_capped {
+        return DeathCapped;
     }
     let quiet_long_enough = |since: Ts| {
         let quiet = now.as_millis().saturating_sub(since.as_millis());

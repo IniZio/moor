@@ -127,11 +127,7 @@ fn detail(kind: &str, p: &Value) -> String {
             (Some(n), Some(e)) => Some(format!("unreachable after {n} tries: {e}")),
             _ => text(p, "error").map(str::to_owned),
         },
-        "death_capped" => number(p, "count")
-            .zip(text(p, "reason"))
-            .map(|(count, why)| {
-                deaths::sentence(usize::try_from(count).unwrap_or(usize::MAX), why)
-            }),
+        "death_capped" => text(p, "reason").map(deaths::sentence),
         "agent_link_lost" => text(p, "pane").map(|pane| {
             p.get("exit").and_then(Value::as_i64).map_or_else(
                 || format!("pane {pane} ended"),

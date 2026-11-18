@@ -1,6 +1,7 @@
 //! The workflow tick over the fake driver and a fake clock.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,7 +44,11 @@ fn rig_with(config: UserConfig) -> Rig {
     rig_driving(config, |d| d)
 }
 
-fn rig_driving(config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) -> Rig {
+/// Builds the rig over `config`, under a controller whose Box agents can report steps: it has
+/// a `moor_service` and a front that reports them.
+fn rig_driving(mut config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) -> Rig {
+    let served = moor_core::config::parse_user("x", "moor_service:\n  upstream: 127.0.0.1:8444\n");
+    config.moor_service = served.unwrap().moor_service;
     let dir = tempfile::tempdir().unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = Arc::new(tune((1..=6).fold(FakeDriver::new(), |d, n| {
@@ -56,7 +61,8 @@ fn rig_driving(config: UserConfig, tune: impl FnOnce(FakeDriver) -> FakeDriver) 
         Arc::new(ScriptedProc::new()),
         config,
     )
-    .with_forge(forge.clone());
+    .with_forge(forge.clone())
+    .with_env(|e| e.with_front_step_reports(BTreeSet::from(["gate".to_owned()])));
     Rig {
         cx,
         driver,
@@ -566,6 +572,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
 mod also;
 mod approve;
 mod check;
+mod death_cap;
 mod manual;
 mod plan;
 mod previous;

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{AgentState, STARTUP_GRACE};
+use moor_core::activity::{AgentState, Probe, STARTUP_GRACE};
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Effect, EffectChange, NewBox, SpecFields};
 use moor_core::domain::inbox::InboxKind;
@@ -111,11 +111,45 @@ fn a_fresh_agent_reads_starting_until_the_startup_grace_ends() {
     assert!(v.timed_out, "the first prompt's turn has not shown yet");
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
     assert_eq!(state(&cx, id), AgentState::Idle);
-    let v = run(&cx, &req(None, Some(5))).unwrap();
-    assert!(
-        !v.timed_out,
+    let e = run(&cx, &req(None, Some(5))).unwrap_err();
+    assert_eq!(
+        e.kind,
+        ErrorKind::Failed,
         "an agent idle at turn 0 past the grace never took its prompt"
     );
+}
+
+#[test]
+fn a_first_prompt_the_agent_never_took_up_fails_its_launch_with_the_screen() {
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = agent::at_turn(agent::idle(Ts::from_millis(0)), 0);
+    let fresh = match fresh {
+        Probe::Read { term, note, .. } => Probe::Read {
+            term,
+            note,
+            screen: Some(
+                "> /no-such-command ship it\n  Unknown command: /no-such-command\n".into(),
+            ),
+        },
+        Probe::TimedOut => Probe::TimedOut,
+    };
+    let (cx, _) = agent_cx(dir.path(), fresh);
+    let id = prompted_live(&cx, Some("/no-such-command ship it"), true);
+    cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
+    let e = run(&cx, &req(None, Some(5))).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert!(e.error.to_string().contains("first prompt"), "{}", e.error);
+    let store = cx.store().unwrap();
+    let failure = store.box_row(id).unwrap().unwrap().launch_failure.unwrap();
+    assert_eq!(failure.step, "prompt");
+    let tail = failure.tail.unwrap_or_default();
+    assert!(tail.contains("Unknown command: /no-such-command"), "{tail}");
+    assert!(
+        store.live_launch(id).unwrap().is_none(),
+        "the failed launch ended"
+    );
+    let failed = store.newest_event_of(id, "session_failed").unwrap();
+    assert!(failed.is_some(), "the failure is on the Box's events");
 }
 
 /// What one read of Box `id`'s agent finds it doing.
