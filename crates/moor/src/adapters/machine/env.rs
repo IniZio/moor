@@ -1,7 +1,7 @@
 //! What `set_env` sends a machine: each Box's environment, once per change.
 
 use std::collections::HashMap;
-use std::sync::{MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_client::link::boxes::{BoxAnswer, BoxOp};
 use moor_core::name::BoxHandle;
@@ -10,16 +10,39 @@ use moor_core::seam::driver::DriverError;
 use super::{unexpected, Machines};
 
 /// The environment of a Box as the machine holds it: variables and the CA.
-pub(super) type SentEnv = (Vec<(String, String)>, Option<String>);
+type SentEnv = (Vec<(String, String)>, Option<String>);
+
+/// The environments sent so far, by Box slug, kept as long as the controller runs.
+#[derive(Default)]
+pub struct SentEnvs(Mutex<HashMap<String, SentEnv>>);
+
+impl Machines {
+    /// The driver remembering in `sent` what it gives each Box, so another request that shares
+    /// `sent` does not give a Box the same environment again.
+    #[must_use]
+    pub fn sharing_sent_env(self, sent: Arc<SentEnvs>) -> Self {
+        Self {
+            env_sent: sent,
+            ..self
+        }
+    }
+}
 
 /// The environments sent so far.
 fn sent(m: &Machines) -> MutexGuard<'_, HashMap<String, SentEnv>> {
-    m.env_sent.lock().unwrap_or_else(PoisonError::into_inner)
+    m.env_sent.0.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Drops what was sent for `slug` when `closed` says its Box is gone.
 pub(super) fn forget_closed(m: &Machines, slug: &str, closed: &Result<BoxAnswer, DriverError>) {
     if matches!(closed, Ok(BoxAnswer::Done | BoxAnswer::Gone)) {
+        sent(m).remove(slug);
+    }
+}
+
+/// Drops what was sent to the Box `handle` names before it is opened, as a new Box holds none.
+pub(super) fn forget_opened(m: &Machines, handle: &BoxHandle) {
+    if let Ok((_, slug)) = Machines::seat(handle) {
         sent(m).remove(slug);
     }
 }

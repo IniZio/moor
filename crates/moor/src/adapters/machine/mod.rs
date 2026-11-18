@@ -7,7 +7,7 @@
 //! detached runs) is composed over exec in [`over_exec`].
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use moor_client::link::boxes::{BoxAnswer, BoxOp, ReportState};
 use moor_client::link::reach::Runner;
@@ -20,6 +20,7 @@ use moor_core::seam::driver::{
 };
 use moor_core::seam::proc::{Deadline, Pipes};
 
+pub use env::SentEnvs;
 use stream::{ask, blocking, failed, open, unreached};
 
 mod env;
@@ -47,8 +48,8 @@ pub struct Machines {
     reach: Arc<dyn Reach>,
     /// This moor binary, which `box-term` runs as.
     moor: PathBuf,
-    /// What [`Driver::set_env`] last sent each Box, by slug, since a send restarts its Docker.
-    env_sent: Mutex<std::collections::HashMap<String, env::SentEnv>>,
+    /// What [`Driver::set_env`] last sent each Box, shared by every request of a controller.
+    env_sent: Arc<SentEnvs>,
 }
 
 impl Machines {
@@ -59,7 +60,7 @@ impl Machines {
         Self {
             reach,
             moor,
-            env_sent: Mutex::default(),
+            env_sent: Arc::default(),
         }
     }
 
@@ -141,6 +142,7 @@ impl Driver for Machines {
         note: &mut dyn FnMut(&str),
     ) -> Result<Acquired, DriverError> {
         let (machine, op, handle) = Self::planned(req)?;
+        env::forget_opened(self, &handle);
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let answer = std::thread::scope(|s| {
             // A lost link is the caller's to wait out, as the open outlives it.

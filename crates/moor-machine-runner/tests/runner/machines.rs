@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor::{Machines, Reach};
+use moor::{Machines, Reach, SentEnvs};
 use moor_client::link::reach::Runner;
 use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::cache::CachePlan;
@@ -283,4 +283,34 @@ fn calls_safe_to_repeat_wait_for_the_relink_and_a_plain_exec_does_not() {
         "{done:?}"
     );
     assert_eq!(m.release(&got.handle), Ok(Released::Deleted));
+}
+
+#[test]
+fn a_box_is_given_an_env_once_across_the_requests_of_one_controller() {
+    let host = Host::boxes();
+    let reach = Arc::new(Relinking {
+        runner: host.runner(),
+        down: AtomicU32::new(0),
+    });
+    let sent = Arc::new(SentEnvs::default());
+    let request = || {
+        Machines::new(reach.clone(), PathBuf::from("/usr/bin/moor"))
+            .sharing_sent_env(Arc::clone(&sent))
+    };
+    let got = opened(&request(), 48);
+    let proxy = vec![("HTTPS_PROXY".to_owned(), "http://127.0.0.1:3128".to_owned())];
+    request().set_env(&got.handle, &proxy, Some("ca")).unwrap();
+    drop_link(&reach, u32::MAX);
+    assert_eq!(request().set_env(&got.handle, &proxy, Some("ca")), Ok(()));
+    drop_link(&reach, 0);
+    let moved = vec![("HTTPS_PROXY".to_owned(), "http://127.0.0.1:3129".to_owned())];
+    request().set_env(&got.handle, &moved, Some("ca")).unwrap();
+    assert_eq!(machines(&host).release(&got.handle), Ok(Released::Deleted));
+    let again = opened(&request(), 48);
+    request()
+        .set_env(&again.handle, &moved, Some("ca"))
+        .unwrap();
+    let (_, out) = run(&request(), &host, &again, Place::Work, "echo $HTTPS_PROXY");
+    assert_eq!(out.trim(), "http://127.0.0.1:3129");
+    assert_eq!(request().release(&again.handle), Ok(Released::Deleted));
 }

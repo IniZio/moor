@@ -36,8 +36,17 @@ PROFILE
 }
 
 dockerd_pid=
+dockerd_inputs=
+dockerd_stale=
+inputs_of_dockerd() {
+  ( [ -f "$run/box.env" ] && . "$run/box.env"; env | grep -iE '^(https?|no)_proxy=' | sort )
+  cksum 2>/dev/null < "$ca_dst"
+}
+
 start_dockerd() {
   command -v dockerd >/dev/null && [ -w /sys/fs/cgroup ] || return 0
+  dockerd_inputs=$(inputs_of_dockerd)
+  dockerd_stale=
   local mtu=${MOOR_MTU:-$(cat /sys/class/net/eth0/mtu 2>/dev/null || echo 1500)}
   mkdir -p /etc/docker
   printf '{"mtu": %s, "default-network-opts": {"bridge": {"com.docker.network.driver.mtu": "%s"}}}\n' "$mtu" "$mtu" > /etc/docker/daemon.json
@@ -126,11 +135,19 @@ mirror_oom() {
   oom_seen=$now
 }
 
+no_container_runs() { local running; running=$(docker ps -q 2>/dev/null) && [ -z "$running" ]; }
+
+restart_stale_dockerd() {
+  [ -n "$dockerd_stale" ] && no_container_runs || return 0
+  stop_dockerd
+  start_dockerd
+}
+
 reload_env() {
   write_profile
   install_ca
-  stop_dockerd
-  start_dockerd
+  if [ "$(inputs_of_dockerd)" = "$dockerd_inputs" ]; then dockerd_stale=; else dockerd_stale=1; fi
+  restart_stale_dockerd
 }
 
 cleanup() {
@@ -148,6 +165,7 @@ mirror_oom
 touch "$run/work.ready"
 while kill -0 "$sshd_pid" 2>/dev/null; do
   mirror_oom
+  restart_stale_dockerd
   if [ -e "$run/rebuild" ]; then
     mv -f "$run/rebuild" "$run/rebuild.asked"
     exit 75

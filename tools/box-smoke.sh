@@ -140,6 +140,30 @@ check "a Bash-tool line leaves its cwd where Claude reads it in the agent place"
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"
 
+reload_env() { in_work /run/moor/bin/moor-work-init --env; sleep 10; }
+dockerd_pid() { in_work pgrep -x dockerd; }
+inner_state() { shell 'docker inspect -f "{{.State.Status}}" boxsmoke-inner' 2>&1; }
+dockerd_proxy() { shell 'docker info --format "{{.HTTPSProxy}}"' 2>/dev/null; }
+dockerd_proxy_is() { local got; got=$(dockerd_proxy) && [ "$got" = "$1" ]; }
+if shell 'docker run -d --name boxsmoke-inner busybox sleep 600' >/dev/null 2>&1; then
+  pid=$(dockerd_pid)
+  in_agent sh -c "echo 'export BOXSMOKE_ENV=reloaded' > /run/moor/box.env"
+  reload_env
+  check "an env reload with the same proxy and CA keeps an inner container running" "running" "$(inner_state)"
+  check "an env reload with the same proxy and CA keeps dockerd" "$pid" "$(dockerd_pid)"
+  check "the reloaded env reaches a new login shell" "reloaded" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"
+  in_agent sh -c "echo 'export HTTPS_PROXY=http://127.0.0.1:3999' > /run/moor/box.env"
+  reload_env
+  check "a proxy change keeps a running inner container" "running" "$(inner_state)"
+  shell 'docker rm -f boxsmoke-inner' >/dev/null 2>&1
+  if wait_for 30 dockerd_proxy_is http://127.0.0.1:3999; then ok "dockerd takes the new proxy once no inner container runs"; else bad "dockerd takes the new proxy once no inner container runs" "$(dockerd_proxy)"; fi
+  in_agent sh -c ': > /run/moor/box.env'
+  in_work /run/moor/bin/moor-work-init --env
+  if wait_for 30 dockerd_proxy_is ""; then ok "a proxy change with no inner container reaches dockerd"; else bad "a proxy change with no inner container reaches dockerd" "$(dockerd_proxy)"; fi
+else
+  bad "an inner container starts" "$(shell 'docker run -d --name boxsmoke-inner busybox sleep 600' 2>&1 | tail -3)"
+fi
+
 shell 'mkdir -p "$HOME/boxsmoke-bin" && printf "#!/bin/sh\necho tool-ran\n" > "$HOME/boxsmoke-bin/boxsmoke-tool" && chmod +x "$HOME/boxsmoke-bin/boxsmoke-tool"'
 in_agent sh -c "printf '%s\n' 'export PATH=\"\$HOME/boxsmoke-bin:\$PATH\"' > /run/moor/agent.env"
 tool_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-2.sh 2>/dev/null || true && cd /home/agent/moor && boxsmoke-tool && pwd -P >| /tmp/claude-bs02-cwd"
