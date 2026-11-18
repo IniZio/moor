@@ -186,6 +186,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
                 "next": "went on"})),
             )
         }
+        "workflow-run-now" => run_now::reply(held.waiting),
         _ => Response::ok("x", None),
     }
 }
@@ -592,3 +593,5 @@ fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
     let unknown = get(&w.addr, "/account/api/workflows/nope", Some(&alice));
     assert_eq!(unknown.status, 404, "{}", unknown.body);
 }
+
+mod run_now;
