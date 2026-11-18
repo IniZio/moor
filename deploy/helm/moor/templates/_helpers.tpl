@@ -116,6 +116,9 @@ true
         fieldRef: { fieldPath: status.podIP }
     - { name: MOOR_GATE_BOX_LISTEN, value: "$(POD_IP):{{ .Values.gate.boxPort }}" }
     - { name: MOOR_GATE_BOX_LISTEN_OFF_HOST, value: "true" }
+    - name: MOOR_SERVICE_KEY
+      valueFrom:
+        secretKeyRef: { name: {{ .Release.Name }}-service-key, key: service-key }
     {{- else if include "moor.stepReports" . }}
     - { name: MOOR_GATE_BOX_LISTEN, value: "127.0.0.1:{{ .Values.gate.boxPort }}" }
     {{- end }}
