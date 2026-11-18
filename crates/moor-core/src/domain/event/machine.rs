@@ -6,12 +6,15 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MachineEvent {
-    /// The machine reaches the Box's ports at the same numbers on its own loopback.
+    /// The Box was given a slot on the machine, by a claim, by a wait that ended, or by a wake.
     MachineAttached {
         /// The machine's name.
         name: String,
-        /// The Box ports it reaches.
-        ports: Vec<u16>,
+        /// The slot the Box holds on it.
+        slot: u16,
+        /// The runner that holds the machine's link, when one does.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runner: Option<String>,
     },
     /// The Box started without a machine.
     MachineLeftOut {

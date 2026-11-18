@@ -145,6 +145,27 @@ fn machine_events_carry_their_own_kind() {
     );
 }
 
+/// `MachineAttached` carries the slot, and the runner only when one holds the machine's link.
+#[test]
+fn machine_attached_payload() {
+    let attached = |runner: Option<&str>| {
+        Event::Machine(MachineEvent::MachineAttached {
+            name: "mini".to_owned(),
+            slot: 2,
+            runner: runner.map(str::to_owned),
+        })
+    };
+    assert_eq!(attached(None).kind(), "machine_attached");
+    assert_eq!(
+        attached(None).payload(),
+        serde_json::json!({"name": "mini", "slot": 2})
+    );
+    assert_eq!(
+        attached(Some("r:7701")).payload(),
+        serde_json::json!({"name": "mini", "slot": 2, "runner": "r:7701"})
+    );
+}
+
 /// `MachineWaiting` carries the place in line and `MachineRefused` only its reason.
 #[test]
 fn machine_waiting_and_refused_payloads() {

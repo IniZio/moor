@@ -219,7 +219,8 @@ fn all_events() -> Vec<Event> {
         },
         Event::Machine(MachineEvent::MachineAttached {
             name: "mini".to_owned(),
-            ports: vec![8081],
+            slot: 1,
+            runner: Some("runner-1:7701".to_owned()),
         }),
         Event::Machine(MachineEvent::MachineLeftOut {
             labels: vec!["ios-sim".to_owned()],

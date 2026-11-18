@@ -74,17 +74,25 @@ impl Store {
         machine_id: i64,
         now: Ts,
     ) -> Result<Option<RunnerAddr>, StoreError> {
-        let conn = self.reader()?;
-        let state = conn
-            .row(
-                link_select().and_where(
-                    Expr::col((MachineLinks::Table, MachineLinks::MachineId)).eq(machine_id),
-                ),
-                state_of,
-            )
-            .optional()?;
-        Ok(state.and_then(|s| s.live(now).cloned()))
+        runner_in(&self.reader()?, machine_id, now)
     }
+}
+
+/// [`Store::machine_runner`], read through `conn`.
+pub(in crate::store) fn runner_in(
+    conn: &dyn Db,
+    machine_id: i64,
+    now: Ts,
+) -> Result<Option<RunnerAddr>, StoreError> {
+    let state = conn
+        .row(
+            link_select().and_where(
+                Expr::col((MachineLinks::Table, MachineLinks::MachineId)).eq(machine_id),
+            ),
+            state_of,
+        )
+        .optional()?;
+    Ok(state.and_then(|s| s.live(now).cloned()))
 }
 
 /// Records `link` as `runner` holds it, unless a newer live link on another runner holds its

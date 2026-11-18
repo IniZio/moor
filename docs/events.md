@@ -36,6 +36,8 @@ A webhook that names no events gets the kinds marked with a check.
 | `port_forward_opened` | | A person forwarded a port of the Box to their computer. `data.port` is the Box's port and `data.local_port` is the one on their computer. |
 | `port_forward_closed` | | The forward ended. `data.connections`, `data.bytes_in` and `data.bytes_out` count what it carried. A forward whose client vanished writes none; the Box's next `asleep` or `closed` marks the end. |
 | `egress_seen` | | A Docker Box reached a host it had not reached before. `data.hosts` lists each new row and each row whose count changed, as `{host, port, path, first_seen, count}`. `path` is `proxied`, `credential` or `direct`, and a `direct` row's `host` is an IP address. A changed count alone waits up to 10 minutes. List them with `moor events --box <name> --kind egress_seen`. [Egress log](specs/egress-log.md) explains each path. |
+| `machine_attached` | | A Box took a slot on one of its user's machines. This follows a claim, a wait that ended, or a wake. `data.name` is the machine and `data.slot` the slot. `data.runner` is the runner that holds the machine's link, when one does. |
+| `machine_detached` | | The Box let go of its slot, because it closed, released it, or slept. `data.name` is the machine. `data.asleep` is true when the Box slept and keeps its claim. The machine's `release` hook runs after the close, on the machine, and records no event. |
 | `port_forward_refused` | | A forward was refused for a reason other than who asked, such as nothing listening on the port. `data.port` and `data.reason` say which and why. |
 
 A webhook keeps the list it was added with. To get a kind added later, remove

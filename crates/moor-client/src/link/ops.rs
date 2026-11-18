@@ -28,9 +28,12 @@ pub const MAX_TIMEOUT_SECS: u64 = 3600;
 /// Largest file a pull carries.
 pub const MAX_PULL: u64 = 32 << 20;
 
-/// Runs the script on fd 3 in the login shell, in its own process group, and ends that group
-/// (TERM, then KILL after 5 s) once stdin reaches EOF: its carrier died or was killed. Without a
-/// pty, nothing else stops the command when its call ends. POSIX sh, since macOS has no `setsid`
+/// Runs the script on fd 3 in its own process group, under bash when the login shell's PATH has
+/// it, else under sh. The login shell (POSIX syntax, as zsh, bash and ksh are) only sets up the
+/// account's environment and PATH, then `exec`s that shell, so `PIPESTATUS` and the like work
+/// wherever the account's login shell is zsh. It ends the group (TERM, then KILL after 5 s) once
+/// stdin reaches EOF: its carrier died or was killed. Without a pty, nothing else stops the
+/// command when its call ends. POSIX sh, since macOS has no `setsid`
 /// binary and dash cannot turn job control on without a tty. Its own stderr goes nowhere, so a
 /// shell's job notice never reaches the output; the command keeps the real one. It sits in
 /// single quotes, so it holds none.
@@ -38,11 +41,12 @@ const WRAPPER: &str = r#"exec 4<&0 </dev/null 5>&2 2>/dev/null
 cmd=$(cat <&3) || exit 255
 exec 3<&-
 sh=${SHELL:-/bin/sh}
+pick="if command -v bash >/dev/null 2>&1; then exec bash -c \"\$1\"; fi; exec sh -c \"\$1\""
 if command -v setsid >/dev/null 2>&1; then
-  setsid "$sh" -lc "$cmd" 4<&- 2>&5 5>&- &
+  setsid "$sh" -lc "$pick" sh "$cmd" 4<&- 2>&5 5>&- &
 else
   set -m
-  "$sh" -lc "$cmd" 4<&- 2>&5 5>&- &
+  "$sh" -lc "$pick" sh "$cmd" 4<&- 2>&5 5>&- &
 fi
 job=$!
 (
@@ -64,7 +68,8 @@ const _: () = assert!(!quote::has_single_quote(WRAPPER));
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "op", deny_unknown_fields)]
 pub enum Op {
-    /// Run `script` in the Box's dir through the login shell.
+    /// Run `script` in the Box's dir under bash, or sh when the machine has no bash, started by
+    /// the login shell so the script keeps its environment and PATH.
     Exec {
         /// The Box whose dir it runs in.
         box_id: i64,

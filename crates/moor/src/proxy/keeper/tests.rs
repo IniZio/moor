@@ -170,7 +170,7 @@ fn the_machine_is_let_go_when_the_box_closes() {
     assert!(kept.tick());
     w.close_box();
     assert!(!kept.tick());
-    assert_eq!(w.kinds(), ["machine_detached"]);
+    assert_eq!(w.kinds(), ["machine_attached", "machine_detached"]);
     assert!(w.store.box_machine(w.id).unwrap().is_none());
 }
 
@@ -181,7 +181,7 @@ fn a_parked_box_frees_its_machine_slot() {
     let kept = w.kept();
     assert!(kept.tick());
     kept.park();
-    assert_eq!(w.kinds(), ["machine_detached"]);
+    assert_eq!(w.kinds(), ["machine_attached", "machine_detached"]);
     assert!(w.store.box_machine(w.id).unwrap().is_none());
 }
 
@@ -193,7 +193,7 @@ fn a_park_for_hands_the_box_replaced_keeps_the_slot_and_logs_the_stale_write() {
     assert!(kept.tick());
     w.store.replace_hands(w.id);
     kept.park();
-    assert!(w.kinds().is_empty());
+    assert_eq!(w.kinds(), ["machine_attached"], "no machine_detached");
     assert!(w.store.box_machine(w.id).unwrap().is_some(), "still held");
     assert!(String::from_utf8_lossy(&w.log.lock().unwrap()).contains("stale_hands_write"));
 }

@@ -13,7 +13,7 @@ the machine only over the link its agent opened.
 | `machine_release` | none | Runs the `suspend` hook and gives the slot back. The Box's files stay until it closes. |
 | `sync` | optional `exclude` | Copies the work tree to `~/moor/<box id>` on the machine, sending only changes. |
 | `pull` | `path`, `dest` | Copies one file, up to 32 MiB, from the machine into the work tree. |
-| `exec` | `command`; optional `timeout_secs`, `hold`, `hold_wait_secs` | Runs a command in `~/moor/<box id>` through the machine user's login shell. |
+| `exec` | `command`; optional `timeout_secs`, `hold`, `hold_wait_secs` | Runs a command in `~/moor/<box id>` under `bash`, or `sh` when the machine has no `bash`. |
 | `machine_info` | none | Returns `box`, `machine`, `slot`, `port_offset`, and `facts`. |
 
 - `machine_claim` with no `labels` or `ports` uses the repo's `machine:`
@@ -25,6 +25,11 @@ the machine only over the link its agent opened.
   `node_modules`, `Pods`, `.gradle`, `DerivedData`, `.dart_tool`, and
   `target`, so install packages on the machine itself. `exclude` adds up to 64
   more patterns.
+- `exec` starts the machine user's login shell first. The command keeps that
+  user's `PATH` and environment. The login shell then runs the command with
+  `bash` from that `PATH`, or with `sh` when there is none. A zsh login shell
+  gives the same result as a bash one, so `PIPESTATUS` and `[[ ]]` work. The
+  login shell must take POSIX `-c` syntax, as zsh, bash, ksh and sh do.
 - `exec` runs for 600 seconds by default, 3600 at most. It returns
   `exit_code`, the last 64 KiB of `output`, `truncated`, and `timed_out`.
 - `exec` with `hold` takes one unit of each named resource that the runner's
@@ -43,7 +48,7 @@ each Box its own things there, such as a simulator. A missing hook is skipped.
 | `suspend` | When the Box sleeps or releases its slot. |
 | `release` | After the Box closes. |
 
-Each hook runs in `~/moor/<box id>` through the login shell, within
+Each hook runs in `~/moor/<box id>` the way `exec` runs, within
 `--hook-timeout-secs` (600 by default), with these variables:
 
 | Variable | Value |

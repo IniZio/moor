@@ -394,7 +394,7 @@ fn a_waiter_records_machine_attached_when_it_takes_the_freed_slot() {
 
     let kinds: Vec<String> = machine_events(&r, b).into_iter().map(|e| e.0).collect();
     assert_eq!(kinds, ["machine_waiting", "machine_attached"]);
-    assert_eq!(machine_events(&r, b)[1], attached(0));
+    assert_eq!(machine_events(&r, b).get(1), Some(&attached(0)));
 }
 
 #[test]
