@@ -54,6 +54,7 @@ mod placement;
 mod profile;
 mod profile_env;
 mod profile_install;
+mod profile_link;
 mod profile_model;
 mod profile_setup;
 mod profile_sources;

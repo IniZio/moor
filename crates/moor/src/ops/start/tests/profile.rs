@@ -231,14 +231,15 @@ fn a_box_without_a_profile_fetches_nothing() {
 }
 
 #[test]
-fn a_failed_fetch_is_reported_and_the_box_still_starts() {
+fn a_failed_fetch_is_reported_and_fails_setup() {
     let failing =
         FakeDriver::new().exec_ends_when(".moor-profile/person", ExecOutcome::Exited { code: 128 });
     let w = answering(failing, None, HEAD, None);
     set_profile(&w, None);
     w.cx.take_warnings();
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(v.failed_step.as_deref(), Some("profile"));
     let events = profile_events(&w, BoxId::new(v.boxed.id));
     let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(kinds, ["profile_resolved", "profile_failed"]);

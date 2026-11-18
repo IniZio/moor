@@ -17,6 +17,7 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::{Deadline, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
+pub(crate) use hooks::RELINK_ASKS;
 pub(crate) use runs::{eventually, live_in_group};
 pub(crate) use script::{is_clone_exec, PutCall};
 use script::{layout, write_log, CopyCall, ExecHook, PeekCall};
@@ -90,6 +91,47 @@ pub(crate) struct FakeDriver {
 }
 
 impl FakeDriver {
+    /// One `exec`, as the Driver's, with no ask again across a lost link.
+    fn exec_once(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError> {
+        self.run_exec_hooks(spec);
+        let mut s = self.st();
+        s.note(format!("exec {}", handle.as_str()));
+        s.placed.push(("exec", spec.place));
+        s.execs.push((handle.clone(), spec.clone(), deadline));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        if s.trees.is_some() {
+            return trees::exec_in_tree(s, handle.as_str(), spec);
+        }
+        let argv = spec.argv.join(" ");
+        if let Some(e) = s.exec_err(&argv) {
+            return Err(e);
+        }
+        let scripted = s.log_text(spec);
+        let ends = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str()));
+        if let Some(out) = ends.map(|(_, out)| *out).or_else(|| s.end_once(&argv)) {
+            write_log(spec, scripted)?;
+            return Ok(out);
+        }
+        let out = s
+            .exec_results
+            .pop_front()
+            .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
+        write_log(spec, scripted)?;
+        let hook = s.after_exec.clone();
+        drop(s);
+        if let Some(hook) = hook {
+            hook();
+        }
+        out
+    }
+
     /// An empty Driver with no scripted failures.
     pub(crate) fn new() -> Self {
         Self::default()
@@ -198,35 +240,7 @@ impl Driver for FakeDriver {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
-        self.run_exec_hooks(spec);
-        let mut s = self.st();
-        s.note(format!("exec {}", handle.as_str()));
-        s.placed.push(("exec", spec.place));
-        s.execs.push((handle.clone(), spec.clone(), deadline));
-        if !s.live.iter().any(|h| h == handle.as_str()) {
-            return Err(DriverError::NotFound);
-        }
-        if s.trees.is_some() {
-            return trees::exec_in_tree(s, handle.as_str(), spec);
-        }
-        let scripted = s.log_text(spec);
-        let argv = spec.argv.join(" ");
-        let ends = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str()));
-        if let Some(out) = ends.map(|(_, out)| *out).or_else(|| s.end_once(&argv)) {
-            write_log(spec, scripted)?;
-            return Ok(out);
-        }
-        let out = s
-            .exec_results
-            .pop_front()
-            .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
-        write_log(spec, scripted)?;
-        let hook = s.after_exec.clone();
-        drop(s);
-        if let Some(hook) = hook {
-            hook();
-        }
-        out
+        self.exec_relinked(handle, spec, deadline)
     }
 
     fn copy_out(

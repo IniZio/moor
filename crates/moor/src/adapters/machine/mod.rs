@@ -31,6 +31,8 @@ mod stream;
 mod term;
 pub use term::box_term;
 
+#[cfg(test)]
+pub(crate) use relink::link_down;
 use relink::relinked;
 
 /// How the controller reaches the runner that holds a machine's link.

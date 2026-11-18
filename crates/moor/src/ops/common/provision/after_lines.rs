@@ -4,7 +4,7 @@ use moor_core::config::BoxSettings;
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use super::clone::SetupProxy;
-use super::outcome::dotfiles_warned;
+use super::outcome::{dotfiles_warned, AfterFailed};
 use super::SetupTarget;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -22,7 +22,7 @@ pub(super) fn steps_after_lines(
     target: &SetupTarget<'_>,
     (cfg, proxy): (&BoxSettings, &SetupProxy),
     run: &SetupRun,
-) -> Result<(DotfilesRun, Result<(), String>), CommandError> {
+) -> Result<(DotfilesRun, Result<(), AfterFailed>), CommandError> {
     if run.failed() {
         return Ok((DotfilesRun::Skipped, Ok(())));
     }
@@ -35,8 +35,8 @@ pub(super) fn steps_after_lines(
 pub(super) struct AfterSetup {
     /// The dotfiles.
     pub(super) dotfiles: DotfilesRun,
-    /// The agent install, with why it failed.
-    pub(super) installed: Result<(), String>,
+    /// The agent install and the profile, with which failed and why.
+    pub(super) installed: Result<(), AfterFailed>,
 }
 
 /// Applies the dotfiles; a failure is warned and reported, and the Box carries on.
@@ -68,7 +68,8 @@ fn refresh_login(cx: &Cx, handle: &BoxHandle) {
 
 /// Runs the steps after the setup lines, the agent install only when `install`. A failed agent
 /// install is warned and returned as the Box's failed step, and the profile, which needs the
-/// agent, waits for the retry.
+/// agent, waits for the retry. A profile that could not be fetched or installed is the failed
+/// step too, so the agent never starts without it.
 #[allow(
     clippy::too_many_arguments,
     reason = "the Box, settings, Proxy and whether to install"
@@ -92,10 +93,21 @@ pub(super) fn after_setup(
         cx.warn(agent_install::warning(&reason));
         return Ok(AfterSetup {
             dotfiles,
-            installed: Err(format!("agent install: {reason}")),
+            installed: Err(AfterFailed {
+                step: "agent_install",
+                cause: format!("agent install: {reason}"),
+            }),
         });
     }
-    profile_fetch::apply(cx, store, at, id, cfg, proxy)?;
+    if let Err(cause) = profile_fetch::apply(cx, store, at, id, cfg, proxy)? {
+        return Ok(AfterSetup {
+            dotfiles,
+            installed: Err(AfterFailed {
+                step: "profile",
+                cause,
+            }),
+        });
+    }
     refresh_login(cx, at.0);
     Ok(AfterSetup {
         dotfiles,

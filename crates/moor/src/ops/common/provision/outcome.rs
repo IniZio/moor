@@ -25,8 +25,8 @@ pub(crate) struct Provisioned {
     pub(crate) dotfiles: DotfilesRun,
     /// How the kept work tree started; none when the Box keeps none or already refreshed it.
     pub(crate) work_tree: Option<WorkTreeView>,
-    /// Whether the agent install failed after every setup line passed.
-    pub(crate) install_failed: bool,
+    /// The step after the setup lines that failed, when every setup line passed.
+    pub(crate) after_failed: Option<&'static str>,
 }
 
 impl Provisioned {
@@ -36,7 +36,7 @@ impl Provisioned {
             setup: SetupRun::Skipped,
             dotfiles: DotfilesRun::Skipped,
             work_tree: None,
-            install_failed: false,
+            after_failed: None,
         }
     }
 
@@ -44,10 +44,8 @@ impl Provisioned {
     pub(crate) const fn failed_step(&self) -> Option<&'static str> {
         if self.setup.failed() {
             Some("setup")
-        } else if self.install_failed {
-            Some("agent_install")
         } else {
-            None
+            self.after_failed
         }
     }
 }
@@ -63,10 +61,18 @@ pub(super) fn dotfiles_noted(id: BoxId, dotfiles: &DotfilesRun) -> Decision {
     }
 }
 
-/// How the lines of `run` and the agent install `installed` ended, as one outcome.
-pub(super) fn step_outcome(run: &SetupRun, installed: Result<(), String>) -> SetupOutcome {
-    match (run.outcome(), installed) {
-        (SetupOutcome::Ok, Err(cause)) => SetupOutcome::Failed { line: cause },
+/// A step after the setup lines that failed the Box's setup.
+pub(crate) struct AfterFailed {
+    /// The step, as `failed_step` names it.
+    pub(crate) step: &'static str,
+    /// Why, naming the step.
+    pub(crate) cause: String,
+}
+
+/// How the lines of `run` and the steps after them, `after`, ended, as one outcome.
+pub(super) fn step_outcome(run: &SetupRun, after: Result<(), AfterFailed>) -> SetupOutcome {
+    match (run.outcome(), after) {
+        (SetupOutcome::Ok, Err(failed)) => SetupOutcome::Failed { line: failed.cause },
         (outcome, _) => outcome,
     }
 }

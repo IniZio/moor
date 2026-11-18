@@ -88,13 +88,13 @@ pub(super) fn finish_steps(
         steps_pending_at: Field::Clear,
         ..Fields::default()
     };
-    let install_failed = after.installed.is_err();
-    let why = after.installed.as_ref().err().cloned();
+    let after_failed = after.installed.as_ref().err().map(|f| f.step);
+    let why = after.installed.as_ref().err().map(|f| f.cause.clone());
     let outcome = match after.installed {
         Ok(()) => SetupOutcome::Ok,
-        Err(line) => {
+        Err(failed) => {
             set.setup_failed_at = Field::Set(cx.clock().now().as_millis());
-            SetupOutcome::Failed { line }
+            SetupOutcome::Failed { line: failed.cause }
         }
     };
     let effect = effect_after(advance, &outcome, &cfg);
@@ -109,7 +109,7 @@ pub(super) fn finish_steps(
         setup: SetupRun::Skipped,
         dotfiles: after.dotfiles,
         work_tree: None,
-        install_failed,
+        after_failed,
     })
 }
 
