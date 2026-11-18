@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use super::login::get;
 use super::nodes::{self, Settings};
 use super::repos::{self, Configs};
+use super::tasks;
 use super::workflows;
 use super::CLIENT_ID;
 
@@ -84,6 +85,7 @@ fn answer(
         "node-list" => Response::ok("x", Some(nodes::list(node))),
         "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
         "start-needs" | "start" => needs(vault, who, inner),
+        cmd @ ("show" | "artifacts") if who.contains(tasks::PREFIX) => tasks::answer(who, cmd, inner),
         cmd if cmd.starts_with("workflow-") => workflows::answer(who, cmd, inner),
         cmd => repos::answer(configs, cmd, who, inner),
     }

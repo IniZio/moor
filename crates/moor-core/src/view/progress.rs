@@ -93,7 +93,7 @@ pub fn latest(events: &[Happened]) -> Option<String> {
 }
 
 /// Event `kind` as a step, or `None` for one that says nothing about getting the Box up.
-fn step(kind: &str, payload: &Value) -> Option<String> {
+pub(crate) fn step(kind: &str, payload: &Value) -> Option<String> {
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
     let took = || {
         payload
@@ -232,7 +232,7 @@ pub fn span(secs: impl TryInto<u64>) -> String {
 }
 
 /// An RFC 3339 UTC time in whole seconds, as the controller writes it, in unix seconds.
-fn unix(ts: &str) -> Option<i64> {
+pub(crate) fn unix(ts: &str) -> Option<i64> {
     let num = |at: usize, len: usize| ts.get(at..at + len)?.parse::<i64>().ok();
     let (y, m, d) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
     let secs = num(11, 2)? * 3600 + num(14, 2)? * 60 + num(17, 2)?;
