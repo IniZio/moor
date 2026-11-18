@@ -493,6 +493,7 @@ mod pair;
 mod repos;
 mod secrets;
 mod setup;
+mod workflows;
 
 #[test]
 fn a_missing_controller_socket_answers_503_with_retry_after() {
