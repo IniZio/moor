@@ -2,16 +2,21 @@
 //!
 //! Each repo goes through the same preparation and start a cron firing uses. The claim is a manual
 //! one: it is recorded only when the repo has no open run, which the store checks in the write
-//! that inserts the row. A repo that is refused records nothing.
+//! that inserts the row. A repo that is refused records nothing. A recorded claim's Box starts on
+//! a thread of its own, as a cron firing's does, so the answer never waits on a Box's setup; a
+//! start that is refused then settles the run as refused, which `list_workflow_runs` shows.
+
+use std::thread;
 
 use moor_core::name::ForgeRepo;
+use moor_core::user::Viewer;
 use moor_core::view::workflow::{RunNowLine, RunNowValue};
 use moor_core::workflow::{
-    box_name, NewRun, RunEnd, RunState, RunTrigger, Workflow, WorkflowName, WorkflowRun,
+    box_name, NewRun, RunState, RunTrigger, Workflow, WorkflowName, WorkflowRun,
 };
 use moor_core::ErrorKind;
 
-use super::{prepare, run_start, Prepared};
+use super::{prepare, run_start, Prepared, StartJob};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{ManualClaim, Store};
@@ -33,7 +38,18 @@ pub(crate) fn run(
     cx: &Cx,
     store: &Store,
     user: moor_core::user::UserId,
+    args: (&str, &[String], Option<u64>),
+) -> Result<RunNowValue, CommandError> {
+    run_with(cx, store, user, args, &|job| spawn_start(cx, job))
+}
+
+/// Like [`run`], handing each recorded claim to `start`.
+pub(super) fn run_with(
+    cx: &Cx,
+    store: &Store,
+    user: moor_core::user::UserId,
     (name, repos, expected_revision): (&str, &[String], Option<u64>),
+    start: &dyn Fn(StartJob) -> Result<(), CommandError>,
 ) -> Result<RunNowValue, CommandError> {
     let name = WorkflowName::parse(name).map_err(usage)?;
     let Some(w) = store.workflow(user, &name)? else {
@@ -62,7 +78,7 @@ pub(crate) fn run(
     }
     let mut runs = Vec::new();
     for repo in &chosen {
-        runs.push(fire(cx, store, &w, repo)?);
+        runs.push(fire(cx, store, &w, repo, start)?);
     }
     Ok(RunNowValue {
         workflow: name.to_string(),
@@ -80,14 +96,14 @@ fn declined(repo: &ForgeRepo, why: String) -> RunNowLine {
     }
 }
 
-/// Claims a manual run of `w` for `repo` and starts its Box on the spot, as the owner `cx` acts
-/// for. A claim the store refuses records nothing; a start that fails after the claim leaves a
-/// refused run, as a cron firing does.
+/// Claims a manual run of `w` for `repo` and hands it to `start`. A claim the store refuses
+/// records nothing; a start that fails after the claim leaves a refused run, as a cron firing does.
 fn fire(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
     repo: &ForgeRepo,
+    start: &dyn Fn(StartJob) -> Result<(), CommandError>,
 ) -> Result<RunNowLine, CommandError> {
     let now = cx.clock().now();
     let Prepared { job, frozen } = match prepare(store, w, repo, (now, RunTrigger::Manual)) {
@@ -118,22 +134,29 @@ fn fire(
         )),
         ManualClaim::Recorded => {
             let name = job.name.as_str().to_owned();
-            run_start(cx, &job);
-            let started = store
-                .recent_workflow_runs(w.id, repo, 5)?
-                .into_iter()
-                .find(|r| r.due_at == now);
-            Ok(match started.map(|r| r.state) {
-                Some(RunState::Done(RunEnd::Refused { detail })) => declined(repo, detail),
-                _ => RunNowLine {
-                    repo: repo.to_string(),
-                    status: "started".to_owned(),
-                    box_name: Some(name),
-                    reason: None,
-                },
+            start(job)?;
+            Ok(RunNowLine {
+                repo: repo.to_string(),
+                status: "started".to_owned(),
+                box_name: Some(name),
+                reason: None,
             })
         }
     }
+}
+
+/// Starts `job`'s Box on a thread of its own, as its owner, which settles the claim.
+fn spawn_start(cx: &Cx, job: StartJob) -> Result<(), CommandError> {
+    let owner = cx
+        .detached()?
+        .with_requester(job.identity.clone())
+        .with_viewer(Viewer::User(job.owner));
+    thread::spawn(move || {
+        crate::cx::owners::checked(|| {
+            run_start(&owner, &job);
+        });
+    });
+    Ok(())
 }
 
 /// The name of the Box `open` works in, or will work in while it is being started.

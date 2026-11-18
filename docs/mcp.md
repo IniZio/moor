@@ -67,7 +67,12 @@ token's audience.
   terminal. It wakes an asleep Box. The timeout is 30 seconds by default and
   120 at most. It returns `exit`, `timed_out`, and the first 64 KiB of
   `stdout` and `stderr`. Each call records an `exec_ran` event.
-- `retry_box` reruns setup on a Box in `setup_failed` and returns when it ends.
+- `retry_box` reruns setup on a Box in `setup_failed`. It returns once setup
+  has restarted, while setup goes on. Follow it with `box_status`.
+- `run_workflow` returns once each repo's run is recorded and its Box start
+  has begun, while the Box sets up. A start the controller refuses after that
+  shows as a refused run in `list_workflow_runs`.
+- No tool waits for setup by default. Only `start_box` with `wait: true` does.
 - `add_webhook` returns the webhook's `id` and a `setup_url`, never a secret.
 
 ### `box_status`
