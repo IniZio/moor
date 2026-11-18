@@ -45,8 +45,8 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
     }
 }
 
-/// Puts what provisioning ran in the view; a failed setup line or agent install also names the
-/// step and the Box.
+/// Puts what provisioning ran in the view; a failed setup line, agent install or profile also
+/// names the step and the Box.
 pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.setup = p.setup.view();
     v.dotfiles = p.dotfiles.view();

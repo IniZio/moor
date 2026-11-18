@@ -274,7 +274,7 @@ fn run_and_record(
             ok: !run.failed(),
         });
     }
-    let install_failed = installed.is_err();
+    let after_failed = installed.as_ref().err().map(|f| f.step);
     let outcome = step_outcome(&run, installed);
     let failed_at = stamped_when_failed(cx, &outcome);
     let effect = effect_after(advance, &outcome, cfg);
@@ -291,7 +291,7 @@ fn run_and_record(
         setup: run,
         dotfiles,
         work_tree: cloned.work_tree,
-        install_failed,
+        after_failed,
     })
 }
 

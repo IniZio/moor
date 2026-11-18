@@ -22,6 +22,15 @@ pub(crate) const INSTALL_DEADLINE: Duration = Duration::from_mins(10);
 /// Wall-clock allowance for asking whether the agent is there.
 const PRESENT_DEADLINE: Duration = Duration::from_mins(1);
 
+/// Whether a script may run again when a lost machine link leaves unknown whether it ran.
+#[derive(Clone, Copy)]
+pub(crate) enum Repeat {
+    /// Runs at most once.
+    Once,
+    /// Safe to run twice, so it is asked again across a lost link.
+    Safe,
+}
+
 /// The warning for an install that did not succeed.
 pub(crate) fn warning(reason: &str) -> Warning {
     Warning {
@@ -31,8 +40,8 @@ pub(crate) fn warning(reason: &str) -> Warning {
 }
 
 /// Runs an install script in `place` in the Box with the env and Proxy setup gets, logging to
-/// `log`, for at most `deadline`. The error is why it could not run to an exit; `what` names the
-/// step in it when the deadline hit.
+/// `log`, for at most `deadline`, asked again across a lost machine link when `repeat` allows. The
+/// error is why it could not run to an exit; `what` names the step in it when the deadline hit.
 #[allow(
     clippy::too_many_arguments,
     reason = "the Box, place, settings, Proxy, script, log and deadline"
@@ -43,7 +52,7 @@ pub(crate) fn run(
     place: Place,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
-    script: String,
+    (script, repeat): (String, Repeat),
     log: &Path,
     (what, deadline): (&str, Duration),
 ) -> Result<ExecOutcome, String> {
@@ -55,6 +64,10 @@ pub(crate) fn run(
     )
     .env(env.vars())
     .output(Some(Output::Log(log.to_path_buf())));
+    let exec = match repeat {
+        Repeat::Once => exec,
+        Repeat::Safe => exec.repeatable(),
+    };
     cx.driver()
         .exec(site.handle, &exec, Deadline(deadline))
         .map_err(|e| exec_failure(what, &e))
@@ -126,7 +139,7 @@ pub(crate) fn present(
         Place::Agent,
         cfg,
         proxy.as_ref(),
-        install.present,
+        (install.present, Repeat::Once),
         &log,
         limit,
     );
@@ -148,7 +161,7 @@ fn install_in_box(
         Place::Agent,
         cfg,
         proxy,
-        script,
+        (script, Repeat::Once),
         log,
         ("agent install", INSTALL_DEADLINE),
     ) {

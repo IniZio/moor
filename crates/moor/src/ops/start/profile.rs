@@ -1,7 +1,10 @@
 //! The requester's agent profile, resolved through the forge before the Box exists.
 //!
-//! No profile step ever fails the start: each failure becomes a `profile_failed` event and a
-//! warning, and the Box starts without what the step would have given it.
+//! Resolving the profile, reading its manifest or running its `setup.sh` never fails the start:
+//! each failure becomes a `profile_failed` event and a warning, and the Box starts without what the
+//! step would have given it. A resolved profile that could not be fetched into the Box or
+//! installed, once a lost machine link is waited out, fails setup instead, so the agent never
+//! starts without it.
 
 use std::sync::{mpsc, Arc};
 use std::thread;
