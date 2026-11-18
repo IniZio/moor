@@ -348,3 +348,53 @@ fn an_empty_service_key_env_stops_the_gate_from_starting() {
         "{stderr}"
     );
 }
+
+/// `moor-gate --listen off` with a service key and a Box listener on a free loopback port, and
+/// no sign-in flags.
+fn box_only_gate(key: &str) -> (moor_testkit::ChildGuard, String) {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let addr = format!("127.0.0.1:{port}");
+    let child = std::process::Command::new(env!("CARGO_BIN_EXE_moor-gate"))
+        .args(["--listen", "off", "--box-listen", &addr])
+        .args(["--front-socket", "/nonexistent.sock"])
+        .env("MOOR_SERVICE_KEY", key)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    (moor_testkit::ChildGuard::new(child), addr)
+}
+
+#[test]
+fn a_gate_with_its_public_listener_off_serves_boxes_without_any_sign_in_flag() {
+    let (mut gate, addr) = box_only_gate("s3cret");
+    let listening = (0..100).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(gate.try_wait().unwrap().is_none(), "the gate exited early");
+        std::net::TcpStream::connect(&addr).is_ok()
+    });
+    assert!(listening, "the Box listener never came up");
+    assert_eq!(post_with_key(&addr, None).0, 401);
+    assert_eq!(post_with_key(&addr, Some("s3cret")).0, 200);
+}
+
+#[test]
+fn a_gate_with_a_public_listener_still_needs_its_sign_in_flags() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_moor-gate"))
+        .args([
+            "--listen",
+            "127.0.0.1:0",
+            "--front-socket",
+            "/nonexistent.sock",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--issuer"), "{stderr}");
+}

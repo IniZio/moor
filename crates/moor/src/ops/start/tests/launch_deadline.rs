@@ -83,10 +83,12 @@ fn a_failed_launch_reads_quiet_after_the_default_three_minutes_and_says_so_once(
     assert_eq!(timed_out(&w, id), [serde_json::json!({"after_secs": 180})]);
     let warnings = w.cx.take_warnings();
     let warned = warnings.iter().find(|x| x.code == "launch_timed_out");
+    let message = warned.map(|x| x.message.as_str()).unwrap_or_default();
     assert!(
-        warned.is_some_and(|x| x.message.contains("moor start demo --resume")),
+        message.ends_with("start it again with `moor start demo`"),
         "{warnings:?}"
     );
+    assert!(!message.contains("--resume"), "{warnings:?}");
     settle_now(&w, id);
     assert_eq!(timed_out(&w, id).len(), 1, "a second read adds no event");
 }

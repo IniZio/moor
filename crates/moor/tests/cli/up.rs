@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -27,6 +28,7 @@ stop() {
 }
 launch() {
   { sed -n 's/^Environment=/export /p' "$units/moor.service"
+    sed -n 's/^EnvironmentFile=\(.*\)$/set -a; . "\1"; set +a/p' "$units/moor.service"
     printf 'exec '
     sed -n 's/^ExecStart=//p' "$units/moor.service"; } > "$dir/run.sh"
   setsid sh "$dir/run.sh" >> "$dir/controller.log" 2>&1 < /dev/null &
@@ -73,7 +75,7 @@ impl Host {
             },
         )
         .unwrap();
-        for tool in ["moor-machine-runner", "moor-machine-agent"] {
+        for tool in ["moor-machine-runner", "moor-machine-agent", "moor-gate"] {
             write_executable(&bin.join(tool), "#!/bin/sh\nexit 0\n").unwrap();
         }
         write_executable(&bin.join("systemctl"), format!("#!/bin/sh\n{SYSTEMCTL}")).unwrap();
@@ -137,8 +139,10 @@ impl Host {
             self.home.join(".config/moor/config.yaml"),
             self.units().join("moor.socket"),
             self.units().join("moor.service"),
+            self.units().join("moor-gate.service"),
             self.units().join("moor-runner.service"),
             self.units().join("moor-agent.service"),
+            self.state.path().join("service.env"),
             self.state.path().join("up-ports.json"),
             self.state
                 .path()
@@ -183,6 +187,8 @@ fn converged() -> (Host, Run) {
 /// The `systemctl` calls of a first `up`.
 const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service\n\
                            --user start moor.socket\n--user restart moor.service\n\
+                           --user daemon-reload\n--user enable moor-gate.service\n\
+                           --user restart moor-gate.service\n\
                            --user daemon-reload\n--user enable moor-runner.service\n\
                            --user restart moor-runner.service\n\
                            --user daemon-reload\n--user enable moor-agent.service\n\
@@ -200,6 +206,7 @@ fn up_converges_a_fresh_host() {
         "ok    docker      Docker 27.0.0 answers\n",
         "Docker Boxes are privileged containers",
         "ok    node        local: Docker Boxes by moor-agent.service",
+        "ok    gate        moor-gate.service serves report_step to the Boxes at 127.0.0.1:8444\n",
     ] {
         assert!(first.stdout.contains(line), "{line}: {first:?}");
     }
@@ -269,6 +276,7 @@ fn a_rerun_changes_nothing_and_prints_the_same_state() {
     assert_eq!(
         host.systemctl_log().strip_prefix(FIRST_CALLS).unwrap(),
         "--user enable moor.socket moor.service\n--user start moor.socket\n--user start moor.service\n\
+         --user enable moor-gate.service\n--user start moor-gate.service\n\
          --user enable moor-runner.service\n--user start moor-runner.service\n\
          --user enable moor-agent.service\n--user start moor-agent.service\n"
     );
@@ -286,10 +294,11 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     assert!(host
         .systemctl_log()
         .ends_with(
-            "--user disable --now moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
+            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
         ));
     assert!(!host.units().join("moor-agent.service").exists());
     assert!(!host.units().join("moor-runner.service").exists());
+    assert!(!host.units().join("moor-gate.service").exists());
     assert_eq!(
         host.moor(&["down"], "").stdout,
         "ok    service     not installed\n"
@@ -360,4 +369,81 @@ fn up_over_the_crabbox_node_of_an_earlier_release_says_to_delete_it() {
     assert_eq!(r.code, 1, "{r:?}");
     assert!(r.stdout.contains("delete nodes.local from"), "{r:?}");
     assert_eq!(host.systemctl_log(), "");
+}
+
+/// The front the controller config gets so the gate can report steps.
+const FRONT: &str = "fronts:\n  authgear:\n    step_reports: true\n";
+
+#[test]
+fn up_runs_a_box_only_gate_that_shares_one_service_key_with_the_controller() {
+    let (host, first) = converged();
+    assert_eq!(first.code, 0, "{first:?}");
+    let controller = fs::read_to_string(host.home.join(".config/moor/controller.yaml")).unwrap();
+    assert!(controller.ends_with(FRONT), "{controller}");
+    let key_file = host.state.path().join("service.env");
+    let env = fs::read_to_string(&key_file).unwrap();
+    let key = env.trim().strip_prefix("MOOR_SERVICE_KEY=").unwrap();
+    assert!(key.len() >= 32, "{env:?}");
+    assert_eq!(
+        fs::metadata(&key_file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let uses = format!("EnvironmentFile={}\n", key_file.display());
+    let gate = fs::read_to_string(host.units().join("moor-gate.service")).unwrap();
+    let front = host.state.path().join("fronts/authgear/front");
+    for want in [
+        "\"--listen\" \"off\"".to_owned(),
+        "\"--box-listen\" \"127.0.0.1:8444\"".to_owned(),
+        format!("\"--front-socket\" \"{}\"", front.display()),
+        "Wants=moor.service\n".to_owned(),
+        uses.clone(),
+    ] {
+        assert!(gate.contains(&want), "{want} missing from {gate}");
+    }
+    let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
+    assert!(service.contains(&uses), "{service}");
+    for (path, text) in host.written() {
+        if path != key_file {
+            assert!(!text.contains(key), "the key is in {}", path.display());
+        }
+    }
+    assert!(front.exists(), "the controller bound no front socket");
+}
+
+#[test]
+fn up_adds_the_front_to_a_controller_config_an_earlier_up_wrote() {
+    let host = Host::new();
+    let config = host.home.join(".config/moor/controller.yaml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let state = host.state.path().display();
+    let earlier = format!("socket: {state}/controller.sock\nstate_dir: {state}\n");
+    fs::write(&config, &earlier).unwrap();
+    let r = host.moor(&["up"], "a\nb\n");
+    assert_eq!(r.code, 0, "{r:?}");
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        format!("{earlier}{FRONT}")
+    );
+    assert!(host.units().join("moor-gate.service").exists());
+}
+
+#[test]
+fn up_leaves_the_fronts_of_a_controller_config_alone_and_starts_no_gate() {
+    let host = Host::new();
+    let config = host.home.join(".config/moor/controller.yaml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let state = host.state.path().display();
+    let own =
+        format!("socket: {state}/controller.sock\nstate_dir: {state}\nfronts:\n  authgear: {{}}\n");
+    fs::write(&config, &own).unwrap();
+    let r = host.moor(&["up"], "a\nb\n");
+    assert_eq!(r.code, 0, "{r:?}");
+    assert!(
+        r.stdout
+            .contains("ok    gate        not started: controller.yaml sets fronts of its own\n"),
+        "{r:?}"
+    );
+    assert_eq!(fs::read_to_string(&config).unwrap(), own);
+    assert!(!host.units().join("moor-gate.service").exists());
+    assert!(!host.state.path().join("service.env").exists());
 }
