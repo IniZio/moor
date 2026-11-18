@@ -21,6 +21,16 @@ pub struct BoxFact {
     pub handle: Option<BoxHandle>,
 }
 
+/// What a reconcile's reason starts with when the holder of a Box saw its places die, the way
+/// they ended following it.
+pub const DOWN_PREFIX: &str = "it stopped on its machine: ";
+
+/// How the places of a Box ended, when `reason` is the one a reconcile gave for a death.
+#[must_use]
+pub fn died_of(reason: &str) -> Option<&str> {
+    reason.strip_prefix(DOWN_PREFIX)
+}
+
 /// Why a reconcile sleeps a Box its provider lists as stopped.
 pub const STOPPED_REASON: &str = "its machine stopped, as when its host restarts";
 
@@ -71,7 +81,7 @@ pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
         .map(|(r, l)| {
             let reason = l.down.as_ref().map_or_else(
                 || STOPPED_REASON.to_owned(),
-                |why| format!("it stopped on its machine: {why}"),
+                |why| format!("{DOWN_PREFIX}{why}"),
             );
             Decision::new(r.box_id)
                 .lifecycle(BoxLifecycleInput::Sleep {

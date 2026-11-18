@@ -1,5 +1,6 @@
 //! Events about an agent that stopped answering: a busy agent gone quiet and its return, or a
-//! held prompt it could not be given, and a Box kept awake past its cap by work.
+//! held prompt it could not be given, a Box kept awake past its cap by work, and a Box whose
+//! places kept dying, so moor stopped resuming it.
 
 use serde::Serialize;
 
@@ -33,6 +34,15 @@ pub enum StallEvent {
         /// Whole seconds the Box has been awake.
         awake_for_secs: u64,
     },
+    /// The Box's places died again and again, so moor stopped resuming it on its own.
+    DeathCapped {
+        /// Deaths within the window.
+        count: usize,
+        /// The window, in seconds.
+        window_secs: u64,
+        /// How the places of the last death ended.
+        reason: String,
+    },
 }
 
 impl StallEvent {
@@ -44,6 +54,7 @@ impl StallEvent {
             Self::AgentResumed { .. } => "agent_resumed",
             Self::PromptNotGiven { .. } => "prompt_not_given",
             Self::SleepHeld { .. } => "sleep_held",
+            Self::DeathCapped { .. } => "death_capped",
         }
     }
 }
