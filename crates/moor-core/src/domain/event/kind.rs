@@ -90,6 +90,8 @@ pub const EVENT_KINDS: &[&str] = &[
     "prompt_not_given",
     "agent_prompt_check_failed",
     "previous_box_kept",
+    "run_waiting",
+    "run_failed",
     "transcript_saved",
     "transcript_failed",
     "transcript_skipped",

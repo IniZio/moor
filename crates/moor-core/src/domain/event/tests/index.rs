@@ -105,5 +105,7 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::SetupReattached { .. }) => 92,
         Event::Timing(TimingEvent::AcquireReattached { .. }) => 93,
         Event::Egress(EgressEvent::EgressSeen { .. }) => 94,
+        Event::Workflow(WorkflowEvent::RunWaiting { .. }) => 95,
+        Event::Workflow(WorkflowEvent::RunFailed { .. }) => 96,
     }
 }
