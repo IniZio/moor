@@ -117,7 +117,12 @@ async fn a_command_runs_under_sh_when_the_path_has_no_bash() {
     )
     .unwrap();
 
-    let ran = exec_as(home.path(), "/bin/sh", r#"echo "${BASH_VERSION:-sh}""#).await;
+    let ran = exec_as(
+        home.path(),
+        "/bin/sh",
+        "command -v bash >/dev/null || echo no-bash",
+    )
+    .await;
 
-    assert_eq!(ran.output, "sh\n");
+    assert_eq!((ran.exit_code, ran.output.as_str()), (Some(0), "no-bash\n"));
 }
