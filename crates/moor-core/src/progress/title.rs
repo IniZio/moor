@@ -37,7 +37,7 @@ fn first_sentence(line: &str) -> &str {
             && seen >= SENTENCE_MIN
             && chars.peek().is_some_and(|(_, next)| next.is_whitespace())
         {
-            return &line[..at + c.len_utf8()];
+            return line.get(..at + c.len_utf8()).unwrap_or(line);
         }
     }
     line
@@ -51,7 +51,7 @@ fn clip(text: &str) -> String {
     }
     let room: String = text.chars().take(TITLE_MAX - 1).collect();
     let cut = match room.rfind(char::is_whitespace) {
-        Some(at) if at >= TITLE_MAX / 2 => &room[..at],
+        Some(at) if at >= TITLE_MAX / 2 => room.get(..at).unwrap_or(&room),
         _ => &room,
     };
     format!("{}…", cut.trim_end_matches([',', ';', ':', '-', ' ']))
