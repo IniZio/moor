@@ -88,6 +88,27 @@ RS
 removed_names removed-names-other-insteadof fail crates/moor-core/src/boxscript/clone.rs <<'RS'
 const G: &str = "git config url.x.insteadOf y";
 RS
+removed_names removed-names-portal-text pass crates/moor-gate/web/src/Portal.tsx <<'TS'
+const label = 'New task';
+export const Home = () => <a href="#/">Tasks</a>;
+export const Empty = () => <p class="muted">No tasks yet. Start one in <kbd>Settings</kbd>.</p>;
+export const Wrapped = () => (
+	<p>
+		Your tasks · <kbd>j</kbd> move
+		and open a task from the list
+	</p>
+);
+TS
+removed_names removed-names-portal-ident fail crates/moor-gate/web/src/Portal.tsx <<'TS'
+export const taskList = () => 'tasks';
+TS
+removed_names removed-names-portal-type fail crates/moor-gate/web/src/api.ts <<'TS'
+export type TaskRow = { box: string };
+TS
+removed_names removed-names-portal-comment fail crates/moor-gate/web/src/Portal.tsx <<'TS'
+/** The task a Box runs. */
+export const x = 1;
+TS
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS

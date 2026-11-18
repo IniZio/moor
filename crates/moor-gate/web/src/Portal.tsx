@@ -144,7 +144,7 @@ export function Home() {
 	const { value, error, now } = usePoll(boxList, 'home');
 	useRowKeys();
 	if (!value) {
-		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Boxes…</p>;
+		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
 	}
 	const by = (g: Group) => value.filter((t) => groupOf(t, now) === g);
 	const settled = by('settled');
@@ -152,7 +152,7 @@ export function Home() {
 		<div class="t-home">
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<p class="t-hint muted">
-				Your Boxes · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
+				Your tasks · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
 			</p>
 			<Section label="Needs you" tone="needs" rows={by('needs')} now={now} empty="Nothing needs you." />
 			<Section label="Working" tone="working" rows={by('working')} now={now} empty="Nothing is running." />
@@ -160,11 +160,11 @@ export function Home() {
 			<details class="t-settled">
 				<summary>
 					<span class="t-chev">▸</span> Settled · {settled.length}{' '}
-					<span class="muted">Boxes closed, or done and quiet for 7 days</span>
+					<span class="muted">tasks closed, or done and quiet for 7 days</span>
 				</summary>
 				{settled.map((t) => <Row t={t} now={now} key={t.box} quiet />)}
 			</details>
-			{!value.length && <p class="t-empty">No Boxes yet. Start one from Claude Code with the moor tools.</p>}
+			{!value.length && <p class="t-empty">No tasks yet. Start one from Claude Code with the moor tools.</p>}
 		</div>
 	);
 }
@@ -319,8 +319,8 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 	if (!value) {
 		return (
 			<div class="t-box">
-				<p><a href="#/">← Boxes</a></p>
-				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Box…</p>}
+				<p><a href="#/">← Tasks</a></p>
+				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading task…</p>}
 			</div>
 		);
 	}
@@ -336,7 +336,7 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 		<div class="t-box">
 			<div class="t-thead">
 				<div class="t-crumbs">
-					<a class="t-mono" href="#/">{value.repo ?? 'boxes'}</a>
+					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
 					<span class="t-sep">▸</span>
 					<b>{titleOf(value)}</b>
 					<span class="t-sep">▸</span>
