@@ -1,4 +1,4 @@
-//! A run whose Box's places keep dying fails at its step at once, not at its timeout.
+//! A run whose Box's places died fails at its step at once, not at its timeout.
 #![allow(clippy::panic, reason = "a test names what it found when it fails")]
 
 use moor_core::config::UserConfig;
@@ -49,12 +49,8 @@ fn resumed(r: &Rig, id: BoxId) {
     promote_waiting(&r.cx, store, &node);
 }
 
-/// Deaths until moor stops resuming the Box: two it resumes, the third it does not.
-fn dies_until_capped(r: &Rig, id: BoxId) {
-    for _ in 0..2 {
-        dies(r, id);
-        resumed(r, id);
-    }
+/// The Box dies, and moor does not resume it.
+fn dies_and_stays_down(r: &Rig, id: BoxId) {
     dies(r, id);
     assert_eq!(row(r, id).lifecycle, BoxLifecycle::Asleep);
     assert!(r
@@ -77,16 +73,16 @@ fn failed_reason(r: &Rig, id: WorkflowId) -> (moor_core::workflow::StepId, Strin
 }
 
 #[test]
-fn a_run_fails_at_its_step_the_tick_after_its_box_hits_the_death_cap() {
+fn a_run_fails_at_its_step_the_tick_after_its_box_dies() {
     let r = rig_that_notices_deaths();
     let (id, box_id) = working_run(&r);
-    dies_until_capped(&r, box_id);
+    dies_and_stays_down(&r, box_id);
 
     r.pass();
 
     let (at, reason) = failed_reason(&r, id);
     assert_eq!(at, Plan::single_id());
-    assert!(reason.contains("3 times in 30 minutes"), "{reason}");
+    assert!(reason.contains("moor did not resume it"), "{reason}");
     assert!(reason.contains(DIED), "{reason}");
     let store = r.cx.store().unwrap();
     let told = store
@@ -110,24 +106,24 @@ fn a_run_fails_at_its_step_the_tick_after_its_box_hits_the_death_cap() {
 }
 
 #[test]
-fn deaths_moor_still_resumes_leave_the_run_going() {
+fn a_machine_that_stopped_with_no_reason_leaves_the_run_going() {
     let r = rig_that_notices_deaths();
     let (id, box_id) = working_run(&r);
-    for _ in 0..2 {
-        dies(&r, box_id);
-        r.pass();
-        assert!(matches!(r.latest(id).state, RunState::Running { .. }));
-        resumed(&r, box_id);
-        r.pass();
-        assert!(matches!(r.latest(id).state, RunState::Running { .. }));
-    }
+    let handle = row(&r, box_id).hands.unwrap().handle.unwrap();
+    r.driver.stop_behind(&handle);
+    reconcile::run(&r.cx);
+    r.pass();
+    assert!(matches!(r.latest(id).state, RunState::Running { .. }));
+    resumed(&r, box_id);
+    r.pass();
+    assert!(matches!(r.latest(id).state, RunState::Running { .. }));
 }
 
 #[test]
-fn a_person_waking_the_capped_box_before_the_tick_keeps_the_run_going() {
+fn a_person_waking_the_stuck_box_before_the_tick_keeps_the_run_going() {
     let r = rig_that_notices_deaths();
     let (id, box_id) = working_run(&r);
-    dies_until_capped(&r, box_id);
+    dies_and_stays_down(&r, box_id);
     let _turn = r.cx.turn(box_id, Cmd::Wake).unwrap();
     wake_box_if_asleep(&r.cx, r.cx.store().unwrap(), &row(&r, box_id)).unwrap();
 

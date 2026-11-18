@@ -1,4 +1,5 @@
-//! A Box whose places keep dying is resumed on its own twice, then left asleep and stuck.
+//! A Box whose places died while its agent worked is not resumed on its own: it sleeps, stuck,
+//! until a person wakes it.
 
 use super::*;
 use crate::cx::owners::Cmd;
@@ -48,6 +49,19 @@ fn person_wakes(cx: &Cx, id: BoxId) {
     wake_box_if_asleep(cx, cx.store().unwrap(), &row(cx, id)).unwrap();
 }
 
+/// The Box sleeps, not queued, saying how its places died, and the owner was told.
+fn assert_stuck(cx: &Cx, id: BoxId) {
+    let r = row(cx, id);
+    assert_eq!(r.lifecycle, BoxLifecycle::Asleep, "{:?}", r.state_reason);
+    let why = r.state_reason.unwrap_or_default();
+    assert!(why.contains("moor did not resume it"), "{why}");
+    assert!(why.contains(DIED), "{why}");
+    let store = cx.store().unwrap();
+    assert!(store.resume_first(id).unwrap().is_none());
+    let told = store.newest_event_of(id, "death_capped").unwrap().unwrap();
+    assert_eq!(told.payload.get("reason"), Some(&DIED.into()));
+}
+
 /// The Box died and waits in the queue to be resumed.
 fn assert_queued(cx: &Cx, id: BoxId) {
     let r = row(cx, id);
@@ -60,74 +74,16 @@ fn assert_running(cx: &Cx, id: BoxId) {
     assert_eq!(row(cx, id).lifecycle, BoxLifecycle::Ready);
 }
 
-/// The Box sleeps, not queued, saying why moor stopped resuming it, and the owner was told.
-fn assert_stuck(cx: &Cx, id: BoxId) {
-    let r = row(cx, id);
-    assert_eq!(r.lifecycle, BoxLifecycle::Asleep, "{:?}", r.state_reason);
-    let why = r.state_reason.unwrap_or_default();
-    assert!(why.contains("3 times in 30 minutes"), "{why}");
-    assert!(why.contains(DIED), "{why}");
-    let store = cx.store().unwrap();
-    assert!(store.resume_first(id).unwrap().is_none());
-    let told = store.newest_event_of(id, "death_capped").unwrap().unwrap();
-    assert_eq!(told.payload.get("count"), Some(&3.into()));
-    assert_eq!(told.payload.get("window_secs"), Some(&1800.into()));
-}
-
 #[test]
-fn the_third_death_in_thirty_minutes_is_not_resumed_and_the_box_is_stuck() {
+fn the_first_death_is_not_resumed_and_the_box_is_stuck() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
     let id = placed(&cx, &driver);
-    for _ in 0..2 {
-        dies(&cx, &driver, id);
-        assert_queued(&cx, id);
-        promoted(&cx, id);
-        assert_running(&cx, id);
-    }
     dies(&cx, &driver, id);
     assert_stuck(&cx, id);
     promoted(&cx, id);
     assert_eq!(row(&cx, id).lifecycle, BoxLifecycle::Asleep);
-}
-
-#[test]
-fn deaths_close_together_count_however_slowly_they_come_inside_the_window() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = Arc::new(FakeDriver::new().listed_by_handle());
-    let cx = cx(dir.path(), &driver);
-    let id = placed(&cx, &driver);
-    for _ in 0..2 {
-        dies(&cx, &driver, id);
-        promoted(&cx, id);
-        cx.clock().sleep(Duration::from_mins(14));
-    }
-    dies(&cx, &driver, id);
-    assert_stuck(&cx, id);
-}
-
-#[test]
-fn deaths_more_than_thirty_minutes_apart_do_not_add_up() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = Arc::new(FakeDriver::new().listed_by_handle());
-    let cx = cx(dir.path(), &driver);
-    let id = placed(&cx, &driver);
-    dies(&cx, &driver, id);
-    promoted(&cx, id);
-    cx.clock().sleep(Duration::from_mins(31));
-    for _ in 0..2 {
-        dies(&cx, &driver, id);
-        assert_queued(&cx, id);
-        promoted(&cx, id);
-    }
-    assert_running(&cx, id);
-    assert!(cx
-        .store()
-        .unwrap()
-        .newest_event_of(id, "death_capped")
-        .unwrap()
-        .is_none());
 }
 
 #[test]
@@ -145,41 +101,15 @@ fn a_machine_that_stopped_with_no_reason_is_not_a_death() {
 }
 
 #[test]
-fn a_person_waking_a_stuck_box_starts_the_count_again() {
+fn a_person_waking_a_stuck_box_brings_it_back_and_the_next_death_sticks_again() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().listed_by_handle());
     let cx = cx(dir.path(), &driver);
     let id = placed(&cx, &driver);
-    for _ in 0..2 {
-        dies(&cx, &driver, id);
-        promoted(&cx, id);
-    }
     dies(&cx, &driver, id);
     assert_stuck(&cx, id);
     person_wakes(&cx, id);
     assert_running(&cx, id);
-    for _ in 0..2 {
-        dies(&cx, &driver, id);
-        assert_queued(&cx, id);
-        promoted(&cx, id);
-        assert_running(&cx, id);
-    }
-}
-
-#[test]
-fn a_person_waking_a_box_between_deaths_starts_the_count_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = Arc::new(FakeDriver::new().listed_by_handle());
-    let cx = cx(dir.path(), &driver);
-    let id = placed(&cx, &driver);
     dies(&cx, &driver, id);
-    promoted(&cx, id);
-    dies(&cx, &driver, id);
-    person_wakes(&cx, id);
-    assert_running(&cx, id);
-    dies(&cx, &driver, id);
-    assert_queued(&cx, id);
-    promoted(&cx, id);
-    dies(&cx, &driver, id);
-    assert_queued(&cx, id);
+    assert_stuck(&cx, id);
 }
