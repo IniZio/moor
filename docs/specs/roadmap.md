@@ -92,7 +92,7 @@ and the portal. The slimming track owns the rest.
 
 | # | Item | Status |
 | --- | --- | --- |
-| 1 | Default-deny egress, phase 2: block hosts outside the presets | Design below. Presets wait for the pilot Boxes. |
+| 1 | Default-deny egress, phase 2: block hosts outside the presets | Design agreed. Presets wait for the pilot Boxes. |
 | 2 | The Proxy refuses pushes to the default branch and protected branches | Not started. A separate PR after item 1. |
 | 3 | Delete the `nodes:` user config, the Helm `nodes` and `defaultNode` values, and `max_boxes` in `NodeConfig` | Not started. It touches runs-track tests. |
 | 4 | Crabbox leftovers: unused `SleepOutcome` variants, the fake driver's acquire flight, the `pool` pairing field, `Sweep.controller`, the `machine_links.max_boxes` column, and unused runner-side forwards | Not started |
@@ -102,7 +102,7 @@ and the portal. The slimming track owns the rest.
 
 ## Default-deny egress, phase 2
 
-This is a proposal. It needs the owner's answer before any code.
+The owner agreed to this design on 2026-11-18. The presets wait for the pilot Boxes.
 
 ### The problem with today's enforcement point
 
@@ -168,15 +168,32 @@ Android SDK hosts, the package registries, and the team's shared tool host.
 Each preset is a named group, such as `npm` or `android`, so a repo config
 names groups rather than hosts.
 
-### Decisions needed
+### The rule every provider keeps
 
-1. Is an egress container per Box acceptable, or should one container serve
-   the whole node?
-2. Is a refused host plus a person editing the repo config the right path for
-   a host outside the presets? Today the agent may add known registries alone,
-   and any other host needs a person.
-3. When the flag is on, should it apply to every node at once or to one node
-   first?
+The Box protocol carries the allow list in, and `egress_seen` and
+`egress_refused` rows out. The controller knows nothing else. Each provider
+keeps one rule: the Box has no route out except one egress point per Box. The
+egress point sits outside the sandbox boundary, so root inside the Box cannot
+change it.
+
+| Provider | Sandbox boundary | Where the egress point runs |
+| --- | --- | --- |
+| Docker (now) | The host's network namespace | A per-Box egress container on an `--internal` network |
+| cloud-hypervisor or Firecracker | The VM | A host process per VM, the only peer of the VM's tap or passt network |
+| incus | The instance | An incus network ACL that denies all egress except the per-Box proxy |
+| Kata in a Kubernetes pod | The pod's VM | A proxy outside the pod, reached through an egress NetworkPolicy. A sidecar is not enough, because it shares the pod's VM. |
+
+Only Docker is built now. The others show that the contract holds.
+
+### Decisions
+
+1. One egress container per Box. Decided 2026-11-18.
+2. A host outside the list is refused, and the Box shows `stuck`. A person
+   adds the host in the repo settings. The agent may still add known
+   registries alone. Decided 2026-11-18.
+3. Blocking turns on for every node at once. Before the switch, the pilot's
+   `egress_seen` rows are replayed against the list to show what would have
+   been refused. Decided 2026-11-18.
 
 ## Docs that still describe the old design
 
