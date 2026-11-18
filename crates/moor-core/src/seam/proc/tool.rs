@@ -3,8 +3,6 @@
 /// An external program moor may run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
-    /// The herdr surface.
-    Herdr,
     /// The agent engine program (claude today).
     Agent,
     /// OpenSSH client.
@@ -24,7 +22,6 @@ impl Tool {
     #[must_use]
     pub const fn bin_var(self) -> &'static str {
         match self {
-            Self::Herdr => "MOOR_HERDR_BIN",
             Self::Agent => "MOOR_CLAUDE_BIN",
             Self::Ssh => "MOOR_SSH_BIN",
             Self::Git => "MOOR_GIT_BIN",
@@ -38,7 +35,6 @@ impl Tool {
     #[must_use]
     pub const fn program(self) -> &'static str {
         match self {
-            Self::Herdr => "herdr",
             Self::Agent => "claude",
             Self::Ssh => "ssh",
             Self::Git => "git",

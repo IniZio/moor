@@ -37,8 +37,7 @@ const TAIL: usize = 2048;
 const DRAIN_GRACE: Duration = Duration::from_millis(500);
 
 /// Every tool, for program resolution at construction.
-const TOOLS: [Tool; 7] = [
-    Tool::Herdr,
+const TOOLS: [Tool; 6] = [
     Tool::Agent,
     Tool::Ssh,
     Tool::Git,
@@ -50,8 +49,6 @@ const TOOLS: [Tool; 7] = [
 /// Program paths from config `tools.*`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ToolPaths {
-    /// Herdr program.
-    pub herdr: Option<PathBuf>,
     /// Agent engine program.
     pub claude: Option<PathBuf>,
     /// OpenSSH client program.
@@ -64,7 +61,6 @@ impl ToolPaths {
     /// Configured path for `tool`, if any.
     const fn get(&self, tool: Tool) -> Option<&PathBuf> {
         match tool {
-            Tool::Herdr => self.herdr.as_ref(),
             Tool::Agent => self.claude.as_ref(),
             Tool::Ssh => self.ssh.as_ref(),
             Tool::Git => self.git.as_ref(),

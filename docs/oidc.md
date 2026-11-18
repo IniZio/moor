@@ -11,8 +11,8 @@ id. Then:
 
 1. Add the redirect URI `https://HOST/auth/callback`. The account page, the
    webhook setup page, and machine pairing sign in through it.
-2. Add the redirect URI `http://localhost:53682/callback`. `moor login` and the
-   herdr plugin sign in through it.
+2. Add the redirect URI `http://localhost:53682/callback`. `moor login` signs in
+   through it.
 3. Let the client sign in as a public client with PKCE, with the scopes
    `openid`, `email`, and `offline_access`.
 

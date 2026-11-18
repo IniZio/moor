@@ -108,7 +108,6 @@ fn box_and_tools_parse() {
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
     assert_eq!(c.tools.ssh, Some(PathBuf::from("/opt/ssh")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
-    assert_eq!(c.tools.herdr, None);
 }
 
 #[test]

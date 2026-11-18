@@ -1,5 +1,5 @@
 //! What the tools add to the controller's answers so a model can tell a person what a Box is
-//! doing, in the words the herdr card uses.
+//! doing, in the words a Box card uses.
 
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::{ErrorDetail, Response as ControllerResponse};

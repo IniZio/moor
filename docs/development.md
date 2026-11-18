@@ -5,7 +5,7 @@
 | Crate | What it holds |
 | --- | --- |
 | [moor-core](../crates/moor-core) | Types and decision logic with no IO: names, config parsing, the `Request` enum, the `Response` envelope, views, and the `Secret` type. |
-| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for herdr, and git, and one module per command in [ops](../crates/moor/src/ops). |
+| [moor](../crates/moor) | The `moor` binary and library: argument parsing, text and JSON output, exit codes, the state store, the controller, the Proxy, the adapters for git, and one module per command in [ops](../crates/moor/src/ops). |
 | [moor-migrate](../crates/moor-migrate) | Forward-only schema migrations for the `SQLite` databases, run by [refinery](https://github.com/rust-db/refinery). |
 | [moor-client](../crates/moor-client) | A client for the controller socket that fronts use. |
 | [moor-listen](../crates/moor-listen) | Holds the gate's listen stream open and prints a line per Box event. |

@@ -7,7 +7,6 @@ on:
     paths:
       - .github/workflows/cd.yaml
       - .releaserc.json
-      - crates/moor-herdr/herdr/build.sh
       - crates/moor-machine-agent/Cargo.toml
       - crates/moor-machine-runner/Cargo.toml
 
@@ -79,7 +78,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
-      BINS: moor moor-gate moor-egress-forward moor-listen moor-herdr moor-hc moor-machine-agent moor-machine-runner
+      BINS: moor moor-gate moor-egress-forward moor-listen moor-hc moor-machine-agent moor-machine-runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -109,15 +108,6 @@ jobs:
             tar -czf "dist/$asset" -C target/${{ matrix.target }}/release "$bin"
             (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
           done
-      - name: The plugin installs from this build
-        if: matrix.target != 'x86_64-apple-darwin'
-        run: |
-          home=$(mktemp -d)
-          mkdir -p "$home/rel/$TAG" && cp dist/* "$home/rel/$TAG/"
-          HOME=$home XDG_CONFIG_HOME='' XDG_STATE_HOME='' MOOR_HERDR_TAG=$TAG MOOR_HERDR_RELEASES="file://$home/rel" \
-            sh crates/moor-herdr/herdr/build.sh
-          "$home/.local/state/herdr/plugins/moor/bin/moor-herdr" --version | grep -qx "moor-herdr ${TAG#v}"
-          grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
       - name: Upload
         if: github.event_name == 'push'
         run: gh release upload "$TAG" dist/* ${{ matrix.target == 'x86_64-unknown-linux-musl' && 'install.sh' || '' }} --clobber --repo "$GITHUB_REPOSITORY"

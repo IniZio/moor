@@ -195,7 +195,6 @@ fn prompt_window(env: &Env) -> Duration {
 pub(crate) fn tool_paths(config: &UserConfig) -> ToolPaths {
     let t = &config.tools;
     ToolPaths {
-        herdr: t.herdr.clone(),
         claude: t.claude.clone(),
         ssh: t.ssh.clone(),
         git: t.git.clone(),

@@ -138,13 +138,13 @@ fn streamed_signal_and_interrupt() {
 }
 
 fn child_spec(args: &[&str]) -> ProcSpec {
-    spec(Tool::Herdr, args).env("K", "V").cwd("/w")
+    spec(Tool::Git, args).env("K", "V").cwd("/w")
 }
 
 #[test]
 fn child_records_call_and_ready_replays_line() {
     let p = ScriptedProc::new();
-    p.on_child(Tool::Herdr, &["tunnel"], ChildReply::Ready("up".into()));
+    p.on_child(Tool::Git, &["tunnel"], ChildReply::Ready("up".into()));
     let mut c = p
         .spawn_child(&child_spec(&["tunnel", "--reverse"]))
         .unwrap();
@@ -153,7 +153,7 @@ fn child_records_call_and_ready_replays_line() {
     assert_eq!(c.first_line(d).unwrap(), "up");
     let calls = p.calls();
     let call = calls.first().unwrap();
-    assert_eq!(call.tool, Tool::Herdr);
+    assert_eq!(call.tool, Tool::Git);
     assert_eq!(call.args, ["tunnel", "--reverse"]);
     assert_eq!(call.env, [("K".to_owned(), "V".to_owned())]);
     assert_eq!(call.cwd.as_deref(), Some(std::path::Path::new("/w")));
@@ -163,7 +163,7 @@ fn child_records_call_and_ready_replays_line() {
 #[test]
 fn child_pids_are_distinct() {
     let p = ScriptedProc::new();
-    p.on_child(Tool::Herdr, &[], ChildReply::Hang);
+    p.on_child(Tool::Git, &[], ChildReply::Hang);
     let a = p.spawn_child(&child_spec(&["a"])).unwrap();
     let b = p.spawn_child(&child_spec(&["b"])).unwrap();
     assert_ne!(a.pid(), b.pid());
@@ -173,7 +173,7 @@ fn child_pids_are_distinct() {
 fn child_exit_reports_code_and_stderr() {
     let p = ScriptedProc::new();
     p.on_child(
-        Tool::Herdr,
+        Tool::Git,
         &["tunnel"],
         ChildReply::Exit {
             code: 3,
@@ -191,11 +191,11 @@ fn child_exit_reports_code_and_stderr() {
 #[test]
 fn child_hang_times_out_with_passed_deadline() {
     let p = ScriptedProc::new();
-    p.on_child(Tool::Herdr, &["tunnel"], ChildReply::Hang);
+    p.on_child(Tool::Git, &["tunnel"], ChildReply::Hang);
     let mut c = p.spawn_child(&child_spec(&["tunnel"])).unwrap();
     assert!(matches!(
         c.first_line(Deadline(Duration::from_millis(7))),
-        Err(FirstLineError::Timeout { tool: Tool::Herdr, after })
+        Err(FirstLineError::Timeout { tool: Tool::Git, after })
             if after == Duration::from_millis(7)
     ));
 }
@@ -208,7 +208,7 @@ fn unscripted_child_is_spawn_error() {
         e,
         ProcError::Spawn(ref io)
             if io.kind() == std::io::ErrorKind::NotFound
-                && io.to_string() == "unscripted: herdr tunnel"
+                && io.to_string() == "unscripted: git tunnel"
     ));
     assert_eq!(p.calls().len(), 1);
 }
@@ -216,7 +216,7 @@ fn unscripted_child_is_spawn_error() {
 #[test]
 fn dropping_child_is_recorded() {
     let p = ScriptedProc::new();
-    p.on_child(Tool::Herdr, &[], ChildReply::Ready("x".into()));
+    p.on_child(Tool::Git, &[], ChildReply::Ready("x".into()));
     let c = p.spawn_child(&child_spec(&["t"])).unwrap();
     let pid = c.pid();
     assert!(p.dropped().is_empty());
@@ -229,7 +229,7 @@ fn dropping_child_is_recorded() {
 #[test]
 fn ready_child_has_not_exited() {
     let p = ScriptedProc::new();
-    p.on_child(Tool::Herdr, &[], ChildReply::Ready("x".into()));
+    p.on_child(Tool::Git, &[], ChildReply::Ready("x".into()));
     let mut c = p.spawn_child(&child_spec(&["t"])).unwrap();
     assert_eq!(c.try_exit(), None);
 }
@@ -238,7 +238,7 @@ fn ready_child_has_not_exited() {
 fn exited_child_reports_code() {
     let p = ScriptedProc::new();
     p.on_child(
-        Tool::Herdr,
+        Tool::Git,
         &[],
         ChildReply::Exit {
             code: 3,
@@ -259,7 +259,7 @@ fn exited_child_reports_code() {
 fn ready_then_exit_flips_after_first_line() {
     let p = ScriptedProc::new();
     p.on_child(
-        Tool::Herdr,
+        Tool::Git,
         &[],
         ChildReply::ReadyThenExit {
             line: "up".into(),

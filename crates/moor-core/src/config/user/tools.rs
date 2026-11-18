@@ -8,8 +8,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ToolsConfig {
-    /// `herdr` program.
-    pub herdr: Option<PathBuf>,
     /// `claude` program.
     pub claude: Option<PathBuf>,
     /// `ssh` program.
