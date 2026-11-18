@@ -137,12 +137,19 @@ pub struct StartBreach {
     pub claimed_only: bool,
 }
 
+/// When a Box's agent first started, if it did.
+pub type AgentStarted<'a> = &'a dyn Fn(BoxId) -> Option<Ts>;
+
+/// The milliseconds a run spent waiting for answers since the given time.
+pub type Waited<'a> = &'a dyn Fn(RunId, Ts) -> i64;
+
 /// The runs in `open` whose agent has not started [`START_LIMIT`] after the run was claimed.
-/// `agent_started` tells when a Box's agent first started, if it did.
+///
+/// The time the run spent waiting for answers since the claim is left out.
 #[must_use]
 pub fn workflow_start_overdue(
     open: &[WorkflowRun],
-    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    (agent_started, waited): (AgentStarted<'_>, Waited<'_>),
     now: Ts,
 ) -> Vec<StartBreach> {
     let limit = i64::try_from(START_LIMIT.as_millis()).unwrap_or(i64::MAX);
@@ -151,7 +158,14 @@ pub fn workflow_start_overdue(
         .filter_map(|run| {
             let (box_id, claimed_only) = match run.state {
                 RunState::Queued => (None, true),
-                RunState::Running { box_id, .. } if agent_started(box_id).is_none() => {
+                RunState::Running { box_id, .. }
+                    if agent_started(box_id).is_none()
+                        && now
+                            .as_millis()
+                            .saturating_sub(run.recorded_at.as_millis())
+                            .saturating_sub(waited(run.id, run.recorded_at))
+                            >= limit =>
+                {
                     (Some(box_id), false)
                 }
                 _ => return None,
@@ -177,7 +191,7 @@ pub fn workflow_expired(
     workflow: &Workflow,
     open: &[WorkflowRun],
     agent_started: &dyn Fn(BoxId) -> Option<Ts>,
-    waited: &dyn Fn(RunId) -> i64,
+    waited: &dyn Fn(RunId, Ts) -> i64,
     now: Ts,
 ) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
@@ -186,7 +200,7 @@ pub fn workflow_expired(
             RunState::Running { box_id, at, try_n }
                 if agent_started(*box_id).is_some_and(|began| {
                     let spent = now.as_millis().saturating_sub(began.as_millis());
-                    spent >= limit && spent.saturating_sub(waited(run.id)) >= limit
+                    spent >= limit && spent.saturating_sub(waited(run.id, began)) >= limit
                 }) =>
             {
                 Some(WorkflowExpiry {

@@ -7,6 +7,7 @@
     reason = "test assertions index JSON values and panic on a wrong shape"
 )]
 
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
 use moor_core::workflow::{Answer, Plan, RunEnd, RunOutcome, RunState, WorkflowId, WorkflowRun};
@@ -140,7 +141,100 @@ fn a_run_that_begins_at_an_approve_step_waits_from_the_tick() {
         "{:?}",
         run.state
     );
-    assert_eq!(r.lines_of(&run), ["queued", "entered"]);
+    // The step is entered again as the wait begins, so the wait is counted from there.
+    assert_eq!(r.lines_of(&run), ["queued", "entered", "entered"]);
+}
+
+#[test]
+fn a_wait_at_the_first_step_does_not_use_up_the_start_limit_or_the_timeout() {
+    let r = rig();
+    r.answer_repo();
+    let wid = r.put_planned(Some(plan_of(&[ask(None), ship()])));
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    r.pause(MIN);
+    r.pass();
+    assert!(matches!(r.first(wid).state, RunState::Waiting { .. }));
+    // Two days pass, far over the hour a start gets and the three hours of timeout.
+    r.pause(2 * DAY);
+    r.pass();
+    assert!(matches!(r.first(wid).state, RunState::Waiting { .. }));
+    r.answer(wid, Answer::Yes).unwrap();
+    r.pass();
+    let state = r.first(wid).state;
+    assert!(matches!(state, RunState::Running { .. }), "{state:?}");
+}
+
+#[test]
+fn a_broken_box_ends_a_waiting_run_refused() {
+    let r = rig();
+    let wid = r.waiting(&[audit(), ask(None), ship()]);
+    let id = r.first(wid).state.box_id().unwrap();
+    let failure =
+        json!({"step": "npm ci", "message": "exit 1", "tail": null, "at": "2026-11-17T00:00:00Z"});
+    let fields = Fields {
+        launch_failure: Field::Set(failure.to_string()),
+        ..Fields::default()
+    };
+    r.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(fields))
+        .unwrap();
+    r.pass();
+    let state = r.first(wid).state;
+    assert!(
+        matches!(&state, RunState::Done(RunEnd::Refused { detail }) if detail.contains("npm ci")),
+        "{state:?}"
+    );
+}
+
+#[test]
+fn two_answers_at_once_steer_the_agent_once() {
+    let r = rig();
+    let wid = r.waiting(&[audit(), ask(Some("redo")), redo(), ship()]);
+    // The winner answers yes after the loser found the run waiting and before it read the lines.
+    super::super::answer::tests_hook::once_after_read(move |cx| {
+        let store = cx.store().unwrap();
+        let name = store.workflow_by_id(wid).unwrap().unwrap().name;
+        let told = answer_run(
+            cx,
+            store,
+            REQUESTER_USER,
+            (name.as_str(), "o/n", Answer::Yes, None),
+        );
+        assert!(told.is_ok(), "{told:?}");
+    });
+    let why = r.answer(wid, Answer::No).unwrap_err().error.to_string();
+    assert!(why.contains("moved while you answered"), "{why}");
+    let run = r.first(wid);
+    assert_eq!(step_of(&run.state), ("ship".to_owned(), 1));
+    let steers = r.queued(wid);
+    assert!(steers.contains("The owner answered yes"), "{steers}");
+    assert!(!steers.contains("answered no"), "{steers}");
+    assert_eq!(steers.matches("The owner answered").count(), 1, "{steers}");
+    assert_eq!(
+        r.lines_of(&run),
+        ["queued", "entered", "reported", "entered", "answered", "entered", "sent"]
+    );
+}
+
+#[test]
+fn a_report_while_waiting_says_to_end_the_turn_and_changes_nothing() {
+    let r = rig();
+    let wid = r.waiting(&[audit(), ask(None), ship()]);
+    let before = r.lines_of(&r.first(wid));
+    // The reply to the report that entered the wait was lost, so the agent sends it again.
+    let again = r.report(wid, super::report::ok("audit", ""));
+    assert!(!again.error, "{again:?}");
+    assert!(again.reply.starts_with("Already recorded."), "{again:?}");
+    assert!(again.reply.contains("End your turn"), "{again:?}");
+    // Any other report is no step to report, and does not tell the agent to go on.
+    let other = r.report(wid, super::report::ok("ship", "done"));
+    assert!(other.error, "{other:?}");
+    assert!(other.reply.contains("End your turn"), "{other:?}");
+    assert!(!other.reply.contains("carry on"), "{other:?}");
+    assert!(matches!(r.first(wid).state, RunState::Waiting { .. }));
+    assert_eq!(r.lines_of(&r.first(wid)), before);
 }
 
 #[test]
@@ -314,6 +408,8 @@ fn an_answer_racing_the_weeks_expiry_applies_once_and_the_expiry_wins_when_first
     let run = r.first(wid);
     assert!(matches!(ended(&run), RunOutcome::Declined { .. }));
     assert!(!r.lines_of(&run).contains(&"answered".to_owned()));
+    // The expiry won, so the agent is told nothing.
+    assert!(!r.queued(wid).contains("The owner answered"));
 }
 
 #[test]

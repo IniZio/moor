@@ -64,7 +64,11 @@ pub(super) fn expire_runs(
 ) -> Result<(), StoreError> {
     let open = store.open_workflow_runs(w.id)?;
     let agent = |id| store.first_launch_at(id).ok().flatten();
-    let waited = |run: RunId| store.run_entries(run).map_or(0, |l| waited_millis(&l));
+    let waited = |run: RunId, from| {
+        store
+            .run_entries(run)
+            .map_or(0, |l| waited_millis(&l, from))
+    };
     for u in workflow_unanswered(&open, now) {
         let key = (w.id, &u.repo, u.due_at);
         let lines = [HistoryEntry::Unanswered { step: u.at.clone() }];
@@ -120,7 +124,12 @@ pub(super) fn enforce_start_limit(
 ) -> Result<(), StoreError> {
     let open = store.open_workflow_runs(w.id)?;
     let agent = |id| store.first_launch_at(id).ok().flatten();
-    for b in workflow_start_overdue(&open, &agent, now) {
+    let waited = |run: RunId, from| {
+        store
+            .run_entries(run)
+            .map_or(0, |l| waited_millis(&l, from))
+    };
+    for b in workflow_start_overdue(&open, (&agent, &waited), now) {
         let key = (w.id, &b.repo, b.due_at);
         let planned = match b.box_id {
             Some(id) => store.box_row(id)?.map(|r| r.name),

@@ -69,6 +69,8 @@ struct Standing {
     plan: Plan,
     /// The step the run is at, and its try.
     at: (StepId, u8),
+    /// Whether the run waits at that step for the owner's answer.
+    waiting: bool,
     /// The run's lines, with when the agent was last told something.
     history: Vec<HistoryEntry>,
 }
@@ -78,9 +80,12 @@ fn standing(store: &Store, id: BoxId) -> Result<Option<Standing>, CommandError> 
     let Some((wid, run)) = store.running_run_of_box(id)? else {
         return Ok(None);
     };
-    let RunState::Running { ref at, try_n, .. } = run.state else {
+    let (RunState::Running { ref at, try_n, .. } | RunState::Waiting { ref at, try_n, .. }) =
+        run.state
+    else {
         return Ok(None);
     };
+    let waiting = matches!(run.state, RunState::Waiting { .. });
     let at = (at.clone(), try_n);
     let Some(w) = store.workflow_by_id(wid)? else {
         return Ok(None);
@@ -92,6 +97,7 @@ fn standing(store: &Store, id: BoxId) -> Result<Option<Standing>, CommandError> 
         run,
         plan,
         at,
+        waiting,
         history,
     }))
 }
@@ -127,6 +133,9 @@ fn settle(
     let Some(current) = s.plan.step(&s.at.0) else {
         return Ok(Some(refused("The run's plan has no such step.")));
     };
+    if s.waiting {
+        return Ok(Some(while_waiting(s, report)));
+    }
     if report.step != s.at.0 {
         return Ok(Some(elsewhere(s, current, report)));
     }
@@ -206,14 +215,32 @@ fn evidence_index(
     }))
 }
 
+/// The reply to a report while the run waits for the owner: the agent is to end its turn, not
+/// carry on. The duplicate of the report that entered the wait, sent again after a lost reply, is
+/// already recorded.
+fn while_waiting(s: &Standing, report: &StepReport) -> StepReportValue {
+    if last_reported(s) == Some(report) {
+        return said(format!("Already recorded. {END_TURN_APPROVE}"));
+    }
+    refused(format!(
+        "The run waits for the owner's answer at step {}, so there is no step to report. \
+         {END_TURN_APPROVE}",
+        s.at.0
+    ))
+}
+
+/// The last report in the run's lines.
+fn last_reported(s: &Standing) -> Option<&StepReport> {
+    s.history.iter().rev().find_map(|e| match e {
+        HistoryEntry::Reported { report, .. } => Some(report),
+        _ => None,
+    })
+}
+
 /// The reply to a report of a step that is not the current one: the duplicate of the last
 /// report, or the current step again.
 fn elsewhere(s: &Standing, current: &Step, report: &StepReport) -> StepReportValue {
-    let last = s.history.iter().rev().find_map(|e| match e {
-        HistoryEntry::Reported { report, .. } => Some(report),
-        _ => None,
-    });
-    if last == Some(report) {
+    if last_reported(s) == Some(report) {
         return said(format!("Already recorded. {}", instructions(current)));
     }
     refused(format!(
@@ -357,27 +384,5 @@ fn apply(
     }
 }
 
-/// A test seam between a report's reading of the run and its move.
 #[cfg(test)]
-pub(super) mod tests_hook {
-    use std::cell::RefCell;
-
-    use crate::cx::Cx;
-
-    type Hook = Box<dyn FnOnce(&Cx)>;
-
-    thread_local! {
-        static AFTER_STANDING: RefCell<Option<Hook>> = const { RefCell::new(None) };
-    }
-
-    /// Runs `f` once, after the next reading of a run by a report on this thread.
-    pub(in crate::ops::workflow) fn once_after_standing(f: impl FnOnce(&Cx) + 'static) {
-        AFTER_STANDING.with(|h| *h.borrow_mut() = Some(Box::new(f)));
-    }
-
-    pub(super) fn after_standing(cx: &Cx) {
-        if let Some(f) = AFTER_STANDING.with(|h| h.borrow_mut().take()) {
-            f(cx);
-        }
-    }
-}
+pub(super) mod tests_hook;

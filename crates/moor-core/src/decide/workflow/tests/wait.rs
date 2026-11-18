@@ -39,14 +39,39 @@ fn waiting_time_is_each_span_from_entering_an_approve_step_to_its_answer() {
         entered("ask2", 2 * HOUR),
         answered("ask2", 10 * HOUR),
     ];
-    assert_eq!(waited_millis(&lines), HOUR + 8 * HOUR);
-    assert_eq!(waited_millis(&lines[..2]), 0);
+    assert_eq!(waited_millis(&lines, ts(0)), HOUR + 8 * HOUR);
+    assert_eq!(waited_millis(&lines[..2], ts(0)), 0);
+}
+
+#[test]
+fn a_wait_before_the_clock_started_is_not_part_of_it() {
+    // A run that waited at its first step, 0 to 5 hours, and whose agent began at 4 hours.
+    let lines = [entered("ask", 0), answered("ask", 5 * HOUR)];
+    assert_eq!(waited_millis(&lines, ts(0)), 5 * HOUR);
+    assert_eq!(waited_millis(&lines, ts(4 * HOUR)), HOUR);
+    assert_eq!(waited_millis(&lines, ts(6 * HOUR)), 0);
+}
+
+#[test]
+fn the_start_limit_does_not_count_the_wait_at_a_first_approve_step() {
+    use crate::decide::workflow::{workflow_start_overdue, START_LIMIT};
+    let hour = i64::try_from(START_LIMIT.as_millis()).unwrap();
+    let open = [started("a/b", DAY0, 7)];
+    let none = |_| None;
+    let waited = |_: RunId, _: Ts| 5 * DAY;
+    let now = ts(DAY0 + 5 * DAY + hour - 1);
+    assert!(workflow_start_overdue(&open, (&none, &waited), now).is_empty());
+    let now = ts(DAY0 + 5 * DAY + hour);
+    assert_eq!(
+        workflow_start_overdue(&open, (&none, &waited), now).len(),
+        1
+    );
 }
 
 #[test]
 fn a_wait_not_answered_yet_is_not_counted() {
     let lines = [entered("a", 0), entered("ask", HOUR)];
-    assert_eq!(waited_millis(&lines), 0);
+    assert_eq!(waited_millis(&lines, ts(0)), 0);
 }
 
 #[test]
@@ -56,14 +81,14 @@ fn the_timeout_clock_stops_while_a_run_waits_for_an_answer() {
     let open = [started("a/b", DAY0, 7)];
     let agent = |_| Some(ts(DAY0));
     // 5 hours on the wall clock, 4.5 of them spent waiting, so 30 working minutes.
-    let waited = |_: RunId| 270 * MIN;
+    let waited = |_: RunId, _: Ts| 270 * MIN;
     let at = |ms: i64| workflow_expired(&w, &open, &agent, &waited, ts(DAY0 + ms));
     assert!(at(300 * MIN).is_empty());
     assert!(at(329 * MIN).is_empty());
     assert_eq!(at(330 * MIN).len(), 1);
     // Without the waits the same run would be long expired.
     assert_eq!(
-        workflow_expired(&w, &open, &agent, &|_| 0, ts(DAY0 + 300 * MIN)).len(),
+        workflow_expired(&w, &open, &agent, &|_, _| 0, ts(DAY0 + 300 * MIN)).len(),
         1
     );
 }
@@ -73,7 +98,7 @@ fn a_waiting_run_never_expires_on_the_timeout() {
     let w = daily();
     let open = [waiting("a/b", DAY0)];
     let agent = |_| Some(ts(DAY0));
-    assert!(workflow_expired(&w, &open, &agent, &|_| 0, ts(DAY0 + 30 * DAY)).is_empty());
+    assert!(workflow_expired(&w, &open, &agent, &|_, _| 0, ts(DAY0 + 30 * DAY)).is_empty());
 }
 
 #[test]

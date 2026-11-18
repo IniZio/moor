@@ -1,14 +1,17 @@
 //! A run that waits at an approve step, as the tick sees it.
 
+use moor_core::decide::workflow::{run_verdict, RunVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{RunOutcome, StepId, Workflow, WorkflowRun};
 use moor_core::BoxId;
 
+use super::settle::{box_facts, broken_detail};
 use crate::store::{Store, StoreError};
 
 /// Ends the run that waits at `at` as incomplete when its Box is gone or closed: nobody is left
-/// to send the answer to. A Box that sleeps is what a wait wants, so any other Box leaves it be.
+/// to send the answer to. A Box no agent can run in until a person acts ends it refused, as at a
+/// work step. A Box that sleeps is what a wait wants, so any other Box leaves it be.
 pub(super) fn lose_waiting(
     store: &Store,
     w: &Workflow,
@@ -17,10 +20,17 @@ pub(super) fn lose_waiting(
     now: Ts,
 ) -> Result<(), StoreError> {
     let row = store.box_row(box_id)?;
+    let key = (w.id, &run.repo, run.due_at);
+    if let Some(row) = &row {
+        let facts = box_facts(store, row)?;
+        if run_verdict(Some(&facts), now) == RunVerdict::Broken {
+            store.refuse_waiting_run(key, (at, try_n), &broken_detail(row), now)?;
+            return Ok(());
+        }
+    }
     if row.is_some_and(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)) {
         return Ok(());
     }
-    let key = (w.id, &run.repo, run.due_at);
     let outcome = RunOutcome::Incomplete { at: at.clone() };
     store
         .end_waiting_run(key, (at, try_n), (box_id, outcome), (&[], now))

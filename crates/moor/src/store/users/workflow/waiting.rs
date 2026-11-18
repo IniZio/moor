@@ -30,6 +30,21 @@ impl Store {
         self.move_run(key, (Open::Waiting, &to), (Some(on), lines, at, true))
     }
 
+    /// Refuses the run that waits at `on` with `detail`, dropping its Box from the run. False,
+    /// with nothing changed, when the run no longer waits at exactly that step and try.
+    pub(crate) fn refuse_waiting_run(
+        &self,
+        key: (WorkflowId, &ForgeRepo, Ts),
+        on: (&StepId, u8),
+        detail: &str,
+        at: Ts,
+    ) -> Result<bool, StoreError> {
+        let to = RunState::Done(RunEnd::Refused {
+            detail: detail.to_owned(),
+        });
+        self.move_run(key, (Open::Waiting, &to), (Some(on), &[], at, true))
+    }
+
     /// Moves the running run, at `on`, to wait at the approve step `to`, appending `lines`, which
     /// carry the `Entered` line. False, with nothing changed, when it is not running at exactly
     /// `on`. `to` may be `on` itself, for a run that began at an approve step.

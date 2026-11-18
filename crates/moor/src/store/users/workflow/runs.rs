@@ -320,7 +320,8 @@ impl Store {
             .collect()
     }
 
-    /// The run that is at a step in Box `box_id`, with its workflow; none when the Box has none.
+    /// The run that is at a step in Box `box_id`, running or waiting, with its workflow; none when
+    /// the Box has none.
     pub(crate) fn running_run_of_box(
         &self,
         box_id: BoxId,
@@ -333,7 +334,7 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
-                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTED, WAITING]))
                     .order_by(WorkflowRuns::Id, Order::Desc)
                     .limit(1),
                 |r| Ok::<_, db::Error>((r.get(0)?, read_run(r, 1)?)),

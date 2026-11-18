@@ -228,8 +228,13 @@ impl Quiet<'_> {
     fn ask(&self, box_id: BoxId) -> Result<(), StoreError> {
         let key = (self.w.id, &self.run.repo, self.run.due_at);
         let at = (self.at.0, self.at.1);
+        // The step is entered again as the wait begins, so a wait is counted from here.
+        let line = HistoryEntry::Entered {
+            step: at.0.clone(),
+            try_n: at.1,
+        };
         self.store
-            .wait_workflow_run(key, (at, at), box_id, (&[], self.now))
+            .wait_workflow_run(key, (at, at), box_id, (&[line], self.now))
             .map(|_| ())
     }
 
@@ -244,8 +249,9 @@ impl Quiet<'_> {
         let Some(StepKind::Check { command, .. }) = plan.step(self.at.0).map(|s| &s.kind) else {
             return Ok(());
         };
-        let waited = waited_millis(&self.store.run_entries(self.run.id)?);
+        let entries = self.store.run_entries(self.run.id)?;
         let spent = self.store.first_launch_at(box_id)?.map_or(0, |began| {
+            let waited = waited_millis(&entries, began);
             self.now
                 .as_millis()
                 .saturating_sub(began.as_millis())

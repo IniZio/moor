@@ -2,9 +2,9 @@
 //!
 //! The answer moves the run in one transaction with its lines, compare-and-set on the run waiting
 //! at exactly that step and try, so two answers, or an answer and the week's expiry, apply once.
-//! The next step's instructions go out as a steer first and the move is recorded after, as the
-//! tick does, so a crash in between sends the step twice and never skips it. A steer to an asleep
-//! Box wakes it.
+//! The move is committed before the agent is told, so only the answer that wins steers; a crash
+//! or a failed steer after it leaves the run at the step with no `Sent` line, and the tick
+//! reminds the agent of it. A steer to an asleep Box wakes it.
 
 use moor_core::decide::workflow::{answer_move, Move};
 use moor_core::name::ForgeRepo;
@@ -21,11 +21,23 @@ use super::advance::send;
 use super::facts::history_of;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::Store;
+use crate::store::{BoxRow, Store};
 
 /// A refusal the caller can act on.
 fn refused(why: impl std::fmt::Display) -> CommandError {
     CommandError::new(ErrorKind::Refused, why.to_string())
+}
+
+/// Why an answer found the run gone from the step it waited at.
+const MOVED: &str = "the run moved while you answered: it was answered already, or it ended";
+
+/// Whether the last step `history` entered is `at`, the step and try the run waits at.
+fn entered_last(history: &[HistoryEntry], at: (&StepId, u8)) -> bool {
+    let last = history.iter().rev().find_map(|e| match e {
+        HistoryEntry::Entered { step, try_n } => Some((step, *try_n)),
+        _ => None,
+    });
+    last == Some(at)
 }
 
 /// A refusal for input the caller can correct.
@@ -93,9 +105,14 @@ pub(crate) fn run(
         )));
     };
     let plan = store.run_plan(run.id, &w.prompt)?;
-    let (history, _) = history_of(store, run.id, (&at, try_n))?;
     #[cfg(test)]
     tests_hook::after_read(cx);
+    let (history, _) = history_of(store, run.id, (&at, try_n))?;
+    // An answer that read the run waiting may read the lines of the answer that moved it: refuse
+    // unless the run's last entry is still the wait, so no move is worked out from a later step.
+    if !entered_last(&history, (&at, try_n)) {
+        return Err(refused(MOVED));
+    }
     let Some(ask) = plan
         .step(&at)
         .filter(|s| matches!(s.kind, StepKind::Approve { .. }))
@@ -148,10 +165,13 @@ impl Asked<'_> {
                 step,
                 try_n,
                 exhausted,
-            } => (
-                self.go_on((step.clone(), try_n), exhausted)?,
-                format!("the run went on to step {step}"),
-            ),
+            } => {
+                let told = self.go_on((step.clone(), try_n), exhausted)?;
+                (
+                    told.is_some(),
+                    format!("the run went on to step {step}{}", told.unwrap_or_default()),
+                )
+            }
             Move::Fail {
                 at,
                 reason,
@@ -178,9 +198,7 @@ impl Asked<'_> {
         if done {
             Ok(said)
         } else {
-            Err(refused(
-                "the run moved while you answered: it was answered already, or it ended",
-            ))
+            Err(refused(MOVED))
         }
     }
 
@@ -206,13 +224,15 @@ impl Asked<'_> {
     }
 
     /// Sends the run on to `step`, for its `try_n`th entry: waiting again at an approve step,
-    /// else running there, with the agent told first when the step is its to do. False when the
-    /// run no longer waits at the step.
+    /// else running there. The move is committed first; when the step is the agent's to do it is
+    /// told after, and a failed steer is said in the answer's reply, not undone, for the tick to
+    /// remind the agent. None when the run no longer waits at the step, with nothing steered;
+    /// else what to add to the reply.
     fn go_on(
         &self,
         (step, try_n): (StepId, u8),
         exhausted: Vec<StepId>,
-    ) -> Result<bool, CommandError> {
+    ) -> Result<Option<String>, CommandError> {
         let Some(next) = self.plan.step(&step) else {
             return Err(refused("the run's plan has no such step"));
         };
@@ -236,34 +256,48 @@ impl Asked<'_> {
                 try_n,
             }
         };
-        if matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. }) {
-            let (_, answer, note) = self.given;
-            tell(
-                self.cx,
-                self.store,
-                box_id,
-                &Plan::answer_steer(self.ask, (answer, note), next),
-            )?;
-            lines.push(HistoryEntry::Sent { step, try_n });
+        let tells = matches!(next.kind, StepKind::Work { .. } | StepKind::Deliver { .. });
+        if tells {
+            // Nothing is recorded for a Box that is already closed, so the owner can answer again.
+            live(self.store, box_id)?;
         }
-        Ok(self
+        if !self
             .store
-            .answer_workflow_run(self.key(), self.at, &to, (&lines, self.now))?)
+            .answer_workflow_run(self.key(), self.at, &to, (&lines, self.now))?
+        {
+            return Ok(None);
+        }
+        if !tells {
+            return Ok(Some(String::new()));
+        }
+        let (_, answer, note) = self.given;
+        let text = Plan::answer_steer(self.ask, (answer, note), next);
+        let sent = live(self.store, box_id).and_then(|row| {
+            send(self.cx, &row, &text).map_err(|why| refused(format!("could not send it ({why})")))
+        });
+        if let Err(why) = sent {
+            return Ok(Some(format!(
+                ", but the agent could not be told ({}); the run reminds it",
+                why.error
+            )));
+        }
+        let line = HistoryEntry::Sent {
+            step: step.clone(),
+            try_n,
+        };
+        let at = (&step, try_n);
+        self.store
+            .step_workflow_run(self.key(), (at, at), (&[line], self.now))?;
+        Ok(Some(String::new()))
     }
 }
 
-/// Steers the agent in Box `id` with `text`; a closed or missing Box is a refusal that records
-/// nothing, so the owner can answer again once the Box is back.
-fn tell(cx: &Cx, store: &Store, id: BoxId, text: &str) -> Result<(), CommandError> {
-    let row = store
+/// The Box `id` when it is live; a closed or missing Box is a refusal.
+fn live(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
+    store
         .box_row(id)?
         .filter(|r| r.lifecycle.is_live())
-        .ok_or_else(|| refused("the run's Box is closed, so there is no agent to tell"))?;
-    send(cx, &row, text).map_err(|why| {
-        refused(format!(
-            "could not send the next step to the Box ({why}); nothing is recorded, answer again"
-        ))
-    })
+        .ok_or_else(|| refused("the run's Box is closed, so there is no agent to tell"))
 }
 
 /// A test seam between an answer's reading of the run and its move.
