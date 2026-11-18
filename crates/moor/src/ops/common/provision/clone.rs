@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, one_at_a_time, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::one_at_a_time;
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};

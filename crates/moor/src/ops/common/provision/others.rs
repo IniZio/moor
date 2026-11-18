@@ -1,8 +1,7 @@
 //! The repos a Box lists after its primary one: each cloned into its own work tree and set up there.
 
-use moor_core::boxscript::clone::{
-    clone_script, left_out_submodules, one_at_a_time, Checkout, CloneStep,
-};
+use moor_core::boxscript::clone::{clone_script, left_out_submodules, Checkout, CloneStep};
+use moor_core::boxscript::one_at_a_time;
 use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};

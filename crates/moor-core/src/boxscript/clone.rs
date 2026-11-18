@@ -170,29 +170,5 @@ moor_submodules() {{
     )
 }
 
-/// Seconds a run waits for an earlier copy before it goes on unlocked: as long as a clone exec
-/// may take.
-const LOCK_WAIT_SECS: u64 = 30 * 60;
-
-/// `script` run with no other copy of it alongside in the same directory.
-///
-/// A copy a lost link left running in the Box is waited for, so a rerun finds its work done
-/// instead of racing it. The lock is a `flock` on a file in `~/.moor` named after the directory, held until the
-/// copy and every process it started have ended. A Box with no `flock` or no writable home runs
-/// unlocked, and a wait longer than a clone exec may take goes on unlocked.
-#[must_use]
-pub fn one_at_a_time(script: &str) -> String {
-    let secs = LOCK_WAIT_SECS;
-    format!(
-        r#"moor_lock="$HOME/.moor/clone-$(pwd -P | cksum | cut -d ' ' -f 1).lock"
-mkdir -p -- "$HOME/.moor" 2>/dev/null && : >>"$moor_lock" 2>/dev/null || moor_lock=/dev/null
-(
-[ "$moor_lock" = /dev/null ] || ! command -v flock >/dev/null 2>&1 || flock -w {secs} 9 || :
-{script}
-) 9>>"$moor_lock"
-"#
-    )
-}
-
 #[cfg(test)]
 mod tests;

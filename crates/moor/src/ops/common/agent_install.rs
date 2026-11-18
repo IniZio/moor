@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::boxscript::one_at_a_time;
 use moor_core::config::BoxSettings;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
@@ -103,7 +104,7 @@ pub(crate) fn apply(
         workdir: None,
     };
     timed_result(cx, store, id, PostCloneStep::AgentInstall, || {
-        install_in_box(cx, &site, cfg, proxy.as_ref(), install.script, &log)
+        install_in_box(cx, &site, cfg, proxy.as_ref(), &install.script, &log)
     })
 }
 
@@ -139,20 +140,21 @@ pub(crate) fn present(
         Place::Agent,
         cfg,
         proxy.as_ref(),
-        (install.present, Repeat::Once),
+        (install.present, Repeat::Safe),
         &log,
         limit,
     );
     matches!(ran, Ok(ExecOutcome::Exited { code: 0 }))
 }
 
-/// Runs the install script in the Box; why it did not succeed, with the log tail.
+/// Runs the install script in the Box, one copy at a time and asked again across a lost machine
+/// link, since it does nothing once the agent is there; why it did not succeed, with the log tail.
 fn install_in_box(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
-    script: String,
+    script: &str,
     log: &Path,
 ) -> Result<(), String> {
     let reason = match run(
@@ -161,7 +163,7 @@ fn install_in_box(
         Place::Agent,
         cfg,
         proxy,
-        (script, Repeat::Once),
+        (one_at_a_time(script), Repeat::Safe),
         log,
         ("agent install", INSTALL_DEADLINE),
     ) {

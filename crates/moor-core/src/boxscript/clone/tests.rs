@@ -3,7 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use super::{clone_script, one_at_a_time, Checkout, CloneStep};
+use super::{clone_script, Checkout, CloneStep};
+use crate::boxscript::one_at_a_time;
 
 mod submodules;
 

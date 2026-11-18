@@ -38,6 +38,7 @@ mod exited_start;
 mod forced_close;
 mod fresh_guest;
 mod identity;
+mod install_link;
 mod interrupted;
 mod interrupted_steps;
 mod launch_deadline;
