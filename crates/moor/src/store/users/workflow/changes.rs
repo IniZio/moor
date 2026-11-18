@@ -37,7 +37,7 @@ impl Store {
     /// changed one row. Otherwise nothing is kept, the number included.
     pub(super) fn numbered(
         &self,
-        write: impl FnOnce(&dyn Db, i64) -> Result<usize, StoreError>,
+        write: impl FnOnce(&db::Tx<'_>, i64) -> Result<usize, StoreError>,
     ) -> Result<bool, StoreError> {
         let mut writer = self.writer();
         let tx = writer.immediate()?;

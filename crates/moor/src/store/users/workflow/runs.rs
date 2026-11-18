@@ -15,6 +15,7 @@ use moor_schema::tables::WorkflowRuns;
 use sea_query::{Expr, ExprTrait as _, Func, OnConflict, Order, Query};
 
 use super::history::{append_history, run_id};
+use super::notice;
 use super::row::{
     read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_OVERLAP, STARTED, STARTING,
     WAITING,
@@ -124,6 +125,7 @@ impl Store {
         let cols = state_cols(to);
         let entry = HistoryEntry::moving(from.phase(), to);
         self.numbered(|tx, seq| {
+            let held = notice::held(tx, (workflow, repo, due_at))?;
             let mut update = Query::update();
             update
                 .table(WorkflowRuns::Table)
@@ -154,6 +156,7 @@ impl Store {
                 if own {
                     append_history(tx, id, at, &entry)?;
                 }
+                notice::record(tx, ((workflow, repo), id), &held, to, at)?;
             }
             Ok(changed)
         })
