@@ -51,11 +51,18 @@ struct Listener {
     addr: String,
     seen: mpsc::Receiver<Value>,
     _dir: tempfile::TempDir,
+    /// The service key the requests carry, as the Proxy would stamp it.
+    key: Option<String>,
 }
 
 /// A Box listener whose controller answers each `step-report` from [`ROWS`], or refuses a step
 /// called `refuse`.
 fn listener(controller_up: bool) -> Listener {
+    listener_keyed(controller_up, None)
+}
+
+/// As [`listener`], requiring `key` in `X-Moor-Service-Key` when it is given.
+fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
     let (tx, seen) = mpsc::channel();
@@ -83,7 +90,10 @@ fn listener(controller_up: bool) -> Listener {
             }
         });
     }
-    let boxes = moor_gate::Boxes::new(moor_client::Client::new(&socket)).unwrap();
+    let mut boxes = moor_gate::Boxes::new(moor_client::Client::new(&socket)).unwrap();
+    if let Some(key) = key {
+        boxes = boxes.requiring_key(key.to_owned());
+    }
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = tcp.local_addr().unwrap().to_string();
     std::thread::spawn(move || boxes.serve(tcp));
@@ -91,6 +101,7 @@ fn listener(controller_up: bool) -> Listener {
         addr,
         seen,
         _dir: dir,
+        key: key.map(str::to_owned),
     }
 }
 
@@ -130,6 +141,9 @@ impl Listener {
                 .header("Host", "moor.moor.internal");
             if let Some(id) = box_header {
                 req = req.header("X-Moor-Box", id);
+            }
+            if let Some(key) = &self.key {
+                req = req.header("X-Moor-Service-Key", key);
             }
             if let Some(session) = session {
                 req = req.header("Mcp-Session-Id", session);
@@ -267,4 +281,70 @@ fn a_step_id_that_is_no_id_is_refused_before_the_controller() {
     let result = l.report(Some("7"), "Not An Id");
     assert_eq!(result["isError"], true, "{result}");
     assert!(l.seen.try_recv().is_err());
+}
+
+/// The status and body of a bare POST to `/mcp` carrying `key` as the service key, if any.
+fn post_with_key(addr: &str, key: Option<&str>) -> (u16, String) {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut req = agent
+        .post(format!("http://{addr}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("X-Moor-Box", "7");
+    if let Some(key) = key {
+        req = req.header("X-Moor-Service-Key", key);
+    }
+    let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "test", "version": "0"}}});
+    let mut res = req.send(init.to_string()).unwrap();
+    let status = res.status().as_u16();
+    (status, res.body_mut().read_to_string().unwrap())
+}
+
+#[test]
+fn a_matching_service_key_is_served() {
+    let l = listener_keyed(true, Some("s3cret"));
+    let result = l.report(Some("7"), "delivered");
+    assert_eq!(text(&result), "Done.", "{result}");
+    assert_eq!(l.seen.recv().unwrap()["box_id"], 7);
+}
+
+#[test]
+fn a_missing_or_wrong_service_key_is_refused_alike() {
+    let l = listener_keyed(true, Some("s3cret"));
+    let missing = post_with_key(&l.addr, None);
+    let wrong = post_with_key(&l.addr, Some("s3cret2"));
+    let short = post_with_key(&l.addr, Some("s3"));
+    assert_eq!(missing.0, 401, "{missing:?}");
+    assert_eq!(missing, wrong);
+    assert_eq!(missing, short);
+    assert!(l.seen.try_recv().is_err());
+    assert_eq!(post_with_key(&l.addr, Some("s3cret")).0, 200);
+}
+
+#[test]
+fn with_no_service_key_required_a_request_without_one_is_served() {
+    let l = listener(true);
+    assert_eq!(post_with_key(&l.addr, None).0, 200);
+    assert_eq!(post_with_key(&l.addr, Some("anything")).0, 200);
+}
+
+#[test]
+fn an_empty_service_key_env_stops_the_gate_from_starting() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_moor-gate"))
+        .args(["--listen", "127.0.0.1:0", "--issuer", "https://i.example"])
+        .args(["--client-id", "c", "--front-socket", "/nonexistent.sock"])
+        .env("MOOR_SERVICE_KEY", "")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("MOOR_SERVICE_KEY is set but empty"),
+        "{stderr}"
+    );
 }

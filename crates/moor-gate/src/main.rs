@@ -9,7 +9,7 @@ use std::time::Duration;
 use clap::Parser;
 use moor_client::tls::TlsPki;
 use moor_client::Client;
-use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN};
+use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN, SERVICE_KEY_ENV};
 
 /// The remote front: OIDC access tokens in, the controller out.
 #[derive(Parser)]
@@ -27,7 +27,10 @@ struct Args {
     box_listen: String,
     /// Allows `--box-listen` to bind an address that is not loopback, such as the pod address
     /// on a cluster. Set it only where nothing but a Proxy can reach that address, because the
-    /// listener trusts the `X-Moor-Box` header it is sent.
+    /// listener trusts the `X-Moor-Box` header it is sent. Where a `NetworkPolicy` cannot keep
+    /// other callers off it, set `MOOR_SERVICE_KEY` instead: the listener then refuses, with 401,
+    /// any request whose `X-Moor-Service-Key` header, which the Proxy stamps, differs. Set but
+    /// empty, the gate does not start.
     #[arg(long, env = "MOOR_GATE_BOX_LISTEN_OFF_HOST")]
     box_listen_off_host: bool,
     /// The controller's front socket for the `authgear` front.
@@ -122,8 +125,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let boxes = guarded_box_listen(&args.box_listen, args.box_listen_off_host)
-        .and_then(|()| serve_boxes(&args.box_listen, &controller));
+    let boxes = service_key(std::env::var(SERVICE_KEY_ENV).ok())
+        .and_then(|key| {
+            guarded_box_listen(&args.box_listen, args.box_listen_off_host).map(|()| key)
+        })
+        .and_then(|key| serve_boxes(&args.box_listen, &controller, key));
     if let Err(why) = boxes {
         return fail(&why);
     }
@@ -184,14 +190,30 @@ fn guarded_box_listen(listen: &str, off_host: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Starts the Box-facing listener on `listen` in a thread of its own, unless it is `off`.
-fn serve_boxes(listen: &str, controller: &Client) -> Result<(), String> {
+/// The shared secret `MOOR_SERVICE_KEY` names, if it is set; a set but empty value is an error,
+/// so a gate never runs open by a typo.
+fn service_key(raw: Option<String>) -> Result<Option<String>, String> {
+    match raw {
+        Some(key) if key.is_empty() => Err(format!(
+            "{SERVICE_KEY_ENV} is set but empty; set it to the shared secret or unset it"
+        )),
+        key => Ok(key),
+    }
+}
+
+/// Starts the Box-facing listener on `listen` in a thread of its own, unless it is `off`. With a
+/// `key`, the listener refuses requests that do not carry it.
+fn serve_boxes(listen: &str, controller: &Client, key: Option<String>) -> Result<(), String> {
     if listen == "off" {
         return Ok(());
     }
     let listener = TcpListener::bind(listen)
         .map_err(|e| format!("cannot listen on {listen} for Boxes: {e}"))?;
     let boxes = Boxes::new(controller.clone())?;
+    let boxes = match key {
+        Some(key) => boxes.requiring_key(key),
+        None => boxes,
+    };
     std::thread::spawn(move || {
         if let Err(e) = boxes.serve(listener) {
             moor_gate_log(&format!("the Box listener stopped: {e}"));
@@ -214,7 +236,15 @@ fn moor_gate_log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::guarded_box_listen;
+    use super::{guarded_box_listen, service_key};
+
+    #[test]
+    fn the_service_key_is_unset_or_non_empty() {
+        assert_eq!(service_key(None), Ok(None));
+        assert_eq!(service_key(Some("k".to_owned())), Ok(Some("k".to_owned())));
+        let why = service_key(Some(String::new())).unwrap_err();
+        assert!(why.contains("MOOR_SERVICE_KEY"), "{why}");
+    }
 
     #[test]
     fn a_box_listener_off_the_loopback_needs_the_opt_in() {

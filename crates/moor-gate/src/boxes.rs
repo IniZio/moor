@@ -3,14 +3,19 @@
 //!
 //! A Box holds no token. The shared Proxy routes `moor.moor.internal` to this listener and
 //! stamps `X-Moor-Box: <box id>`, dropping any such header the Box sent. Only the Proxy reaches
-//! this listener, so the header is trusted as the Box's identity and nothing else is checked.
+//! this listener, so the header is trusted as the Box's identity. Where a `NetworkPolicy` cannot
+//! keep other callers off it, the Proxy also stamps a shared secret, `X-Moor-Service-Key`, and
+//! the listener refuses a request whose copy differs.
 //! The listener serves no other tool and no person's request.
 
 use std::io;
 use std::net::TcpListener;
 use std::sync::Arc;
 
+use bytes::Bytes;
+use http_body_util::{BodyExt as _, Full};
 use hyper::server::conn::http1;
+use hyper::service::{service_fn, Service as _};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use moor_client::{Client, ClientError};
@@ -27,10 +32,18 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use rmcp::{tool, tool_handler, tool_router, RoleServer, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
+use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq as _;
 use tokio::runtime::Runtime;
 
 /// The header the Proxy stamps with the id of the Box that made the request.
 pub const BOX_HEADER: &str = "x-moor-box";
+
+/// The header the Proxy stamps with the shared secret, where the listener asks for one.
+pub const SERVICE_KEY_HEADER: &str = "x-moor-service-key";
+
+/// The environment variable that holds the shared secret.
+pub const SERVICE_KEY_ENV: &str = "MOOR_SERVICE_KEY";
 
 /// The default address of the listener: loopback, so nothing but a Proxy on the host reaches it.
 pub const DEFAULT_BOX_LISTEN: &str = "127.0.0.1:8444";
@@ -166,6 +179,17 @@ pub struct Boxes {
     runtime: Runtime,
     /// The MCP service, shared by every connection so sessions survive reconnects.
     service: StreamableHttpService<BoxTools, LocalSessionManager>,
+    /// The shared secret every request must carry, when there is one.
+    key: Option<String>,
+}
+
+/// Whether `headers` carry `key` in [`SERVICE_KEY_HEADER`], compared in constant time.
+fn carries_key(headers: &http::HeaderMap, key: &str) -> bool {
+    headers.get(SERVICE_KEY_HEADER).is_some_and(|sent| {
+        Sha256::digest(sent.as_bytes())
+            .ct_eq(&Sha256::digest(key.as_bytes()))
+            .into()
+    })
 }
 
 impl Boxes {
@@ -191,7 +215,18 @@ impl Boxes {
             .enable_all()
             .build()
             .map_err(|e| format!("cannot start the Box listener's runtime: {e}"))?;
-        Ok(Self { runtime, service })
+        Ok(Self {
+            runtime,
+            service,
+            key: None,
+        })
+    }
+
+    /// Refuses every request that does not carry `key` in `X-Moor-Service-Key`.
+    #[must_use]
+    pub fn requiring_key(mut self, key: String) -> Self {
+        self.key = Some(key);
+        self
     }
 
     /// Serves `listener` until it fails.
@@ -204,7 +239,24 @@ impl Boxes {
             let listener = tokio::net::TcpListener::from_std(listener)?;
             loop {
                 let (stream, _) = listener.accept().await?;
-                let svc = TowerToHyperService::new(self.service.clone());
+                let service = Arc::new(TowerToHyperService::new(self.service.clone()));
+                let key = self.key.clone();
+                let svc = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                    let service = Arc::clone(&service);
+                    let allowed = key.as_deref().is_none_or(|k| carries_key(req.headers(), k));
+                    async move {
+                        if allowed {
+                            return service.call(req).await;
+                        }
+                        let mut res = hyper::Response::new(
+                            Full::new(Bytes::from_static(b"unauthorized"))
+                                .map_err(|never| match never {})
+                                .boxed(),
+                        );
+                        *res.status_mut() = http::StatusCode::UNAUTHORIZED;
+                        Ok::<_, std::convert::Infallible>(res)
+                    }
+                });
                 tokio::spawn(async move {
                     let _ = http1::Builder::new()
                         .serve_connection(TokioIo::new(stream), svc)
