@@ -459,14 +459,16 @@ fn a_rerun_while_an_earlier_run_still_clones_waits_for_it_and_both_pass() {
     let bin = slow_first_clone(r.dir.path());
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     let spawn = || {
-        Command::new("sh")
-            .args(["-c", &script])
-            .current_dir(r.path("box"))
-            .env("HOME", r.dir.path())
-            .env("PATH", &path)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .spawn()
-            .unwrap()
+        moor_testkit::ChildGuard::new(
+            Command::new("sh")
+                .args(["-c", &script])
+                .current_dir(r.path("box"))
+                .env("HOME", r.dir.path())
+                .env("PATH", &path)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .spawn()
+                .unwrap(),
+        )
     };
     let mut first = spawn();
     std::thread::sleep(std::time::Duration::from_millis(500));
