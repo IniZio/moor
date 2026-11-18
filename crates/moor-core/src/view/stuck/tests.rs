@@ -380,7 +380,13 @@ fn deaths_that_were_capped_look_stuck_and_say_why() {
 #[test]
 fn a_wake_clears_capped_deaths_and_nothing_else() {
     let woke = at("woke", json!({}), "2026-01-01T00:06:00Z");
-    assert_eq!(stuck_of(&[capped("2026-01-01T00:05:00Z"), woke.clone()]), None);
+    assert_eq!(
+        stuck_of(&[capped("2026-01-01T00:05:00Z"), woke.clone()]),
+        None
+    );
     let events = [stalled("2026-01-01T00:04:00Z"), woke];
-    assert_eq!(stuck_of(&events).map(|s| s.kind), Some("stalled".to_owned()));
+    assert_eq!(
+        stuck_of(&events).map(|s| s.kind),
+        Some("stalled".to_owned())
+    );
 }

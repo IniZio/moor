@@ -41,6 +41,7 @@ const UPDATED: &[&str] = &[
     "session_failed",
     "launch_timed_out",
     "relaunch_capped",
+    "death_capped",
     "relaunched",
     "disk_lost",
     "session_restored",

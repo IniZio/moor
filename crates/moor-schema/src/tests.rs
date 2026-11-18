@@ -9,6 +9,7 @@ use moor_migrate::{render, Backend};
 
 use crate::STEPS;
 
+mod box_deaths;
 mod box_hands;
 mod box_inbox;
 mod box_state;

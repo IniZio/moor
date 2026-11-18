@@ -235,6 +235,7 @@ fn assert_watch(fake: &Mutex<Fake>) {
         "node_disk_recovered",
         "setup_failed",
         "relaunch_capped",
+        "death_capped",
         "disk_lost",
         "started",
         "closed",

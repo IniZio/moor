@@ -2,7 +2,7 @@
 
 use moor_core::decide::reconcile::{reconcile, reconcile_answered, BoxFact, STOPPED_REASON};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::driver::DriverError;
 use moor_core::{BoxId, ProviderId, Warning};
@@ -10,9 +10,10 @@ use moor_core::{BoxId, ProviderId, Warning};
 use crate::adapters::proc::plain::last_sentence;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
-use crate::ops::common::node::now;
 use crate::ops::common::stale::unless_stale;
 use crate::store::{BoxRow, RunRow, Store, StoreError};
+
+mod died;
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
@@ -200,18 +201,7 @@ fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
         noted(cx, store.apply(d));
         return;
     }
-    let suspend = Decision::new(id)
-        .lifecycle(BoxLifecycleInput::Suspend {
-            reason: reason.clone(),
-        })
-        .hands_input(at.1, HandsInput::Sleep)
-        .set(Fields {
-            state_reason: Field::Set(reason),
-            ..Fields::default()
-        });
-    if noted(cx, store.apply(suspend)) {
-        let _ = store.owe_suspended(id, now(cx), true);
-    }
+    died::working(cx, store, id, at.1, &reason);
 }
 
 /// Whether a verdict was written. One about hands the Box has since replaced is dropped with a
