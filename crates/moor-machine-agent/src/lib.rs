@@ -12,6 +12,7 @@ use moor_client::link::{self, Frame};
 use serde::{Deserialize, Serialize};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
+use tokio::sync::mpsc;
 
 pub use crate::boxes::{Host, Images};
 pub use crate::release::{update, Updated};
@@ -161,26 +162,6 @@ struct Own {
     host: Option<Host>,
 }
 
-/// Holds the link `carried` until it ends, keeping `own.linked` meanwhile.
-async fn hold(
-    own: &Own,
-    carried: link::Carried,
-    machine: &Arc<Machine>,
-    boxes: &Arc<listen::Boxes>,
-    recent: &Arc<status::Recent>,
-    log: &(dyn Fn(&str) + Sync),
-) -> held::Ended {
-    log(&format!("linked to {}", own.state.server));
-    if let Err(e) = linked::write(&own.linked, &own.state.server) {
-        log(&format!("cannot write {}: {e}", own.linked.display()));
-    }
-    let ended = held::hold(carried, machine, own.host.as_ref(), boxes, recent).await;
-    if matches!(ended, held::Ended::Closed(_)) {
-        let _ = fs::remove_file(&own.linked);
-    }
-    ended
-}
-
 /// Keeps `machine` linked to `own`'s server, telling `tell` the server's release on each link.
 async fn keep_linked(
     own: &Own,
@@ -197,14 +178,16 @@ async fn keep_linked(
     let mut old: Option<tokio::task::JoinHandle<String>> = None;
     let mut relinked: Option<tokio::time::Instant> = None;
     let mut ever_linked = false;
+    // What each link's pump says, logged while that link holds.
+    let (say, mut said) = mpsc::unbounded_channel();
     loop {
-        let (why, handing_over) = match connect(own).await {
+        let (why, handing_over) = match connect(own, &say).await {
             Ok((carried, theirs)) => {
                 tell.send_replace(theirs);
                 ever_linked = true;
                 wait = FIRST_WAIT;
                 relinked = None;
-                match hold(own, carried, machine, &boxes, &recent, log).await {
+                match held::keep(own, carried, machine, &boxes, &recent, (log, &mut said)).await {
                     held::Ended::Closed(why) => (why, false),
                     held::Ended::Relinked(link) => {
                         old = Some(link);
@@ -271,7 +254,10 @@ pub(crate) fn takes_no_machines(server: &str) -> String {
 
 /// Dials `state`'s server and proves the machine with `key`; the link, once it is up, and the
 /// server's release.
-async fn connect(own: &Own) -> Result<(link::Carried, String), Turned> {
+async fn connect(
+    own: &Own,
+    say: &mpsc::UnboundedSender<String>,
+) -> Result<(link::Carried, String), Turned> {
     let (state, key) = (&own.state, &own.key);
     let mut ws = link::dial_found(&state.server)
         .await
@@ -300,7 +286,13 @@ async fn connect(own: &Own) -> Result<(link::Carried, String), Turned> {
         .await
         .map_err(Turned::Failed)?;
     match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
-        Frame::Welcome { version } => Ok((link::carry(ws, link::KEEPALIVE), version)),
+        Frame::Welcome { version } => {
+            let say = say.clone();
+            let tell = move |line: &str| {
+                let _ = say.send(line.to_owned());
+            };
+            Ok((link::carry(ws, link::KEEPALIVE, tell), version))
+        }
         other => Err(turned(other)),
     }
 }

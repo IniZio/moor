@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
+use moor_client::link::{self, Asked, Channel, Frame, Offer, Report, WebSocketStream};
 use moor_client::Client;
 use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, RunnerAddr};
 use ssh_key::rand_core::{OsRng, RngCore};
@@ -17,10 +17,11 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::claim::now;
-use crate::forwards::{accepted, Routes};
+use crate::forwards::Routes;
 use hello::{judge, MIN_AGENT_VERSION, STAMPED, VERSION};
 
 mod drain;
+mod held;
 mod hello;
 mod keys;
 mod memory;
@@ -170,30 +171,14 @@ where
     if link::send(&mut ws, &welcome).await.is_err() {
         return;
     }
-    let carried = link::carry(ws, link::KEEPALIVE);
-    let (generation, replaced, asks) = links.up(machine_id, version, offer, carried.tell);
-    eprintln!("machine {machine_id} linked");
-    let why = tokio::select! {
-        why = link::drive(carried.socket, link::Mode::Server, asks, |ch| {
-            let (routes, links) = (Arc::clone(&routes), Arc::clone(&links));
-            tokio::spawn(async move { opened(ch, (machine_id, generation), &routes, &links).await });
-        }, std::future::pending()) => why,
-        _ = replaced => "a newer link replaced it".to_owned(),
-    };
-    links.down(machine_id, generation);
-    eprintln!("machine {machine_id} unlinked: {why}");
-}
-
-/// A stream the agent of a link opened: a listen's connection, or its memory reports.
-async fn opened(mut ch: Channel, link: (i64, u64), routes: &Routes, links: &Links) {
-    let (machine_id, generation) = link;
-    loop {
-        match ops::read_line::<_, Opened>(&mut ch).await {
-            Ok(Opened::Accepted(a)) => return accepted(ch, machine_id, a, routes).await,
-            Ok(Opened::Report { report }) => links.reported(machine_id, generation, &report),
-            Err(_) => return,
-        }
-    }
+    held::hold_link(
+        ws,
+        (machine_id, version, offer),
+        link::KEEPALIVE,
+        links,
+        routes,
+    )
+    .await;
 }
 
 /// The machine whose agent proved itself on `ws` and the agent's release, or the frame to

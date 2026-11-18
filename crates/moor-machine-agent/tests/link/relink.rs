@@ -24,7 +24,7 @@ async fn take(listener: &TcpListener) -> link::Carried {
         version: "test".to_owned(),
     };
     link::send(&mut ws, &welcome).await.unwrap();
-    link::carry(ws, link::KEEPALIVE)
+    link::carry(ws, link::KEEPALIVE, |_| {})
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -5,13 +5,10 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
-use tokio::sync::mpsc;
-use tokio::time::Instant;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 pub mod boxes;
 pub mod broker;
@@ -19,12 +16,14 @@ pub mod chan;
 mod dial;
 pub mod lease;
 pub mod ops;
+mod pump;
 pub mod reach;
 pub mod status;
 mod stream;
 pub mod sweep;
 
 pub use dial::{dial, dial_found, Dialed};
+pub use pump::{carry, Carried, Socket};
 pub use stream::{drive, Asked, Channel};
 
 #[cfg(test)]
@@ -34,8 +33,9 @@ mod tests;
 pub const PATH: &str = "/machines/link";
 /// The sshsig namespace of the agent's proof, so no other signature by its key passes.
 pub const NAMESPACE: &str = "moor-machine-link";
-/// How often each end pings; three silent periods end the link.
-pub const KEEPALIVE: Duration = Duration::from_secs(15);
+/// How often each end pings. An end warns after two silent periods and ends the link after
+/// three, well before a tunnel drops an idle socket.
+pub const KEEPALIVE: Duration = Duration::from_secs(5);
 
 /// How long a dial may take to connect and upgrade, so a dropped SYN fails instead of hanging.
 pub const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -218,114 +218,6 @@ where
 
 pub use tokio_tungstenite::WebSocketStream;
 pub use yamux::Mode;
-
-/// The socket yamux runs on.
-pub type Socket = Compat<DuplexStream>;
-
-/// A link that is up: the socket yamux runs on, and the frames sent beside it.
-pub struct Carried {
-    /// The end yamux runs on.
-    pub socket: Socket,
-    /// Frames to send the far end.
-    pub tell: mpsc::Sender<Frame>,
-    /// Frames the far end sent.
-    pub heard: mpsc::Receiver<Frame>,
-}
-
-/// Spawns a pump that carries yamux's bytes over `ws` and pings every `keepalive`.
-///
-/// The pump closes the socket when `ws` closes or fails, or nothing arrives for three
-/// `keepalive` periods.
-pub fn carry<S>(ws: WebSocketStream<S>, keepalive: Duration) -> Carried
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
-    let (near, far) = tokio::io::duplex(64 * 1024);
-    let (tell, told) = mpsc::channel(4);
-    let (hear, heard) = mpsc::channel(4);
-    tokio::spawn(pump(ws, far, keepalive, (told, hear)));
-    Carried {
-        socket: near.compat(),
-        tell,
-        heard,
-    }
-}
-
-/// Moves bytes between `ws` and `far` until either ends or the far end goes quiet, sending the
-/// frames told and passing on the frames heard.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the count is select!'s expansion"
-)]
-async fn pump<S>(
-    mut ws: WebSocketStream<S>,
-    mut far: DuplexStream,
-    keepalive: Duration,
-    (mut told, hear): (mpsc::Receiver<Frame>, mpsc::Sender<Frame>),
-) where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    let mut tick = tokio::time::interval_at(Instant::now() + keepalive, keepalive);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut heard = Instant::now();
-    let mut buf = vec![0u8; 16 * 1024];
-    loop {
-        let open = tokio::select! {
-            msg = ws.next() => {
-                heard = Instant::now();
-                deliver(msg, &mut far, &hear).await
-            }
-            n = far.read(&mut buf) => forward(&mut ws, n.ok().and_then(|n| buf.get(..n))).await,
-            Some(frame) = told.recv() => send(&mut ws, &frame).await.is_ok(),
-            _ = tick.tick() => ping(&mut ws, heard.elapsed() <= keepalive * 3).await,
-        };
-        if !open {
-            break;
-        }
-    }
-    let _ = ws.close(None).await;
-    // yamux answers the last frames it reads, such as window updates; a dropped pipe would fail
-    // those writes, and yamux would end the link before its streams read the data.
-    let _ = far.shutdown().await;
-    let _ = tokio::io::copy(&mut far, &mut tokio::io::sink()).await;
-}
-
-/// Sends yamux's `bytes` on; false once the link is over.
-async fn forward<S>(ws: &mut WebSocketStream<S>, bytes: Option<&[u8]>) -> bool
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    let bytes = bytes.unwrap_or_default();
-    !bytes.is_empty() && ws.send(Message::binary(bytes.to_vec())).await.is_ok()
-}
-
-/// Pings the far end while it is `alive`; false once the link is over.
-async fn ping<S>(ws: &mut WebSocketStream<S>, alive: bool) -> bool
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    alive && ws.send(Message::Ping(Vec::new().into())).await.is_ok()
-}
-
-/// Writes a binary message's bytes to `far` and passes a frame to `hear`; false once the link
-/// is over. A text message that is no frame this release knows is skipped.
-async fn deliver(
-    msg: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
-    far: &mut DuplexStream,
-    hear: &mpsc::Sender<Frame>,
-) -> bool {
-    match msg {
-        Some(Ok(Message::Binary(bytes))) => far.write_all(&bytes).await.is_ok(),
-        Some(Ok(Message::Text(text))) => {
-            if let Ok(frame) = serde_json::from_str(&text) {
-                let _ = hear.try_send(frame);
-            }
-            true
-        }
-        Some(Ok(Message::Close(_)) | Err(_)) | None => false,
-        Some(Ok(_)) => true,
-    }
-}
 
 /// The link's address on `server`: `https` becomes `wss`, `http` becomes `ws`.
 ///
