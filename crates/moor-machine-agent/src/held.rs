@@ -1,6 +1,7 @@
 //! One link the agent holds: serving the runner's streams on it until it ends or the runner asks
 //! for a new one.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use moor_client::link::{self, Frame};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::{busy, listen, report, serve, status, Host, Machine};
+use crate::{busy, linked, listen, report, serve, status, Host, Machine, Own};
 
 /// How a held link ended.
 pub(crate) enum Ended {
@@ -16,6 +17,43 @@ pub(crate) enum Ended {
     Closed(String),
     /// The runner asked for a new link; this one serves its open streams until it closes.
     Relinked(JoinHandle<String>),
+}
+
+/// The lines each link's pump says, for [`keep`] to log.
+pub(crate) type Said = mpsc::UnboundedReceiver<String>;
+
+/// Holds the link `carried` until it ends, keeping `own.linked` meanwhile, and logs what its pump
+/// says.
+pub(crate) async fn keep(
+    own: &Own,
+    carried: link::Carried,
+    machine: &Arc<Machine>,
+    boxes: &Arc<listen::Boxes>,
+    recent: &Arc<status::Recent>,
+    (log, said): (&(dyn Fn(&str) + Sync), &mut Said),
+) -> Ended {
+    log(&format!("linked to {}", own.state.server));
+    if let Err(e) = linked::write(&own.linked, &own.state.server) {
+        log(&format!("cannot write {}: {e}", own.linked.display()));
+    }
+    let holding = hold(carried, machine, own.host.as_ref(), boxes, recent);
+    let telling = async {
+        while let Some(line) = said.recv().await {
+            log(&line);
+        }
+        std::future::pending().await
+    };
+    let ended = tokio::select! {
+        ended = holding => ended,
+        ended = telling => ended,
+    };
+    while let Ok(line) = said.try_recv() {
+        log(&line);
+    }
+    if matches!(ended, Ended::Closed(_)) {
+        let _ = fs::remove_file(&own.linked);
+    }
+    ended
 }
 
 /// Serves the runner's streams on `carried` until it closes or the runner asks for a new link.

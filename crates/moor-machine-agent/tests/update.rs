@@ -362,7 +362,7 @@ async fn welcoming_server(
                 if !shook {
                     return;
                 }
-                let carried = link::carry(ws, link::KEEPALIVE);
+                let carried = link::carry(ws, link::KEEPALIVE, |_| {});
                 let (ask, asks) = mpsc::channel(4);
                 let _ = links.send(Opener(ask));
                 let mode = link::Mode::Server;
