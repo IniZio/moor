@@ -5,11 +5,15 @@ use moor_core::decide::workflow::{
     START_LIMIT,
 };
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::deaths;
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
 use moor_core::view::LaunchFailure;
-use moor_core::workflow::{box_name, HistoryEntry, RunId, RunOutcome, Workflow};
+use moor_core::workflow::{
+    box_name, HistoryEntry, RunId, RunOutcome, StepId, Workflow, WorkflowRun,
+};
+use moor_core::BoxId;
 
 use crate::cx::Cx;
 use crate::ops::{close, end_session};
@@ -34,8 +38,45 @@ pub(super) fn box_facts(store: &Store, row: &BoxRow) -> Result<RunBoxFacts, Stor
         session: row.session,
         idle_since,
         launch_failed: row.launch_failure.is_some(),
-        death_capped: false,
+        death_capped: row.lifecycle == BoxLifecycle::Asleep && death_capped(store, row.id)?,
     })
+}
+
+/// Whether moor stopped resuming Box `id` for its deaths and no wake has come since. Events
+/// are numbered in the order they were written, so ids tell which came last.
+fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
+    let Some(capped) = store.newest_event_of(id, "death_capped")? else {
+        return Ok(false);
+    };
+    let woke = store.newest_event_of(id, "woke")?;
+    Ok(woke.is_none_or(|w| w.id < capped.id))
+}
+
+/// Fails the run at `at`, which works in Box `box_id` that moor stopped resuming for its deaths,
+/// with the sentence its `death_capped` event told the owner. Nothing is sent to the Box: neither
+/// the step's `fail` edge nor another try could run without waking it, which starts the count of
+/// deaths again.
+pub(super) fn fail_death_capped(
+    store: &Store,
+    w: &Workflow,
+    run: &WorkflowRun,
+    (box_id, at, try_n): (BoxId, &StepId, u8),
+    now: Ts,
+) -> Result<(), StoreError> {
+    let said = store
+        .newest_event_of(box_id, "death_capped")?
+        .and_then(|e| {
+            let count = usize::try_from(e.payload.get("count")?.as_u64()?).ok()?;
+            Some(deaths::sentence(count, e.payload.get("reason")?.as_str()?))
+        })
+        .unwrap_or_else(|| "its machine kept stopping, so moor stopped resuming it".to_owned());
+    let key = (w.id, &run.repo, run.due_at);
+    let outcome = RunOutcome::Failed {
+        at: at.clone(),
+        reason: said,
+    };
+    store.end_workflow_run(key, (at, try_n), (box_id, outcome), (&[], now))?;
+    Ok(())
 }
 
 /// Why no agent will run in `row`, naming the Box and its recorded failure: the launch failure,
