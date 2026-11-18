@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
+use moor_core::request::{MachineLink, RunnerAddr};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::user::{Identity, UserId};
 use moor_core::view::MachineHoldState;
@@ -314,4 +315,104 @@ fn a_claim_naming_a_pool_host_is_refused() {
         }
     );
     assert!(!r.has_row(a));
+}
+
+/// `id`'s machine events as (kind, payload).
+fn machine_events(r: &Rig, id: BoxId) -> Vec<(String, serde_json::Value)> {
+    let events = r.store.events(id, 100).unwrap();
+    events
+        .into_iter()
+        .filter(|e| e.kind.starts_with("machine_"))
+        .map(|e| (e.kind, e.payload))
+        .collect()
+}
+
+fn attached(slot: u16) -> (String, serde_json::Value) {
+    (
+        "machine_attached".to_owned(),
+        serde_json::json!({"name": "mini", "slot": slot}),
+    )
+}
+
+#[test]
+fn a_granted_claim_records_machine_attached_once() {
+    let r = Rig::new(1);
+    let a = r.new_box("a");
+
+    r.claim(a, None);
+    r.claim(a, None);
+
+    assert_eq!(machine_events(&r, a), [attached(0)]);
+}
+
+#[test]
+fn machine_attached_names_the_runner_holding_the_machines_link() {
+    let r = Rig::new(1);
+    let a = r.new_box("a");
+    let link = MachineLink {
+        provides: None,
+        machine_id: r.mini,
+        online: true,
+        since: r.clock.now(),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
+        memory: None,
+    };
+    let runner = RunnerAddr::new("runner-1:7701");
+    r.store
+        .set_machine_links(&runner, false, &[link], r.clock.now())
+        .unwrap();
+
+    r.claim(a, None);
+
+    let want = serde_json::json!({"name": "mini", "slot": 0, "runner": "runner-1:7701"});
+    assert_eq!(
+        machine_events(&r, a),
+        [("machine_attached".to_owned(), want)]
+    );
+}
+
+#[test]
+fn a_waiter_records_machine_attached_when_it_takes_the_freed_slot() {
+    let r = Rig::new(1);
+    let (a, b) = (r.new_box("a"), r.new_box("b"));
+    r.claim(a, None);
+    r.claim(b, Some(Duration::from_secs(3600)));
+    assert!(!machine_events(&r, b)
+        .iter()
+        .any(|e| e.0 == "machine_attached"));
+
+    r.claim_as(a, r.user, &HoldOp::Release);
+    r.store.grant_machine(b, None).unwrap();
+    r.store.grant_machine(b, None).unwrap();
+
+    let kinds: Vec<String> = machine_events(&r, b).into_iter().map(|e| e.0).collect();
+    assert_eq!(kinds, ["machine_waiting", "machine_attached"]);
+    assert_eq!(machine_events(&r, b)[1], attached(0));
+}
+
+#[test]
+fn a_wake_records_machine_attached_on_the_slot_it_takes() {
+    let r = Rig::new(2);
+    let (a, b, c) = (r.new_box("a"), r.new_box("b"), r.new_box("c"));
+    r.claim(a, None);
+    r.claim(b, None);
+    r.store.sleep_machine(a, None).unwrap();
+    r.claim(c, None);
+    r.claim_as(b, r.user, &HoldOp::Release);
+
+    r.store.grant_machine(a, None).unwrap();
+
+    let events = machine_events(&r, a);
+    assert_eq!(events.last(), Some(&attached(1)), "{events:?}");
+    assert_eq!(
+        events.iter().filter(|e| e.0 == "machine_attached").count(),
+        2
+    );
 }
