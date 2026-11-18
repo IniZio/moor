@@ -5,7 +5,7 @@ import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Repos } from './Repos';
 import { Secrets } from './Secrets';
-import { Home, tabOf, TaskPage } from './Tasks';
+import { Home, tabOf, BoxPage } from './Portal';
 import { Workflows, workflowsAt } from './Workflows';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
@@ -17,11 +17,11 @@ function repoOf(hash: string): string | null {
 	return rest.startsWith('repos/') ? decodeURI(rest.slice('repos/'.length)) : null;
 }
 
-/** The task the address names, `#/task/<box>[/<tab>]`; null for any other page. */
-function taskOf(hash: string): { box: string; tab: string | undefined } | null {
+/** The Box the address names, `#/box/<box>[/<tab>]`; null for any other page. */
+function boxOf(hash: string): { box: string; tab: string | undefined } | null {
 	const rest = hash.replace(/^#\/?/, '');
-	if (!rest.startsWith('task/')) return null;
-	const [box, tab] = rest.slice('task/'.length).split('/');
+	if (!rest.startsWith('box/')) return null;
+	const [box, tab] = rest.slice('box/'.length).split('/');
 	return box ? { box: decodeURIComponent(box), tab } : null;
 }
 
@@ -68,17 +68,17 @@ export function App() {
 	const { account } = state;
 	const repo = repoOf(hash);
 	const flows = workflowsAt(hash);
-	const task = taskOf(hash);
+	const open = boxOf(hash);
 	const settings = settingsAt(hash);
-	const tasks = repo === null && !flows && !settings;
+	const home = repo === null && !flows && !settings;
 	const unlinked = account.secrets.filter((s) => !s.linked).map((s) => s.name);
 	const leave = () => signOut(account.csrf).then(() => setState({ at: 'out' }));
 	return (
-		<main class={flows || tasks ? 'wide' : undefined}>
+		<main class={flows || home ? 'wide' : undefined}>
 			<header>
 				<h1>moor</h1>
 				<nav>
-					<a href="#/" aria-current={tasks ? 'page' : undefined}>Tasks</a>
+					<a href="#/" aria-current={home ? 'page' : undefined}>Boxes</a>
 					<a href="#/workflows" aria-current={flows ? 'page' : undefined}>Workflows</a>
 					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
 					<a href="#/settings" aria-current={settings ? 'page' : undefined}>Settings</a>
@@ -88,14 +88,14 @@ export function App() {
 			</header>
 			{flows ? (
 				<Workflows csrf={account.csrf} at={flows} />
-			) : tasks ? (
+			) : home ? (
 				<>
 					{unlinked.length > 0 && (
 						<p class="notice warn">
-							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
+							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a Box can start.
 						</p>
 					)}
-					{task ? <TaskPage box={task.box} tab={tabOf(task.tab)} /> : <Home />}
+					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home />}
 				</>
 			) : repo === null ? (
 				<>

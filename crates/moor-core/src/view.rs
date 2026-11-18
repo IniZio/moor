@@ -166,9 +166,9 @@ pub struct BoxView {
     /// The agent's newest message, on `show` of one Box asked for the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub said: Option<SaidView>,
-    /// The Box as a task: its derived state and the line that matters now; set by `show`.
+    /// The Box as a Box: its derived state and the line that matters now; set by `show`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub task: Option<crate::task::TaskView>,
+    pub progress: Option<crate::progress::ProgressView>,
 }
 
 /// The newest `agent_said` event of a Box.
@@ -372,7 +372,7 @@ pub struct ShowView {
     pub artifacts: Option<Vec<ArtifactView>>,
     /// The selected Box's events as a timeline, when events were requested.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeline: Option<Vec<crate::task::TimelineEntry>>,
+    pub timeline: Option<Vec<crate::progress::TimelineEntry>>,
 }
 
 /// `value` of `close`.
