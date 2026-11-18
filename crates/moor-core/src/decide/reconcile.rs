@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use crate::domain::box_state::BoxLifecycleInput;
-use crate::domain::decision::Decision;
+use crate::domain::decision::{Decision, Field, Fields};
 use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::{BoxListing, HandlesListing};
@@ -57,24 +57,32 @@ pub fn reconcile_answered(rows: &[BoxFact], asked: &HandlesListing) -> Vec<Decis
 }
 
 /// Sleeps each Ready row whose handle the listing shows asleep, so a wake boots it again with
-/// its disk; a row the listing leaves out is not decided here.
+/// its disk, giving why its holder says it is down; a row the listing leaves out is not decided
+/// here.
 #[must_use]
 pub fn stopped(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
-    let asleep: HashSet<&BoxHandle> = listing
-        .iter()
-        .filter(|l| l.asleep)
-        .map(|l| &l.handle)
-        .collect();
     rows.iter()
         .filter(|r| r.state == HandsState::Ready)
-        .filter(|r| r.handle.as_ref().is_some_and(|h| asleep.contains(h)))
-        .map(|r| {
+        .filter_map(|r| {
+            let handle = r.handle.as_ref()?;
+            let l = listing.iter().find(|l| l.asleep && &l.handle == handle)?;
+            Some((r, l))
+        })
+        .map(|(r, l)| {
+            let reason = l.down.as_ref().map_or_else(
+                || STOPPED_REASON.to_owned(),
+                |why| format!("it stopped on its machine: {why}"),
+            );
             Decision::new(r.box_id)
                 .lifecycle(BoxLifecycleInput::Sleep {
                     auto: true,
-                    reason: Some(STOPPED_REASON.to_owned()),
+                    reason: Some(reason.clone()),
                 })
                 .hands_input(r.inc, HandsInput::Sleep)
+                .set(Fields {
+                    state_reason: Field::Set(reason),
+                    ..Fields::default()
+                })
         })
         .collect()
 }

@@ -204,6 +204,10 @@ pub struct BoxReport {
     /// MiB of the host the Box holds, when its machine can tell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem_mib: Option<u64>,
+    /// Why a Box meant to run is down, when its machine saw its places stop on their own: each
+    /// place that stopped, its exit code and whether its memory limit killed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down: Option<String>,
 }
 
 /// What a Box is doing.

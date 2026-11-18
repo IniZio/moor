@@ -8,8 +8,10 @@
 )]
 
 use super::args::{agent_run, gid_of, work_memory_mib, work_run};
+use super::cli::parse_ended;
 use super::names::Names;
 use super::{net, Images, Settings};
+use crate::boxes::provider::Ended;
 use crate::boxes::Slug;
 
 const SLUG: &str = "moor-3b3b3b3b-9001";
@@ -146,4 +148,26 @@ fn close_removes_the_shared_skills_volumes() {
     assert!(n.volumes().contains(&n.agents.as_str()));
     assert!(n.volumes().contains(&n.skills.as_str()));
     assert!(n.volumes().contains(&n.tmp.as_str()));
+}
+
+#[test]
+fn inspect_lines_say_how_each_container_ended_and_odd_lines_are_left_out() {
+    let ended = parse_ended(
+        "/moor-3b3b3b3b-9001-agent 143 false\n/moor-3b3b3b3b-9001-work 137 true\nError: No such object\n",
+    );
+    assert_eq!(ended.len(), 2, "{ended:?}");
+    assert_eq!(
+        ended.get("moor-3b3b3b3b-9001-agent"),
+        Some(&Ended {
+            code: 143,
+            oom: false
+        })
+    );
+    assert_eq!(
+        ended.get("moor-3b3b3b3b-9001-work"),
+        Some(&Ended {
+            code: 137,
+            oom: true
+        })
+    );
 }

@@ -90,6 +90,7 @@ impl FakeDriver {
                 handle: BoxHandle::new(h.clone()),
                 provider: Some(provider.clone()),
                 asleep: s.stopped.contains(h),
+                down: None,
             })
             .collect())
     }

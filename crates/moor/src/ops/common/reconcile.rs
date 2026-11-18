@@ -190,17 +190,23 @@ fn apply(cx: &Cx, store: &Store, d: Decision, who: Verdicts) {
         return;
     }
     let _ = store.set_suspend_check(at, None);
+    let reason = match &d.lifecycle_input {
+        Some(BoxLifecycleInput::Sleep {
+            reason: Some(why), ..
+        }) => why.clone(),
+        _ => STOPPED_REASON.to_owned(),
+    };
     if row.session.is_quiet() {
         noted(cx, store.apply(d));
         return;
     }
     let suspend = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Suspend {
-            reason: STOPPED_REASON.to_owned(),
+            reason: reason.clone(),
         })
         .hands_input(at.1, HandsInput::Sleep)
         .set(Fields {
-            state_reason: Field::Set(STOPPED_REASON.to_owned()),
+            state_reason: Field::Set(reason),
             ..Fields::default()
         });
     if noted(cx, store.apply(suspend)) {

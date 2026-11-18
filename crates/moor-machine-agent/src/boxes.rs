@@ -32,7 +32,7 @@ pub use host::Host;
 #[cfg(any(test, feature = "fake-boxes"))]
 use fake::FakeProvider;
 use held::{Held, Store, Want};
-use provider::{BoxProvider, Env, Notes, Observed, PlaceState, ProvideError, Spec};
+use provider::{BoxProvider, Ended, Env, Notes, Observed, PlaceState, ProvideError, Spec};
 
 /// A Box's name on its machine: `moor-<controller>-<id>[-h<inc>]`, so two controllers sharing a
 /// machine never touch each other's Boxes. Only [`Slug::parse`] makes one, which keeps every
@@ -303,10 +303,23 @@ impl<P: BoxProvider> Boxes<P> {
             }
             if let Ok(Some(held)) = self.store.load(&slug) {
                 let observed = seen.iter().find(|o| o.slug == slug);
-                reports.push(report(&slug, &held, observed));
+                let mut said = report(&slug, &held, observed);
+                if self.in_flight(&slug) {
+                    said.down = None;
+                }
+                reports.push(said);
             }
         }
         reports
+    }
+
+    /// Whether a verb works on `slug` now, which may stop and start its places on purpose.
+    fn in_flight(&self, slug: &Slug) -> bool {
+        self.flights
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(slug)
+            .is_some_and(|lock| lock.try_lock().is_err())
     }
 
     /// `slug` when the Box is held and awake; none when it is not held; an error when it sleeps.
@@ -329,6 +342,16 @@ fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
         (None, Want::Awake) if up => ReportState::Awake,
         (None, Want::Awake) => ReportState::Mending,
     };
+    let down = match (&state, seen) {
+        (ReportState::Mending, Some(o)) => {
+            let said: Vec<String> = [("agent", o.agent), ("work", o.work)]
+                .into_iter()
+                .filter_map(|(name, place)| place_down(name, place))
+                .collect();
+            Some(said.join("; "))
+        }
+        _ => None,
+    };
     BoxReport {
         slug: slug.as_str().to_owned(),
         state,
@@ -336,7 +359,22 @@ fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
         oom_kills: seen.map_or(0, |o| o.oom_kills),
         last_mend: None,
         mem_mib: seen.and_then(|o| o.mem_mib),
+        down,
     }
+}
+
+/// How the place called `name` is down, worded for people; none when it runs.
+fn place_down(name: &str, place: PlaceState) -> Option<String> {
+    Some(match place {
+        PlaceState::Up => return None,
+        PlaceState::Down => format!("the {name} place is not running"),
+        PlaceState::Exited(Ended { code, oom: true }) => {
+            format!("the {name} place was killed for memory (exit {code})")
+        }
+        PlaceState::Exited(Ended { code, oom: false }) => {
+            format!("the {name} place exited with code {code}, not for memory")
+        }
+    })
 }
 
 /// Whether `name` can be exported: `[A-Za-z_][A-Za-z0-9_]*`.

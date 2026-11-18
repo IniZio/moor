@@ -14,7 +14,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
-use super::provider::{BoxProvider, Env, Notes, Observed, PlaceState, ProvideError, Spec};
+use super::provider::{BoxProvider, Ended, Env, Notes, Observed, PlaceState, ProvideError, Spec};
 use super::Slug;
 
 /// One fake Box.
@@ -89,10 +89,16 @@ impl FakeProvider {
         self.boxes().get(slug).is_some_and(|f| f.sealed)
     }
 
-    /// Whether `slug`'s places died under it, as a `died` file in its directory says: what a
-    /// `docker kill` from outside the agent leaves of a Box, for a test outside this crate.
-    fn died(&self, slug: &Slug) -> bool {
-        self.root.join(slug.as_str()).join("died").exists()
+    /// How `slug`'s places died under it, as a `died` file in its directory says: what a
+    /// `docker kill` from outside the agent leaves of a Box, for a test outside this crate. The
+    /// file holds the exit code, and `oom` after it when the memory limit killed them.
+    fn died(&self, slug: &Slug) -> Option<Ended> {
+        let text = std::fs::read_to_string(self.root.join(slug.as_str()).join("died")).ok()?;
+        let mut words = text.split_whitespace();
+        Some(Ended {
+            code: words.next().and_then(|c| c.parse().ok()).unwrap_or(137),
+            oom: words.next() == Some("oom"),
+        })
     }
 
     /// Runs `change` on `slug`'s Box, if there is one.
@@ -152,11 +158,19 @@ impl BoxProvider for FakeProvider {
         Ok(self
             .boxes()
             .iter()
-            .map(|(slug, fake)| (slug, fake, fake.awake && !self.died(slug)))
-            .map(|(slug, fake, awake)| Observed {
+            .map(|(slug, fake)| {
+                let died = self.died(slug).map(PlaceState::Exited);
+                let agent = died.unwrap_or_else(|| up(fake.awake));
+                (
+                    slug,
+                    agent,
+                    died.unwrap_or_else(|| up(fake.awake && !fake.work_down)),
+                )
+            })
+            .map(|(slug, agent, work)| Observed {
                 slug: slug.clone(),
-                agent: up(awake),
-                work: up(awake && !fake.work_down),
+                agent,
+                work,
                 oom_kills: 0,
                 mem_mib: None,
             })

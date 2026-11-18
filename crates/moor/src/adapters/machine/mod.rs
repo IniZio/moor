@@ -230,7 +230,8 @@ impl Driver for Machines {
                     listing.listed.push(BoxListing {
                         handle: handle.clone(),
                         provider: None,
-                        asleep: held.state == ReportState::Asleep,
+                        asleep: held.state == ReportState::Asleep || held.down.is_some(),
+                        down: held.down.clone(),
                     });
                 }
             }

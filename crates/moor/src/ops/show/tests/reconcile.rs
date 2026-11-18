@@ -54,6 +54,50 @@ fn reconcile_only_sleeps_a_quiet_box_its_host_stopped() {
     assert!(store.resume_first(id).unwrap().is_none());
 }
 
+/// Why the fake host says a Box's places died.
+const DIED: &str = "the work place exited with code 143, not for memory";
+
+#[test]
+fn reconcile_queues_a_working_box_whose_places_died_to_resume_first_saying_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = cx(dir.path(), &driver);
+    let id = working(&cx, &driver, "a", None);
+    let store = cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    driver.die_behind(&row.hands.unwrap().handle.unwrap(), DIED);
+    assert_eq!(box_state(&cx), HandsState::Asleep);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Pending);
+    let why = format!("it stopped on its machine: {DIED}");
+    assert_eq!(row.state_reason.as_deref(), Some(why.as_str()));
+    assert!(store.resume_first(id).unwrap().is_some());
+    let said = store.newest_event_of(id, "asleep").unwrap().unwrap();
+    assert_eq!(
+        said.payload.get("reason").and_then(|r| r.as_str()),
+        Some(why.as_str())
+    );
+}
+
+#[test]
+fn reconcile_sleeps_a_quiet_box_whose_places_died_saying_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().listed_by_handle());
+    let cx = cx(dir.path(), &driver);
+    let id = working(&cx, &driver, "a", None);
+    let store = cx.store().unwrap();
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    driver.die_behind(&row.hands.unwrap().handle.unwrap(), DIED);
+    assert_eq!(box_state(&cx), HandsState::Asleep);
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    let why = format!("it stopped on its machine: {DIED}");
+    assert_eq!(row.state_reason.as_deref(), Some(why.as_str()));
+}
+
 #[test]
 fn reconcile_leaves_a_box_alone_while_an_op_holds_its_lock() {
     let dir = tempfile::tempdir().unwrap();

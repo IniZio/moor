@@ -56,6 +56,14 @@ impl FakeDriver {
         self.st().stopped.push(handle.as_str().to_owned());
     }
 
+    /// Kills `handle`'s places behind moor's back, keeping its disk, as `docker kill` does; its
+    /// holder lists it down for `why`.
+    pub(crate) fn die_behind(&self, handle: &BoxHandle, why: &str) {
+        let mut s = self.st();
+        s.stopped.push(handle.as_str().to_owned());
+        s.down.push((handle.as_str().to_owned(), why.to_owned()));
+    }
+
     /// `list` is unsupported and `list_handles` answers instead, as for a pool host's Boxes.
     pub(crate) fn listed_by_handle(self) -> Self {
         self.st().by_handle = true;
@@ -100,6 +108,11 @@ impl FakeDriver {
                 handle: h.clone(),
                 provider: None,
                 asleep: s.stopped.iter().any(|l| l == h.as_str()),
+                down: s
+                    .down
+                    .iter()
+                    .find(|(l, _)| l == h.as_str())
+                    .map(|(_, why)| why.clone()),
             })
             .collect();
         Ok(HandlesListing {

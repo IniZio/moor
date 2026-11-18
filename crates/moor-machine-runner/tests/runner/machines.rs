@@ -225,6 +225,13 @@ fn a_box_whose_places_die_under_it_is_listed_stopped_and_a_wake_brings_it_back()
         listed.listed[0].asleep,
         "a Box that died is not up: {listed:?}"
     );
+    assert_eq!(
+        listed.listed[0].down.as_deref(),
+        Some(
+            "the agent place exited with code 143, not for memory; \
+             the work place exited with code 143, not for memory"
+        )
+    );
     m.wake(&got.handle).unwrap();
     let (outcome, _) = run(&m, &host, &got, Place::Work, "true");
     assert_eq!(outcome, ExecOutcome::Exited { code: 0 });

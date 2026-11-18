@@ -309,26 +309,6 @@ async fn keystrokes_reach_a_terminal_and_its_output_is_all_out_frames() {
 }
 
 #[tokio::test]
-async fn a_work_place_that_is_down_ends_exec_as_down_and_the_agent_place_runs_on() {
-    let rig = rig();
-    rig.opened().await;
-    rig.boxes.provider.set_work_down(&slug(), true);
-    let (out, _, exit) = rig.run(&exec(Place::Work, "echo never", None)).await;
-    assert_eq!((out.as_str(), exit), ("", Exit::Down));
-    let (out, _, exit) = rig.run(&exec(Place::Agent, "echo here", None)).await;
-    assert_eq!((out.as_str(), exit), ("here\n", Exit::Code(0)));
-    let listed = rig
-        .one(&BoxOp::List {
-            controller: ControllerId::parse("1a2b3c4d").unwrap(),
-        })
-        .await;
-    let BoxAnswer::Listed { boxes } = listed else {
-        panic!("{listed:?}");
-    };
-    assert_eq!(boxes[0].state, ReportState::Mending);
-}
-
-#[tokio::test]
 async fn dropping_the_stream_ends_the_commands_process_group() {
     let rig = rig();
     rig.opened().await;
@@ -598,3 +578,5 @@ async fn a_machine_that_provides_boxes_offers_them_with_the_protocol_it_speaks()
     assert_eq!(crate::offered(None), None);
     assert!(crate::Host::named("crabbox", rig.home.path()).is_err());
 }
+
+mod down;
