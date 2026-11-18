@@ -171,6 +171,7 @@ impl Tools {
             }),
             expected_revision: args.expected_revision,
             origin_key: None,
+            keep_state: false,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

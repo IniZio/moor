@@ -10,7 +10,9 @@ use moor_core::name::ForgeRepo;
 use moor_core::request::{UserCmd, WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
-use moor_core::workflow::{NewRun, Plan, RunOutcome, RunState, WorkflowId, WorkflowName};
+use moor_core::workflow::{
+    NewRun, Plan, RunOutcome, RunState, WorkflowId, WorkflowName, WorkflowState,
+};
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
@@ -32,6 +34,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         plan: None,
         expected_revision: None,
         origin_key: None,
+        keep_state: false,
     }
 }
 
@@ -227,6 +230,78 @@ fn an_origin_is_kept_only_from_a_front_that_names_a_key() {
     );
 }
 
+/// The stored workflow `daily` of `who`.
+fn stored(f: &Fixture, who: &Identity) -> moor_core::workflow::Workflow {
+    let store = f.cx.store().unwrap();
+    store
+        .workflow(
+            store.user_of(who).unwrap().unwrap(),
+            &WorkflowName::parse("daily").unwrap(),
+        )
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn a_replace_that_sends_no_origin_keeps_the_stored_one() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    let mut req = add_req("daily", "0 9 * * *", "UTC");
+    req.origin_key = Some("C1/T1".to_owned());
+    ok(&f, &who, add(req.clone(), Some("slack")));
+
+    req.origin_key = None;
+    req.prompt = "a new prompt".to_owned();
+    ok(&f, &who, add(req.clone(), None));
+    let got = stored(&f, &who);
+    assert_eq!(got.prompt, "a new prompt");
+    let origin = got.origin.unwrap();
+    assert_eq!(
+        (origin.front.as_str(), origin.key.as_deref()),
+        ("slack", Some("C1/T1")),
+        "a caller that is no front, and sends no key, leaves the origin"
+    );
+
+    req.origin_key = Some("C2/T2".to_owned());
+    ok(&f, &who, add(req, Some("slack")));
+    let origin = stored(&f, &who).origin.unwrap();
+    assert_eq!(
+        origin.key.as_deref(),
+        Some("C2/T2"),
+        "a front's key still sets it"
+    );
+}
+
+#[test]
+fn keep_state_leaves_a_disabled_workflow_disabled_with_its_reason() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    let store = f.cx.store().unwrap();
+    assert!(store
+        .disable_workflow(stored(&f, &who).id, "o/n: three failures")
+        .unwrap());
+    let disabled = stored(&f, &who).state;
+
+    let mut req = add_req("daily", "0 9 * * *", "UTC");
+    req.prompt = "edited".to_owned();
+    req.keep_state = true;
+    ok(&f, &who, add(req.clone(), None));
+    let got = stored(&f, &who);
+    assert_eq!(got.prompt, "edited");
+    assert_eq!(
+        got.state, disabled,
+        "a kept state stays disabled, with its reason"
+    );
+
+    req.keep_state = false;
+    ok(&f, &who, add(req, None));
+    assert!(
+        matches!(stored(&f, &who).state, WorkflowState::Enabled { .. }),
+        "add_workflow as the MCP tool sends it still enables the workflow"
+    );
+}
+
 fn record(f: &Fixture, who: &Identity, state: RunState, due: i64) -> WorkflowId {
     let store = f.cx.store().unwrap();
     let user = store.user_of(who).unwrap().unwrap();
@@ -335,6 +410,57 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
     let streamed = runs(&f, &who, None, None);
     let change = streamed["changes"].as_array().unwrap().last().unwrap();
     assert_eq!(change["history"], done["history"]);
+}
+
+fn run_list(f: &Fixture, who: &Identity, only: Option<i64>) -> Value {
+    let list = WorkflowCmd::RunList {
+        workflow: "daily".to_owned(),
+        run: only,
+        limit: None,
+    };
+    ok(f, who, cmd(list))
+}
+
+#[test]
+fn the_run_list_is_newest_first_and_one_run_reads_with_its_frozen_plan() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    record(&f, &who, RunState::Queued, 100);
+    record(&f, &who, RunState::Queued, 300);
+    record(&f, &who, RunState::Queued, 200);
+    let listed = run_list(&f, &who, None);
+    let due: Vec<i64> = listed["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["due_at"].as_i64().unwrap())
+        .collect();
+    assert_eq!(due, [300, 200, 100]);
+    assert!(listed["runs"][0].get("plan").is_none());
+    let id = listed["runs"][1]["id"].as_i64().unwrap();
+    let one = run_list(&f, &who, Some(id));
+    assert_eq!(one["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(one["runs"][0]["due_at"], 200);
+    assert_eq!(one["runs"][0]["plan"]["steps"][0]["kind"], "deliver");
+}
+
+#[test]
+fn the_run_list_of_a_workflow_that_is_not_yours_is_refused() {
+    let f = fixture();
+    let owner = me(&f, "local:2000");
+    daily(&f, &owner);
+    let other = me(&f, "local:2001");
+    let why = refusal(
+        &f,
+        &other,
+        cmd(WorkflowCmd::RunList {
+            workflow: "daily".to_owned(),
+            run: None,
+            limit: None,
+        }),
+    );
+    assert!(why.contains("no workflow named daily"), "{why}");
 }
 
 #[test]

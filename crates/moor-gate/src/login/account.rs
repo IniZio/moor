@@ -16,7 +16,7 @@ use serde_json::json;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
-use super::{nodes, repos};
+use super::{nodes, repos, workflows};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Rebuilt by `make web`.
@@ -97,6 +97,16 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
+        (method, p, session) if workflows::route(p).is_some() => {
+            let query = req.target.split_once('?').map_or("", |(_, q)| q);
+            workflow_route(
+                &mut stream,
+                (method, p, query),
+                (req.leftover, req.length, req.csrf),
+                gate,
+                session.as_ref(),
+            );
+        }
         ("PUT", p, session) if repos::named(p).is_some() || nodes::named(p).is_some() => {
             write_settings(
                 &mut stream,
@@ -118,6 +128,42 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         }
         ("GET", p, None) if p.starts_with(API) => signed_out(&mut stream),
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
+    }
+}
+
+/// Serves one request of the workflows pages: reads, a plan write and an answer.
+fn workflow_route(
+    stream: &mut TcpStream,
+    (method, path, query): (&str, &str, &str),
+    (leftover, length, csrf): (Vec<u8>, Option<usize>, Option<&str>),
+    gate: &Gate,
+    session: Option<&Session>,
+) {
+    use workflows::Route;
+    let Some(route) = workflows::route(path) else {
+        return page(stream, "404 Not Found", "", "Not found.");
+    };
+    // Read the body before any answer: closing on unread bytes resets the connection.
+    let body = if method == "GET" {
+        None
+    } else {
+        read_body(stream, leftover, length, workflows::BODY_MAX)
+    };
+    let Some(session) = session else {
+        return signed_out(stream);
+    };
+    match (method, route) {
+        ("GET", Route::List) => workflows::list(stream, gate, session),
+        ("GET", Route::One(name)) => workflows::read(stream, gate, session, name),
+        ("PUT", Route::One(name)) => {
+            workflows::write(stream, gate, session, csrf, name, body.as_deref());
+        }
+        ("GET", Route::Run(name, id)) => workflows::run(stream, gate, session, name, id),
+        ("POST", Route::Answer(name, id)) => {
+            workflows::answer(stream, gate, session, csrf, (name, id), body.as_deref());
+        }
+        ("GET", Route::Artifact) => workflows::artifact(stream, gate, session, query),
+        _ => page(stream, "404 Not Found", "", "Not found."),
     }
 }
 

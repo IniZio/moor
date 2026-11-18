@@ -38,6 +38,7 @@ pub(crate) fn serve(
         record: &found.record,
         held: Vec::new(),
         started: false,
+        head,
     };
     let read = artifact::read(controller, &person, &found, |data| body.push(data));
     match read {
@@ -54,27 +55,29 @@ pub(crate) fn serve(
 /// The body on its way out. Up to [`ARTIFACT_HOLD_BACK_MAX`] bytes wait before the head is
 /// written, so a mismatch in a small Artifact is still a 409; past that the last byte waits,
 /// so a body that fails the check never arrives whole.
-struct Body<'a> {
+pub(crate) struct Body<'a> {
     /// The connection.
-    stream: &'a mut TcpStream,
+    pub(crate) stream: &'a mut TcpStream,
     /// The Artifact being sent.
-    record: &'a ArtifactView,
+    pub(crate) record: &'a ArtifactView,
     /// Bytes received and not yet written.
-    held: Vec<u8>,
+    pub(crate) held: Vec<u8>,
     /// Whether the head went out.
-    started: bool,
+    pub(crate) started: bool,
+    /// Writes the `200` head.
+    pub(crate) head: fn(&mut TcpStream, &ArtifactView) -> io::Result<()>,
 }
 
 impl Body<'_> {
     /// Takes one piece from the controller.
-    fn push(&mut self, data: &[u8]) -> io::Result<()> {
+    pub(crate) fn push(&mut self, data: &[u8]) -> io::Result<()> {
         self.held.extend_from_slice(data);
         if !self.started && self.held.len() as u64 <= ARTIFACT_HOLD_BACK_MAX {
             return Ok(());
         }
         if !self.started {
             self.started = true;
-            head(self.stream, self.record)?;
+            (self.head)(self.stream, self.record)?;
         }
         let keep = self.held.split_off(self.held.len().saturating_sub(1));
         self.stream.write_all(&self.held)?;
@@ -83,8 +86,8 @@ impl Body<'_> {
     }
 
     /// Writes what is held once the controller vouched for the whole body.
-    fn finish(self) {
-        if !self.started && head(self.stream, self.record).is_err() {
+    pub(crate) fn finish(self) {
+        if !self.started && (self.head)(self.stream, self.record).is_err() {
             return;
         }
         let _ = self.stream.write_all(&self.held);

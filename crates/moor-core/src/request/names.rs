@@ -119,6 +119,7 @@ impl Request {
             | Self::WorkflowRemove(_)
             | Self::WorkflowSetEnabled(_)
             | Self::WorkflowRuns(_)
+            | Self::WorkflowRunList(_)
             | Self::WorkflowAnswer(_)
             | Self::McpOAuthFinish(_)
             | Self::MachineRemove(_)

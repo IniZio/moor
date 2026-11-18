@@ -98,6 +98,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::WorkflowRemove(_)
         | Request::WorkflowSetEnabled(_)
         | Request::WorkflowRuns(_)
+        | Request::WorkflowRunList(_)
         | Request::WorkflowAnswer(_)
         | Request::McpOAuthFinish(_)
         | Request::MachineRemove(_)

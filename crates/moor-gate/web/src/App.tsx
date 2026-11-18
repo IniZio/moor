@@ -5,6 +5,7 @@ import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Repos } from './Repos';
 import { Secrets } from './Secrets';
+import { Workflows, workflowsAt } from './Workflows';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
 
@@ -52,19 +53,23 @@ export function App() {
 
 	const { account } = state;
 	const repo = repoOf(hash);
+	const flows = workflowsAt(hash);
 	const leave = () => signOut(account.csrf).then(() => setState({ at: 'out' }));
 	return (
-		<main>
+		<main class={flows ? 'wide' : undefined}>
 			<header>
 				<h1>moor</h1>
 				<nav>
-					<a href="#/" aria-current={repo === null ? 'page' : undefined}>Account</a>
+					<a href="#/" aria-current={repo === null && !flows ? 'page' : undefined}>Account</a>
 					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
+					<a href="#/workflows" aria-current={flows ? 'page' : undefined}>Workflows</a>
 				</nav>
 				<span class="muted">{account.email}</span>
 				<button class="quiet" onClick={leave}>Sign out</button>
 			</header>
-			{repo === null ? (
+			{flows ? (
+				<Workflows csrf={account.csrf} at={flows} />
+			) : repo === null ? (
 				<>
 					<Secrets account={account} onLinked={refresh} />
 					<Machines

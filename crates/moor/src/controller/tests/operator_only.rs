@@ -48,6 +48,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
             "repos": ["o/n"], "prompt": "p"
         }),
         "workflow-remove" => json!({"cmd": kind, "name": "n"}),
+        "workflow-run-list" => json!({"cmd": kind, "workflow": "n"}),
         "workflow-set-enabled" => json!({"cmd": kind, "name": "n", "enabled": false}),
         "workflow-answer" => json!({"cmd": kind, "workflow": "n", "repo": "o/n", "answer": "yes"}),
         "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
