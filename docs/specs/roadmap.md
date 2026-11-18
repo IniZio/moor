@@ -185,6 +185,11 @@ change it.
 
 Only Docker is built now. The others show that the contract holds.
 
+In every row, `moor-machine-agent` is the provider. It makes the Box and its
+egress point, and the controller speaks only the Box protocol to it. For
+Kubernetes, the machine agent runs in the cluster and makes pods through the
+Kubernetes API.
+
 ### Decisions
 
 1. One egress container per Box. Decided 2026-11-18.
