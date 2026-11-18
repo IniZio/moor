@@ -1,7 +1,6 @@
 //! Pairing a machine by code: its agent asks at `/machines/pair`, a signed-in person confirms
 //! at `/pair`, and the agent's poll gets the controller's enrollment once.
 
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
@@ -10,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use moor_core::response::Response;
 use moor_gate::{Gate, Login, Verifier};
 use moor_testkit::oidc::Issuer;
+use moor_testkit::pairing::Pairings;
 use oauth2::url::form_urlencoded;
 use serde_json::{json, Value};
 
@@ -29,61 +29,6 @@ struct World {
     enrolled: Arc<Mutex<Vec<Value>>>,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
-}
-
-/// The controller's pairing codes, by code: the device code, the ask, the stage and the
-/// enrollment. Nothing expires here; the controller's own tests cover expiry.
-#[derive(Default)]
-struct Pairings(HashMap<String, (String, Value, &'static str, Value)>);
-
-impl Pairings {
-    /// Answers one `machine-pair` op the way the controller does.
-    fn step(&mut self, op: &Value) -> Value {
-        let code = op["code"].as_str().unwrap_or_default().to_owned();
-        let at = |s: &Self, stage| s.0.get(&code).filter(|p| p.2 == stage).map(|p| p.1.clone());
-        match op["do"].as_str().unwrap() {
-            "start" => {
-                let device = op["device_code"].as_str().unwrap().to_owned();
-                self.0
-                    .insert(code, (device, op["ask"].clone(), "waiting", Value::Null));
-                json!({"pairing": "started"})
-            }
-            "show" => at(self, "waiting").map_or_else(
-                || json!({"pairing": "gone"}),
-                |ask| json!({"pairing": "waiting", "ask": ask}),
-            ),
-            "claim" => match at(self, "waiting") {
-                Some(ask) => {
-                    self.0.get_mut(&code).unwrap().2 = "enrolling";
-                    json!({"pairing": "waiting", "ask": ask})
-                }
-                None => json!({"pairing": "gone"}),
-            },
-            "settle" => {
-                let p = self.0.get_mut(&code).unwrap();
-                p.2 = if op["enrolled"].is_null() {
-                    "waiting"
-                } else {
-                    "enrolled"
-                };
-                p.3 = op["enrolled"].clone();
-                json!({"pairing": "settled"})
-            }
-            "poll" => {
-                let device = op["device_code"].as_str().unwrap();
-                let found = self.0.iter().find(|(_, p)| p.0 == device);
-                match found.map(|(code, p)| (code.clone(), p.2)) {
-                    Some((code, "enrolled")) => {
-                        let enrolled = self.0.remove(&code).unwrap().3;
-                        json!({"pairing": "enrolled", "enrolled": enrolled})
-                    }
-                    Some(_) => json!({"pairing": "pending"}),
-                    None => json!({"pairing": "gone"}),
-                }
-            }
-            other => panic!("unknown machine-pair op {other}"),
-        }
-    }
 }
 
 /// One gate replica.

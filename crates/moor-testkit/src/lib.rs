@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 mod egress;
 mod guard;
 pub mod oidc;
+pub mod pairing;
 mod port;
 
 pub use egress::{write_host_guards, FakeEgress, FAKE_TINYPROXY, HOST_GUARD};

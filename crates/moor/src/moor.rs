@@ -9,7 +9,7 @@ use crate::error::CommandError;
 use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
-use moor_core::request::{Grant, UserCmd, WorkflowCmd};
+use moor_core::request::{Grant, MachinePairReq, UserCmd, WorkflowCmd};
 use moor_core::seam::checkout::Checkout;
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
@@ -336,22 +336,15 @@ impl Moor {
     pub(crate) fn call_machine_pair(
         &self,
         caller: &Result<Caller, String>,
-        request: &Request,
+        req: &MachinePairReq,
     ) -> Response {
-        let name = request.cmd();
         let run = || {
             ops::machine_pair::permit(caller)?;
-            let Request::MachinePair(req) = request else {
-                return Err(CommandError::new(
-                    ErrorKind::Internal,
-                    "not a machine-pair request",
-                ));
-            };
             ops::machine_pair::run(self.cx.store()?, req)
         };
         match run() {
-            Ok(value) => Response::ok(name, Some(value)),
-            Err(e) => e.into_response(name, vec![]),
+            Ok(value) => Response::ok("machine-pair", Some(value)),
+            Err(e) => e.into_response("machine-pair", vec![]),
         }
     }
 

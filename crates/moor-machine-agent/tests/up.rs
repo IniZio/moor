@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use moor_core::response::Response;
 use moor_gate::{Gate, Login, Verifier};
 use moor_testkit::oidc::Issuer;
+use moor_testkit::pairing::Pairings;
 use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
@@ -69,10 +70,12 @@ fn world() -> World {
     let listener = UnixListener::bind(&socket).unwrap();
     let enrolled: Arc<Mutex<Vec<Value>>> = Arc::default();
     let kept = Arc::clone(&enrolled);
+    let pairings: Arc<Mutex<Pairings>> = Arc::default();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let kept = Arc::clone(&kept);
-            std::thread::spawn(move || answer(stream, &kept));
+            let pairings = Arc::clone(&pairings);
+            std::thread::spawn(move || answer(stream, &kept, &pairings));
         }
     });
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -93,7 +96,11 @@ fn world() -> World {
     }
 }
 
-fn answer(stream: std::os::unix::net::UnixStream, kept: &Mutex<Vec<Value>>) {
+fn answer(
+    stream: std::os::unix::net::UnixStream,
+    kept: &Mutex<Vec<Value>>,
+    pairings: &Mutex<Pairings>,
+) {
     let mut reply = stream.try_clone().unwrap();
     for line in BufReader::new(stream).lines().map_while(Result::ok) {
         let frame: Value = serde_json::from_str(&line).unwrap();
@@ -102,7 +109,9 @@ fn answer(stream: std::os::unix::net::UnixStream, kept: &Mutex<Vec<Value>>) {
             continue;
         }
         let inner = &frame["request"]["request"];
-        let value = if inner["cmd"] == "machine-enroll" {
+        let value = if frame["request"]["cmd"] == "machine-pair" {
+            pairings.lock().unwrap().step(&frame["request"]["op"])
+        } else if inner["cmd"] == "machine-enroll" {
             kept.lock().unwrap().push(inner.clone());
             json!({"machine_id": 7, "name": inner["name"], "user": 1,
                 "owner": "alice@example.com", "capacity": inner["capacity"]})

@@ -22,10 +22,10 @@ pub(super) fn front_request(env: &Env, peer: &Peer, request: &Request) -> Option
     {
         return None;
     }
-    Some(match Moor::from_env(env) {
-        Ok(moor) if outbox => moor.call_webhook_outbox(&peer.caller, &peer.vault, request),
-        Ok(moor) if pair => moor.call_machine_pair(&peer.caller, request),
-        Ok(moor) => moor.call_step_report(&peer.caller, request),
-        Err(e) => e.into_response(request.cmd(), vec![]),
+    Some(match (Moor::from_env(env), request) {
+        (Ok(moor), Request::MachinePair(req)) => moor.call_machine_pair(&peer.caller, req),
+        (Ok(moor), _) if outbox => moor.call_webhook_outbox(&peer.caller, &peer.vault, request),
+        (Ok(moor), _) => moor.call_step_report(&peer.caller, request),
+        (Err(e), _) => e.into_response(request.cmd(), vec![]),
     })
 }
