@@ -147,6 +147,10 @@ check "a Bash-tool line of two lines exits 0 and prints nothing else" "exit=0" "
 check "a Bash-tool line leaves its cwd under the agent's TMPDIR" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs03/claude-bs03-cwd 2>&1)"
 check "a failing Bash-tool line exits with its own code" "exit=3" "$(bash_tool bs04 '(exit 3)')"
 
+task=/home/agent/.moor-tmp-bs05/claude-1000/-home-agent-moor/s/tasks/b1.output
+in_agent sh -c "mkdir -p ${task%/*} && echo bg-line > $task"
+check "a Bash-tool line reads a background task's output in the launch's TMPDIR" "bg-line" "$(bash_tool bs05 "cat $task" | head -n 1)"
+
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"
 
