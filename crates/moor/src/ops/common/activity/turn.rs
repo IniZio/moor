@@ -1,5 +1,7 @@
 //! The `turn_done` event: the agent finished the turn a sent inbox row started.
 
+use std::time::Duration;
+
 use moor_core::activity::{stalled_for, Activity, AgentState, Source, Status, STARTUP_GRACE};
 use moor_core::decide::turn::{turn_done, SteerMark, TermTurn, TurnFacts, TurnSignal};
 use moor_core::domain::event::TurnOutcome;
@@ -81,8 +83,32 @@ fn answer(reading: &Reading, open: &InboxRow, now: Ts) -> Option<TurnOutcome> {
     };
     turn_done(&facts)
         .map(|(_, outcome)| outcome)
+        .or_else(|| taken_into_running(reading, mark, Ts::from_millis(at), now))
         .or_else(|| never_taken(reading, mark, Ts::from_millis(at), now))
         .or_else(|| never_began(reading, Ts::from_millis(at), now))
+}
+
+/// How long the agent must stay idle after the turn a steer was typed into ends before that turn
+/// counts as the steer's. A message the turn left over starts the next turn at once.
+const LEFT_OVER_GRACE: Duration = Duration::from_secs(15);
+
+/// Ends a row typed at `sent` while the agent worked, once the turn running then has ended after
+/// `sent` and the agent has stayed idle past [`LEFT_OVER_GRACE`]. Claude Code takes a message
+/// typed mid-turn into that turn, so its ended-turn count rises once for the turn and every
+/// message typed into it. A send to a working agent records no status and counts the running
+/// turn's end, at least 1, as `turn_before`.
+fn taken_into_running(reading: &Reading, mark: SendMark, sent: Ts, now: Ts) -> Option<TurnOutcome> {
+    let running_ends_at = mark
+        .turn_before
+        .filter(|b| *b >= 1 && mark.status_before.is_none())?;
+    let term = reading.term.as_ref()?;
+    let idle = matches!(term.status, Some(Status::Idle | Status::Error { .. }));
+    let ended = term.turn >= running_ends_at;
+    let grace = i64::try_from(LEFT_OVER_GRACE.as_millis()).unwrap_or(i64::MAX);
+    let settled = term.status_at.is_some_and(|at| {
+        at.as_millis() > sent.as_millis() && now.as_millis().saturating_sub(at.as_millis()) >= grace
+    });
+    (idle && ended && settled).then_some(TurnOutcome::Idle)
 }
 
 /// Ends a first prompt the agent never took up: sent before any turn ended, with the agent still

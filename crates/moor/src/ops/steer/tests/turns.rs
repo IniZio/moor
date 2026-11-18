@@ -114,6 +114,7 @@ fn a_steer_the_agent_took_into_its_running_turn_is_closed_when_that_turn_ends() 
     f.engine
         .set_probes("agent-1", agent::at_turn(super::working(), 1));
     let two = run(&f.cx, &text("two")).unwrap().steer.unwrap();
+    f.cx.clock().sleep(Duration::from_secs(40));
     let ended = f.cx.clock().now();
     f.engine
         .set_probes("agent-1", agent::at_turn(agent::idle(ended), 2));
