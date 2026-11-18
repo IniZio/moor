@@ -459,3 +459,19 @@ fn up_leaves_the_fronts_of_a_controller_config_alone_and_starts_no_gate() {
     assert!(!host.units().join("moor-gate.service").exists());
     assert!(!host.state.path().join("service.env").exists());
 }
+
+#[test]
+fn a_rerun_after_an_up_that_failed_part_way_still_starts_the_gate() {
+    let host = Host::new();
+    let config = host.home.join(".config/moor/config.yaml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(&config, "nodes:\n  local:\n    runtime: external\n").unwrap();
+    let failed = host.moor(&["up"], "a\nb\n");
+    assert_eq!(failed.code, 1, "{failed:?}");
+    fs::remove_file(&config).unwrap();
+    let r = host.moor(&["up"], "a\nb\n");
+    assert_eq!(r.code, 0, "{r:?}");
+    assert!(host.units().join("moor-gate.service").exists(), "{r:?}");
+    let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
+    assert!(service.contains("EnvironmentFile="), "{service}");
+}
