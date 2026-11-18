@@ -172,7 +172,7 @@ names groups rather than hosts.
 
 The Box protocol carries the allow list in, and `egress_seen` and
 `egress_refused` rows out. The controller knows nothing else. Each provider
-keeps one rule: the Box has no route out except one egress point per Box. The
+keeps one rule. The Box has no route out except one egress point per Box. The
 egress point sits outside the sandbox boundary, so root inside the Box cannot
 change it.
 
