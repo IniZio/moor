@@ -135,3 +135,152 @@ export async function nodeSet(
 	});
 	return answer(res, NodeSettingsSchema);
 }
+
+const StatusSchema = v.picklist(['queued', 'running', 'waiting', 'success', 'failure', 'stopped', 'skipped']);
+
+const LastRunSchema = v.object({
+	repo: v.string(),
+	status: StatusSchema,
+	label: v.string(),
+	due_at: v.number(),
+});
+
+const WorkflowRowSchema = v.object({
+	name: v.string(),
+	repos: v.array(v.string()),
+	cron: v.string(),
+	timezone: v.string(),
+	enabled: v.boolean(),
+	disabled_reason: v.nullish(v.string()),
+	next_due: v.nullish(v.number()),
+	has_plan: v.boolean(),
+	plan_stale: v.boolean(),
+	last: v.nullish(LastRunSchema),
+});
+
+const WorkflowListSchema = v.object({ workflows: v.array(WorkflowRowSchema) });
+
+const RunRowSchema = v.object({
+	id: v.number(),
+	repo: v.string(),
+	due_at: v.number(),
+	started_at: v.nullish(v.number()),
+	duration_ms: v.nullish(v.number()),
+	status: StatusSchema,
+	label: v.string(),
+	result: v.nullish(v.string()),
+	detail: v.nullish(v.string()),
+});
+
+const WorkflowSchema = v.object({
+	...WorkflowRowSchema.entries,
+	also: v.array(v.string()),
+	timeout_minutes: v.number(),
+	prompt: v.string(),
+	plan: v.nullish(v.string()),
+	plan_edited: v.boolean(),
+	revision: v.number(),
+	runs: v.array(RunRowSchema),
+});
+
+const LineSchema = v.object({
+	at: v.number(),
+	kind: v.string(),
+	text: v.string(),
+	evidence: v.array(v.object({ name: v.string(), href: v.nullish(v.string()) })),
+});
+
+const StepSchema = v.object({
+	id: v.string(),
+	title: v.string(),
+	kind: v.string(),
+	instructions: v.nullish(v.string()),
+	done_when: v.nullish(v.string()),
+	command: v.nullish(v.string()),
+	question: v.nullish(v.string()),
+	state: v.picklist(['pending', 'running', 'waiting', 'passed', 'failed', 'ended']),
+	history: v.array(LineSchema),
+	check: v.nullish(v.object({ exit: v.nullish(v.number()), tail: v.string() })),
+	expects: v.array(v.object({ name: v.string() })),
+});
+
+const RunSchema = v.object({
+	workflow: v.string(),
+	id: v.number(),
+	repo: v.string(),
+	due_at: v.number(),
+	started_at: v.nullish(v.number()),
+	duration_ms: v.nullish(v.number()),
+	phase: v.string(),
+	status: StatusSchema,
+	label: v.string(),
+	result: v.nullish(v.string()),
+	detail: v.nullish(v.string()),
+	box: v.nullish(v.string()),
+	question: v.nullish(v.object({ step: v.string(), text: v.string() })),
+	steps: v.array(StepSchema),
+	lines: v.array(LineSchema),
+});
+
+export type RunStatus = v.InferOutput<typeof StatusSchema>;
+export type WorkflowRow = v.InferOutput<typeof WorkflowRowSchema>;
+export type Workflow = v.InferOutput<typeof WorkflowSchema>;
+export type RunRow = v.InferOutput<typeof RunRowSchema>;
+export type Run = v.InferOutput<typeof RunSchema>;
+export type Step = v.InferOutput<typeof StepSchema>;
+export type Line = v.InferOutput<typeof LineSchema>;
+
+const ClearsPlanSchema = v.object({ error: v.string(), code: v.literal('clears_plan') });
+
+/** Thrown when a save would drop a stored plan; the page asks the person first. */
+export class ClearsPlan extends Error {}
+
+function workflowPath(name: string): string {
+	return `/account/api/workflows/${encodeURIComponent(name)}`;
+}
+
+export async function workflowList(): Promise<WorkflowRow[]> {
+	return (await answer(await fetch('/account/api/workflows'), WorkflowListSchema)).workflows;
+}
+
+export async function workflowGet(name: string): Promise<Workflow> {
+	return answer(await fetch(workflowPath(name)), WorkflowSchema);
+}
+
+/** Replaces a workflow's prompt and plan, against the revision the page read. */
+export async function workflowSet(
+	csrf: string,
+	name: string,
+	draft: { prompt: string; plan: string; revision: number; clearPlan: boolean },
+): Promise<Workflow> {
+	const res = await fetch(workflowPath(name), {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({
+			prompt: draft.prompt,
+			plan: draft.plan,
+			revision: draft.revision,
+			clear_plan: draft.clearPlan,
+		}),
+	});
+	if (res.status === 400) {
+		const body: unknown = await res.clone().json().catch(() => null);
+		const clears = v.safeParse(ClearsPlanSchema, body);
+		if (clears.success) throw new ClearsPlan(clears.output.error);
+	}
+	return answer(res, WorkflowSchema);
+}
+
+export async function runGet(name: string, id: number): Promise<Run> {
+	return answer(await fetch(`${workflowPath(name)}/runs/${id}`), RunSchema);
+}
+
+/** Answers the approve step a run waits at. */
+export async function runAnswer(csrf: string, name: string, id: number, yes: boolean): Promise<Run> {
+	const res = await fetch(`${workflowPath(name)}/runs/${id}/answer`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ answer: yes ? 'yes' : 'no' }),
+	});
+	return answer(res, RunSchema);
+}
