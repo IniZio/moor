@@ -56,13 +56,17 @@ fn approval_of(store: &Store, box_id: BoxId) -> Result<Option<ApprovalView>, Com
         return Ok(None);
     };
     let plan = store.run_plan(run.id, &w.prompt)?;
-    let Some(StepKind::Approve { question, .. }) = plan.step(at).map(|s| &s.kind) else {
+    let Some((title, question)) = plan.step(at).and_then(|s| match &s.kind {
+        StepKind::Approve { question, .. } => Some((s.title.clone(), question.clone())),
+        _ => None,
+    }) else {
         return Ok(None);
     };
     Ok(Some(ApprovalView {
         workflow: w.name.to_string(),
         run: run.id.get(),
-        question: question.clone(),
+        step: title,
+        question,
     }))
 }
 

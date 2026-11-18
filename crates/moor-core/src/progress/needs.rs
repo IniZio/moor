@@ -40,6 +40,8 @@ pub struct Approve {
     pub workflow: String,
     /// The run's id.
     pub run: i64,
+    /// The title of the approve step the run waits at.
+    pub step: String,
 }
 
 /// One button of the card.
@@ -168,6 +170,7 @@ pub fn approve_needs(approval: &ApprovalView) -> Needs {
         approve: Some(Approve {
             workflow: approval.workflow.clone(),
             run: approval.run,
+            step: approval.step.clone(),
         }),
     }
 }

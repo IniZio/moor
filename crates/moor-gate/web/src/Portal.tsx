@@ -249,6 +249,7 @@ function Line({ e }: { e: Entry }) {
 					<span class="t-who">You</span>
 					<span class="t-when">{clock(e.at)}</span>
 					<span class="t-what">{e.text}</span>
+					{e.step && <span class="t-step">Step: {e.step}</span>}
 				</div>
 			);
 		case 'asked':
@@ -420,7 +421,7 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 }
 
 /** The card for a workflow run that waits at an approve step: its question, yes or no, and a note for the agent. */
-function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workflow: string; run: number }; csrf: string; onSent: () => void }) {
+function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workflow: string; run: number; step: string }; csrf: string; onSent: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [note, setNote] = useState('');
@@ -440,7 +441,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 	};
 	return (
 		<div class="t-wait" role="region" aria-label="Your approval is needed">
-			<div class="t-wait-h">Your input is needed · a workflow step is waiting for approval</div>
+			<div class="t-wait-h">Step {run.step} is waiting for approval</div>
 			<p class="t-wait-q">{needs.question}</p>
 			<form
 				class="t-wait-own"

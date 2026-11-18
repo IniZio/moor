@@ -14,7 +14,7 @@ mod brief;
 mod doc;
 mod parse;
 
-pub use brief::CheckSays;
+pub use brief::{split_start_prompt, CheckSays, StartStep};
 pub use doc::{PlanDoc, PlanError, StepDoc};
 
 /// A step's id: 1-32 bytes of `[a-z0-9-]`, starting with a letter. Stable across recompiles, so

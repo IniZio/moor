@@ -36,7 +36,7 @@ impl Step {
     /// The step as the agent is told it.
     #[must_use]
     pub fn brief(&self) -> String {
-        let head = format!("Current step: {}, \"{}\"", self.id, self.title);
+        let head = format!("{STEP_LABEL}{}, \"{}\"", self.id, self.title);
         match &self.kind {
             StepKind::Work {
                 instructions,
@@ -86,12 +86,43 @@ impl Step {
     }
 }
 
+/// Where moor's preamble starts in a start prompt, after the workflow's own prompt.
+const PREAMBLE_HEAD: &str = "\n\nmoor runs this as a plan of ";
+
+/// How a step's brief opens: the label, then `ID, "TITLE"`.
+const STEP_LABEL: &str = "Current step: ";
+
+/// The first step of a start prompt, as its brief names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartStep<'a> {
+    /// The step's id.
+    pub id: &'a str,
+    /// The step's title.
+    pub title: &'a str,
+}
+
+/// The workflow's own prompt and the first step, taken back out of a start prompt.
+///
+/// None when `text` is not one [`Plan::start_prompt`] made. The preamble head is searched first
+/// and the step head only after it, so a prompt that holds `Current step:` itself splits at the
+/// preamble.
+#[must_use]
+pub fn split_start_prompt(text: &str) -> Option<(&str, StartStep<'_>)> {
+    let at = text.find(PREAMBLE_HEAD)?;
+    let (prompt, rest) = text.split_at(at);
+    let brief = rest.split_once(&format!("\n\n{STEP_LABEL}"))?.1;
+    let line = brief.lines().next()?;
+    let (id, quoted) = line.split_once(", \"")?;
+    let title = quoted.strip_suffix('"')?;
+    Some((prompt, StartStep { id, title }))
+}
+
 impl Plan {
     /// What a Box's agent is first asked: `prompt`, then the preamble and the first step.
     #[must_use]
     pub fn start_prompt(&self, prompt: &str) -> String {
         format!(
-            "{prompt}\n\nmoor runs this as a plan of {} steps. Do only the current step, then call \
+            "{prompt}{PREAMBLE_HEAD}{} steps. Do only the current step, then call \
              report_step, a tool of the `moor` MCP server; if it is a deferred tool, load it \
              with ToolSearch first. Leave each evidence file in .moor/artifacts/.\n\n{}",
             self.step_count(),

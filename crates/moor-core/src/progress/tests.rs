@@ -509,6 +509,7 @@ fn approval() -> crate::view::ApprovalView {
     crate::view::ApprovalView {
         workflow: "nightly".into(),
         run: 7,
+        step: "Release gate".into(),
         question: "Ship the release?".into(),
     }
 }
@@ -532,7 +533,29 @@ fn a_run_waiting_at_an_approve_step_needs_you_with_the_steps_question() {
         assert!(needs.picks.is_empty());
         let run = needs.approve.unwrap();
         assert_eq!((run.workflow.as_str(), run.run), ("nightly", 7));
+        assert_eq!(run.step, "Release gate");
     }
+}
+
+#[test]
+fn a_workflow_runs_first_message_shows_its_prompt_and_names_the_step_apart() {
+    let plan = crate::workflow::Plan::parse(
+        &json!({"steps": [{"id": "audit", "title": "Audit deps", "kind": "deliver",
+            "instructions": "look", "done_when": "done"}]})
+        .to_string(),
+        "check deps",
+    )
+    .unwrap();
+    let start = plan.start_prompt("check deps");
+    let events = [
+        ev(1, "steered", "t", json!({"message": start})),
+        ev(2, "steered", "t", json!({"message": "keep going"})),
+    ];
+    let [first, second] = timeline(&events).try_into().unwrap();
+    assert_eq!(first.text, "check deps");
+    assert_eq!(first.step.as_deref(), Some("Audit deps"));
+    assert!(!first.text.contains("report_step"));
+    assert_eq!((second.text.as_str(), second.step), ("keep going", None));
 }
 
 #[test]

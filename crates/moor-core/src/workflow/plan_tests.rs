@@ -351,6 +351,24 @@ fn the_first_prompt_says_where_report_step_lives_and_how_to_load_it() {
 }
 
 #[test]
+fn a_start_prompt_splits_back_into_the_workflow_prompt_and_the_first_step() {
+    let plan = parse(&[deliver("a"), deliver("b")]).unwrap();
+    let text = plan.start_prompt("do it");
+    let (prompt, step) = super::split_start_prompt(&text).unwrap();
+    assert_eq!((prompt, step.id, step.title), ("do it", "a", "Deliver"));
+    assert!(super::split_start_prompt("do it").is_none());
+}
+
+#[test]
+fn a_prompt_that_holds_current_step_itself_still_splits_at_the_preamble() {
+    let plan = parse(&[deliver("a")]).unwrap();
+    let mine = "audit it\n\nCurrent step: x, \"mine\"\n\nthen stop";
+    let text = plan.start_prompt(mine);
+    let (prompt, step) = super::split_start_prompt(&text).unwrap();
+    assert_eq!((prompt, step.id, step.title), (mine, "a", "Deliver"));
+}
+
+#[test]
 fn made_from_marks_a_plan_stale_and_comes_from_the_prompt_when_absent() {
     let plan = parse(&[deliver("a")]).unwrap();
     assert_eq!(plan.made_from, PromptHash::of(PROMPT));

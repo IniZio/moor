@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::view::progress::step;
 use crate::view::EventView;
+use crate::workflow::split_start_prompt;
 
 /// How a front treats one timeline entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -158,6 +159,10 @@ pub struct TimelineEntry {
     /// For evidence, the artifact's name and version.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact: Option<(String, i64)>,
+    /// For the first message of a workflow run, the title of the step it starts at. The text is
+    /// then the workflow's own prompt, without moor's instructions to the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
 }
 
 /// The first of `keys` that `payload` has as text.
@@ -165,6 +170,15 @@ fn field<'a>(payload: &'a Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter()
         .find_map(|k| payload.get(k).and_then(Value::as_str))
         .filter(|s| !s.trim().is_empty())
+}
+
+/// The workflow prompt and starting step's title of a message that is a plan's start prompt.
+fn plan_start(e: &EventView) -> Option<(String, String)> {
+    if e.kind != "steered" {
+        return None;
+    }
+    let (prompt, step) = split_start_prompt(field(&e.payload, &["message"])?)?;
+    Some((prompt.to_owned(), step.title.to_owned()))
 }
 
 /// The words for an event.
@@ -211,13 +225,18 @@ pub fn timeline(events: &[EventView]) -> Vec<TimelineEntry> {
                     ))
                 })
                 .flatten();
+            let (text, step) = match plan_start(e) {
+                Some((prompt, step)) => (prompt, Some(step)),
+                None => (words(e), None),
+            };
             Some(TimelineEntry {
                 id: e.id,
                 at: e.ts.clone(),
                 kind: e.kind.clone(),
                 class,
-                text: words(e),
+                text,
                 artifact,
+                step,
             })
         })
         .collect()
