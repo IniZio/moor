@@ -63,6 +63,10 @@ fn refusal(kind: ErrorKind, message: &str) -> Response {
     Response::err("x", view)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture run that has a line of every kind"
+)]
 fn waiting_run(held: &Held) -> Value {
     let (outcome, phase) = if held.waiting {
         ("waiting", "waiting")
@@ -93,7 +97,7 @@ fn waiting_run(held: &Held) -> Value {
         );
         history.push(
             json!({"at": 9000, "entry": {"kind": "ended", "phase_before": "running",
-            "outcome": {"kind": "delivered", "result": "PR 5"}}}),
+            "outcome": {"outcome": "delivered", "result": "PR 5"}}}),
         );
     }
     json!({"id": 7, "repo": "acme/web", "due_at": 1000, "outcome": outcome, "phase": phase,
@@ -106,11 +110,16 @@ fn delivered_run() -> Value {
     json!({"id": 6, "repo": "acme/api", "due_at": 500, "outcome": "finished", "phase": "done",
         "result": "ok", "history": [
             {"at": 100, "entry": {"kind": "queued"}},
-            {"at": 400100, "entry": {"kind": "ended", "phase_before": "running",
-                "outcome": {"kind": "delivered", "result": "ok"}}}]})
+            {"at": 400_100, "entry": {"kind": "ended", "phase_before": "running",
+                "outcome": {"outcome": "delivered", "result": "ok"}}}]})
 }
 
 /// What the fake controller answers a workflow request or an artifact read.
+#[allow(
+    clippy::too_many_lines,
+    clippy::significant_drop_tightening,
+    reason = "a fake controller that holds its state for the whole request"
+)]
 pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
     if !who.contains(OWNER) {
         return refusal(ErrorKind::Refused, "no workflow named weekly-deps");
@@ -132,7 +141,9 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             runs.retain(|r| one.is_none_or(|id| r["id"] == id));
             if one.is_some() {
                 let plan = held.plan.clone().unwrap_or(Value::Null);
-                runs.iter_mut().for_each(|r| r["plan"] = plan.clone());
+                for run in &mut runs {
+                    run["plan"] = plan.clone();
+                }
             }
             Response::ok("x", Some(json!({"workflow": "weekly-deps", "runs": runs})))
         }
@@ -152,7 +163,10 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             {
                 return refusal(ErrorKind::Usage, "the plan has 1 error: bogus step");
             }
-            held.prompt = inner["prompt"].as_str().unwrap().to_owned();
+            inner["prompt"]
+                .as_str()
+                .unwrap()
+                .clone_into(&mut held.prompt);
             held.plan = plan;
             held.enabled = true;
             held.revision += 1;
@@ -265,6 +279,10 @@ fn the_page_lists_runs_with_icon_repo_time_duration_and_outcome() {
 }
 
 #[test]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "one run page read, asserted field by field"
+)]
 fn a_run_shows_every_step_kind_with_history_check_output_and_evidence() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-3");
@@ -357,7 +375,7 @@ fn a_save_stores_the_plan_marked_edited_and_keeps_every_other_field() {
     assert_eq!(flow["revision"], 4);
     assert_eq!(flow["plan_edited"], true);
     assert!(flow["plan"].as_str().unwrap().contains("Audit well"));
-    let seen = w.seen.lock().unwrap();
+    let seen = w.seen.lock().unwrap().clone();
     let add = seen
         .iter()
         .find(|r| r["request"]["cmd"] == "workflow-add")
@@ -475,7 +493,7 @@ fn yes_answers_the_waiting_run_as_the_session_person_and_the_run_goes_on() {
     let run = json_of(&reply);
     assert_eq!(run["status"], "success");
     assert_eq!(run["question"], Value::Null);
-    let seen = w.seen.lock().unwrap();
+    let seen = w.seen.lock().unwrap().clone();
     let sent = seen
         .iter()
         .find(|r| r["request"]["cmd"] == "workflow-answer")

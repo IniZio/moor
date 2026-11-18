@@ -337,6 +337,57 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
     assert_eq!(change["history"], done["history"]);
 }
 
+fn run_list(f: &Fixture, who: &Identity, only: Option<i64>) -> Value {
+    let list = WorkflowCmd::RunList {
+        workflow: "daily".to_owned(),
+        run: only,
+        limit: None,
+    };
+    ok(f, who, cmd(list))
+}
+
+#[test]
+fn the_run_list_is_newest_first_and_one_run_reads_with_its_frozen_plan() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    record(&f, &who, RunState::Queued, 100);
+    record(&f, &who, RunState::Queued, 300);
+    record(&f, &who, RunState::Queued, 200);
+    let listed = run_list(&f, &who, None);
+    let due: Vec<i64> = listed["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["due_at"].as_i64().unwrap())
+        .collect();
+    assert_eq!(due, [300, 200, 100]);
+    assert!(listed["runs"][0].get("plan").is_none());
+    let id = listed["runs"][1]["id"].as_i64().unwrap();
+    let one = run_list(&f, &who, Some(id));
+    assert_eq!(one["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(one["runs"][0]["due_at"], 200);
+    assert_eq!(one["runs"][0]["plan"]["steps"][0]["kind"], "deliver");
+}
+
+#[test]
+fn the_run_list_of_a_workflow_that_is_not_yours_is_refused() {
+    let f = fixture();
+    let owner = me(&f, "local:2000");
+    daily(&f, &owner);
+    let other = me(&f, "local:2001");
+    let why = refusal(
+        &f,
+        &other,
+        cmd(WorkflowCmd::RunList {
+            workflow: "daily".to_owned(),
+            run: None,
+            limit: None,
+        }),
+    );
+    assert!(why.contains("no workflow named daily"), "{why}");
+}
+
 #[test]
 fn the_breaker_disabling_is_a_change_of_its_own_and_other_people_see_none() {
     let f = fixture();
