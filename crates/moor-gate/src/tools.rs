@@ -259,34 +259,38 @@ fn target(name: &str) -> Result<BoxTarget, String> {
 /// The shape of [`send`] and [`send_early`].
 type SendFn = fn(&Client, &Person, ControllerRequest, Reply) -> Result<serde_json::Value, String>;
 
-/// How often [`send_early`] looks for the Box.
+/// How often [`send_early`] looks at the Box.
 const EARLY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// How many polls [`send_early`] makes (about a minute) before giving up on the Box appearing.
+/// How many polls [`send_early`] makes (about a minute) before giving up on the Box.
 const EARLY_POLLS: u32 = 240;
 
-/// Runs a `start` without waiting for it to finish: returns the Box's `show` as soon as the Box
-/// exists, while the controller's start carries on in the background. A start that ends first, or for
-/// a Box that exists already, answers with its own result. Other requests go through [`send`].
-/// Either answer is shaped by `reply`.
+/// Runs a `start` or a `retry` without waiting for it to finish: returns the Box's `show` as soon
+/// as the Box exists, or its setup has restarted, while the controller's work carries on in the
+/// background. Work that ends first, or a start for a Box that exists already, answers with its
+/// own result. Other requests go through [`send`]. Either answer is shaped by `reply`.
 fn send_early(
     controller: &Client,
     person: &Person,
     request: ControllerRequest,
     reply: Reply,
 ) -> Result<serde_json::Value, String> {
-    let ControllerRequest::Start(start) = &request else {
-        return send(controller, person, request, reply);
+    let (name, begun): (BoxName, fn(&Value) -> bool) = match &request {
+        ControllerRequest::Start(start) => (start.name.clone(), |_| true),
+        ControllerRequest::Retry(retry) => (retry.box_name.clone(), setup_restarted),
+        _ => return send(controller, person, request, reply),
     };
     let show = ControllerRequest::Show(ShowReq {
-        target: Some(start.name.clone().into()),
+        target: Some(name.into()),
         events: Some(5),
         agent: true,
         reports: false,
         artifacts: false,
         pane: false,
     });
-    if act_as(controller, person, show.clone()).is_ok() {
+    if matches!(request, ControllerRequest::Start(_))
+        && act_as(controller, person, show.clone()).is_ok()
+    {
         // The Box exists already: this start attaches or is refused as busy, and either answer
         // comes from the controller, so wait for it.
         return send(controller, person, request, reply);
@@ -304,11 +308,17 @@ fn send_early(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
-        if let Ok(shown) = send(controller, person, show.clone(), reply.clone()) {
-            return Ok(shown);
+        match send(controller, person, show.clone(), reply.clone()) {
+            Ok(shown) if begun(&shown) => return Ok(shown),
+            _ => {}
         }
     }
     Err("the Box did not appear in time; check box_status".to_owned())
+}
+
+/// Whether `shown` is a Box whose setup no longer stands failed: a retry took it up.
+fn setup_restarted(shown: &Value) -> bool {
+    shown.pointer("/box/lifecycle") != Some(&Value::from("setup_failed"))
 }
 
 /// Enrolls `person`, then runs `request` as them; the controller's value as is, or why not.

@@ -104,6 +104,9 @@ until its plan is right, and enable it after.
   it, so the run tries the plan you reviewed.
 - The reply has one line per repo. A line says `started` with the Box name, or
   `refused` with the reason.
+- The reply comes once each run is recorded, while its Box sets up. Follow the
+  Box with `box_status` and the run with `list_workflow_runs`. A Box start that
+  fails after the reply shows there as a refused run.
 - The Workflows page of the account portal has a **Run now** button per repo.
 
 A run fired by hand is an ordinary run. It freezes the plan, starts a Box as you,

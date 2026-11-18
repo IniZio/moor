@@ -6,7 +6,8 @@ use moor_core::view::workflow::{RunNowLine, RunNowValue};
 use moor_core::workflow::{NewRun, RunState, RunTrigger, WorkflowId};
 
 use super::{repo, rig, Rig, DAY, FIRST_DUE};
-use crate::ops::workflow::run_now;
+use crate::ops::workflow::now::run_with;
+use crate::ops::workflow::{run_now, run_start};
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::runs::{delivered, refused, running, skipped};
 
@@ -24,14 +25,19 @@ fn record_run(r: &Rig, id: WorkflowId, due: i64, (state, trigger): (RunState, Ru
     assert!(r.cx.store().unwrap().record_workflow_run(&run).unwrap());
 }
 
-/// `run_workflow` for the repos named, as the workflow's owner.
+/// `run_workflow` for the repos named, as the workflow's owner, each Box started on the spot.
 fn fire(r: &Rig, repos: &[&str]) -> Result<RunNowValue, String> {
     let repos: Vec<String> = repos.iter().map(ToString::to_string).collect();
-    run_now(
+    let start = |job| {
+        run_start(&r.cx, &job);
+        Ok(())
+    };
+    run_with(
         &r.cx,
         r.cx.store().unwrap(),
         REQUESTER_USER,
         ("daily-fix", &repos, None),
+        &start,
     )
     .map_err(|e| e.error.to_string())
 }
@@ -215,4 +221,49 @@ fn skips_between_failures_do_not_hide_the_breaker_streak() {
     r.advance_to(FIRST_DUE + 31 * DAY);
     let lines = r.pass();
     assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
+}
+
+#[test]
+fn a_manual_run_answers_while_its_box_is_still_setting_up() {
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
+
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    let (release, held) = mpsc::channel::<()>();
+    let held = Mutex::new(held);
+    r.driver.on_exec(move || {
+        let _ = held.lock().unwrap().recv();
+    });
+    let (answer, answered) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let store = r.cx.store().unwrap();
+        let _ = answer.send(run_now(
+            &r.cx,
+            store,
+            REQUESTER_USER,
+            ("daily-fix", &[], None),
+        ));
+        r
+    });
+    let got = answered.recv_timeout(Duration::from_secs(5));
+    drop(release);
+    let r = worker.join().unwrap();
+    let line = only(
+        got.expect("run_workflow answered while setup was still running")
+            .map_err(|e| e.error.to_string())
+            .unwrap(),
+    );
+    assert_eq!(line.status, "started", "{line:?}");
+    let running = || matches!(r.latest(id).state, RunState::Running { .. });
+    assert!(
+        crate::testing::driver::eventually(running),
+        "{:?}",
+        r.latest(id)
+    );
+    let store = r.cx.store().unwrap();
+    let started = store.box_row(r.latest_box(id)).unwrap().unwrap().name;
+    assert_eq!(line.box_name.as_deref(), Some(started.as_str()));
+    assert_eq!(r.open_boxes(), 1);
 }

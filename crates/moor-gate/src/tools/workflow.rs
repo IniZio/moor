@@ -282,7 +282,11 @@ impl Tools {
                        disable a workflow, and one that delivers resets that count. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \
                        you reviewed. The reply has one line per repo: `started` with the Box \
-                       name, or `refused` with the reason. Needs the moor:write scope."
+                       name, or `refused` with the reason. It returns once each run is \
+                       recorded and its Box start has begun, while setup continues; follow \
+                       the Box with box_status and the run with list_workflow_runs, where a \
+                       start refused later shows as a refused run. Needs the moor:write \
+                       scope."
     )]
     async fn run_workflow(
         &self,

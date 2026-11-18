@@ -33,8 +33,9 @@ impl Tools {
     /// Re-runs setup on a Box whose setup failed.
     #[tool(
         description = "Re-run setup on one of your Boxes whose setup failed (its status shows \
-                       setup_failed). Refused for any other Box. Returns once the retry \
-                       finishes; follow it with box_status. Needs the moor:write scope."
+                       setup_failed). Refused for any other Box. Returns once setup has \
+                       restarted, while it continues; follow it with box_status. Needs the \
+                       moor:write scope."
     )]
     async fn retry_box(
         &self,
@@ -44,13 +45,9 @@ impl Tools {
         let request = BoxName::parse_allow_bare(&args.r#box)
             .map(|box_name| ControllerRequest::Retry(BoxReq { box_name }))
             .map_err(|e| e.to_string());
-        self.run(
-            &context,
-            WRITE,
-            request,
-            Reply::Started(self.public_url.clone()),
-        )
-        .await
+        let reply = Reply::Started(self.public_url.clone());
+        self.run_with(&context, WRITE, request, reply, super::send_early)
+            .await
     }
 
     /// Closes every Box whose setup failed.
