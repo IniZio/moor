@@ -14,7 +14,8 @@ use moor_core::{HoldOp, HoldValue};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{open_as, Server, World};
-use crate::proxy::egress::MachineRoute;
+use crate::proxy::egress::ServedRoute;
+use moor_core::config::Served;
 
 /// The machine service's host name, as Boxes request it.
 const MACHINE: &str = "machine.moor.internal";
@@ -130,10 +131,10 @@ fn holding(w: &World, service: SocketAddr) -> (Server, i64) {
     assert!(matches!(held, HoldValue::Held { .. }), "{held:?}");
     let machine_id = w.store.claimed_machine(w.id).unwrap().unwrap().machine_id;
     let mut cfg = w.config(10.0, 10.0, 64);
-    cfg.machine = Some(MachineRoute {
+    cfg.served = vec![ServedRoute {
         key: Some("the-key".into()),
-        ..MachineRoute::parse(&format!("{MACHINE}={service}")).unwrap()
-    });
+        ..ServedRoute::parse(Served::Machine, &format!("{MACHINE}={service}")).unwrap()
+    }];
     (Server::start(cfg).unwrap(), machine_id)
 }
 

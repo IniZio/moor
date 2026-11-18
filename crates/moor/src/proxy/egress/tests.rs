@@ -125,7 +125,7 @@ impl World {
             log: self.log.clone(),
             upstream_ca: Some(self.up.ca_path.clone()),
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
-            machine: None,
+            served: Vec::new(),
             warm: Some(Warm {
                 every: Duration::from_secs(10),
                 deadline: Duration::from_secs(8),
@@ -560,6 +560,7 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
 mod holder;
 mod logs;
 mod plain;
+mod served;
 mod synced;
 
 #[test]

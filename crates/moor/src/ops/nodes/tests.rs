@@ -167,13 +167,20 @@ fn a_node_shows_the_sum_its_boxes_hold_and_a_later_report_without_one_drops_it()
         .machine_id;
     let store = cx.store().unwrap();
     store
-        .set_box_memory(&[on(&cx, id, 1, 2048), on(&cx, id, 2, 0), on(&cx, id, 3, 512)])
+        .set_box_memory(
+            &crate::testing::runner(),
+            &[on(&cx, id, 1, 2048), on(&cx, id, 2, 0), on(&cx, id, 3, 512)],
+        )
         .unwrap();
     assert_eq!(held(&cx, "mini"), Some(2560));
     assert_eq!(held(&cx, "fast"), None);
-    store.set_box_memory(&[on(&cx, id, 2, 0)]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[on(&cx, id, 2, 0)])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), Some(0));
-    store.set_box_memory(&[]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), None);
 }
 
@@ -183,7 +190,7 @@ fn memory_for_a_machine_that_is_not_enrolled_is_not_kept() {
     let (cx, _, _) = two_users(dir.path());
     cx.store()
         .unwrap()
-        .set_box_memory(&[on(&cx, 999, 1, 100)])
+        .set_box_memory(&crate::testing::runner(), &[on(&cx, 999, 1, 100)])
         .unwrap();
     assert!(cx.store().unwrap().box_memory_totals().unwrap().is_empty());
 }
@@ -197,7 +204,9 @@ fn memory_for_a_box_another_controller_named_is_not_kept() {
     let mut other = on(&cx, id, 1, 4096);
     other.controller = moor_core::box_key::ControllerId::parse("ffffffff").unwrap();
     assert_ne!(other.controller, store.controller_id().unwrap());
-    store.set_box_memory(&[other, on(&cx, id, 2, 512)]).unwrap();
+    store
+        .set_box_memory(&crate::testing::runner(), &[other, on(&cx, id, 2, 512)])
+        .unwrap();
     assert_eq!(held(&cx, "mini"), Some(512));
 }
 
@@ -230,4 +239,67 @@ fn the_operator_gets_no_start_pick() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _, _) = two_users(dir.path());
     assert!(list(&cx).unwrap().start.is_none());
+}
+
+/// What runner `addr` reports for `links` and the Boxes holding `memory`, through the dispatcher.
+fn report(cx: &Cx, addr: &str, links: Vec<MachineLink>, memory: Vec<BoxHostMemory>) {
+    let req = moor_core::request::MachineLinksReq {
+        runner: moor_core::request::RunnerAddr::new(addr),
+        draining: false,
+        links,
+        box_memory: memory,
+    };
+    crate::ops::dispatch(cx, moor_core::Request::MachineLinks(req)).unwrap();
+}
+
+#[test]
+fn a_runner_without_a_machines_link_leaves_that_machines_box_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let (_, a) = enroll(&cx, "authgear:a", "mini", true);
+    let (_, b) = enroll(&cx, "authgear:b", "rack", true);
+    let (mini, rack) = (a.machine_id, b.machine_id);
+    report(&cx, "runner-a", vec![a.clone()], Vec::new());
+    report(&cx, "runner-b", vec![b.clone()], Vec::new());
+
+    report(
+        &cx,
+        "runner-a",
+        vec![a.clone()],
+        vec![on(&cx, mini, 1, 100)],
+    );
+    report(
+        &cx,
+        "runner-b",
+        vec![b.clone()],
+        vec![on(&cx, rack, 2, 200)],
+    );
+    assert_eq!(
+        (held(&cx, "mini"), held(&cx, "rack")),
+        (Some(100), Some(200))
+    );
+
+    // Each runner lists only its own machine and reports only its Boxes, again.
+    report(
+        &cx,
+        "runner-a",
+        vec![a.clone()],
+        vec![on(&cx, mini, 1, 100)],
+    );
+    report(
+        &cx,
+        "runner-b",
+        vec![b.clone()],
+        vec![on(&cx, rack, 2, 200)],
+    );
+    assert_eq!(
+        (held(&cx, "mini"), held(&cx, "rack")),
+        (Some(100), Some(200))
+    );
+
+    // An empty report from one runner drops only the Boxes of its own machines.
+    report(&cx, "runner-a", vec![a], Vec::new());
+    assert_eq!((held(&cx, "mini"), held(&cx, "rack")), (None, Some(200)));
+    report(&cx, "runner-b", vec![b], Vec::new());
+    assert_eq!(held(&cx, "rack"), None);
 }

@@ -7,7 +7,7 @@
 
 use super::authority_ok;
 use super::header_ok;
-use super::machine::{marked, Hold};
+use super::machine::marked;
 
 /// Port assumed when the request names none.
 const DEFAULT_PORT: &str = "80";
@@ -121,16 +121,20 @@ pub(crate) fn connect_head(authority: &str, token: &[u8]) -> zeroize::Zeroizing<
     out
 }
 
-/// The origin-form request a plain `http://` head sends to `authority`, marked with what the Box
-/// holds when it goes to the machine service; `None` when the head is not one plain request
-/// for `authority`.
-pub(crate) fn plain_request(head: &[u8], authority: &str, hold: Option<&Hold>) -> Option<Vec<u8>> {
+/// The origin-form request a plain `http://` head sends to `authority`, marked with the Proxy's
+/// `own` `X-Moor-*` headers in place of any the Box sent when it goes to a host the Proxy
+/// serves; `None` when the head is not one plain request for `authority`.
+pub(crate) fn plain_request(
+    head: &[u8],
+    authority: &str,
+    own: Option<&[(&str, String)]>,
+) -> Option<Vec<u8>> {
     let plain = parse(head)?;
     if !plain.authority.eq_ignore_ascii_case(authority) {
         return None;
     }
-    match hold {
-        Some(hold) => marked(&plain.request, hold),
+    match own {
+        Some(own) => marked(&plain.request, own),
         None => Some(plain.request),
     }
 }

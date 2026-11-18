@@ -196,6 +196,25 @@ fn deps_check_reads_carry_the_credential_on_each_listed_repo_only() {
 }
 
 #[test]
+fn issue_reads_carry_the_credential_on_each_listed_repo_only() {
+    let a = also();
+    for read in ["issues?state=open", "issues/42", "issues/42/timeline"] {
+        for (name, listed) in [("app", true), ("lib", true), ("other", false)] {
+            let path = format!("/repos/o/{name}/{read}");
+            assert_eq!(get_credentialed(&a, &path), listed, "{path}");
+        }
+    }
+    a.stop();
+}
+
+#[test]
+fn opening_an_issue_stays_refused_on_the_box_repo() {
+    let a = also();
+    assert_eq!(api_post(&a.rig.client(), "/repos/o/app/issues"), 401);
+    a.stop();
+}
+
+#[test]
 fn graphql_scope_covers_each_listed_repo_and_no_other() {
     let a = also();
     let client = a.rig.client();

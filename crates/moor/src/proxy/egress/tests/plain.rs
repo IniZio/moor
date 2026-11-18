@@ -9,20 +9,21 @@ use std::time::Duration;
 use tokio_tungstenite::tungstenite::{Message, WebSocket};
 
 use super::{open, open_as, Server, World};
-use crate::proxy::egress::MachineRoute;
+use crate::proxy::egress::ServedRoute;
+use moor_core::config::Served;
 
 /// The machine service's host name, as Boxes request it.
 const MACHINE: &str = "machine.moor.internal";
 
 /// A plain HTTP server on loopback that answers each request `200 hi` and keeps its head; a
 /// connection that sends nothing is no request.
-struct Plain {
-    addr: SocketAddr,
+pub(super) struct Plain {
+    pub(super) addr: SocketAddr,
     heads: Arc<Mutex<Vec<String>>>,
 }
 
 impl Plain {
-    fn start() -> Self {
+    pub(super) fn start() -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let addr = listener.local_addr().unwrap();
         let heads: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -47,7 +48,7 @@ impl Plain {
         Self { addr, heads }
     }
 
-    fn heads(&self) -> Vec<String> {
+    pub(super) fn heads(&self) -> Vec<String> {
         self.heads.lock().unwrap().clone()
     }
 }
@@ -56,13 +57,17 @@ impl Plain {
 fn server(w: &World, plain: &Plain, machine: Option<String>) -> Server {
     let mut cfg = w.config(10.0, 10.0, 64);
     cfg.guard_exempt.push(plain.addr);
-    cfg.machine =
-        machine.map(|upstream| MachineRoute::parse(&format!("{MACHINE}={upstream}")).unwrap());
+    cfg.served = machine
+        .map(|upstream| {
+            ServedRoute::parse(Served::Machine, &format!("{MACHINE}={upstream}")).unwrap()
+        })
+        .into_iter()
+        .collect();
     Server::start(cfg).unwrap()
 }
 
 /// Sends `request` into `tunnel` and reads what comes back until the tunnel ends.
-fn exchange(mut tunnel: WebSocket<TcpStream>, request: &str) -> String {
+pub(super) fn exchange(mut tunnel: WebSocket<TcpStream>, request: &str) -> String {
     tunnel
         .send(Message::binary(request.as_bytes().to_vec()))
         .unwrap();
@@ -195,10 +200,10 @@ fn the_machine_service_gets_the_service_key_and_never_one_the_box_sent() {
     let service = Plain::start();
     let mut cfg = w.config(10.0, 10.0, 64);
     cfg.guard_exempt.push(service.addr);
-    cfg.machine = Some(MachineRoute {
+    cfg.served = vec![ServedRoute {
         key: Some("the-key".into()),
-        ..MachineRoute::parse(&format!("{MACHINE}={}", service.addr)).unwrap()
-    });
+        ..ServedRoute::parse(Served::Machine, &format!("{MACHINE}={}", service.addr)).unwrap()
+    }];
     let server = Server::start(cfg).unwrap();
     let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
     let reply = exchange(
@@ -246,15 +251,16 @@ fn a_machine_service_flag_takes_an_ip_or_a_dns_name_with_a_port() {
         "m=moor-machine.moor.svc:7700",
         "m=[::1]:7700",
     ] {
-        assert!(MachineRoute::parse(ok).is_some(), "{ok}");
+        assert!(ServedRoute::parse(Served::Machine, ok).is_some(), "{ok}");
     }
     for bad in [
         "m=moor-machine.moor.svc",
         "=127.0.0.1:7700",
         "m=http://x:1",
+        "m=8.8.8.8:7700",
         "m",
     ] {
-        assert!(MachineRoute::parse(bad).is_none(), "{bad}");
+        assert!(ServedRoute::parse(Served::Machine, bad).is_none(), "{bad}");
     }
 }
 

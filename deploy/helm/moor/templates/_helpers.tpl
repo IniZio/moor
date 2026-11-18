@@ -109,6 +109,16 @@ true
       valueFrom:
         secretKeyRef: { name: {{ .Release.Name }}-gate, key: cookie-key }
     {{- end }}
+    {{- if and (include "moor.stepReports" .) .Values.egress.enabled }}
+    # The egress pods reach the Box listener through the gate-boxes Service, so it binds the pod address.
+    - name: POD_IP
+      valueFrom:
+        fieldRef: { fieldPath: status.podIP }
+    - { name: MOOR_GATE_BOX_LISTEN, value: "$(POD_IP):{{ .Values.gate.boxPort }}" }
+    - { name: MOOR_GATE_BOX_LISTEN_OFF_HOST, value: "true" }
+    {{- else if include "moor.stepReports" . }}
+    - { name: MOOR_GATE_BOX_LISTEN, value: "127.0.0.1:{{ .Values.gate.boxPort }}" }
+    {{- end }}
   args:
     - --listen=0.0.0.0:{{ .Values.gate.port }}
     {{- if include "moor.gateSeparate" . }}
@@ -132,6 +142,9 @@ true
     {{- end }}
   ports:
     - { name: gate, containerPort: {{ .Values.gate.port }} }
+    {{- if and (include "moor.stepReports" .) .Values.egress.enabled }}
+    - { name: boxes, containerPort: {{ .Values.gate.boxPort }} }
+    {{- end }}
   {{- if include "moor.gateSeparate" . }}
   # The Service and the ingress take the pod out before it stops accepting.
   lifecycle:
@@ -152,6 +165,23 @@ true
     {{- else }}
     - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/authgear, readOnly: true }
     {{- end }}
+{{- end -}}
+
+{{/* Non-empty when Boxes report workflow steps to the gate's Box listener. */}}
+{{- define "moor.stepReports" -}}
+{{- if .Values.gate.stepReports -}}
+{{- if not .Values.gate.enabled }}{{ fail "gate.stepReports needs gate.enabled: the gate serves the Box listener" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/* Where the Proxy sends moor.moor.internal: the gate beside it in the pod, or the gate-boxes Service. */}}
+{{- define "moor.boxUpstream" -}}
+{{- if .Values.egress.enabled -}}
+{{ .Release.Name }}-gate-boxes.{{ .Release.Namespace }}.svc:{{ .Values.gate.boxPort }}
+{{- else -}}
+127.0.0.1:{{ .Values.gate.boxPort }}
+{{- end -}}
 {{- end -}}
 
 {{/* Non-empty when the runner is its own Deployment, which dials the controller's ledger. */}}

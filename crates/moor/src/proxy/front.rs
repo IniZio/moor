@@ -1,9 +1,10 @@
 //! What a request head asks the shared egress Proxy to do: the plain-HTTP rewrite, the CONNECT
-//! head sent to a Box's nono, the 403 refusal, and what a Box holds of the machine service.
+//! head sent to a Box's nono, the 403 refusal, what a Box holds of the machine service, and the
+//! headers that say who sent a request to a host the Proxy serves.
 //!
 //! Request bytes carry credentials, so nothing here logs them.
 
-pub(crate) use machine::{hold_or_missing, Held, Hold};
+pub(crate) use machine::{hold_headers, hold_or_missing, Held, Hold};
 pub(crate) use plain::{connect_head, plain_request};
 pub(crate) use refusal::refusal;
 

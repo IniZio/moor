@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use moor_core::decide::capacity::counts;
-use moor_core::decide::schedule::BoxSpec;
+use moor_core::decide::schedule::{BoxSpec, Placement};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
@@ -140,6 +140,7 @@ impl Store {
         let labels = serde_json::from_str(&labels)
             .map_err(|e| StoreError::Corrupt(format!("box {} node labels: {e}", id.get())))?;
         Ok(BoxSpec {
+            placement: Placement::FirstOnly,
             labels,
             node: node.and_then(|n| NodeName::parse(&n).ok()),
         })

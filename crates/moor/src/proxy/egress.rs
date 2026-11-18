@@ -37,9 +37,11 @@
 //! With `X-Moor-Plain: 1` the tunnel carries one absolute-form `http://` request for the target,
 //! sent whole after `101`, and its reply. The Proxy sends it on in origin form, without
 //! `Proxy-*` or hop-by-hop headers, through the Box's proxy and never with a credential. A
-//! request for the machine service goes to the service instead, carrying the Box and the machine
-//! it holds in `X-Moor-*` headers that only the Proxy sets; the service not answering is `502`
-//! before the upgrade, and a CONNECT to it is `403`. A request that is not one plain request for
+//! request for a host the Proxy serves itself, the machine service or moor's own, goes to its
+//! upstream instead, carrying the Box, and for the machine service the machine it holds, in
+//! `X-Moor-*` headers that only the Proxy sets. An upstream that does not answer, or whose name
+//! reaches an address that is neither loopback nor private, is `502` before the upgrade, and a
+//! CONNECT to a served host is `403`. A request that is not one plain request for
 //! the target gets a `403` reply in the tunnel.
 //!
 //! A remote front's turn takes the same path: its forwarder sends the lease as
@@ -67,6 +69,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::config::{Served, Upstream};
 use moor_core::seam::clock::Clock;
 
 use tokio::sync::Notify;
@@ -86,10 +89,13 @@ pub(crate) const PATH: &str = "/egress";
 /// Answers 200 from the first whole warming pass on; rollouts wait on it.
 pub(crate) const SYNCED: &str = "/synced";
 
-/// The machine service plain requests for `host` go to, as `--machine-service HOST=ADDR` names
-/// it. `upstream` is `host:port`, its name looked up on each connection.
+/// A host the Proxy serves itself, as `--machine-service HOST=ADDR` or `--moor-service HOST=ADDR`
+/// names it: a Box's plain requests for `host` go to `upstream`, `host:port` with its name looked
+/// up on each connection and dialled only when every address is loopback or private.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct MachineRoute {
+pub(crate) struct ServedRoute {
+    /// What it is for, which decides the headers stamped on each request.
+    pub(crate) served: Served,
     /// Name a Box requests over `http://`, compared without case.
     pub(crate) host: String,
     /// Where those requests go.
@@ -98,19 +104,21 @@ pub(crate) struct MachineRoute {
     pub(crate) key: Option<Arc<str>>,
 }
 
-impl std::fmt::Debug for MachineRoute {
+impl std::fmt::Debug for ServedRoute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}={}", self.host, self.upstream)
     }
 }
 
-impl MachineRoute {
-    /// `HOST=ADDR`; none when either side is empty or `ADDR` is not `host:port`.
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+impl ServedRoute {
+    /// `HOST=ADDR` for `served`; none when either side is empty or `ADDR` is not an upstream.
+    pub(crate) fn parse(served: Served, value: &str) -> Option<Self> {
         let (host, upstream) = value.split_once('=')?;
-        (!host.is_empty() && wire::authority_ok(upstream)).then(|| Self {
+        let upstream = Upstream::parse(upstream).ok()?;
+        (!host.is_empty()).then(|| Self {
+            served,
             host: host.to_owned(),
-            upstream: upstream.to_owned(),
+            upstream: upstream.as_str().to_owned(),
             key: None,
         })
     }
@@ -120,6 +128,7 @@ impl MachineRoute {
         host.eq_ignore_ascii_case(&self.host)
     }
 }
+
 /// The header naming the CONNECT target as `host:port`.
 pub(crate) const TARGET: &str = "x-moor-target";
 /// The header that marks a tunnel carrying one plain `http://` request.
@@ -151,8 +160,8 @@ pub(crate) struct Config {
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Loopback addresses the egress guard lets through; empty in production.
     pub(crate) guard_exempt: Vec<SocketAddr>,
-    /// The machine service plain requests for its host go to; `None` when none is configured.
-    pub(crate) machine: Option<MachineRoute>,
+    /// The hosts it serves itself, such as the machine service.
+    pub(crate) served: Vec<ServedRoute>,
     /// How the replica keeps every awake Box ready; `None` learns each Box on first use only,
     /// as one Proxy beside its controller does.
     pub(crate) warm: Option<Warm>,
@@ -166,8 +175,8 @@ struct Shared {
     boxes: Boxes,
     /// Connections accepted and not yet finished.
     open: AtomicUsize,
-    /// The machine service, when one is configured.
-    machine: Option<MachineRoute>,
+    /// The hosts it serves itself.
+    served: Vec<ServedRoute>,
     /// Names the egress key on `/ready`.
     key_id: i64,
 }
@@ -231,12 +240,12 @@ impl Server {
             })
             .transpose()?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
-        let (machine, warm) = (cfg.machine.clone(), cfg.warm);
+        let (served, warm) = (cfg.served.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
             open: AtomicUsize::new(0),
-            machine,
+            served,
             key_id,
         });
         let accepting = std::iter::once(listener)

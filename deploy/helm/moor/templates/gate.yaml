@@ -50,6 +50,23 @@ spec:
       port: {{ .Values.runner.agentsPort }}
       targetPort: agents
 {{- end }}
+{{- if and (include "moor.stepReports" .) .Values.egress.enabled }}
+---
+# The egress pods reach the gate's Box listener here. ClusterIP only, never behind the ingress:
+# the listener trusts the X-Moor-Box header, so nothing but the egress pods may reach it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gate-boxes
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include (ternary "moor.gateLabels" "moor.labels" (not (empty (include "moor.gateSeparate" .)))) . | nindent 4 }}
+  ports:
+    - name: boxes
+      port: {{ .Values.gate.boxPort }}
+      targetPort: boxes
+{{- end }}
 {{- if .Values.gate.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

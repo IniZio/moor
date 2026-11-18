@@ -84,6 +84,9 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) >/dev/null
 	@! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -n 'pathType: Exact' || { echo "chart: the cloudflare-tunnel ingress class drops a whole Ingress with an Exact path; use Prefix"; exit 1; }
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -q 'moor.moor.internal=moor-gate-boxes.default.svc:8444'
+	! helm template moor $(CHART) $(CHART_VALUES) | grep -q 'moor_service\|gate-boxes'
+	helm template moor $(CHART) $(CHART_VALUES) --set gate.stepReports=true --set gate.enabled=false 2>&1 | grep -q 'gate.stepReports needs gate.enabled'
 	helm template moor $(CHART) $(CHART_VALUES) | grep -q 'command: \[moor-machine-runner\]'
 	! helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false | grep -q 'moor-machine-runner'
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx | grep -q 'path: /machines/pair'

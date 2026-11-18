@@ -36,14 +36,11 @@ pub use machine::{
 pub use nodes::NodeConfig;
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
-pub use service::{MachineService, MachinesConfig, MoorService, MOOR_SERVICE_HOST};
+pub use service::{
+    reachable, MachinesConfig, Served, ServedHost, Upstream, MACHINE_SERVICE_HOST,
+    MOOR_SERVICE_HOST,
+};
 pub use tools::ToolsConfig;
-
-/// The name a Box's agent knows the machine service's MCP server by.
-const MACHINE_MCP: &str = "machine";
-
-/// The name a Box's agent knows moor's own MCP server by, the one that has `report_step`.
-const MOOR_MCP: &str = "moor";
 
 /// Idle time before a Box sleeps when `box.sleep_after` is unset.
 pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(5);
@@ -276,7 +273,8 @@ pub struct UserConfig {
     /// The service Boxes reach for the machine they hold.
     pub machines: MachinesConfig,
     /// The MCP server a Box's agent reports its workflow steps to; none leaves Boxes without it.
-    pub moor_service: Option<MoorService>,
+    #[serde(deserialize_with = "service::moor_service")]
+    pub moor_service: Option<ServedHost>,
     /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
     /// that validates.
     #[serde(default, deserialize_with = "super::controller::present_key")]
@@ -302,18 +300,18 @@ pub struct UserConfig {
 }
 
 impl UserConfig {
-    /// The MCP servers every Box gets: `mcp_servers`, plus the machine service's server when
-    /// `machines.service` is set and moor's own when `moor_service` is set, unless an entry
-    /// already takes the name.
+    /// The hosts the Proxy serves itself: `machines.service` and `moor_service`, when set.
+    pub fn served_hosts(&self) -> impl Iterator<Item = &ServedHost> {
+        self.machines.service.iter().chain(&self.moor_service)
+    }
+
+    /// The MCP servers every Box gets: `mcp_servers`, plus one for each served host, unless an
+    /// entry already takes its name.
     #[must_use]
     pub fn shared_mcp(&self) -> BTreeMap<String, McpServer> {
         let mut out = self.mcp_servers.clone();
-        if let Some(s) = &self.machines.service {
-            out.entry(MACHINE_MCP.to_owned())
-                .or_insert_with(|| s.mcp_server());
-        }
-        if let Some(s) = &self.moor_service {
-            out.entry(MOOR_MCP.to_owned())
+        for s in self.served_hosts() {
+            out.entry(s.served.mcp_name().to_owned())
                 .or_insert_with(|| s.mcp_server());
         }
         out
@@ -358,10 +356,7 @@ impl UserConfig {
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }
-        if let Some(s) = &self.machines.service {
-            s.validate()?;
-        }
-        if let Some(s) = &self.moor_service {
+        for s in self.served_hosts() {
             s.validate()?;
         }
         self.machines.sync.validate("machines.sync")?;

@@ -1,5 +1,5 @@
 //! One connection: the upgrade request, the CONNECT into the Box's proxy or the connection to
-//! the machine service, then the tunnel.
+//! a host the Proxy serves, then the tunnel.
 //!
 //! Request bytes carry the Box token, so nothing here logs them.
 
@@ -17,13 +17,13 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use super::boxes::{Refused, Route};
-use super::{Shared, PATH, SYNCED};
+use super::{ServedRoute, Shared, PATH, SYNCED};
 use crate::proxy::front::{connect_head, plain_request, refusal};
 use crate::store::token_hash;
 use moor_core::Secret;
 
 mod ask;
-mod machine;
+mod service;
 
 pub(super) use ask::authority_ok;
 use ask::parse;
@@ -62,8 +62,8 @@ struct Open {
     route: Route,
     /// Whether the tunnel carries one plain `http://` request.
     plain: bool,
-    /// Whether the target is the machine service.
-    machine: bool,
+    /// The host the Proxy serves that the target names, if any.
+    served: Option<ServedRoute>,
 }
 
 /// Serves one connection to its end.
@@ -76,16 +76,16 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
         Ok(Checked::Ready) => answer(&mut stream, 200, &shared.key_id.to_string()).await,
         Ok(Checked::Synced) if shared.boxes.synced() => answer(&mut stream, 200, "synced").await,
         Ok(Checked::Synced) => answer(&mut stream, 503, "not synced with the ledger yet").await,
-        Ok(Checked::Tunnel(open)) => tunnel(stream, shared, &open).await,
+        Ok(Checked::Tunnel(open)) => tunnel(stream, &open).await,
     }
 }
 
-/// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
-/// the connection and relays the tunnel.
-async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
+/// Opens the CONNECT into the Box's proxy, or the connection to a host the Proxy serves,
+/// upgrades the connection and relays the tunnel.
+async fn tunnel<S: Peer>(mut stream: S, ask: &Open) {
     let route = &ask.route;
-    if let Some(service) = shared.machine.as_ref().filter(|_| ask.machine) {
-        return machine::tunnel(stream, service, ask, route).await;
+    if let Some(service) = &ask.served {
+        return service::tunnel(stream, service, ask, route).await;
     }
     let (addr, internal) = (route.served.addr, &route.served.internal);
     let (mut upstream, rest) = match open(addr, internal, &ask.target).await {
@@ -175,10 +175,8 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
         return Err(refuse(400, "expected a WebSocket upgrade with a target"));
     };
     let token = ask.token.ok_or_else(|| refuse(401, "no token"))?;
-    let machine = shared
-        .machine
-        .as_ref()
-        .is_some_and(|m| m.serves(target.rsplit_once(':').map_or(target.as_str(), |(h, _)| h)));
+    let host = target.rsplit_once(':').map_or(target.as_str(), |(h, _)| h);
+    let served = shared.served.iter().find(|s| s.serves(host)).cloned();
     if !shared.boxes.signed(&token) {
         return Err(refuse(401, "unknown token"));
     }
@@ -196,15 +194,15 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
                 }
             },
         )?;
-    if machine && !ask.plain {
-        return Err(refuse(403, "the machine service takes only plain http"));
+    if served.is_some() && !ask.plain {
+        return Err(refuse(403, "a host moor serves takes only plain http"));
     }
     Ok(Checked::Tunnel(Open {
         key,
         target,
         route,
         plain: ask.plain,
-        machine,
+        served,
     }))
 }
 
