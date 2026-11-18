@@ -18,7 +18,7 @@ use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
-use crate::adapters::machine::Machines;
+use crate::adapters::machine::{Machines, SentEnvs};
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
@@ -64,7 +64,8 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         .sharing(store)
         .sharing(Arc::new(Owners::new(clock)))
         .sharing(Arc::new(InFlight::default()))
-        .sharing(Arc::new(Traffic::default())))
+        .sharing(Arc::new(Traffic::default()))
+        .sharing(Arc::new(SentEnvs::default())))
 }
 
 /// Waits until this controller may run on `env`'s store, which it then may until the process
@@ -152,7 +153,9 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
             env.get(crate::env::MACHINE_SERVICE_KEY),
         )
     });
-    let machines = Machines::new(links::reach(links.clone()), links::moor_binary());
+    let sent_env = env.shared::<Arc<SentEnvs>>().cloned().unwrap_or_default();
+    let machines =
+        Machines::new(links::reach(links.clone()), links::moor_binary()).sharing_sent_env(sent_env);
     let driver: Arc<dyn Driver> = Arc::new(machines);
     let engine = BoxAgent::new(Arc::clone(&driver), Arc::new(Claude));
     let proxy_host = proxy_host(env, &driver, &(Arc::clone(&clock) as Arc<dyn Clock>), &rng);

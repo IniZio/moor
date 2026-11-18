@@ -36,7 +36,7 @@ mod wire;
 
 /// The driver over machines that provide Boxes themselves, and how it reaches their runners; the
 /// runner's tests drive it against a real runner.
-pub use crate::adapters::machine::{box_term, Machines, Reach};
+pub use crate::adapters::machine::{box_term, Machines, Reach, SentEnvs};
 pub use crate::moor::Moor;
 /// Run the credential proxy for a Box until a stop signal; returns the exit code.
 /// Open the state store, which brings its schema to this build's latest migration; returns
