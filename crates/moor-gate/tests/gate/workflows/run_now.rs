@@ -83,7 +83,7 @@ fn a_forged_page_a_missing_repo_or_a_stranger_send_nothing() {
     assert_eq!(none.status, 401);
     let bob = as_user(&w, "bob-33");
     let reply = run_now(&w, &bob, &csrf(&w, &bob), &body);
-    assert_eq!(reply.status, 403, "{}", reply.body);
+    assert_eq!(reply.status, 404, "{}", reply.body);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use moor_core::view::workflow::RunNowValue;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::decode;
+use super::{decode, not_found};
 use crate::login::account::{failed, json};
 use crate::login::repos::answered;
 use crate::login::{check_csrf, Session};
@@ -50,6 +50,10 @@ pub(crate) fn run_now(
         Ok(reply) => reply,
         Err(why) => return failed(stream, "run now", &why),
     };
+    if reply.class == ExitClass::Refused {
+        // Every workflow the controller shows a person is theirs, so a refusal is no such workflow.
+        return not_found(stream);
+    }
     if reply.class != ExitClass::Ok {
         return answered(stream, &reply);
     }
