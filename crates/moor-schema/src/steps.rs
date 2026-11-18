@@ -45,6 +45,7 @@ mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
 mod workflow_plans;
+mod workflow_run_trigger;
 mod workflows;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
@@ -92,4 +93,5 @@ pub const STEPS: &[Step] = &[
     step("V84__node_settings", node_settings::write),
     step("V85__workflow_plans", workflow_plans::write),
     step("V86__machine_pairings", machine_pairings::write),
+    step("V87__workflow_run_trigger", workflow_run_trigger::write),
 ];

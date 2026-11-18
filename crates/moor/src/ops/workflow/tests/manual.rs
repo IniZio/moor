@@ -1,5 +1,6 @@
 //! A workflow fired by hand: the claim, the refusal, and how it sits beside the cron firings.
 
+use moor_core::request::CloseReq;
 use moor_core::seam::clock::Ts;
 use moor_core::view::workflow::{RunNowLine, RunNowValue};
 use moor_core::workflow::{NewRun, RunState, RunTrigger, WorkflowId};
@@ -123,8 +124,9 @@ fn a_manual_run_leaves_a_missed_due_time_to_fire() {
         1,
         "09:00 fires though a manual run came after it"
     );
-    assert_eq!(cron[0].due_at, Ts::from_millis(FIRST_DUE));
-    assert!(matches!(cron[0].state, RunState::Running { .. }));
+    let fired = cron.first().unwrap();
+    assert_eq!(fired.due_at, Ts::from_millis(FIRST_DUE));
+    assert!(matches!(fired.state, RunState::Running { .. }));
 }
 
 #[test]
@@ -158,6 +160,31 @@ fn a_repo_the_workflow_does_not_list_or_a_stale_revision_is_refused() {
     .unwrap_err();
     assert!(stale.error.to_string().contains("revision"), "{stale:?}");
     assert_eq!(r.open_boxes(), 0);
+}
+
+#[test]
+fn a_timed_out_run_blocks_while_its_box_is_open_and_not_once_it_is_closed() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(30);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    r.advance_to(FIRST_DUE + 1_000 + 31 * 60_000);
+    r.pass();
+    let before = r.runs(id);
+    let line = only(fire(&r, &[]).unwrap());
+    assert_eq!(line.status, "refused", "{line:?}");
+    assert_eq!(r.runs(id), before);
+
+    let box_id = r.latest_box(id);
+    let name = r.cx.store().unwrap().box_row(box_id).unwrap().unwrap().name;
+    let close = CloseReq {
+        target: name.into(),
+        force: true,
+    };
+    crate::ops::close::run(&r.cx, &close).unwrap();
+    let line = only(fire(&r, &[]).unwrap());
+    assert_eq!(line.status, "started", "{line:?}");
 }
 
 #[test]

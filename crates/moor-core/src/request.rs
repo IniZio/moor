@@ -51,7 +51,7 @@ pub use user::{
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
-    WorkflowRunListReq, WorkflowRunsReq,
+    WorkflowRunListReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -192,6 +192,8 @@ pub enum Request {
     WorkflowRunList(WorkflowRunListReq),
     /// Answer yes or no for the approve step one of the caller's user's runs waits at.
     WorkflowAnswer(WorkflowAnswerReq),
+    /// Fire one of the caller's user's workflows once, now, for some or all of its repos.
+    WorkflowRunNow(WorkflowRunNowReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),

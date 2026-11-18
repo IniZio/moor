@@ -13,7 +13,8 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    box_name, NewRun, Plan, RunEnd, RunState, StepId, Workflow, WorkflowId, WorkflowState,
+    box_name, NewRun, Plan, RunEnd, RunState, RunTrigger, StepId, Workflow, WorkflowId,
+    WorkflowState,
 };
 use moor_core::{BoxId, BoxName, StartReq};
 
@@ -24,6 +25,7 @@ use advance::finish_runs;
 pub(crate) use answer::run as answer_run;
 pub(crate) use check::{run_check, CheckJob};
 use facts::history;
+pub(crate) use now::run as run_now;
 use previous::close_previous;
 pub(crate) use report::run as step_report;
 use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
@@ -110,7 +112,7 @@ fn tick_one(
         }
         return Ok(());
     }
-    let verdicts = workflow_due(w, &history.facts(store)?, now);
+    let verdicts = workflow_due(w, &history.facts(store, w)?, now);
     for v in verdicts {
         match v.verdict {
             WorkflowVerdict::NotDue => {}
@@ -132,7 +134,7 @@ fn tick_one(
     Ok(())
 }
 
-/// Records a run that never starts a Box; a repeated record changes nothing.
+/// Records a cron run that never starts a Box; a repeated record changes nothing.
 fn record(
     store: &Store,
     w: &Workflow,
@@ -148,46 +150,43 @@ fn record(
         state,
         recorded_at: now,
         plan,
+        trigger: RunTrigger::Cron,
     })
 }
 
-/// Claims the firing and hands it to `launch`; a refusal before any Box is recorded as such.
-fn claim(
+/// A firing made ready to claim: the job that starts its Box, and the plan the run freezes.
+struct Prepared {
+    /// The job.
+    job: StartJob,
+    /// The workflow's plan, when it was planned. A workflow nobody planned freezes none, and its
+    /// Box gets the bare prompt as it always has.
+    frozen: Option<Plan>,
+}
+
+/// Makes the firing of `w` for `repo` due at `due_at` ready to claim, or says why it cannot
+/// be: its Box name is invalid, or its owner has no identity to start a Box as.
+fn prepare(
     store: &Store,
     w: &Workflow,
     repo: &ForgeRepo,
-    due_at: Ts,
-    now: Ts,
-    launch: &dyn Fn(StartJob),
-) -> Result<(), StoreError> {
-    let refuse = |detail: String| {
-        record(
-            store,
-            w,
-            repo,
-            due_at,
-            now,
-            (RunState::Done(RunEnd::Refused { detail }), None),
-        )
-        .map(|_| ())
-    };
-    let name = match box_name(w.id, w.name.as_str(), repo, due_at) {
-        Ok(name) => name,
-        Err(e) => return refuse(e.to_string()),
-    };
-    let Some(identity) = store.identities(w.owner)?.into_iter().next() else {
-        return refuse("the owner has no identity to start a Box as".to_owned());
-    };
-    // A workflow nobody planned freezes none, and its Box gets the bare prompt as it always has.
+    (due_at, trigger): (Ts, RunTrigger),
+) -> Result<Prepared, String> {
+    let name = box_name(w.id, w.name.as_str(), repo, due_at, trigger).map_err(|e| e.to_string())?;
+    let identity = store
+        .identities(w.owner)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .next()
+        .ok_or("the owner has no identity to start a Box as")?;
     let planned = !w.plan.is_single_of(&w.prompt);
-    let frozen = planned.then(|| w.plan.clone());
     let prompt = if planned {
         w.plan.start_prompt(&w.prompt)
     } else {
         w.prompt.clone()
     };
-    if record(store, w, repo, due_at, now, (RunState::Queued, frozen))? {
-        launch(StartJob {
+    Ok(Prepared {
+        frozen: planned.then(|| w.plan.clone()),
+        job: StartJob {
             workflow: w.id,
             owner: w.owner,
             identity,
@@ -198,9 +197,31 @@ fn claim(
             name,
             prompt,
             first_step: w.plan.first().id.clone(),
-        });
+        },
+    })
+}
+
+/// Claims the cron firing and hands it to `launch`; a refusal before any Box is recorded as such.
+fn claim(
+    store: &Store,
+    w: &Workflow,
+    repo: &ForgeRepo,
+    due_at: Ts,
+    now: Ts,
+    launch: &dyn Fn(StartJob),
+) -> Result<(), StoreError> {
+    match prepare(store, w, repo, (due_at, RunTrigger::Cron)) {
+        Err(detail) => {
+            let state = RunState::Done(RunEnd::Refused { detail });
+            record(store, w, repo, due_at, now, (state, None)).map(|_| ())
+        }
+        Ok(Prepared { job, frozen }) => {
+            if record(store, w, repo, due_at, now, (RunState::Queued, frozen))? {
+                launch(job);
+            }
+            Ok(())
+        }
     }
-    Ok(())
 }
 
 /// Starts the Box of a claimed firing as the owner `cx` acts for, through the start a person
@@ -292,7 +313,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
         let workflow = store.workflow_by_id(run.workflow).ok().flatten();
         let found = workflow
             .as_ref()
-            .and_then(|w| box_name(w.id, w.name.as_str(), &run.repo, run.due_at).ok())
+            .and_then(|w| box_name(w.id, w.name.as_str(), &run.repo, run.due_at, run.trigger).ok())
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
         let now = cx.clock().now();
         let state = match (found, workflow) {
@@ -329,6 +350,7 @@ mod advance;
 mod answer;
 mod check;
 mod facts;
+mod now;
 mod previous;
 mod report;
 mod settle;

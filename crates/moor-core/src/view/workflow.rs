@@ -25,6 +25,9 @@ pub struct LastRunView {
     /// `queued`, `running`, `waiting` or `done`.
     #[serde(default)]
     pub phase: String,
+    /// What fired the run: `cron` or `manual`.
+    #[serde(default = "cron")]
+    pub trigger: String,
     /// The step a run in flight is at, or the step a failed, incomplete, declined or timed-out
     /// run ended at.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,6 +48,11 @@ pub struct LastRunView {
     /// What happened to the run, oldest line first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryLineView>,
+}
+
+/// The trigger of a run a writer that predates triggers described.
+fn cron() -> String {
+    "cron".to_owned()
 }
 
 /// One line of a run's history.
@@ -137,6 +145,30 @@ pub struct WorkflowAnswerValue {
     pub next: String,
 }
 
+/// One repo's line of the value of `workflow-run-now`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunNowLine {
+    /// The repo.
+    pub repo: String,
+    /// `started` when a run began, `refused` when none did.
+    pub status: String,
+    /// The Box the run started in, when it started.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "box")]
+    pub box_name: Option<String>,
+    /// Why none began, when it was refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Value of `workflow-run-now`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunNowValue {
+    /// The workflow's name.
+    pub workflow: String,
+    /// One line per repo, in the order asked.
+    pub runs: Vec<RunNowLine>,
+}
+
 /// One entry of the change stream `workflow-runs` returns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -152,7 +184,7 @@ pub enum ChangeView {
         origin: Option<OriginView>,
         /// The run.
         #[serde(flatten)]
-        run: LastRunView,
+        run: Box<LastRunView>,
     },
     /// The controller disabled the workflow.
     Disabled {

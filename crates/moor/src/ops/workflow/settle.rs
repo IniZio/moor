@@ -133,7 +133,7 @@ pub(super) fn enforce_start_limit(
         let key = (w.id, &b.repo, b.due_at);
         let planned = match b.box_id {
             Some(id) => store.box_row(id)?.map(|r| r.name),
-            None => box_name(w.id, w.name.as_str(), &b.repo, b.due_at).ok(),
+            None => box_name(w.id, w.name.as_str(), &b.repo, b.due_at, b.trigger).ok(),
         };
         let detail = format!(
             "the run's agent did not start within {} minutes of the firing, so the run was \

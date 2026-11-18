@@ -11,9 +11,11 @@ use moor_core::workflow::{
 use moor_schema::tables::{WorkflowRuns, Workflows};
 use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 
+pub(crate) use claim::ManualClaim;
 pub(crate) use put::Put;
 
 mod changes;
+mod claim;
 mod history;
 mod list;
 mod notice;

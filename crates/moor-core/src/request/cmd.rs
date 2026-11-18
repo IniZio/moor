@@ -67,6 +67,7 @@ impl Request {
             Self::WorkflowRuns(_) => "workflow-runs",
             Self::WorkflowRunList(_) => "workflow-run-list",
             Self::WorkflowAnswer(_) => "workflow-answer",
+            Self::WorkflowRunNow(_) => "workflow-run-now",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineEnroll(_) => "machine-enroll",

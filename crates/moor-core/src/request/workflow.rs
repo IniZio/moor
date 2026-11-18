@@ -95,6 +95,24 @@ pub struct WorkflowAnswerReq {
     pub note: Option<String>,
 }
 
+/// Arguments of `workflow-run-now`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowRunNowReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The workflow's name.
+    pub name: String,
+    /// The repos, each `OWNER/NAME`, to run it for; every repo of the workflow when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
+    /// The revision of the stored workflow the caller read. The call is refused when the
+    /// workflow has been changed since. Not checked when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_revision: Option<u64>,
+}
+
 /// Arguments of `workflow-runs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -167,6 +185,15 @@ pub enum WorkflowCmd {
         /// What the owner adds.
         note: Option<String>,
     },
+    /// Fire a workflow once, now.
+    RunNow {
+        /// The workflow's name.
+        name: String,
+        /// The repos to run it for; every repo of the workflow when empty.
+        repos: Vec<String>,
+        /// The revision the caller read.
+        expected_revision: Option<u64>,
+    },
     /// Read the latest runs of one workflow.
     RunList {
         /// The workflow's name.
@@ -195,6 +222,7 @@ impl WorkflowCmd {
             Self::Remove { .. } => "workflow-remove",
             Self::SetEnabled { .. } => "workflow-set-enabled",
             Self::Answer { .. } => "workflow-answer",
+            Self::RunNow { .. } => "workflow-run-now",
             Self::Runs { .. } => "workflow-runs",
             Self::RunList { .. } => "workflow-run-list",
         }
@@ -230,6 +258,14 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
                 note: r.note,
             },
         ),
+        Request::WorkflowRunNow(r) => (
+            r.identity,
+            WorkflowCmd::RunNow {
+                name: r.name,
+                repos: r.repos,
+                expected_revision: r.expected_revision,
+            },
+        ),
         Request::WorkflowRuns(r) => (
             r.identity,
             WorkflowCmd::Runs {
@@ -257,6 +293,7 @@ pub(super) const fn own_identity(request: &Request) -> Option<&Identity> {
         | Request::WorkflowRemove(WorkflowRemoveReq { identity, .. })
         | Request::WorkflowSetEnabled(WorkflowEnableReq { identity, .. })
         | Request::WorkflowAnswer(WorkflowAnswerReq { identity, .. })
+        | Request::WorkflowRunNow(WorkflowRunNowReq { identity, .. })
         | Request::WorkflowRunList(WorkflowRunListReq { identity, .. })
         | Request::WorkflowRuns(WorkflowRunsReq { identity, .. }) => identity.as_ref(),
         _ => None,

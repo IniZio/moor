@@ -384,7 +384,7 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
         last_run(),
         json!({
             "repo": "o/n", "due_at": 100, "outcome": "started", "phase": "running",
-            "step": "deliver", "history": [queued, entered],
+            "trigger": "cron", "step": "deliver", "history": [queued, entered],
         })
     );
 
@@ -404,7 +404,7 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
         "outcome": {"outcome": "delivered", "result": "opened a pull request"},
     }});
     let done = json!({
-        "repo": "o/n", "due_at": 100, "outcome": "finished", "phase": "done",
+        "repo": "o/n", "due_at": 100, "outcome": "finished", "phase": "done", "trigger": "cron",
         "result": "opened a pull request", "history": [queued, entered, ended],
     });
     assert_eq!(last_run(), done);

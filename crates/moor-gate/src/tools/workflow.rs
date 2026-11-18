@@ -4,7 +4,7 @@
 use moor_core::config::override_text;
 use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
-    WorkflowRemoveReq, WorkflowRunsReq,
+    WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
 use moor_core::workflow::{Answer, PlanDoc};
 use rmcp::handler::server::wrapper::Parameters;
@@ -92,6 +92,20 @@ struct AnswerArgs {
     answer: AnswerArg,
     /// What to tell the agent along with the answer; none when left out.
     note: Option<String>,
+}
+
+/// Arguments of `run_workflow`.
+#[derive(Deserialize, JsonSchema)]
+struct RunNowArgs {
+    /// The workflow's name, as `list_workflows` shows it.
+    name: String,
+    /// The repos, as `owner/name`, to run it for; each must be one of the workflow's. Every repo
+    /// of the workflow when left out.
+    #[serde(default)]
+    repos: Vec<String>,
+    /// The `revision` `list_workflows` showed for the workflow. The call is refused when the
+    /// workflow has changed since, so the run tries the plan you reviewed.
+    expected_revision: Option<u64>,
 }
 
 /// Arguments of `list_workflow_runs`.
@@ -249,6 +263,37 @@ impl Tools {
                 AnswerArg::No => Answer::No,
             },
             note: args.note,
+        });
+        self.run(&context, WRITE, Ok(request), Reply::AsIs).await
+    }
+
+    /// Fires a workflow once, now.
+    #[tool(
+        description = "Run one of your workflows once, now, for some or all of its repos, instead \
+                       of waiting for its cron. It works on a disabled workflow, so you can \
+                       add one, disable it, run it until the plan is right, and enable it \
+                       after. The run is an ordinary run: it freezes the plan, starts a Box as \
+                       you, walks the steps and has the workflow's timeout. It shows in \
+                       list_workflow_runs with trigger `manual`. A repo that has a run open \
+                       (starting, working, waiting for an answer, or timed out with its Box \
+                       still open) is refused with that run's Box, and nothing is recorded for \
+                       it. A cron run that comes due while a manual run is open is skipped. A \
+                       manual run that fails does not count toward the three failed runs that \
+                       disable a workflow, and one that delivers resets that count. Pass the \
+                       revision you read as expected_revision to be sure the run tries the plan \
+                       you reviewed. The reply has one line per repo: `started` with the Box \
+                       name, or `refused` with the reason. Needs the moor:write scope."
+    )]
+    async fn run_workflow(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<RunNowArgs>,
+    ) -> CallToolResult {
+        let request = ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
+            identity: None,
+            name: args.name,
+            repos: args.repos,
+            expected_revision: args.expected_revision,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

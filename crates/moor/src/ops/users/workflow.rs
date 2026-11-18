@@ -68,6 +68,16 @@ pub(super) fn run(
             user,
             (workflow, repo, *answer, note.as_deref()),
         )?),
+        WorkflowCmd::RunNow {
+            name,
+            repos,
+            expected_revision,
+        } => to_value(&crate::ops::workflow::run_now(
+            cx,
+            store,
+            user,
+            (name, repos, *expected_revision),
+        )?),
         WorkflowCmd::Runs { after, limit } => runs(store, user, *after, *limit),
         WorkflowCmd::RunList {
             workflow,
@@ -281,7 +291,7 @@ fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunV
         run.state,
         RunState::Queued | RunState::Done(RunEnd::Refused { .. })
     )
-    .then(|| box_name(run.workflow, workflow, &run.repo, run.due_at).ok())
+    .then(|| box_name(run.workflow, workflow, &run.repo, run.due_at, run.trigger).ok())
     .flatten()
     .map(|name| name.as_str().to_owned());
     let history = store
@@ -297,6 +307,7 @@ fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunV
         due_at: run.due_at.as_millis(),
         outcome: run.state.tag().to_owned(),
         phase: run.state.phase().as_str().to_owned(),
+        trigger: run.trigger.as_str().to_owned(),
         step: run.state.step().map(ToString::to_string),
         result,
         detail,
@@ -327,7 +338,7 @@ fn runs(
         let seq = change.seq;
         changes.push(match change.what {
             ChangeKind::Run(run) => {
-                let run = run_view(store, &workflow, &run)?;
+                let run = Box::new(run_view(store, &workflow, &run)?);
                 ChangeView::Run {
                     seq,
                     workflow,

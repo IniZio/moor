@@ -7,12 +7,12 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, StepId, WorkflowId,
+    HistoryEntry, RunEnd, RunOutcome, RunPhase, RunState, RunTrigger, StepId, WorkflowId,
     WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
-use sea_query::{Expr, ExprTrait as _, Func, OnConflict, Order, Query};
+use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::history::{append_history, run_id};
 use super::notice;
@@ -20,7 +20,7 @@ use super::row::{
     read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_OVERLAP, STARTED, STARTING,
     WAITING,
 };
-use crate::store::db::{self, DbExt as _};
+use crate::store::db::{self, Db, DbExt as _};
 use crate::store::{Store, StoreError};
 
 /// A phase a run can move on from.
@@ -55,59 +55,6 @@ impl Open {
 }
 
 impl Store {
-    /// Records one firing. False, with nothing changed, when that workflow, repo and due time
-    /// already have one, so a firing repeated after a crash records once. The run's history
-    /// opens with the line for its state.
-    pub(crate) fn record_workflow_run(&self, run: &NewRun) -> Result<bool, StoreError> {
-        let cols = state_cols(&run.state);
-        let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
-        let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
-        let key = (run.workflow, &run.repo, run.due_at);
-        self.numbered(|tx, seq| {
-            let inserted = tx.run(
-                Query::insert()
-                    .into_table(WorkflowRuns::Table)
-                    .columns([
-                        WorkflowRuns::Workflow,
-                        WorkflowRuns::Repo,
-                        WorkflowRuns::DueAt,
-                        WorkflowRuns::Box,
-                        WorkflowRuns::Outcome,
-                        WorkflowRuns::Detail,
-                        WorkflowRuns::EndedAt,
-                        WorkflowRuns::RecordedAt,
-                        WorkflowRuns::Seq,
-                        WorkflowRuns::Step,
-                        WorkflowRuns::TryN,
-                        WorkflowRuns::WaitingSince,
-                        WorkflowRuns::EndedStep,
-                        WorkflowRuns::Plan,
-                    ])
-                    .values_panic([
-                        run.workflow.get().into(),
-                        run.repo.to_string().into(),
-                        run.due_at.as_millis().into(),
-                        cols.box_id.into(),
-                        run.state.tag().into(),
-                        cols.detail.clone().into(),
-                        cols.ended_at.into(),
-                        run.recorded_at.as_millis().into(),
-                        seq.into(),
-                        cols.step.clone().into(),
-                        cols.try_n.into(),
-                        cols.waiting_since.into(),
-                        cols.ended_step.clone().into(),
-                        plan.clone().into(),
-                    ])
-                    .on_conflict(OnConflict::new().do_nothing().to_owned()),
-            )?;
-            if inserted == 1 {
-                append_history(tx, run_id(tx, key)?, run.recorded_at, &entry)?;
-            }
-            Ok(inserted)
-        })
-    }
-
     /// Moves the run of `workflow` and `repo` due at `due_at` from the phase `from` to `to` at
     /// `at`, and appends the line for the move, when the run is still in `from`. False, with
     /// nothing changed, otherwise, so whichever of two moves comes first wins.
@@ -234,7 +181,19 @@ impl Store {
 
     /// The latest run of `workflow` for `repo` that was a real attempt, whatever came since: not
     /// skipped and not refused. Its place in the table does not depend on how many skips follow.
+    /// Latest is the last recorded, not the latest due: a run fired by hand is due when it is
+    /// claimed, so a cron run for an earlier due time can be recorded after it.
     pub(crate) fn latest_real_run(
+        &self,
+        workflow: WorkflowId,
+        repo: &ForgeRepo,
+    ) -> Result<Option<WorkflowRun>, StoreError> {
+        real_run(&self.reader()?, workflow, repo)
+    }
+
+    /// The latest cron run of `workflow` for `repo` by due time, whatever came of it. A run
+    /// fired by hand is left out, so it never hides a due time the schedule missed.
+    pub(crate) fn latest_cron_run(
         &self,
         workflow: WorkflowId,
         repo: &ForgeRepo,
@@ -246,9 +205,7 @@ impl Store {
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
                     .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                    .and_where(
-                        Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, REFUSED]),
-                    )
+                    .and_where(Expr::col(WorkflowRuns::Trigger).eq(RunTrigger::Cron.as_str()))
                     .order_by(WorkflowRuns::DueAt, Order::Desc)
                     .limit(1),
                 |r| read_run(r, 0),
@@ -385,4 +342,27 @@ impl Store {
             })
             .collect()
     }
+}
+
+/// The latest run of `workflow` for `repo` that was a real attempt, read through `db`, which
+/// may be a transaction.
+pub(super) fn real_run(
+    db: &dyn Db,
+    workflow: WorkflowId,
+    repo: &ForgeRepo,
+) -> Result<Option<WorkflowRun>, StoreError> {
+    db.rows(
+        Query::select()
+            .columns(RUN_COLS)
+            .from(WorkflowRuns::Table)
+            .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+            .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+            .and_where(Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, REFUSED]))
+            .order_by(WorkflowRuns::Id, Order::Desc)
+            .limit(1),
+        |r| read_run(r, 0),
+    )?
+    .map(|row| run_of(workflow, &row?))
+    .next()
+    .transpose()
 }

@@ -39,6 +39,7 @@ fn the_tools_are_listed() {
             "remove_webhook",
             "remove_workflow",
             "retry_box",
+            "run_workflow",
             "send_to_box",
             "set_node_settings",
             "set_repo_config",
