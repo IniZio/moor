@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::{sleep_due, SleepFacts, SleepVerdict};
+use super::{sleep_due, HoldReason, SleepFacts, SleepVerdict};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
@@ -10,6 +10,7 @@ use crate::seam::clock::Ts;
 const AFTER: Duration = Duration::from_secs(600);
 const BLOCKED_MS: i64 = 300_000;
 const MAX_AWAKE_MS: i64 = 7_200_000;
+const HARD_MS: i64 = 43_200_000;
 
 fn facts(
     lifecycle: BoxLifecycle,
@@ -25,6 +26,8 @@ fn facts(
         after: AFTER,
         after_blocked: Duration::from_secs(300),
         max_awake: Duration::from_secs(7200),
+        hard_ceiling: Duration::from_hours(12),
+        background_job: false,
         blocked: false,
         awake_since: None,
     }
@@ -149,12 +152,52 @@ fn an_idle_box_not_waiting_keeps_the_idle_timer() {
 }
 
 #[test]
-fn any_box_awake_past_the_cap_is_due_whatever_its_session() {
+fn an_idle_box_past_the_cap_is_due_without_waiting_out_the_idle_timer() {
+    let f = SleepFacts {
+        idle_since: Some(Ts::from_millis(MAX_AWAKE_MS - 1)),
+        ..limited(SessionState::Idle, false, Some(0), MAX_AWAKE_MS)
+    };
+    assert_eq!(sleep_due(&f), SleepVerdict::Due);
+}
+
+#[test]
+fn a_working_box_past_the_cap_is_held() {
     for session in [SessionState::Working, SessionState::Starting] {
         let at = |now| sleep_due(&limited(session, false, Some(0), now));
         assert_eq!(at(MAX_AWAKE_MS - 1), SleepVerdict::NotIdle, "{session:?}");
-        assert_eq!(at(MAX_AWAKE_MS), SleepVerdict::Due, "{session:?}");
+        assert_eq!(
+            at(MAX_AWAKE_MS),
+            SleepVerdict::Held(HoldReason::Working),
+            "{session:?}"
+        );
     }
+}
+
+#[test]
+fn a_box_with_a_background_job_past_the_cap_is_held_for_it() {
+    let f = SleepFacts {
+        background_job: true,
+        ..limited(SessionState::Working, false, Some(0), MAX_AWAKE_MS)
+    };
+    assert_eq!(sleep_due(&f), SleepVerdict::Held(HoldReason::BackgroundJob));
+}
+
+#[test]
+fn any_box_past_the_hard_ceiling_is_due_whatever_its_session() {
+    for session in [SessionState::Working, SessionState::Starting] {
+        let at = |now| sleep_due(&limited(session, false, Some(0), now));
+        assert_eq!(
+            at(HARD_MS - 1),
+            SleepVerdict::Held(HoldReason::Working),
+            "{session:?}"
+        );
+        assert_eq!(at(HARD_MS), SleepVerdict::DueAtCeiling, "{session:?}");
+    }
+    let f = SleepFacts {
+        background_job: true,
+        ..limited(SessionState::Working, false, Some(0), HARD_MS)
+    };
+    assert_eq!(sleep_due(&f), SleepVerdict::DueAtCeiling);
 }
 
 #[test]

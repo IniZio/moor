@@ -389,6 +389,10 @@ fn all_events() -> Vec<Event> {
             reason: s("the agent stopped without reporting"),
             link: s("/workflows/deps/runs/7"),
         }),
+        Event::Stall(StallEvent::SleepHeld {
+            reason: s("working"),
+            awake_for_secs: 7_200,
+        }),
     ]
 }
 
@@ -406,7 +410,7 @@ fn asserted_kinds_are_the_frozen_twenty() {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 97);
+    assert_eq!(all.len(), 98);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

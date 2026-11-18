@@ -107,5 +107,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Egress(EgressEvent::EgressSeen { .. }) => 94,
         Event::Workflow(WorkflowEvent::RunWaiting { .. }) => 95,
         Event::Workflow(WorkflowEvent::RunFailed { .. }) => 96,
+        Event::Stall(StallEvent::SleepHeld { .. }) => 97,
     }
 }

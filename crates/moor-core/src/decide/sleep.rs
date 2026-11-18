@@ -25,15 +25,43 @@ pub struct SleepFacts {
     pub after_blocked: Duration,
     /// When the machine last came up, by acquire or wake, if known.
     pub awake_since: Option<Ts>,
-    /// How long any Box stays awake before it sleeps, whatever its Session does.
+    /// How long a Box stays awake before it sleeps once it is idle.
     pub max_awake: Duration,
+    /// How long any Box stays awake before it sleeps, working or not.
+    pub hard_ceiling: Duration,
+    /// Whether the agent ended its turn but waits on a background job it started.
+    pub background_job: bool,
+}
+
+/// Why a Box past `max_awake` is held awake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldReason {
+    /// The agent is mid-turn.
+    Working,
+    /// The agent waits on a background job.
+    BackgroundJob,
+}
+
+impl HoldReason {
+    /// The `snake_case` name recorded in the `sleep_held` event.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::BackgroundJob => "background_job",
+        }
+    }
 }
 
 /// Outcome of one auto-sleep check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SleepVerdict {
-    /// The Box has been Idle long enough to sleep.
+    /// The Box has been Idle long enough, or Idle past `max_awake`, to sleep.
     Due,
+    /// The Box has been awake past `hard_ceiling`, so it sleeps whatever its Session does.
+    DueAtCeiling,
+    /// The Box is past `max_awake` but its agent works, so it stays awake.
+    Held(HoldReason),
     /// The Box is Idle but not for long enough, or its idle time is unknown.
     NotYet,
     /// The Box is not Idle.
@@ -42,18 +70,30 @@ pub enum SleepVerdict {
 
 /// Decides auto-sleep.
 ///
-/// A Ready Box is due once it has been awake for `max_awake`, whatever its Session does. Otherwise only an Idle Box is due, once `now - idle_since` reaches `after`, or
-/// the shorter `after_blocked` while it waits on a prompt. A clock that went backwards is never due.
+/// A Ready Box is due at once when it has been awake for `hard_ceiling`, whatever its Session
+/// does. Past `max_awake` an Idle Box is due and a busy one is held. Otherwise only an Idle Box
+/// is due, once `now - idle_since` reaches `after`, or the shorter `after_blocked` while it
+/// waits on a prompt. A clock that went backwards is never due.
 #[must_use]
 pub fn sleep_due(f: &SleepFacts) -> SleepVerdict {
     if f.lifecycle != BoxLifecycle::Ready {
         return SleepVerdict::NotIdle;
     }
-    if f.awake_since.is_some_and(|t| lasted(t, f.now, f.max_awake)) {
-        return SleepVerdict::Due;
+    if f.awake_since
+        .is_some_and(|t| lasted(t, f.now, f.hard_ceiling))
+    {
+        return SleepVerdict::DueAtCeiling;
     }
+    let capped = f.awake_since.is_some_and(|t| lasted(t, f.now, f.max_awake));
     if !f.session.is_quiet() {
-        return SleepVerdict::NotIdle;
+        return match (capped, f.background_job) {
+            (false, _) => SleepVerdict::NotIdle,
+            (true, true) => SleepVerdict::Held(HoldReason::BackgroundJob),
+            (true, false) => SleepVerdict::Held(HoldReason::Working),
+        };
+    }
+    if capped {
+        return SleepVerdict::Due;
     }
     let after = if f.blocked {
         f.after.min(f.after_blocked)

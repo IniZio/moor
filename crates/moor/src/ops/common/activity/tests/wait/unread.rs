@@ -125,10 +125,12 @@ fn an_unread_agent_does_not_sleep_on_its_idle_time() {
 }
 
 #[test]
-fn an_unread_agent_still_sleeps_at_the_awake_cap() {
+fn an_unread_agent_is_held_at_the_awake_cap_and_sleeps_at_the_hard_ceiling() {
     let (_d, rig) = rig();
     rig.reads(dropped());
     rig.pass(Duration::from_hours(2));
+    assert_eq!(rig.sleeps(), 0);
+    rig.pass(Duration::from_hours(10));
     assert_eq!(rig.sleeps(), 1);
 }
 

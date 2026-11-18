@@ -42,6 +42,13 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
             ExtraEvent::LaunchTimedOut { after_secs } => Self::LaunchTimedOut { after_secs },
+            ExtraEvent::SleepHeld {
+                reason,
+                awake_for_secs,
+            } => Self::Stall(StallEvent::SleepHeld {
+                reason,
+                awake_for_secs,
+            }),
             ExtraEvent::RelaunchCapped { count, window_secs } => {
                 Self::RelaunchCapped { count, window_secs }
             }

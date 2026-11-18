@@ -70,6 +70,13 @@ pub enum ExtraEvent {
         /// The configured limit, in seconds.
         after_secs: u64,
     },
+    /// A Box past `box.max_awake` stays awake because its agent works or a background job runs.
+    SleepHeld {
+        /// Why: `working` or `background_job`.
+        reason: String,
+        /// Whole seconds the Box has been awake.
+        awake_for_secs: u64,
+    },
     /// moor refused another automatic agent relaunch.
     RelaunchCapped {
         /// Relaunches within the window.

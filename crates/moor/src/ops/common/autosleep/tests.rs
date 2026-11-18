@@ -194,9 +194,9 @@ fn a_working_box_never_sleeps() {
 }
 
 #[test]
-fn a_working_box_past_the_awake_limit_sleeps_marked_as_parked_at_work() {
+fn a_working_box_past_the_hard_ceiling_sleeps_marked_as_parked_at_work() {
     let f = working_with(FakeDriver::new());
-    pass(&f, Duration::from_hours(2) + Duration::from_mins(1));
+    pass(&f, Duration::from_hours(12) + Duration::from_mins(1));
     auto_sleep(&f);
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
@@ -368,19 +368,87 @@ fn a_box_waiting_on_a_prompt_sleeps_after_five_minutes() {
     );
 }
 
+/// The `sleep_held` events recorded for the Box, as `(reason, awake_for_secs)`.
+fn holds(f: &Fx) -> Vec<(String, u64)> {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    rows.into_iter()
+        .filter(|e| e.kind == "sleep_held")
+        .map(|e| {
+            (
+                e.payload
+                    .get("reason")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+                e.payload.get("awake_for_secs").unwrap().as_u64().unwrap(),
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn a_working_box_sleeps_after_two_hours_awake() {
+fn an_idle_box_past_the_awake_cap_sleeps() {
     let f = working_with(FakeDriver::new());
     pass(&f, Duration::from_mins(119));
     auto_sleep(&f);
     assert_eq!(sleep_calls(&f), 0);
     pass(&f, Duration::from_mins(1));
+    step(&f, SessionInput::AgentQuiet);
     auto_sleep(&f);
-    assert_eq!(
-        states(&f).0,
-        BoxLifecycle::Asleep,
-        "a Box awake two hours sleeps while working"
-    );
+    assert_eq!(states(&f).0, BoxLifecycle::Asleep);
+    assert!(holds(&f).is_empty());
+}
+
+#[test]
+fn a_working_box_past_the_awake_cap_stays_awake_and_says_so_once() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_hours(2));
+    auto_sleep(&f);
+    pass(&f, Duration::from_mins(10));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 0);
+    assert_eq!(states(&f).0, BoxLifecycle::Ready);
+    assert_eq!(holds(&f), [("working".to_owned(), 7_200)]);
+}
+
+#[test]
+fn a_box_with_a_background_job_past_the_awake_cap_stays_awake() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_hours(3));
+    run(&f.cx, f.cx.store().unwrap(), f.id, AgentRead::Background);
+    run(&f.cx, f.cx.store().unwrap(), f.id, AgentRead::Background);
+    assert_eq!(sleep_calls(&f), 0);
+    assert_eq!(states(&f).0, BoxLifecycle::Ready);
+    assert_eq!(holds(&f), [("background_job".to_owned(), 10_800)]);
+}
+
+#[test]
+fn a_held_box_sleeps_once_its_work_ends() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_hours(2));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 0);
+    step(&f, SessionInput::AgentQuiet);
+    auto_sleep(&f);
+    assert_eq!(states(&f).0, BoxLifecycle::Asleep);
+}
+
+#[test]
+fn a_busy_box_past_the_hard_ceiling_sleeps_and_says_why() {
+    for agent in [AgentRead::Plain, AgentRead::Background, AgentRead::Unread] {
+        let f = working_with(FakeDriver::new());
+        pass(&f, Duration::from_hours(12));
+        run(&f.cx, f.cx.store().unwrap(), f.id, agent);
+        assert_eq!(states(&f).0, BoxLifecycle::Asleep, "{agent:?}");
+        let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+        let asleep = rows.iter().find(|e| e.kind == "asleep").unwrap();
+        assert_eq!(
+            asleep.payload.get("reason").and_then(|r| r.as_str()),
+            Some("max_awake_hard"),
+            "{agent:?}"
+        );
+    }
 }
 
 #[test]

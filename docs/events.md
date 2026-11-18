@@ -14,6 +14,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `setup_failed` | ✓ | A clone, `setup` line, or agent install failed. `data.line` names it. |
 | `session_failed` | ✓ | The agent could not be started. |
 | `launch_timed_out` | ✓ | The agent did not start within `box.launch_timeout`. |
+| `sleep_held` | | A Box past `box.max_awake` stays awake because its agent is working or waits on a background job. `data.reason` is `working` or `background_job`, and `data.awake_for_secs` how long the Box has been awake. Recorded once for each hold. |
 | `relaunch_capped` | ✓ | The agent ended 3 times in 10 minutes, so moor stopped restarting it. |
 | `box_failed` | ✓ | The Box's VM could not be made. |
 | `disk_lost` | ✓ | The Box's VM was gone and a new, empty one replaced it. Work that was not pushed is lost. |
