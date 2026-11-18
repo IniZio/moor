@@ -48,7 +48,7 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 | `notify.enabled` | `false` | Run the webhook front. |
 | `runner.enabled` | `true` | Run the machine runner, so teammates can pair machines. |
 | `runner.separate` | `false` | Run the runner as `runner.replicas` pods of its own. Needs `egress.enabled`. |
-| `runner.agentsPort`, `runner.linksPort` | 7701, 7702 | Where agents link, and where the controller reaches a runner pod. |
+| `runner.agentsPort`, `runner.linksPort` | 7701, 7702 | Where agents link, and where the controller or another runner pod reaches a runner pod. |
 | `runner.extraArgs` | `[]` | More `moor-machine-runner` flags, such as `--relay`. |
 | `podDisruptionBudget.enabled` | `false` | One budget for the gate and runner pods. Needs RBAC on `policy/v1`. |
 

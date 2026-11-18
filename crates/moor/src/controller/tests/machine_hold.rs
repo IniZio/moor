@@ -117,6 +117,19 @@ fn a_held_claim_names_the_runner_that_holds_the_machines_link() {
 }
 
 #[test]
+fn a_held_claim_leaves_out_a_runner_on_the_controllers_host() {
+    let h = Hold::new();
+    let a = h.new_box(A, "a");
+    let runner = h.served.runner();
+    let link = json!({"machine_id": 1, "online": true, "since": 1});
+    let report = json!({"cmd": "machine-links", "runner": "/run/runner.sock", "links": [link]});
+    assert_eq!(ask(&runner, &report)["class"], "ok");
+    let got = ask(&runner, &hold(a, &claim()));
+    assert_eq!(got["value"]["state"], "held", "{got}");
+    assert!(got["value"].get("runner").is_none(), "{got}");
+}
+
+#[test]
 fn a_claim_on_a_full_machine_without_a_wait_is_refused_naming_the_holder() {
     let h = Hold::new();
     let (a, b) = (h.new_box(A, "a"), h.new_box(A, "b"));

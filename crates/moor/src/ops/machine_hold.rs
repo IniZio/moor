@@ -4,6 +4,7 @@
 
 use moor_core::config::sync_excludes;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::request::RunnerAddr;
 use moor_core::{ErrorKind, HoldValue, MachineHoldReq};
 
 use crate::cx::Cx;
@@ -42,10 +43,12 @@ pub(crate) fn run(cx: &Cx, req: &MachineHoldReq) -> Result<HoldValue, CommandErr
         machine_id, runner, ..
     } = &mut value
     {
-        *runner = store
+        let holder = store
             .machine_runner(*machine_id, store.now())
             .ok()
             .flatten();
+        let only_runner_on_this_host = |r: &RunnerAddr| r.as_str().starts_with('/');
+        *runner = holder.filter(|r| !only_runner_on_this_host(r));
     }
     Ok(value)
 }
