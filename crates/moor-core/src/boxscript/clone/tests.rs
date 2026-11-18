@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use super::{clone_script, Checkout, CloneStep};
+use super::{clone_script, one_at_a_time, Checkout, CloneStep};
 
 mod submodules;
 
@@ -425,4 +425,53 @@ fn a_git_dir_that_appears_while_cloning_is_never_nested_and_stops_at_the_clone_s
     assert!(!b.join(".git/.git").exists(), "nested .git");
     assert!(b.join(".git/HEAD").is_file(), "the other run's .git stays");
     assert_eq!(r.moor_dir(), Vec::<String>::new(), "no temp dir is left");
+}
+
+/// A `git` on `PATH` whose first `clone` under `home` sleeps before it runs, standing in for a
+/// long clone that a lost link left running in the Box.
+fn slow_first_clone(home: &Path) -> PathBuf {
+    let real = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    let real = String::from_utf8(real.stdout).unwrap().trim().to_owned();
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let shim = bin.join("git");
+    let text = format!(
+        "#!/bin/sh\ncase \"$1\" in clone) mkdir \"$HOME/slowed\" 2>/dev/null && sleep 3;; esac\nexec {real} \"$@\"\n"
+    );
+    std::fs::write(&shim, text).unwrap();
+    std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    bin
+}
+
+#[test]
+fn a_rerun_while_an_earlier_run_still_clones_waits_for_it_and_both_pass() {
+    let r = Remote::new("overlap");
+    let url = r.url();
+    let script = one_at_a_time(&clone_script(&Checkout {
+        url: &url,
+        base: &r.base,
+        branch: BRANCH,
+    }));
+    let bin = slow_first_clone(r.dir.path());
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let spawn = || {
+        Command::new("sh")
+            .args(["-c", &script])
+            .current_dir(r.path("box"))
+            .env("HOME", r.dir.path())
+            .env("PATH", &path)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .spawn()
+            .unwrap()
+    };
+    let mut first = spawn();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let rerun = spawn().wait().unwrap();
+    let first = first.wait().unwrap();
+    assert_eq!((first.code(), rerun.code()), (Some(0), Some(0)));
+    assert_eq!(r.state().branch, BRANCH);
+    assert_eq!(r.git(&r.path("box"), &["rev-parse", "HEAD"]), r.base);
 }

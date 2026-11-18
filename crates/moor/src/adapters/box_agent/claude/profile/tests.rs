@@ -14,7 +14,8 @@ use crate::adapters::box_agent::profile_writer::{ProfileCtx, ProfileWriter};
 const FULL: &str = "claude:\n  marketplaces:\n    tools: https://github.com/acme/agent-tools\n  \
 plugins: [lint@tools, fmt@tools]\n";
 
-/// A Box laid out under a temp dir, with a `claude` on `PATH` that logs its arguments.
+/// A Box laid out under a temp dir, with a `claude` on `PATH` that logs its arguments, and a
+/// `sleep` that logs its pause and returns at once.
 struct Fixture {
     root: TempDir,
 }
@@ -27,9 +28,15 @@ impl Fixture {
         }
         let claude = root.path().join("bin/claude");
         let script = "#!/bin/sh\necho \"$*\" >> \"$STUB_LOG\"\n\
-[ \"$*\" = \"plugin install $STUB_FAIL\" ] && exit 7\nexit 0\n";
+[ \"$*\" = \"plugin install $STUB_FAIL\" ] && exit 7\n\
+if [ -n \"$STUB_FLAKY\" ] && [ \"$*\" = \"$STUB_FLAKY\" ]; then \
+n=$(cat \"$STUB_LOG.flaky\" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > \"$STUB_LOG.flaky\"; \
+[ $n -le 2 ] && exit 5; fi\nexit 0\n";
         fs::write(&claude, script).unwrap();
         fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let sleep = root.path().join("bin/sleep");
+        fs::write(&sleep, "#!/bin/sh\necho \"sleep $*\" >> \"$STUB_LOG\"\n").unwrap();
+        fs::set_permissions(&sleep, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         Self { root }
     }
 
@@ -48,6 +55,11 @@ impl Fixture {
     }
 
     fn run(&self, manifest: &Manifest, fail: &str) -> Output {
+        self.run_flaky(manifest, fail, "")
+    }
+
+    /// [`Self::run`] with the stub failing the first two calls whose arguments are `flaky`.
+    fn run_flaky(&self, manifest: &Manifest, fail: &str, flaky: &str) -> Output {
         let box_path = |rel| BoxPath::under(self.root.path().to_str().unwrap(), rel).unwrap();
         let (dir, workdir, home) = (box_path("profile"), box_path("work"), box_path("home"));
         let setup = Claude
@@ -72,6 +84,7 @@ impl Fixture {
             .env("HOME", self.path("home"))
             .env("STUB_LOG", self.path("log"))
             .env("STUB_FAIL", fail)
+            .env("STUB_FLAKY", flaky)
             .stdin(Stdio::null())
             .output()
             .unwrap()
@@ -245,5 +258,62 @@ fn a_marketplace_ref_is_kept_in_the_added_source() {
     assert_eq!(
         f.read("log"),
         "plugin marketplace add https://github.com/acme/agent-tools#feat/x\n"
+    );
+}
+
+#[test]
+fn a_flaky_install_is_tried_again_after_10_then_30_seconds_and_passes() {
+    let f = Fixture::new();
+    let out = f.run_flaky(
+        &profile::parse(FULL).unwrap(),
+        "",
+        "plugin install lint@tools",
+    );
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+    assert_eq!(
+        f.read("log"),
+        "plugin marketplace add https://github.com/acme/agent-tools\n\
+plugin install lint@tools\nsleep 10\nplugin install lint@tools\nsleep 30\n\
+plugin install lint@tools\nplugin install fmt@tools\n"
+    );
+    assert_eq!(f.read("work/.moor/profile-failures"), "");
+}
+
+#[test]
+fn a_flaky_marketplace_add_is_tried_again_and_its_plugins_install() {
+    let f = Fixture::new();
+    let add = "plugin marketplace add https://github.com/acme/agent-tools";
+    let out = f.run_flaky(&profile::parse(FULL).unwrap(), "", add);
+    assert!(out.status.success());
+    assert_eq!(
+        f.read("log"),
+        format!("{add}\nsleep 10\n{add}\nsleep 30\n{add}\nplugin install lint@tools\nplugin install fmt@tools\n")
+    );
+    assert_eq!(f.read("work/.moor/profile-failures"), "");
+}
+
+#[test]
+fn an_install_that_fails_three_times_is_recorded_once() {
+    let f = Fixture::new();
+    let out = f.run(&profile::parse(FULL).unwrap(), "lint@tools");
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "moor: profile: plugin lint@tools exit 7\n"
+    );
+    let log = f.read("log");
+    let tries = log
+        .lines()
+        .filter(|l| *l == "plugin install lint@tools")
+        .count();
+    assert_eq!(tries, 3, "{log}");
+    assert!(
+        log.contains("lint@tools\nsleep 10\nplugin install lint@tools\nsleep 30\n"),
+        "{log}"
+    );
+    assert_eq!(
+        f.read("work/.moor/profile-failures"),
+        "plugin lint@tools exit 7\n"
     );
 }

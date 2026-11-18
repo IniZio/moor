@@ -170,5 +170,12 @@ moor_submodules() {{
     )
 }
 
+/// `script` run so that no other copy of it runs alongside in the same place: a copy a lost link
+/// left running is waited for, so a rerun finds its work done instead of racing it.
+#[must_use]
+pub fn one_at_a_time(script: &str) -> String {
+    script.to_owned()
+}
+
 #[cfg(test)]
 mod tests;

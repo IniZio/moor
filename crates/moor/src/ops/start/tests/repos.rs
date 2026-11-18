@@ -224,3 +224,20 @@ fn every_failed_clone_is_named_with_its_reason_in_listed_order() {
     assert!(lib < deploy, "{shown}");
     assert!(shown.contains("; "), "{shown}");
 }
+
+#[test]
+fn a_link_drop_during_another_repos_clone_waits_for_the_relink() {
+    let cut = DriverError::Transport {
+        stderr_tail: "the stream ended before the command did".to_owned(),
+    };
+    let driver = FakeDriver::new().exec_fails_once_when("github.com/o/lib.git", cut);
+    let (w, done) = provisioned(driver, lib_and_deploy());
+    assert!(!done.setup.failed(), "{:?}", done.setup);
+    let lib_clones = w
+        .driver
+        .execs()
+        .into_iter()
+        .filter(|e| is_clone_exec(&e.1) && script(&e.1).contains("github.com/o/lib.git"))
+        .count();
+    assert_eq!(lib_clones, 2, "one ask cut, one after");
+}

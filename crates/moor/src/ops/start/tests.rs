@@ -27,6 +27,7 @@ mod branch_owner;
 mod cache;
 mod cache_node;
 mod capacity;
+mod clone_link;
 mod clone_proxy;
 mod clone_retry;
 mod clone_timing;
