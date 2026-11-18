@@ -36,15 +36,11 @@ fn dirs(w: &World, id: BoxId) -> Vec<LeaseRow> {
 fn assert_dirs(rows: &[LeaseRow], id: BoxId, state: LeaseState) {
     assert_eq!(rows.len(), 2, "{rows:?}");
     assert!(rows.iter().all(|r| r.state == state), "{rows:?}");
-    for (row, name) in rows.iter().zip([
-        format!(".moor-cred-{}-", id.get()),
-        format!(".moor-tmp-{}-", id.get()),
+    for (row, start) in rows.iter().zip([
+        format!("/home/box/.moor-cred-{}-", id.get()),
+        format!("/tmp/.moor-tmp-{}-", id.get()),
     ]) {
-        assert!(
-            row.key.starts_with(&format!("/home/box/{name}")),
-            "{}",
-            row.key
-        );
+        assert!(row.key.starts_with(&start), "{}", row.key);
     }
 }
 

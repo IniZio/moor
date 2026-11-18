@@ -18,7 +18,7 @@ use crate::testing::driver::FakeDriver;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 const CRED: &str = "/home/box/.moor-cred-1-abc123";
-const TMP: &str = "/home/box/.moor-tmp-1-abc123";
+const TMP: &str = "/tmp/.moor-tmp-1-abc123";
 
 fn environ_path() -> BoxPath {
     BoxPath::restore("/proc/self/environ").unwrap()

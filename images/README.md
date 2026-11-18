@@ -7,8 +7,9 @@ A Box has two places, each a container, and moor-machine-agent provides both on 
 | agent | `images/agent` | Claude Code, herdr-core, `moor-egress-forward`, tinyproxy | Not privileged. Owns the network namespace. User `agent`, uid 1000. |
 | work | `images/work` | Where Claude's Bash runs: repos build, services run, Docker runs inside | Privileged. `--network container:<agent>`. User `agent`, uid 1000. |
 
-The places share two volumes. The work tree is mounted at `/home/agent/moor` in both, so a path
-means the same file in both. The run volume is mounted at `/run/moor` in both.
+The places share volumes. The work tree is mounted at `/home/agent/moor` in both, so a path
+means the same file in both. The run volume is mounted at `/run/moor` in both. `/tmp` is one volume
+in both, and it holds the agent's `TMPDIR`, so the Bash tool can read a background task's output file.
 
 Build the agent image from the repository root, because it compiles `moor-egress-forward`:
 
@@ -33,7 +34,7 @@ The script `tools/box-smoke.sh` builds both images and starts a Box from them. I
 | `egress.json` | machine agent | The hosts the Box reached, one row per host, port and path. See [the egress log](../docs/specs/egress-log.md). |
 | `oom` | work init | Count of OOM kills in the work place's cgroup. Only grows, also across work place restarts. |
 | `rebuild`, `rebuild.asked` | `box-rebuild`, work init | `keep` or `clean`, then the reason. Work init renames `rebuild` to `rebuild.asked` as it exits 75. The provider clears it. |
-| `tmp/` | | `TMPDIR` in both places, because Claude writes the command's cwd file there and reads it in the agent place. |
+| `tmp/` | | `TMPDIR` of the lines `box-shell` runs in the work place, and the cwd file it links for a Bash-tool line. |
 
 ## `box-shell`
 

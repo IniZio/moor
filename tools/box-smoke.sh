@@ -132,24 +132,24 @@ check "the work place sees the agent place's files at the same path" "shared" "$
 shell 'echo made > /home/agent/moor/from-work'
 check "the agent place sees the work place's files, owned by uid 1000" "made 1000" "$(in_agent sh -c 'echo "$(cat /home/agent/moor/from-work) $(stat -c %u /home/agent/moor/from-work)"')"
 check "a line runs in the caller's directory" "/home/agent/moor" "$(docker exec -w /home/agent/moor "$agent" box-shell -c pwd 2>&1)"
-claude_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && cd /home/agent/moor && true && pwd -P >| /home/agent/.moor-tmp-bs01/claude-bs01-cwd"
-in_agent sh -c "mkdir -p /home/agent/.moor-tmp-bs01 && rm -f /home/agent/.moor-tmp-bs01/claude-bs01-cwd"
+claude_line="source /home/agent/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && cd /home/agent/moor && true && pwd -P >| /tmp/.moor-tmp-bs01/claude-bs01-cwd"
+in_agent sh -c "mkdir -p /tmp/.moor-tmp-bs01 && rm -f /tmp/.moor-tmp-bs01/claude-bs01-cwd"
 in_agent box-shell "$claude_line" >/dev/null 2>&1
-check "a Bash-tool line leaves its cwd where Claude reads it in the agent place" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs01/claude-bs01-cwd 2>&1)"
+check "a Bash-tool line leaves its cwd where Claude reads it in the agent place" "/home/agent/moor" "$(in_agent cat /tmp/.moor-tmp-bs01/claude-bs01-cwd 2>&1)"
 
 bash_tool() {
-  local id=$1 cmd=$2 tmp=/home/agent/.moor-tmp-bs03
+  local id=$1 cmd=$2 tmp=/tmp/.moor-tmp-bs03
   in_agent sh -c "mkdir -p $tmp && rm -f $tmp/claude-$id-cwd"
   docker exec -w /home/agent/moor "$agent" box-shell "source /home/agent/.claude/shell-snapshots/snapshot-bash-3.sh 2>/dev/null || true && { \\builtin shopt -u extglob || \\builtin setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval '$cmd' < /dev/null && pwd -P >| $tmp/claude-$id-cwd" 2>&1
   echo "exit=$?"
 }
 check "a Bash-tool line of two lines exits 0 and prints nothing else" "exit=0" "$(bash_tool bs03 $'cd /home/agent/moor\ntrue')"
-check "a Bash-tool line leaves its cwd under the agent's TMPDIR" "/home/agent/moor" "$(in_agent cat /home/agent/.moor-tmp-bs03/claude-bs03-cwd 2>&1)"
+check "a Bash-tool line leaves its cwd under the agent's TMPDIR" "/home/agent/moor" "$(in_agent cat /tmp/.moor-tmp-bs03/claude-bs03-cwd 2>&1)"
 check "a failing Bash-tool line exits with its own code" "exit=3" "$(bash_tool bs04 '(exit 3)')"
 
-task=/home/agent/.moor-tmp-bs05/claude-1000/-home-agent-moor/s/tasks/b1.output
-in_agent sh -c "mkdir -p ${task%/*} && echo bg-line > $task"
-check "a Bash-tool line reads a background task's output in the launch's TMPDIR" "bg-line" "$(bash_tool bs05 "cat $task" | head -n 1)"
+out=/tmp/.moor-tmp-bs05/claude-1000/-home-agent-moor/s/tasks/b1.output
+in_agent sh -c "mkdir -p ${out%/*} && echo bg-line > $out"
+check "a Bash-tool line reads a background task's output in the launch's TMPDIR" "bg-line" "$(bash_tool bs05 "cat $out" | head -n 1)"
 
 in_agent sh -c "echo 'export BOXSMOKE_ENV=through-profile' > /run/moor/box.env"
 check "box.env reaches the work place's login shell" "through-profile" "$(shell 'echo $BOXSMOKE_ENV' 2>&1)"

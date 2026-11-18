@@ -56,6 +56,10 @@ pub struct GitSource {
     pub git_ref: Option<String>,
 }
 
+/// The directory every place of a Box sees at the same path, so a file the agent's Bash writes
+/// or reads there is the file the agent itself sees.
+pub const SHARED_TMP: &str = "/tmp";
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -96,7 +100,8 @@ pub struct LaunchReq {
 }
 
 impl LaunchReq {
-    /// The credential and tmp directories this launch creates under the Box home `home`.
+    /// The credential directory this launch creates under the Box home `home`, and its tmp
+    /// directory under [`SHARED_TMP`].
     ///
     /// # Errors
     /// [`NameError`] when `home` and the Box name do not form a valid Box path.
@@ -104,7 +109,7 @@ impl LaunchReq {
         let (cred, tmp) = self.dir_names();
         Ok((
             BoxPath::under(home.as_str(), &cred)?,
-            BoxPath::under(home.as_str(), &tmp)?,
+            BoxPath::under(SHARED_TMP, &tmp)?,
         ))
     }
 
