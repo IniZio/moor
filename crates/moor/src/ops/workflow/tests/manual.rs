@@ -216,3 +216,41 @@ fn skips_between_failures_do_not_hide_the_breaker_streak() {
     let lines = r.pass();
     assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
 }
+
+#[test]
+fn a_manual_run_answers_while_its_box_is_still_setting_up() {
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
+
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    let (release, held) = mpsc::channel::<()>();
+    let held = Mutex::new(held);
+    r.driver.on_exec(move || {
+        let _ = held.lock().unwrap().recv();
+    });
+    let (answer, answered) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = answer.send(fire(&r, &[]));
+        r
+    });
+    let got = answered.recv_timeout(Duration::from_secs(5));
+    drop(release);
+    let r = worker.join().unwrap();
+    let line = only(
+        got.expect("run_workflow answered while setup was still running")
+            .unwrap(),
+    );
+    assert_eq!(line.status, "started", "{line:?}");
+    assert_eq!(
+        line.box_name.as_deref(),
+        Some("n/w1-daily-fix-m19700101000000")
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !matches!(r.latest(id).state, RunState::Running { .. }) {
+        assert!(std::time::Instant::now() < deadline, "{:?}", r.latest(id));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(r.open_boxes(), 1);
+}

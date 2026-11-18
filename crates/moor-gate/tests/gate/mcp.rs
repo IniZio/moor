@@ -43,7 +43,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                     let who = frame["request"]["identity"].as_str().unwrap_or_default();
                     let box_name = inner["name"].as_str().or_else(|| inner["box"].as_str());
                     let cmd = inner["cmd"].as_str().unwrap_or_default();
-                    if cmd == "start" {
+                    if cmd == "start" || cmd == "retry" {
                         note_start(&started, box_name.unwrap());
                     }
                     if cmd == "show"
@@ -84,7 +84,8 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     rx
 }
 
-/// Remembers that Box `name` started; a `/slow` one takes three seconds to.
+/// Remembers that Box `name` started or began its setup again; a `/slow` one takes three
+/// seconds to finish.
 fn note_start(started: &Mutex<HashSet<String>>, name: &str) {
     started.lock().unwrap().insert(name.to_owned());
     if name.ends_with("/slow") {

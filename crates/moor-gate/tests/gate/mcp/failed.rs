@@ -51,3 +51,23 @@ fn close_failed_boxes_sends_close_failed_with_force_off_unless_set() {
         );
     }
 }
+
+#[test]
+fn retry_box_returns_once_setup_restarted_while_the_retry_still_runs() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let began = std::time::Instant::now();
+    let result = m.call(&token, "retry_box", json!({"box": "web/slow"}));
+    assert_ne!(result["isError"], true, "{result}");
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(2),
+        "retry_box waited {:?} for the retry to finish",
+        began.elapsed()
+    );
+    assert_eq!(
+        result["structuredContent"]["box"]["name"], "web/slow",
+        "{result}"
+    );
+    let next = result["structuredContent"]["next"].as_str().unwrap();
+    assert!(next.contains("box_status"), "{result}");
+}
