@@ -61,8 +61,6 @@ pub fn normalize(server: &str) -> String {
 pub struct Store {
     /// The directory holding both files.
     dir: PathBuf,
-    /// A credentials file of the old one-server layout to import a sign-in from.
-    legacy: Option<PathBuf>,
 }
 
 /// `$XDG_STATE_HOME`, or `~/.local/state`.
@@ -77,21 +75,14 @@ impl Store {
     /// A store in `dir`.
     #[must_use]
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self {
-            dir: dir.into(),
-            legacy: None,
-        }
+        Self { dir: dir.into() }
     }
 
-    /// The person's store, `$XDG_STATE_HOME/moor`, which imports a sign-in the herdr plugin
-    /// saved before it shared this one.
+    /// The person's store, `$XDG_STATE_HOME/moor`.
     #[must_use]
     pub fn user() -> Self {
-        let herdr = std::env::var_os("HERDR_PLUGIN_STATE_DIR")
-            .map_or_else(|| xdg_state().join("herdr/plugins/moor"), PathBuf::from);
         Self {
             dir: xdg_state().join("moor"),
-            legacy: Some(herdr.join("credentials.json")),
         }
     }
 
@@ -119,11 +110,7 @@ impl Store {
     /// # Errors
     /// The file exists and cannot be read.
     pub fn read(&self, server: &str) -> Result<Option<Credentials>, String> {
-        let server = normalize(server);
-        if let Some(creds) = self.load()?.servers.remove(&server) {
-            return Ok(Some(creds));
-        }
-        self.import(&server)
+        Ok(self.load()?.servers.remove(&normalize(server)))
     }
 
     /// Every saved sign-in, by server.
@@ -132,31 +119,6 @@ impl Store {
     /// The file exists and cannot be read.
     pub fn all(&self) -> Result<Vec<Credentials>, String> {
         Ok(self.load()?.servers.into_values().collect())
-    }
-
-    /// Copies the old layout's sign-in to `server` into this store, once.
-    fn import(&self, server: &str) -> Result<Option<Credentials>, String> {
-        let Some(old) = self.legacy.as_ref().and_then(|p| fs::read(p).ok()) else {
-            return Ok(None);
-        };
-        let Ok(creds) = serde_json::from_slice::<Credentials>(&old) else {
-            return Ok(None);
-        };
-        if normalize(&creds.server) != server {
-            return Ok(None);
-        }
-        let _lock = self.lock().map_err(|e| e.to_string())?;
-        let mut saved = self.load()?;
-        let kept = saved
-            .servers
-            .entry(server.to_owned())
-            .or_insert(creds)
-            .clone();
-        self.save(&saved).map_err(|e| e.to_string())?;
-        if let Some(old) = &self.legacy {
-            let _ = fs::rename(old, old.with_extension("json.imported"));
-        }
-        Ok(Some(kept))
     }
 
     /// Saves `creds` under its server with mode 0600, replacing the file in one step.

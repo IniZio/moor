@@ -59,7 +59,6 @@ front calls it.
 | --- | --- | --- |
 | `moor-hc forward BOX PORT` | Yes, the teammate's entry | `moor-hc` already runs on the person's computer, signed in with `moor-hc login`, and pipes bytes to a Box through `/front` for hc ([`moor-hc/src/exec.rs`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/crates/moor-hc/src/exec.rs)). It runs in any terminal pane of the TUI. |
 | `moor forward NAME PORT` | Yes, first and dev only | Proves the path before the bridge ships. Same client code. |
-| moor-herdr | Not planned | It stays only until herdr is an hc client. It could call the same module from a pane. |
 | Account page, MCP | No | They run on a server. A listener there is not the person's `localhost`. |
 
 ## Data path

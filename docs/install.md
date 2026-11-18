@@ -39,7 +39,6 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 | `moor-machine-agent` | Each person who adds a machine. `moor up` runs it for the host's own node. |
 | `moor-machine-runner` | The operator. `moor up` runs it beside the controller, to take agent links. |
 | `moor-listen` | Anyone who wants event lines with a token of their own. |
-| `moor-herdr` | Installed by the herdr plugin, not by hand. |
 
 | Option | Effect |
 | --- | --- |

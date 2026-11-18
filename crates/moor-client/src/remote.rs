@@ -200,7 +200,7 @@ impl Remote {
                 if matches!(resp.status().as_u16(), 401 | 403) =>
             {
                 Failure::Refused(format!(
-                    "the server answered {}; run `moor-herdr login`",
+                    "the server answered {}; run `moor login`",
                     resp.status()
                 ))
             }

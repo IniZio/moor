@@ -1,8 +1,7 @@
 # Start and steer Boxes
 
-You can start, watch, and steer a Box from Claude Code. To type into the
-agent's own terminal, take it over in herdr. Each front shows the same Box, so
-you can start in one and follow in another.
+You can start, watch, and steer a Box from Claude Code or the web portal. Each
+front shows the same Box, so you can start in one and follow in another.
 
 Before you start, link your `claude` and `github` secrets on the account page
 at `https://HOST`. A start without the secrets is refused, and the refusal names each one that is
@@ -38,44 +37,6 @@ request. Look at the screen with `inspect_box` before you steer.
 
 To have Claude Code tell you when a Box needs you, install the moor plugin.
 [Get Box events](notify.md#in-claude-code) shows how.
-
-## Take over the agent's terminal in herdr
-
-The agent's session in a Box is a real Claude Code session. Taking over means
-typing into it. Today you do that with the moor plugin for
-[herdr](https://herdr.dev), which shows each Box as a herdr workspace.
-
-1. Install the plugin and name your moor:
-
-   ```sh
-   herdr plugin install IniZio/moor/crates/moor-herdr/herdr --ref main
-   echo MOOR_HERDR_SERVER=https://HOST >> "$(herdr plugin config-dir moor)/env"
-   ```
-
-2. Sign in. The command opens your browser.
-
-   ```sh
-   ~/.local/state/herdr/plugins/moor/bin/moor-herdr login
-   ```
-
-3. Add the plugin's config snippet and reload herdr:
-
-   ```sh
-   cat "$(herdr plugin config-dir moor)/herdr-setup.toml" >> ~/.config/herdr/config.toml
-   herdr server reload-config
-   ```
-
-Each open Box is now a workspace labelled `◈ repo/name`. Its pane is the
-agent's terminal.
-
-| Key | Does |
-| --- | --- |
-| `prefix+c` | New work, in a local worktree or a new Box |
-| `prefix+m` | The Boxes panel, with attach, wake, and close buttons |
-| `ctrl+]` | Detach. The agent keeps running. |
-
-A new tab in a Box's workspace opens a shell in the Box, in its work tree.
-`herdr plugin update moor` installs the newest release of the plugin.
 
 ## Close a Box
 
