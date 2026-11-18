@@ -1,6 +1,7 @@
 //! What a steer sends, given what the agent shows.
 
 use moor_core::activity::AgentState;
+use moor_core::progress::ask_id;
 use moor_core::seam::engine::Steer;
 use moor_core::{ErrorKind, SteerReq};
 
@@ -19,17 +20,37 @@ pub(super) fn choose(
         return Ok(Steer::Interrupt);
     }
     let waiting = match state {
-        Some(AgentState::NeedsInput { question, options }) => Some((question, options)),
+        Some(AgentState::NeedsInput {
+            question,
+            options,
+            detail,
+            ..
+        }) => Some((question, options, detail)),
         _ => None,
     };
+    if let (Some(ask), Some((question, options, detail))) = (&req.ask, &waiting) {
+        let now = ask_id(question.as_deref(), detail.as_deref(), options);
+        if *ask != now {
+            return Err(CommandError::new(
+                ErrorKind::Refused,
+                format!(
+                    "the agent of {box_name} asks something else by now; read it and answer again"
+                ),
+            ));
+        }
+    }
     match (req.menu, req.text.as_deref(), waiting) {
         (Some(n), _, Some(_)) => Ok(Steer::Menu(choice(n)?)),
+        (Some(_), _, None) if req.ask.is_some() => Err(CommandError::new(
+            ErrorKind::Refused,
+            format!("the agent of {box_name} no longer waits at that prompt"),
+        )),
         (Some(_), _, None) => Err(CommandError::new(
             ErrorKind::Refused,
             format!("the agent of {box_name} is not waiting at a menu"),
         )),
         (None, Some(t), None) => Ok(Steer::Text(t.to_owned())),
-        (None, Some(t), Some((question, options))) => {
+        (None, Some(t), Some((question, options, _))) => {
             answer(t, options).map(Steer::Menu).ok_or_else(|| {
                 CommandError::new(
                     ErrorKind::Refused,

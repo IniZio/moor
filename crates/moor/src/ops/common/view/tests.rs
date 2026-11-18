@@ -241,6 +241,8 @@ fn agent_view_needs_input_carries_question_and_options() {
         AgentState::NeedsInput {
             question: Some("Proceed?".into()),
             options: vec!["Yes".into(), "No".into()],
+            kind: None,
+            detail: None,
         },
         Source::Status,
         PaneLiveness::Live,

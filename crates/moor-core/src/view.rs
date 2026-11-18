@@ -19,16 +19,15 @@ pub mod steer;
 pub mod stuck;
 pub mod user;
 pub mod workflow;
+use crate::domain::box_state::BoxLifecycle;
+use crate::domain::hands::HandsState;
+use crate::domain::session_state::SessionState;
 pub use attach::{AttachEnd, AttachView, ExecView};
 pub use attention::AttentionView;
 pub use forward::{ForwardView, ForwardedView};
 pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
 pub use sleep::unfinished_turn;
-
-use crate::domain::box_state::BoxLifecycle;
-use crate::domain::hands::HandsState;
-use crate::domain::session_state::SessionState;
 
 /// Why the agent could not be launched.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -71,6 +70,10 @@ pub struct AgentView {
     pub question: Option<String>,
     /// The numbered choices the prompt offers; empty when none.
     pub options: Vec<String>,
+    /// `permission` or `question` for a prompt the agent said the kind of.
+    pub kind: Option<String>,
+    /// What the prompt shows above its menu, such as the command a permission is for.
+    pub detail: Option<String>,
     /// The background work an agent in `waiting` waits on; empty in any other state.
     pub waiting_on: Vec<String>,
     /// Why the launch failed, when it did.

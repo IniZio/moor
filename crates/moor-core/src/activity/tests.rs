@@ -4,6 +4,7 @@ use super::{
     decide, may_apply_quiet, AgentState, BlockKind, Life, Note, Probe, Question, Source, Status,
     Term,
 };
+use crate::activity::menu_detail;
 use crate::seam::clock::Ts;
 
 const NOW: i64 = 1_000_000_000;
@@ -71,6 +72,8 @@ fn a_permission_asks_with_its_message_and_the_menu_on_screen() {
         AgentState::NeedsInput {
             question: Some("approve Bash: ls".to_owned()),
             options: vec!["Yes".to_owned(), "No".to_owned()],
+            kind: Some(BlockKind::Permission),
+            detail: Some("Run ls?".to_owned()),
         }
     );
 }
@@ -97,6 +100,8 @@ fn a_question_takes_its_text_and_choices_from_the_note() {
         AgentState::NeedsInput {
             question: Some("Which fruit?".to_owned()),
             options: vec!["Apple".to_owned(), "Banana".to_owned()],
+            kind: Some(BlockKind::Question),
+            detail: None,
         }
     );
 }
@@ -120,6 +125,8 @@ fn a_permission_never_shows_a_stale_question() {
         AgentState::NeedsInput {
             question: Some("approve Bash: ls".to_owned()),
             options: Vec::new(),
+            kind: Some(BlockKind::Permission),
+            detail: None,
         }
     );
 }
@@ -197,4 +204,24 @@ fn only_the_agents_status_or_its_end_may_quiet_a_box() {
     };
     let got = decide(&gone, Ts::from_millis(NOW), OLD, None);
     assert!(may_apply_quiet(&got, Some(&gone)));
+}
+
+#[test]
+fn a_permission_prompt_gives_what_it_shows_above_its_menu() {
+    let screen = "earlier chat\n────────────\n Bash command\n\n   npm run e2e\n   Run the e2e tests\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n";
+    assert_eq!(
+        menu_detail(screen).as_deref(),
+        Some("Bash command\n\nnpm run e2e\nRun the e2e tests\n\nDo you want to proceed?")
+    );
+    assert_eq!(menu_detail("no menu here"), None);
+    assert_eq!(menu_detail("❯ 1. Yes\n  2. No"), None);
+}
+
+#[test]
+fn a_command_between_dashed_rules_is_all_the_detail() {
+    let screen = "chat\n────\n Bash command\n Tip: try auto\n Run the script\n╌╌╌╌╌╌\n npm run e2e;\n echo done > /tmp/x\n╌╌╌╌╌╌\n This command requires approval\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n";
+    assert_eq!(
+        menu_detail(screen).as_deref(),
+        Some("npm run e2e;\necho done > /tmp/x")
+    );
 }

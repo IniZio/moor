@@ -388,6 +388,7 @@ pub(super) fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
         text: Some(text.to_owned()),
         menu: None,
         interrupt: false,
+        ask: None,
     };
     cx.for_box(row.user, || steer::run(cx, &req))
         .map(|_| ())

@@ -57,6 +57,7 @@ fn a_request_takes_either_form_in_its_box_field() {
             text: Some("hi".into()),
             menu: None,
             interrupt: false,
+            ask: None,
         })
     );
     let err = serde_json::from_value::<Request>(json!({"cmd": "steer", "box": {"id": 3, "x": 1}}))

@@ -39,3 +39,62 @@ pub fn menu_options(tail: &str) -> Vec<String> {
     }
     block.into_iter().map(|(_, l)| l.to_owned()).collect()
 }
+
+/// The most lines of a prompt's detail.
+const DETAIL_LINES: usize = 40;
+
+/// Whether `text` only draws a rule or a box edge.
+fn is_rule(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| "─━═╭╮╰╯┌┐└┘-_╌┄┈ ".contains(c))
+}
+
+/// Whether `text` is a dashed rule, which Claude Code draws around the command it asks about.
+fn is_fence(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| "╌┄┈╍┅┉ ".contains(c))
+}
+
+/// Where the last numbered menu in `lines` starts.
+fn menu_start(lines: &[&str]) -> Option<usize> {
+    let mut start = None;
+    for (i, line) in lines.iter().enumerate().rev() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if menu_line(line).is_some() {
+            start = Some(i);
+        } else if start.is_some() {
+            break;
+        }
+    }
+    start
+}
+
+/// What a permission prompt shows above its menu.
+///
+/// That is the command or file it asks to use. It sits between the last two dashed rules when the
+/// prompt draws them; otherwise everything above the menu down to the rule that opens the prompt.
+/// None when the pane shows no menu or nothing above it.
+#[must_use]
+pub fn menu_detail(tail: &str) -> Option<String> {
+    let lines: Vec<&str> = tail.lines().collect();
+    let start = menu_start(&lines)?;
+    let mut above: Vec<&str> = Vec::new();
+    for line in lines.get(..start)?.iter().rev() {
+        let text = line.trim().trim_matches(['│', '┃', '|']).trim();
+        if (is_rule(text) && !is_fence(text)) || above.len() >= DETAIL_LINES {
+            break;
+        }
+        above.push(text);
+    }
+    above.reverse();
+    let fences: Vec<usize> = (0..above.len())
+        .filter(|i| above.get(*i).is_some_and(|t| is_fence(t)))
+        .collect();
+    let body = match fences.as_slice() {
+        [.., open, close] => above.get(open + 1..*close)?,
+        _ => &above[..],
+    };
+    let shown = body.join("\n");
+    let shown = shown.trim();
+    (!shown.is_empty()).then(|| shown.to_owned())
+}

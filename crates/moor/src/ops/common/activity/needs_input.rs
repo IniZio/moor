@@ -23,7 +23,9 @@ pub(super) fn note_needs_input(
     reading: &Reading,
 ) -> Result<(), CommandError> {
     let Some(Activity {
-        state: AgentState::NeedsInput { question, options },
+        state: AgentState::NeedsInput {
+            question, options, ..
+        },
         source,
     }) = reading.activity.as_ref()
     else {

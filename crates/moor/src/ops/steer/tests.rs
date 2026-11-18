@@ -133,6 +133,7 @@ fn text(t: &str) -> SteerReq {
         text: Some(t.to_owned()),
         menu: None,
         interrupt: false,
+        ask: None,
     }
 }
 
@@ -142,6 +143,7 @@ fn menu(n: u32) -> SteerReq {
         text: None,
         menu: Some(n),
         interrupt: false,
+        ask: None,
     }
 }
 
@@ -151,6 +153,7 @@ fn interrupt() -> SteerReq {
         text: None,
         menu: None,
         interrupt: true,
+        ask: None,
     }
 }
 
@@ -558,6 +561,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
 }
 
 mod arrival;
+mod ask;
 mod cold_boot;
 mod doubt;
 mod inbox;

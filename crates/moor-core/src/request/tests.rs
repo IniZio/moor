@@ -59,6 +59,7 @@ fn with_args() -> Vec<Request> {
             text: Some("x".into()),
             menu: None,
             interrupt: false,
+            ask: None,
         }),
         Request::Show(ShowReq {
             target: None,
@@ -126,6 +127,7 @@ fn an_interrupt_steer_roundtrips() {
         text: None,
         menu: None,
         interrupt: true,
+        ask: None,
     });
     let text = serde_json::to_string(&r).unwrap();
     assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), r);

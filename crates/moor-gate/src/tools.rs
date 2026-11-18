@@ -138,6 +138,7 @@ impl Tools {
                 text: Some(args.text),
                 menu: None,
                 interrupt: false,
+                ask: None,
             })
         });
         self.run(&context, WRITE, request, Reply::AsIs).await

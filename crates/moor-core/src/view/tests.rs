@@ -77,6 +77,8 @@ fn agent_and_run_nested_keys() {
         exit_code: None,
         question: None,
         options: Vec::new(),
+        kind: None,
+        detail: None,
         waiting_on: Vec::new(),
         reason: None,
     });
@@ -96,6 +98,8 @@ fn agent_and_run_nested_keys() {
             "exit_code": null,
             "question": null,
             "options": [],
+            "kind": null,
+            "detail": null,
             "waiting_on": [],
             "reason": null
         }))

@@ -188,6 +188,8 @@ fn a_blocked_agent_sleeps_on_the_shorter_prompt_time() {
             state: AgentState::NeedsInput {
                 question: None,
                 options: Vec::new(),
+                kind: None,
+                detail: None,
             },
             source: Source::Status,
         }),

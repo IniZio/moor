@@ -105,6 +105,7 @@ pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result
         text: Some(text),
         menu: None,
         interrupt: false,
+        ask: None,
     };
     let mut slot = Slot::new(InboxKind::Note);
     let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
@@ -231,11 +232,7 @@ fn attempt(
         return Ok(Attempt::Gone(Gone::new(name, Some(session), *code)));
     }
     let steer = choose(req, name, before.as_ref())?;
-    let sent = match &steer {
-        Steer::Text(t) => t.clone(),
-        Steer::Menu(n) => n.to_string(),
-        Steer::Interrupt => "(interrupt)".to_owned(),
-    };
+    let sent = sent_of(&steer, req);
     let (outcome, inbox) = slot.send(cx, store, (id, name), (&sref, &session), (&steer, &sent))?;
     let Some(outcome) = outcome else {
         let code = match before {
@@ -249,6 +246,7 @@ fn attempt(
         gone.finish(cx, store, id)?;
         return exited(cx, store, (id, name), &session, (sent, inbox)).map(Attempt::Sent);
     };
+    type_after_menu(cx, &sref, req, &steer)?;
     let starts_turn = !(matches!(steer, Steer::Interrupt) && idle(reading.term.as_ref()));
     let mark = Mark {
         turn_before: turn_before(reading.term.as_ref(), &steer).filter(|_| starts_turn),
@@ -387,6 +385,7 @@ mod lost;
 mod queue;
 mod record;
 mod relaunch;
+mod typed;
 
 pub(crate) use queue::{deliver, pass, Backoff};
 
@@ -395,6 +394,7 @@ use inbox::Slot;
 use lost::{bring_back, lost};
 use record::{delivered, idle, record, status_before, turn_before, Mark};
 use relaunch::Revived;
+use typed::{sent_of, type_after_menu};
 
 #[cfg(test)]
 mod tests;

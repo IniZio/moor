@@ -52,6 +52,8 @@ fn asking() -> AgentState {
     AgentState::NeedsInput {
         question: Some(QUESTION.to_owned()),
         options: LABELS.map(str::to_owned).to_vec(),
+        kind: Some(BlockKind::Question),
+        detail: None,
     }
 }
 
