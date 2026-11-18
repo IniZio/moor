@@ -78,7 +78,7 @@ export function App() {
 			<header>
 				<h1>moor</h1>
 				<nav>
-					<a href="#/" aria-current={home ? 'page' : undefined}>Boxes</a>
+					<a href="#/" aria-current={home ? 'page' : undefined}>Tasks</a>
 					<a href="#/workflows" aria-current={flows ? 'page' : undefined}>Workflows</a>
 					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
 					<a href="#/settings" aria-current={settings ? 'page' : undefined}>Settings</a>
@@ -92,7 +92,7 @@ export function App() {
 				<>
 					{unlinked.length > 0 && (
 						<p class="notice warn">
-							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a Box can start.
+							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
 					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home />}
