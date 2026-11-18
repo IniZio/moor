@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::gate::{Gate, Stream};
 use crate::token::Fail;
 
-use self::line::{disk_line, newest_worth, question_line, quiet_line, run_line, SAID};
+use self::line::{disk_line, newest_worth, question_line, quiet_line, run_line, said};
 
 /// Every Box resource's URI starts with this.
 const PREFIX: &str = "moor://box/";
@@ -306,10 +306,7 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
     let said = status
         .pointer("/agent_said/text")
         .and_then(Value::as_str)
-        .and_then(|t| t.lines().next())
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(|t| t.chars().take(SAID).collect::<String>());
+        .and_then(said);
     let payload = event.get("payload");
     let line = quiet_line(name, kind, payload)
         .or_else(|| disk_line(name, kind, payload))

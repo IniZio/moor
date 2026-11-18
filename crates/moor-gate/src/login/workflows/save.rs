@@ -8,7 +8,7 @@ use moor_core::view::workflow::WorkflowView;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{decode, read, workflows, Failure};
+use super::{decode, not_found, read, workflows, Failure};
 use crate::login::account::{failed, json};
 use crate::login::repos::answered;
 use crate::login::{check_csrf, Session};
@@ -49,6 +49,7 @@ pub(crate) fn write(
     let name = decode(name);
     match save(gate, session, &name, &write) {
         Ok(()) => read(stream, gate, session, &name),
+        Err(Saved::Missing) => not_found(stream),
         Err(Saved::Conflict(now)) => changed(stream, now),
         Err(Saved::Bad(why)) => json(stream, "400 Bad Request", &why),
         Err(Saved::Refused(reply)) => answered(stream, &reply),
@@ -58,6 +59,8 @@ pub(crate) fn write(
 
 /// Why a save did not happen.
 enum Saved {
+    /// The workflow is not the person's: it does not exist or is someone else's.
+    Missing,
     /// The workflow moved on; the revision it is at, none when it is gone.
     Conflict(Option<u64>),
     /// The write is wrong: a body for the page to show.
@@ -72,6 +75,7 @@ impl From<Failure> for Saved {
     fn from(f: Failure) -> Self {
         match f {
             Failure::Reply(r) => Self::Refused(r),
+            Failure::Missing => Self::Missing,
             Failure::Other(why) => Self::Other(why),
         }
     }
@@ -89,11 +93,11 @@ fn without_edited(plan: &Value) -> Value {
 
 /// Stores the written prompt and plan on top of what the workflow already is.
 fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(), Saved> {
-    let found = workflows(gate, session)?
+    let found = Failure::own(workflows(gate, session))?
         .into_iter()
         .find(|w| w.name == name);
     let Some(stored) = found else {
-        return Err(Saved::Conflict(None));
+        return Err(Saved::Missing);
     };
     if stored.revision != write.revision {
         return Err(Saved::Conflict(Some(stored.revision)));

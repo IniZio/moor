@@ -193,7 +193,6 @@ impl Quiet<'_> {
             Move::Remind | Move::RunCheck | Move::Enter { .. } | Move::Fail { .. }
                 if open(self.row).is_none() =>
             {
-                // Nobody is left to send the next step to or to run a check in.
                 end(RunOutcome::Incomplete {
                     at: self.at.0.clone(),
                 })
@@ -318,7 +317,6 @@ impl Quiet<'_> {
         });
         let key = (self.w.id, &self.run.repo, self.run.due_at);
         if matches!(next.kind, StepKind::Approve { .. }) {
-            // The owner is asked, not the agent: the run waits and the Box may sleep.
             return self
                 .store
                 .wait_workflow_run(key, (self.at, (&step, try_n)), row.id, (&lines, self.now))
