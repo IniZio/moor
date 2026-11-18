@@ -253,7 +253,8 @@ fn attempt(
         status_before: status_before(reading.term.as_ref()).filter(|_| starts_turn),
         submit_retried: outcome.submit_retried,
     };
-    let steer_id = record(store, id, &session, &sent, mark, inbox)?;
+    let shown = shown_of(&steer, req, before.as_ref());
+    let steer_id = record(store, id, &session, &shown, mark, inbox)?;
     if starts_turn {
         open_turn(store, &row)?;
     }
@@ -296,18 +297,6 @@ fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, 
 fn activity_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Activity>, CommandError> {
     let reading = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)?;
     Ok(reading.activity)
-}
-
-/// The refusal for an agent stopped at a first-run screen: a key typed there may pick an option
-/// that ends the agent, so the Box is started again instead.
-fn first_run_refusal(name: &str) -> CommandError {
-    CommandError::new(
-        ErrorKind::Refused,
-        format!(
-            "the agent of {name} stopped at a first-run screen that moor's pre-seed should have skipped; this is a moor bug; end the Box with `moor end {name}` and start it again"
-        ),
-    )
-    .with_detail(ErrorDetail::FirstRunScreen)
 }
 
 /// Whether `steer` asks the agent to exit.
@@ -391,10 +380,10 @@ pub(crate) use queue::{deliver, pass, Backoff};
 
 use choose::choose;
 use inbox::Slot;
-use lost::{bring_back, lost};
+use lost::{bring_back, first_run_refusal, lost};
 use record::{delivered, idle, record, status_before, turn_before, Mark};
 use relaunch::Revived;
-use typed::{sent_of, type_after_menu};
+use typed::{sent_of, shown_of, type_after_menu};
 
 #[cfg(test)]
 mod tests;

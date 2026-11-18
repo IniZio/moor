@@ -127,7 +127,12 @@ details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-settled-row { opacity: 0.75; }
 
 .t-thead { padding: var(--moor-space-1) 0 var(--moor-space-2); }
-.t-crumbs { display: flex; align-items: center; gap: var(--moor-space-2); flex-wrap: wrap; }
+.t-crumbs { display: flex; align-items: center; gap: var(--moor-space-2); flex-wrap: nowrap; min-width: 0; }
+.t-crumbs > * { flex: none; }
+/* A long title is cut, so the state stays on the title row. */
+.t-crumbs > b, .t-crumbs > .t-mono { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-crumbs > b { flex-shrink: 1; }
+.t-crumbs > .grow { flex: 1 0 0; }
 .t-crumbs a { color: var(--moor-color-text-muted); text-decoration: none; }
 .t-crumbs b { font: var(--moor-weight-heading) 1.05rem var(--moor-font-heading); }
 .t-sep { color: var(--moor-color-border-strong); }

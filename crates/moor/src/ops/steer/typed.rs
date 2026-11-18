@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use moor_core::activity::AgentState;
 use moor_core::seam::engine::{SessionRef, Steer};
 use moor_core::SteerReq;
 
@@ -16,6 +17,22 @@ pub(super) fn sent_of(steer: &Steer, req: &SteerReq) -> String {
         (Steer::Menu(n), Some(typed)) => format!("{n}: {typed}"),
         (Steer::Menu(n), None) => n.to_string(),
         (Steer::Interrupt, _) => "(interrupt)".to_owned(),
+    }
+}
+
+/// What the timeline says the person sent: the option's own words for a menu choice the agent
+/// showed, the typed words for the entry that opens a text field, else what was sent.
+pub(super) fn shown_of(steer: &Steer, req: &SteerReq, before: Option<&AgentState>) -> String {
+    let (Steer::Menu(n), Some(AgentState::NeedsInput { options, .. })) = (steer, before) else {
+        return sent_of(steer, req);
+    };
+    let typed = req.text.as_deref().filter(|_| req.menu.is_some());
+    let label = usize::from(*n).checked_sub(1).and_then(|i| options.get(i));
+    match (label, typed) {
+        (Some(label), Some(typed)) => format!("{label}: {typed}"),
+        (Some(label), None) => label.clone(),
+        (None, Some(typed)) => typed.to_owned(),
+        (None, None) => sent_of(steer, req),
     }
 }
 
