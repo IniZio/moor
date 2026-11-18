@@ -17,8 +17,14 @@ const MOOR: &str = "moor.moor.internal";
 /// The machine service's host name.
 const MACHINE: &str = "machine.moor.internal";
 
-/// A shared Proxy serving `routes`, each `(served, upstream)`.
+/// A shared Proxy serving `routes`, each `(served, upstream)`, with no key for moor's host.
 fn server(w: &World, routes: &[(Served, String)]) -> Server {
+    server_keyed(w, routes, None)
+}
+
+/// A shared Proxy serving `routes`, sending `moor_key` to moor's host and `machine-key` to the
+/// machine service.
+fn server_keyed(w: &World, routes: &[(Served, String)], moor_key: Option<&str>) -> Server {
     let mut cfg = w.config(10.0, 10.0, 64);
     cfg.served = routes
         .iter()
@@ -26,7 +32,10 @@ fn server(w: &World, routes: &[(Served, String)]) -> Server {
             served: *served,
             host: served.default_host().to_owned(),
             upstream: upstream.clone(),
-            key: (*served == Served::Machine).then(|| "machine-key".into()),
+            key: match served {
+                Served::Machine => Some("machine-key".into()),
+                Served::Moor => moor_key.map(Into::into),
+            },
         })
         .collect();
     Server::start(cfg).unwrap()
@@ -141,5 +150,83 @@ fn each_served_host_goes_to_its_own_upstream_with_its_own_headers() {
     );
     assert!(!gate.contains("X-Moor-Machine"), "{gate}");
     assert!(!gate.contains("X-Moor-Service-Key"), "{gate}");
+    server.drain(Duration::from_secs(5));
+}
+
+/// The `X-Moor-Service-Key` lines of `head`.
+fn key_lines(head: &str) -> Vec<&str> {
+    head.lines()
+        .filter(|l| l.to_ascii_lowercase().starts_with("x-moor-service-key"))
+        .collect()
+}
+
+#[test]
+fn a_moor_request_carries_the_configured_key_and_a_forged_one_is_replaced() {
+    let w = World::new();
+    let gate = Plain::start();
+    let server = server_keyed(
+        &w,
+        &[(Served::Moor, gate.addr.to_string())],
+        Some("moor-key"),
+    );
+    let tunnel = open_as(&server, &w.token, &format!("{MOOR}:80"), true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &post(
+            MOOR,
+            "X-Moor-Service-Key: forged\r\nx-moor-service-key: forged2\r\n",
+        ),
+    );
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    let heads = gate.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert_eq!(key_lines(head), ["X-Moor-Service-Key: moor-key"], "{head}");
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_machine_request_never_carries_the_moor_key_and_a_forged_one_is_stripped() {
+    let w = World::new();
+    let gate = Plain::start();
+    let machine = Plain::start();
+    let server = server_keyed(
+        &w,
+        &[
+            (Served::Machine, machine.addr.to_string()),
+            (Served::Moor, gate.addr.to_string()),
+        ],
+        Some("moor-key"),
+    );
+    let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
+    let reply = exchange(tunnel, &post(MACHINE, "X-Moor-Service-Key: moor-key\r\n"));
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    let heads = machine.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert_eq!(
+        key_lines(head),
+        ["X-Moor-Service-Key: machine-key"],
+        "{head}"
+    );
+    assert!(!head.contains("moor-key\r\n"), "{head}");
+    assert!(gate.heads().is_empty());
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn without_a_moor_key_a_forged_one_is_stripped_and_none_is_sent() {
+    let w = World::new();
+    let gate = Plain::start();
+    let server = server(&w, &[(Served::Moor, gate.addr.to_string())]);
+    let tunnel = open_as(&server, &w.token, &format!("{MOOR}:80"), true).unwrap();
+    exchange(tunnel, &post(MOOR, "X-Moor-Service-Key: forged\r\n"));
+    let heads = gate.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert!(key_lines(head).is_empty(), "{head}");
     server.drain(Duration::from_secs(5));
 }

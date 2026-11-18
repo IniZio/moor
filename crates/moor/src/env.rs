@@ -41,6 +41,9 @@ pub(crate) const EGRESS_LISTEN: &str = "MOOR_EGRESS_LISTEN";
 /// The key the shared egress Proxy sends the machine service, which checks it before it trusts
 /// the Box the request names.
 pub(crate) const MACHINE_SERVICE_KEY: &str = "MOOR_MACHINE_SERVICE_KEY";
+/// The key the shared egress Proxy sends moor's own served host, the gate's Box listener, which
+/// checks it before it trusts the Box headers. Unset, the Proxy sends none.
+pub(crate) const MOOR_SERVICE_KEY: &str = "MOOR_SERVICE_KEY";
 
 /// Whether two keys match; their digests are compared in constant time, so timing says nothing
 /// of the key.

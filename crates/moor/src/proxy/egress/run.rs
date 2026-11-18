@@ -26,7 +26,7 @@ use zeroize::Zeroizing;
 
 use super::{Config, Listen, Rate, ServedRoute, Server, Warm};
 use crate::adapters::clock::SystemClock;
-use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY};
+use crate::env::{Env, EGRESS_KEY, MACHINE_SERVICE_KEY, MOOR_SERVICE_KEY};
 use crate::ledger_dir;
 use crate::proxy::ledger::{Endpoint, TlsFiles};
 
@@ -228,16 +228,21 @@ fn stop_flag(until_stdin_closes: bool) -> Result<Arc<AtomicBool>, String> {
     Ok(stop)
 }
 
-/// `route` with the key `MOOR_MACHINE_SERVICE_KEY` holds, which it sends the machine service.
+/// `route` with the key its service is sent: `MOOR_MACHINE_SERVICE_KEY` for the machine service,
+/// `MOOR_SERVICE_KEY` for moor's own. A machine key left empty is none; an empty moor key is
+/// refused, so a mis-set secret never leaves the Box listener unguarded.
 fn keyed(route: ServedRoute, env: &Env) -> Result<ServedRoute, String> {
-    if route.served != Served::Machine {
-        return Ok(route);
+    let (name, empty_ok) = match route.served {
+        Served::Machine => (MACHINE_SERVICE_KEY, true),
+        Served::Moor => (MOOR_SERVICE_KEY, false),
+    };
+    let key = env.get(name);
+    if !empty_ok && key.is_some_and(str::is_empty) {
+        return Err(format!("{name} is set but empty"));
     }
-    let key = env.get(MACHINE_SERVICE_KEY).filter(|k| !k.is_empty());
+    let key = key.filter(|k| !k.is_empty());
     if key.is_some_and(|k| !k.bytes().all(|b| b.is_ascii_graphic())) {
-        return Err(format!(
-            "{MACHINE_SERVICE_KEY} must be printable with no spaces"
-        ));
+        return Err(format!("{name} must be printable with no spaces"));
     }
     Ok(ServedRoute {
         key: key.map(Arc::from),
