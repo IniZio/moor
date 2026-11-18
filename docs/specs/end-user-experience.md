@@ -131,7 +131,7 @@ Settled · 18  ▸
 
 ```
 acme/web ▸ Fix login typo ▸ moor/42-fix-login-typo · engine-03     ● needs you
-PR: none yet                                  [Steer] [Interrupt] [Stop] [⋯]
+PR: none yet                                                   [Stop] [⋯]
 ──────────────────────────────────────────────────────────────────────────────
  Timeline | Terminal | Changes +3 −1 | Evidence 2                Plan
                                                                  ✓ review
@@ -145,16 +145,18 @@ PR: none yet                                  [Steer] [Interrupt] [Stop] [⋯]
  Agent       "The typo was in the label. Running e2e next."
  ── turn 1 · 4 tool calls · 1 file changed +3 −1 · Review · 1m 55s ──
 ──────────────────────────────────────────────────────────────────────────────
- Steer the agent…                                                    [Send]
+ (Steer|Interrupt)  Steer the agent…                                [Send]
 ```
 
 - **The header** is a breadcrumb of repo, task, branch and machine, then the state. Below it sits the PR as a state machine. It moves through none yet, draft, open with checks, approved and merged. The button always names the next step.
 - **Timeline** is the default tab. It folds routine tool calls into one line and never folds errors. Each turn ends with a receipt that moor computes from git, not from the agent's words.
-- **Terminal** is the Box's real Claude session, live, with keyboard. It is where a developer takes over. It closes nothing when the tab closes.
+- **Terminal** is the Box's real Claude session, live, with keyboard. It uses ghostty-web, pinned to one version, which needs `'wasm-unsafe-eval'` in the page's script policy. xterm.js has the same API and is the fallback. It is where a developer takes over. It closes nothing when the tab closes.
 - **Changes** is the diff against the base branch, file by file.
 - **Evidence** is the artifact gallery. It holds screenshots, videos, logs and step reports.
 - **The right rail** shows the plan's steps when there is one, and the background jobs.
 - **The waiting card** quotes the question. An answer covers once, or this task. "Always" belongs in repo settings, not on the card.
+
+Only Stop sits in the header. Close is under ⋯ with a confirm. Steer and Interrupt both need a message, so they are two modes of the message box at the bottom.
 
 Steering verbs:
 
