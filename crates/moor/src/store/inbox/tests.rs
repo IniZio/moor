@@ -355,7 +355,11 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
         .unwrap();
     let cut = format!(
         "{}:queued",
-        moor_core::domain::inbox::cut_note("fix it", clock.now(), clock.now())
+        moor_core::domain::inbox::cut_note(
+            "fix it",
+            clock.now().as_millis(),
+            clock.now().as_millis()
+        )
     );
     assert_eq!(
         texts(&store.unsent(id).unwrap()),

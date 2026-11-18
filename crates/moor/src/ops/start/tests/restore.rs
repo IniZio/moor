@@ -153,8 +153,8 @@ fn a_conversation_that_could_not_be_restored_has_its_prompt_named_to_the_new_age
     assert!(
         rows.contains(&cut_note(
             "remember PLUM-42",
-            w.cx.clock().now(),
-            w.cx.clock().now()
+            w.cx.clock().now().as_millis(),
+            w.cx.clock().now().as_millis()
         )),
         "{rows:?}"
     );

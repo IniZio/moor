@@ -5,7 +5,6 @@
 
 use super::Illegal;
 use crate::name::LaunchId;
-use crate::seam::clock::Ts;
 
 /// A store-assigned inbox row id, in arrival order across every kind; never reused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -84,27 +83,27 @@ pub enum QueueCause {
     Busy,
 }
 
-/// The note that tells a new agent of `text`, first sent at `sent` to the launch before it.
+/// The note that tells a new agent of `text`, first sent at `sent_ms` to the launch before it.
 ///
 /// That launch ended before the turn `text` started did. The text is never sent again, since
 /// that turn may have pushed or commented already. The note names when `text` was first sent,
-/// as of `now`, so the agent can tell how old it is.
+/// as of `now_ms`, so the agent can tell how old it is.
 #[must_use]
-pub fn cut_note(text: &str, sent: Ts, now: Ts) -> String {
+pub fn cut_note(text: &str, sent_ms: i64, now_ms: i64) -> String {
     let quoted: Vec<String> = text.lines().map(|l| format!("> {l}")).collect();
     format!(
         "Your session ended before you finished the message below (first sent {}), so it was \
          not sent again. It may have partly run: check what it already did before you continue \
          it.\n\n{}",
-        first_sent(sent, now),
+        first_sent(sent_ms, now_ms),
         quoted.join("\n")
     )
 }
 
-/// When `sent` was, in UTC, and how long before `now`: `20:22 UTC, 2 h 21 min ago`, with the
+/// When `sent_ms` was, in UTC, and how long before `now_ms`: `20:22 UTC, 2 h 21 min ago`, with the
 /// date once it is a day or more old.
-fn first_sent(sent: Ts, now: Ts) -> String {
-    let mins = now.as_millis().saturating_sub(sent.as_millis()).max(0) / 60_000;
+fn first_sent(sent_ms: i64, now_ms: i64) -> String {
+    let mins = now_ms.saturating_sub(sent_ms).max(0) / 60_000;
     let ago = match (mins / 1440, mins / 60 % 24, mins % 60) {
         (0, 0, m) => format!("{m} min ago"),
         (0, h, m) => format!("{h} h {m} min ago"),
@@ -115,7 +114,7 @@ fn first_sent(sent: Ts, now: Ts) -> String {
     } else {
         "%Y-%m-%d %H:%M"
     };
-    match jiff::Timestamp::from_millisecond(sent.as_millis()) {
+    match jiff::Timestamp::from_millisecond(sent_ms) {
         Ok(at) => format!("{} UTC, {ago}", at.strftime(shape)),
         Err(_) => ago,
     }

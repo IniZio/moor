@@ -61,12 +61,12 @@ fn a_restored_launch_drops_rows_its_archive_holds_and_names_the_rest_first() {
             (
                 after,
                 InboxKind::Note,
-                cut_note("after", clock.now(), clock.now())
+                cut_note("after", clock.now().as_millis(), clock.now().as_millis())
             ),
             (
                 doubt,
                 InboxKind::Note,
-                cut_note("doubt", clock.now(), clock.now())
+                cut_note("doubt", clock.now().as_millis(), clock.now().as_millis())
             ),
             (queued, InboxKind::Steer, "queued".to_owned()),
         ]
@@ -107,7 +107,10 @@ fn a_launch_after_the_agent_died_names_every_cut_text_and_sends_a_cut_note_as_it
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         [
-            format!("{}:queued", cut_note("sent", clock.now(), clock.now())),
+            format!(
+                "{}:queued",
+                cut_note("sent", clock.now().as_millis(), clock.now().as_millis())
+            ),
             "moor says:queued".to_owned()
         ]
     );

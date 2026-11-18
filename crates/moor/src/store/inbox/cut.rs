@@ -58,7 +58,7 @@ pub(in crate::store) fn name_cut(
                 sender: row.sender,
             });
             insert_event(tx, box_id, &cut, now)?;
-            cut_note(&row.text, row.created_at, now)
+            cut_note(&row.text, row.created_at.as_millis(), now.as_millis())
         };
         tx.run(
             Query::update()

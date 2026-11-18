@@ -1,5 +1,4 @@
 use super::cut_note;
-use crate::seam::clock::Ts;
 
 /// 2026-11-17 20:22:17 UTC.
 const SENT: i64 = 1_794_946_937_170;
@@ -8,11 +7,7 @@ const MIN: i64 = 60_000;
 
 /// The note for `text` sent at [`SENT`], cut `mins` minutes later.
 fn cut(mins: i64) -> String {
-    cut_note(
-        "rerun the suite",
-        Ts::from_millis(SENT),
-        Ts::from_millis(SENT + mins * MIN),
-    )
+    cut_note("rerun the suite", SENT, SENT + mins * MIN)
 }
 
 #[test]
