@@ -2,6 +2,7 @@
 //! step, and the numbered list the owner reviews.
 
 use super::{Plan, Step, StepKind};
+use crate::workflow::Answer;
 
 /// What a check came to, as the agent is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +122,24 @@ impl Plan {
              report_step.\n\n{}",
             check.id,
             check.title,
+            next.brief()
+        )
+    }
+
+    /// The steer that sends the agent the step after an approve step, with the owner's answer
+    /// and the note they left.
+    #[must_use]
+    pub fn answer_steer(ask: &Step, (answer, note): (Answer, Option<&str>), next: &Step) -> String {
+        let said = note
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map_or_else(String::new, |n| format!(" They added: {n}"));
+        format!(
+            "The owner answered {} to step {} (\"{}\").{said}\nDo only the next step, then call \
+             report_step.\n\n{}",
+            answer.as_str(),
+            ask.id,
+            ask.title,
             next.brief()
         )
     }

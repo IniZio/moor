@@ -81,8 +81,16 @@ check command must therefore be safe to run twice.
 A work step whose agent crashed or exited is not passed. moor sends the step
 again once. A second end without progress ends the run `incomplete`.
 
-`approve` steps are part of the plan format, and moor refuses them until it
-runs them.
+An `approve` step asks the workflow's owner its `question`. The run waits
+(`waiting` in `list_workflows`) and its Box is left to sleep. The owner answers
+with `answer_run(workflow, repo, answer, note)`. A `yes` follows `ok` and a
+`no` follows `fail`. A `no` at a step with no `fail` edge ends the run
+`declined`.
+The next step goes to the agent as a steer, which wakes the Box, and the note
+goes with it. Waiting does not count toward `timeout_minutes`. A wait with no
+answer ends the run `declined` after 7 days, so the next firing is not skipped
+forever. A waiting run blocks the next firing like a running one, and a
+declined run neither counts toward the breaker nor resets it.
 
 ## Know when a run fires
 

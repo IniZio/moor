@@ -1,14 +1,15 @@
 //! Settling the started runs of a workflow: finished, refused or expired.
 
 use moor_core::decide::workflow::{
-    workflow_expired, workflow_start_overdue, RunBoxFacts, START_LIMIT,
+    waited_millis, workflow_expired, workflow_start_overdue, workflow_unanswered, RunBoxFacts,
+    START_LIMIT,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
 use moor_core::view::LaunchFailure;
-use moor_core::workflow::{box_name, RunOutcome, Workflow};
+use moor_core::workflow::{box_name, HistoryEntry, RunId, RunOutcome, Workflow};
 
 use crate::cx::Cx;
 use crate::ops::{close, end_session};
@@ -63,7 +64,18 @@ pub(super) fn expire_runs(
 ) -> Result<(), StoreError> {
     let open = store.open_workflow_runs(w.id)?;
     let agent = |id| store.first_launch_at(id).ok().flatten();
-    for e in workflow_expired(w, &open, &agent, now) {
+    let waited = |run: RunId, from| {
+        store
+            .run_entries(run)
+            .map_or(0, |l| waited_millis(&l, from))
+    };
+    for u in workflow_unanswered(&open, now) {
+        let key = (w.id, &u.repo, u.due_at);
+        let lines = [HistoryEntry::Unanswered { step: u.at.clone() }];
+        let outcome = RunOutcome::Declined { at: u.at.clone() };
+        store.end_waiting_run(key, (&u.at, u.try_n), (u.box_id, outcome), (&lines, now))?;
+    }
+    for e in workflow_expired(w, &open, &agent, &waited, now) {
         if let Some(row) = store.box_row(e.box_id)? {
             let req = EndSessionReq {
                 box_name: row.name.as_str().to_owned(),
@@ -112,7 +124,12 @@ pub(super) fn enforce_start_limit(
 ) -> Result<(), StoreError> {
     let open = store.open_workflow_runs(w.id)?;
     let agent = |id| store.first_launch_at(id).ok().flatten();
-    for b in workflow_start_overdue(&open, &agent, now) {
+    let waited = |run: RunId, from| {
+        store
+            .run_entries(run)
+            .map_or(0, |l| waited_millis(&l, from))
+    };
+    for b in workflow_start_overdue(&open, (&agent, &waited), now) {
         let key = (w.id, &b.repo, b.due_at);
         let planned = match b.box_id {
             Some(id) => store.box_row(id)?.map(|r| r.name),

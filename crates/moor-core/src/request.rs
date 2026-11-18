@@ -50,7 +50,8 @@ pub use user::{
     WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 pub use workflow::{
-    WorkflowAddReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq, WorkflowRunsReq,
+    WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
+    WorkflowRunsReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -184,6 +185,8 @@ pub enum Request {
     WorkflowSetEnabled(WorkflowEnableReq),
     /// The changes to the caller's user's workflow runs after a cursor, oldest first.
     WorkflowRuns(WorkflowRunsReq),
+    /// Answer yes or no for the approve step one of the caller's user's runs waits at.
+    WorkflowAnswer(WorkflowAnswerReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),

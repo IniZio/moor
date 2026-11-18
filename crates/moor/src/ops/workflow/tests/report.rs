@@ -56,7 +56,7 @@ fn approve() -> serde_json::Value {
     json!({"id": "ask", "title": "Ask", "kind": "approve", "question": "go?", "ok": "ship"})
 }
 
-fn ok(step: &str, note: &str) -> StepReport {
+pub(super) fn ok(step: &str, note: &str) -> StepReport {
     StepReport {
         step: id(step),
         result: StepResult::Ok,

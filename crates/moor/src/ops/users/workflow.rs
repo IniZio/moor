@@ -11,7 +11,7 @@ use moor_core::view::workflow::{
     WorkflowRunsValue, WorkflowView,
 };
 use moor_core::workflow::{
-    box_name, ChangeKind, Plan, PlanError, PromptHash, RunEnd, RunOutcome, RunState, StepKind,
+    box_name, ChangeKind, Plan, PlanError, PromptHash, RunEnd, RunOutcome, RunState,
     TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin, WorkflowRun,
     WorkflowSchedule,
 };
@@ -54,6 +54,17 @@ pub(super) fn run(
             })
         }
         WorkflowCmd::SetEnabled { name, enabled } => set_enabled(store, user, name, *enabled, now),
+        WorkflowCmd::Answer {
+            workflow,
+            repo,
+            answer,
+            note,
+        } => to_value(&crate::ops::workflow::answer_run(
+            cx,
+            store,
+            user,
+            (workflow, repo, *answer, note.as_deref()),
+        )?),
         WorkflowCmd::Runs { after, limit } => runs(store, user, *after, *limit),
     }
 }
@@ -147,25 +158,7 @@ fn parse_plan(text: &str, prompt: &str) -> Result<Plan, CommandError> {
             lines.join("\n")
         ))
     };
-    let plan = Plan::parse(text, prompt).map_err(refuse)?;
-    // moor does not run approve steps yet, so a plan with one would be walked past it.
-    let unrun: Vec<PlanError> = plan
-        .steps()
-        .filter(|s| matches!(s.kind, StepKind::Approve { .. }))
-        .map(|s| {
-            PlanError::Json(format!(
-                "step `{}` is a {} step, which moor does not run yet; use work, check and \
-                 deliver steps",
-                s.id,
-                s.kind.name()
-            ))
-        })
-        .collect();
-    if unrun.is_empty() {
-        Ok(plan)
-    } else {
-        Err(refuse(unrun))
-    }
+    Plan::parse(text, prompt).map_err(refuse)
 }
 
 /// The refusal for a write whose `expected_revision` is not the stored one.

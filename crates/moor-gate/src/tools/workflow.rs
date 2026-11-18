@@ -3,10 +3,10 @@
 
 use moor_core::config::override_text;
 use moor_core::request::{
-    AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowEnableReq, WorkflowRemoveReq,
-    WorkflowRunsReq,
+    AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
+    WorkflowRemoveReq, WorkflowRunsReq,
 };
-use moor_core::workflow::PlanDoc;
+use moor_core::workflow::{Answer, PlanDoc};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -71,6 +71,29 @@ struct EnableArgs {
     enabled: bool,
 }
 
+/// What the owner answers.
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum AnswerArg {
+    /// Go on to the step after the approve step.
+    Yes,
+    /// Take the approve step's fail edge, or end the run declined when it has none.
+    No,
+}
+
+/// Arguments of `answer_run`.
+#[derive(Deserialize, JsonSchema)]
+struct AnswerArgs {
+    /// The workflow's name, as `list_workflows` shows it.
+    workflow: String,
+    /// The repo, as `owner/name`, whose run waits.
+    repo: String,
+    /// `yes` or `no`.
+    answer: AnswerArg,
+    /// What to tell the agent along with the answer; none when left out.
+    note: Option<String>,
+}
+
 /// Arguments of `list_workflow_runs`.
 #[derive(Deserialize, JsonSchema)]
 struct RunsArgs {
@@ -109,8 +132,11 @@ impl Tools {
                        Box, not by the agent: exit 0 follows `ok`, any other exit follows \
                        `fail`, and the command may run twice if a connection drops, so it must \
                        be safe to repeat. Use a check step for anything a command can decide. \
-                       `approve` steps (the owner says yes or no) are in the schema but moor \
-                       does not run them yet, so they are refused. When you change an \
+                       An `approve` step asks the owner a `question` and the run waits, with \
+                       its Box left to sleep, until the owner calls answer_run; yes follows \
+                       `ok`, no follows `fail`, and a no with no `fail` edge ends the run \
+                       declined. A wait with no answer ends the run declined after 7 days. \
+                       When you change an \
                        existing workflow, read its plan with list_workflows and keep the ids of \
                        the steps that did not change, so run history stays attached to them. \
                        Leave `made_from` out of a plan you wrote for the prompt you send; \
@@ -195,6 +221,33 @@ impl Tools {
             identity: None,
             name: args.name,
             enabled: args.enabled,
+        });
+        self.run(&context, WRITE, Ok(request), Reply::AsIs).await
+    }
+
+    /// Answers the approve step a run waits at.
+    #[tool(
+        description = "Answer the approve step one of your workflow runs waits at: `yes` goes on \
+                       along the step's ok edge, `no` along its fail edge, or ends the run \
+                       declined when it has none. The note is passed to the agent with the \
+                       next step, which wakes the run's Box. Find waiting runs with \
+                       list_workflows (phase `waiting`). Only the workflow's owner can answer. \
+                       Needs the moor:write scope."
+    )]
+    async fn answer_run(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<AnswerArgs>,
+    ) -> CallToolResult {
+        let request = ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
+            identity: None,
+            workflow: args.workflow,
+            repo: args.repo,
+            answer: match args.answer {
+                AnswerArg::Yes => Answer::Yes,
+                AnswerArg::No => Answer::No,
+            },
+            note: args.note,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

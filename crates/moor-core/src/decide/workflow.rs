@@ -3,7 +3,8 @@
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 use crate::workflow::{
-    RunEnd, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState, BREAKER_STREAK,
+    RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
+    BREAKER_STREAK,
 };
 
 /// What the store and the Boxes say about one repo of a workflow.
@@ -136,12 +137,19 @@ pub struct StartBreach {
     pub claimed_only: bool,
 }
 
+/// When a Box's agent first started, if it did.
+pub type AgentStarted<'a> = &'a dyn Fn(BoxId) -> Option<Ts>;
+
+/// The milliseconds a run spent waiting for answers since the given time.
+pub type Waited<'a> = &'a dyn Fn(RunId, Ts) -> i64;
+
 /// The runs in `open` whose agent has not started [`START_LIMIT`] after the run was claimed.
-/// `agent_started` tells when a Box's agent first started, if it did.
+///
+/// The time the run spent waiting for answers since the claim is left out.
 #[must_use]
 pub fn workflow_start_overdue(
     open: &[WorkflowRun],
-    agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    (agent_started, waited): (AgentStarted<'_>, Waited<'_>),
     now: Ts,
 ) -> Vec<StartBreach> {
     let limit = i64::try_from(START_LIMIT.as_millis()).unwrap_or(i64::MAX);
@@ -150,7 +158,14 @@ pub fn workflow_start_overdue(
         .filter_map(|run| {
             let (box_id, claimed_only) = match run.state {
                 RunState::Queued => (None, true),
-                RunState::Running { box_id, .. } if agent_started(box_id).is_none() => {
+                RunState::Running { box_id, .. }
+                    if agent_started(box_id).is_none()
+                        && now
+                            .as_millis()
+                            .saturating_sub(run.recorded_at.as_millis())
+                            .saturating_sub(waited(run.id, run.recorded_at))
+                            >= limit =>
+                {
                     (Some(box_id), false)
                 }
                 _ => return None,
@@ -167,13 +182,16 @@ pub fn workflow_start_overdue(
 
 /// The runs in `open` that have worked for the workflow's timeout.
 ///
-/// The time counts on the wall clock from when the run's agent first started. A run whose agent
-/// has not started is never expired here; the start limit covers it.
+/// The time counts on the wall clock from when the run's agent first started, less the
+/// milliseconds `waited` says the run spent waiting for answers. A run whose agent has not
+/// started is never expired here; the start limit covers it. A run that waits is never expired
+/// here either: its clock is stopped, and [`workflow_unanswered`] ends it after a week.
 #[must_use]
 pub fn workflow_expired(
     workflow: &Workflow,
     open: &[WorkflowRun],
     agent_started: &dyn Fn(BoxId) -> Option<Ts>,
+    waited: &dyn Fn(RunId, Ts) -> i64,
     now: Ts,
 ) -> Vec<WorkflowExpiry> {
     let limit = workflow.timeout.millis();
@@ -181,7 +199,8 @@ pub fn workflow_expired(
         .filter_map(|run| match &run.state {
             RunState::Running { box_id, at, try_n }
                 if agent_started(*box_id).is_some_and(|began| {
-                    now.as_millis().saturating_sub(began.as_millis()) >= limit
+                    let spent = now.as_millis().saturating_sub(began.as_millis());
+                    spent >= limit && spent.saturating_sub(waited(run.id, began)) >= limit
                 }) =>
             {
                 Some(WorkflowExpiry {
@@ -262,9 +281,12 @@ mod finished;
 mod gate;
 #[cfg(test)]
 mod tests;
+mod wait;
 
 pub use advance::{
-    advance, quiet_move, quiet_since, refusal_move, report_move, Event, Move, CHECK_LOSSES,
+    advance, answer_move, quiet_move, quiet_since, refusal_move, report_move, Event, Move,
+    CHECK_LOSSES,
 };
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
 pub use gate::code_gate;
+pub use wait::{waited_millis, workflow_unanswered, Unanswered, WAIT_LIMIT};

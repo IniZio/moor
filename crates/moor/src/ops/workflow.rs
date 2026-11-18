@@ -21,6 +21,7 @@ use crate::cx::Cx;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
 use advance::finish_runs;
+pub(crate) use answer::run as answer_run;
 pub(crate) use check::{run_check, CheckJob};
 use facts::history;
 use previous::close_previous;
@@ -325,6 +326,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
 }
 
 mod advance;
+mod answer;
 mod check;
 mod facts;
 mod previous;
@@ -332,3 +334,4 @@ mod report;
 mod settle;
 #[cfg(test)]
 mod tests;
+mod wait;

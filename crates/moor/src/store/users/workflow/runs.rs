@@ -24,11 +24,13 @@ use crate::store::{Store, StoreError};
 
 /// A phase a run can move on from.
 #[derive(Debug, Clone, Copy)]
-enum Open {
+pub(super) enum Open {
     /// Claimed, its Box not yet recorded.
     Queued,
     /// At a step.
     Running,
+    /// At an approve step, waiting for the owner.
+    Waiting,
 }
 
 impl Open {
@@ -37,6 +39,7 @@ impl Open {
         match self {
             Self::Queued => STARTING,
             Self::Running => STARTED,
+            Self::Waiting => WAITING,
         }
     }
 
@@ -45,6 +48,7 @@ impl Open {
         match self {
             Self::Queued => RunPhase::Queued,
             Self::Running => RunPhase::Running,
+            Self::Waiting => RunPhase::Waiting,
         }
     }
 }
@@ -107,13 +111,15 @@ impl Store {
     /// `at`, and appends the line for the move, when the run is still in `from`. False, with
     /// nothing changed, otherwise, so whichever of two moves comes first wins.
     ///
-    /// `guard` also requires a running run to be at exactly that step and try, and `lines` are
-    /// appended before the move's own line, in the same transaction.
-    fn move_run(
+    /// `guard` also requires a running or waiting run to be at exactly that step and try, and
+    /// `lines` are appended before the move's own line, in the same transaction. A move that
+    /// enters a step passes the `Entered` line in `lines` and sets `own` false, so the line is
+    /// not written twice.
+    pub(super) fn move_run(
         &self,
         (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
         (from, to): (Open, &RunState),
-        (guard, lines, at): (Option<(&StepId, u8)>, &[HistoryEntry], Ts),
+        (guard, lines, at, own): (Option<(&StepId, u8)>, &[HistoryEntry], Ts, bool),
     ) -> Result<bool, StoreError> {
         let cols = state_cols(to);
         let entry = HistoryEntry::moving(from.phase(), to);
@@ -145,7 +151,9 @@ impl Store {
                 for line in lines {
                     append_history(tx, id, at, line)?;
                 }
-                append_history(tx, id, at, &entry)?;
+                if own {
+                    append_history(tx, id, at, &entry)?;
+                }
             }
             Ok(changed)
         })
@@ -167,7 +175,7 @@ impl Store {
             ended_at: at,
             outcome,
         });
-        self.move_run(key, (Open::Running, &to), (Some(on), lines, at))
+        self.move_run(key, (Open::Running, &to), (Some(on), lines, at, true))
     }
 
     /// Refuses the run of `workflow` and `repo` due at `due_at` with `detail`, dropping its Box
@@ -188,7 +196,7 @@ impl Store {
         let to = RunState::Done(RunEnd::Refused {
             detail: detail.to_owned(),
         });
-        self.move_run(key, (from, &to), (None, &[], at))
+        self.move_run(key, (from, &to), (None, &[], at, true))
     }
 
     /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `state`, which is
@@ -199,7 +207,7 @@ impl Store {
         state: &RunState,
         at: Ts,
     ) -> Result<bool, StoreError> {
-        self.move_run(key, (Open::Queued, state), (None, &[], at))
+        self.move_run(key, (Open::Queued, state), (None, &[], at, true))
     }
 
     /// The runs of `workflow` that are being started, work, or wait: those that have not ended.
@@ -312,7 +320,8 @@ impl Store {
             .collect()
     }
 
-    /// The run that is at a step in Box `box_id`, with its workflow; none when the Box has none.
+    /// The run that is at a step in Box `box_id`, running or waiting, with its workflow; none when
+    /// the Box has none.
     pub(crate) fn running_run_of_box(
         &self,
         box_id: BoxId,
@@ -325,7 +334,7 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
-                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTED, WAITING]))
                     .order_by(WorkflowRuns::Id, Order::Desc)
                     .limit(1),
                 |r| Ok::<_, db::Error>((r.get(0)?, read_run(r, 1)?)),
