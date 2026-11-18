@@ -203,6 +203,7 @@ A research pass on 2026-11-18 read origin/develop. Most screens need data moor a
 - Dense rows, not cards. Mono for ids, branches and paths.
 - One accent for "needs you", one for "working". Green and red only for diffs and checks.
 - The existing moorland tokens stay. Dark and light both ship.
+- The design system is our own CSS on those tokens, plus the browser's built-in dialog and popover elements. No Tailwind and no component library.
 - Keyboard first. ⌘K opens the switcher, j and k move, enter opens.
 
 ## Order
