@@ -89,4 +89,16 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-gallery figure { margin: 0; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); overflow: hidden; background: var(--moor-color-bg-raised); }
 .t-gallery img { display: block; width: 100%; max-height: 14rem; object-fit: cover; background: var(--moor-color-bg-sunken); }
 .t-gallery figcaption { display: grid; padding: 0.5rem 0.7rem; font-size: 0.8125rem; border-top: 1px solid var(--moor-color-border); overflow-wrap: anywhere; }
+.t-new { max-width: 52rem; padding-top: var(--moor-space-6); }
+.t-new h1 { font: var(--moor-weight-heading) var(--moor-text-xl)/1.2 var(--moor-font-heading); margin: 0 0 var(--moor-space-4); }
+.t-composer { border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-md); }
+.t-composer:focus-within { border-color: var(--moor-color-focus); }
+.t-composer textarea { margin: 0; width: 100%; border: 0; border-radius: var(--moor-radius-md) var(--moor-radius-md) 0 0; background: transparent; font: inherit; font-size: var(--moor-text-sm); padding: 1rem 1.1rem; outline: none; resize: vertical; }
+.t-target { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-2); padding: 0.6rem 0.7rem; border-top: 1px solid var(--moor-color-border); background: var(--moor-color-bg-sunken); border-radius: 0 0 var(--moor-radius-md) var(--moor-radius-md); }
+.t-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0 0.6rem; height: 1.9rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); background: var(--moor-color-bg-raised); font-size: 0.8125rem; }
+.t-chip input, .t-chip select { flex: none; width: 10rem; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; outline: none; }
+.t-chip input[list] { width: 15rem; }
+.t-chip:focus-within { border-color: var(--moor-color-focus); }
+.t-foot { margin-top: var(--moor-space-3); }
+.t-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .t-file { display: block; padding: var(--moor-space-6) var(--moor-space-4); text-align: center; color: var(--moor-color-accent); }

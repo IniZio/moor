@@ -1,5 +1,5 @@
 //! The account page: the built app at the gate root, and the JSON it reads and writes under
-//! `/account/api`. It links secrets and shows machines; it never starts a Box.
+//! `/account/api`. It links secrets, shows machines and Boxes, and starts a Box.
 
 use std::io::Write as _;
 use std::net::TcpStream;
@@ -97,9 +97,8 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
-        ("GET", p, Some(session)) if portal::serves(p) => {
-            let query = req.target.split_once('?').map_or("", |(_, q)| q);
-            portal::serve(&mut stream, gate, &session, (p, query));
+        (method, p, session) if portal::serves(method, p) => {
+            portal::serve(&mut stream, &req, gate, login, session.as_ref());
         }
         (method, p, session) if workflows::route(p).is_some() => {
             let query = req.target.split_once('?').map_or("", |(_, q)| q);

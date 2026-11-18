@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Entry, SignedOut, type BoxDetail, boxGet, boxList, type BoxRow, type Progress } from './api';
+import {
+	type Account,
+	type BoxDetail,
+	boxGet,
+	boxList,
+	type BoxRow,
+	boxStart,
+	type Entry,
+	type Progress,
+	repoList,
+	SignedOut,
+} from './api';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
 const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
@@ -388,6 +399,104 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
 				</aside>
 			</div>
+		</div>
+	);
+}
+
+/** Where the last start went, so the next one starts there. */
+const LAST_REPO = 'moor.lastRepo';
+
+/** The composer that starts a Box: the footer names the target before anything is sent. */
+export function NewBox({ account }: { account: Account }) {
+	const [prompt, setPrompt] = useState('');
+	const [repo, setRepo] = useState(() => localStorage.getItem(LAST_REPO) ?? '');
+	const [base, setBase] = useState('');
+	const [node, setNode] = useState('');
+	const [repos, setRepos] = useState<string[]>([]);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState('');
+	useEffect(() => {
+		repoList().then(setRepos, () => setRepos([]));
+	}, []);
+	const machines = account.machines.nodes.filter((n) => n.online);
+	const send = async () => {
+		if (busy) return;
+		setBusy(true);
+		setError('');
+		try {
+			const name = await boxStart(account.csrf, { repo, prompt, base, node });
+			localStorage.setItem(LAST_REPO, repo);
+			location.hash = `#/box/${encodeURIComponent(name)}`;
+		} catch (e) {
+			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setBusy(false);
+		}
+	};
+	const ready = prompt.trim() !== '' && repo.trim() !== '' && !busy;
+	return (
+		<div class="t-new">
+			<h1>New task</h1>
+			<form
+				class="t-composer"
+				onSubmit={(e) => {
+					e.preventDefault();
+					if (ready) void send();
+				}}
+			>
+				<label class="t-sr" for="t-prompt">What should the agent do?</label>
+				<textarea
+					id="t-prompt"
+					rows={6}
+					placeholder="What should the agent do?"
+					value={prompt}
+					onInput={(e) => setPrompt(e.currentTarget.value)}
+					onKeyDown={(e) => {
+						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && ready) void send();
+					}}
+				/>
+				<div class="t-target">
+					<label class="t-chip">
+						<span class="muted">repo</span>
+						<input
+							class="t-mono"
+							list="t-repos"
+							placeholder="owner/name"
+							value={repo}
+							onInput={(e) => setRepo(e.currentTarget.value)}
+							aria-label="Repo"
+						/>
+					</label>
+					<datalist id="t-repos">{repos.map((r) => <option value={r} key={r} />)}</datalist>
+					<label class="t-chip">
+						<span class="muted">from</span>
+						<input
+							class="t-mono"
+							placeholder="default branch"
+							value={base}
+							onInput={(e) => setBase(e.currentTarget.value)}
+							aria-label="Branch to start from"
+						/>
+					</label>
+					<label class="t-chip">
+						<span class="muted">on</span>
+						<select value={node} onChange={(e) => setNode(e.currentTarget.value)} aria-label="Machine">
+							<option value="">any free machine</option>
+							{machines.map((n) => (
+								<option value={n.name} key={n.name}>
+									{n.name}
+									{n.max_boxes != null ? ` (${Math.max(0, n.max_boxes - n.used)} free)` : ''}
+								</option>
+							))}
+						</select>
+					</label>
+					<span class="grow" />
+					<button type="submit" disabled={!ready}>{busy ? 'Starting…' : 'Start'}</button>
+				</div>
+			</form>
+			{error && <p class="notice danger" role="alert">{error}</p>}
+			<p class="muted t-foot">
+				The agent works on a new branch. You can watch it from the task page.
+			</p>
 		</div>
 	);
 }

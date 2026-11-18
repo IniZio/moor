@@ -1,0 +1,60 @@
+//! Starting a Box from the portal.
+
+use std::net::TcpStream;
+
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use super::super::account::json;
+use super::super::{check_csrf, Login, Session};
+use crate::{tools, Gate};
+
+/// What a new Box asks for.
+#[derive(Deserialize)]
+struct NewBox {
+    /// The repo, as `owner/name`.
+    repo: String,
+    /// What the agent should do.
+    prompt: String,
+    /// The revision to branch from; the repo's default branch when absent or empty.
+    base: Option<String>,
+    /// The machine to run on; the one a start picks when absent or empty.
+    node: Option<String>,
+}
+
+/// Starts a Box as the session's person, through the same request `start_box` sends. Answers the
+/// Box's name once the Box exists, while setup carries on.
+pub(super) fn start(
+    stream: &mut TcpStream,
+    gate: &Gate,
+    login: &Login,
+    session: &Session,
+    csrf: Option<&str>,
+    body: Option<&[u8]>,
+) {
+    if !csrf.is_some_and(|c| check_csrf(session, c)) {
+        let error = json!({"error": "write from the page you are signed in on"});
+        return json(stream, "403 Forbidden", &error);
+    }
+    let new = body.and_then(|b| serde_json::from_slice::<NewBox>(b).ok());
+    let Some(new) = new.filter(|t| !t.prompt.trim().is_empty() && !t.repo.trim().is_empty()) else {
+        let error = json!({"error": "say what the agent should do, and on which repo"});
+        return json(stream, "400 Bad Request", &error);
+    };
+    let keep = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+    let asked = tools::NewBox {
+        repo: new.repo.trim().to_owned(),
+        prompt: new.prompt,
+        base: keep(new.base),
+        node: keep(new.node),
+    };
+    let origin: std::sync::Arc<str> = login.public().into();
+    match tools::start_from_portal(&gate.controller, &session.person, asked, origin) {
+        Ok(started) => {
+            let name = started.pointer("/box/name").and_then(Value::as_str);
+            json(stream, "200 OK", &json!({"box": name}));
+        }
+        // A refusal, such as missing secrets, is for the person to read.
+        Err(why) => json(stream, "400 Bad Request", &json!({"error": why})),
+    }
+}

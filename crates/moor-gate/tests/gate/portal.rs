@@ -4,7 +4,7 @@
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
-use super::login::{get, sign_in};
+use super::login::{get, send, sign_in};
 use super::secrets::world;
 
 /// Accounts whose subject starts with this reach this fake; the others reach the shared one.
@@ -180,4 +180,75 @@ fn the_app_page_may_show_images_from_itself_and_nothing_else() {
     let csp = page.header("content-security-policy").unwrap();
     assert!(csp.contains("img-src 'self';"), "{csp}");
     assert!(csp.contains("default-src 'none'"), "{csp}");
+}
+
+fn post(
+    w: &super::secrets::World,
+    cookie: &str,
+    csrf: Option<&str>,
+    body: &str,
+) -> super::login::Reply {
+    let token = csrf.map_or_else(String::new, |c| format!("X-Moor-Csrf: {c}\r\n"));
+    let extra = format!("Cookie: {cookie}\r\n{token}Content-Type: application/json\r\n");
+    send(&w.addr, "POST", "/account/api/boxes", &extra, body)
+}
+
+fn csrf_of(w: &super::secrets::World, cookie: &str) -> String {
+    let view = json_of(&get(&w.addr, "/account/api", Some(cookie)));
+    view["csrf"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a_repo() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-6");
+    let ok = json!({"repo": "acme/web", "prompt": "Fix the typo"}).to_string();
+    assert_eq!(post(&w, &cookie, None, &ok).status, 403);
+    assert_eq!(post(&w, &cookie, Some("wrong"), &ok).status, 403);
+    let csrf = csrf_of(&w, &cookie);
+    for bad in [
+        "not json",
+        r#"{"repo":"acme/web","prompt":"  "}"#,
+        r#"{"repo":"","prompt":"x"}"#,
+    ] {
+        let reply = post(&w, &cookie, Some(&csrf), bad);
+        assert_eq!(reply.status, 400, "{bad}: {}", reply.body);
+    }
+    assert!(
+        w.cmds().iter().all(|c| c != "start"),
+        "nothing reached the controller"
+    );
+    let out = send(
+        &w.addr,
+        "POST",
+        "/account/api/boxes",
+        "Content-Type: application/json\r\n",
+        &ok,
+    );
+    assert_eq!(out.status, 401);
+}
+
+#[test]
+fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_readable() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-7");
+    let csrf = csrf_of(&w, &cookie);
+    let body =
+        json!({"repo": "acme/web", "prompt": "Fix the typo", "base": "main", "node": "engine-03"});
+    let reply = post(&w, &cookie, Some(&csrf), &body.to_string());
+    assert_eq!(reply.status, 400, "{}", reply.body);
+    let why = json_of(&reply)["error"].as_str().unwrap().to_owned();
+    assert!(why.contains("missing secrets claude, github"), "{why}");
+    let start = w
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|r| r["request"]["cmd"] == "start")
+        .cloned()
+        .expect("a start");
+    assert_eq!(start["request"]["repo"], "acme/web");
+    assert_eq!(start["request"]["prompt"], "Fix the typo");
+    assert_eq!(start["request"]["base"], "main");
+    assert_eq!(start["request"]["node"], "engine-03");
 }

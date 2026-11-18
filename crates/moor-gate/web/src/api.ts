@@ -353,6 +353,19 @@ export async function boxList(): Promise<BoxRow[]> {
 	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
 }
 
+/** Starts a Box as the signed-in person; answers the Box's name once it exists. */
+export async function boxStart(
+	csrf: string,
+	body: { repo: string; prompt: string; base: string; node: string },
+): Promise<string> {
+	const res = await fetch('/account/api/boxes', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify(body),
+	});
+	return (await answer(res, v.object({ box: v.string() }))).box;
+}
+
 export async function boxGet(box: string): Promise<BoxDetail> {
 	return answer(await fetch(`/account/api/box?box=${encodeURIComponent(box)}`), BoxDetailSchema);
 }

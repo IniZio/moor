@@ -5,7 +5,7 @@ import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Repos } from './Repos';
 import { Secrets } from './Secrets';
-import { Home, tabOf, BoxPage } from './Portal';
+import { BoxPage, Home, NewBox, tabOf } from './Portal';
 import { Workflows, workflowsAt } from './Workflows';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
@@ -69,6 +69,7 @@ export function App() {
 	const repo = repoOf(hash);
 	const flows = workflowsAt(hash);
 	const open = boxOf(hash);
+	const composing = hash.replace(/^#\/?/, '') === 'new';
 	const settings = settingsAt(hash);
 	const home = repo === null && !flows && !settings;
 	const unlinked = account.secrets.filter((s) => !s.linked).map((s) => s.name);
@@ -78,7 +79,8 @@ export function App() {
 			<header>
 				<h1>moor</h1>
 				<nav>
-					<a href="#/" aria-current={home ? 'page' : undefined}>Tasks</a>
+					<a href="#/" aria-current={home && !composing ? 'page' : undefined}>Tasks</a>
+					<a href="#/new" aria-current={composing ? 'page' : undefined}>New task</a>
 					<a href="#/workflows" aria-current={flows ? 'page' : undefined}>Workflows</a>
 					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
 					<a href="#/settings" aria-current={settings ? 'page' : undefined}>Settings</a>
@@ -95,7 +97,7 @@ export function App() {
 							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
-					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home />}
+					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home />}
 				</>
 			) : repo === null ? (
 				<>
