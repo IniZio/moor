@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use moor_core::activity::{Activity, Life, Status, Term};
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::seam::clock::Clock;
 
@@ -21,8 +22,14 @@ struct Rig {
 fn rig() -> (tempfile::TempDir, Rig) {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(NOW));
-    let (cx, _) = cx(dir.path(), &Arc::new(FakeEngine::new()));
-    let cx = cx.with_clock(clock.clone());
+    let cx = Cx::fake_with_clock(
+        dir.path(),
+        Arc::new(FakeDriver::new()),
+        Arc::new(ScriptedProc::new()),
+        moor_core::config::UserConfig::default(),
+        clock.clone(),
+    )
+    .with_engine(Arc::new(FakeEngine::new()));
     let id = working_box(&cx, true);
     (dir, Rig { cx, id, clock })
 }
@@ -58,6 +65,18 @@ impl Rig {
             &r,
         )
         .unwrap();
+    }
+
+    /// Records the agent's doing line as changed now.
+    fn doing(&self, text: &str) {
+        let doing = ExtraEvent::AgentDoing {
+            text: text.to_owned(),
+        };
+        self.cx
+            .store()
+            .unwrap()
+            .apply(Decision::new(self.id).event(doing))
+            .unwrap();
     }
 
     fn events(&self, kind: &str) -> Vec<serde_json::Value> {
@@ -169,4 +188,30 @@ fn an_unreadable_agent_is_not_a_stall() {
     };
     rig.pass_with(unknown, Some((working(None), 11 * MINUTE)), false);
     assert!(rig.events("agent_stalled").is_empty());
+}
+
+#[test]
+fn a_doing_line_that_moved_three_minutes_ago_is_not_a_stall() {
+    let (_dir, rig) = rig();
+    rig.doing("Running cargo build");
+    rig.clock.sleep(3 * MINUTE);
+    rig.pass(working(Some("Running cargo test")), 11 * MINUTE, false);
+    assert!(rig.events("agent_stalled").is_empty());
+}
+
+#[test]
+fn a_doing_line_that_moves_after_a_stall_writes_one_resume() {
+    let (_dir, rig) = rig();
+    rig.pass(working(Some("Running cargo build")), 11 * MINUTE, false);
+    rig.clock.sleep(MINUTE);
+    rig.doing("Running cargo test");
+    rig.pass(working(Some("Running cargo test")), 12 * MINUTE, false);
+    rig.pass(working(Some("Running cargo test")), 12 * MINUTE, false);
+    assert_eq!(rig.events("agent_stalled").len(), 1);
+    let resumed = rig.events("agent_resumed");
+    assert_eq!(resumed.len(), 1, "once per stall");
+    assert_eq!(
+        resumed.first().unwrap().get("quiet_secs"),
+        Some(&serde_json::json!(720))
+    );
 }
