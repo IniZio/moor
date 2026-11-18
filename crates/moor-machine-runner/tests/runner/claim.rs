@@ -126,6 +126,30 @@ fn a_held_slot_on_a_machine_too_full_to_use_is_released_and_the_claim_fails() {
 }
 
 #[test]
+fn a_claim_that_reaches_a_runner_without_the_link_prepares_the_box_on_the_runner_with_it() {
+    const KEY: &str = "replica-key";
+    let mut rig = Rig::with_args(&["--service-key", KEY]);
+    rig.hook("prepare", r#"echo '{"device": "sim-1"}'"#);
+    let holder = rig.replica(&["--links", "127.0.0.1:0", "--service-key", KEY]);
+    rig.agent_dials(holder.agents);
+    let runner = format!("127.0.0.1:{}", holder.links.unwrap());
+    let held = json!({"state": "held", "machine": "minion", "machine_id": 7, "slot": 0,
+        "ports": [8081], "runner": runner});
+    rig.holds.lock().unwrap().answers = vec![held].into();
+    let headers = [MISSING[0], MISSING[1], ("X-Moor-Service-Key", KEY)];
+    let got = rig.call_with("machine_claim", json!({}), &headers);
+    assert_eq!(
+        got,
+        Ok(
+            json!({"machine": "minion", "slot": 0, "port_offset": 0, "ports": [8081],
+            "facts": {"device": "sim-1"}})
+        )
+    );
+    let ops: Vec<Value> = seen(&rig).into_iter().map(|s| s["op"].clone()).collect();
+    assert_eq!(ops, [json!({"claim": {}})]);
+}
+
+#[test]
 fn the_runner_says_its_tool_list_can_change_so_clients_heed_the_notice() {
     let rig = Rig::start();
     let init = rig.initialized();

@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 
 mod controller;
 mod machine;
+mod replica;
 use controller::{fake_controller, Fake, Records};
 
 /// Starts the fake controller on the rig at `dir`, listing `open` as open, or refusing to list
@@ -156,7 +157,7 @@ impl Rig {
         std::fs::create_dir_all(machine::hooks_dir(dir.path())).unwrap();
         let fake = start_controller(dir.path(), &tree, listing_fails, open);
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
-        let (runner, port, agents, links) = spawn(dir.path(), &args);
+        let (runner, port, agents, links) = spawn(dir.path(), &dir.path().join("state"), &args);
         let (machine_agent, agent_log) =
             machine::start_agent(dir.path(), &remote, agents, &fake.link, sweep_grace);
         let http = ureq::Agent::config_builder()
@@ -205,7 +206,9 @@ impl Rig {
     pub fn restart_empty(&mut self) {
         self.runner = Runner(None);
         std::fs::remove_dir_all(self.state()).unwrap();
-        (self.runner, self.port, self.agents, self.links) = spawn(self.dir.path(), &self.args);
+        let state = self.state();
+        (self.runner, self.port, self.agents, self.links) =
+            spawn(self.dir.path(), &state, &self.args);
     }
 
     /// Starts the fake machine's agent again, dialing `port` instead of this runner, and waits
@@ -481,9 +484,9 @@ impl Rig {
     }
 }
 
-/// Starts a runner in the rig at `dir`; it, the port it listens on, and the one it takes agent
-/// links on.
-fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16, Option<u16>) {
+/// Starts a runner in the rig at `dir` keeping its state in `state`; it, the port it listens on,
+/// and the one it takes agent links on.
+fn spawn(dir: &Path, state: &Path, args: &[String]) -> (Runner, u16, u16, Option<u16>) {
     let path = format!(
         "{}:{}",
         dir.join("bin").display(),
@@ -500,7 +503,7 @@ fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16, Option<u16>) {
             .args(["--listen", "127.0.0.1:0", "--socket"])
             .arg(dir.join("runner.sock"))
             .arg("--state-dir")
-            .arg(dir.join("state"))
+            .arg(state)
             .args(["--agents", "127.0.0.1:0"])
             .args(sweep)
             .args(args)
