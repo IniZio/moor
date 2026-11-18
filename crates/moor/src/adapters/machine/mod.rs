@@ -64,16 +64,6 @@ impl Machines {
         }
     }
 
-    /// The driver remembering in `sent` what it gives each Box, so another request that shares
-    /// `sent` does not give a Box the same environment again.
-    #[must_use]
-    pub fn sharing_sent_env(self, sent: Arc<SentEnvs>) -> Self {
-        Self {
-            env_sent: sent,
-            ..self
-        }
-    }
-
     /// The machine and Box slug `handle` names.
     fn seat(handle: &BoxHandle) -> Result<(i64, &str), DriverError> {
         parse_machine_handle(handle.as_str())

@@ -1,7 +1,7 @@
 //! What `set_env` sends a machine: each Box's environment, once per change.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_client::link::boxes::{BoxAnswer, BoxOp};
 use moor_core::name::BoxHandle;
@@ -15,6 +15,18 @@ type SentEnv = (Vec<(String, String)>, Option<String>);
 /// The environments sent so far, by Box slug, kept as long as the controller runs.
 #[derive(Default)]
 pub struct SentEnvs(Mutex<HashMap<String, SentEnv>>);
+
+impl Machines {
+    /// The driver remembering in `sent` what it gives each Box, so another request that shares
+    /// `sent` does not give a Box the same environment again.
+    #[must_use]
+    pub fn sharing_sent_env(self, sent: Arc<SentEnvs>) -> Self {
+        Self {
+            env_sent: sent,
+            ..self
+        }
+    }
+}
 
 /// The environments sent so far.
 fn sent(m: &Machines) -> MutexGuard<'_, HashMap<String, SentEnv>> {
