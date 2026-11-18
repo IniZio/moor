@@ -117,6 +117,43 @@ fn insert_workflow(
     )?)
 }
 
+/// Replaces the content of workflow `id` with `def`, at `state` (`enabled_at`, disabled reason)
+/// and time `now`, and raises its revision. The origin is written only when `def` has one.
+fn replace_workflow(
+    conn: &dyn Db,
+    id: i64,
+    def: &WorkflowDef,
+    (repos, also, plan): (String, String, Option<String>),
+    ((enabled_at, reason), now): ((Option<i64>, Option<String>), i64),
+) -> Result<(), StoreError> {
+    let mut update = Query::update();
+    update
+        .table(Workflows::Table)
+        .value(Workflows::Cron, def.schedule.expr())
+        .value(Workflows::Timezone, def.schedule.zone())
+        .value(Workflows::Repos, repos)
+        .value(Workflows::Also, also)
+        .value(Workflows::Config, def.config.as_deref())
+        .value(Workflows::Prompt, def.prompt.as_str())
+        .value(Workflows::Plan, plan)
+        .value(Workflows::EnabledAt, enabled_at)
+        .value(Workflows::DisabledReason, reason)
+        .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
+        .value(Workflows::UpdatedAt, now)
+        .value(
+            Workflows::Revision,
+            Expr::col(Workflows::Revision).add(1_i64),
+        )
+        .and_where(Expr::col(Workflows::Id).eq(id));
+    if let Some(origin) = &def.origin {
+        update
+            .value(Workflows::OriginFront, origin.front.as_str())
+            .value(Workflows::OriginKey, origin.key.as_deref());
+    }
+    conn.run(&mut update)?;
+    Ok(())
+}
+
 impl Store {
     /// Stores `def` as `owner`'s workflow of its name, replacing the one already there, and
     /// returns its id. A replaced workflow keeps its id, its runs and its creation time; it
@@ -128,7 +165,7 @@ impl Store {
         owner: UserId,
         def: &WorkflowDef,
     ) -> Result<WorkflowId, StoreError> {
-        match self.put_workflow_at(owner, def, None)? {
+        match self.put_workflow_at(owner, def, None, false)? {
             Put::Written { id, .. } => Ok(id),
             Put::Stale { .. } => Err(StoreError::Invalid(
                 "a write that names no revision was refused as stale".to_owned(),
@@ -137,12 +174,15 @@ impl Store {
     }
 
     /// Stores `def` as `put_workflow` does, writing only when the stored workflow is at revision `expected`,
-    /// if one is given. The check and the write share one transaction.
+    /// if one is given. The check and the write share one transaction. A replace with
+    /// `keep_state` leaves whether the workflow is enabled, and the reason it is not, as stored.
+    /// A `def` with no origin leaves the stored origin as it is.
     pub(crate) fn put_workflow_at(
         &self,
         owner: UserId,
         def: &WorkflowDef,
         expected: Option<u64>,
+        keep_state: bool,
     ) -> Result<Put, StoreError> {
         let now = self.now().as_millis();
         let repos = serde_json::to_string(&def.repos)?;
@@ -150,7 +190,6 @@ impl Store {
         let plan = def.plan.as_ref().map(Plan::to_json).transpose()?;
         let mut writer = self.writer();
         let tx = writer.immediate()?;
-        let origin = def.origin.as_ref();
         let found = existing(&tx, owner, def)?;
         let current = found.as_ref().map(|f| f.revision);
         if expected.is_some_and(|want| current != Some(want)) {
@@ -163,30 +202,15 @@ impl Store {
             ..
         }) = found
         {
-            let enabled_at = def.enabled.then_some(was_enabled_at.unwrap_or(now));
-            let reason = if def.enabled { None } else { was_reason };
-            tx.run(
-                Query::update()
-                    .table(Workflows::Table)
-                    .value(Workflows::Cron, def.schedule.expr())
-                    .value(Workflows::Timezone, def.schedule.zone())
-                    .value(Workflows::Repos, repos)
-                    .value(Workflows::Also, also)
-                    .value(Workflows::Config, def.config.as_deref())
-                    .value(Workflows::Prompt, def.prompt.as_str())
-                    .value(Workflows::Plan, plan)
-                    .value(Workflows::EnabledAt, enabled_at)
-                    .value(Workflows::DisabledReason, reason)
-                    .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
-                    .value(Workflows::UpdatedAt, now)
-                    .value(
-                        Workflows::Revision,
-                        Expr::col(Workflows::Revision).add(1_i64),
-                    )
-                    .value(Workflows::OriginFront, origin.map(|o| o.front.as_str()))
-                    .value(Workflows::OriginKey, origin.and_then(|o| o.key.as_deref()))
-                    .and_where(Expr::col(Workflows::Id).eq(id)),
-            )?;
+            let state = if keep_state {
+                (was_enabled_at, was_reason)
+            } else {
+                (
+                    def.enabled.then_some(was_enabled_at.unwrap_or(now)),
+                    if def.enabled { None } else { was_reason },
+                )
+            };
+            replace_workflow(&tx, id, def, (repos, also, plan), (state, now))?;
             (id, current.unwrap_or_default() + 1)
         } else {
             (

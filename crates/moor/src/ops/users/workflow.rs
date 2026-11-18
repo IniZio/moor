@@ -139,7 +139,7 @@ fn add(
         .as_deref()
         .map(|text| parse_plan(text, &req.prompt))
         .transpose()?;
-    let revision = match store.put_workflow_at(user, &def, req.expected_revision)? {
+    let revision = match store.put_workflow_at(user, &def, req.expected_revision, req.keep_state)? {
         Put::Written { revision, .. } => revision,
         Put::Stale { current } => return Err(stale(&name, current, req.expected_revision)),
     };

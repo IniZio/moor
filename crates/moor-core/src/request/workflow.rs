@@ -46,6 +46,11 @@ pub struct WorkflowAddReq {
     /// socket may send one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_key: Option<String>,
+    /// Yes to replace a stored workflow's content and keep whether it is enabled, and the
+    /// reason the controller disabled it for. A workflow just made is enabled either way. No
+    /// (the default) is a replace that enables it, as `add_workflow` does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_state: bool,
 }
 
 /// Arguments of `workflow-remove`.

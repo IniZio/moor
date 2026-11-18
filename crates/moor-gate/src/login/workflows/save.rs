@@ -2,7 +2,7 @@
 
 use std::net::TcpStream;
 
-use moor_core::request::{Request as ControllerRequest, WorkflowAddReq, WorkflowEnableReq};
+use moor_core::request::{Request as ControllerRequest, WorkflowAddReq};
 use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::workflow::WorkflowView;
 use serde::Deserialize;
@@ -112,6 +112,9 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         plan,
         expected_revision: Some(write.revision),
         origin_key: None,
+        // An edit of the content only: whether it runs, and why not, stay as stored, and so
+        // does the origin.
+        keep_state: true,
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {
@@ -135,15 +138,6 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
     }
     if reply.class != ExitClass::Ok {
         return Err(Saved::Refused(Box::new(reply)));
-    }
-    if !stored.enabled {
-        // A replace enables a workflow; a person who only edited its plan did not ask for that.
-        let off = ControllerRequest::WorkflowSetEnabled(WorkflowEnableReq {
-            identity: None,
-            name: stored.name,
-            enabled: false,
-        });
-        tools::ask_as(&gate.controller, &session.person, off).map_err(Saved::Other)?;
     }
     Ok(())
 }

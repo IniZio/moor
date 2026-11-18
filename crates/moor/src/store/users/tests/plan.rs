@@ -61,7 +61,7 @@ fn a_put_writes_only_at_the_revision_the_writer_read() {
     let (store, _) = open(dir.path());
     let alice = user(&store, "local:1");
     let d = def("daily", &["a/one"], true);
-    let at = |expected| store.put_workflow_at(alice, &d, expected).unwrap();
+    let at = |expected| store.put_workflow_at(alice, &d, expected, false).unwrap();
 
     assert!(matches!(at(Some(0)), Put::Stale { current: None }));
     assert!(matches!(at(None), Put::Written { revision: 0, .. }));

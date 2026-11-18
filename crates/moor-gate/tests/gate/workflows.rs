@@ -168,7 +168,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
                 .unwrap()
                 .clone_into(&mut held.prompt);
             held.plan = plan;
-            held.enabled = true;
+            held.enabled = held.enabled || inner["keep_state"] != true;
             held.revision += 1;
             Response::ok("x", Some(json!({"name": "weekly-deps", "changed": true})))
         }
@@ -454,6 +454,19 @@ fn a_plan_the_controller_refuses_and_a_disabled_workflow_are_handled() {
     let ok = json!({"prompt": "p", "plan": plan_text(), "revision": 3});
     let flow = json_of(&put(&w, &cookie, &ok));
     assert_eq!(flow["enabled"], false);
+    let cmds = w.cmds();
+    assert!(
+        !cmds.contains(&"workflow-set-enabled".to_owned()),
+        "a save is one controller request that keeps the state"
+    );
+    let seen = w.seen.lock().unwrap().clone();
+    let add = seen
+        .iter()
+        .rev()
+        .find(|r| r["request"]["cmd"] == "workflow-add")
+        .unwrap();
+    assert_eq!(add["request"]["keep_state"], true);
+    assert!(add["request"].get("origin_key").is_none());
 }
 
 #[test]
