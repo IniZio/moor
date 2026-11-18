@@ -106,7 +106,7 @@ fn fire(
     start: &dyn Fn(StartJob) -> Result<(), CommandError>,
 ) -> Result<RunNowLine, CommandError> {
     let now = cx.clock().now();
-    let Prepared { job, frozen } = match prepare(store, w, repo, (now, RunTrigger::Manual)) {
+    let Prepared { job, frozen } = match prepare(cx, store, w, repo, (now, RunTrigger::Manual)) {
         Ok(prepared) => prepared,
         Err(why) => return Ok(declined(repo, why)),
     };

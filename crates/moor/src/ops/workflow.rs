@@ -127,7 +127,7 @@ fn tick_one(
                 )?;
             }
             WorkflowVerdict::Start { due_at } => {
-                claim(store, w, &v.repo, due_at, now, launch)?;
+                claim(cx, store, w, &v.repo, (due_at, now), launch)?;
             }
         }
     }
@@ -164,8 +164,10 @@ struct Prepared {
 }
 
 /// Makes the firing of `w` for `repo` due at `due_at` ready to claim, or says why it cannot
-/// be: its Box name is invalid, or its owner has no identity to start a Box as.
+/// be: its Box name is invalid, its owner has no identity to start a Box as, or it has a plan
+/// whose steps its agent could not report.
 fn prepare(
+    cx: &Cx,
     store: &Store,
     w: &Workflow,
     repo: &ForgeRepo,
@@ -179,6 +181,9 @@ fn prepare(
         .next()
         .ok_or("the owner has no identity to start a Box as")?;
     let planned = !w.plan.is_single_of(&w.prompt);
+    if let Some(why) = planned.then(|| unreportable(cx)).flatten() {
+        return Err(why.to_owned());
+    }
     let prompt = if planned {
         w.plan.start_prompt(&w.prompt)
     } else {
@@ -201,16 +206,29 @@ fn prepare(
     })
 }
 
+/// Why an agent in a Box of this controller could not call `report_step`, when it could not: the
+/// tool is the `moor` MCP server's, which `moor_service` gives every Box, and it reports through
+/// a front whose config sets `step_reports: true`.
+fn unreportable(cx: &Cx) -> Option<&'static str> {
+    if cx.config().moor_service.is_none() {
+        return Some("the plan needs report_step, and this controller gives its Boxes no moor MCP server: set moor_service in the user config");
+    }
+    if !cx.env().reports_steps() {
+        return Some("the plan needs report_step, and no front of this controller reports steps: give the gate's front step_reports: true in the controller config");
+    }
+    None
+}
+
 /// Claims the cron firing and hands it to `launch`; a refusal before any Box is recorded as such.
 fn claim(
+    cx: &Cx,
     store: &Store,
     w: &Workflow,
     repo: &ForgeRepo,
-    due_at: Ts,
-    now: Ts,
+    (due_at, now): (Ts, Ts),
     launch: &dyn Fn(StartJob),
 ) -> Result<(), StoreError> {
-    match prepare(store, w, repo, (due_at, RunTrigger::Cron)) {
+    match prepare(cx, store, w, repo, (due_at, RunTrigger::Cron)) {
         Err(detail) => {
             let state = RunState::Done(RunEnd::Refused { detail });
             record(store, w, repo, due_at, now, (state, None)).map(|_| ())

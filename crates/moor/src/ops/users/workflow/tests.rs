@@ -158,7 +158,8 @@ fn a_refused_add_names_the_bad_field() {
 #[test]
 fn a_lower_floor_lets_a_one_minute_cron_through() {
     let mut f = fixture();
-    f.cx = f.cx.with_workflow_floor(Duration::from_secs(60));
+    f.cx =
+        f.cx.with_env(|e| e.with_workflow_min_interval(Duration::from_secs(60)));
     let who = me(&f, "local:2000");
     ok(&f, &who, add(add_req("fast", "* * * * *", "UTC"), None));
     let again = refusal(

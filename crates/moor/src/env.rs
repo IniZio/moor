@@ -219,6 +219,11 @@ impl Env {
         self.front_step_reports.contains(ns)
     }
 
+    /// Whether any front reports steps for the agents in Boxes.
+    pub(crate) fn reports_steps(&self) -> bool {
+        !self.front_step_reports.is_empty()
+    }
+
     /// Share `value` with every request and tick that runs in this environment.
     #[must_use]
     pub(crate) fn sharing<T: Any + Send + Sync>(mut self, value: T) -> Self {

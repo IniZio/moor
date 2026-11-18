@@ -26,7 +26,7 @@ use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{BoxRow, Store};
 
 /// Lines of a failure's output kept as its tail.
-pub(super) const TAIL_LINES: usize = 10;
+pub(crate) const TAIL_LINES: usize = 10;
 
 /// Launches the agent when the Box is Working with a ready machine and no live session.
 ///
@@ -370,4 +370,4 @@ pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
 mod failed;
 
 use failed::record_failure;
-pub(super) use failed::{record, to_json};
+pub(crate) use failed::{record, to_json};
