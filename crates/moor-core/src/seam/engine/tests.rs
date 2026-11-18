@@ -54,6 +54,16 @@ fn dir_names_come_from_the_box_id() {
     assert!(!cred.contains('/') && !tmp.contains('/'));
 }
 
+#[test]
+fn the_tmp_dir_is_where_both_places_of_a_box_see_it() {
+    let home = BoxPath::restore("/home/agent").unwrap();
+    let (cred, tmp) = req().dirs_under(&home).unwrap();
+    assert_eq!(
+        (cred.as_str(), tmp.as_str()),
+        ("/home/agent/.moor-cred-7-abc", "/tmp/.moor-tmp-7-abc")
+    );
+}
+
 fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
     LaunchReq {
         profile: None,

@@ -188,7 +188,7 @@ impl BoxKey {
         format!("{STATE_ROOT}/{}", self.0.get())
     }
 
-    /// The scratch directory under the Box home, `.moor-tmp-{id}-{nonce}`.
+    /// The name of a launch's scratch directory, `.moor-tmp-{id}-{nonce}`.
     #[must_use]
     pub fn tmp_dir(self, nonce: &str) -> String {
         format!("{HOME_PREFIX}tmp-{}-{nonce}", self.0.get())
