@@ -15,6 +15,8 @@ use crate::env::Env;
 pub(crate) const SERVICE: &str = "moor.service";
 /// The socket unit's name.
 pub(crate) const SOCKET: &str = "moor.socket";
+/// The gate's unit, which serves `report_step` to the Boxes.
+pub(crate) const GATE: &str = "moor-gate.service";
 /// The machine runner's unit.
 pub(crate) const RUNNER: &str = "moor-runner.service";
 /// The local node's machine agent's unit.
@@ -31,12 +33,19 @@ pub(crate) struct Unit {
     pub socket: PathBuf,
     /// Environment the controller needs beside the service manager's own.
     pub env: Vec<(String, String)>,
+    /// A file of more environment, which only its owner may read: the service key.
+    pub env_file: Option<PathBuf>,
 }
 
 impl Unit {
     /// The unit for `layout`, run by this executable with this `PATH`, whose Proxy also listens
     /// on `egress`, the address the Boxes of Docker machines on this host dial.
-    pub(crate) fn new(env: &Env, layout: &Layout, egress: SocketAddr) -> Result<Self, Check> {
+    pub(crate) fn new(
+        env: &Env,
+        layout: &Layout,
+        egress: SocketAddr,
+        env_file: Option<PathBuf>,
+    ) -> Result<Self, Check> {
         let exe = std::env::current_exe()
             .map_err(|e| Check::fail("service", format!("cannot find moor itself: {e}"), ""))?;
         let mut vars = vec![
@@ -54,6 +63,7 @@ impl Unit {
             config: layout.controller_config.clone(),
             socket: layout.socket.clone(),
             env: vars,
+            env_file,
         })
     }
 }
@@ -104,6 +114,7 @@ pub(crate) fn service_unit(unit: &Unit) -> String {
     for (k, v) in &unit.env {
         let _ = writeln!(env, "Environment={}", quoted(&format!("{k}={v}")));
     }
+    env.push_str(&env_file_line(unit.env_file.as_deref()));
     format!(
         "[Unit]
 Description=moor controller
@@ -122,13 +133,25 @@ WantedBy=default.target
     )
 }
 
-/// A unit that keeps `exe args` running, started after `after` and restarted when it ends.
+/// The `EnvironmentFile=` line for `file`, or nothing.
+fn env_file_line(file: Option<&Path>) -> String {
+    file.map_or_else(String::new, |f| {
+        format!(
+            "EnvironmentFile={}\n",
+            f.display().to_string().replace('%', "%%")
+        )
+    })
+}
+
+/// A unit that keeps `exe args` running, started after `after` and restarted when it ends, with
+/// `env` and the variables of `env_file`.
 pub(crate) fn process_unit(
     description: &str,
     after: &str,
     exe: &Path,
     args: &[String],
     env: &[(String, String)],
+    env_file: Option<&Path>,
 ) -> String {
     let exec = std::iter::once(exe.display().to_string())
         .chain(args.iter().cloned())
@@ -139,6 +162,7 @@ pub(crate) fn process_unit(
     for (k, v) in env {
         let _ = writeln!(vars, "Environment={}", quoted(&format!("{k}={v}")));
     }
+    vars.push_str(&env_file_line(env_file));
     format!(
         "[Unit]
 Description={description}
@@ -212,10 +236,10 @@ pub(crate) fn install_one(
     Ok(changed)
 }
 
-/// Stops and disables every unit `up` wrote, the agent first, and removes their files; whether
+/// Stops and disables every unit `up` wrote, the gate and the agent first, and removes their files; whether
 /// any was there.
 pub(crate) fn remove(dir: &Path) -> Result<bool, Check> {
-    let names: Vec<&str> = [AGENT, RUNNER, SERVICE, SOCKET]
+    let names: Vec<&str> = [GATE, AGENT, RUNNER, SERVICE, SOCKET]
         .into_iter()
         .filter(|n| dir.join(n).exists())
         .collect();

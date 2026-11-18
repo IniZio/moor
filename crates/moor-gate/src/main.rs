@@ -1,6 +1,8 @@
 //! The `moor-gate` binary.
 
+use std::io::Read as _;
 use std::net::{TcpListener, ToSocketAddrs as _};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -15,7 +17,9 @@ use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN, SERVICE_K
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// Address to listen on; TLS is the ingress's job.
+    /// Address to listen on; TLS is the ingress's job. `off` serves only the Box-facing
+    /// listener, with no sign-in, `/mcp` or account page, and then `--issuer` and `--client-id`
+    /// are not needed.
     #[arg(long, env = "MOOR_GATE_LISTEN", default_value = "0.0.0.0:8443")]
     listen: String,
     /// Address of the Box-facing listener, which serves only `report_step` to the agent in a
@@ -61,12 +65,12 @@ struct Args {
     /// The key the front hello presents to `--controller`.
     #[arg(long, env = "MOOR_GATE_FRONT_KEY", hide_env_values = true)]
     front_key: Option<String>,
-    /// The OIDC issuer tokens must name in `iss`.
+    /// The OIDC issuer tokens must name in `iss`; needed unless `--listen` is `off`.
     #[arg(long, env = "MOOR_GATE_ISSUER")]
-    issuer: String,
-    /// The client id tokens must name in `aud`.
+    issuer: Option<String>,
+    /// The client id tokens must name in `aud`; needed unless `--listen` is `off`.
     #[arg(long, env = "MOOR_GATE_CLIENT_ID")]
-    client_id: String,
+    client_id: Option<String>,
     /// Where the issuer's keys are, when the gate cannot reach the issuer's discovery URL.
     #[arg(long, env = "MOOR_GATE_JWKS_URL")]
     jwks_url: Option<String>,
@@ -112,18 +116,28 @@ impl Args {
     }
 }
 
+/// The public listener, bound; none when `--listen` is `off`.
+fn public_listener(args: &Args) -> Result<Option<TcpListener>, String> {
+    if args.listen == "off" {
+        return Ok(None);
+    }
+    if args.issuer.is_none() || args.client_id.is_none() {
+        return Err("--issuer and --client-id are needed unless --listen is off".to_owned());
+    }
+    TcpListener::bind(&args.listen)
+        .map(Some)
+        .map_err(|e| format!("cannot listen on {}: {e}", args.listen))
+}
+
 fn main() -> ExitCode {
     let args = Args::parse();
     let controller = match args.client() {
         Ok(controller) => controller,
         Err(why) => return fail(&why),
     };
-    let listener = match TcpListener::bind(&args.listen) {
-        Ok(listener) => listener,
-        Err(e) => {
-            moor_gate_log(&format!("cannot listen on {}: {e}", args.listen));
-            return ExitCode::FAILURE;
-        }
+    let public = match public_listener(&args) {
+        Ok(public) => public,
+        Err(why) => return fail(&why),
     };
     let boxes = service_key(std::env::var(SERVICE_KEY_ENV).ok())
         .and_then(|key| {
@@ -133,6 +147,31 @@ fn main() -> ExitCode {
     if let Err(why) = boxes {
         return fail(&why);
     }
+    let wake = match moor_gate::on_termination() {
+        Ok(wake) => wake,
+        Err(e) => {
+            moor_gate_log(&format!("cannot handle SIGTERM: {e}"));
+            return ExitCode::FAILURE;
+        }
+    };
+    if let (Some(listener), Some(issuer), Some(client_id)) =
+        (public, args.issuer.clone(), args.client_id.clone())
+    {
+        serve_public(args, controller, listener, (issuer, client_id), &wake)
+    } else {
+        let _ = (&wake).read(&mut [0_u8; 1]);
+        ExitCode::SUCCESS
+    }
+}
+
+/// Serves the public listener until `wake` turns readable, then drains.
+fn serve_public(
+    args: Args,
+    controller: Client,
+    listener: TcpListener,
+    (issuer, client_id): (String, String),
+    wake: &UnixStream,
+) -> ExitCode {
     let mcp = match args
         .mcp_resource_url
         .map(|url| Mcp::with_setup(&url, controller.clone(), args.public_url.as_deref()))
@@ -153,17 +192,10 @@ fn main() -> ExitCode {
     let gate = Arc::new(Gate {
         controller,
         mcp,
-        verifier: Verifier::new(args.issuer, args.client_id, args.jwks_url),
+        verifier: Verifier::new(issuer, client_id, args.jwks_url),
     });
-    let wake = match moor_gate::on_termination() {
-        Ok(wake) => wake,
-        Err(e) => {
-            moor_gate_log(&format!("cannot handle SIGTERM: {e}"));
-            return ExitCode::FAILURE;
-        }
-    };
     let drain = Duration::from_secs(args.drain_timeout_secs);
-    match moor_gate::serve_until(listener, &gate, login.as_ref(), &wake, drain) {
+    match moor_gate::serve_until(listener, &gate, login.as_ref(), wake, drain) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             moor_gate_log(&format!("accept failed: {e}"));

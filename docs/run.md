@@ -36,14 +36,19 @@ is already in place.
 
 1. It checks that `docker info` works for your user, and says that Docker
    Boxes are privileged containers.
-2. It writes the controller config, `~/.config/moor/controller.yaml`, and adds
-   the controller to `~/.config/moor/config.yaml`. It also adds
-   `moor_service`, which routes `moor.moor.internal` to `127.0.0.1:8444`. That
-   is where a `moor-gate` on this host serves `report_step` to Boxes. moor up
-   does not start that gate.
+2. It writes the controller config, `~/.config/moor/controller.yaml`, with a
+   front for the gate that may report steps, and adds the controller to
+   `~/.config/moor/config.yaml`. It also adds `moor_service`, which routes
+   `moor.moor.internal` to `127.0.0.1:8444`. A workflow with a plan needs
+   both. A controller config that already has `fronts`, or a `moor_service`
+   that names another listener, means you run the gate yourself. moor up then
+   starts none.
 3. It installs and starts the controller as the systemd user units
    `moor.socket` and `moor.service`. The service also listens on the address
-   of Docker's bridge network, where Boxes reach the Proxy.
+   of Docker's bridge network, where Boxes reach the Proxy. It then starts
+   `moor-gate.service`, a `moor-gate` with no public listener and no sign-in.
+   It serves `report_step` to Boxes at `127.0.0.1:8444`. moor up makes a key once, in `~/.local/state/moor/service.env`. It goes to the
+   controller and the gate. No other process on the host can name a Box.
 4. It creates your moor user and asks for your `claude` and `github` secrets.
    Paste what `claude setup-token` and `gh auth token` print.
 5. It starts the machine runner as `moor-runner.service`. The runner takes

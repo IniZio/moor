@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::files::{converge_user, Layout};
+use super::files::{controller, converge_user, Layout};
+use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, runner_unit, Plan, Ports};
 use super::service::{service_unit, socket_unit, Unit};
 use crate::env::Env;
@@ -112,6 +113,7 @@ fn unit() -> Unit {
                 "/home/ada/.local/bin:/usr/bin".to_owned(),
             ),
         ],
+        env_file: None,
     }
 }
 
@@ -220,4 +222,105 @@ fn the_agent_runs_under_its_own_home_and_state_and_keeps_the_users_path_to_docke
         assert!(text.contains(line), "{line} missing from {text}");
     }
     assert!(!text.to_lowercase().contains("crabbox"));
+}
+
+fn gate_plan() -> GatePlan {
+    GatePlan {
+        exe: PathBuf::from("/home/ada/.local/bin/moor-gate"),
+        key_file: PathBuf::from("/home/ada/.local/state/moor/service.env"),
+        front_socket: PathBuf::from("/home/ada/.local/state/moor/fronts/authgear/front"),
+    }
+}
+
+#[test]
+fn the_gate_serves_only_boxes_and_takes_the_key_from_its_file() {
+    assert_eq!(
+        gate::unit(&gate_plan()),
+        "[Unit]
+Description=moor gate: serves report_step to the Boxes on this host
+Wants=moor.service
+After=moor.service
+
+[Service]
+ExecStart=\"/home/ada/.local/bin/moor-gate\" \"--listen\" \"off\" \"--box-listen\" \"127.0.0.1:8444\" \"--front-socket\" \"/home/ada/.local/state/moor/fronts/authgear/front\"
+EnvironmentFile=/home/ada/.local/state/moor/service.env
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    );
+}
+
+#[test]
+fn the_controller_unit_reads_the_same_key_file() {
+    let mut u = unit();
+    u.env_file = Some(PathBuf::from("/home/ada/.local/state/moor/service.env"));
+    assert!(service_unit(&u).contains(
+        "Environment=\"PATH=/home/ada/.local/bin:/usr/bin\"\nEnvironmentFile=/home/ada/.local/state/moor/service.env\nKillMode=process"
+    ));
+}
+
+#[test]
+fn the_service_key_is_made_once_and_only_its_owner_reads_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = moor_testkit::short_tempdir("key").unwrap();
+    let plan = GatePlan {
+        key_file: dir.path().join("service.env"),
+        ..gate_plan()
+    };
+    gate::keep_key(&plan).unwrap();
+    let first = std::fs::read_to_string(&plan.key_file).unwrap();
+    assert!(
+        first.starts_with("MOOR_SERVICE_KEY=") && first.trim().len() > 40,
+        "{first}"
+    );
+    assert_eq!(
+        std::fs::metadata(&plan.key_file)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    gate::keep_key(&plan).unwrap();
+    assert_eq!(std::fs::read_to_string(&plan.key_file).unwrap(), first);
+    std::fs::write(&plan.key_file, "MOOR_SERVICE_KEY=\n").unwrap();
+    gate::keep_key(&plan).unwrap();
+    assert_ne!(
+        std::fs::read_to_string(&plan.key_file).unwrap(),
+        "MOOR_SERVICE_KEY=\n"
+    );
+}
+
+#[test]
+fn the_controller_config_up_writes_lets_a_gate_report_steps() {
+    let dir = moor_testkit::short_tempdir("cfg").unwrap();
+    let mut l = layout();
+    l.controller_config = dir.path().join("controller.yaml");
+    controller(&l, true).unwrap();
+    let text = std::fs::read_to_string(&l.controller_config).unwrap();
+    let config = moor_core::config::parse_controller("controller.yaml", &text).unwrap();
+    assert_eq!(
+        config.step_report_fronts().into_iter().collect::<Vec<_>>(),
+        ["authgear"]
+    );
+    let before = text;
+    controller(&l, true).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&l.controller_config).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn a_user_config_routing_moor_service_elsewhere_gets_no_gate() {
+    let dir = moor_testkit::short_tempdir("own").unwrap();
+    let mut l = layout();
+    l.user_config = dir.path().join("config.yaml");
+    l.controller_config = dir.path().join("controller.yaml");
+    std::fs::write(&l.user_config, "moor_service:\n  upstream: 10.0.0.9:8444\n").unwrap();
+    let got = gate::decide(&env(), &l, dir.path()).unwrap();
+    assert_eq!(got, Gate::Left("moor_service names a listener of your own"));
 }

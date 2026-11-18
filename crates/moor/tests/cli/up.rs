@@ -287,8 +287,6 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     let (host, _) = converged();
     let down = host.moor(&["down"], "");
     assert_eq!(down.code, 0, "{down:?}");
-    assert!(!host.units().join("moor.service").exists());
-    assert!(!host.units().join("moor.socket").exists());
     assert!(host.home.join(".config/moor/controller.yaml").exists());
     assert!(host.state.path().join("moor.db").exists());
     assert!(host
@@ -296,9 +294,13 @@ fn down_removes_the_units_and_keeps_config_and_state() {
         .ends_with(
             "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
         ));
-    assert!(!host.units().join("moor-agent.service").exists());
-    assert!(!host.units().join("moor-runner.service").exists());
-    assert!(!host.units().join("moor-gate.service").exists());
+    let left = fs::read_dir(host.units()).unwrap().count();
+    assert_eq!(
+        left,
+        0,
+        "{:?}",
+        fs::read_dir(host.units()).unwrap().collect::<Vec<_>>()
+    );
     assert_eq!(
         host.moor(&["down"], "").stdout,
         "ok    service     not installed\n"
@@ -375,7 +377,7 @@ fn up_over_the_crabbox_node_of_an_earlier_release_says_to_delete_it() {
 const FRONT: &str = "fronts:\n  authgear:\n    step_reports: true\n";
 
 #[test]
-fn up_runs_a_box_only_gate_that_shares_one_service_key_with_the_controller() {
+fn up_keeps_one_private_service_key_the_controller_binds_the_gate_front_with() {
     let (host, first) = converged();
     assert_eq!(first.code, 0, "{first:?}");
     let controller = fs::read_to_string(host.home.join(".config/moor/controller.yaml")).unwrap();
@@ -388,7 +390,23 @@ fn up_runs_a_box_only_gate_that_shares_one_service_key_with_the_controller() {
         fs::metadata(&key_file).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    let uses = format!("EnvironmentFile={}\n", key_file.display());
+    for (path, text) in host.written() {
+        assert!(
+            path == key_file || !text.contains(key),
+            "the key is in {}",
+            path.display()
+        );
+    }
+    assert!(host.state.path().join("fronts/authgear/front").exists());
+}
+
+#[test]
+fn the_gate_runs_without_a_public_listener_and_both_units_read_the_key_file() {
+    let (host, _) = converged();
+    let uses = format!(
+        "EnvironmentFile={}\n",
+        host.state.path().join("service.env").display()
+    );
     let gate = fs::read_to_string(host.units().join("moor-gate.service")).unwrap();
     let front = host.state.path().join("fronts/authgear/front");
     for want in [
@@ -402,12 +420,6 @@ fn up_runs_a_box_only_gate_that_shares_one_service_key_with_the_controller() {
     }
     let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
     assert!(service.contains(&uses), "{service}");
-    for (path, text) in host.written() {
-        if path != key_file {
-            assert!(!text.contains(key), "the key is in {}", path.display());
-        }
-    }
-    assert!(front.exists(), "the controller bound no front socket");
 }
 
 #[test]

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::{parse_controller, parse_user};
 
+use super::gate::{BOX_LISTEN, FRONT};
 use crate::config_load::user_path;
 use crate::doctor::Check;
 use crate::env::Env;
@@ -85,11 +86,17 @@ pub(crate) fn controller_yaml(layout: &Layout) -> String {
     )
 }
 
-/// Writes the controller config when it is missing; an existing one is kept as it is.
-pub(crate) fn controller(layout: &Layout) -> Result<Check, Check> {
+/// Writes the controller config when it is missing, and with `front` adds the gate's front where
+/// it has no `fronts`; anything else in an existing one is kept as it is.
+pub(crate) fn controller(layout: &Layout, front: bool) -> Result<Check, Check> {
     let path = &layout.controller_config;
-    if !path.exists() {
-        write(path, &controller_yaml(layout))?;
+    let existing = fs::read_to_string(path).ok();
+    let mut text = existing.clone().unwrap_or_else(|| controller_yaml(layout));
+    if front && !has_key(&text, "fronts") {
+        section(&mut text, FRONT);
+    }
+    if existing.as_deref() != Some(text.as_str()) {
+        write(path, &text)?;
     }
     Ok(Check::ok(
         "config",
@@ -97,8 +104,10 @@ pub(crate) fn controller(layout: &Layout) -> Result<Check, Check> {
     ))
 }
 
-/// moor-gate's own `--box-listen`, where the Proxy beside the controller sends `moor.moor.internal`.
-const GATE_BOX_LISTEN: &str = "127.0.0.1:8444";
+/// Whether `text` has the top-level `key`.
+pub(super) fn has_key(text: &str, key: &str) -> bool {
+    text.lines().any(|l| l.starts_with(&format!("{key}:")))
+}
 
 /// The user config text after `up`: `existing` with a `controller` section, and a `moor_service`
 /// routed to the gate on this host, added where it has none; `None` when it needs no change.
@@ -116,10 +125,9 @@ pub(crate) fn converge_user(
     let config = parse_user(file, text)
         .map_err(|e| Check::fail("config", e.to_string(), format!("fix {file}")))?;
     let mut out = text.to_owned();
-    let has_key = |key: &str| text.lines().any(|l| l.starts_with(&format!("{key}:")));
     match (&config.controller.socket, &config.controller.ssh) {
         (Some(s), _) if env.expand_home(s) == socket => {}
-        (None, None) if !has_key("controller") => {
+        (None, None) if !has_key(text, "controller") => {
             section(
                 &mut out,
                 &format!("controller:\n  socket: {}\n", socket.display()),
@@ -140,10 +148,10 @@ pub(crate) fn converge_user(
             format!("delete nodes.{NODE} from {file}; moor up adds the Docker node of that name"),
         ));
     }
-    if config.moor_service.is_none() && !has_key("moor_service") {
+    if config.moor_service.is_none() && !has_key(text, "moor_service") {
         section(
             &mut out,
-            &format!("moor_service:\n  upstream: {GATE_BOX_LISTEN}\n"),
+            &format!("moor_service:\n  upstream: {BOX_LISTEN}\n"),
         );
     }
     Ok((existing != Some(out.as_str())).then_some(out))
