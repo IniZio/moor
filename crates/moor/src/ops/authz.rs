@@ -135,6 +135,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
             Some(crate::ops::webhook_outbox::FRONT_ONLY)
         }
         Request::StepReport(_) => Some(STEP_REPORT_FRONT_ONLY),
+        Request::MachinePair(_) => Some(crate::ops::machine_pair::FRONT_ONLY),
         Request::BoxRsync(_) => Some(RSYNC_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),

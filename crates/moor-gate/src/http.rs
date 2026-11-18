@@ -81,7 +81,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
         (Some("GET"), "/front") => front(stream, leftover, &req, gate, streams),
         (Some("POST"), p @ ("/machines/pair" | "/machines/pair/poll")) => {
             let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
-            pair::agent(stream, leftover, length, p, login);
+            pair::agent(stream, leftover, length, p, gate, login);
         }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }

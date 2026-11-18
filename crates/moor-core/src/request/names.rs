@@ -134,6 +134,7 @@ impl Request {
             | Self::MachineLinks(_)
             | Self::MachineBox(_)
             | Self::StepReport(_)
+            | Self::MachinePair(_)
             | Self::WebhookClaim(_)
             | Self::WebhookReport(_)
             | Self::Version {} => Vec::new(),

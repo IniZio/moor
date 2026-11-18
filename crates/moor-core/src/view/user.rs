@@ -161,6 +161,34 @@ pub struct MachineEnrollValue {
     pub capacity: u16,
 }
 
+/// Value of `machine-pair`: where the code stands after the step.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "pairing", rename_all = "kebab-case")]
+pub enum MachinePairValue {
+    /// `start` kept the code.
+    Started,
+    /// `start` kept nothing: too many codes wait.
+    Full,
+    /// `start` kept nothing: another pairing holds that code.
+    Taken,
+    /// The code waits for a confirm and asks for this; `claim` moved it to enrolling.
+    Waiting {
+        /// What the agent asked to be enrolled as.
+        ask: serde_json::Value,
+    },
+    /// The code is unknown, expired, used, or not at the stage the step needs.
+    Gone,
+    /// `settle` recorded the enroll's end.
+    Settled,
+    /// Nobody has confirmed the code yet.
+    Pending,
+    /// The controller's enrollment, handed out this once.
+    Enrolled {
+        /// The `machine-enroll` value.
+        enrolled: serde_json::Value,
+    },
+}
+
 /// Value of `whoami`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WhoamiValue {

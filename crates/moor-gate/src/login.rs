@@ -99,8 +99,6 @@ impl oauth2::SyncHttpClient for Http {
 pub struct Login {
     /// The public URL, without a trailing slash.
     public: String,
-    /// The machines pairing through this gate.
-    pairings: pair::Pairings,
     /// `<public-url>/auth/callback`.
     redirect: String,
     /// Seals and opens the sign-in and session cookies.
@@ -155,7 +153,6 @@ impl Login {
         Ok(Self {
             redirect: format!("{public}/auth/callback"),
             public,
-            pairings: pair::Pairings::default(),
             seal,
             endpoints: Mutex::new(None),
             http: Http(Agent::new_with_config(config)),

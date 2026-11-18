@@ -28,6 +28,7 @@ mod launch_fence;
 mod link_provides;
 mod link_runner;
 mod machine_boxes;
+mod machine_pairings;
 mod node_settings;
 mod pause_publish;
 mod proxy_key;
@@ -90,4 +91,5 @@ pub const STEPS: &[Step] = &[
     step("V83__link_provides", link_provides::write),
     step("V84__node_settings", node_settings::write),
     step("V85__workflow_plans", workflow_plans::write),
+    step("V86__machine_pairings", machine_pairings::write),
 ];
