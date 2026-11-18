@@ -394,8 +394,6 @@ fn all_events() -> Vec<Event> {
             awake_for_secs: 7_200,
         }),
         Event::Stall(StallEvent::DeathCapped {
-            count: 3,
-            window_secs: 1_800,
             reason: s("the work place exited with code 137"),
         }),
     ]

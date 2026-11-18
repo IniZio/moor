@@ -357,20 +357,20 @@ fn a_setup_line_finishing_does_not_clear_a_refused_host() {
 fn capped(ts: &str) -> Happened {
     at(
         "death_capped",
-        json!({"count": 3, "window_secs": 1800, "reason": "the work place exited with code 137"}),
+        json!({"reason": "the work place exited with code 137"}),
         ts,
     )
 }
 
 #[test]
-fn deaths_that_were_capped_look_stuck_and_say_why() {
+fn a_death_moor_did_not_resume_looks_stuck_and_says_why() {
     let events = [capped("2026-01-01T00:05:00Z")];
     assert_eq!(
         stuck_of(&events),
         Some(StuckView {
             kind: "death_capped".to_owned(),
             since: "2026-01-01T00:05:00Z".to_owned(),
-            detail: "its machine stopped 3 times in 30 minutes, so moor stopped resuming it: \
+            detail: "its machine stopped, so moor did not resume it: \
                      the work place exited with code 137"
                 .to_owned(),
         })
@@ -378,7 +378,7 @@ fn deaths_that_were_capped_look_stuck_and_say_why() {
 }
 
 #[test]
-fn a_wake_clears_capped_deaths_and_nothing_else() {
+fn a_wake_clears_a_death_and_nothing_else() {
     let woke = at("woke", json!({}), "2026-01-01T00:06:00Z");
     assert_eq!(
         stuck_of(&[capped("2026-01-01T00:05:00Z"), woke.clone()]),

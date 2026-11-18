@@ -1,9 +1,9 @@
-//! A Box whose places died while its agent worked: put in the queue to resume on its own, until
-//! it has died too often, and then left asleep and stuck.
+//! A Box whose places died while its agent worked: put in the queue to resume on its own after a
+//! stop with no word of why, and left asleep and stuck after a death.
 
 use moor_core::decide::reconcile::died_of;
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::deaths::{self, Tally, DEATH_WINDOW};
+use moor_core::domain::deaths;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::BoxId;
@@ -14,18 +14,12 @@ use crate::ops::common::node::now;
 use crate::store::Store;
 
 /// Records that working Box `id`, on hands `inc`, stopped as `reason` says. The caller holds the
-/// Box's turn and has seen it Ready. It queues to resume first with its Session as it was, unless
-/// its places died and have now done so [`deaths::DEATH_CAP`] times inside [`DEATH_WINDOW`]: then
-/// it sleeps with its deaths as the reason, and nothing resumes it but a person.
+/// Box's turn and has seen it Ready. Its places dying leaves it asleep with the way they ended
+/// as the reason, and nothing resumes it but a person. Any other stop queues it to resume first
+/// with its Session as it was.
 pub(super) fn working(cx: &Cx, store: &Store, id: BoxId, inc: HandsInc, reason: &str) {
-    let tally = died_of(reason).map(|why| {
-        let earlier = store.recent_deaths(id).unwrap_or_default();
-        let at = cx.clock().now().as_millis();
-        (why, deaths::record(&earlier, at))
-    });
-    if let Some((why, tally)) = tally.as_ref().filter(|(_, t)| t.capped) {
-        if noted(cx, store.apply(stuck(id, inc, why, tally))) {
-            let _ = store.set_recent_deaths(id, &tally.kept);
+    if let Some(why) = died_of(reason) {
+        if noted(cx, store.apply(stuck(id, inc, why))) {
             let _ = store.set_resume_first(id, None);
             return;
         }
@@ -41,16 +35,13 @@ pub(super) fn working(cx: &Cx, store: &Store, id: BoxId, inc: HandsInc, reason: 
         });
     if noted(cx, store.apply(suspend)) {
         let _ = store.owe_suspended(id, now(cx), true);
-        if let Some((_, tally)) = tally {
-            let _ = store.set_recent_deaths(id, &tally.kept);
-        }
     }
 }
 
-/// Sleeps Box `id` after its deaths: asleep, not queued, saying why, with the event that tells
+/// Sleeps Box `id` after its death: asleep, not queued, saying why, with the event that tells
 /// its owner.
-fn stuck(id: BoxId, inc: HandsInc, why: &str, tally: &Tally) -> Decision {
-    let said = deaths::sentence(tally.kept.len(), why);
+fn stuck(id: BoxId, inc: HandsInc, why: &str) -> Decision {
+    let said = deaths::sentence(why);
     Decision::new(id)
         .lifecycle(BoxLifecycleInput::Sleep {
             auto: false,
@@ -62,8 +53,6 @@ fn stuck(id: BoxId, inc: HandsInc, why: &str, tally: &Tally) -> Decision {
             ..Fields::default()
         })
         .event(ExtraEvent::DeathCapped {
-            count: tally.kept.len(),
-            window_secs: DEATH_WINDOW.as_secs(),
             reason: why.to_owned(),
         })
 }

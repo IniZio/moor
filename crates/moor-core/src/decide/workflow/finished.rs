@@ -22,8 +22,7 @@ pub struct RunBoxFacts {
     pub idle_since: Option<Ts>,
     /// Whether the last agent launch failed and no later launch succeeded.
     pub launch_failed: bool,
-    /// Whether the Box's places died so often that moor stopped resuming it, and no wake has
-    /// come since.
+    /// Whether the Box's places died and moor did not resume it, and no wake has come since.
     pub death_capped: bool,
 }
 
@@ -36,8 +35,8 @@ pub enum RunVerdict {
     Finished,
     /// No agent can run in the Box until a person acts, so the run will never finish.
     Broken,
-    /// The Box's places kept dying, so moor stopped resuming it and only a person's wake brings
-    /// it back: the run will never finish.
+    /// The Box's places died and moor did not resume it, so only a person's wake brings it back:
+    /// the run will never finish.
     DeathCapped,
 }
 
@@ -45,8 +44,8 @@ pub enum RunVerdict {
 ///
 /// It is Finished when the Box is gone or closed, when its agent exited, or when its Session has
 /// been Idle for [`QUIET_BEFORE_FINISHED`]. It is Broken when setup failed or the agent launch
-/// failed, since only a person retrying starts an agent then, and `DeathCapped` when moor stopped
-/// resuming a Box whose places kept dying, whatever its agent last said. Otherwise it is Running, which
+/// failed, since only a person retrying starts an agent then, and `DeathCapped` when moor did not
+/// resume a Box whose places died, whatever its agent last said. Otherwise it is Running, which
 /// includes a Box queued for a slot, one still setting up, and an agent that ended its turn to
 /// wait on background work.
 #[must_use]

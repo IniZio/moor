@@ -42,7 +42,7 @@ pub(super) fn box_facts(store: &Store, row: &BoxRow) -> Result<RunBoxFacts, Stor
     })
 }
 
-/// Whether moor stopped resuming Box `id` for its deaths and no wake has come since. Events
+/// Whether Box `id` died and moor did not resume it, and no wake has come since. Events
 /// are numbered in the order they were written, so ids tell which came last.
 fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     let Some(capped) = store.newest_event_of(id, "death_capped")? else {
@@ -52,10 +52,9 @@ fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     Ok(woke.is_none_or(|w| w.id < capped.id))
 }
 
-/// Fails the run at `at`, which works in Box `box_id` that moor stopped resuming for its deaths,
-/// with the sentence its `death_capped` event told the owner. Nothing is sent to the Box: neither
-/// the step's `fail` edge nor another try could run without waking it, which starts the count of
-/// deaths again.
+/// Fails the run at `at`, which works in Box `box_id` that died and was not resumed, with the
+/// sentence its `death_capped` event told the owner. Nothing is sent to the Box: neither the
+/// step's `fail` edge nor another try could run without waking it.
 pub(super) fn fail_death_capped(
     store: &Store,
     w: &Workflow,
@@ -65,11 +64,8 @@ pub(super) fn fail_death_capped(
 ) -> Result<(), StoreError> {
     let said = store
         .newest_event_of(box_id, "death_capped")?
-        .and_then(|e| {
-            let count = usize::try_from(e.payload.get("count")?.as_u64()?).ok()?;
-            Some(deaths::sentence(count, e.payload.get("reason")?.as_str()?))
-        })
-        .unwrap_or_else(|| "its machine kept stopping, so moor stopped resuming it".to_owned());
+        .and_then(|e| Some(deaths::sentence(e.payload.get("reason")?.as_str()?)))
+        .unwrap_or_else(|| "its machine stopped, so moor did not resume it".to_owned());
     let key = (w.id, &run.repo, run.due_at);
     let outcome = RunOutcome::Failed {
         at: at.clone(),
