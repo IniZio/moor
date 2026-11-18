@@ -19,6 +19,8 @@ const WORTH: &[&str] = &[
     "session_restored",
     "session_lost",
     "closed",
+    "run_waiting",
+    "run_failed",
 ];
 
 /// Longest the line's agent text runs.
@@ -110,3 +112,28 @@ pub(super) fn disk_line(name: &str, kind: &str, payload: Option<&Value>) -> Opti
         "moor: box {name} {kind}: {node} has {free} GiB free of {total} GiB"
     ))
 }
+
+/// The line for a workflow run that waits for its owner or ended badly, with the run page; none
+/// for other kinds.
+pub(super) fn run_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
+    let text = |key| payload?.get(key)?.as_str();
+    let (workflow, repo, link) = (text("workflow")?, text("repo")?, text("link")?);
+    match kind {
+        "run_waiting" => Some(format!(
+            "moor: box {name} run_waiting: {workflow} ({repo}) asks: {} {link}",
+            text("question")?
+        )),
+        "run_failed" => {
+            let at = text("step").map_or_else(String::new, |s| format!(" at {s}"));
+            Some(format!(
+                "moor: box {name} run_failed: {workflow} ({repo}) {}{at}: {} {link}",
+                text("outcome")?,
+                text("reason")?
+            ))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests;

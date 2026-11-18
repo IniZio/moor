@@ -23,6 +23,8 @@ A webhook that names no events gets the kinds marked with a check.
 | `agent_resumed` | | A stalled agent reported again. |
 | `node_disk_low` | ✓ | The Box's node fell below its free-disk floor. Once per owner. |
 | `node_disk_recovered` | ✓ | That node climbed back above its floor. |
+| `run_waiting` | | A workflow run entered an approve step. `data` has `workflow`, `repo`, `run`, `step`, `question` and `link`, the run page path `/workflows/NAME/runs/ID`. |
+| `run_failed` | | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |
@@ -83,6 +85,7 @@ listener prints the events it missed.
 | Line | When |
 | --- | --- |
 | `moor: box NAME EVENT: SAID` | An `idled`, `needs_input`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped`, or `closed` event. `SAID` is the first line of the agent's message, cut at 200 characters. |
+| `moor: box NAME run_failed: WORKFLOW (REPO) OUTCOME at STEP: REASON LINK` | `run_failed`, and `run_waiting` as `run_waiting: WORKFLOW (REPO) asks: QUESTION LINK`. |
 | `moor: box NAME stalled: no progress for N min while DOING` | `agent_stalled`. |
 | `moor: box NAME resumed after N min` | `agent_resumed`. |
 | `moor: box NAME disk_lost: ...` | `disk_lost`, and `session_restored` and `session_lost` in the same shape. |

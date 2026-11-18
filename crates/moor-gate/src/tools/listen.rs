@@ -45,6 +45,8 @@ const UPDATED: &[&str] = &[
     "disk_lost",
     "session_restored",
     "session_lost",
+    "run_waiting",
+    "run_failed",
     "box_ready",
     "box_failed",
     "asleep",

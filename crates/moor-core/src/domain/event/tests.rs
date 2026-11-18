@@ -372,6 +372,23 @@ fn all_events() -> Vec<Event> {
                 count: 1,
             }],
         }),
+        Event::Workflow(WorkflowEvent::RunWaiting {
+            workflow: s("deps"),
+            repo: s("o/n"),
+            run: 7,
+            step: s("ask"),
+            question: s("ship it?"),
+            link: s("/workflows/deps/runs/7"),
+        }),
+        Event::Workflow(WorkflowEvent::RunFailed {
+            workflow: s("deps"),
+            repo: s("o/n"),
+            run: 7,
+            outcome: s("incomplete"),
+            step: Some(s("work")),
+            reason: s("the agent stopped without reporting"),
+            link: s("/workflows/deps/runs/7"),
+        }),
     ]
 }
 
@@ -389,7 +406,7 @@ fn asserted_kinds_are_the_frozen_twenty() {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 95);
+    assert_eq!(all.len(), 97);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
