@@ -89,6 +89,12 @@ pub(crate) const WRONG_KEY: &str = "the machine service key is wrong";
 /// Sends `ask` on its machine's link; the answer, and the stream when a Box stream is spliced.
 async fn relay(agents: &Agents, ask: Ask) -> (Brokered, Option<moor_client::link::Channel>) {
     let machine_id = ask.machine_id;
+    if let PoolOp::Run { run } = &ask.op {
+        if !matches!(run, Op::Exec { .. } | Op::Hook { .. }) {
+            let reason = "the broker runs only an exec or a hook".to_owned();
+            return (Brokered::Refused { reason }, None);
+        }
+    }
     let offline = |reason: String| (Brokered::Offline { machine_id, reason }, None);
     let mut stream = match agents.open(machine_id).await {
         Ok(stream) => stream,

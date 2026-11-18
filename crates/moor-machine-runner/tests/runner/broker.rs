@@ -196,6 +196,35 @@ async fn a_controller_reaches_the_machine_through_the_runner_across_the_network_
     assert_eq!(status.os, std::env::consts::OS);
 }
 
+#[test]
+fn the_broker_runs_an_exec_for_another_runner_and_no_other_op() {
+    let rig = Rig::with_args(&["--links", "127.0.0.1:0", "--service-key", KEY]);
+    let runner = Runner::Remote {
+        addr: format!("127.0.0.1:{}", rig.links.unwrap()),
+        key: KEY.to_owned(),
+    };
+    let exec = Op::Exec {
+        box_id: 7,
+        env: Vec::new(),
+        script: "echo ran".to_owned(),
+        timeout_secs: 5,
+    };
+    let pull = Op::Pull {
+        box_id: 7,
+        path: "x".to_owned(),
+    };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let reply = rt.block_on(broker::run(&runner, MACHINE_ID, exec)).unwrap();
+    assert!(
+        matches!(&reply, ops::Reply::Ran(ran) if ran.output.contains("ran")),
+        "{reply:?}"
+    );
+    let err = rt
+        .block_on(broker::run(&runner, MACHINE_ID, pull))
+        .unwrap_err();
+    assert!(err.contains("runs only an exec or a hook"), "{err}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_controller_with_the_wrong_key_is_refused_links_and_forwards() {
     use moor_client::forward::{Forward, Forwarding};

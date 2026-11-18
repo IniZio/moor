@@ -18,21 +18,17 @@ impl Hooks {
         hook: Hook,
         env: &[(String, String)],
     ) -> Result<Option<ExecOutput>, String> {
-        let Reach {
-            machine_id,
-            machine,
-        } = reach;
         let op = Op::Hook {
             box_id: id,
             hook,
             env: env.to_vec(),
             timeout_secs: link::secs(self.timeout),
         };
-        match link::send(self.agents.as_ref(), machine, *machine_id, &op).await? {
+        match link::send_to(self.agents.as_ref(), reach, &op).await? {
             Answer::Ran(ran) => succeeded(ran.into()).map(Some),
             Answer::Missing => Ok(None),
             Answer::Started(_) | Answer::Sending(..) | Answer::Swept(_) => {
-                Err(format!("machine {machine} answered no run"))
+                Err(format!("machine {} answered no run", reach.machine))
             }
         }
     }
@@ -44,19 +40,15 @@ impl Hooks {
         reach: &Reach,
         script: &str,
     ) -> Result<ExecOutput, String> {
-        let Reach {
-            machine_id,
-            machine,
-        } = reach;
         let op = Op::Exec {
             box_id: id,
             env: Vec::new(),
             script: script.to_owned(),
             timeout_secs: link::secs(self.timeout),
         };
-        match link::send(self.agents.as_ref(), machine, *machine_id, &op).await? {
+        match link::send_to(self.agents.as_ref(), reach, &op).await? {
             Answer::Ran(ran) => Ok(ran.into()),
-            _ => Err(format!("machine {machine} answered no run")),
+            _ => Err(format!("machine {} answered no run", reach.machine)),
         }
     }
 }

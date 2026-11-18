@@ -1,8 +1,10 @@
 //! Requests over a linked machine's agent link: one stream each.
 
+use moor_client::link::broker;
 use moor_client::link::ops::{self, Op, Ran, Reply};
 use moor_client::link::sweep::Swept;
 
+use crate::caller::Reach;
 use crate::Agents;
 use moor_client::link::Channel;
 
@@ -46,6 +48,33 @@ pub(crate) async fn send(
         Reply::Listening | Reply::Status(_) => {
             Err(format!("machine {machine} answered something else"))
         }
+    }
+}
+
+/// Sends `op`, an exec or a hook, to the machine `reach` names: over this runner's link, or
+/// through the runner `reach` names as holding it when this one holds none.
+///
+/// # Errors
+/// As [`send`], or the holder could not be reached.
+pub(crate) async fn send_to(
+    agents: Option<&Agents>,
+    reach: &Reach,
+    op: &Op,
+) -> Result<Answer, String> {
+    let here = agents.is_some_and(|a| a.online().contains(&reach.machine_id));
+    let machine = &reach.machine;
+    let Some(holder) = reach.holder.as_ref().filter(|_| !here) else {
+        return send(agents, machine, reach.machine_id, op).await;
+    };
+    let offline = |why: String| format!("machine {machine} is offline: {why}");
+    match broker::run(holder, reach.machine_id, op.clone())
+        .await
+        .map_err(offline)?
+    {
+        Reply::Ran(ran) => Ok(Answer::Ran(ran)),
+        Reply::Missing => Ok(Answer::Missing),
+        Reply::Refused { reason } => Err(format!("machine {machine} refused: {reason}")),
+        _ => Err(format!("machine {machine} answered something else")),
     }
 }
 

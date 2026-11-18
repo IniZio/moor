@@ -33,6 +33,12 @@ pub enum PoolOp {
     Boxes,
     /// [`Op::Status`].
     Status,
+    /// One [`Op::Exec`] or [`Op::Hook`], for a runner that holds no link to the machine; the
+    /// runner refuses any other op.
+    Run {
+        /// The op the agent runs.
+        run: Op,
+    },
 }
 
 impl From<PoolOp> for Op {
@@ -40,6 +46,7 @@ impl From<PoolOp> for Op {
         match op {
             PoolOp::Boxes => Self::Boxes,
             PoolOp::Status => Self::Status,
+            PoolOp::Run { run } => run,
         }
     }
 }
@@ -76,6 +83,12 @@ pub async fn status(runner: &Runner, machine_id: i64) -> Result<Status, String> 
         Reply::Status(status) => Ok(*status),
         other => Err(refusal(machine_id, other)),
     }
+}
+
+/// Asks `runner`'s broker to run `op`, an exec or a hook, on machine `machine_id`; the agent's
+/// reply.
+pub async fn run(runner: &Runner, machine_id: i64, op: Op) -> Result<Reply, String> {
+    Ok(ask(runner, machine_id, PoolOp::Run { run: op }).await?.1)
 }
 
 /// Asks `runner`'s broker for a stream to machine `machine_id`'s agent that carries one Box

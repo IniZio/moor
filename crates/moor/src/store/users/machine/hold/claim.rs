@@ -216,5 +216,6 @@ fn held_value(conn: &dyn Db, id: BoxId) -> Result<HoldValue, StoreError> {
         machine_id,
         slot,
         ports,
+        runner: None,
     })
 }

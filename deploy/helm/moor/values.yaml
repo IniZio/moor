@@ -54,7 +54,7 @@ runner:
   separate: false
   replicas: 2
   agentsPort: 7701
-  # separate only: where the controller dials a runner pod for links and port forwards.
+  # separate only: where the controller and other runner pods dial a runner pod.
   linksPort: 7702
   extraArgs: []
   resources: {}

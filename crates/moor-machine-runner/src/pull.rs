@@ -80,6 +80,7 @@ pub(crate) async fn serve(
         let Reach {
             machine_id,
             machine,
+            ..
         } = &caller.reach;
         let op = Op::Pull {
             box_id: caller.box_id.get(),

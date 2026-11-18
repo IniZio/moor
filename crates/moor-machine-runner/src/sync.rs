@@ -127,6 +127,7 @@ fn reach(
     let Reach {
         machine_id,
         machine,
+        ..
     } = &caller.reach;
     let rsh = rsh
         .ok_or_else(|| format!("machine {machine} is offline: this runner takes no agent links"))?;
