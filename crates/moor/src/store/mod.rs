@@ -76,6 +76,7 @@ mod select;
 mod sessions;
 #[cfg(test)]
 mod tests;
+mod user_inbox;
 mod users;
 
 pub(crate) use agent::{Launch, LaunchEnd};
@@ -89,6 +90,7 @@ pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as 
 pub(crate) use users::workflow::{ManualClaim, Put};
 mod webhook_outbox;
 mod write_check;
+pub(crate) use user_inbox::UserInboxRow;
 pub(crate) use webhook_outbox::ClaimedDelivery;
 
 /// How long a `SQLite` connection waits on a lock before `SQLITE_BUSY`.

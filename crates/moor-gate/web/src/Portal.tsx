@@ -54,7 +54,7 @@ function groupOf(t: BoxRow, now: number): Group {
 	}
 }
 
-function age(iso: string | null | undefined, now: number): string {
+export function age(iso: string | null | undefined, now: number): string {
 	const at = iso ? Date.parse(iso) : NaN;
 	if (Number.isNaN(at)) return '';
 	const s = Math.max(0, Math.round((now - at) / 1000));

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { BoxRow, Progress } from './api';
-import { Glyph, STATES } from './Portal';
+import { type BoxRow, type Inbox, type InboxItem, inboxRead, type Progress } from './api';
+import { age, Glyph, STATES } from './Portal';
 import { currentTheme, setTheme, type Theme } from './theme';
 
 /** Where a Box sits in the switcher: the ones that need the person first. */
@@ -125,7 +125,16 @@ function shut(e: Event) {
 	(e.currentTarget as HTMLElement).closest<HTMLElement>('[popover]')?.hidePopover();
 }
 
-export function TopBar({ email, rows, onSignOut }: { email: string; rows: BoxRow[]; onSignOut: () => void }) {
+/** What the inbox shows beside an item's wording: its mark, by state and kind. */
+function mark(item: InboxItem) {
+	if (item.state === 'resolved') return { glyph: '✓', word: 'answered', tone: 'done' };
+	if (item.kind === 'run_failed') return { glyph: '✕', word: 'failed', tone: 'failed' };
+	return { glyph: '●', word: item.state === 'unread' ? 'unread' : 'read', tone: item.state === 'unread' ? 'needs' : 'read' };
+}
+
+type InboxPoll = { value: Inbox | null; now: number; reload: () => void };
+
+export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string; csrf: string; rows: BoxRow[]; inbox: InboxPoll; onSignOut: () => void }) {
 	const [finding, setFinding] = useState(false);
 	const [theme, setThemeState] = useState<Theme>(currentTheme());
 	useEffect(() => {
@@ -138,7 +147,11 @@ export function TopBar({ email, rows, onSignOut }: { email: string; rows: BoxRow
 		addEventListener('keydown', on);
 		return () => removeEventListener('keydown', on);
 	}, []);
-	const needs = rows.filter((t) => t.state === 'needs_you');
+	const items = inbox.value?.items ?? [];
+	const unread = inbox.value?.unread ?? 0;
+	const markRead = (ids: number[]) => {
+		void inboxRead(csrf, ids).then(inbox.reload, inbox.reload);
+	};
 	const flip = () => {
 		const next: Theme = theme === 'dark' ? 'light' : 'dark';
 		setTheme(next);
@@ -159,7 +172,7 @@ export function TopBar({ email, rows, onSignOut }: { email: string; rows: BoxRow
 					{'+ New task'}
 				</a>
 				<button class="btn ghost" popovertarget="inbox">
-					Inbox{needs.length > 0 && <b class="count">{needs.length}</b>}
+					Inbox{unread > 0 && <b class="count">{unread}</b>}
 				</button>
 				<button class="btn ghost icon" onClick={flip} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'}`}>
 					{theme === 'dark' ? '☀' : '☾'}
@@ -170,19 +183,41 @@ export function TopBar({ email, rows, onSignOut }: { email: string; rows: BoxRow
 			</header>
 			<div id="inbox" class="pop inbox" popover="auto">
 				<div class="pop-h">
-					Inbox <span class="muted">what needs you now</span>
+					<span>
+						Inbox <span class="muted">newest first · survives reload</span>
+					</span>
+					{unread > 0 && (
+						<button class="inbox-all" onClick={() => markRead([])}>
+							Mark all read
+						</button>
+					)}
 				</div>
-				{needs.map((t) => (
-					<a class="inbox-item" href={`#/box/${encodeURIComponent(t.box)}`} onClick={shut} key={t.box}>
-						<Glyph state={t.state} stale={t.stale} />
-						<span>
-							<b>{t.title}</b> <span class="t-mono muted">{t.repo ?? ''}</span>
-							<br />
-							{t.line}
-						</span>
-					</a>
-				))}
-				{!needs.length && <p class="t-empty">Nothing needs you.</p>}
+				{items.map((item) => {
+					const m = mark(item);
+					return (
+						<a
+							class={`inbox-item inbox-${item.state}`}
+							href={`#/box/${encodeURIComponent(item.box)}`}
+							onClick={(e) => {
+								if (item.state === 'unread') markRead([item.id]);
+								shut(e);
+							}}
+							key={item.id}
+						>
+							<span class={`t-glyph t-${m.tone}`} role="img" aria-label={m.word} title={m.word}>
+								{m.glyph}
+							</span>
+							<span class="inbox-body">
+								<b>{item.title}</b> <span class="t-mono muted">{item.repo ?? ''}</span>
+								<br />
+								{item.state === 'resolved' ? 'Answered: ' : ''}
+								{item.text}
+							</span>
+							<span class="muted inbox-age">{age(item.at, inbox.now)}</span>
+						</a>
+					);
+				})}
+				{!items.length && <p class="t-empty">Nothing has needed you yet.</p>}
 			</div>
 			<div id="usermenu" class="pop menu usermenu" popover="auto">
 				<div class="menu-who muted">{email}</div>

@@ -237,4 +237,5 @@ fn removing_a_webhook_drops_its_pending_deliveries() {
     assert!(!left.is_empty() && left.iter().all(|&(webhook, _)| webhook == kept));
 }
 
+mod inbox;
 mod runs;

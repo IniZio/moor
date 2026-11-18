@@ -41,6 +41,7 @@ mod said_at;
 mod session_archive;
 mod shared_machines;
 mod suspend_check;
+mod user_inbox;
 pub(crate) mod vm_inc;
 mod wanted_effect;
 mod warm_starts;
@@ -98,4 +99,5 @@ pub const STEPS: &[Step] = &[
     step("V87__workflow_run_trigger", workflow_run_trigger::write),
     step("V88__box_deaths", box_deaths::write),
     step("V89__drop_box_deaths", drop_box_deaths::write),
+    step("V90__user_inbox", user_inbox::write),
 ];

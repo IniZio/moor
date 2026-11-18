@@ -28,15 +28,15 @@ use crate::vault::Vault;
 const PROMPT: &str = "fix the security alerts";
 const REPO: &str = "a/one";
 
-fn repo() -> ForgeRepo {
+pub(super) fn repo() -> ForgeRepo {
     ForgeRepo::parse(REPO).unwrap()
 }
 
-fn step(s: &str) -> StepId {
+pub(super) fn step(s: &str) -> StepId {
     StepId::parse(s).unwrap()
 }
 
-fn plan() -> Plan {
+pub(super) fn plan() -> Plan {
     Plan::parse(
         &json!({"steps": [
             {"id": "ask", "title": "Ask", "kind": "approve",
@@ -65,7 +65,7 @@ fn def(with_plan: bool) -> WorkflowDef {
     def
 }
 
-fn new_run(id: WorkflowId, due: i64, state: RunState, plan: Option<Plan>) -> NewRun {
+pub(super) fn new_run(id: WorkflowId, due: i64, state: RunState, plan: Option<Plan>) -> NewRun {
     NewRun {
         workflow: id,
         repo: repo(),
@@ -81,7 +81,7 @@ type Sent = Vec<(String, serde_json::Value)>;
 
 impl World {
     /// A workflow and a Box of `owner`.
-    fn workflow(&self, owner: UserId, with_plan: bool) -> (WorkflowId, BoxId) {
+    pub(super) fn workflow(&self, owner: UserId, with_plan: bool) -> (WorkflowId, BoxId) {
         let id = self.store.put_workflow(owner, &def(with_plan)).unwrap();
         let boxed = self
             .store
@@ -92,7 +92,7 @@ impl World {
     }
 
     /// Records the run due at `due` as running at its first step in `boxed`.
-    fn start(&self, id: WorkflowId, boxed: BoxId, due: i64, plan: Option<Plan>) {
+    pub(super) fn start(&self, id: WorkflowId, boxed: BoxId, due: i64, plan: Option<Plan>) {
         let run = new_run(id, due, running(boxed.get()), plan);
         assert!(self.store.record_workflow_run(&run).unwrap());
     }

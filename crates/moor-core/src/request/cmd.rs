@@ -60,6 +60,7 @@ impl Request {
             Self::WebhookSetupFinish(_) => "webhook-setup-finish",
             Self::WebhookList(_) => "webhook-list",
             Self::WebhookRemove(_) => "webhook-remove",
+            Self::Inbox(_) => "inbox",
             Self::WorkflowAdd(_) => "workflow-add",
             Self::WorkflowList(_) => "workflow-list",
             Self::WorkflowRemove(_) => "workflow-remove",

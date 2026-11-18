@@ -390,6 +390,37 @@ export async function boxStart(
 	return (await answer(res, v.object({ box: v.string() }))).box;
 }
 
+const InboxItemSchema = v.object({
+	id: v.number(),
+	box: v.string(),
+	repo: v.nullish(v.string()),
+	kind: v.picklist(['needs_input', 'run_waiting', 'run_failed']),
+	state: v.picklist(['unread', 'read', 'resolved']),
+	title: v.string(),
+	text: v.string(),
+	at: v.string(),
+});
+
+const InboxSchema = v.object({ items: v.array(InboxItemSchema), unread: v.number() });
+
+export type InboxItem = v.InferOutput<typeof InboxItemSchema>;
+export type Inbox = v.InferOutput<typeof InboxSchema>;
+
+/** The person's inbox, newest first, with how many items are unread. */
+export async function inboxList(): Promise<Inbox> {
+	return answer(await fetch('/account/api/inbox'), InboxSchema);
+}
+
+/** Marks inbox items read, or every item when `ids` is empty; answers the inbox as it is then. */
+export async function inboxRead(csrf: string, ids: number[]): Promise<Inbox> {
+	const res = await fetch('/account/api/inbox/read', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ ids }),
+	});
+	return answer(res, InboxSchema);
+}
+
 /** Answers what a Box's agent asks: menu entry `n` of the prompt named `ask`. */
 export async function boxAnswer(csrf: string, box: string, ask: string, n: number, text?: string): Promise<void> {
 	const res = await fetch('/account/api/box/answer', {
