@@ -14,12 +14,15 @@ use moor_core::view::ArtifactView;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::account::{failed, json};
+use super::account::{failed, json, signed_out};
 use super::repos::answered;
-use super::Session;
+use super::routes::{read_body, Request};
+use super::{Login, Session};
 use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
+
+mod start;
 
 /// The events a Box page reads: the most the controller keeps in one window.
 const EVENTS: u32 = 500;
@@ -30,24 +33,40 @@ const DOWNLOAD_MAX: u64 = 32 * 1024 * 1024;
 /// Content types a page may show inline in an `<img>`. Never SVG: it can carry script.
 const IMAGES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-/// Whether `path` is a Boxes route.
-pub(super) fn serves(path: &str) -> bool {
+/// The most a new Box's request body holds: its prompt, and room for the rest.
+const BODY_MAX: usize = 64 * 1024;
+
+/// Whether the request is for a Boxes route.
+pub(super) fn serves(method: &str, path: &str) -> bool {
     matches!(
-        path,
-        "/account/api/boxes" | "/account/api/box" | "/account/api/box/artifact"
+        (method, path),
+        (
+            "GET",
+            "/account/api/boxes" | "/account/api/box" | "/account/api/box/artifact"
+        ) | ("POST", "/account/api/boxes")
     )
 }
 
-/// Answers the Boxes route `path` (see [`serves`]) for `session`, with the request's `query`.
+/// Answers a Boxes route (see [`serves`]): reads for the signed-in person, and a new Box.
 pub(super) fn serve(
     stream: &mut TcpStream,
+    req: &Request<'_>,
     gate: &Gate,
-    session: &Session,
-    (path, query): (&str, &str),
+    login: &Login,
+    session: Option<&Session>,
 ) {
-    match path {
-        "/account/api/boxes" => list(stream, gate, session),
-        "/account/api/box" => read(stream, gate, session, query),
+    let (path, query) = req.target.split_once('?').unwrap_or((req.target, ""));
+    // Read the body before any answer: closing on unread bytes resets the connection.
+    let body = (req.method == "POST")
+        .then(|| read_body(stream, req.leftover.clone(), req.length, BODY_MAX))
+        .flatten();
+    let Some(session) = session else {
+        return signed_out(stream);
+    };
+    match (req.method, path) {
+        ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
+        (_, "/account/api/boxes") => list(stream, gate, session),
+        (_, "/account/api/box") => read(stream, gate, session, query),
         _ => artifact(stream, gate, session, query),
     }
 }
