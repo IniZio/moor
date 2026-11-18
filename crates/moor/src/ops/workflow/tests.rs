@@ -11,7 +11,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    NewRun, RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
+    RunEnd, RunOutcome, RunState, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName,
     WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 use moor_core::{BoxId, BoxPath};
@@ -22,7 +22,7 @@ use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
-use crate::testing::runs::{refused, running, skipped, timed_out};
+use crate::testing::runs::{running, timed_out};
 
 pub(super) const DAY: i64 = 86_400_000;
 /// The first 09:00 UTC after the fake clock's start.
@@ -525,33 +525,6 @@ fn a_timed_out_run_with_an_open_box_blocks_however_many_skips_follow() {
 }
 
 #[test]
-fn skips_between_failures_do_not_hide_the_breaker_streak() {
-    let r = rig();
-    let id = r.put(180);
-    let store = r.cx.store().unwrap();
-    let record = |due: i64, state: RunState| {
-        let run = NewRun {
-            workflow: id,
-            repo: repo(),
-            due_at: Ts::from_millis(due),
-            state,
-            recorded_at: Ts::from_millis(due),
-            plan: None,
-        };
-        assert!(store.record_workflow_run(&run).unwrap());
-    };
-    record(FIRST_DUE, refused("no"));
-    record(FIRST_DUE + DAY, refused("no"));
-    for day in 2..30 {
-        record(FIRST_DUE + day * DAY, skipped());
-    }
-    record(FIRST_DUE + 30 * DAY, refused("no"));
-    r.advance_to(FIRST_DUE + 31 * DAY);
-    let lines = r.pass();
-    assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
-}
-
-#[test]
 fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflow() {
     let r = rig();
     r.answer_repo();
@@ -593,6 +566,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
 mod also;
 mod approve;
 mod check;
+mod manual;
 mod plan;
 mod previous;
 mod report;

@@ -11,7 +11,7 @@ use moor_core::request::{UserCmd, WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
 use moor_core::workflow::{
-    NewRun, Plan, RunOutcome, RunState, WorkflowId, WorkflowName, WorkflowState,
+    NewRun, Plan, RunOutcome, RunState, RunTrigger, WorkflowId, WorkflowName, WorkflowState,
 };
 use moor_core::BoxId;
 use serde_json::{json, Value};
@@ -316,6 +316,7 @@ fn record(f: &Fixture, who: &Identity, state: RunState, due: i64) -> WorkflowId 
         state,
         recorded_at: Ts::from_millis(due),
         plan: None,
+        trigger: RunTrigger::Cron,
     };
     store.record_workflow_run(&run).unwrap();
     w.id
@@ -514,6 +515,7 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
             "daily",
             &ForgeRepo::new("o", "n"),
             Ts::from_millis(due),
+            RunTrigger::Cron,
         );
         json!(name.unwrap().as_str())
     };
