@@ -708,13 +708,24 @@ the same op.
 
 ### What it does
 
-For each repo, the op reads the same facts the tick reads. A repo whose last
-run still blocks (queued, running, waiting, or timed out with its Box open)
-is refused with the open run's Box name. Nothing is recorded for it, because
-the author asked and the reply already answers. Otherwise the op calls
-`claim` with `due_at` set to now and the trigger `manual`. From there the run
-is a normal run. It freezes the plan, starts the Box as the owner, walks the
-steps, and has the workflow's timeout.
+For each repo, the op calls `claim` with `due_at` set to now and the trigger
+`manual`. A manual claim checks for an open run in the same write that
+inserts its row. A repo whose latest run of any trigger still blocks (queued,
+running, waiting, or timed out with its Box open) is refused with the open
+run's Box name, and nothing is recorded. A read before the write would race
+the tick. The tick could claim a cron run with another `due_at` in between,
+and the unique key on `(workflow, repo, due_at)` would not stop it.
+
+When the insert finds the row already there, the reply says `refused` with
+that reason, never `started`.
+
+From there the run is a normal run. It freezes the plan, starts the Box as
+the owner, walks the steps, and has the workflow's timeout.
+
+`box_name` takes the trigger. A cron run keeps its stamp to the minute. A
+manual run gets `m` and a stamp to the second, such as `m20261118051230`.
+Without it, a manual run and a cron run due in the same minute share one Box
+name.
 
 ### Store
 
@@ -732,8 +743,9 @@ One migration adds a column to `workflow_runs`:
 | Rule | A manual run |
 | --- | --- |
 | Overlap | Blocks the next cron firing while open, as any run does. Is refused, not skipped, when a run is open. |
-| `last_due` | Ignored. The tick reads `last_due` from cron runs only, so a manual run never swallows a missed due time. |
-| Breaker | Neither counts nor resets the streak. A failing try is the author testing, not the schedule failing. |
+| `last_due` | Ignored. A manual run never swallows a missed due time. |
+| Overlap fact (`prior`) | Counted. A cron run that comes due while a manual run is open records `SkippedOverlap`. |
+| Breaker | A failure does not count. A delivery resets the streak, pending the owner (open question 9). |
 | Start limit, expiry, check and approve steps | As for a cron run. |
 | Notifications | As for a cron run. |
 | Cron floor | Does not apply. One open run per repo already bounds it. |
@@ -743,15 +755,21 @@ One migration adds a column to `workflow_runs`:
 **`feat(workflow): run a workflow now`**
 
 - The `trigger` column and `RunTrigger`.
-- `WorkflowRepoFacts.last_due` and `workflow_breaker` skip manual runs.
+- The facts query splits. `last_due` reads cron runs only. `prior` reads the
+  latest run of any trigger.
+- `workflow_breaker` skips manual failures and resets on a manual delivery.
+- `box_name` takes the trigger.
+- The migration takes the next free number after V86.
 - The op, `run_workflow` in moor-gate, and the portal button.
 - The PR stack's live checks switch from the one-minute cron to
   `run_workflow` on a workflow with a yearly cron.
 - Check. Decide tests in
   [`moor-core/src/decide/workflow/tests.rs`](https://github.com/IniZio/moor/blob/8d10b84d2f70ea0e8f9473243e68c5cb5c096b2f/crates/moor-core/src/decide/workflow/tests.rs).
-  A manual run leaves `workflow_due` firing a missed due time. Three failed
-  manual runs leave the breaker untripped. An ops test calls `run_workflow` on
-  a repo with an open run, which refuses and records nothing. Live. On verify-moor-live, add
+  A manual run leaves `workflow_due` firing a missed due time. A cron run due
+  while a manual run is open records `SkippedOverlap`. Three failed manual
+  runs leave the breaker untripped. A manual and a cron run in the same minute
+  get different Box names. An ops test calls `run_workflow` on a repo with an
+  open run, which refuses and records nothing. Live. On verify-moor-live, add
   a two-step workflow with cron `0 0 1 1 *`, disable it, call `run_workflow`,
   and save the `list_workflow_runs` output showing the run `done` with
   trigger `manual`.
@@ -790,3 +808,9 @@ One migration adds a column to `workflow_runs`:
    until the egress work gives moor a typed list of what a repo grants. Then
    moor can check each step's declared needs against it without reading step
    text.
+
+9. **A manual delivery and the breaker.** An author sees two cron failures,
+   fixes the plan, and proves the fix with a manual run that delivers. If
+   manual runs never touch the streak, the next cron failure still trips the
+   breaker. Recommendation. A manual failure does not count, and a manual
+   delivery resets the streak. Owner to decide.
