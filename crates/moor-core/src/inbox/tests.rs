@@ -21,7 +21,7 @@ fn only_the_three_waiting_kinds_add_an_item() {
 }
 
 #[test]
-fn a_question_is_titled_by_its_task() {
+fn a_question_is_titled_by_its_box() {
     let e = entry_of(
         "needs_input",
         &json!({"question": "Allow npm run e2e?"}),

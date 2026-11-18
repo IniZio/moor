@@ -65,7 +65,7 @@ pub enum InboxState {
 pub struct Entry {
     /// Why it is there.
     pub kind: InboxKind,
-    /// What it is about: the task, or the workflow run.
+    /// What it is about: the Box, or the workflow run.
     pub title: String,
     /// The question asked, or the reason the run failed.
     pub text: String,

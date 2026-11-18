@@ -12,7 +12,7 @@ use super::runs::{new_run, plan, repo, step};
 use super::{insert, world};
 
 #[test]
-fn a_question_adds_one_row_for_the_boxs_owner_and_nothing_else_does() {
+fn a_question_adds_one_row_for_the_owner_of_the_box_and_nothing_else_does() {
     let w = world();
     let (alice, bob) = (w.user("local:2000"), w.user("local:2001"));
     let boxed = w.store.apply(insert("a").requester(alice)).unwrap().box_id;
@@ -56,6 +56,11 @@ fn the_question_marker_moves_past_a_question_once_an_answer_is_sent() {
         .apply(Decision::new(boxed).event(asked))
         .unwrap()
         .events[0];
+    assert_eq!(w.store.newest_question_marker(boxed).unwrap(), Some(event));
+    let doing = ExtraEvent::AgentDoing {
+        text: "Read 2 files".to_owned(),
+    };
+    w.store.apply(Decision::new(boxed).event(doing)).unwrap();
     assert_eq!(w.store.newest_question_marker(boxed).unwrap(), Some(event));
     let answer = SteerSent {
         session: "s".to_owned(),

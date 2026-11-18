@@ -17,15 +17,9 @@ use super::{Store, StoreError};
 /// The `outcome` of a run that waits for its owner, as `workflow_runs` stores it.
 const WAITING: &str = "waiting";
 
-/// The events that ask a question or end one.
-const QUESTION_MARKERS: [&str; 6] = [
-    "needs_input",
-    "steered",
-    "working",
-    "busy",
-    "idled",
-    "turn_done",
-];
+/// The events that ask a question or end one. A turn ending is not among them: the agent's turn
+/// ends right when it asks, and the question stands.
+const QUESTION_MARKERS: [&str; 4] = ["needs_input", "steered", "working", "busy"];
 
 /// One inbox row with the Box it is about and the event's payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,7 +162,7 @@ impl Store {
     }
 
     /// The id of the newest event of Box `id` that either asks the person or ends a question: a
-    /// `needs_input`, an answer sent, the agent working again, or its turn ending.
+    /// `needs_input`, an answer sent, or the agent working again.
     pub(crate) fn newest_question_marker(&self, id: BoxId) -> Result<Option<i64>, StoreError> {
         Ok(self
             .reader()?
