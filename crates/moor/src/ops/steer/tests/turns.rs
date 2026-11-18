@@ -102,6 +102,49 @@ fn two_steers_queued_while_busy_are_both_closed_by_the_following_idle() {
     assert!(f.cx.store().unwrap().sent(f.id).unwrap().is_empty());
 }
 
+/// Claude Code takes a message typed while it works into the turn it is in, so the steers are
+/// done when that one turn ends: the agent's ended-turn count goes up once, not once per steer.
+#[test]
+fn a_steer_the_agent_took_into_its_running_turn_is_closed_when_that_turn_ends() {
+    use std::time::Duration;
+
+    let idle = |turn| agent::at_turn(agent::idle(Ts::from_millis(1_000)), turn);
+    let f = fx_with(FakeEngine::new().probes("agent-1", idle(1)), true);
+    let one = run(&f.cx, &text("one")).unwrap().steer.unwrap();
+    f.engine
+        .set_probes("agent-1", agent::at_turn(super::working(), 1));
+    let two = run(&f.cx, &text("two")).unwrap().steer.unwrap();
+    let ended = f.cx.clock().now();
+    f.engine
+        .set_probes("agent-1", agent::at_turn(agent::idle(ended), 2));
+    settle_once(&f);
+    assert!(
+        turns_done(&f).is_empty(),
+        "right at the turn's end a message left over could still start a turn"
+    );
+    f.cx.clock().sleep(Duration::from_secs(30));
+    settle_once(&f);
+    assert_eq!(answered_steers(&f), [one, two]);
+    assert!(f.cx.store().unwrap().sent(f.id).unwrap().is_empty());
+}
+
+#[test]
+fn a_steer_left_for_the_next_turn_waits_for_that_turn() {
+    use std::time::Duration;
+
+    let f = fx_with(
+        FakeEngine::new().probes("agent-1", agent::at_turn(super::working(), 1)),
+        true,
+    );
+    run(&f.cx, &text("two")).unwrap();
+    f.cx.clock().sleep(Duration::from_secs(30));
+    let now = f.cx.clock().now();
+    f.engine
+        .set_probes("agent-1", agent::at_turn(agent::working(now), 2));
+    settle_once(&f);
+    assert!(turns_done(&f).is_empty(), "the next turn runs the steer");
+}
+
 #[test]
 fn a_steer_sent_after_a_newer_row_is_not_closed_by_that_row_s_turn() {
     use moor_core::domain::inbox::{InboxKind, SendMark};
