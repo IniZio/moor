@@ -174,35 +174,70 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow, turn: Turn) -> Result<Woke, Comman
             box_resumed: false,
         });
     }
-    let mut workdir = None;
-    if let Some(b) = &row.hands {
-        if matches!(b.state, HandsState::Gone | HandsState::Deleted) {
-            return Err(CommandError::new(ErrorKind::Refused, "the Box is gone"));
-        }
-        if box_asleep {
-            let handle = b.handle.as_ref().ok_or_else(|| {
-                CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
-            })?;
-            if let Some(reason) = room_to_wake(cx, store, row, turn)? {
-                return Err(match turn {
-                    Turn::OnlyIfRoom => CommandError::new(ErrorKind::Refused, reason),
-                    Turn::Reached | Turn::JoinsQueue => wait_for_room(store, row, reason)?,
-                });
-            }
-            cx.driver().wake(handle)?;
-            if b.workdir
-                .as_deref()
-                .is_none_or(|w| recorded_workdir(w).is_none())
-            {
-                workdir = Some(cx.driver().workdir(handle)?);
-            }
-        }
-    }
+    let workdir = resume_machine(cx, store, row, turn, box_asleep)?;
     store.apply(woken(row, (row_asleep, box_asleep), workdir))?;
     Ok(Woke {
         any: true,
         box_resumed: box_asleep,
     })
+}
+
+/// Wakes what an op that only looks into Box `row` needs: of an Asleep Box, only its machine,
+/// with its tunnel. The Box stays Asleep, so its agent is not started again and nothing waiting
+/// for it is sent: a steer or a wake does that, and [`rest_machine`] sleeps the machine again.
+/// Any other Box is woken as [`wake_and_revive`] does. `Ok(true)` when it woke anything.
+pub(crate) fn wake_to_look(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    if row.lifecycle != BoxLifecycle::Asleep {
+        return wake_and_revive(cx, store, row);
+    }
+    let box_asleep = row
+        .hands
+        .as_ref()
+        .is_some_and(|b| b.state == HandsState::Asleep);
+    if !box_asleep {
+        return Ok(false);
+    }
+    let workdir = resume_machine(cx, store, row, Turn::JoinsQueue, true)?;
+    store.apply(woken(row, (false, true), workdir))?;
+    restore_tunnel(cx, row.id)?;
+    Ok(true)
+}
+
+/// Resumes `row`'s machine when `box_asleep`; the workdir to record when none usable is stored.
+fn resume_machine(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    turn: Turn,
+    box_asleep: bool,
+) -> Result<Option<BoxPath>, CommandError> {
+    let Some(b) = &row.hands else {
+        return Ok(None);
+    };
+    if matches!(b.state, HandsState::Gone | HandsState::Deleted) {
+        return Err(CommandError::new(ErrorKind::Refused, "the Box is gone"));
+    }
+    if !box_asleep {
+        return Ok(None);
+    }
+    let handle = b
+        .handle
+        .as_ref()
+        .ok_or_else(|| CommandError::new(ErrorKind::Refused, "the Box has not been acquired"))?;
+    if let Some(reason) = room_to_wake(cx, store, row, turn)? {
+        return Err(match turn {
+            Turn::OnlyIfRoom => CommandError::new(ErrorKind::Refused, reason),
+            Turn::Reached | Turn::JoinsQueue => wait_for_room(store, row, reason)?,
+        });
+    }
+    cx.driver().wake(handle)?;
+    if b.workdir
+        .as_deref()
+        .is_none_or(|w| recorded_workdir(w).is_none())
+    {
+        return Ok(Some(cx.driver().workdir(handle)?));
+    }
+    Ok(None)
 }
 
 /// The write that wakes `row`, the Box and its machine as asleep says, recording `workdir`.
@@ -304,7 +339,9 @@ pub(crate) fn wake_box(
 }
 
 mod owed;
+mod rest;
 pub(crate) use owed::{resume_owed, Seen};
+pub(crate) use rest::rest_machine;
 
 #[cfg(test)]
 mod tests;

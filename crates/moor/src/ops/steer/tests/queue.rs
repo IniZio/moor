@@ -170,7 +170,17 @@ fn a_row_in_doubt_on_an_agent_that_ended_is_named_to_the_next_agent_not_sent_aga
     queue(&f, "next");
     reports_idle(&f, "agent-2");
     pass(&f);
-    assert_eq!(texts(&f), [cut_note("cut"), "next".to_owned()]);
+    assert_eq!(
+        texts(&f),
+        [
+            cut_note(
+                "cut",
+                f.cx.clock().now().as_millis(),
+                f.cx.clock().now().as_millis()
+            ),
+            "next".to_owned()
+        ]
+    );
     let events = store.events(f.id, 100).unwrap();
     let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
     assert!(kinds.contains(&"steer_cut"), "{kinds:?}");
@@ -257,6 +267,16 @@ fn a_pass_send_that_failed_stays_in_doubt_and_a_new_launch_names_it() {
     store.begin_launch(f.id, "agent-2").unwrap();
     reports_idle(&f, "agent-2");
     pass(&f);
-    assert_eq!(texts(&f), ["deploy".to_owned(), cut_note("deploy")]);
+    assert_eq!(
+        texts(&f),
+        [
+            "deploy".to_owned(),
+            cut_note(
+                "deploy",
+                f.cx.clock().now().as_millis(),
+                f.cx.clock().now().as_millis()
+            )
+        ]
+    );
     assert!(store.newest_event_of(f.id, "steer_cut").unwrap().is_some());
 }

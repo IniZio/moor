@@ -84,9 +84,9 @@ fn a_crash_after_the_mark_leaves_the_row_in_doubt() {
 }
 
 #[test]
-fn a_turn_that_answers_the_newest_steer_absorbs_the_older_one() {
+fn a_turn_that_answers_the_newest_steer_answers_the_older_one_too() {
     let f = fx_with(FakeEngine::new().probes("agent-1", idle_after(0)), true);
-    run(&f.cx, &text("one")).unwrap();
+    let one = run(&f.cx, &text("one")).unwrap();
     let two = run(&f.cx, &text("two")).unwrap();
     let texts: Vec<_> = f.engine.steers().into_iter().map(|s| s.1).collect();
     assert_eq!(
@@ -99,8 +99,8 @@ fn a_turn_that_answers_the_newest_steer_absorbs_the_older_one() {
     let answered: Vec<_> = turns_done(&f).iter().map(|d| d["steer"].clone()).collect();
     assert_eq!(
         answered,
-        [two.steer.unwrap()],
-        "one turn answered both, as one prompt"
+        [one.steer.unwrap(), two.steer.unwrap()],
+        "one turn answered both, each with its own turn_done"
     );
     assert!(sent(&f).is_empty(), "the older row went with it");
 }

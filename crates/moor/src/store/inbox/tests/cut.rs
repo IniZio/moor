@@ -58,8 +58,16 @@ fn a_restored_launch_drops_rows_its_archive_holds_and_names_the_rest_first() {
     assert_eq!(
         got,
         [
-            (after, InboxKind::Note, cut_note("after")),
-            (doubt, InboxKind::Note, cut_note("doubt")),
+            (
+                after,
+                InboxKind::Note,
+                cut_note("after", clock.now().as_millis(), clock.now().as_millis())
+            ),
+            (
+                doubt,
+                InboxKind::Note,
+                cut_note("doubt", clock.now().as_millis(), clock.now().as_millis())
+            ),
             (queued, InboxKind::Steer, "queued".to_owned()),
         ]
     );
@@ -78,7 +86,7 @@ fn a_restored_launch_drops_rows_its_archive_holds_and_names_the_rest_first() {
 #[test]
 fn a_launch_after_the_agent_died_names_every_cut_text_and_sends_a_cut_note_as_it_was() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _clock) = open(dir.path());
+    let (store, clock) = open(dir.path());
     let id = new_box(&store, "a");
     let other = new_box(&store, "b");
     let old = launch(&store, id);
@@ -99,7 +107,10 @@ fn a_launch_after_the_agent_died_names_every_cut_text_and_sends_a_cut_note_as_it
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         [
-            format!("{}:queued", cut_note("sent")),
+            format!(
+                "{}:queued",
+                cut_note("sent", clock.now().as_millis(), clock.now().as_millis())
+            ),
             "moor says:queued".to_owned()
         ]
     );
@@ -129,4 +140,24 @@ fn a_note_cut_again_keeps_its_sends_so_it_goes_out_twice_at_most() {
         );
     }
     assert!(store.mark_sending(id, note, live).is_err());
+}
+
+#[test]
+fn a_cut_text_resent_hours_later_names_when_it_was_first_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    let id = new_box(&store, "a");
+    let old = launch(&store, id);
+    let row = store
+        .enqueue(id, InboxKind::Steer, "rerun it", "U1")
+        .unwrap();
+    store.mark_sending(id, row, old).unwrap();
+    store.confirm_sent(id, row, MARK, &steered(row)).unwrap();
+    clock.sleep(Duration::from_mins(141));
+
+    store.begin_launch(id, "agent-2").unwrap();
+
+    let note = store.unsent(id).unwrap().pop().unwrap().text;
+    assert!(note.contains(" UTC, 2 h 21 min ago)"), "{note}");
+    assert!(note.ends_with("> rerun it"), "{note}");
 }

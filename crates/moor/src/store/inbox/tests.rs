@@ -147,7 +147,7 @@ fn a_send_the_agent_refused_before_typing_does_not_count() {
 }
 
 #[test]
-fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
+fn answering_a_row_ends_every_row_sent_before_it_each_with_its_turn_done() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "a");
@@ -174,7 +174,7 @@ fn answering_a_row_deletes_the_older_sent_rows_with_one_turn_done() {
         .into_iter()
         .filter(|e| e.kind == "turn_done")
         .count();
-    assert_eq!(done, 1);
+    assert_eq!(done, 2);
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         ["waiting:queued", "doubt:in_doubt", "three:queued"],
@@ -325,7 +325,7 @@ fn an_unconfirmed_row_is_deleted_with_its_event() {
 #[test]
 fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _clock) = open(dir.path());
+    let (store, clock) = open(dir.path());
     let id = new_box(&store, "a");
     store.enqueue(id, InboxKind::Steer, "ahead", "u").unwrap();
     let prompt = store
@@ -353,7 +353,14 @@ fn a_launch_that_carries_a_queued_prompt_marks_that_row_sent() {
     store
         .begin_launch_with(id, "agent", Some("not queued"), None)
         .unwrap();
-    let cut = format!("{}:queued", moor_core::domain::inbox::cut_note("fix it"));
+    let cut = format!(
+        "{}:queued",
+        moor_core::domain::inbox::cut_note(
+            "fix it",
+            clock.now().as_millis(),
+            clock.now().as_millis()
+        )
+    );
     assert_eq!(
         texts(&store.unsent(id).unwrap()),
         ["ahead:queued", cut.as_str(), "later:queued"],
