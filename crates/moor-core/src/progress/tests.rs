@@ -40,6 +40,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         updated_at: "2026-11-18T10:00:00Z".into(),
         attention: Vec::new(),
         held_machine: None,
+        approval: None,
         said: None,
         progress: None,
     }
@@ -502,4 +503,58 @@ fn the_summary_line_shows_no_markdown() {
     for (md, want) in cases {
         assert_eq!(said(md), want, "{md}");
     }
+}
+
+fn approval() -> crate::view::ApprovalView {
+    crate::view::ApprovalView {
+        workflow: "nightly".into(),
+        run: 7,
+        question: "Ship the release?".into(),
+    }
+}
+
+#[test]
+fn a_run_waiting_at_an_approve_step_needs_you_with_the_steps_question() {
+    for (lifecycle, session) in [
+        (BoxLifecycle::Ready, SessionState::Idle),
+        (BoxLifecycle::Asleep, SessionState::Idle),
+    ] {
+        let mut b = row(lifecycle, session);
+        b.approval = Some(approval());
+        let p = derive(&b, &[], ten());
+        assert_eq!(
+            (p.state, p.line.as_str()),
+            (Progress::NeedsYou, "Ship the release?")
+        );
+        let needs = p.needs.unwrap();
+        assert_eq!(needs.kind, NeedKind::Approve);
+        assert_eq!(needs.question, "Ship the release?");
+        assert!(needs.picks.is_empty());
+        let run = needs.approve.unwrap();
+        assert_eq!((run.workflow.as_str(), run.run), ("nightly", 7));
+    }
+}
+
+#[test]
+fn an_approve_wait_never_revives_a_box_that_is_closed_or_failed() {
+    for (lifecycle, want) in [
+        (BoxLifecycle::Closed, Progress::Closed),
+        (BoxLifecycle::SetupFailed, Progress::Failed),
+    ] {
+        let mut b = row(lifecycle, SessionState::Idle);
+        b.approval = Some(approval());
+        let p = derive(&b, &[], ten());
+        assert_eq!(p.state, want);
+        assert!(p.needs.is_none());
+    }
+}
+
+#[test]
+fn the_approve_card_is_named_by_its_run_so_an_answer_lands_on_that_wait() {
+    let a = approve_needs(&approval());
+    let later = approve_needs(&crate::view::ApprovalView {
+        run: 8,
+        ..approval()
+    });
+    assert_ne!(a.id, later.id);
 }

@@ -13,6 +13,7 @@ import {
 	type Pick,
 	type Progress,
 	repoList,
+	runAnswer,
 	SignedOut,
 } from './api';
 import { Markdown } from './Markdown';
@@ -350,6 +351,15 @@ export function buttonsOf(needs: Needs): { pick: Pick; word: string; tone: strin
 
 /** The card for an agent that asks; the controller wrote what it says, the page only sends the pick. */
 function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
+	return needs.kind === 'approve' && needs.approve ? (
+		<ApproveCard needs={needs} run={needs.approve} csrf={csrf} onSent={onSent} />
+	) : (
+		<AskCard box={box} needs={needs} csrf={csrf} onSent={onSent} />
+	);
+}
+
+/** An agent's own prompt: a permission or a question. */
+function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [typed, setTyped] = useState('');
@@ -400,6 +410,59 @@ function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; cs
 					</button>
 				</form>
 			)}
+			{error && (
+				<p class="notice danger" role="alert">
+					{error}
+				</p>
+			)}
+		</div>
+	);
+}
+
+/** The card for a workflow run that waits at an approve step: its question, yes or no, and a note for the agent. */
+function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workflow: string; run: number }; csrf: string; onSent: () => void }) {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState('');
+	const [note, setNote] = useState('');
+	const send = async (yes: boolean) => {
+		if (busy) return;
+		setBusy(true);
+		setError('');
+		try {
+			await runAnswer(csrf, run.workflow, run.run, yes, note);
+			onSent();
+		} catch (e) {
+			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			onSent();
+		} finally {
+			setBusy(false);
+		}
+	};
+	return (
+		<div class="t-wait" role="region" aria-label="Your approval is needed">
+			<div class="t-wait-h">Your input is needed · a workflow step is waiting for approval</div>
+			<p class="t-wait-q">{needs.question}</p>
+			<form
+				class="t-wait-own"
+				onSubmit={(e) => {
+					e.preventDefault();
+					void send(true);
+				}}
+			>
+				<button type="button" class="t-btn t-btn-deny" disabled={busy} onClick={() => void send(false)}>
+					Reject
+				</button>
+				<button type="submit" class="t-btn" disabled={busy}>
+					Approve
+				</button>
+				<input
+					value={note}
+					onInput={(e) => setNote(e.currentTarget.value)}
+					placeholder="Add a note for the agent (optional)"
+					aria-label="Note for the agent"
+					disabled={busy}
+				/>
+			</form>
 			{error && (
 				<p class="notice danger" role="alert">
 					{error}

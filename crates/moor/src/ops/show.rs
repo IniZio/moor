@@ -4,9 +4,10 @@
 use moor_core::domain::hands::HandsState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
-    ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, MachineHoldState, PaneView,
-    ReportView, SaidView, ShowView,
+    ApprovalView, ArtifactView, AttentionView, BoxView, EventView, HeldMachineView,
+    MachineHoldState, PaneView, ReportView, SaidView, ShowView,
 };
+use moor_core::workflow::{RunState, StepKind};
 use moor_core::{progress, BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
@@ -41,6 +42,28 @@ fn attention(store: &Store, box_id: BoxId) -> Result<Vec<AttentionView>, Command
         .iter()
         .map(AttentionView::from)
         .collect())
+}
+
+/// The approve step of the workflow run that waits in the Box, when one does.
+fn approval_of(store: &Store, box_id: BoxId) -> Result<Option<ApprovalView>, CommandError> {
+    let Some((workflow, run)) = store.running_run_of_box(box_id)? else {
+        return Ok(None);
+    };
+    let RunState::Waiting { at, .. } = &run.state else {
+        return Ok(None);
+    };
+    let Some(w) = store.workflow_by_id(workflow)? else {
+        return Ok(None);
+    };
+    let plan = store.run_plan(run.id, &w.prompt)?;
+    let Some(StepKind::Approve { question, .. }) = plan.step(at).map(|s| &s.kind) else {
+        return Ok(None);
+    };
+    Ok(Some(ApprovalView {
+        workflow: w.name.to_string(),
+        run: run.id.get(),
+        question: question.clone(),
+    }))
 }
 
 /// The latest version of each of the Box's artifacts as views.
@@ -152,6 +175,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         .is_some_and(|b| b.state == HandsState::Asleep);
     (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id, asleep)?);
     detail.attention = attention(store, row.id)?;
+    detail.approval = approval_of(store, row.id)?;
     detail.said = if req.agent {
         said_of(store, row.id)?
     } else {
@@ -208,6 +232,7 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
         view.agent = agent_view(&reading);
         view.attention = attention(store, row.id)?;
+        view.approval = approval_of(store, row.id)?;
         let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
         view.progress = Some(progress::derive(&view, &events, now.as_millis()));

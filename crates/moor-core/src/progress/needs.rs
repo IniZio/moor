@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::view::AgentView;
+use crate::view::{AgentView, ApprovalView};
 
 /// What the agent asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,6 +15,8 @@ pub enum NeedKind {
     Permission,
     /// It asks a question.
     Question,
+    /// A workflow run waits at an approve step for its owner's yes or no.
+    Approve,
 }
 
 /// What picking an option does.
@@ -29,6 +31,15 @@ pub enum Role {
     Deny,
     /// An answer to a question.
     Choice,
+}
+
+/// The workflow run an approve card answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Approve {
+    /// The workflow's name.
+    pub workflow: String,
+    /// The run's id.
+    pub run: i64,
 }
 
 /// One button of the card.
@@ -58,6 +69,9 @@ pub struct Needs {
     /// The menu number of the entry that opens a text field, when the prompt has one. Pick it
     /// together with the text to answer in the person's own words.
     pub other: Option<u32>,
+    /// For an approve card: the run its yes or no goes to. It has no picks.
+    #[serde(default)]
+    pub approve: Option<Approve>,
 }
 
 /// The name of the prompt that asks `question` with `detail` and `options`.
@@ -113,7 +127,7 @@ pub fn needs_of(agent: &AgentView) -> Option<Needs> {
             label: label.clone(),
             role: match kind {
                 NeedKind::Permission => role_of(label),
-                NeedKind::Question => Role::Choice,
+                NeedKind::Question | NeedKind::Approve => Role::Choice,
             },
         })
         .collect();
@@ -133,5 +147,27 @@ pub fn needs_of(agent: &AgentView) -> Option<Needs> {
             .then(|| u32::try_from(agent.options.len() + 1).ok())
             .flatten(),
         picks,
+        approve: None,
     })
+}
+
+/// The card for a run that waits at an approve step: the step's question, to answer yes or no.
+#[must_use]
+pub fn approve_needs(approval: &ApprovalView) -> Needs {
+    Needs {
+        id: ask_id(
+            Some(&approval.question),
+            Some(&format!("{}#{}", approval.workflow, approval.run)),
+            &[],
+        ),
+        kind: NeedKind::Approve,
+        question: approval.question.clone(),
+        detail: None,
+        picks: Vec::new(),
+        other: None,
+        approve: Some(Approve {
+            workflow: approval.workflow.clone(),
+            run: approval.run,
+        }),
+    }
 }

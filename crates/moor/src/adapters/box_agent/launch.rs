@@ -104,7 +104,7 @@ fn failed(f: Failure) -> EngineError {
     }
 }
 
-/// The credential and tmp directories a launch of `req` creates under `home`.
+/// The credential and tmp directories a launch of `req` creates, the first under `home`.
 fn dirs_in(home: &BoxPath, req: &LaunchReq) -> Result<(BoxPath, BoxPath), Failure> {
     req.dirs_under(home).map_err(|e| fail("brief", &e))
 }

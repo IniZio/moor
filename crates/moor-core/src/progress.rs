@@ -8,12 +8,12 @@ use serde_json::Value;
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::view::progress::{latest, span, unix, Happened};
-use crate::view::{BoxView, EventView};
+use crate::view::{ApprovalView, BoxView, EventView};
 
 mod markdown;
 mod needs;
 mod timeline;
-pub use needs::{ask_id, needs_of, NeedKind, Needs, Pick, Role};
+pub use needs::{approve_needs, ask_id, needs_of, Approve, NeedKind, Needs, Pick, Role};
 pub use timeline::{timeline, Class, TimelineEntry};
 mod title;
 pub use title::{title_of, TITLE_MAX};
@@ -94,7 +94,12 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
         last_event_at: events.last().map(|e| e.ts.clone()),
         pr: pr_of(boxed, events),
         needs: (state == Progress::NeedsYou)
-            .then(|| boxed.agent.as_ref().and_then(needs_of))
+            .then(|| {
+                approval_of(boxed).map_or_else(
+                    || boxed.agent.as_ref().and_then(needs_of),
+                    |a| Some(approve_needs(a)),
+                )
+            })
             .flatten(),
     }
 }
@@ -102,6 +107,9 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
 /// The state the Box's row says. Events never decide it: a window of them can miss the one that
 /// would.
 fn state_of(b: &BoxView) -> Progress {
+    if approval_of(b).is_some() {
+        return Progress::NeedsYou;
+    }
     match b.lifecycle {
         BoxLifecycle::Closed => Progress::Closed,
         BoxLifecycle::Rejected | BoxLifecycle::SetupFailed => Progress::Failed,
@@ -110,6 +118,14 @@ fn state_of(b: &BoxView) -> Progress {
         BoxLifecycle::Asleep => Progress::Asleep,
         BoxLifecycle::Ready => ready_state(b),
     }
+}
+
+/// The approve step a run waits at in `b`, while the Box is open: the agent has ended its turn
+/// for it, so the Box may be asleep, and only the run's owner can go on.
+fn approval_of(b: &BoxView) -> Option<&ApprovalView> {
+    b.approval
+        .as_ref()
+        .filter(|_| matches!(b.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep))
 }
 
 /// The state of a Box whose machine is up.
@@ -175,10 +191,9 @@ fn line_of(
         Progress::Queued => "waiting for a machine slot".to_owned(),
         Progress::SettingUp => latest(happened)
             .map_or_else(|| "setting up".to_owned(), |s| format!("setting up · {s}")),
-        Progress::NeedsYou => b
-            .agent
-            .as_ref()
-            .and_then(|a| a.question.clone())
+        Progress::NeedsYou => approval_of(b)
+            .map(|a| a.question.clone())
+            .or_else(|| b.agent.as_ref().and_then(|a| a.question.clone()))
             .or_else(|| newest(events, "needs_input", "question").map(str::to_owned))
             .or_else(|| b.attention.first().map(|a| a.message.clone()))
             .map_or_else(|| "needs your input".to_owned(), |q| first_line(&q)),

@@ -166,6 +166,7 @@ pub(crate) fn box_view_with_run(
         held_machine: None,
         said: None,
         progress: None,
+        approval: None,
     }
 }
 

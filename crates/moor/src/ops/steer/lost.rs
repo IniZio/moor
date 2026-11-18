@@ -1,7 +1,7 @@
 //! A steer to a Box that lost its machine, which needs new hands first.
 
 use moor_core::domain::hands::HandsState;
-use moor_core::StartReq;
+use moor_core::{ErrorDetail, ErrorKind, StartReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -35,4 +35,16 @@ pub(super) fn bring_back(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         identity: None,
     };
     start::run(cx, &req).map(drop)
+}
+
+/// The refusal for an agent stopped at a first-run screen: a key typed there may pick an option
+/// that ends the agent, so the Box is started again instead.
+pub(super) fn first_run_refusal(name: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "the agent of {name} stopped at a first-run screen that moor's pre-seed should have skipped; this is a moor bug; end the Box with `moor end {name}` and start it again"
+        ),
+    )
+    .with_detail(ErrorDetail::FirstRunScreen)
 }

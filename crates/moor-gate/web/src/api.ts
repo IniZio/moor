@@ -289,11 +289,11 @@ export async function runGet(name: string, id: number): Promise<Run> {
 }
 
 /** Answers the approve step a run waits at. */
-export async function runAnswer(csrf: string, name: string, id: number, yes: boolean): Promise<Run> {
+export async function runAnswer(csrf: string, name: string, id: number, yes: boolean, note?: string): Promise<Run> {
 	const res = await fetch(`${workflowPath(name)}/runs/${id}/answer`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: JSON.stringify({ answer: yes ? 'yes' : 'no' }),
+		body: JSON.stringify({ answer: yes ? 'yes' : 'no', note: note?.trim() || undefined }),
 	});
 	return answer(res, RunSchema);
 }
@@ -311,11 +311,13 @@ const PickSchema = v.object({
 /** What the agent asks, as the controller derives it: the card a person answers. */
 const NeedsSchema = v.object({
 	id: v.string(),
-	kind: v.picklist(['permission', 'question']),
+	kind: v.picklist(['permission', 'question', 'approve']),
 	question: v.string(),
 	detail: v.nullish(v.string()),
 	picks: v.array(PickSchema),
 	other: v.nullish(v.number()),
+	/** For an approve card: the workflow run its yes or no goes to. */
+	approve: v.nullish(v.object({ workflow: v.string(), run: v.number() })),
 });
 
 const BoxRowSchema = v.object({

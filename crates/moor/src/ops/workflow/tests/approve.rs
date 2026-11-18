@@ -451,3 +451,42 @@ fn a_closed_box_ends_a_waiting_run_incomplete() {
         RunOutcome::Incomplete { .. }
     ));
 }
+
+#[test]
+fn a_box_whose_run_waits_at_an_approve_step_shows_its_question_and_needs_you() {
+    use moor_core::progress::{NeedKind, Progress};
+    use moor_core::ShowReq;
+
+    let r = rig();
+    let wid = r.waiting(&[audit(), ask(None), ship()]);
+    let run = r.first(wid);
+    let name =
+        r.cx.store()
+            .unwrap()
+            .box_row(r.latest_box(wid))
+            .unwrap()
+            .unwrap()
+            .name;
+    let req = ShowReq {
+        target: Some(
+            moor_core::BoxName::parse_allow_bare(name.as_str())
+                .unwrap()
+                .into(),
+        ),
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    };
+    let shown = crate::ops::show::run(&r.cx, &req).unwrap();
+    let progress = shown.boxed.unwrap().progress.unwrap();
+    assert_eq!(progress.state, Progress::NeedsYou);
+    let needs = progress.needs.unwrap();
+    assert_eq!(
+        (needs.kind, needs.question.as_str()),
+        (NeedKind::Approve, "ship it?")
+    );
+    let target = needs.approve.unwrap();
+    assert_eq!(target.run, run.id.get());
+}
