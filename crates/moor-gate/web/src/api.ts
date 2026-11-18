@@ -297,3 +297,62 @@ export async function runAnswer(csrf: string, name: string, id: number, yes: boo
 	});
 	return answer(res, RunSchema);
 }
+
+const TaskStateSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
+
+const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
+
+const TaskRowSchema = v.object({
+	box: v.string(),
+	repo: v.nullish(v.string()),
+	branch: v.nullish(v.string()),
+	base: v.nullish(v.string()),
+	prompt: v.nullish(v.string()),
+	state: TaskStateSchema,
+	stale: v.boolean(),
+	line: v.string(),
+	last_event_at: v.nullish(v.string()),
+	updated_at: v.string(),
+	pr: v.nullable(PrSchema),
+});
+
+const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
+
+const EntrySchema = v.object({
+	id: v.number(),
+	at: v.string(),
+	kind: v.string(),
+	class: EntryClassSchema,
+	text: v.string(),
+});
+
+const EvidenceSchema = v.object({
+	name: v.string(),
+	version: v.number(),
+	kind: v.string(),
+	content_type: v.string(),
+	size: v.number(),
+	created_at: v.string(),
+	image: v.boolean(),
+	href: v.string(),
+});
+
+const TaskSchema = v.object({
+	...TaskRowSchema.entries,
+	timeline: v.array(EntrySchema),
+	artifacts: v.array(EvidenceSchema),
+});
+
+export type TaskState = v.InferOutput<typeof TaskStateSchema>;
+export type TaskRow = v.InferOutput<typeof TaskRowSchema>;
+export type Task = v.InferOutput<typeof TaskSchema>;
+export type Entry = v.InferOutput<typeof EntrySchema>;
+export type Evidence = v.InferOutput<typeof EvidenceSchema>;
+
+export async function taskList(): Promise<TaskRow[]> {
+	return (await answer(await fetch('/account/api/tasks'), v.object({ tasks: v.array(TaskRowSchema) }))).tasks;
+}
+
+export async function taskGet(box: string): Promise<Task> {
+	return answer(await fetch(`/account/api/task?box=${encodeURIComponent(box)}`), TaskSchema);
+}

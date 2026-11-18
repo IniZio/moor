@@ -493,6 +493,7 @@ mod pair;
 mod repos;
 mod secrets;
 mod setup;
+mod tasks;
 mod workflows;
 
 #[test]
