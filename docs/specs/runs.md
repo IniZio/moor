@@ -710,9 +710,9 @@ the same op.
 
 For each repo, the op calls `claim` with `due_at` set to now and the trigger
 `manual`. A manual claim checks for an open run in the same write that
-inserts its row. A repo whose latest run of any trigger still blocks (queued,
-running, waiting, or timed out with its Box open) is refused with the open
-run's Box name, and nothing is recorded. A read before the write would race
+inserts its row. A run blocks while it is queued, running or waiting, or timed out with its
+Box open. When the repo's latest run of any trigger blocks, the call is
+refused with that run's Box name. Nothing is recorded. A read before the write would race
 the tick. The tick could claim a cron run with another `due_at` in between,
 and the unique key on `(workflow, repo, due_at)` would not stop it.
 
