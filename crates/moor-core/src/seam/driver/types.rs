@@ -48,8 +48,10 @@ pub struct BoxListing {
     pub handle: BoxHandle,
     /// Provider, when known.
     pub provider: Option<ProviderId>,
-    /// Whether the Box sleeps.
+    /// Whether the Box is stopped: slept, or down as `down` says.
     pub asleep: bool,
+    /// Why the Box is down though nobody slept it, as its holder saw its places stop.
+    pub down: Option<String>,
 }
 
 /// What [`super::Driver::list_handles`] learned: the handles whose holder answered, and which of

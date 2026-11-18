@@ -338,10 +338,17 @@ impl BoxProvider for Docker {
         let listed = parse_ps(&listed);
         self.egress
             .keep_only(&listed.keys().cloned().collect::<Vec<_>>());
+        let ended = cli::ended(&listed).await;
+        let ended_as = |name: &str, place| match ended.get(name) {
+            Some(e) if place == PlaceState::Down => PlaceState::Exited(*e),
+            _ => place,
+        };
         for (slug, (agent, work)) in listed {
+            let names = Names::of(&slug);
+            let (agent, work) = (ended_as(&names.agent, agent), ended_as(&names.work, work));
             let oom_kills = if agent == PlaceState::Up {
                 self.egress.read_when_due(&slug, &self.settings.agent_image);
-                self.oom_kills(&Names::of(&slug)).await
+                self.oom_kills(&names).await
             } else {
                 0
             };

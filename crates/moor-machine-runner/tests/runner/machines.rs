@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor::{Machines, Reach, SentEnvs};
 use moor_client::link::reach::Runner;
-use moor_core::box_key::{ControllerId, PoolSeat};
+use moor_core::box_key::{parse_machine_handle, ControllerId, PoolSeat};
 use moor_core::cache::CachePlan;
 use moor_core::name::{BoxId, BoxName, BoxPath, ProviderId};
 use moor_core::seam::driver::{
@@ -209,6 +209,34 @@ fn sleep_wake_and_close_follow_the_box_and_close_is_repeatable() {
     let spec = ExecSpec::new(Place::Work, vec!["true".into()]);
     let err = m.exec(&got.handle, &spec, Deadline(Duration::from_secs(5)));
     assert_eq!(err, Err(DriverError::NotFound));
+}
+
+#[test]
+fn a_box_whose_places_die_under_it_is_listed_stopped_and_a_wake_brings_it_back() {
+    let host = Host::boxes();
+    let m = machines(&host);
+    let got = opened(&m, 47);
+    let (_, slug) = parse_machine_handle(got.handle.as_str()).unwrap();
+    let dir = host.home.join("fake-boxes").join(slug);
+    std::fs::write(dir.join("died"), "143").unwrap();
+    let listed = m.list_handles(std::slice::from_ref(&got.handle)).unwrap();
+    assert_eq!(listed.answered, std::slice::from_ref(&got.handle));
+    assert!(
+        listed.listed[0].asleep,
+        "a Box that died is not up: {listed:?}"
+    );
+    assert_eq!(
+        listed.listed[0].down.as_deref(),
+        Some(
+            "the agent place exited with code 143, not for memory; \
+             the work place exited with code 143, not for memory"
+        )
+    );
+    m.wake(&got.handle).unwrap();
+    let (outcome, _) = run(&m, &host, &got, Place::Work, "true");
+    assert_eq!(outcome, ExecOutcome::Exited { code: 0 });
+    let listed = m.list_handles(std::slice::from_ref(&got.handle)).unwrap();
+    assert!(!listed.listed[0].asleep, "a woken Box is up: {listed:?}");
 }
 
 #[test]

@@ -7,7 +7,8 @@ use std::process::{Output, Stdio};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use crate::boxes::provider::{PlaceState, ProvideError};
+use super::names::Names;
+use crate::boxes::provider::{Ended, PlaceState, ProvideError};
 use crate::boxes::Slug;
 
 /// Whether a container is running.
@@ -115,6 +116,46 @@ pub(super) fn failed(out: &Output) -> ProvideError {
     } else {
         format!("docker: {said}")
     })
+}
+
+/// How each place of `listed` that is down ended, by container name, from one `docker
+/// inspect`; a place it cannot read is left out.
+pub(super) async fn ended(
+    listed: &BTreeMap<Slug, (PlaceState, PlaceState)>,
+) -> BTreeMap<String, Ended> {
+    let down: Vec<String> = listed
+        .iter()
+        .flat_map(|(slug, (agent, work))| {
+            let names = Names::of(slug);
+            [(names.agent, *agent), (names.work, *work)]
+        })
+        .filter(|(_, place)| *place == PlaceState::Down)
+        .map(|(name, _)| name)
+        .collect();
+    if down.is_empty() {
+        return BTreeMap::new();
+    }
+    let format = "{{.Name}} {{.State.ExitCode}} {{.State.OOMKilled}}";
+    let args = ["inspect", "-f", format].into_iter().map(str::to_owned);
+    Cli::output(args.chain(down))
+        .await
+        .map(|out| parse_ended(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or_default()
+}
+
+/// How each container ended, by name, from `docker inspect` lines of `/name code oom-killed`.
+/// A line that does not read so is left out.
+pub(super) fn parse_ended(inspected: &str) -> BTreeMap<String, Ended> {
+    inspected
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let name = words.next()?.trim_start_matches('/');
+            let code = words.next()?.parse().ok()?;
+            let oom = words.next()?.parse().ok()?;
+            Some((name.to_owned(), Ended { code, oom }))
+        })
+        .collect()
 }
 
 /// The places of each Box that `docker ps` lists as `slug place state` lines: how the agent place

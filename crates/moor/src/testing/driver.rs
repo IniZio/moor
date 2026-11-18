@@ -27,6 +27,7 @@ struct State {
     next: u32,
     live: Vec<String>,
     stopped: Vec<String>,
+    down: Vec<(String, String)>,
     away: Vec<String>,
     by_handle: bool,
     providers: Vec<(String, ProviderId)>,

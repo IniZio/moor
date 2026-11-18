@@ -70,8 +70,19 @@ impl Notes {
 pub(crate) enum PlaceState {
     /// Running.
     Up,
-    /// Stopped or not there.
+    /// Stopped or not there, how it ended unknown.
     Down,
+    /// Stopped, and how its main process ended.
+    Exited(Ended),
+}
+
+/// How the main process of a place that stopped ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Ended {
+    /// Its exit code.
+    pub(crate) code: i64,
+    /// Whether the place's memory limit killed it.
+    pub(crate) oom: bool,
 }
 
 /// One Box as the provider sees it now.
