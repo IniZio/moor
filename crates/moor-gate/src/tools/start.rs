@@ -1,10 +1,14 @@
-//! The request `start_box` sends.
+//! The request `start_box` sends, and how a start answers once its Box exists.
 
+use moor_client::Client;
 use moor_core::config::override_text;
 use moor_core::name::{BoxName, ForgeRepo};
-use moor_core::request::{Request as ControllerRequest, StartReq};
+use moor_core::request::{Request as ControllerRequest, ShowReq, StartReq};
+use serde_json::Value;
 
-use super::StartArgs;
+use super::reply::Reply;
+use super::{act_as, send, StartArgs};
+use crate::Person;
 
 /// The controller request that starts the Box `args` asks for.
 pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String> {
@@ -52,6 +56,101 @@ fn random() -> u32 {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let bits = RandomState::new().build_hasher().finish();
     u32::try_from(bits & u64::from(u32::MAX)).unwrap_or_default()
+}
+
+/// How often [`send_early`] looks at the Box.
+const EARLY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// How many polls [`send_early`] makes (about a minute) before giving up on the Box.
+const EARLY_POLLS: u32 = 240;
+
+/// Runs a `start` or a `retry` without waiting for it to finish: returns the Box's `show` as soon
+/// as the Box exists, or its setup has restarted, while the controller's work carries on in the
+/// background. Work that ends first, or a start for a Box that exists already, answers with its
+/// own result. Other requests go through [`send`]. Either answer is shaped by `reply`.
+pub(super) fn send_early(
+    controller: &Client,
+    person: &Person,
+    request: ControllerRequest,
+    reply: Reply,
+) -> Result<serde_json::Value, String> {
+    let (name, begun): (BoxName, fn(&Value) -> bool) = match &request {
+        ControllerRequest::Start(start) => (start.name.clone(), |_| true),
+        ControllerRequest::Retry(retry) => (retry.box_name.clone(), setup_restarted),
+        _ => return send(controller, person, request, reply),
+    };
+    let show = ControllerRequest::Show(ShowReq {
+        target: Some(name.into()),
+        events: Some(5),
+        agent: true,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    });
+    if matches!(request, ControllerRequest::Start(_))
+        && act_as(controller, person, show.clone()).is_ok()
+    {
+        // The Box exists already: this start attaches or is refused as busy, and either answer
+        // comes from the controller, so wait for it.
+        return send(controller, person, request, reply);
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (owned, who, done) = (controller.clone(), person.clone(), reply.clone());
+    std::thread::spawn(move || {
+        let _ = tx.send(send(&owned, &who, request, done));
+    });
+    for _ in 0..EARLY_POLLS {
+        match rx.recv_timeout(EARLY_POLL) {
+            Ok(done) => return done,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("the start did not finish".to_owned());
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        match send(controller, person, show.clone(), reply.clone()) {
+            Ok(shown) if begun(&shown) => return Ok(shown),
+            _ => {}
+        }
+    }
+    Err("the Box did not appear in time; check box_status".to_owned())
+}
+
+/// Whether `shown` is a Box whose setup no longer stands failed: a retry took it up.
+fn setup_restarted(shown: &Value) -> bool {
+    shown.pointer("/box/lifecycle") != Some(&Value::from("setup_failed"))
+}
+
+/// What a person asks of the portal to start.
+pub(crate) struct NewBox {
+    /// The repo, as `owner/name`.
+    pub(crate) repo: String,
+    /// What the agent should do first.
+    pub(crate) prompt: String,
+    /// The revision to branch from.
+    pub(crate) base: Option<String>,
+    /// The node to start on.
+    pub(crate) node: Option<String>,
+}
+
+/// Starts a Box for `person` the way `start_box` does: the same request, answered once the Box
+/// exists, while setup carries on. `origin` is where a refusal sends the person for missing secrets.
+pub(crate) fn start_from_portal(
+    controller: &Client,
+    person: &Person,
+    new: NewBox,
+    origin: std::sync::Arc<str>,
+) -> Result<Value, String> {
+    let request = start_request(StartArgs {
+        repo: new.repo,
+        also: None,
+        name: None,
+        prompt: Some(new.prompt),
+        base: new.base,
+        node: new.node,
+        config: None,
+        wait: None,
+    })?;
+    send_early(controller, person, request, Reply::Started(Some(origin)))
 }
 
 #[cfg(test)]

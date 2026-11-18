@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Entry, SignedOut, type BoxDetail, boxGet, boxList, type BoxRow, type Progress } from './api';
+import {
+	type Account,
+	type BoxDetail,
+	boxGet,
+	boxList,
+	type BoxRow,
+	boxStart,
+	type Entry,
+	type Progress,
+	repoList,
+	SignedOut,
+} from './api';
+import { Markdown } from './Markdown';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
-const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
+export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
 	needs_you: { word: 'needs you', glyph: '●', tone: 'needs' },
 	working: { word: 'working', glyph: '◐', tone: 'working' },
 	setting_up: { word: 'setting up', glyph: '◌', tone: 'working' },
@@ -38,12 +50,6 @@ function groupOf(t: BoxRow, now: number): Group {
 	}
 }
 
-/** The title a Box goes by: the first line of what it was asked. */
-function titleOf(t: { prompt?: string | null; box: string }): string {
-	const line = (t.prompt ?? '').split('\n').find((l) => l.trim()) ?? t.box;
-	return line.length > 64 ? `${line.slice(0, 63)}…` : line;
-}
-
 function age(iso: string | null | undefined, now: number): string {
 	const at = iso ? Date.parse(iso) : NaN;
 	if (Number.isNaN(at)) return '';
@@ -55,7 +61,7 @@ function age(iso: string | null | undefined, now: number): string {
 }
 
 /** Loads on mount and every few seconds while the page is open; keeps the last answer on a failed poll. */
-function usePoll<T>(load: () => Promise<T>, key: string) {
+export function usePoll<T>(load: () => Promise<T>, key: string) {
 	const [value, setValue] = useState<T | null>(null);
 	const [error, setError] = useState('');
 	const [now, setNow] = useState(Date.now());
@@ -86,7 +92,7 @@ function usePoll<T>(load: () => Promise<T>, key: string) {
 	return { value, error, now };
 }
 
-function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
+export function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
 	const s = STATES[state];
 	return (
 		<span class={`t-glyph t-${s.tone}${stale ? ' t-stale' : ''}`} role="img" aria-label={s.word} title={s.word}>
@@ -101,7 +107,7 @@ function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
 			<span class="t-repo t-mono">{t.repo ?? ''}</span>
-			<span class="t-title">{titleOf(t)}</span>
+			<span class="t-title">{t.title}</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
 				{t.state === 'failed' && <span class="t-failword">failed </span>}
@@ -128,7 +134,7 @@ function useRowKeys() {
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {
 			const tag = (document.activeElement as HTMLElement | null)?.tagName;
-			if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA') return;
+			if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || document.querySelector('dialog[open]')) return;
 			if (e.key !== 'j' && e.key !== 'k') return;
 			const rows = [...document.querySelectorAll<HTMLElement>('[data-row]')];
 			if (!rows.length) return;
@@ -140,11 +146,18 @@ function useRowKeys() {
 	}, []);
 }
 
-export function Home() {
-	const { value, error, now } = usePoll(boxList, 'home');
+export type Boxes = ReturnType<typeof useBoxes>;
+
+/** The person's Boxes, one poll the whole page shares: the list, the switcher and the Inbox count. */
+export function useBoxes() {
+	return usePoll(boxList, 'home');
+}
+
+export function Home({ boxes }: { boxes: Boxes }) {
+	const { value, error, now } = boxes;
 	useRowKeys();
 	if (!value) {
-		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Boxes…</p>;
+		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
 	}
 	const by = (g: Group) => value.filter((t) => groupOf(t, now) === g);
 	const settled = by('settled');
@@ -152,7 +165,7 @@ export function Home() {
 		<div class="t-home">
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<p class="t-hint muted">
-				Your Boxes · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
+				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
 			</p>
 			<Section label="Needs you" tone="needs" rows={by('needs')} now={now} empty="Nothing needs you." />
 			<Section label="Working" tone="working" rows={by('working')} now={now} empty="Nothing is running." />
@@ -160,11 +173,11 @@ export function Home() {
 			<details class="t-settled">
 				<summary>
 					<span class="t-chev">▸</span> Settled · {settled.length}{' '}
-					<span class="muted">Boxes closed, or done and quiet for 7 days</span>
+					<span class="muted">tasks closed, or done and quiet for 7 days</span>
 				</summary>
 				{settled.map((t) => <Row t={t} now={now} key={t.box} quiet />)}
 			</details>
-			{!value.length && <p class="t-empty">No Boxes yet. Start one from Claude Code with the moor tools.</p>}
+			{!value.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
 		</div>
 	);
 }
@@ -255,7 +268,9 @@ function Line({ e }: { e: Entry }) {
 				<div class="t-ev">
 					<span class="t-who">Agent</span>
 					<span class="t-when">{clock(e.at)}</span>
-					<span class="t-what t-say">{e.text}</span>
+					<div class="t-what t-say">
+						<Markdown text={e.text} />
+					</div>
 				</div>
 			);
 	}
@@ -319,8 +334,8 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 	if (!value) {
 		return (
 			<div class="t-box">
-				<p><a href="#/">← Boxes</a></p>
-				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading Box…</p>}
+				<p><a href="#/">← Tasks</a></p>
+				{error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading task…</p>}
 			</div>
 		);
 	}
@@ -336,9 +351,9 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 		<div class="t-box">
 			<div class="t-thead">
 				<div class="t-crumbs">
-					<a class="t-mono" href="#/">{value.repo ?? 'boxes'}</a>
+					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
 					<span class="t-sep">▸</span>
-					<b>{titleOf(value)}</b>
+					<b>{value.title}</b>
 					<span class="t-sep">▸</span>
 					<span class="t-mono muted">{value.branch ?? value.box}</span>
 					<span class="grow" />
@@ -388,6 +403,106 @@ export function BoxPage({ box, tab }: { box: string; tab: Tab }) {
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
 				</aside>
 			</div>
+		</div>
+	);
+}
+
+/** Where the last start went, so the next one starts there. */
+const LAST_REPO = 'moor.lastRepo';
+
+/** The composer that starts a Box: the footer names the target before anything is sent. */
+export function NewBox({ account }: { account: Account }) {
+	const [prompt, setPrompt] = useState('');
+	const [repo, setRepo] = useState(() => localStorage.getItem(LAST_REPO) ?? '');
+	const [base, setBase] = useState('');
+	const [node, setNode] = useState('');
+	const [repos, setRepos] = useState<string[]>([]);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState('');
+	useEffect(() => {
+		repoList().then(setRepos, () => setRepos([]));
+	}, []);
+	const machines = account.machines.nodes.filter((n) => n.online);
+	const send = async () => {
+		if (busy) return;
+		setBusy(true);
+		setError('');
+		try {
+			const name = await boxStart(account.csrf, { repo, prompt, base, node });
+			localStorage.setItem(LAST_REPO, repo);
+			location.hash = `#/box/${encodeURIComponent(name)}`;
+		} catch (e) {
+			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setBusy(false);
+		}
+	};
+	const ready = prompt.trim() !== '' && repo.trim() !== '' && !busy;
+	return (
+		<div class="t-new">
+			<h1>New task</h1>
+			<form
+				class="t-composer"
+				onSubmit={(e) => {
+					e.preventDefault();
+					if (ready) void send();
+				}}
+			>
+				<label class="t-sr" for="t-prompt">What should the agent do?</label>
+				<textarea
+					id="t-prompt"
+					rows={6}
+					placeholder="What should the agent do?"
+					value={prompt}
+					onInput={(e) => setPrompt(e.currentTarget.value)}
+					onKeyDown={(e) => {
+						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && ready) void send();
+					}}
+				/>
+				<div class="t-target">
+					<label class="t-chip">
+						<span class="muted">repo</span>
+						<input
+							class="t-mono"
+							list="t-repos"
+							placeholder="owner/name"
+							value={repo}
+							onInput={(e) => setRepo(e.currentTarget.value)}
+							aria-label="Repo"
+						/>
+					</label>
+					<datalist id="t-repos">{repos.map((r) => <option value={r} key={r} />)}</datalist>
+					<label class="t-chip">
+						<span class="muted">from</span>
+						<input
+							class="t-mono"
+							placeholder="default branch"
+							value={base}
+							onInput={(e) => setBase(e.currentTarget.value)}
+							aria-label="Branch to start from"
+						/>
+					</label>
+					<label class="t-chip">
+						<span class="muted">on</span>
+						<select value={node} onChange={(e) => setNode(e.currentTarget.value)} aria-label="Machine">
+							<option value="">any free machine</option>
+							{machines.map((n) => (
+								<option value={n.name} key={n.name}>
+									{n.name}
+									{n.max_boxes != null ? ` (${Math.max(0, n.max_boxes - n.used)} free)` : ''}
+								</option>
+							))}
+						</select>
+					</label>
+					<span class="grow" />
+					<button class="btn primary" type="submit" disabled={!ready}>
+						{busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
+					</button>
+				</div>
+			</form>
+			{error && <p class="notice danger" role="alert">{error}</p>}
+			<p class="muted t-foot">
+				The agent works on a new branch. You can watch it from the task page.
+			</p>
 		</div>
 	);
 }

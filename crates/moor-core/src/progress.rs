@@ -12,6 +12,8 @@ use crate::view::{BoxView, EventView};
 
 mod timeline;
 pub use timeline::{timeline, Class, TimelineEntry};
+mod title;
+pub use title::{title_of, TITLE_MAX};
 
 /// How long a working Box may go without an event before it shows a warning.
 pub const STALE_AFTER_MS: i64 = 30 * 60 * 1000;
@@ -50,6 +52,9 @@ pub struct PrLink {
 /// What a front shows of one Box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgressView {
+    /// A short name for the Box: the start of what it was asked, else the Box name.
+    #[serde(default)]
+    pub title: String,
     /// The derived state.
     pub state: Progress,
     /// A working Box with no event for [`STALE_AFTER_MS`].
@@ -77,6 +82,7 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
         })
         .collect();
     ProgressView {
+        title: title_of(boxed.prompt.as_deref(), &boxed.name),
         state,
         stale: state == Progress::Working && silent.is_some_and(|s| s > STALE_AFTER_MS),
         line: line_of(state, boxed, events, &happened, silent),

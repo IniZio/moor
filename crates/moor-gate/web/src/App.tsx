@@ -5,7 +5,8 @@ import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Repos } from './Repos';
 import { Secrets } from './Secrets';
-import { Home, tabOf, BoxPage } from './Portal';
+import { BoxPage, Home, NewBox, tabOf, useBoxes } from './Portal';
+import { TopBar } from './TopBar';
 import { Workflows, workflowsAt } from './Workflows';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
@@ -65,52 +66,50 @@ export function App() {
 	}
 	if (state.at === 'loading') return <main aria-busy="true"><h1>moor</h1></main>;
 
-	const { account } = state;
+	return <Ready account={state.account} hash={hash} onSignedOut={() => setState({ at: 'out' })} onChanged={refresh} />;
+}
+
+/** The signed-in page: the top bar, then the page the address names. */
+function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; hash: string; onSignedOut: () => void; onChanged: () => void }) {
+	const boxes = useBoxes();
 	const repo = repoOf(hash);
 	const flows = workflowsAt(hash);
 	const open = boxOf(hash);
+	const composing = hash.replace(/^#\/?/, '') === 'new';
 	const settings = settingsAt(hash);
 	const home = repo === null && !flows && !settings;
 	const unlinked = account.secrets.filter((s) => !s.linked).map((s) => s.name);
-	const leave = () => signOut(account.csrf).then(() => setState({ at: 'out' }));
+	const leave = () => signOut(account.csrf).then(onSignedOut);
 	return (
-		<main class={flows || home ? 'wide' : undefined}>
-			<header>
-				<h1>moor</h1>
-				<nav>
-					<a href="#/" aria-current={home ? 'page' : undefined}>Boxes</a>
-					<a href="#/workflows" aria-current={flows ? 'page' : undefined}>Workflows</a>
-					<a href="#/repos" aria-current={repo === null ? undefined : 'page'}>Repos</a>
-					<a href="#/settings" aria-current={settings ? 'page' : undefined}>Settings</a>
-				</nav>
-				<span class="muted">{account.email}</span>
-				<button class="quiet" onClick={leave}>Sign out</button>
-			</header>
+		<>
+			<TopBar email={account.email} rows={boxes.value ?? []} onSignOut={() => void leave()} />
+			<main class={flows ? 'wide' : composing ? 'app-new' : open ? 'app-box' : home ? 'app-home' : undefined}>
 			{flows ? (
 				<Workflows csrf={account.csrf} at={flows} />
 			) : home ? (
 				<>
 					{unlinked.length > 0 && (
 						<p class="notice warn">
-							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a Box can start.
+							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
-					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home />}
+					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} /> : <Home boxes={boxes} />}
 				</>
 			) : repo === null ? (
 				<>
-					<Secrets account={account} onLinked={refresh} />
+					<Secrets account={account} onLinked={onChanged} />
 					<Machines
 						csrf={account.csrf}
 						machines={account.machines}
 						serverUrl={account.connect.server_url}
-						onChanged={refresh}
+						onChanged={onChanged}
 					/>
 					<Connect url={account.connect.mcp_url} />
 				</>
 			) : (
 				<Repos csrf={account.csrf} repo={repo === '' ? null : repo} />
 			)}
-		</main>
+			</main>
+		</>
 	);
 }

@@ -308,6 +308,7 @@ const BoxRowSchema = v.object({
 	branch: v.nullish(v.string()),
 	base: v.nullish(v.string()),
 	prompt: v.nullish(v.string()),
+	title: v.string(),
 	state: ProgressSchema,
 	stale: v.boolean(),
 	line: v.string(),
@@ -351,6 +352,19 @@ export type Evidence = v.InferOutput<typeof EvidenceSchema>;
 
 export async function boxList(): Promise<BoxRow[]> {
 	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
+}
+
+/** Starts a Box as the signed-in person; answers the Box's name once it exists. */
+export async function boxStart(
+	csrf: string,
+	body: { repo: string; prompt: string; base: string; node: string },
+): Promise<string> {
+	const res = await fetch('/account/api/boxes', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify(body),
+	});
+	return (await answer(res, v.object({ box: v.string() }))).box;
 }
 
 export async function boxGet(box: string): Promise<BoxDetail> {

@@ -82,6 +82,7 @@ if [ -n "$flag_hits" ]; then
 fi
 
 # The removed Task concept must not return in any file, test or not.
+# The portal says "task" to people: in web/src, string literals and JSX text are cut out first.
 # Allowlisted strings are cut out of each hit; the rest of the line is checked again.
 allow="$(mktemp)"
 trap 'rm -f "$allow"' EXIT
@@ -94,7 +95,16 @@ task_hits=$(grep -rniI --exclude-dir=target --exclude-dir=node_modules --exclude
       BEGIN { while ((getline line < allowfile) > 0) allowed[++n] = line }
       {
         rest = $0
+        portal = ($0 ~ /^crates\/moor-gate\/web\/src\//)
         if (match(rest, /^[^:]*:[0-9]+:/)) rest = substr(rest, RLENGTH + 1)
+        if (portal) {
+          gsub(/"[^"]*"|\047[^\047]*\047|`[^`]*`/, "\"\"", rest)
+          gsub(/>[^<>{}]*</, "><", rest)
+          sub(/>[^<>{}]*$/, ">", rest)
+          sub(/^[[:space:]]*[^<>{}=;()]*</, "<", rest)
+          if (rest !~ /^[[:space:]]*(const|let|var|function|type|import|export|return)[[:space:]]/ &&
+              rest ~ /^[[:space:]]*[A-Za-z][^=;(){}<>]* [^=;(){}<>]*$/) rest = ""
+        }
         for (i = 1; i <= n; i++) {
           out = ""
           while ((k = index(rest, allowed[i])) > 0) {

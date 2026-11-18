@@ -338,3 +338,76 @@ fn the_timeline_hides_noise_keeps_errors_and_shows_an_unclassed_kind() {
         Some("Turn ended (needs input)")
     );
 }
+
+#[test]
+fn title_is_the_name_without_a_prompt() {
+    assert_eq!(title_of(None, "r/t"), "r/t");
+    assert_eq!(title_of(Some("  \n \n"), "r/t"), "r/t");
+    assert_eq!(title_of(Some("## \n- "), "r/t"), "r/t");
+}
+
+#[test]
+fn title_is_the_first_nonblank_line() {
+    let prompt = "\n  Fix the typo on the login page\nthen open a PR";
+    assert_eq!(
+        title_of(Some(prompt), "n"),
+        "Fix the typo on the login page"
+    );
+}
+
+#[test]
+fn title_stops_at_the_first_sentence() {
+    let prompt = "Fix the login typo. Then open a PR with a screenshot.";
+    assert_eq!(title_of(Some(prompt), "n"), "Fix the login typo");
+    // a dot inside a file name or a version does not end the sentence
+    let prompt = "Rename login.tsx to signin.tsx and bump to v1.2 everywhere";
+    assert_eq!(title_of(Some(prompt), "n"), prompt);
+}
+
+#[test]
+fn title_keeps_a_short_lead_going() {
+    assert_eq!(
+        title_of(Some("Hi. Please fix the build"), "n"),
+        "Hi. Please fix the build"
+    );
+}
+
+#[test]
+fn title_drops_list_and_heading_marks() {
+    assert_eq!(title_of(Some("# Plan\n- add dark mode"), "n"), "Plan");
+    assert_eq!(title_of(Some("- add dark mode"), "n"), "add dark mode");
+}
+
+#[test]
+fn title_is_cut_at_a_word_with_an_ellipsis() {
+    let prompt = "Make the settings page keep its scroll position when the sidebar collapses and expands again";
+    let title = title_of(Some(prompt), "n");
+    assert!(title.ends_with('…'), "{title}");
+    assert!(title.chars().count() <= TITLE_MAX, "{title}");
+    assert!(prompt.starts_with(title.trim_end_matches('…')), "{title}");
+    assert!(!title.trim_end_matches('…').ends_with("sid"), "{title}");
+}
+
+#[test]
+fn title_counts_characters_not_bytes() {
+    let prompt = "ü".repeat(TITLE_MAX);
+    assert_eq!(title_of(Some(&prompt), "n"), prompt);
+    let prompt = "ü".repeat(TITLE_MAX + 5);
+    let title = title_of(Some(&prompt), "n");
+    assert_eq!(title.chars().count(), TITLE_MAX);
+    assert!(title.ends_with('…'));
+}
+
+#[test]
+fn title_of_a_short_prompt_has_no_ellipsis() {
+    assert_eq!(title_of(Some("Fix login typo"), "n"), "Fix login typo");
+}
+
+#[test]
+fn derive_carries_the_title() {
+    let mut b = row(BoxLifecycle::Ready, SessionState::Working);
+    b.prompt = Some("Fix the login typo. Then more.".into());
+    assert_eq!(derive(&b, &[], 0).title, "Fix the login typo");
+    b.prompt = None;
+    assert_eq!(derive(&b, &[], 0).title, "r/t");
+}
