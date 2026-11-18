@@ -151,7 +151,7 @@ fn closing_a_box_with_no_supervisor_frees_its_machine() {
         .into_iter()
         .map(|e| e.0)
         .collect();
-    assert_eq!(kinds, ["machine_detached"]);
+    assert_eq!(kinds, ["machine_attached", "machine_detached"]);
 }
 
 #[test]

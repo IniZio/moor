@@ -18,6 +18,7 @@ use crate::store::hands::fence_inc;
 use crate::store::{Store, StoreError};
 
 mod route;
+pub(super) use route::runner_in;
 
 impl Store {
     /// Every machine a user owns, with the key its agent signs with, by id.

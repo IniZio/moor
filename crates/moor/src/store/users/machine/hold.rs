@@ -12,6 +12,7 @@ use moor_core::BoxId;
 use moor_schema::tables::{BoxMachines, Boxes, Events};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
+use super::links::runner_in;
 use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
 use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
@@ -224,10 +225,11 @@ fn position_in(conn: &dyn Db, id: BoxId, user: UserId) -> Result<u16, StoreError
 }
 
 /// Drops `user`'s expired wants, recording `machine_left_out`, then gives each remaining want,
-/// oldest first, the slot `pick_machine` finds free.
+/// oldest first, the slot `pick_machine` finds free, recording `machine_attached` for each.
 fn grant_in(conn: &Tx<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     drop_expired_in(conn, user, now)?;
     let owned = owned_in(conn, user)?;
+    let ids: BTreeMap<String, i64> = owned.iter().map(|(id, m)| (m.name.clone(), *id)).collect();
     let own: Vec<UserMachine> = owned.into_iter().map(|(_, m)| m).collect();
     let mut held = held_in(conn, user)?;
     for (id, box_name) in wants_in(conn, user)? {
@@ -245,6 +247,16 @@ fn grant_in(conn: &Tx<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
         held.entry(machine.name.clone())
             .or_default()
             .insert(slot, box_name);
+        let runner = match ids.get(&machine.name) {
+            Some(machine_id) => runner_in(conn, *machine_id, now)?,
+            None => None,
+        };
+        let attached = MachineEvent::MachineAttached {
+            name: machine.name.clone(),
+            slot,
+            runner: runner.map(|r| r.as_str().to_owned()),
+        };
+        insert_event(conn, id, &Event::Machine(attached), now)?;
         let state = ClaimState::Held {
             machine: machine.name,
             slot,
