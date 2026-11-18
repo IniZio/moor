@@ -25,6 +25,7 @@ mod postgres;
 mod session_archive;
 mod shared_machines;
 mod sqlite;
+mod user_inbox;
 mod vm_inc;
 mod workflow_plans;
 mod workflow_run_trigger;
@@ -124,7 +125,7 @@ fn plain_default(raw: &str) -> String {
 #[test]
 fn sqlite_reads_back_every_table_with_its_keys() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
-    assert_eq!(schema.tables.len(), 39, "{:?}", schema.tables.keys());
+    assert_eq!(schema.tables.len(), 40, "{:?}", schema.tables.keys());
     let sessions = schema.tables.get("sessions").unwrap();
     assert_eq!(sessions.primary_key, ["id"]);
     assert!(sessions.indexes.contains(&Index {

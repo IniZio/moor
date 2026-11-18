@@ -14,6 +14,7 @@ pub mod doing;
 pub mod domain;
 pub mod exec_env;
 pub mod graphql_scope;
+pub mod inbox;
 pub mod name;
 pub mod profile;
 pub mod progress;

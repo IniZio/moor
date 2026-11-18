@@ -19,10 +19,13 @@ use crate::store::{webhook_key_name, Store};
 use crate::vault::Vault;
 
 /// The event kinds a webhook gets when it names none: a turn ended, a Box or its agent stopped in
-/// a way someone must look at (a Box whose machine keeps dying among them), or the disk under its Boxes ran low or came back.
+/// a way someone must look at (a Box whose machine keeps dying among them), a workflow run waits
+/// for approval or failed, or the disk under its Boxes ran low or came back.
 const DEFAULT_EVENTS: &[&str] = &[
     "idled",
     "needs_input",
+    "run_waiting",
+    "run_failed",
     "closed",
     "setup_failed",
     "session_failed",

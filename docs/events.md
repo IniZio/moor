@@ -10,7 +10,7 @@ A webhook that names no events gets the kinds marked with a check.
 | Kind | Default | When |
 | --- | --- | --- |
 | `idled` | ✓ | The agent ended its turn. |
-| `needs_input` | | The agent asks a question or a permission. |
+| `needs_input` | ✓ | The agent asks a question or a permission. |
 | `setup_failed` | ✓ | A clone, `setup` line, or agent install failed. `data.line` names it. |
 | `session_failed` | ✓ | The agent could not be started. |
 | `launch_timed_out` | ✓ | The agent did not start within `box.launch_timeout`. |
@@ -25,8 +25,8 @@ A webhook that names no events gets the kinds marked with a check.
 | `agent_resumed` | | A stalled agent reported again. |
 | `node_disk_low` | ✓ | The Box's node fell below its free-disk floor. Once per owner. |
 | `node_disk_recovered` | ✓ | That node climbed back above its floor. |
-| `run_waiting` | | A workflow run entered an approve step. `data` has `workflow`, `repo`, `run`, `step`, `question` and `link`, the run page path `/workflows/NAME/runs/ID`. |
-| `run_failed` | | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
+| `run_waiting` | ✓ | A workflow run entered an approve step. `data` has `workflow`, `repo`, `run`, `step`, `question` and `link`, the run page path `/workflows/NAME/runs/ID`. |
+| `run_failed` | ✓ | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |

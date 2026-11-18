@@ -8,9 +8,11 @@ use crate::name::ProfileSource;
 use crate::user::{Email, Identity, SecretName};
 
 mod identity;
+mod inbox;
 mod mcp;
 mod secret_value;
 mod webhook;
+pub use inbox::{InboxOp, InboxReq};
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
 pub use secret_value::SecretValue;
 pub use webhook::{WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq};
@@ -135,6 +137,8 @@ pub enum UserCmd {
     ProfileRemove,
     /// A workflow request.
     Workflow(WorkflowCmd),
+    /// List the caller's inbox, or mark items in it read.
+    Inbox(InboxOp),
     /// Add a webhook for the caller's user.
     WebhookAdd {
         /// The `https://` URL each event is posted to.
@@ -227,6 +231,7 @@ impl UserCmd {
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
             Self::MachineStatus { .. } => "machine-status",
+            Self::Inbox(_) => "inbox",
             Self::Workflow(c) => c.cmd(),
         }
     }
@@ -306,6 +311,7 @@ impl Request {
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
             Self::MachineList(r) => (r.identity, UserCmd::MachineList),
             Self::MachineStatus(r) => (r.identity, UserCmd::MachineStatus { name: r.name }),
+            Self::Inbox(r) => (r.identity, UserCmd::Inbox(r.op)),
             other => match super::workflow::split(other) {
                 Ok((identity, cmd)) => (identity, UserCmd::Workflow(cmd)),
                 Err(other) => return Err(other),

@@ -376,6 +376,7 @@ pub(super) fn insert_event(tx: &Tx<'_>, id: BoxId, e: &Event, now: Ts) -> Result
     )?;
     facts::follow(tx, id, e, now)?;
     super::webhook_outbox::enqueue(tx, id, event, e.kind())?;
+    super::user_inbox::note(tx, id, (event, e), now)?;
     Ok(event)
 }
 

@@ -228,6 +228,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "webhook-add"
         | "webhook-list"
         | "webhook-remove"
+        | "inbox"
         | "workflow-add"
         | "workflow-list"
         | "workflow-remove"
