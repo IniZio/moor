@@ -53,6 +53,7 @@ impl Class {
             | "session_failed"
             | "launch_timed_out"
             | "relaunch_capped"
+            | "death_capped"
             | "agent_unreachable"
             | "agent_stalled"
             | "steer_cut"
