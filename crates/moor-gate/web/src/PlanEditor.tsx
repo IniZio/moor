@@ -61,7 +61,9 @@ function Target({ label, value, none, doc, onPick }: { label: string; value?: st
 }
 
 function StepFields({ step, at, edit }: { step: StepDoc; at: number; edit: Edit }) {
-	const [evidence, setEvidence] = useState((step.evidence ?? []).join(', '));
+	const [typed, setEvidence] = useState((step.evidence ?? []).join(', '));
+	const names = (text: string) => text.split(/[\s,]+/).filter(Boolean);
+	const evidence = names(typed).join() === (step.evidence ?? []).join() ? typed : (step.evidence ?? []).join(', ');
 	const put = (next: StepDoc) => edit.set({ ...edit.doc, steps: edit.doc.steps.map((s, i) => (i === at ? next : s)) });
 	const patch = (fields: Partial<StepDoc>) => put({ ...step, ...fields });
 	const text = (field: 'instructions' | 'done_when' | 'command' | 'question', label: string, rows = 3) => (
@@ -98,7 +100,7 @@ function StepFields({ step, at, edit }: { step: StepDoc; at: number; edit: Edit 
 						placeholder="report.md, before-*"
 						onInput={(e) => {
 							setEvidence(e.currentTarget.value);
-							patch({ evidence: e.currentTarget.value.split(/[\s,]+/).filter(Boolean) });
+							patch({ evidence: names(e.currentTarget.value) });
 						}}
 					/>
 				</Field>

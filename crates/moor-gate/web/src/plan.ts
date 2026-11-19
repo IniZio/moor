@@ -8,7 +8,7 @@ const StepDocSchema = v.strictObject({
 	id: v.string(),
 	title: v.string(),
 	kind: v.string(),
-	max_tries: v.nullish(v.pipe(v.number(), v.integer(), v.minValue(0))),
+	max_tries: v.nullish(v.number()),
 	instructions: text,
 	done_when: text,
 	evidence: v.nullish(v.array(v.string())),
@@ -127,7 +127,7 @@ export function problems(doc: PlanDoc): Problem[] {
 		}
 		const len = bytes(s.title);
 		if (s.title.trim() === '' || len > MAX_TITLE) say(`${place}: the title must be 1 to 120 bytes, not ${len}`);
-		if (s.max_tries !== undefined && (s.max_tries < 1 || s.max_tries > 5)) say(`${place}: max_tries must be 1 to 5, not ${s.max_tries}`);
+		if (s.max_tries !== undefined && !(Number.isInteger(s.max_tries) && s.max_tries >= 1 && s.max_tries <= 5)) say(`${place}: max_tries must be 1 to 5, not ${s.max_tries}`);
 		if (!isKind(s.kind)) return void say(`${place}: unknown kind \`${s.kind}\`; use work, check, approve or deliver`);
 		const kind = s.kind;
 		const takes = KIND_FIELDS[kind];
