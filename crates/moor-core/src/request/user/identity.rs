@@ -1,8 +1,8 @@
 //! The identity a request's own field asserts.
 
 use super::{
-    AsReq, EnrollReq, InboxReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
-    SecretDeleteReq, SecretSetReq, StartNeedsReq, WebhookAddReq, WebhookRemoveReq,
+    AsReq, EnrollReq, InboxReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileCheckReq,
+    ProfileSetReq, SecretDeleteReq, SecretSetReq, StartNeedsReq, WebhookAddReq, WebhookRemoveReq,
     WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 use crate::request::{
@@ -25,6 +25,7 @@ impl Request {
             | Self::McpList(AsReq { identity })
             | Self::ProfileShow(AsReq { identity })
             | Self::ProfileRemove(AsReq { identity })
+            | Self::ProfileCheck(ProfileCheckReq { identity, .. })
             | Self::WebhookList(AsReq { identity })
             | Self::Inbox(InboxReq { identity, .. })
             | Self::WebhookAdd(WebhookAddReq { identity, .. })

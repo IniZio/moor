@@ -91,6 +91,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::McpList(_)
         | Request::ProfileSet(_)
         | Request::ProfileShow(_)
+        | Request::ProfileCheck(_)
         | Request::ProfileRemove(_)
         | Request::WebhookAdd(_)
         | Request::WebhookSetupShow(_)

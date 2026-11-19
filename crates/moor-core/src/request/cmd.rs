@@ -56,6 +56,7 @@ impl Request {
             Self::McpList(_) => "mcp-list",
             Self::ProfileSet(_) => "profile-set",
             Self::ProfileShow(_) => "profile-show",
+            Self::ProfileCheck(_) => "profile-check",
             Self::ProfileRemove(_) => "profile-remove",
             Self::WebhookAdd(_) => "webhook-add",
             Self::WebhookSetupShow(_) => "webhook-setup-show",

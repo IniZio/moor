@@ -10,10 +10,12 @@ use crate::user::{Email, Identity, SecretName};
 mod identity;
 mod inbox;
 mod mcp;
+mod profile_check;
 mod secret_value;
 mod webhook;
 pub use inbox::{InboxOp, InboxReq};
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
+pub use profile_check::ProfileCheckReq;
 pub use secret_value::SecretValue;
 pub use webhook::{WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq};
 
@@ -133,6 +135,11 @@ pub enum UserCmd {
     },
     /// The caller's user's agent profile repo.
     ProfileShow,
+    /// Resolve a profile through the forge and report it; the recorded one when `source` is none.
+    ProfileCheck {
+        /// The profile to check.
+        source: Option<ProfileSource>,
+    },
     /// Clear the caller's user's agent profile repo.
     ProfileRemove,
     /// A workflow request.
@@ -221,6 +228,7 @@ impl UserCmd {
             Self::McpOAuthFinish { .. } => "mcp-oauth-finish",
             Self::ProfileSet { .. } => "profile-set",
             Self::ProfileShow => "profile-show",
+            Self::ProfileCheck { .. } => "profile-check",
             Self::ProfileRemove => "profile-remove",
             Self::WebhookAdd { .. } => "webhook-add",
             Self::WebhookSetupShow { .. } => "webhook-setup-show",
@@ -270,6 +278,7 @@ impl Request {
             Self::McpList(r) => (r.identity, UserCmd::McpList),
             Self::ProfileSet(r) => (r.identity, UserCmd::ProfileSet { source: r.source }),
             Self::ProfileShow(r) => (r.identity, UserCmd::ProfileShow),
+            Self::ProfileCheck(r) => (r.identity, UserCmd::ProfileCheck { source: r.source }),
             Self::ProfileRemove(r) => (r.identity, UserCmd::ProfileRemove),
             Self::WebhookAdd(r) => (
                 r.identity,

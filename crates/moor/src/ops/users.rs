@@ -92,6 +92,9 @@ pub(crate) fn run(
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
         UserCmd::ProfileSet { source } => profile::set(store, enrolled(store, who)?, source),
         UserCmd::ProfileShow => profile::show(store, enrolled(store, who)?),
+        UserCmd::ProfileCheck { source } => {
+            profile::check(cx, enrolled(store, who)?, source.as_ref())
+        }
         UserCmd::ProfileRemove => profile::remove(store, enrolled(store, who)?),
         UserCmd::MachineEnroll {
             email,

@@ -188,6 +188,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::McpList(_)
         | Request::ProfileSet(_)
         | Request::ProfileShow(_)
+        | Request::ProfileCheck(_)
         | Request::ProfileRemove(_)
         | Request::WebhookAdd(_)
         | Request::WebhookSetupShow(_)

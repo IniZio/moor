@@ -10,6 +10,7 @@ mod close_failed;
 mod inspect;
 mod machine;
 mod node;
+mod profile_check;
 mod repo_config;
 mod show;
 
@@ -93,6 +94,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "close-failed" => close_failed::text(value),
         "wait" => wait_text(value),
         "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
+        "profile-check" => profile_check::text(value),
         "repo-config-get" => repo_config::get_text(value),
         "repo-config-set" => repo_config::set_line(value),
         "box-config-set" => repo_config::box_line(value),

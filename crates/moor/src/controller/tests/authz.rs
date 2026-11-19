@@ -216,6 +216,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "mcp-list"
         | "profile-set"
         | "profile-show"
+        | "profile-check"
         | "profile-remove"
         | "mcp-oauth-finish"
         | "machine-remove"

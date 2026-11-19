@@ -5,10 +5,12 @@ use std::io::Write as _;
 use std::net::TcpStream;
 use std::time::SystemTime;
 
+use moor_core::name::ProfileSource;
 use moor_core::request::{AsReq, Request as ControllerRequest, SecretSetReq, SecretValue};
 use moor_core::secret::{check_claude_token, check_github_token, Secret};
 use moor_core::user::SecretName;
 use moor_core::view::node::NodeListValue;
+use moor_core::view::user::ProfileValue;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -16,7 +18,7 @@ use serde_json::json;
 use super::routes::{page, read_body, redirect, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
-use super::{nodes, portal, repos, workflows};
+use super::{nodes, portal, repos, settings, workflows};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Built by `build.rs`, not committed.
@@ -59,6 +61,8 @@ struct View<'a> {
     machines: NodeListValue,
     /// How to connect from outside.
     connect: Connect<'a>,
+    /// The agent profile repo, when one is set.
+    profile: Option<ProfileSource>,
 }
 
 /// The connect section's data.
@@ -97,8 +101,8 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
-        (method, p, session) if portal::serves(method, p) => {
-            portal::serve(&mut stream, &req, gate, login, session.as_ref());
+        (method, p, session) if portal::serves(method, p) || settings::serves(method, p) => {
+            boxes_or_settings(&mut stream, &req, gate, login, session.as_ref());
         }
         (method, p, session) if workflows::route(p).is_some() => {
             let query = req.target.split_once('?').map_or("", |(_, q)| q);
@@ -131,6 +135,22 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         }
         ("GET", p, None) if p.starts_with(API) => signed_out(&mut stream),
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
+    }
+}
+
+/// Serves a Boxes route or a settings route.
+fn boxes_or_settings(
+    stream: &mut TcpStream,
+    req: &Request<'_>,
+    gate: &Gate,
+    login: &Login,
+    session: Option<&Session>,
+) {
+    let path = req.target.split('?').next().unwrap_or_default();
+    if settings::serves(req.method, path) {
+        settings::serve(stream, req, gate, session);
+    } else {
+        portal::serve(stream, req, gate, login, session);
     }
 }
 
@@ -272,6 +292,14 @@ fn show(stream: &mut TcpStream, gate: &Gate, login: &Login, session: &Session) {
         Ok(machines) => machines,
         Err(why) => return failed(stream, "machines", &why),
     };
+    let profile = tools::act_as(
+        &gate.controller,
+        &session.person,
+        ControllerRequest::ProfileShow(AsReq { identity: None }),
+    )
+    .ok()
+    .and_then(|v| serde_json::from_value::<ProfileValue>(v).ok())
+    .and_then(|p| p.source);
     let view = View {
         email: session.person.email.as_str(),
         csrf: csrf_token(session),
@@ -281,6 +309,7 @@ fn show(stream: &mut TcpStream, gate: &Gate, login: &Login, session: &Session) {
             mcp_url: gate.mcp.as_ref().map(crate::Mcp::resource_url),
             server_url: login.public(),
         },
+        profile,
     };
     json(stream, "200 OK", &json!(view));
 }

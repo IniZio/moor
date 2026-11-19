@@ -4,6 +4,8 @@ use moor_core::ErrorKind;
 use serde_json::json;
 
 use crate::ops::users::run;
+
+mod check;
 use crate::ops::users::tests::{fixture, id};
 
 fn set(url: &str) -> UserCmd {

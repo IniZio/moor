@@ -4,12 +4,24 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::user::{Email, Identity};
+
 /// Arguments of `machine-pair`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachinePairReq {
     /// What to do with a code.
     pub op: PairOp,
+}
+
+/// The person a grant enrolls machines as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PairOwner {
+    /// The identity the machine is enrolled as.
+    pub identity: Identity,
+    /// The email the front verified for it.
+    pub email: Email,
 }
 
 /// One step of a code's life.
@@ -45,6 +57,21 @@ pub enum PairOp {
         code: String,
         /// The enrollment, when it worked.
         enrolled: Option<Value>,
+    },
+    /// Keep a grant for `owner`, replacing the one they held: whoever redeems `token` within
+    /// `ttl_secs` enrolls a machine as them. Only the token's hash is kept.
+    Grant {
+        /// Who the grant enrolls machines as.
+        owner: PairOwner,
+        /// The secret the machine presents.
+        token: String,
+        /// Seconds the grant lasts.
+        ttl_secs: u64,
+    },
+    /// Take the unexpired grant `token` names, once.
+    Redeem {
+        /// The secret the machine presents.
+        token: String,
     },
     /// What the agent polling with `device_code` gets; an enrollment is handed out once.
     Poll {

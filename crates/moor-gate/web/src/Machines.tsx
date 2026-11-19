@@ -1,7 +1,8 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import { type Account, Conflict, type Node, nodeSet, SignedOut } from './api';
-import { Command } from './Connect';
+import { RemoveMachine } from './RemoveMachine';
 
 function state(n: Node): string {
 	if (n.online) return 'Online';
@@ -107,31 +108,32 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 export function Machines({
 	csrf,
 	machines,
-	serverUrl,
 	onChanged,
+	action,
 }: {
 	csrf: string;
 	machines: Account['machines'];
-	serverUrl: string;
 	onChanged: () => void;
+	action?: ComponentChildren;
 }) {
 	return (
 		<section>
-			<h2>Machines</h2>
+			<div class="row-head section-head">
+				<h2>Machines</h2>
+				{action}
+			</div>
+			<p class="muted">Where your Boxes run. Add a computer of your own, or use a shared one your team runs.</p>
 			{machines.nodes.length === 0 ? (
-				<>
-					<p class="muted">No machine of yours yet. Adding one is optional. Run this on it:</p>
-					<ul class="cards">
-						<Command label="Add this machine" line={`moor-machine-agent up --server ${serverUrl}`} />
-					</ul>
-				</>
+				<p class="muted">No machine runs Boxes for you yet. Add one of your own, or ask your team for a shared one.</p>
 			) : (
 				<ul class="cards">
 					{machines.nodes.map((n) => (
 						<li key={n.name}>
 							<div class="row-head">
 								<strong>{n.name}</strong>
+								<span class="grow" />
 								<span class={n.online ? 'pill ok' : 'pill warn'}>{state(n)}</span>
+								{n.scope === 'personal' && n.editable && <RemoveMachine csrf={csrf} node={n} onRemoved={onChanged} />}
 							</div>
 							<p class="muted">
 								{n.scope === 'personal' ? 'Yours' : 'Shared'} · {n.provides ?? n.runtime}
