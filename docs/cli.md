@@ -53,8 +53,7 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 
 | Flag | Effect |
 | --- | --- |
-| `--repo OWNER/NAME` | The repo to clone, as `OWNER/NAME` or a github.com URL. The default is the current checkout's `origin`. |
-| `--also OWNER/NAME` | Another repo to clone beside the first. Repeat for more. Replaces `box.also`. |
+| `--repo OWNER/NAME` | A repo to clone, as `OWNER/NAME` or a github.com URL. Repeat for more, first one first. The agent works in the first, and the rest are cloned beside it. Two or more replace `box.also`. The default is the current checkout's `origin`. |
 | `--prompt TEXT` | The agent's first prompt. Without it, the agent waits. |
 | `--issue REF` | An issue reference for the Box. |
 | `--base REF` | The ref to branch from. The default is the repo's default branch. |

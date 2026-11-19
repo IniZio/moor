@@ -20,7 +20,7 @@ moor, that file holds the operator's defaults for everyone.
 | --- | --- | --- | --- |
 | `box.size` | `small`, `medium`, `large`, `xlarge` | none | The Box size. The repo config wins. With no size, the provider decides. |
 | `box.node` | string | the only node in `nodes` | The shared node a start that names none tries first, after your personal nodes. It may name an enrolled machine's node. |
-| `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names none. |
+| `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first when the start names only one repo. A start that names two or more, and every workflow run, ignores it. |
 | `box.sleep_after` | duration, such as `45m` | `5m` | How long a Box stays idle before it sleeps. |
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box waits on an unanswered prompt before it sleeps. The shorter of the two applies. |
 | `box.max_awake` | duration | `2h` | How long a Box stays awake after a start or wake before an idle Box sleeps. A Box whose agent is mid-turn or waits on a background job is held past it, and moor records `sleep_held` once for each hold. |
