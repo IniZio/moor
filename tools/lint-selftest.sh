@@ -109,6 +109,17 @@ removed_names removed-names-portal-comment fail crates/moor-gate/web/src/Portal.
 /** The task a Box runs. */
 export const x = 1;
 TS
+removed_names removed-names-docs-prose pass docs/start.md <<'MD'
+Start a task from the portal. The Task page shows the Box.
+MD
+removed_names removed-names-docs-code fail docs/start.md <<'MD'
+Run `moor task list` to see them.
+MD
+removed_names removed-names-docs-fence fail README.md <<'MD'
+```sh
+moor task list
+```
+MD
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS
