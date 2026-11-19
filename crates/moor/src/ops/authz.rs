@@ -166,6 +166,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Sleep(_)
         | Request::Wake(_)
         | Request::Retry(_)
+        | Request::Pulls(_)
         | Request::CloseFailed(_)
         | Request::Attach(_)
         | Request::Exec(_)

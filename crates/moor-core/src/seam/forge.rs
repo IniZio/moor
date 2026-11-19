@@ -4,6 +4,8 @@ use crate::name::Sha;
 pub use crate::name::{ForgeRepo, GitAuthor, RepoNameError};
 use crate::secret::Secret;
 
+pub use crate::domain::pull::{BranchPull, Checks, Pull, PullState};
+
 /// What the forge says about a repo at the commit a Box starts from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoAt {
@@ -74,6 +76,18 @@ pub trait Forge: Send + Sync {
         path: &'static str,
         token: &Secret,
     ) -> Result<(Sha, Option<String>), ForgeError>;
+
+    /// Whether `branch` exists in `repo`, and the pull request whose head is `branch` of `repo`
+    /// itself, as the account of `token`: the newest open one, else the newest one.
+    ///
+    /// # Errors
+    /// Returns the [`ForgeError`] that says why the repo's pull requests cannot be read.
+    fn pull_of(
+        &self,
+        repo: &ForgeRepo,
+        branch: &str,
+        token: &Secret,
+    ) -> Result<BranchPull, ForgeError>;
 }
 
 #[cfg(test)]

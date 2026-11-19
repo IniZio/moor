@@ -9,6 +9,7 @@ use moor_core::user::Viewer;
 
 use super::in_flight::InFlight;
 use super::owners::Owners;
+use super::pulls::PullCache;
 use super::traffic::Traffic;
 use super::Cx;
 use crate::env::Cancel;
@@ -52,6 +53,14 @@ impl Cx {
                 .shared::<Arc<Traffic>>()
                 .map_or_else(|| Arc::new(Traffic::default()), Arc::clone)
         })
+    }
+
+    /// The pull requests `pulls` read lately: one record per controller, shared through the
+    /// env, else none held between requests.
+    pub(crate) fn pull_cache(&self) -> Arc<PullCache> {
+        self.env
+            .shared::<Arc<PullCache>>()
+            .map_or_else(|| Arc::new(PullCache::default()), Arc::clone)
     }
 
     /// A context for work on a thread of its own that outlives this request: the same adapters,

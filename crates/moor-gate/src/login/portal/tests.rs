@@ -1,3 +1,5 @@
+//! The head an artifact download is sent with.
+
 use std::io::Read as _;
 use std::net::{TcpListener, TcpStream};
 

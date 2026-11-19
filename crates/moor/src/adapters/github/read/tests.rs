@@ -475,6 +475,7 @@ fn unusable_profile_name_falls_back_to_the_login() {
     assert_eq!(author_of("octo", &json!(longest)).unwrap().name, longest);
 }
 
+mod pull;
 mod scope;
 mod transport;
 

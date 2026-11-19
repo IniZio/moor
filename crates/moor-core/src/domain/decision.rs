@@ -93,6 +93,8 @@ pub struct SpecFields {
     pub prompt: Option<String>,
     /// Base ref.
     pub base: Option<String>,
+    /// The ref the person named as the base, which `base` resolved; none for the default branch.
+    pub base_ref: Option<String>,
     /// Branch name; a Decision that names the branch by id sets it instead.
     pub branch: Option<String>,
     /// Labels the Box's node must carry.

@@ -86,6 +86,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         issue: None,
         prompt: None,
         base: None,
+        base_ref: None,
         branch: None,
         agent_session_id: None,
         lifecycle: BoxLifecycle::Ready,

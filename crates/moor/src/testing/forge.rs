@@ -5,6 +5,7 @@ use std::fmt;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use moor_core::seam::forge::BranchPull;
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo, GitAuthor, RepoAt, RepoFiles};
 use moor_core::{Secret, Sha};
 
@@ -16,6 +17,8 @@ struct State {
     files: HashMap<(ForgeRepo, Option<String>, &'static str), FileAnswer>,
     asked: Vec<Read>,
     files_asked: Vec<(ForgeRepo, Option<String>, &'static str)>,
+    pulls: HashMap<(ForgeRepo, String), Result<BranchPull, ForgeError>>,
+    pulls_asked: usize,
 }
 
 /// What `read_file_at` answers: the commit and the file's text there.
@@ -104,6 +107,21 @@ impl FakeForge {
         self.lock().files_asked.clone()
     }
 
+    /// From now on answers `pull_of` of `branch` in `repo` with `answer`.
+    pub(crate) fn answer_pull(
+        &self,
+        repo: ForgeRepo,
+        branch: &str,
+        answer: Result<BranchPull, ForgeError>,
+    ) {
+        self.lock().pulls.insert((repo, branch.to_owned()), answer);
+    }
+
+    /// How many `pull_of` reads were asked so far.
+    pub(crate) fn pulls_asked(&self) -> usize {
+        self.lock().pulls_asked
+    }
+
     /// Every `read` answered so far, in order.
     pub(crate) fn reads(&self) -> Vec<Read> {
         self.lock().asked.clone()
@@ -165,5 +183,23 @@ impl Forge for FakeForge {
             .get(&key)
             .cloned()
             .unwrap_or(Err(ForgeError::NotVisible))
+    }
+
+    fn pull_of(
+        &self,
+        repo: &ForgeRepo,
+        branch: &str,
+        _token: &Secret,
+    ) -> Result<BranchPull, ForgeError> {
+        let mut state = self.lock();
+        state.pulls_asked += 1;
+        state
+            .pulls
+            .get(&(repo.clone(), branch.to_owned()))
+            .cloned()
+            .unwrap_or(Ok(BranchPull {
+                pushed: false,
+                pull: None,
+            }))
     }
 }
