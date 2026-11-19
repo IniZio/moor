@@ -9,7 +9,9 @@ use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::view::progress::{latest, span, unix, Happened};
 use crate::view::{ApprovalView, BoxView, EventView};
+use failed::closed_failure;
 
+mod failed;
 mod markdown;
 mod needs;
 mod timeline;
@@ -61,6 +63,9 @@ pub struct ProgressView {
     pub title: String,
     /// The derived state.
     pub state: Progress,
+    /// Setup failed, the agent died or its session ended badly, or the run failed; a closed Box keeps it.
+    #[serde(default)]
+    pub failed: bool,
     /// A working Box with no event for [`STALE_AFTER_MS`].
     pub stale: bool,
     /// The one line that matters now.
@@ -90,6 +95,8 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
     ProgressView {
         title: title_of(boxed.prompt.as_deref(), &boxed.name),
         state,
+        failed: state == Progress::Failed
+            || state == Progress::Closed && closed_failure(events).is_some(),
         stale: state == Progress::Working && silent.is_some_and(|s| s > STALE_AFTER_MS),
         line: line_of(state, boxed, events, &happened, silent),
         last_event_at: events.last().map(|e| e.ts.clone()),
@@ -211,7 +218,9 @@ fn line_of(
             None => said().unwrap_or_else(|| "done".to_owned()),
         },
         Progress::Asleep => "asleep".to_owned(),
-        Progress::Closed => "closed".to_owned(),
+        Progress::Closed => closed_failure(events)
+            .and_then(|e| timeline(std::slice::from_ref(e)).pop())
+            .map_or_else(|| "closed".to_owned(), |e| first_line(&e.text)),
         Progress::Failed => failure(b, happened)
             .or_else(|| b.state_reason.clone())
             .map_or_else(|| "failed".to_owned(), |why| first_line(&why)),

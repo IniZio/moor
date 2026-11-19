@@ -190,6 +190,7 @@ fn summary(row: &Row) -> Option<Value> {
         "prompt": row.prompt,
         "title": progress.title,
         "state": progress.state,
+        "failed": progress.failed,
         "stale": progress.stale,
         "line": progress.line,
         "last_event_at": progress.last_event_at,

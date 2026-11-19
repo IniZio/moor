@@ -377,6 +377,8 @@ const BoxRowSchema = v.object({
 	updated_at: v.string(),
 	pr: v.nullable(PrSchema),
 	needs: v.nullish(NeedsSchema),
+	/** Whether the Box failed, as moor-core decides: the one answer every view reads. */
+	failed: v.optional(v.boolean(), false),
 	/** Whether setup failed, so it can be run again. */
 	retryable: v.optional(v.boolean(), false),
 });
