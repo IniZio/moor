@@ -25,8 +25,9 @@ export default defineConfig({
 			],
 			plugins: [starlightLlmsTxt()],
 			sidebar: [
-				{ label: 'Get started', items: [{ label: 'What is moor', link: '/' }, 'use', 'run'] },
-				{ label: 'Use', items: ['boxes', 'add-machine', 'repo', 'workflows', 'notify'] },
+				{ label: 'Get started', items: [{ label: 'What is moor', link: '/' }, 'start', 'run'] },
+				{ label: 'By role', items: ['developer', 'qa', 'pm', 'designer'] },
+				{ label: 'Use', items: ['workflows', 'boxes', 'add-machine', 'repo', 'notify'] },
 				{
 					label: 'Self-host',
 					items: ['install', 'providers', 'deploy', 'kubernetes', 'oidc', 'upgrade'],

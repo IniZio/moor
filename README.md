@@ -1,9 +1,10 @@
 # moor
 
-moor runs coding agents in Boxes. A Box is one piece of work. It has a branch
-of a GitHub repo, a VM to work in, and an agent working there. You hand it work
-from Claude Code and check on it from the same place. You get a pushed
-branch and a pull request back.
+moor runs coding agents for your team. You start a task in the web portal, in
+plain words, and the agent works on it in a Box. A Box is the computer a task
+runs in, with a branch of a GitHub repo and an agent working there. You watch,
+answer its questions, step in when needed, and get a pushed branch and a pull
+request back. Claude Code can do the same over MCP.
 
 The agent never holds your Claude or GitHub token. A Proxy on the host adds
 each token to the agent's requests on the way out, so a Box that misbehaves
@@ -11,8 +12,9 @@ has nothing to leak.
 
 ## Where to start
 
-- You are on a team that runs moor. Read [Use a team moor](docs/use.md). You
-  install nothing.
+- You are on a team that runs moor. Read [Get started](docs/start.md). You
+  install nothing. Then read the [developer](docs/developer.md),
+  [QA](docs/qa.md), [PM](docs/pm.md) or [designer](docs/designer.md) page.
 - You want moor on your own Linux host. Read
   [Self-host on one machine](docs/run.md). It needs Docker and takes three
   commands.
@@ -22,7 +24,7 @@ has nothing to leak.
 
 ```mermaid
 flowchart LR
-	P[You] -->|Claude Code| G[gate]
+	P[You] -->|portal or Claude Code| G[gate]
 	G --> C[controller]
 	C --> N1[shared node]
 	C --> N2[your machine]
@@ -36,8 +38,8 @@ flowchart LR
 - **Controller.** The one long-running process. It owns the state and starts,
   steers, sleeps, and closes Boxes.
 - **Gate.** The HTTPS front at `https://HOST`. It signs people in with the
-  team's OIDC provider, serves the account page, and serves the MCP endpoint
-  at `https://HOST/mcp`.
+  team's OIDC provider, serves the portal, and serves the MCP endpoint at
+  `https://HOST/mcp`.
 - **Node.** A place that runs Boxes. A shared node serves everyone. A personal
   node is a teammate's own machine and serves only its owner.
 - **Proxy.** It holds your secrets and adds them to requests for the hosts
@@ -60,11 +62,13 @@ most of the clone and install. [Scheduling](docs/scheduling.md) covers how that 
 The site at <https://inizio.github.io/moor/> has every page. Pages are grouped
 by what you came to do:
 
-- **Get started.** [Use a team moor](docs/use.md),
+- **Get started.** [Get started](docs/start.md),
   [Self-host on one machine](docs/run.md).
-- **Use.** [Start and steer Boxes](docs/boxes.md),
+- **By role.** [Developers](docs/developer.md), [QA](docs/qa.md),
+  [PMs](docs/pm.md), [Designers](docs/designer.md).
+- **Use.** [Workflows for teams](docs/workflows.md),
+  [Claude Code and the CLI](docs/boxes.md),
   [Add your machine](docs/add-machine.md), [Set up a repo](docs/repo.md),
-  [Run Boxes on a schedule](docs/workflows.md),
   [Get Box events](docs/notify.md).
 - **Self-host.** [Choose an install](docs/install.md),
   [Set up the Box provider](docs/providers.md),

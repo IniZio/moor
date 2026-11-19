@@ -7,7 +7,7 @@ environment variable shown.
 
 ## moor-gate
 
-The HTTPS front. It checks OIDC tokens and serves `/mcp`, the account page,
+The HTTPS front. It checks OIDC tokens and serves `/mcp`, the portal,
 browser sign-in, webhook setup, and machine pairing. It uses the `authgear`
 namespace.
 
@@ -19,7 +19,7 @@ namespace.
 | `--controller` | `MOOR_GATE_CONTROLLER` | none | `tls://HOST:PORT`, the controller's `ledger_tls`, in place of `--front-socket`. |
 | `--controller-ca`, `--controller-cert`, `--controller-key` | `MOOR_GATE_CONTROLLER_*` | none | The TLS files for `--controller`. |
 | `--front-key` | `MOOR_GATE_FRONT_KEY` | none | The key the gate's hello presents to `--controller`. |
-| `--listen` | `MOOR_GATE_LISTEN` | `0.0.0.0:8443` | The address. TLS is the ingress's job. `off` serves only the Box-facing listener, with no sign-in, `/mcp` or account page. `moor up` runs the gate this way. |
+| `--listen` | `MOOR_GATE_LISTEN` | `0.0.0.0:8443` | The address. TLS is the ingress's job. `off` serves only the Box-facing listener, with no sign-in, `/mcp` or portal. `moor up` runs the gate this way. |
 | `--box-listen` | `MOOR_GATE_BOX_LISTEN` | `127.0.0.1:8444` | The Box-facing listener, which serves only `report_step`. Bind loopback beside a Proxy on the host, or the pod address on a cluster. Nothing but a Proxy may reach it. `off` turns it off. A non-loopback address is refused without `--box-listen-off-host`. |
 | `--box-listen-off-host` | `MOOR_GATE_BOX_LISTEN_OFF_HOST` | off | Allows `--box-listen` to bind a non-loopback address. Set it only where nothing but a Proxy can reach that address. |
 | none | `MOOR_SERVICE_KEY` | unset | A shared secret for the Box-facing listener, for a cluster where a NetworkPolicy cannot keep other callers off it, or a host with other users. `moor up` sets it for the controller and its gate. When set, the Proxy stamps it as `X-Moor-Service-Key`. The listener refuses with `401` any request whose copy differs or is missing, and compares in constant time. Set but empty, the gate does not start. Unset, the listener is as before. |
