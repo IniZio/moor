@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use super::{
-    boxwork_script, is_full_sha, parse_boxwork, BoxworkCounts, BOXWORK_FILE, BOXWORK_MARKER,
-    BOXWORK_NO_CHECKOUT,
+    boxwork_script, boxwork_script_with, is_full_sha, parse_boxwork, BoxworkCounts, BOXWORK_FILE,
+    BOXWORK_MARKER, BOXWORK_NO_CHECKOUT,
 };
 
 const SHA_A: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -190,6 +190,54 @@ fn counts_unsaved_commits_and_dirty_files() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("MOOR_BOXWORK ahead=2 dirty=2"), "{stdout}");
     assert_eq!(r.result(), Some(BoxworkCounts { ahead: 2, dirty: 2 }));
+}
+
+#[test]
+fn work_in_a_second_checkout_counts_and_a_plain_directory_is_skipped() {
+    if !git_available() {
+        return;
+    }
+    let r = Repo::new("others");
+    r.commit("base", "b");
+    let other = r.root.with_file_name("others-second-checkout");
+    let plain = r.root.with_file_name("others-plain-dir");
+    let _ = fs::remove_dir_all(&other);
+    fs::create_dir_all(&plain).unwrap();
+    fs::create_dir_all(&other).unwrap();
+    let in_other = |args: &[&str]| {
+        let out = Command::new("git")
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .current_dir(&other)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    in_other(&["init", "-q"]);
+    fs::write(other.join("f"), "1").unwrap();
+    in_other(&["add", "f"]);
+    in_other(&["commit", "-q", "-m", "f"]);
+    fs::write(other.join("g"), "2").unwrap();
+    let (other, plain) = (other.to_str().unwrap(), plain.to_str().unwrap());
+    let script = boxwork_script_with(&[], &[other, plain, "/nonexistent"]).unwrap();
+    let out = Command::new("sh")
+        .args(["-c", &script])
+        .current_dir(&r.root)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(r.result(), Some(BoxworkCounts { ahead: 2, dirty: 1 }));
 }
 
 #[test]

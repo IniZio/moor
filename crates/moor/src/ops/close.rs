@@ -70,6 +70,16 @@ pub(crate) fn run_unless_kept(
     close_with(cx, req, None, Some(keep), false)
 }
 
+/// [`run_unless_kept`] for the close moor chooses on its own: `reason` lands on the `closed` event.
+pub(crate) fn run_auto(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: &str,
+    keep: Keep<'_>,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, Some(reason.to_owned()), Some(keep), false)
+}
+
 /// The close of `req`; see [`run_unless_kept`] for `keep`. Once the Box's turn is held and `keep`
 /// lets it go, the close is wanted, so a restart or the wanted pass finishes what this cannot.
 /// `tell` records `close_refused` when the close is given up.

@@ -32,6 +32,11 @@ pub enum AccessEvent {
         /// Each repo, the first one first.
         repos: Vec<RepoReceipt>,
     },
+    /// A person opened the Box's terminal: the agent's, or a shell.
+    TerminalOpened {
+        /// True for a login shell, false for the agent's own terminal.
+        shell: bool,
+    },
     /// A person's port forward into the Box opened.
     PortForwardOpened {
         /// The port in the Box.
@@ -67,6 +72,7 @@ impl AccessEvent {
             Self::Copied { .. } => "copied",
             Self::ExecRan { .. } => "exec_ran",
             Self::TurnChanges { .. } => "turn_changes",
+            Self::TerminalOpened { .. } => "terminal_opened",
             Self::PortForwardOpened { .. } => "port_forward_opened",
             Self::PortForwardClosed { .. } => "port_forward_closed",
             Self::PortForwardRefused { .. } => "port_forward_refused",

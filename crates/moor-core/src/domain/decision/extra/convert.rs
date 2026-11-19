@@ -13,6 +13,9 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::DiskLost => Self::DiskLost,
             ExtraEvent::CachesNotSaved => Self::Close(CloseEvent::CachesNotSaved),
+            ExtraEvent::AutoCloseHeld { due, why } => {
+                Self::Close(CloseEvent::AutoCloseHeld { due, why })
+            }
             ExtraEvent::CloseRefused { reason, error } => {
                 Self::Close(CloseEvent::CloseRefused { reason, error })
             }

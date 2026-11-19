@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::config::{parse_controller, ControllerConfig};
+use moor_core::config::{parse_controller, AutoClose, ControllerConfig};
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
@@ -123,6 +123,8 @@ struct Running {
     settle_every: Duration,
     /// How long a Box may stay `setup_failed` before the settle pass closes it; none keeps them.
     close_setup_failed_after: Option<Duration>,
+    /// When the controller closes Boxes nobody needs any more; none closes none.
+    auto_close: Option<AutoClose>,
     /// How long a drain waits for in-flight requests.
     drain_timeout: Duration,
 }
@@ -223,6 +225,7 @@ fn start_until(
         env: Arc::new(Moor::log_to(env, sink).sharing(Arc::new(watch::Streams::default()))),
         settle_every: cfg.settle_every(),
         close_setup_failed_after: cfg.close_setup_failed_after(),
+        auto_close: cfg.auto_close(),
         drain_timeout: cfg.drain_timeout(),
     };
     Ok((running, wake))

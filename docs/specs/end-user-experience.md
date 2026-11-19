@@ -94,6 +94,14 @@ Closing the hc client leaves the session running in the Box.
 
 The person closes it from any front. Boxes do not vanish from lists while asleep.
 
+moor also closes Boxes nobody needs.
+
+- A workflow run's Box closes 24 hours after the run ends. A steer or an opened terminal restarts the 24 hours.
+- A task Box closes when its pull request merges or closes, or after 7 idle days.
+- A Box with unpushed commits or uncommitted files is never closed. The status line says why, and a person decides.
+- A close does not wake an asleep Box. It uses the check recorded at sleep.
+- A close keeps artifacts, the transcript and the stored diff.
+
 ## Operator extras
 
 ```
@@ -112,7 +120,7 @@ The operator sees every node and its free slots on the account page. Per-user Bo
 - **Take over through hc.** It holds the session in the Box already, so a client needs no moor front code.
 - **moor-web goes now.** The account page replaces it.
 - **moor-herdr stays until the owner's herdr is an hc client.** Then it goes too.
-- **A Box closes only when a person closes it.** Sleep already frees its capacity. Closing on PR merge stays in the backlog.
+- **moor closes a Box only when nobody needs it and nothing is lost.** A run's Box closes 24 hours after the run ends. A task Box closes on PR merge or close, or after 7 idle days. Work that is not pushed holds the close. Sleep frees capacity, but an asleep Box still holds its disk.
 - **hc connect goes through a small `moor-hc` bridge.**
   - hc reaches a machine only over SSH or a `--via` command that carries stdin and stdout. So any shape needs a local bridge.
   - herdr's TUI reaches only herdr servers over SSH. It keeps the moor-herdr plugin.

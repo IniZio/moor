@@ -320,6 +320,9 @@ same directory.
 | `state_dir` | the CLI's state directory | The state directory. |
 | `settle_every_secs` | 5 | Seconds between passes that update each Box's agent state. |
 | `close_setup_failed_after_secs` | 86400 | How long a Box may stay `setup_failed` before moor closes it. 0 keeps it. |
+| `auto_close_every_secs` | 60 | Seconds between the passes that close Boxes nobody needs. 0 turns auto-close off. |
+| `auto_close_run_after_secs` | 86400 | How long after a workflow run ends moor closes its Box. A steer or a terminal restarts it. 0 keeps run Boxes. |
+| `auto_close_idle_after_secs` | 604800 | How long a task Box may sit idle before moor closes it. A steer, a terminal or a finished turn counts as use. 0 turns the idle close off. A task Box whose pull request merged or closed closes either way. |
 | `workflow_min_interval_secs` | 3600 | The shortest gap a workflow cron may leave between firings. |
 | `drain_timeout_secs` | 30 | How long a SIGTERM waits for requests in flight. |
 | `blobs` | `kind: fs` | Where artifacts, Reports, and transcripts live. See [Blob storage](#blob-storage). |

@@ -1,5 +1,6 @@
 //! Reads of one kind of a Box's events.
 
+use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::Events;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
@@ -27,6 +28,23 @@ impl Store {
         let mut newest = rows.collect::<Result<Vec<_>, _>>()?;
         newest.reverse();
         Ok(newest)
+    }
+
+    /// When the newest event of Box `id` whose kind is one of `kinds` was recorded; none when it
+    /// has had none.
+    pub(crate) fn last_event_at(
+        &self,
+        id: BoxId,
+        kinds: &[&str],
+    ) -> Result<Option<Ts>, StoreError> {
+        let q = Query::select()
+            .expr(Expr::col(Events::Ts).max())
+            .from(Events::Table)
+            .and_where(Expr::col(Events::Box).eq(id.get()))
+            .and_where(Expr::col(Events::Kind).is_in(kinds.iter().copied()))
+            .take();
+        let at: Option<i64> = self.reader()?.row(q, |r| r.get(0))?;
+        Ok(at.map(Ts::from_millis))
     }
 
     /// How many events of `kind` a box has had.

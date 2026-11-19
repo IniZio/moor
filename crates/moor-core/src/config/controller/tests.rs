@@ -257,6 +257,29 @@ fn setup_failed_close_defaults_to_a_day_and_zero_turns_it_off() {
 }
 
 #[test]
+fn auto_close_defaults_to_a_day_after_a_run_and_a_week_idle_and_zero_turns_it_off() {
+    let on = ControllerConfig::default()
+        .auto_close()
+        .expect("on by default");
+    assert_eq!(on.every, std::time::Duration::from_mins(1));
+    assert_eq!(on.run_after, Some(std::time::Duration::from_hours(24)));
+    assert_eq!(on.idle_after, Some(std::time::Duration::from_hours(24 * 7)));
+    let fast = parse_controller(
+        "c.yaml",
+        "auto_close_every_secs: 2\nauto_close_run_after_secs: 9\nauto_close_idle_after_secs: 0\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"))
+    .auto_close()
+    .expect("on");
+    assert_eq!(fast.every, std::time::Duration::from_secs(2));
+    assert_eq!(fast.run_after, Some(std::time::Duration::from_secs(9)));
+    assert_eq!(fast.idle_after, None);
+    let off =
+        parse_controller("c.yaml", "auto_close_every_secs: 0\n").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(off.auto_close(), None);
+}
+
+#[test]
 fn workflow_floor_parses_and_defaults_to_an_hour() {
     let c = parse_controller("c.yaml", "workflow_min_interval_secs: 60\n")
         .unwrap_or_else(|e| panic!("{e}"));

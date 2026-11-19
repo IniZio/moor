@@ -63,6 +63,9 @@ pub(super) fn serve_started(
     settle::spawn_watch_count(&running.env, &drain, sink);
     settle::spawn_wanted(&running.env, running.settle_every, &drain, sink);
     settle::spawn_promote(&running.env, running.settle_every, &drain, sink);
+    if let Some(auto) = running.auto_close {
+        settle::spawn_auto_close(&running.env, auto, &drain, sink);
+    }
     reconcile_in_background((after, reconcile), &running.env, &drain, sink);
     running.serve_until(wake, &drain, sink);
     fronts.wait();

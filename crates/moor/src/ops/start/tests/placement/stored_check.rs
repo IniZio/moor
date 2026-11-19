@@ -225,19 +225,19 @@ fn a_box_found_stopped_keeps_no_answer_from_before_it_last_ran() {
 }
 
 #[test]
-fn close_of_a_clean_box_with_room_wakes_it_so_its_caches_are_saved() {
+fn close_of_a_clean_box_with_room_still_answers_from_the_record_and_never_wakes_it() {
     let (w, hv) = live_world(32_768);
     let a = asleep_clean(&w);
     tick(&w, hv, 32_768, 0, 0);
     let before = calls(&w, "wake");
     close_box(&w, a, false).unwrap();
     assert_eq!(lifecycle(&w, a), Closed);
-    assert_eq!(calls(&w, "wake"), before + 1);
+    assert_eq!(calls(&w, "wake"), before);
     let store = w.cx.store().unwrap();
     assert!(store
         .newest_event_of(a, "caches_not_saved")
         .unwrap()
-        .is_none());
+        .is_some());
 }
 
 /// A small Box asleep with a clean answer stored, whose live check answers clean too.

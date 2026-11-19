@@ -16,6 +16,9 @@ impl TryFrom<Event> for ExtraEvent {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::DiskLost => Ok(Self::DiskLost),
             Event::Close(CloseEvent::CachesNotSaved) => Ok(Self::CachesNotSaved),
+            Event::Close(CloseEvent::AutoCloseHeld { due, why }) => {
+                Ok(Self::AutoCloseHeld { due, why })
+            }
             Event::Close(CloseEvent::CloseRefused { reason, error }) => {
                 Ok(Self::CloseRefused { reason, error })
             }
@@ -42,7 +45,8 @@ impl TryFrom<Event> for ExtraEvent {
                 timed_out,
             }),
             Event::Access(
-                e @ (AccessEvent::PortForwardOpened { .. }
+                e @ (AccessEvent::TerminalOpened { .. }
+                | AccessEvent::PortForwardOpened { .. }
                 | AccessEvent::PortForwardClosed { .. }
                 | AccessEvent::PortForwardRefused { .. }
                 | AccessEvent::TurnChanges { .. }),

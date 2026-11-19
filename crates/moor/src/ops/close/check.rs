@@ -25,8 +25,7 @@ pub(super) enum Wake {
 /// Looks for work that exists only in the Box, waking a sleeping Box to read it when it fits.
 ///
 /// `row` is reloaded when the wake changed it, so teardown sees a Ready Box. An asleep Box whose
-/// check before it was suspended still stands is answered from that when it held work, or when
-/// it held none and does not fit to wake. Any other Box that cannot be woken or read gives
+/// check before it was suspended still stands is answered from that, never woken. Any other Box that cannot be woken or read gives
 /// [`BoxCheck::Unknown`], which the gate refuses; `waits` is set when what stopped the wake was
 /// room on its node, which a later close can find.
 pub(super) fn box_check(
@@ -62,7 +61,7 @@ pub(super) fn box_check(
             dirty: c.dirty,
         });
     }
-    if asleep && wake == Wake::Never {
+    if asleep && (wake == Wake::Never || stored.is_some()) {
         return Ok(stored.map_or_else(
             || BoxCheck::Unknown("its work was not checked when it went to sleep".to_owned()),
             |_| BoxCheck::Clean,
@@ -80,7 +79,6 @@ pub(super) fn box_check(
         Err(e) if e.error.downcast_ref::<DriverError>() == Some(&DriverError::NotFound) => {
             return Ok(BoxCheck::Skipped);
         }
-        Err(e) if e.kind == ErrorKind::Refused && stored.is_some() => return Ok(BoxCheck::Clean),
         Err(e) => {
             waits.set(e.kind == ErrorKind::Refused);
             return Ok(BoxCheck::Unknown(format!(

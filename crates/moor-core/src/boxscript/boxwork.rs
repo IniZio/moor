@@ -51,9 +51,24 @@ pub fn is_full_sha(s: &str) -> bool {
 /// [`BOXWORK_NO_CHECKOUT`], so a missing checkout never reads as clean.
 #[must_use]
 pub fn boxwork_script(saved: &[&str]) -> Option<String> {
+    boxwork_script_with(saved, &[])
+}
+
+/// [`boxwork_script`] that also counts the work in each checkout of `others`.
+///
+/// `others` are the directories beside the workdir that hold a Box's other repos. The counts are
+/// summed; a directory that is not a git checkout holds no work and is skipped. A git failure in
+/// any of them fails the script.
+#[must_use]
+pub fn boxwork_script_with(saved: &[&str], others: &[&str]) -> Option<String> {
     if !saved.iter().all(|s| is_full_sha(s)) {
         return None;
     }
+    let dirs: String = others.iter().fold(String::new(), |mut acc, d| {
+        acc.push(' ');
+        acc.push_str(&quote(d));
+        acc
+    });
     let shas: String = saved.iter().fold(String::new(), |mut acc, s| {
         acc.push(' ');
         acc.push_str(&quote(s));
@@ -75,15 +90,27 @@ keep=
 for s in{shas}; do
   git cat-file -e "$s^{{commit}}" 2>/dev/null && keep="$keep $s"
 done
-ahead=$(git rev-list --count HEAD --not --remotes $keep) || exit 1
-st=$(git status --porcelain --no-renames) || exit 1
-if [ -z "$st" ]; then
-  dirty=0
-else
-  dirty=$(printf '%s\n' "$st" | grep -vcE {ignored} || true)
-fi
-ahead=$((ahead + 0))
-dirty=$((dirty + 0))
+count() {{
+  a=$(git rev-list --count HEAD --not --remotes $keep) || return 1
+  st=$(git status --porcelain --no-renames) || return 1
+  if [ -z "$st" ]; then
+    d=0
+  else
+    d=$(printf '%s\n' "$st" | grep -vcE {ignored} || true)
+  fi
+  echo "$((a + 0)) $((d + 0))"
+}}
+out=$(count) || exit 1
+set -- $out
+ahead=$1
+dirty=$2
+for dir in{dirs}; do
+  (cd "$dir" && git rev-parse --git-dir >/dev/null 2>&1) || continue
+  out=$(cd "$dir" && keep= && count) || exit 1
+  set -- $out
+  ahead=$((ahead + $1))
+  dirty=$((dirty + $2))
+done
 printf 'ahead=%s dirty=%s\n' "$ahead" "$dirty" > {BOXWORK_FILE} || exit 1
 echo "{BOXWORK_MARKER} ahead=$ahead dirty=$dirty"
 "#

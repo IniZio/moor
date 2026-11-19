@@ -22,6 +22,7 @@ const WORTH: &[&str] = &[
     "closed",
     "run_waiting",
     "run_failed",
+    "auto_close_held",
 ];
 
 /// Longest the line's agent text runs.
@@ -101,6 +102,18 @@ pub(super) fn death_line(name: &str, kind: &str, payload: Option<&Value>) -> Opt
     Some(format!(
         "moor: box {name} death_capped: its machine stopped and moor did not resume it, wake it \
          or message it to bring it back: {why}"
+    ))
+}
+
+/// The line for a close moor held back so a person decides; none for other kinds.
+pub(super) fn held_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
+    if kind != "auto_close_held" {
+        return None;
+    }
+    let why = payload?.get("why")?.as_str()?;
+    Some(format!(
+        "moor: box {name} auto_close_held: moor did not close it, {why}; push or discard that, \
+         then close it"
     ))
 }
 

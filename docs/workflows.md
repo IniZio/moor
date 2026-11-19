@@ -150,6 +150,24 @@ How it sits beside the schedule:
   is finished once its agent has been quiet for two minutes, has exited, or
   its Box is closed.
 
+## When a run's Box closes
+
+A run's Box stays open after the run ends. You can look inside and steer it.
+moor closes it 24 hours after the run ends.
+
+- Opening the Box's terminal or steering it restarts the 24 hours from that
+  moment.
+- A Box with unpushed commits or uncommitted files is never closed. moor writes
+  an `auto_close_held` event on the Box that says why. `box_status` shows it as
+  `close_held`. Push or discard the work, and moor closes the Box on a later pass.
+- The close never wakes an asleep Box. It uses the check moor recorded when the
+  Box went to sleep. A Box with no such check is held, not woken.
+- A close keeps the artifacts, the transcript and the stored diff.
+
+The controller config key `auto_close_run_after_secs` sets the wait. The default is
+86400. 0 keeps run Boxes open. [Controller config](config.md#controller-config)
+lists the keys.
+
 ## Limits and the breaker
 
 A run has one hour from the firing for its agent to start. A run that misses
