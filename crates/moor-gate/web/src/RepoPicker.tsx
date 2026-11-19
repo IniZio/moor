@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-/** The repos a task clones, in order: the agent starts in the first, and the rest are cloned with it. */
+/** The repos a new Box clones, in order: the agent starts in the first, and the rest are cloned with it. */
 export function RepoPicker({ repos, known, onChange }: { repos: string[]; known: string[]; onChange: (next: string[]) => void }) {
 	const [typed, setTyped] = useState('');
 	const add = () => {
