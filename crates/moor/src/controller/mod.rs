@@ -220,7 +220,7 @@ fn start_until(
         vault: Arc::new(vault),
         _lock: lock,
         _state_lock: state_lock,
-        env: Arc::new(Moor::log_to(env, sink)),
+        env: Arc::new(Moor::log_to(env, sink).sharing(Arc::new(watch::Streams::default()))),
         settle_every: cfg.settle_every(),
         close_setup_failed_after: cfg.close_setup_failed_after(),
         drain_timeout: cfg.drain_timeout(),
