@@ -4,7 +4,6 @@ use moor_core::cache::{AgentCache, CacheLayers, CachePlan, Origin};
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::driver::DriverCaps;
-use moor_core::user::UserId;
 use moor_core::{ProviderId, Warning};
 
 use crate::cx::Cx;
@@ -97,8 +96,8 @@ fn layers(cx: &Cx, cfg: &BoxSettings) -> CacheLayers {
 
 /// Why the personal machine `row` is placed on keeps no cache volumes for `user`, when
 /// it does not: it is offline, unlinked or not the owner's, or its agent does not report them.
-fn machine_lacks(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<Why> {
-    match machine_features(cx, store, row, user) {
+fn machine_lacks(cx: &Cx, store: &Store, row: &BoxRow) -> Option<Why> {
+    match machine_features(cx, store, row) {
         None => Some(Why::MachineOffline),
         Some(features) if !features.iter().any(|f| f == CACHE_VOLUME) => Some(Why::MachineLacks),
         Some(_) => None,
@@ -106,12 +105,9 @@ fn machine_lacks(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<W
 }
 
 /// What the online agent of the owner's personal machine `row` is placed on reports.
-fn machine_features(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> Option<Vec<String>> {
+fn machine_features(cx: &Cx, store: &Store, row: &BoxRow) -> Option<Vec<String>> {
     let seat = seat_of(cx, store, row).ok()??;
-    let links = store.user_machine_links(user).unwrap_or_default();
-    let (_, link) = links
-        .into_iter()
-        .find(|(_, l)| l.machine_id == seat.machine)?;
+    let link = store.machine_link(seat.machine).ok().flatten()?;
     link.online.then_some(link.features)
 }
 
@@ -148,8 +144,9 @@ fn plan(
     let Some(user) = user else {
         return Err(off);
     };
-    let lacks = if provider.host().is_some() {
-        machine_lacks(cx, store, row, user)
+    let seated = seat_of(cx, store, row).ok().flatten().is_some();
+    let lacks = if provider.host().is_some() || seated {
+        machine_lacks(cx, store, row)
     } else if caps.cache_volumes {
         None
     } else {
