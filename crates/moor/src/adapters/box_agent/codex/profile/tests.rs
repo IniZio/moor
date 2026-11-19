@@ -87,6 +87,7 @@ n=$(cat \"$STUB_LOG.flaky\" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > \"$S
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("STUB_LOG", self.path("log"))
+            .env("moor_out", self.path("out"))
             .env("STUB_FAIL", fail)
             .env("STUB_FLAKY", flaky)
             .stdin(Stdio::null())

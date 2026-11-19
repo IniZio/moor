@@ -28,7 +28,7 @@ impl Fixture {
         }
         let claude = root.path().join("bin/claude");
         let script = "#!/bin/sh\necho \"$*\" >> \"$STUB_LOG\"\n\
-[ \"$*\" = \"plugin install $STUB_FAIL\" ] && exit 7\n\
+[ \"$*\" = \"plugin install $STUB_FAIL\" ] && { echo \"✘ Failed to install\"; echo \"Plugin $STUB_FAIL not found\" >&2; exit 7; }\n\
 if [ -n \"$STUB_FLAKY\" ] && [ \"$*\" = \"$STUB_FLAKY\" ]; then \
 n=$(cat \"$STUB_LOG.flaky\" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > \"$STUB_LOG.flaky\"; \
 [ $n -le 2 ] && exit 5; fi\nexit 0\n";
@@ -83,6 +83,7 @@ n=$(cat \"$STUB_LOG.flaky\" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > \"$S
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("STUB_LOG", self.path("log"))
+            .env("moor_out", self.path("out"))
             .env("STUB_FAIL", fail)
             .env("STUB_FLAKY", flaky)
             .stdin(Stdio::null())
@@ -216,11 +217,11 @@ fn a_failed_install_is_recorded_and_the_rest_still_run() {
     assert!(out.status.success());
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "moor: profile: plugin lint@tools exit 7\n"
+        "moor: profile: plugin lint@tools exit 7: ✘ Failed to install Plugin lint@tools not found\n"
     );
     assert_eq!(
         f.read("work/.moor/profile-failures"),
-        "plugin lint@tools exit 7\n"
+        "plugin lint@tools exit 7: ✘ Failed to install Plugin lint@tools not found\n"
     );
     assert!(f.read("log").ends_with("plugin install fmt@tools\n"));
 }
@@ -300,7 +301,7 @@ fn an_install_that_fails_three_times_is_recorded_once() {
     assert!(out.status.success());
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "moor: profile: plugin lint@tools exit 7\n"
+        "moor: profile: plugin lint@tools exit 7: ✘ Failed to install Plugin lint@tools not found\n"
     );
     let log = f.read("log");
     let tries = log
@@ -314,6 +315,25 @@ fn an_install_that_fails_three_times_is_recorded_once() {
     );
     assert_eq!(
         f.read("work/.moor/profile-failures"),
-        "plugin lint@tools exit 7\n"
+        "plugin lint@tools exit 7: ✘ Failed to install Plugin lint@tools not found\n"
+    );
+}
+
+#[test]
+fn a_failed_marketplace_add_records_what_claude_printed() {
+    let f = Fixture::new();
+    let said = "Adding marketplace…✘ Failed to add marketplace: Failed to clone marketplace repository: \
+Git clone timed out after 120s.\n\nOriginal error: Cloning into '/home/agent/.claude/plugins/x.clone'...\n";
+    let add = "plugin marketplace add https://github.com/acme/agent-tools";
+    let stub = format!("#!/bin/sh\necho \"$*\" >> \"$STUB_LOG\"\n[ \"$*\" = '{add}' ] && {{ printf '%s' \"{said}\" >&2; exit 1; }}\nexit 0\n");
+    f.put("bin/claude", &stub);
+    f.run(&profile::parse(FULL).unwrap(), "");
+    let first = f.read("work/.moor/profile-failures");
+    let first = first.lines().next().unwrap();
+    assert_eq!(
+        first,
+        "marketplace tools exit 1: Adding marketplace…✘ Failed to add marketplace: Failed to clone \
+marketplace repository: Git clone timed out after 120s. Original error: Cloning into \
+'/home/agent/.claude/plugins/x.clone'..."
     );
 }

@@ -94,7 +94,8 @@ fn plugin_installs(
             (script, &log),
             ("profile plugins", SETUP_DEADLINE, Repeat::Safe),
         );
-        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        let text = std::fs::read(&log).unwrap_or_default();
+        let text = String::from_utf8_lossy(&text);
         let mut failures: Vec<String> = ran.err().into_iter().collect();
         failures.extend(failed_installs(&text).into_iter().map(str::to_owned));
         if failures.is_empty() {
@@ -213,8 +214,8 @@ fn run(
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e,
     };
-    let logged = std::fs::read_to_string(log)
-        .map(|s| tail(&s))
+    let logged = std::fs::read(log)
+        .map(|b| tail(&String::from_utf8_lossy(&b)))
         .unwrap_or_default();
     Err(if logged.is_empty() {
         reason

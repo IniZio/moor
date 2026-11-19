@@ -67,7 +67,7 @@ pub(crate) fn install_script(manifest: &Manifest) -> Option<String> {
         .collect();
     (!steps.is_empty()).then(|| {
         format!(
-            "{AGENT_PATH_LINE}\nd=\"$HOME/{PROFILE_DIR}\"; f=/dev/null\n{FAIL_FN}\n{}\n:\n",
+            "{AGENT_PATH_LINE}\nd=\"$HOME/{PROFILE_DIR}\"; f=/dev/null\n{FAIL_FN}\n{OUT_FILE}\n{}\n[ \"$moor_out\" = /dev/null ] || rm -f \"$moor_out\"\n:\n",
             steps.join("\n")
         )
     })
@@ -75,16 +75,22 @@ pub(crate) fn install_script(manifest: &Manifest) -> Option<String> {
 
 pub(crate) use moor_core::boxscript::profile::FAILURES_FILE;
 
+/// Where each install writes what it printed, so a failure can say why.
+const OUT_FILE: &str = "moor_out=$(mktemp 2>/dev/null) || moor_out=/dev/null";
+
 /// Records a failed step as one line and goes on. Called `fail <what> $?` right after the command.
-pub(crate) const FAIL_FN: &str =
-    r#"fail() { echo "moor: profile: $1 exit $2" >&2; printf '%s exit %s\n' "$1" "$2" >> "$f"; }"#;
+/// The line ends with the last lines the command printed to `$moor_out`.
+pub(crate) const FAIL_FN: &str = r#"fail() {
+  why=; [ -s "${moor_out:-}" ] && why=": $(grep -v '^[[:space:]]*$' "$moor_out" | tail -n 4 | tr -s '\r\n\t' '   ' | head -c 500)"; [ -n "${moor_out:-}" ] && : > "$moor_out"
+  echo "moor: profile: $1 exit $2${why% }" >&2; printf '%s exit %s%s\n' "$1" "$2" "${why% }" >> "$f"
+}"#;
 
 /// Runs a command up to three times, 10 s and then 30 s apart, and returns its last exit code: an
 /// install reaches upstream, which can fail for a moment, and adding a marketplace or plugin that
 /// is there already changes nothing.
 pub(crate) const RETRY_FN: &str = r#"moor_retry() {
   for moor_pause in 10 30 -; do
-    "$@" && return 0
+    "$@" > "${moor_out:-/dev/null}" 2>&1 && return 0
     moor_code=$?
     [ "$moor_pause" = - ] && return "$moor_code"
     sleep "$moor_pause"
