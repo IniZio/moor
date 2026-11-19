@@ -142,11 +142,6 @@ impl Reading {
             term: None,
         }
     }
-
-    /// Whether the agent counts as ended only because its Box stopped answering reads.
-    const fn unreachable(&self) -> bool {
-        self.read_failed && matches!(self.pane, PaneLiveness::Exited)
-    }
 }
 
 /// Read `row`'s agent once.
@@ -186,7 +181,7 @@ pub(crate) fn read(
     if let Some(term) = probe.term() {
         doing::note_doing(store, row.id, term, now)?;
     }
-    let lost = unreachable::note_read(cx, store, (row, &session), &probe, now)?;
+    unreachable::note_read(cx, store, (row, &session), &probe, now)?;
     let pane_text = probe.screen().map(str::to_owned);
     let first_run = first_run(cx, pane_text.as_deref());
     let mut activity = decide(&probe, now, session.started_at, first_run);
@@ -194,9 +189,6 @@ pub(crate) fn read(
     let prompted = fresh && store.launched_on_prompt(row.id, &session)?;
     activity = before_first_turn(activity, probe.term(), now, session.started_at, prompted);
     activity = stall::end_stale_wait(cx, &sref, &probe, activity, now, deadline);
-    if lost {
-        activity = unreachable::ENDED;
-    }
     let pane = if asleep {
         PaneLiveness::Gone
     } else {
@@ -286,13 +278,8 @@ pub(crate) fn settle(
             _ => None,
         };
         if !turn_end_pending {
-            let cause = if reading.unreachable() {
-                "unreachable"
-            } else {
-                transcript::save_on_exit(cx, store, row, probed)?;
-                "exited"
-            };
-            end_exited_launch(cx, store, row, (exit, cause), probed)?;
+            transcript::save_on_exit(cx, store, row, probed)?;
+            end_exited_launch(cx, store, row, exit, probed)?;
         }
         Some(Fate::Ended(exit))
     } else {
@@ -314,7 +301,7 @@ fn end_exited_launch(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    (exit, cause): (Option<i32>, &str),
+    exit: Option<i32>,
     probed: LaunchId,
 ) -> Result<(), CommandError> {
     let Some(_turn) = cx.try_turn(row.id, Cmd::Settle) else {
@@ -322,7 +309,7 @@ fn end_exited_launch(
     };
     let end = LaunchEnd {
         exit,
-        session: Some(cause),
+        session: Some("exited"),
         ..LaunchEnd::default()
     };
     unless_stale(cx, store.end_launch(row.id, probed, &end))?;
