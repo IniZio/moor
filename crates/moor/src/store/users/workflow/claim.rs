@@ -4,7 +4,6 @@
 //! counter, so a read in the transaction cannot be overtaken by another claim.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::name::ForgeRepo;
 use moor_core::workflow::{
     HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
 };
@@ -23,9 +22,9 @@ use crate::store::{Store, StoreError};
 pub(crate) enum ManualClaim {
     /// The run is recorded.
     Recorded,
-    /// A run of the repo is open, so nothing was recorded. It is that run.
+    /// A run of the workflow is open, so nothing was recorded. It is that run.
     Open(WorkflowRun),
-    /// A run of the repo already has that due time, so nothing was recorded.
+    /// A run of the workflow already has that due time, so nothing was recorded.
     Taken,
 }
 
@@ -37,14 +36,14 @@ impl Store {
         self.numbered(|tx, seq| insert(tx, seq, run))
     }
 
-    /// Records a run its owner asked for, unless the repo has a run open, which is looked for in
-    /// the transaction that inserts the row. A read before the write would race the tick, which
+    /// Records a run its owner asked for, unless the workflow has a run open, which is looked for
+    /// in the transaction that inserts the row. A read before the write would race the tick, which
     /// could claim a cron run with another due time in between, and the unique key on workflow,
-    /// repo and due time would not stop two runs of one repo.
+    /// repo and due time would not stop two runs of one workflow.
     pub(crate) fn claim_manual_run(&self, run: &NewRun) -> Result<ManualClaim, StoreError> {
         let mut open = None;
         let recorded = self.numbered(|tx, seq| {
-            open = blocking(tx, run.workflow, &run.repo)?;
+            open = blocking(tx, run.workflow)?;
             if open.is_some() {
                 return Ok(0);
             }
@@ -109,20 +108,15 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
     Ok(inserted)
 }
 
-/// The run that keeps another from starting in `repo`: one that is claimed, working or waiting,
+/// The run that keeps another of `workflow` from starting: one that is claimed, working or waiting,
 /// whenever it was due, else the latest real run when it timed out and its Box is still open.
-fn blocking(
-    tx: &dyn Db,
-    workflow: WorkflowId,
-    repo: &ForgeRepo,
-) -> Result<Option<WorkflowRun>, StoreError> {
+fn blocking(tx: &dyn Db, workflow: WorkflowId) -> Result<Option<WorkflowRun>, StoreError> {
     let open = tx
         .rows(
             Query::select()
                 .columns(super::row::RUN_COLS)
                 .from(WorkflowRuns::Table)
                 .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
                 .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTING, STARTED, WAITING]))
                 .order_by(WorkflowRuns::Id, Order::Desc)
                 .limit(1),
@@ -134,7 +128,7 @@ fn blocking(
     if open.is_some() {
         return Ok(open);
     }
-    let Some(last) = real_run(tx, workflow, repo)? else {
+    let Some(last) = real_run(tx, workflow)? else {
         return Ok(None);
     };
     let RunState::Done(RunEnd::Ended {

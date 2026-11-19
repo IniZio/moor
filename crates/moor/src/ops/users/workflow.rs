@@ -59,24 +59,22 @@ pub(super) fn run(
         WorkflowCmd::SetEnabled { name, enabled } => set_enabled(store, user, name, *enabled, now),
         WorkflowCmd::Answer {
             workflow,
-            repo,
             answer,
             note,
         } => to_value(&crate::ops::workflow::answer_run(
             cx,
             store,
             user,
-            (workflow, repo, *answer, note.as_deref()),
+            (workflow, *answer, note.as_deref()),
         )?),
         WorkflowCmd::RunNow {
             name,
-            repos,
             expected_revision,
         } => to_value(&crate::ops::workflow::run_now(
             cx,
             store,
             user,
-            (name, repos, *expected_revision),
+            (name, *expected_revision),
         )?),
         WorkflowCmd::Runs { after, limit } => runs(store, user, *after, *limit),
         WorkflowCmd::RunList {
@@ -121,14 +119,12 @@ fn add(
     let schedule = WorkflowSchedule::parse_with_min_interval(&req.cron, &req.timezone, floor)
         .map_err(usage)?;
     let repos = parse_repos("repos", &req.repos)?;
-    let also = parse_repos("also", &req.also)?;
     box_config::check(req.config.as_deref())?;
     let timeout = req
         .timeout_minutes
         .map_or(Ok(TimeoutMinutes::DEFAULT), TimeoutMinutes::new)
         .map_err(usage)?;
     let mut def = WorkflowDef::new(name.clone(), schedule, repos, &req.prompt, (true, timeout))
-        .and_then(|d| d.with_also(also))
         .map_err(usage)?;
     def.origin = match (origin_front, &req.origin_key) {
         (Some(front), Some(key)) => Some(WorkflowOrigin {
@@ -227,17 +223,17 @@ fn set_enabled(
 fn list(store: &Store, user: UserId, now: Ts) -> Result<serde_json::Value, CommandError> {
     let mut workflows = Vec::new();
     for w in store.workflows(user)? {
-        let mut last_runs = Vec::new();
-        for run in store.last_workflow_runs(w.id)? {
-            last_runs.push(run_view(store, w.name.as_str(), &run)?);
-        }
-        workflows.push(view(&w, now, last_runs));
+        let last_run = match store.last_workflow_run(w.id)? {
+            Some(run) => Some(run_view(store, w.name.as_str(), &run)?),
+            None => None,
+        };
+        workflows.push(view(&w, now, last_run));
     }
     to_value(&WorkflowListValue { workflows })
 }
 
 /// `w` as shown.
-fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
+fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
     let (enabled, disabled_reason) = match &w.state {
         moor_core::workflow::WorkflowState::Enabled { .. } => (true, None),
         moor_core::workflow::WorkflowState::Disabled { reason } => (false, reason.clone()),
@@ -247,7 +243,6 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
         cron: w.schedule.expr().to_owned(),
         timezone: w.schedule.zone().to_owned(),
         repos: w.repos.iter().map(ToString::to_string).collect(),
-        also: w.also.iter().map(ToString::to_string).collect(),
         config: w.config.clone(),
         prompt: w.prompt.clone(),
         enabled,
@@ -261,7 +256,7 @@ fn view(w: &Workflow, now: Ts, last_runs: Vec<LastRunView>) -> WorkflowView {
             .flatten(),
         plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
         revision: w.revision,
-        last_runs,
+        last_run,
     }
 }
 
@@ -291,7 +286,7 @@ fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunV
         run.state,
         RunState::Queued | RunState::Done(RunEnd::Refused { .. })
     )
-    .then(|| box_name(run.workflow, workflow, &run.repo, run.due_at, run.trigger).ok())
+    .then(|| box_name(run.workflow, workflow, run.due_at, run.trigger).ok())
     .flatten()
     .map(|name| name.as_str().to_owned());
     let history = store
@@ -303,7 +298,6 @@ fn run_view(store: &Store, workflow: &str, run: &WorkflowRun) -> Result<LastRunV
         })
         .collect();
     Ok(LastRunView {
-        repo: run.repo.to_string(),
         due_at: run.due_at.as_millis(),
         outcome: run.state.tag().to_owned(),
         phase: run.state.phase().as_str().to_owned(),

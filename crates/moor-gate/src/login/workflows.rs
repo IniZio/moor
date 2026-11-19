@@ -175,7 +175,7 @@ fn status(phase: &str, outcome: &str) -> &'static str {
 
 /// One line of a workflow list.
 fn summary(w: &WorkflowView) -> Value {
-    let last = w.last_runs.iter().max_by_key(|r| r.due_at);
+    let last = w.last_run.as_ref();
     json!({
         "name": w.name,
         "repos": w.repos,
@@ -187,7 +187,6 @@ fn summary(w: &WorkflowView) -> Value {
         "has_plan": w.plan.is_some(),
         "plan_stale": w.plan_stale,
         "last": last.map(|r| json!({
-            "repo": r.repo,
             "status": status(&r.phase, &r.outcome),
             "label": label(&r.phase, &r.outcome, r.step.as_deref()),
             "due_at": r.due_at,
@@ -229,7 +228,6 @@ fn run_row(row: &RunRowView) -> Value {
     let duration = started.zip(ended).map(|(s, e)| (e - s).max(0));
     json!({
         "id": row.id,
-        "repo": run.repo,
         "due_at": run.due_at,
         "trigger": run.trigger,
         "started_at": started,
@@ -281,7 +279,6 @@ fn detail(gate: &Gate, session: &Session, name: &str) -> Result<Value, Failure> 
         .and_then(|p| serde_json::to_string_pretty(p).ok());
     let mut view = summary(&w);
     if let Some(map) = view.as_object_mut() {
-        map.insert("also".to_owned(), json!(w.also));
         map.insert("config".to_owned(), json!(w.config));
         map.insert("timeout_minutes".to_owned(), json!(w.timeout_minutes));
         map.insert("prompt".to_owned(), json!(w.prompt));

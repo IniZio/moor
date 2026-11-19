@@ -271,7 +271,7 @@ fn start_box_refused_for_missing_secrets_links_the_account_page() {
     let reply = w.call(
         "alice-sub",
         "start_box",
-        json!({"repo": "acme/web", "wait": true}),
+        json!({"repos": ["acme/web"], "wait": true}),
     );
     assert_eq!(reply["result"]["isError"], true, "{reply}");
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
@@ -290,7 +290,7 @@ fn without_browser_sign_in_the_refusal_keeps_the_controller_s_words() {
     let reply = w.call(
         "alice-sub",
         "start_box",
-        json!({"repo": "acme/web", "wait": true}),
+        json!({"repos": ["acme/web"], "wait": true}),
     );
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("moor user secret set claude"), "{text}");
@@ -300,7 +300,7 @@ fn without_browser_sign_in_the_refusal_keeps_the_controller_s_words() {
 #[test]
 fn a_start_that_does_not_wait_links_the_account_page_too() {
     let w = world(true, &[]);
-    let reply = w.call("alice-sub", "start_box", json!({"repo": "acme/web"}));
+    let reply = w.call("alice-sub", "start_box", json!({"repos": ["acme/web"]}));
     assert_eq!(reply["result"]["isError"], true, "{reply}");
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains(&format!("http://{}/ and", w.addr)), "{text}");

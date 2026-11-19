@@ -1,5 +1,5 @@
-//! The workflow tools: a signed-in user keeps recurring jobs that start a Box in each repo on
-//! a cron, and reads what each run did.
+//! The workflow tools: a signed-in user keeps recurring jobs that start one Box over a set of
+//! repos on a cron, and reads what each run did.
 
 use moor_core::config::override_text;
 use moor_core::request::{
@@ -27,12 +27,10 @@ struct AddArgs {
     cron: String,
     /// The IANA time zone the cron is read in, such as `Europe/London`.
     timezone: String,
-    /// The repos, each as `owner/name`, that each firing starts a Box in.
+    /// The repos each run's one Box clones, each as `owner/name`, first one first. The agent
+    /// works in the first, where its branch and pull request go; the rest are cloned beside it,
+    /// and each must be one you can push to.
     repos: Vec<String>,
-    /// More repos, each as `owner/name` and each one you can push to, that every Box of the
-    /// workflow clones beside its own repo; none when left out.
-    #[serde(default)]
-    also: Vec<String>,
     /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
     /// replace. None when left out.
@@ -86,8 +84,6 @@ enum AnswerArg {
 struct AnswerArgs {
     /// The workflow's name, as `list_workflows` shows it.
     workflow: String,
-    /// The repo, as `owner/name`, whose run waits.
-    repo: String,
     /// `yes` or `no`.
     answer: AnswerArg,
     /// What to tell the agent along with the answer; none when left out.
@@ -99,10 +95,6 @@ struct AnswerArgs {
 struct RunNowArgs {
     /// The workflow's name, as `list_workflows` shows it.
     name: String,
-    /// The repos, as `owner/name`, to run it for; each must be one of the workflow's. Every repo
-    /// of the workflow when left out.
-    #[serde(default)]
-    repos: Vec<String>,
     /// The `revision` `list_workflows` showed for the workflow. The call is refused when the
     /// workflow has changed since, so the run tries the plan you reviewed.
     expected_revision: Option<u64>,
@@ -121,12 +113,14 @@ struct RunsArgs {
 impl Tools {
     /// Adds or replaces a workflow.
     #[tool(
-        description = "Add a workflow: on its cron, moor starts a Box in each of the repos with \
-                       your prompt, cloning the `also` repos beside it. Every run acts as you, with your credentials, and its agent \
+        description = "Add a workflow: on its cron, moor starts one Box with your prompt that \
+                       clones every repo in `repos`. The agent starts in the first repo, and the \
+                       rest sit beside it. To run the same job on separate projects, add one \
+                       workflow per project. Every run acts as you, with your credentials, and its agent \
                        may push branches and open pull requests in those repos; it cannot merge \
-                       them. A run is skipped while the previous run for that repo is unfinished, \
-                       and a run past timeout_minutes is stopped. Three failed runs in a row for \
-                       a repo disable the workflow. A cron that can fire closer together than the \
+                       them. A run is skipped while the workflow's previous run is unfinished, \
+                       and a run past timeout_minutes is stopped. Three failed runs in a row \
+                       disable the workflow. A cron that can fire closer together than the \
                        controller's minimum gap, an hour unless configured, is refused. Adding \
                        an existing name replaces it, plan included: send the whole plan again, \
                        and pass the revision you read as expected_revision, so a change made \
@@ -174,7 +168,6 @@ impl Tools {
             cron: args.cron,
             timezone: args.timezone,
             repos: args.repos,
-            also: args.also,
             config: override_text(args.config),
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
@@ -192,10 +185,10 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron, time zone, repos, also repos, prompt, plan (with \
+        description = "List your workflows: cron, time zone, repos, prompt, plan (with \
                        plan_stale when the prompt changed after it was made), revision, timeout, whether each \
                        is enabled, why it was disabled if the controller disabled it, its next \
-                       due time and the latest run of each repo with its outcome and Box. Needs \
+                       due time and its latest run with its outcome and Box. Needs \
                        the moor:read scope."
     )]
     async fn list_workflows(&self, context: RequestContext<RoleServer>) -> CallToolResult {
@@ -257,7 +250,6 @@ impl Tools {
         let request = ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
             identity: None,
             workflow: args.workflow,
-            repo: args.repo,
             answer: match args.answer {
                 AnswerArg::Yes => Answer::Yes,
                 AnswerArg::No => Answer::No,
@@ -269,20 +261,19 @@ impl Tools {
 
     /// Fires a workflow once, now.
     #[tool(
-        description = "Run one of your workflows once, now, for some or all of its repos, instead \
-                       of waiting for its cron. It works on a disabled workflow, so you can \
+        description = "Run one of your workflows once, now, in one Box with all its repos, \
+                       instead of waiting for its cron. It works on a disabled workflow, so you can \
                        add one, disable it, run it until the plan is right, and enable it \
                        after. The run is an ordinary run: it freezes the plan, starts a Box as \
                        you, walks the steps and has the workflow's timeout. It shows in \
-                       list_workflow_runs with trigger `manual`. A repo that has a run open \
+                       list_workflow_runs with trigger `manual`. A workflow that has a run open \
                        (starting, working, waiting for an answer, or timed out with its Box \
-                       still open) is refused with that run's Box, and nothing is recorded for \
-                       it. A cron run that comes due while a manual run is open is skipped. A \
+                       still open) is refused with that run's Box, and nothing is recorded. A cron run that comes due while a manual run is open is skipped. A \
                        manual run that fails does not count toward the three failed runs that \
                        disable a workflow, and one that delivers resets that count. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \
-                       you reviewed. The reply has one line per repo: `started` with the Box \
-                       name, or `refused` with the reason. It returns once each run is \
+                       you reviewed. The reply says `started` with the Box name, or \
+                       `refused` with the reason. It returns once the run is \
                        recorded and its Box start has begun, while setup continues; follow \
                        the Box with box_status and the run with list_workflow_runs, where a \
                        start refused later shows as a refused run. Needs the moor:write \
@@ -296,7 +287,6 @@ impl Tools {
         let request = ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
             identity: None,
             name: args.name,
-            repos: args.repos,
             expected_revision: args.expected_revision,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
@@ -305,7 +295,7 @@ impl Tools {
     /// Reads changes to the caller's workflow runs.
     #[tool(
         description = "Read what your workflow runs did, oldest change first: each entry is a \
-                       run (repo, due time, outcome, refusal detail, Box) or a workflow the \
+                       run (due time, outcome, refusal detail, Box) or a workflow the \
                        controller disabled (with the reason). A run appears again each time it \
                        moves on, from started to finished or timed out. Pass the previous \
                        `next` as `after` to get only newer changes. Needs the moor:read scope."

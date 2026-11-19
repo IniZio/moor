@@ -38,7 +38,12 @@ fn every_move_of_a_run_appends_one_line_to_its_history() {
     assert!(ends(&store, key, (4, &outcome), Ts::from_millis(900)));
     assert!(!ends(&store, key, (4, &outcome), Ts::from_millis(950)));
 
-    let run_id = store.last_workflow_runs(id).unwrap().first().unwrap().id;
+    let run_id = store
+        .recent_workflow_runs(id, 50)
+        .unwrap()
+        .first()
+        .unwrap()
+        .id;
     let lines = store.run_history(run_id).unwrap();
     let want = [
         (100 + 5, HistoryEntry::Queued),
@@ -109,7 +114,7 @@ fn a_run_reads_back_with_its_step_result_and_reason() {
     for (due, state) in (1..).zip(states.iter()) {
         let new = run(id, "a/one", due, state.clone());
         assert!(store.record_workflow_run(&new).unwrap());
-        let got = store.recent_workflow_runs(id, &repo("a/one"), 1).unwrap();
+        let got = store.recent_workflow_runs(id, 1).unwrap();
         assert_eq!(got.first().map(|r| &r.state), Some(state));
     }
     assert_eq!(
@@ -153,7 +158,7 @@ fn a_run_from_before_plans_reads_at_the_single_step() {
         ]);
     }
     store.writer().run(insert).unwrap();
-    let mut got = store.recent_workflow_runs(id, &repo("a/one"), 3).unwrap();
+    let mut got = store.recent_workflow_runs(id, 3).unwrap();
     got.reverse();
     let states: Vec<_> = got.into_iter().map(|r| r.state).collect();
     assert_eq!(states, [running(3), timed_out(3, 5), delivered(3, 6)]);

@@ -48,6 +48,7 @@ mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
 mod workflow_plans;
+mod workflow_repo_set;
 mod workflow_run_trigger;
 mod workflows;
 
@@ -100,4 +101,5 @@ pub const STEPS: &[Step] = &[
     step("V88__box_deaths", box_deaths::write),
     step("V89__drop_box_deaths", drop_box_deaths::write),
     step("V90__user_inbox", user_inbox::write),
+    step("V91__workflow_repo_set", workflow_repo_set::write),
 ];

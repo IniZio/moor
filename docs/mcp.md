@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repo`; optional `also`, `name`, `prompt`, `base`, `node`, `config`, `wait` |
+| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `wait` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |
@@ -38,13 +38,13 @@ token's audience.
 | `list_webhooks` | none |
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
-| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `also`, `config`, `timeout_minutes`, `plan`, `expected_revision` |
+| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `config`, `timeout_minutes`, `plan`, `expected_revision` |
 | `list_workflows` | none |
 | `list_workflow_runs` | optional `after`, `limit` |
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
-| `answer_run` | `workflow`, `repo`, `answer` (`yes` or `no`); optional `note` |
-| `run_workflow` | `name`; optional `repos`, `expected_revision` |
+| `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note` |
+| `run_workflow` | `name`; optional `expected_revision` |
 | `get_repo_config` | `repo` |
 | `set_repo_config` | `repo`, `text`; optional `expected_revision` |
 | `get_node_settings` | `name` |
@@ -53,7 +53,9 @@ token's audience.
 - `list_nodes` gives each node's name, scope, runtime, online state, Boxes,
   `max_boxes` when it caps them, and free memory. Its `start` field
   names the node a start with no `node` would use.
-- `start_box` takes repos as `owner/name`. It refuses before it creates
+- `start_box` takes `repos` as a list of `owner/name`, first one first. The
+  agent works in the first, and the rest are cloned beside it. A list of one
+  adds your `box.also` beside it. It refuses before it creates
   anything when you lack a secret, and links the account page. It
   returns once the Box exists, with the fields `box_status` gives. With
   `wait: true`, it returns once setup and the agent launch finish. A start on
@@ -69,7 +71,7 @@ token's audience.
   `stdout` and `stderr`. Each call records an `exec_ran` event.
 - `retry_box` reruns setup on a Box in `setup_failed`. It returns once setup
   has restarted, while setup goes on. Follow it with `box_status`.
-- `run_workflow` returns once each repo's run is recorded and its Box start
+- `run_workflow` returns once the run is recorded and its Box start
   has begun, while the Box sets up. A start the controller refuses after that
   shows as a refused run in `list_workflow_runs`.
 - No tool waits for setup by default. Only `start_box` with `wait: true` does.

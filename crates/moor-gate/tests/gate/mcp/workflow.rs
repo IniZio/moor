@@ -12,7 +12,7 @@ fn add_workflow_sends_workflow_add_as_the_token_s_person_and_no_origin() {
         &token,
         "add_workflow",
         json!({"name": "daily-fix", "cron": "0 9 * * *", "timezone": "Europe/London",
-            "repos": ["acme/web", "acme/api"], "also": ["acme/lib"],
+            "repos": ["acme/web", "acme/api", "acme/lib"],
             "prompt": "fix the alerts", "timeout_minutes": 90}),
     );
     assert_ne!(result["isError"], true, "{result}");
@@ -20,8 +20,8 @@ fn add_workflow_sends_workflow_add_as_the_token_s_person_and_no_origin() {
         m.requests()[0]["request"],
         json!({"cmd": "as", "identity": "authgear:alice-sub", "request": {
             "cmd": "workflow-add", "name": "daily-fix", "cron": "0 9 * * *",
-            "timezone": "Europe/London", "repos": ["acme/web", "acme/api"],
-            "also": ["acme/lib"], "prompt": "fix the alerts", "timeout_minutes": 90}})
+            "timezone": "Europe/London", "repos": ["acme/web", "acme/api", "acme/lib"],
+            "prompt": "fix the alerts", "timeout_minutes": 90}})
     );
 }
 
@@ -38,11 +38,11 @@ fn the_other_workflow_tools_send_their_requests() {
         ),
         (
             "answer_run",
-            json!({"workflow": "daily-fix", "repo": "o/n", "answer": "no", "note": "later"}),
+            json!({"workflow": "daily-fix", "answer": "no", "note": "later"}),
         ),
         (
             "run_workflow",
-            json!({"name": "daily-fix", "repos": ["o/n"], "expected_revision": 3}),
+            json!({"name": "daily-fix", "expected_revision": 3}),
         ),
         ("list_workflow_runs", json!({"after": 12, "limit": 5})),
     ] {
@@ -60,10 +60,9 @@ fn the_other_workflow_tools_send_their_requests() {
             json!({"cmd": "workflow-list"}),
             json!({"cmd": "workflow-remove", "name": "daily-fix"}),
             json!({"cmd": "workflow-set-enabled", "name": "daily-fix", "enabled": false}),
-            json!({"cmd": "workflow-answer", "workflow": "daily-fix", "repo": "o/n",
+            json!({"cmd": "workflow-answer", "workflow": "daily-fix",
                 "answer": "no", "note": "later"}),
-            json!({"cmd": "workflow-run-now", "name": "daily-fix", "repos": ["o/n"],
-                "expected_revision": 3}),
+            json!({"cmd": "workflow-run-now", "name": "daily-fix", "expected_revision": 3}),
             json!({"cmd": "workflow-runs", "after": 12, "limit": 5}),
         ]
     );
@@ -84,10 +83,7 @@ fn a_read_token_reads_but_cannot_change_workflows() {
             "set_workflow_enabled",
             json!({"name": "n", "enabled": true}),
         ),
-        (
-            "answer_run",
-            json!({"workflow": "n", "repo": "o/n", "answer": "yes"}),
-        ),
+        ("answer_run", json!({"workflow": "n", "answer": "yes"})),
         ("run_workflow", json!({"name": "n"})),
     ] {
         let result = m.call(&token, tool, args);

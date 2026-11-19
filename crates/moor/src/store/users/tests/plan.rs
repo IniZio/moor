@@ -88,7 +88,7 @@ fn a_run_freezes_the_plan_it_was_claimed_with() {
 
     d.plan = None;
     store.put_workflow(alice, &d).unwrap();
-    let runs = store.recent_workflow_runs(wid, &repo("a/one"), 2).unwrap();
+    let runs = store.recent_workflow_runs(wid, 2).unwrap();
     assert_eq!(store.run_plan(runs[1].id, PROMPT).unwrap(), plan());
     assert!(store
         .run_plan(runs[0].id, PROMPT)
@@ -145,7 +145,7 @@ fn the_pointer_moves_once_from_exactly_the_step_and_try_it_was_read_at() {
     assert!(moved((&first, 1)));
     assert!(!moved((&first, 1)), "the same move twice applies once");
 
-    let run_row = store.last_workflow_runs(wid).unwrap().remove(0);
+    let run_row = store.recent_workflow_runs(wid, 50).unwrap().remove(0);
     let RunState::Running { at, try_n, .. } = &run_row.state else {
         panic!("{:?}", run_row.state);
     };
@@ -204,7 +204,7 @@ fn a_run_ends_only_from_exactly_the_step_and_try_it_was_read_at_with_its_lines()
     };
     assert!(!end((&first, 1), &line), "a step the run has left");
     assert!(!end((&next, 2), &line), "a try the run is not at");
-    let run_row = store.last_workflow_runs(wid).unwrap().remove(0);
+    let run_row = store.recent_workflow_runs(wid, 50).unwrap().remove(0);
     assert_eq!(store.run_history(run_row.id).unwrap().len(), 2);
     assert!(end((&next, 1), &line));
     let kinds: Vec<_> = store

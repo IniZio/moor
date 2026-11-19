@@ -79,8 +79,10 @@ impl Tools {
 
     /// Starts a Box.
     #[tool(
-        description = "Start a Box on a GitHub repo given as owner/name, optionally with a name, \
-                       a first prompt for its agent and a base revision. The answer names the \
+        description = "Start a Box on one or more GitHub repos given as owner/name in `repos`, \
+                       first one first: the agent works in the first, and the rest are cloned \
+                       beside it. Optionally give a name, \
+                       a first prompt for its agent and a base revision of the first repo. The answer names the \
                        node the Box went to. Returns once the Box \
                        exists, while setup continues; follow the start with box_status. Pass \
                        wait=true to block until setup and the agent launch finish. A refusal \

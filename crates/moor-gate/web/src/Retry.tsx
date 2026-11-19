@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { type BoxDetail, boxRetry, SignedOut, workflowRunNow } from './api';
 
 /** What the composer opens with when a person starts a failed Box again. */
-export type Draft = { repo: string; base: string; prompt: string };
+export type Draft = { repos: string[]; base: string; prompt: string };
 
 const AGAIN = 'moor.again';
 
@@ -19,7 +19,7 @@ export function takeAgain(): Draft | null {
 	sessionStorage.removeItem(AGAIN);
 	try {
 		const draft = raw ? (JSON.parse(raw) as Partial<Draft>) : null;
-		return draft ? { repo: draft.repo ?? '', base: draft.base ?? '', prompt: draft.prompt ?? '' } : null;
+		return draft ? { repos: draft.repos ?? [], base: draft.base ?? '', prompt: draft.prompt ?? '' } : null;
 	} catch {
 		return null;
 	}
@@ -57,7 +57,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 	};
 	const runAgain = async () => {
 		if (!flow) return;
-		const started = await workflowRunNow(csrf, flow.name, flow.repo);
+		const started = await workflowRunNow(csrf, flow.name);
 		if (started.box) location.hash = `#/box/${encodeURIComponent(started.box)}`;
 	};
 	return (
@@ -75,7 +75,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 						type="button"
 						class="t-btn t-btn-once"
 						disabled={busy}
-						onClick={() => startAgain({ repo: detail.repo ?? '', base: detail.base ?? '', prompt: promptOf(detail) })}
+						onClick={() => startAgain({ repos: detail.repo ? [detail.repo, ...detail.other_repos] : [], base: detail.base ?? '', prompt: promptOf(detail) })}
 					>
 						Start again
 					</button>

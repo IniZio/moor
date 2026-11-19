@@ -117,7 +117,8 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-glyph.t-stale, .t-warn { color: var(--moor-color-warning); animation: none; }
 @keyframes t-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .t-working .t-glyph { animation: none; } }
-.t-repo { color: var(--moor-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-repo { display: flex; align-items: center; min-width: 0; color: var(--moor-color-text-muted); white-space: nowrap; }
+.t-repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .t-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now { color: var(--moor-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now.t-ask { color: var(--moor-color-text); }
@@ -210,6 +211,14 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-chip input[list] { width: 12rem; }
 .t-chip input.t-mono { font-weight: 600; }
 .t-chip:focus-within { border-color: var(--moor-color-focus); }
+.t-repos { display: contents; }
+.t-pick { gap: 0.4rem; }
+.t-pick-first { border-color: var(--moor-color-accent); }
+.t-pick-n { display: inline-grid; place-items: center; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--moor-color-bg-sunken); font-size: 0.6875rem; font-weight: 600; }
+.t-pick-first .t-pick-n { background: var(--moor-color-accent); color: var(--moor-color-on-accent); }
+.t-pick-btn { padding: 0 0.2rem; border: 0; background: transparent; color: var(--moor-color-text-muted); font: inherit; cursor: pointer; }
+.t-pick-btn:hover { color: var(--moor-color-text); }
 .t-foot { margin-top: var(--moor-space-3); }
 .t-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .t-file { display: block; padding: var(--moor-space-6) var(--moor-space-4); text-align: center; color: var(--moor-color-accent); }
+.t-more { flex: none; margin-left: 0.3rem; padding: 0 0.4rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); font-size: 0.75rem; color: var(--moor-color-text-muted); white-space: nowrap; }

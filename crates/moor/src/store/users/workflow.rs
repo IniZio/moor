@@ -43,8 +43,6 @@ struct WorkflowRow {
     timezone: String,
     /// `repos`, as JSON.
     repos: String,
-    /// `also`, as JSON.
-    also: String,
     /// `prompt`.
     prompt: String,
     /// `enabled_at`.
@@ -70,7 +68,7 @@ struct WorkflowRow {
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 18] = [
+const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -85,7 +83,6 @@ const WORKFLOW_COLS: [Workflows; 18] = [
     Workflows::UpdatedAt,
     Workflows::OriginFront,
     Workflows::OriginKey,
-    Workflows::Also,
     Workflows::Config,
     Workflows::Revision,
     Workflows::Plan,
@@ -113,10 +110,9 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         updated_at: r.get(11)?,
         origin_front: r.get(12)?,
         origin_key: r.get(13)?,
-        also: r.get(14)?,
-        config: r.get(15)?,
-        revision: r.get(16)?,
-        plan: r.get(17)?,
+        config: r.get(14)?,
+        revision: r.get(15)?,
+        plan: r.get(16)?,
     })
 }
 
@@ -137,7 +133,6 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         )
         .map_err(|e| corrupt("schedule", e))?,
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
-        also: serde_json::from_str(&row.also).map_err(|e| corrupt("also", e))?,
         config: row.config,
         prompt: row.prompt.clone(),
         state: row.enabled_at.map_or(

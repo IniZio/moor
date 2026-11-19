@@ -12,7 +12,7 @@ use moor_core::workflow::{
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
-use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::history::{append_history, run_id};
 use super::notice;
@@ -179,24 +179,22 @@ impl Store {
             .collect()
     }
 
-    /// The latest run of `workflow` for `repo` that was a real attempt, whatever came since: not
+    /// The latest run of `workflow` that was a real attempt, whatever came since: not
     /// skipped and not refused. Its place in the table does not depend on how many skips follow.
     /// Latest is the last recorded, not the latest due: a run fired by hand is due when it is
     /// claimed, so a cron run for an earlier due time can be recorded after it.
     pub(crate) fn latest_real_run(
         &self,
         workflow: WorkflowId,
-        repo: &ForgeRepo,
     ) -> Result<Option<WorkflowRun>, StoreError> {
-        real_run(&self.reader()?, workflow, repo)
+        real_run(&self.reader()?, workflow)
     }
 
-    /// The latest cron run of `workflow` for `repo` by due time, whatever came of it. A run
+    /// The latest cron run of `workflow` by due time, whatever came of it. A run
     /// fired by hand is left out, so it never hides a due time the schedule missed.
     pub(crate) fn latest_cron_run(
         &self,
         workflow: WorkflowId,
-        repo: &ForgeRepo,
     ) -> Result<Option<WorkflowRun>, StoreError> {
         self.reader()?
             .rows(
@@ -204,7 +202,6 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
                     .and_where(Expr::col(WorkflowRuns::Trigger).eq(RunTrigger::Cron.as_str()))
                     .order_by(WorkflowRuns::DueAt, Order::Desc)
                     .limit(1),
@@ -215,12 +212,11 @@ impl Store {
             .transpose()
     }
 
-    /// The latest `limit` runs of `workflow` for `repo` that were not skipped, newest due time
+    /// The latest `limit` runs of `workflow` that were not skipped, newest due time
     /// first, so skips never push a failure out of the window.
     pub(crate) fn recent_unskipped_runs(
         &self,
         workflow: WorkflowId,
-        repo: &ForgeRepo,
         limit: u64,
     ) -> Result<Vec<WorkflowRun>, StoreError> {
         self.reader()?
@@ -229,7 +225,6 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
                     .and_where(Expr::col(WorkflowRuns::Outcome).ne(SKIPPED_OVERLAP))
                     .order_by(WorkflowRuns::DueAt, Order::Desc)
                     .limit(limit),
@@ -239,11 +234,10 @@ impl Store {
             .collect()
     }
 
-    /// The latest `limit` runs of `workflow` for `repo`, newest due time first.
+    /// The latest `limit` runs of `workflow`, newest due time first.
     pub(crate) fn recent_workflow_runs(
         &self,
         workflow: WorkflowId,
-        repo: &ForgeRepo,
         limit: u64,
     ) -> Result<Vec<WorkflowRun>, StoreError> {
         self.reader()?
@@ -252,7 +246,6 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
                     .order_by(WorkflowRuns::DueAt, Order::Desc)
                     .limit(limit),
                 |r| read_run(r, 0),
@@ -308,55 +301,26 @@ impl Store {
         .transpose()
     }
 
-    /// The latest run of each repo of `workflow` that has one, by due time.
-    pub(crate) fn last_workflow_runs(
+    /// The latest run of `workflow` by due time, when it has one.
+    pub(crate) fn last_workflow_run(
         &self,
         workflow: WorkflowId,
-    ) -> Result<Vec<WorkflowRun>, StoreError> {
-        let reader = self.reader()?;
-        let latest: Vec<(String, i64)> = reader
-            .rows(
-                Query::select()
-                    .column(WorkflowRuns::Repo)
-                    .expr(Func::max(Expr::col(WorkflowRuns::DueAt)))
-                    .from(WorkflowRuns::Table)
-                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .group_by_col(WorkflowRuns::Repo)
-                    .order_by(WorkflowRuns::Repo, Order::Asc),
-                |r| Ok::<_, db::Error>((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
-            )?
-            .collect::<Result<_, _>>()?;
-        latest
-            .into_iter()
-            .map(|(repo, due)| {
-                let row = reader.row(
-                    Query::select()
-                        .columns(RUN_COLS)
-                        .from(WorkflowRuns::Table)
-                        .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                        .and_where(Expr::col(WorkflowRuns::Repo).eq(repo))
-                        .and_where(Expr::col(WorkflowRuns::DueAt).eq(due)),
-                    |r| read_run(r, 0),
-                )?;
-                run_of(workflow, &row)
-            })
-            .collect()
+    ) -> Result<Option<WorkflowRun>, StoreError> {
+        Ok(self.recent_workflow_runs(workflow, 1)?.pop())
     }
 }
 
-/// The latest run of `workflow` for `repo` that was a real attempt, read through `db`, which
+/// The latest run of `workflow` that was a real attempt, read through `db`, which
 /// may be a transaction.
 pub(super) fn real_run(
     db: &dyn Db,
     workflow: WorkflowId,
-    repo: &ForgeRepo,
 ) -> Result<Option<WorkflowRun>, StoreError> {
     db.rows(
         Query::select()
             .columns(RUN_COLS)
             .from(WorkflowRuns::Table)
             .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-            .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
             .and_where(Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, REFUSED]))
             .order_by(WorkflowRuns::Id, Order::Desc)
             .limit(1),

@@ -133,8 +133,8 @@ main.wide { max-width: 64rem; }
 .status.waiting, .status.running { color: var(--moor-color-warning); }
 .status.queued, .status.skipped, .status.stopped { color: var(--moor-color-text-muted); }
 
-.run-now { list-style: none; margin: var(--moor-space-3) 0 0; padding: 0; display: grid; gap: var(--moor-space-2); }
-.run-now li { display: flex; align-items: center; flex-wrap: wrap; gap: var(--moor-space-3); }
+.run-now { margin: var(--moor-space-3) 0 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--moor-space-3); }
+.repo-set { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; vertical-align: middle; }
 .runs, .steps, .history, .evidence { list-style: none; margin: var(--moor-space-3) 0 0; padding: 0; }
 .runs li a {
 	display: flex; align-items: center; gap: var(--moor-space-3); padding: var(--moor-space-2) var(--moor-space-3);

@@ -101,6 +101,9 @@ struct Row {
     name: String,
     /// The repo, as `OWNER/NAME`.
     repo: Option<String>,
+    /// The repos cloned beside `repo`, in order.
+    #[serde(default)]
+    other_repos: Vec<String>,
     /// The branch.
     branch: Option<String>,
     /// The base ref.
@@ -143,6 +146,7 @@ fn summary(row: &Row) -> Option<Value> {
     Some(json!({
         "box": row.name,
         "repo": row.repo,
+        "other_repos": row.other_repos,
         "branch": row.branch,
         "base": row.base,
         "prompt": row.prompt,
@@ -268,15 +272,11 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
 
 /// Answers `refusal` as a JSON error.
 fn refuse(stream: &mut TcpStream, refusal: &Refusal) {
-    json(
-        stream,
-        refusal.status(),
-        &json!({"error": refusal.message()}),
-    );
+    let error = json!({"error": refusal.message()});
+    json(stream, refusal.status(), &error);
 }
 
-/// Sends the bytes of the artifact the query names, read as the session's person: a raster image
-/// inline, so a page can show it, and anything else as a download.
+/// Sends the artifact the query names, as the session's person. An image is inline, else a download.
 pub(super) fn artifact(stream: &mut TcpStream, gate: &Gate, session: &Session, query: &str) {
     let version = param(query, "version").and_then(|v| v.parse().ok());
     let wanted = Wanted::parse(
@@ -314,8 +314,7 @@ pub(super) fn artifact(stream: &mut TcpStream, gate: &Gate, session: &Session, q
     }
 }
 
-/// Writes the `200` head. The bytes are the agent's: an allowed image is shown, never run;
-/// anything else is a download, and a browser that opens it sandboxes it.
+/// Writes the `200` head. An allowed image is shown, never run; anything else is a sandboxed download.
 fn head(stream: &mut TcpStream, record: &ArtifactView) -> std::io::Result<()> {
     let image = IMAGES.contains(&record.content_type.as_str());
     let (kind, disposition) = if image {

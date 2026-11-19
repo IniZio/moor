@@ -104,35 +104,23 @@ fn a_definition_needs_repos_and_a_prompt() {
 }
 
 #[test]
-fn also_repos_each_need_a_name_no_other_repo_of_the_box_has() {
-    let def = || {
+fn each_repo_of_the_set_needs_a_name_no_other_has() {
+    let def = |repos: Vec<ForgeRepo>| {
         WorkflowDef::new(
             WorkflowName::parse("fix").unwrap(),
             schedule(),
-            vec![repo("o/app"), repo("o/web")],
+            repos,
             "go",
             (true, TimeoutMinutes::DEFAULT),
         )
-        .unwrap()
+        .map(|d| d.repos)
     };
     assert_eq!(
-        def()
-            .with_also(vec![repo("o/lib"), repo("p/deploy")])
-            .unwrap()
-            .also,
-        vec![repo("o/lib"), repo("p/deploy")]
-    );
-    assert_eq!(def().also, vec![]);
-    assert_eq!(
-        def().with_also(vec![repo("o/lib"), repo("o/lib")]),
-        Err(WorkflowError::DuplicateRepo("o/lib".to_owned()))
+        def(vec![repo("o/app"), repo("o/lib"), repo("p/deploy")]),
+        Ok(vec![repo("o/app"), repo("o/lib"), repo("p/deploy")])
     );
     assert_eq!(
-        def().with_also(vec![repo("o/web")]),
-        Err(WorkflowError::DuplicateRepo("o/web".to_owned()))
-    );
-    assert_eq!(
-        def().with_also(vec![repo("p/App")]),
+        def(vec![repo("o/app"), repo("p/App")]),
         Err(WorkflowError::SameName(repo("o/app"), repo("p/App")))
     );
 }
@@ -200,11 +188,10 @@ fn a_daily_time_on_a_clock_change_day_is_one_firing() {
     assert!(WorkflowSchedule::parse("30 1 * * *", "Europe/London").is_ok());
 }
 
-fn named(id: i64, workflow: &str, r: &str, due: i64) -> String {
+fn named(id: i64, workflow: &str, due: i64) -> String {
     super::box_name(
         super::WorkflowId::new(id),
         workflow,
-        &repo(r),
         Ts::from_millis(due),
         super::RunTrigger::Cron,
     )
@@ -214,27 +201,27 @@ fn named(id: i64, workflow: &str, r: &str, due: i64) -> String {
 }
 
 #[test]
-fn a_firing_names_its_box_by_repo_workflow_and_due_time() {
+fn a_firing_names_its_box_by_workflow_and_due_time() {
     // 2026-07-01 09:00 UTC.
     assert_eq!(
-        named(7, "daily-fix", "acme/web", 1_782_896_400_000),
-        "web/w7-daily-fix-202607010900"
+        named(7, "daily-fix", 1_782_896_400_000),
+        "daily-fix/w7-202607010900"
     );
 }
 
 #[test]
 fn box_names_stay_valid_and_apart_for_awkward_input() {
     let long = "a".repeat(64);
-    let name = named(12, &long, "Acme/My.Repo_Name", 1_782_896_400_000);
+    let name = named(12, &long, 1_782_896_400_000);
     assert!(crate::BoxName::parse(&name).is_ok(), "{name}");
-    assert!(name.starts_with("my-repo-name/w12-aaaa"), "{name}");
+    assert!(name.ends_with("/w12-202607010900"), "{name}");
     assert_ne!(
-        named(1, "x", "a/b", 1_782_896_400_000),
-        named(2, "x", "a/b", 1_782_896_400_000)
+        named(1, "x", 1_782_896_400_000),
+        named(2, "x", 1_782_896_400_000)
     );
     assert_ne!(
-        named(1, "x", "a/b", 1_782_896_400_000),
-        named(1, "x", "a/b", 1_782_982_800_000)
+        named(1, "x", 1_782_896_400_000),
+        named(1, "x", 1_782_982_800_000)
     );
-    assert!(crate::BoxName::parse(&named(1, "__", "a/---", 0)).is_ok());
+    assert!(crate::BoxName::parse(&named(1, "my.flow_v2", 0)).is_ok());
 }

@@ -387,53 +387,6 @@ fn the_keep_count_counts_only_runs_that_kept_the_same_box() {
 }
 
 #[test]
-fn the_same_workflow_on_another_repo_keeps_its_box() {
-    let r = rig_probing(CLEAN);
-    let other = moor_core::name::ForgeRepo::new("o", "m");
-    r.answer_repo();
-    r.forge
-        .answer(other.clone(), Ok(crate::testing::forge::repo_at("abc123")));
-    let def = moor_core::workflow::WorkflowDef::new(
-        WorkflowName::parse("daily-fix").unwrap(),
-        moor_core::workflow::WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
-        vec![repo(), other.clone()],
-        "fix what is broken",
-        (true, moor_core::workflow::TimeoutMinutes::new(180).unwrap()),
-    )
-    .unwrap();
-    let store = r.cx.store().unwrap();
-    let id = store.put_workflow(REQUESTER_USER, &def).unwrap();
-    let box_of = |repo: &moor_core::name::ForgeRepo| {
-        r.cx.store()
-            .unwrap()
-            .recent_workflow_runs(id, repo, 1)
-            .unwrap()
-            .first()
-            .unwrap()
-            .state
-            .box_id()
-            .unwrap()
-    };
-    r.advance_to(FIRST_DUE + 1_000);
-    r.pass();
-    let (mine, theirs) = (box_of(&repo()), box_of(&other));
-    for b in [mine, theirs] {
-        store
-            .apply(Decision::new(b).session(SessionInput::AgentQuiet))
-            .unwrap();
-    }
-    r.advance_to(FIRST_DUE + 1_000 + 3 * 60_000);
-    r.pass();
-    put_to_sleep(&r, mine);
-    put_to_sleep(&r, theirs);
-    r.forge
-        .answer(other, Err(moor_core::seam::forge::ForgeError::NotVisible));
-    next_day(&r);
-    assert_eq!(lifecycle(&r, mine), BoxLifecycle::Closed);
-    assert_ne!(lifecycle(&r, theirs), BoxLifecycle::Closed);
-}
-
-#[test]
 fn every_earlier_box_asleep_and_clean_closes_in_one_run() {
     let r = rig_probing(CLEAN);
     r.answer_repo();

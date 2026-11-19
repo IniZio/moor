@@ -82,7 +82,7 @@ impl Rig {
     ) -> Result<WorkflowAnswerValue, CommandError> {
         let store = self.cx.store().unwrap();
         let name = store.workflow_by_id(wid).unwrap().unwrap().name;
-        answer_run(&self.cx, store, user, (name.as_str(), "o/n", answer, note))
+        answer_run(&self.cx, store, user, (name.as_str(), answer, note))
     }
 
     fn answer(&self, wid: WorkflowId, answer: Answer) -> Result<WorkflowAnswerValue, CommandError> {
@@ -200,7 +200,7 @@ fn two_answers_at_once_steer_the_agent_once() {
             cx,
             store,
             REQUESTER_USER,
-            (name.as_str(), "o/n", Answer::Yes, None),
+            (name.as_str(), Answer::Yes, None),
         );
         assert!(told.is_ok(), "{told:?}");
     });
@@ -244,7 +244,7 @@ fn yes_goes_on_with_the_next_step_sent_to_the_sleeping_box_and_the_run_delivers(
     let told = r
         .answer_as(REQUESTER_USER, wid, Answer::Yes, Some("  go, but squash  "))
         .unwrap();
-    assert_eq!(told.repo, "o/n");
+    assert_eq!(told.workflow, "deps");
     let run = r.first(wid);
     assert_eq!(step_of(&run.state), ("ship".to_owned(), 1));
     assert!(matches!(run.state, RunState::Running { .. }));

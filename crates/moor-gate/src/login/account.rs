@@ -166,7 +166,7 @@ fn workflow_route(
             workflows::answer(stream, gate, session, csrf, (name, id), body.as_deref());
         }
         ("POST", Route::RunNow(name)) => {
-            workflows::run_now(stream, gate, session, csrf, name, body.as_deref());
+            workflows::run_now(stream, gate, session, csrf, name);
         }
         ("GET", Route::Artifact) => workflows::artifact(stream, gate, session, query),
         _ => page(stream, "404 Not Found", "", "Not found."),

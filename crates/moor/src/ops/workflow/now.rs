@@ -1,16 +1,15 @@
-//! `workflow-run-now`: the owner fires a workflow once, now, for some or all of its repos.
+//! `workflow-run-now`: the owner fires a workflow once, now.
 //!
-//! Each repo goes through the same preparation and start a cron firing uses. The claim is a manual
-//! one: it is recorded only when the repo has no open run, which the store checks in the write
-//! that inserts the row. A repo that is refused records nothing. A recorded claim's Box starts on
-//! a thread of its own, as a cron firing's does, so the answer never waits on a Box's setup; a
-//! start that is refused then settles the run as refused, which `list_workflow_runs` shows.
+//! The run goes through the same preparation and start a cron firing uses. The claim is a manual
+//! one: it is recorded only when the workflow has no open run, which the store checks in the write
+//! that inserts the row. A refused run records nothing. A recorded claim's Box starts on a thread
+//! of its own, as a cron firing's does, so the answer never waits on a Box's setup; a start that
+//! is refused then settles the run as refused, which `list_workflow_runs` shows.
 
 use std::thread;
 
-use moor_core::name::ForgeRepo;
 use moor_core::user::Viewer;
-use moor_core::view::workflow::{RunNowLine, RunNowValue};
+use moor_core::view::workflow::RunNowValue;
 use moor_core::workflow::{
     box_name, NewRun, RunState, RunTrigger, Workflow, WorkflowName, WorkflowRun,
 };
@@ -31,24 +30,23 @@ fn usage(why: impl std::fmt::Display) -> CommandError {
     CommandError::new(ErrorKind::Usage, why.to_string())
 }
 
-/// Fires `user`'s workflow `name` for `repos`, each `OWNER/NAME` and one of the workflow's; every
-/// repo of the workflow when there are none. `expected_revision` refuses the call when the
-/// workflow changed after the caller read it.
+/// Fires `user`'s workflow `name` once. `expected_revision` refuses the call when the workflow
+/// changed after the caller read it.
 pub(crate) fn run(
     cx: &Cx,
     store: &Store,
     user: moor_core::user::UserId,
-    args: (&str, &[String], Option<u64>),
+    args: (&str, Option<u64>),
 ) -> Result<RunNowValue, CommandError> {
     run_with(cx, store, user, args, &|job| spawn_start(cx, job))
 }
 
-/// Like [`run`], handing each recorded claim to `start`.
+/// Like [`run`], handing a recorded claim to `start`.
 pub(super) fn run_with(
     cx: &Cx,
     store: &Store,
     user: moor_core::user::UserId,
-    (name, repos, expected_revision): (&str, &[String], Option<u64>),
+    (name, expected_revision): (&str, Option<u64>),
     start: &dyn Fn(StartJob) -> Result<(), CommandError>,
 ) -> Result<RunNowValue, CommandError> {
     let name = WorkflowName::parse(name).map_err(usage)?;
@@ -62,57 +60,35 @@ pub(super) fn run_with(
         ))
         .with_hint("read it again with list_workflows and run it with that revision"));
     }
-    let mut chosen: Vec<ForgeRepo> = Vec::new();
-    for text in repos {
-        let repo =
-            ForgeRepo::parse(text).map_err(|_| usage(format!("{text} must be OWNER/NAME")))?;
-        if !w.repos.contains(&repo) {
-            return Err(usage(format!("{name} does not run for {repo}")));
-        }
-        if !chosen.contains(&repo) {
-            chosen.push(repo);
-        }
-    }
-    if chosen.is_empty() {
-        chosen.clone_from(&w.repos);
-    }
-    let mut runs = Vec::new();
-    for repo in &chosen {
-        runs.push(fire(cx, store, &w, repo, start)?);
-    }
-    Ok(RunNowValue {
-        workflow: name.to_string(),
-        runs,
-    })
+    fire(cx, store, &w, start)
 }
 
-/// A repo that was refused, and why.
-fn declined(repo: &ForgeRepo, why: String) -> RunNowLine {
-    RunNowLine {
-        repo: repo.to_string(),
+/// A run that was refused, and why.
+fn declined(w: &Workflow, why: String) -> RunNowValue {
+    RunNowValue {
+        workflow: w.name.to_string(),
         status: "refused".to_owned(),
         box_name: None,
         reason: Some(why),
     }
 }
 
-/// Claims a manual run of `w` for `repo` and hands it to `start`. A claim the store refuses
-/// records nothing; a start that fails after the claim leaves a refused run, as a cron firing does.
+/// Claims a manual run of `w` and hands it to `start`. A claim the store refuses records
+/// nothing; a start that fails after the claim leaves a refused run, as a cron firing does.
 fn fire(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
-    repo: &ForgeRepo,
     start: &dyn Fn(StartJob) -> Result<(), CommandError>,
-) -> Result<RunNowLine, CommandError> {
+) -> Result<RunNowValue, CommandError> {
     let now = cx.clock().now();
-    let Prepared { job, frozen } = match prepare(cx, store, w, repo, (now, RunTrigger::Manual)) {
+    let Prepared { job, frozen } = match prepare(cx, store, w, (now, RunTrigger::Manual)) {
         Ok(prepared) => prepared,
-        Err(why) => return Ok(declined(repo, why)),
+        Err(why) => return Ok(declined(w, why)),
     };
     let claim = NewRun {
         workflow: w.id,
-        repo: repo.clone(),
+        repo: job.repo.clone(),
         due_at: now,
         state: RunState::Queued,
         recorded_at: now,
@@ -124,19 +100,22 @@ fn fire(
             let box_name = open_box(store, w, &open)?;
             let phase = open.state.phase().as_str();
             Ok(declined(
-                repo,
-                format!("a run for {repo} is still open ({phase}, Box {box_name})"),
+                w,
+                format!(
+                    "a run of {} is still open ({phase}, Box {box_name})",
+                    w.name
+                ),
             ))
         }
         ManualClaim::Taken => Ok(declined(
-            repo,
-            format!("a run for {repo} was fired at this very moment already"),
+            w,
+            format!("a run of {} was fired at this very moment already", w.name),
         )),
         ManualClaim::Recorded => {
             let name = job.name.as_str().to_owned();
             start(job)?;
-            Ok(RunNowLine {
-                repo: repo.to_string(),
+            Ok(RunNowValue {
+                workflow: w.name.to_string(),
                 status: "started".to_owned(),
                 box_name: Some(name),
                 reason: None,
@@ -166,6 +145,6 @@ fn open_box(store: &Store, w: &Workflow, open: &WorkflowRun) -> Result<String, C
         None => None,
     };
     Ok(existing
-        .or_else(|| box_name(w.id, w.name.as_str(), &open.repo, open.due_at, open.trigger).ok())
+        .or_else(|| box_name(w.id, w.name.as_str(), open.due_at, open.trigger).ok())
         .map_or_else(|| "unknown".to_owned(), |n| n.as_str().to_owned()))
 }

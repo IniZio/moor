@@ -19,12 +19,9 @@ pub struct WorkflowAddReq {
     pub cron: String,
     /// IANA time zone the cron is read in.
     pub timezone: String,
-    /// The repos, each `OWNER/NAME`, that each firing starts a Box in.
+    /// The repos, each `OWNER/NAME`, that each firing's one Box clones, in order. Its agent works
+    /// in the first and the rest sit beside it. The controller's own `box.also` never applies.
     pub repos: Vec<String>,
-    /// The repos, each `OWNER/NAME`, that each started Box clones beside its own; none when
-    /// absent. The controller's own `box.also` never applies to a workflow.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub also: Vec<String>,
     /// A partial repo config, in the repo config format, laid over each repo's config for the
     /// Boxes this workflow starts; none when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,8 +83,6 @@ pub struct WorkflowAnswerReq {
     pub identity: Option<Identity>,
     /// The workflow's name.
     pub workflow: String,
-    /// The repo, `OWNER/NAME`, whose run waits.
-    pub repo: String,
     /// Yes or no.
     pub answer: Answer,
     /// What the owner adds, passed on to the agent; none when absent.
@@ -104,9 +99,6 @@ pub struct WorkflowRunNowReq {
     pub identity: Option<Identity>,
     /// The workflow's name.
     pub name: String,
-    /// The repos, each `OWNER/NAME`, to run it for; every repo of the workflow when empty.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub repos: Vec<String>,
     /// The revision of the stored workflow the caller read. The call is refused when the
     /// workflow has been changed since. Not checked when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,8 +170,6 @@ pub enum WorkflowCmd {
     Answer {
         /// The workflow's name.
         workflow: String,
-        /// The repo whose run waits.
-        repo: String,
         /// Yes or no.
         answer: Answer,
         /// What the owner adds.
@@ -189,8 +179,6 @@ pub enum WorkflowCmd {
     RunNow {
         /// The workflow's name.
         name: String,
-        /// The repos to run it for; every repo of the workflow when empty.
-        repos: Vec<String>,
         /// The revision the caller read.
         expected_revision: Option<u64>,
     },
@@ -253,7 +241,6 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
             r.identity,
             WorkflowCmd::Answer {
                 workflow: r.workflow,
-                repo: r.repo,
                 answer: r.answer,
                 note: r.note,
             },
@@ -262,7 +249,6 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
             r.identity,
             WorkflowCmd::RunNow {
                 name: r.name,
-                repos: r.repos,
                 expected_revision: r.expected_revision,
             },
         ),

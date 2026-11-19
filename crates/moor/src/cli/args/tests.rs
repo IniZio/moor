@@ -95,10 +95,11 @@ fn start_repo_flag() {
 }
 
 #[test]
-fn start_also_flag_repeats_and_is_absent_when_unused() {
+fn start_repo_flag_repeats_first_one_first() {
     assert!(matches!(
-        req(&["start", "t", "--repo", "o/a", "--also", "o/lib", "--also", "p/deploy"]),
-        Request::Start(s) if s.also == Some(vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")])
+        req(&["start", "t", "--repo", "o/a", "--repo", "o/lib", "--repo", "p/deploy"]),
+        Request::Start(s) if s.repo == Some(ForgeRepo::new("o", "a"))
+            && s.also == Some(vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")])
     ));
     assert!(matches!(
         req(&["start", "t", "--repo", "o/a"]),

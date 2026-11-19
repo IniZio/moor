@@ -23,13 +23,11 @@ pub(super) struct StartArgs {
     /// Base ref.
     #[arg(long)]
     base: Option<String>,
-    /// Repo to clone, as OWNER/NAME or a github.com URL; the current checkout's origin when absent.
+    /// A repo to clone, as OWNER/NAME or a github.com URL; repeat for more, first one first. The
+    /// agent works in the first, and the rest sit beside it. The current checkout's origin when
+    /// absent. Naming two or more replaces `box.also` from your config.
     #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
-    repo: Option<moor_core::seam::forge::ForgeRepo>,
-    /// Another repo to clone beside `--repo`, as OWNER/NAME or a github.com URL; repeat for
-    /// more. Any use replaces `box.also` from your config.
-    #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
-    also: Vec<moor_core::seam::forge::ForgeRepo>,
+    repo: Vec<moor_core::seam::forge::ForgeRepo>,
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
@@ -57,6 +55,9 @@ pub(super) struct StartArgs {
 
 impl From<StartArgs> for StartReq {
     fn from(a: StartArgs) -> Self {
+        let mut repos = a.repo.into_iter();
+        let repo = repos.next();
+        let also: Vec<_> = repos.collect();
         Self {
             cold: false,
             placement: Placement::FirstOnly,
@@ -64,14 +65,14 @@ impl From<StartArgs> for StartReq {
             prompt: a.prompt,
             issue: a.issue,
             base: a.base,
-            repo: a.repo,
+            repo,
             model: a.model,
             node: a.node,
             config: override_text(a.config),
             no_agent: a.no_agent,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
-            also: (!a.also.is_empty()).then_some(a.also),
+            also: (!also.is_empty()).then_some(also),
             identity: None,
         }
     }

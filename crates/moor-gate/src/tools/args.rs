@@ -6,11 +6,10 @@ use serde::Deserialize;
 /// Arguments of `start_box`.
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct StartArgs {
-    /// The repo to clone, as `owner/name`.
-    pub(super) repo: String,
-    /// More repos to clone beside `repo`, each as `owner/name` and each one you can push to;
-    /// your configured `box.also` when left out, none when empty.
-    pub(super) also: Option<Vec<String>>,
+    /// The repos to clone, each as `owner/name`, first one first. The agent works in the first,
+    /// where its branch and pull request go; the rest are cloned beside it, and each must be one
+    /// you can push to. Naming only one adds your configured `box.also` beside it.
+    pub(super) repos: Vec<String>,
     /// A name for the Box; one is made up when left out.
     pub(super) name: Option<String>,
     /// What the Box's agent should do first.
