@@ -6,7 +6,9 @@ use std::net::TcpStream;
 use std::time::SystemTime;
 
 use oauth2::url::form_urlencoded;
+use serde_json::json;
 
+use super::account::{json, signed_out};
 use super::{check_csrf, csrf_token, Login, Session, PENDING_COOKIE};
 use crate::{log, Gate};
 
@@ -73,6 +75,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
             Some(session) => me(&mut stream, &session),
             None => redirect(&mut stream, "/auth/login?return=/auth/me", ""),
         },
+        ("POST", "/auth/renew") => renew(&mut stream, login, session, req.csrf, now),
         ("POST", "/auth/logout") => {
             let form = read_form(&mut stream, req.leftover, req.length);
             logout(&mut stream, session, form.as_ref());
@@ -104,11 +107,41 @@ fn callback(
     match login.finish(&gate.verifier, pending, code, now) {
         Ok((session, back)) => {
             let cookie = format!(
-                "Set-Cookie: {COOKIE}={session}; HttpOnly; Secure; SameSite=Lax; Path=/\r\nSet-Cookie: {PENDING_COOKIE}=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/auth\r\n"
+                "{}Set-Cookie: {PENDING_COOKIE}=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/auth\r\n",
+                session.header()
             );
             redirect(stream, &back, &cookie);
         }
         Err(why) => failed(stream, &why),
+    }
+}
+
+/// Seals the session again so it lasts from now, when the request carries its CSRF token in
+/// `X-Moor-Csrf`. The page posts this while the person is active.
+fn renew(
+    stream: &mut TcpStream,
+    login: &Login,
+    session: Option<Session>,
+    csrf: Option<&str>,
+    now: SystemTime,
+) {
+    let Some(session) = session else {
+        return signed_out(stream);
+    };
+    if !csrf.is_some_and(|c| check_csrf(&session, c)) {
+        return json(stream, "403 Forbidden", &json!({"error": "bad csrf token"}));
+    }
+    match login.renew(&session, now) {
+        Ok(issued) => {
+            let body = json!({"expires_in": issued.ttl().as_secs()}).to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\n{}Content-Type: application/json\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                issued.header(),
+                body.len()
+            );
+        }
+        Err(_) => signed_out(stream),
     }
 }
 

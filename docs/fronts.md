@@ -26,7 +26,7 @@ namespace.
 | `--mcp-resource-url` | `MOOR_GATE_MCP_RESOURCE_URL` | none | The public `/mcp` URL. `/mcp` is off without it. |
 | `--public-url` | `MOOR_GATE_PUBLIC_URL` | none | The public origin. Browser sign-in is off without it. |
 | `--jwks-url` | `MOOR_GATE_JWKS_URL` | discovery | The issuer's keys. |
-| `--cookie-key` | `MOOR_GATE_COOKIE_KEY` | per process | Keys of 32 or more characters that seal sign-in cookies. Comma-separated to rotate. |
+| `--cookie-key` | `MOOR_GATE_COOKIE_KEY` | kept in `$XDG_STATE_HOME/moor-gate/cookie-key` | Keys of 32 or more characters that seal sign-in cookies. Comma-separated to rotate. |
 | `--drain-timeout-secs` | `MOOR_GATE_DRAIN_TIMEOUT_SECS` | 30 | How long a SIGTERM waits for requests in flight. |
 
 The Box-facing listener serves one MCP server, `moor`, with one tool,

@@ -9,8 +9,8 @@ use std::time::{Duration, SystemTime};
 use moor_core::user::{Email, Identity};
 
 use super::{
-    check_csrf, csrf_token, Login, Pending, PENDING_PURPOSE, PENDING_TTL, SESSION_PURPOSE,
-    SESSION_TTL,
+    check_csrf, csrf_token, kept, Login, Pending, PENDING_PURPOSE, PENDING_TTL, SESSION_IDLE,
+    SESSION_MAX, SESSION_PURPOSE,
 };
 use crate::Person;
 
@@ -101,22 +101,67 @@ fn a_tampered_sign_in_is_refused() {
 }
 
 #[test]
-fn a_session_lives_fifteen_minutes_from_sign_in() {
+fn a_session_lasts_twelve_hours_from_its_last_renewal() {
     let (l, t0) = (login(), SystemTime::now());
-    let cookie = format!("theme=dark; moor_session={}", l.open(alice(), t0).unwrap());
-    let later = t0 + Duration::from_secs(899);
-    assert_eq!(l.session([cookie.as_str()], later).unwrap().person, alice());
-    assert!(l.session([cookie.as_str()], t0 + SESSION_TTL).is_none());
+    let at = |secs| t0 + Duration::from_secs(secs);
+    let cookie = |sealed: String| format!("theme=dark; moor_session={sealed}");
+    let first = cookie(l.open(alice(), t0).unwrap().sealed);
+    let session = l.session([first.as_str()], at(43_199)).unwrap();
+    assert_eq!(session.person, alice());
+    assert!(l.session([first.as_str()], t0 + SESSION_IDLE).is_none());
+    let renewed = l.renew(&session, at(43_000)).unwrap();
+    assert_eq!(renewed.ttl, SESSION_IDLE);
+    let second = cookie(renewed.sealed);
+    let later = l.session([second.as_str()], at(43_000 + 43_199)).unwrap();
+    assert_eq!(
+        csrf_token(&later),
+        csrf_token(&session),
+        "a renewal keeps the token"
+    );
     assert!(l.session(["moor_session=forged"], t0).is_none());
+}
+
+#[test]
+fn renewals_never_carry_a_session_past_seven_days() {
+    let (l, t0) = (login(), SystemTime::now());
+    let first = format!("moor_session={}", l.open(alice(), t0).unwrap().sealed);
+    let session = l.session([first.as_str()], t0).unwrap();
+    let near_end = t0 + SESSION_MAX - Duration::from_hours(1);
+    let last = l.renew(&session, near_end).unwrap();
+    assert_eq!(last.ttl, Duration::from_hours(1));
+    let cookie = format!("moor_session={}", last.sealed);
+    assert!(l
+        .session([cookie.as_str()], t0 + SESSION_MAX - Duration::from_secs(1))
+        .is_some());
+    assert!(l.session([cookie.as_str()], t0 + SESSION_MAX).is_none());
+    assert!(l.renew(&session, t0 + SESSION_MAX).is_err());
+}
+
+#[test]
+fn a_kept_key_is_made_once_and_read_after() {
+    let dir = std::env::temp_dir().join(format!("moor-gate-kept-{}", std::process::id()));
+    let path = dir.join("moor-gate/cookie-key");
+    let made = kept::read_or_make(&path).unwrap();
+    assert!(made.len() >= 64, "{made}");
+    assert_eq!(kept::read_or_make(&path).unwrap(), made);
+    let perms =
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&path).unwrap().permissions());
+    assert_eq!(perms & 0o777, 0o600);
+    let t0 = SystemTime::now();
+    let before = Login::with_kept_key("https://moor.example.com", &path).unwrap();
+    let cookie = format!("moor_session={}", before.open(alice(), t0).unwrap().sealed);
+    let restarted = Login::with_kept_key("https://moor.example.com", &path).unwrap();
+    assert!(restarted.session([cookie.as_str()], t0).is_some());
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn a_cookie_opens_only_for_its_own_purpose() {
     let (l, t0) = (login(), SystemTime::now());
-    let sign_in = l.seal.seal(PENDING_PURPOSE, &pending(), t0, SESSION_TTL);
+    let sign_in = l.seal.seal(PENDING_PURPOSE, &pending(), t0, SESSION_IDLE);
     let as_session = format!("moor_session={}", sign_in.unwrap());
     assert!(l.session([as_session.as_str()], t0).is_none());
-    let session = l.open(alice(), t0).unwrap();
+    let session = l.open(alice(), t0).unwrap().sealed;
     let open: Option<Pending> = l.seal.open(SESSION_PURPOSE, &session, t0);
     assert!(open.is_none());
 }
@@ -124,7 +169,7 @@ fn a_cookie_opens_only_for_its_own_purpose() {
 #[test]
 fn an_older_key_still_opens_what_it_sealed() {
     let (old, t0) = (login(), SystemTime::now());
-    let cookie = format!("moor_session={}", old.open(alice(), t0).unwrap());
+    let cookie = format!("moor_session={}", old.open(alice(), t0).unwrap().sealed);
     let rotated = Login::with_keys("https://moor.example.com", &format!("{OTHER},{KEY}")).unwrap();
     assert!(rotated.session([cookie.as_str()], t0).is_some());
     let dropped = Login::with_keys("https://moor.example.com", OTHER).unwrap();
@@ -135,7 +180,7 @@ fn an_older_key_still_opens_what_it_sealed() {
 fn the_csrf_token_belongs_to_its_session() {
     let (l, t0) = (login(), SystemTime::now());
     let open = |person| {
-        let cookie = format!("moor_session={}", l.open(person, t0).unwrap());
+        let cookie = format!("moor_session={}", l.open(person, t0).unwrap().sealed);
         l.session([cookie.as_str()], t0).unwrap()
     };
     let (a, b) = (open(alice()), open(alice()));

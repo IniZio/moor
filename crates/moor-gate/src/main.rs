@@ -84,7 +84,8 @@ struct Args {
     public_url: Option<String>,
     /// Secrets of 32 or more characters, comma-separated, that seal the sign-in cookies. Every
     /// gate replica needs the same value; the first seals and all open, to rotate. Without it
-    /// each gate seals under a key of its own, so sign-in works on one replica only.
+    /// the gate keeps a key of its own in `$XDG_STATE_HOME/moor-gate/cookie-key`, so sign-in
+    /// works on one replica only but outlives a restart.
     #[arg(long, env = "MOOR_GATE_COOKIE_KEY", hide_env_values = true)]
     cookie_key: Option<String>,
     /// Seconds a SIGTERM waits for connections in flight before the gate exits.
@@ -183,7 +184,7 @@ fn serve_public(
     let sign_in = |url: &str| {
         args.cookie_key
             .as_deref()
-            .map_or_else(|| Login::new(url), |keys| Login::with_keys(url, keys))
+            .map_or_else(|| kept_key_login(url), |keys| Login::with_keys(url, keys))
     };
     let login = match args.public_url.as_deref().map(sign_in).transpose() {
         Ok(login) => login.map(Arc::new),
@@ -202,6 +203,23 @@ fn serve_public(
             ExitCode::FAILURE
         }
     }
+}
+
+/// Sign-in under the key kept in the state folder. A gate that cannot keep one seals under a key
+/// of its own process, so every restart ends every session; it says so.
+fn kept_key_login(url: &str) -> Result<Login, String> {
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")));
+    let kept = state
+        .ok_or_else(|| "neither XDG_STATE_HOME nor HOME is set".to_owned())
+        .and_then(|dir| Login::with_kept_key(url, &dir.join("moor-gate/cookie-key")));
+    kept.or_else(|why| {
+        moor_gate_log(&format!(
+            "cannot keep a cookie key ({why}); sign-ins end when this gate restarts. Set --cookie-key."
+        ));
+        Login::new(url)
+    })
 }
 
 /// Refuses a `--box-listen` that is not loopback unless `off_host` opts in, so no caller off the

@@ -1,8 +1,10 @@
-//! Browser sign-in: the authorization-code flow with PKCE against the issuer, and short
-//! sessions, for pages that must only reach a signed-in person. A started sign-in and a
-//! session both live in sealed cookies, so any gate replica sharing the key can serve them.
+//! Browser sign-in: the authorization-code flow with PKCE against the issuer, and sessions
+//! that last while the person is active, for pages that must only reach a signed-in person.
+//! A started sign-in and a session both live in sealed cookies, so any gate replica sharing
+//! the key can serve them, and a restart that keeps the key ends no session.
 
 pub(crate) mod account;
+mod kept;
 mod nodes;
 pub(crate) mod pair;
 mod portal;
@@ -37,8 +39,11 @@ use crate::{Person, Verifier};
 /// How long a started sign-in can be finished.
 const PENDING_TTL: Duration = Duration::from_mins(10);
 
-/// A session's absolute lifetime.
-const SESSION_TTL: Duration = Duration::from_mins(15);
+/// How long a session lasts after its last renewal: the page renews it while the person is active.
+const SESSION_IDLE: Duration = Duration::from_hours(12);
+
+/// The most a session lasts from sign-in, however often it is renewed.
+const SESSION_MAX: Duration = Duration::from_hours(7 * 24);
 
 /// The most a token response may hold.
 const BODY_LIMIT: u64 = 1 << 20;
@@ -74,6 +79,33 @@ pub(crate) struct Session {
     pub(crate) person: Person,
     /// The token forms on this session must post back.
     csrf: String,
+    /// Unix seconds of the sign-in, which bounds every renewal by [`SESSION_MAX`].
+    since: u64,
+}
+
+/// A sealed session cookie and how long it lasts.
+pub(crate) struct Issued {
+    /// The cookie value.
+    sealed: String,
+    /// Its life from now.
+    ttl: Duration,
+}
+
+impl Issued {
+    /// Its life from now.
+    pub(crate) const fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
+    /// The `Set-Cookie` header line that stores it, kept by the browser across restarts.
+    pub(crate) fn header(&self) -> String {
+        format!(
+            "Set-Cookie: {}={}; Max-Age={}; HttpOnly; Secure; SameSite=Lax; Path=/\r\n",
+            routes::COOKIE,
+            self.sealed,
+            self.ttl.as_secs()
+        )
+    }
 }
 
 /// Where the issuer signs people in and where codes become tokens.
@@ -120,6 +152,15 @@ impl Login {
     /// When `public_url` is not an `http` or `https` origin.
     pub fn new(public_url: &str) -> Result<Self, String> {
         Self::build(public_url, Seal::random())
+    }
+
+    /// Like [`Login::new`], under a key kept in the file at `path`, made there when missing, so
+    /// sessions outlive a restart of a gate that runs alone.
+    ///
+    /// # Errors
+    /// When `public_url` is not an `http` or `https` origin, or the file cannot be read or made.
+    pub fn with_kept_key(public_url: &str, path: &std::path::Path) -> Result<Self, String> {
+        Self::build(public_url, Seal::from_keys(&kept::read_or_make(path)?)?)
     }
 
     /// Like [`Login::new`], with cookies sealed under `keys`, so every gate given the same keys
@@ -240,7 +281,7 @@ impl Login {
         pending: Pending,
         code: &str,
         now: SystemTime,
-    ) -> Result<(String, String), String> {
+    ) -> Result<(Issued, String), String> {
         let token = BasicClient::new(ClientId::new(verifier.client_id().to_owned()))
             .set_token_uri(TokenUrl::new(pending.token_endpoint).map_err(|e| e.to_string())?)
             .set_redirect_uri(RedirectUrl::new(self.redirect.clone()).map_err(|e| e.to_string())?)
@@ -252,13 +293,27 @@ impl Login {
         Ok((self.open(person, now)?, pending.back))
     }
 
-    /// The sealed cookie value of a new session for `person`.
-    fn open(&self, person: Person, now: SystemTime) -> Result<String, String> {
+    /// The cookie of a new session for `person`.
+    fn open(&self, person: Person, now: SystemTime) -> Result<Issued, String> {
         let session = Session {
             person,
             csrf: CsrfToken::new_random_len(RANDOM_BYTES).into_secret(),
+            since: seal::unix(now),
         };
-        self.seal.seal(SESSION_PURPOSE, &session, now, SESSION_TTL)
+        self.renew(&session, now)
+    }
+
+    /// `session` sealed again to last [`SESSION_IDLE`] from `now`, never past [`SESSION_MAX`]
+    /// from its sign-in. Its person and CSRF token stay, so open pages keep working.
+    pub(crate) fn renew(&self, session: &Session, now: SystemTime) -> Result<Issued, String> {
+        let end = session.since.saturating_add(SESSION_MAX.as_secs());
+        let left = Duration::from_secs(end.saturating_sub(seal::unix(now)));
+        let ttl = SESSION_IDLE.min(left);
+        if ttl.is_zero() {
+            return Err("the session reached its longest life".to_owned());
+        }
+        let sealed = self.seal.seal(SESSION_PURPOSE, session, now, ttl)?;
+        Ok(Issued { sealed, ttl })
     }
 
     /// The live session the `Cookie` header values carry.

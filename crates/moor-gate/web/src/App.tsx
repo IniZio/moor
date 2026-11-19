@@ -2,6 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { type Account, inboxList, load, signOut, SignedOut } from './api';
 import { Checklist } from './Checklist';
+import { dropDrafts, signInHref, useRenewWhileActive } from './session';
+import { SignedOutDialog } from './SignedOutDialog';
 import { BoxPage, Home, NewBox, tabOf, useBoxes, usePoll } from './Portal';
 import { sectionAt, Settings } from './Settings';
 import { TopBar } from './TopBar';
@@ -28,7 +30,10 @@ export function App() {
 	const refresh = () =>
 		load().then(
 			(account) => setState({ at: 'ready', account }),
-			(e) => setState(e instanceof SignedOut ? { at: 'out' } : { at: 'failed', why: String(e.message) }),
+			(e) => {
+				if (e instanceof SignedOut) location.replace(signInHref());
+				else setState({ at: 'failed', why: String(e.message) });
+			},
 		);
 	useEffect(() => void refresh(), []);
 
@@ -37,7 +42,7 @@ export function App() {
 			<main>
 				<h1>moor</h1>
 				<p class="muted">Your session ended.</p>
-				<a class="button" href="/auth/login?return=/">Sign in again</a>
+				<a class="button" href={signInHref()}>Sign in again</a>
 			</main>
 		);
 	}
@@ -66,9 +71,11 @@ function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; ha
 	const home = !flows && !settings;
 	const fresh = boxes.value?.length === 0;
 	const unlinked = account.secrets.filter((s) => !s.linked).map((s) => s.name);
-	const leave = () => signOut(account.csrf).then(onSignedOut);
+	const leave = () => signOut(account.csrf).then(dropDrafts).then(onSignedOut);
+	useRenewWhileActive(account.csrf);
 	return (
 		<>
+			<SignedOutDialog />
 			<TopBar email={account.email} csrf={account.csrf} rows={boxes.value ?? []} inbox={inbox} onSignOut={() => void leave()} />
 			<main class={flows || settings ? 'wide' : composing ? 'app-new' : open ? 'app-box' : home ? 'app-home' : undefined}>
 			{flows ? (

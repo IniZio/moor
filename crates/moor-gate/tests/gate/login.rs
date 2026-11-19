@@ -215,7 +215,10 @@ fn a_finished_sign_in_sets_a_strict_session_cookie_and_returns() {
         .unwrap();
     let (pair, attrs) = cookie.split_once("; ").unwrap();
     assert!(pair.len() >= 43, "{pair}");
-    assert_eq!(attrs, "HttpOnly; Secure; SameSite=Lax; Path=/");
+    assert_eq!(
+        attrs,
+        "Max-Age=43200; HttpOnly; Secure; SameSite=Lax; Path=/"
+    );
 }
 
 #[test]
@@ -361,6 +364,36 @@ fn logout_needs_the_session_csrf_token() {
         .unwrap()
         .starts_with("moor_session=;"));
     assert_eq!(get(&addr, "/auth/me", Some(&other)).status, 200);
+}
+
+#[test]
+fn renew_needs_the_csrf_token_and_resets_the_cookie() {
+    let (addr, _) = gate();
+    let cookie = sign_in(&addr);
+    let token = csrf(&get(&addr, "/auth/me", Some(&cookie)));
+    let renew = |cookie: Option<&str>, csrf: &str| {
+        let jar = cookie.map_or_else(String::new, |c| format!("Cookie: {c}\r\n"));
+        let extra = format!("{jar}X-Moor-Csrf: {csrf}\r\n");
+        send(&addr, "POST", "/auth/renew", &extra, "")
+    };
+    assert_eq!(renew(None, &token).status, 401);
+    assert_eq!(renew(Some(&cookie), "wrong").status, 403);
+    let renewed = renew(Some(&cookie), &token);
+    assert_eq!(renewed.status, 200, "{}", renewed.body);
+    assert!(
+        renewed.body.contains("\"expires_in\":43200"),
+        "{}",
+        renewed.body
+    );
+    let fresh = renewed.cookie("moor_session").unwrap();
+    assert_ne!(fresh, cookie);
+    let me = get(&addr, "/auth/me", Some(&fresh));
+    assert_eq!(me.status, 200);
+    assert_eq!(
+        csrf(&me),
+        token,
+        "a renewal keeps the token open pages hold"
+    );
 }
 
 #[test]

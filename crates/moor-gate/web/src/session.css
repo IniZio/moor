@@ -1,0 +1,4 @@
+.signed-out { width: min(26rem, calc(100vw - 2rem)); padding: var(--moor-space-6); }
+.signed-out h2 { margin: 0 0 var(--moor-space-2); font-size: var(--moor-text-xl); }
+.signed-out p { margin: 0 0 var(--moor-space-4); color: var(--moor-color-text-muted); }
+.signed-out-btns { display: flex; justify-content: flex-end; gap: var(--moor-space-2); }
