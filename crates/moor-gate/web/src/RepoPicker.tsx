@@ -14,18 +14,18 @@ export function RepoPicker({ repos, known, onChange }: { repos: string[]; known:
 	return (
 		<div class="t-repos" role="group" aria-label="Repos, first one first">
 			{repos.map((r, i) => (
-				<span key={r} class={i === 0 ? 't-chip t-repo t-repo-first' : 't-chip t-repo'}>
-					<span class="t-repo-n" aria-hidden="true">
+				<span key={r} class={i === 0 ? 't-chip t-pick t-pick-first' : 't-chip t-pick'}>
+					<span class="t-pick-n" aria-hidden="true">
 						{i + 1}
 					</span>
 					<span class="t-mono">{r}</span>
 					{i === 0 && repos.length > 1 && <span class="muted">starts here</span>}
 					{i > 0 && (
-						<button type="button" class="t-repo-btn" aria-label={`Start in ${r}`} title="Start here" onClick={() => first(i)}>
+						<button type="button" class="t-pick-btn" aria-label={`Start in ${r}`} title="Start here" onClick={() => first(i)}>
 							↑
 						</button>
 					)}
-					<button type="button" class="t-repo-btn" aria-label={`Remove ${r}`} onClick={() => remove(i)}>
+					<button type="button" class="t-pick-btn" aria-label={`Remove ${r}`} onClick={() => remove(i)}>
 						×
 					</button>
 				</span>

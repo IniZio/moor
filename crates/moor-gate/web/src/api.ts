@@ -319,6 +319,8 @@ const NeedsSchema = v.object({
 const BoxRowSchema = v.object({
 	box: v.string(),
 	repo: v.nullish(v.string()),
+	/** The repos cloned beside the first, in order. */
+	other_repos: v.optional(v.array(v.string()), []),
 	branch: v.nullish(v.string()),
 	base: v.nullish(v.string()),
 	prompt: v.nullish(v.string()),

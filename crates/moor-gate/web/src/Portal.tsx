@@ -110,12 +110,40 @@ export function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
 	);
 }
 
+/** The repos cloned beside the first: each one up to two, else a count with the names on hover. */
+function OtherRepos({ repos }: { repos: string[] }) {
+	if (repos.length === 0) return null;
+	if (repos.length > 2) {
+		return (
+			<span class="t-more t-mono" title={repos.join(', ')}>
+				+{repos.length} more
+			</span>
+		);
+	}
+	return (
+		<>
+			{repos.map((r) => (
+				<span key={r} class="t-more t-mono" title="Cloned beside the first repo">
+					+ {r}
+				</span>
+			))}
+		</>
+	);
+}
+
 function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 	const s = STATES[t.state];
 	return (
 		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
-			<span class="t-repo t-mono">{t.repo ?? ''}</span>
+			<span class="t-repo t-mono">
+				{t.repo ?? ''}
+				{t.other_repos.length > 0 && (
+					<span class="t-more" title={t.other_repos.join(', ')}>
+						+{t.other_repos.length}
+					</span>
+				)}
+			</span>
 			<span class="t-title">{t.title}</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
@@ -499,6 +527,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 			<div class="t-thead">
 				<div class="t-crumbs">
 					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
+					<OtherRepos repos={value.other_repos} />
 					<span class="t-sep">▸</span>
 					<b>{value.title}</b>
 					<span class="t-sep">▸</span>

@@ -75,7 +75,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 						type="button"
 						class="t-btn t-btn-once"
 						disabled={busy}
-						onClick={() => startAgain({ repos: detail.repo ? [detail.repo] : [], base: detail.base ?? '', prompt: promptOf(detail) })}
+						onClick={() => startAgain({ repos: detail.repo ? [detail.repo, ...detail.other_repos] : [], base: detail.base ?? '', prompt: promptOf(detail) })}
 					>
 						Start again
 					</button>

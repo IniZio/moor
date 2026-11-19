@@ -101,6 +101,9 @@ struct Row {
     name: String,
     /// The repo, as `OWNER/NAME`.
     repo: Option<String>,
+    /// The repos cloned beside `repo`, in order.
+    #[serde(default)]
+    other_repos: Vec<String>,
     /// The branch.
     branch: Option<String>,
     /// The base ref.
@@ -143,6 +146,7 @@ fn summary(row: &Row) -> Option<Value> {
     Some(json!({
         "box": row.name,
         "repo": row.repo,
+        "other_repos": row.other_repos,
         "branch": row.branch,
         "base": row.base,
         "prompt": row.prompt,
