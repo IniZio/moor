@@ -5,7 +5,7 @@ import {
 	Conflict,
 	repoList,
 	schedulePreview,
-	SignedOut,
+	failure,
 	type Workflow,
 	workflowCreate,
 	workflowEdit,
@@ -13,6 +13,7 @@ import {
 	workflowRemove,
 	workflowRunNow,
 	workflowSwitch,
+	toError,
 } from './api';
 import { textProblems } from './plan';
 import { GeneratePlan } from './PlanDraft';
@@ -25,12 +26,6 @@ type Draft = { name: string; repos: string[]; prompt: string; schedule: Schedule
 
 const DRAFT = 'moor.workflowDraft';
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-
-function reason(err: Error): string {
-	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
-}
-
-const SOMETHING = new Error('Something went wrong.');
 
 /** A valid workflow name made from any text. */
 function nameFrom(text: string): string {
@@ -129,7 +124,7 @@ function Preview({ cron, zone }: { cron: string; zone: string }) {
 		const timer = setTimeout(() => {
 			schedulePreview(cron, zone).then(
 				(p) => live && setShown(p),
-				(e) => live && setShown({ next: [], error: reason(e instanceof Error ? e : SOMETHING) }),
+				(e) => live && setShown({ next: [], error: failure(e) }),
 			);
 		}, 250);
 		return () => {
@@ -173,7 +168,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 				setFlow(read);
 				setDraft(fromFlow(read));
 			},
-			(e) => setProblem({ text: reason(e instanceof Error ? e : SOMETHING), stale: false }),
+			(e) => setProblem({ text: failure(e), stale: false }),
 		);
 	};
 	useEffect(() => {
@@ -181,7 +176,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 		load();
 	}, [editing]);
 	if (editing && !flow) {
-		return problem ? <p class="notice danger" role="alert">{problem.text}</p> : <p class="muted" aria-busy="true">Loading {editing}…</p>;
+		return problem?.text ? <p class="notice danger" role="alert">{problem.text}</p> : <p class="muted" aria-busy="true">Loading {editing}…</p>;
 	}
 	const set = (part: Partial<Draft>) => setDraft({ ...draft, ...part });
 	const cron = toCron(draft.schedule);
@@ -198,7 +193,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf, plan.trim() || undefined);
 			location.hash = `#/workflows/${encodeURIComponent(saved.name)}`;
 		} catch (err) {
-			setProblem({ text: reason(err instanceof Error ? err : SOMETHING), stale: flow != null && err instanceof Conflict });
+			setProblem({ text: failure(toError(err)), stale: flow != null && err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -266,7 +261,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 					<span class="muted">A run that takes longer is stopped. Three hours when blank.</span>
 				</label>
 			</details>
-			{problem && <p class="notice danger" role="alert">{problem.text}</p>}
+			{problem?.text && <p class="notice danger" role="alert">{problem.text}</p>}
 			<div class="actions">
 				<button disabled={!ready}>{busy ? 'Saving…' : flow ? 'Save' : 'Create workflow'}</button>
 				{problem?.stale && (
@@ -290,7 +285,7 @@ export function WorkflowActions({ csrf, flow, onChanged }: { csrf: string; flow:
 		try {
 			await go();
 		} catch (e) {
-			setProblem(reason(e instanceof Error ? e : SOMETHING));
+			setProblem(failure(toError(e)));
 		}
 		setBusy(false);
 	};

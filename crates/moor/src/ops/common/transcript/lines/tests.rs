@@ -50,7 +50,7 @@ fn only_the_session_files_at_the_top_are_read() {
         .iter()
         .filter_map(|l| match &l.what {
             What::Tool(t) => Some(t.title.clone()),
-            What::Said { .. } => None,
+            What::Said { .. } | What::Typed { .. } => None,
         })
         .collect();
     assert_eq!(titles, ["Ran npm test"]);

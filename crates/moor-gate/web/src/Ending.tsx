@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 
-import { type BoxDetail, SignedOut } from './api';
+import { type BoxDetail, failure } from './api';
 import { boxClose, boxStop, Refused, type Unsaved } from './steerApi';
 import './steer.css';
 
@@ -15,8 +15,7 @@ export function unsavedWords({ ahead, dirty }: Unsaved): string {
 }
 
 function whyNot(e: Error): string {
-	if (e instanceof SignedOut) return 'Your session ended. Reload to sign in again.';
-	return e instanceof Refused && e.unsaved && (e.unsaved.ahead > 0 || e.unsaved.dirty > 0) ? unsavedWords(e.unsaved) : e.message;
+	return e instanceof Refused && e.unsaved && (e.unsaved.ahead > 0 || e.unsaved.dirty > 0) ? unsavedWords(e.unsaved) : failure(e);
 }
 
 /** Stop beside the state, and Close under a menu with a confirm; Close removes the Box. */
