@@ -171,7 +171,7 @@ pub(super) fn enforce_start_limit(
         let key = (w.id, &b.repo, b.due_at);
         let planned = match b.box_id {
             Some(id) => store.box_row(id)?.map(|r| r.name),
-            None => box_name(w.id, w.name.as_str(), &b.repo, b.due_at, b.trigger).ok(),
+            None => box_name(w.id, w.name.as_str(), b.due_at, b.trigger).ok(),
         };
         let detail = format!(
             "the run's agent did not start within {} minutes of the firing, so the run was \
@@ -182,8 +182,8 @@ pub(super) fn enforce_start_limit(
             |out: &mut Vec<String>| match planned.as_ref().map(|n| close_open_box(cx, store, n)) {
                 Some(Err(why)) => {
                     out.push(format!(
-                        "workflow {}: could not close the late Box of {}: {why}",
-                        w.name, b.repo
+                        "workflow {}: could not close the late Box of its run: {why}",
+                        w.name
                     ));
                     false
                 }

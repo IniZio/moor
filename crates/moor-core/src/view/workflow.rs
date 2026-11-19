@@ -12,11 +12,9 @@ pub struct OriginView {
     pub key: Option<String>,
 }
 
-/// The latest run of one repo of a workflow.
+/// The latest run of a workflow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastRunView {
-    /// The repo.
-    pub repo: String,
     /// The scheduled time the run answers, in Unix milliseconds.
     pub due_at: i64,
     /// `starting`, `started`, `waiting`, `finished`, `failed`, `incomplete`, `declined`,
@@ -73,11 +71,8 @@ pub struct WorkflowView {
     pub cron: String,
     /// The zone the cron is read in.
     pub timezone: String,
-    /// Its repos.
+    /// The repos each run's Box clones, in order; the first is where the agent works.
     pub repos: Vec<String>,
-    /// The repos each of its Boxes clones beside its own.
-    #[serde(default)]
-    pub also: Vec<String>,
     /// The partial repo config laid over the repo's for each of its Boxes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
@@ -104,8 +99,9 @@ pub struct WorkflowView {
     /// Counts the writes of the workflow; send it as `expected_revision` to change it.
     #[serde(default)]
     pub revision: u64,
-    /// The latest run of each repo that has one.
-    pub last_runs: Vec<LastRunView>,
+    /// Its latest run, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<LastRunView>,
 }
 
 /// Value of `workflow-list`.
@@ -139,17 +135,15 @@ pub struct WorkflowChangeValue {
 pub struct WorkflowAnswerValue {
     /// The workflow's name.
     pub workflow: String,
-    /// The repo whose run was answered.
-    pub repo: String,
     /// What the run did next, in one sentence.
     pub next: String,
 }
 
-/// One repo's line of the value of `workflow-run-now`.
+/// Value of `workflow-run-now`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunNowLine {
-    /// The repo.
-    pub repo: String,
+pub struct RunNowValue {
+    /// The workflow's name.
+    pub workflow: String,
     /// `started` when a run began, `refused` when none did.
     pub status: String,
     /// The Box the run started in, when it started.
@@ -158,15 +152,6 @@ pub struct RunNowLine {
     /// Why none began, when it was refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-}
-
-/// Value of `workflow-run-now`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunNowValue {
-    /// The workflow's name.
-    pub workflow: String,
-    /// One line per repo, in the order asked.
-    pub runs: Vec<RunNowLine>,
 }
 
 /// One entry of the change stream `workflow-runs` returns.

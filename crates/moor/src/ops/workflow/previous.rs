@@ -41,7 +41,7 @@ pub(super) fn kept(store: &Store, row: &BoxRow) -> Option<String> {
     }
 }
 
-/// Closes the open Box of each run of `job`'s workflow and repo due before `job`, without force
+/// Closes the open Box of each run of `job`'s workflow due before `job`, without force
 /// and without waking it, when [`kept`] finds no reason to keep it under the Box's lock. Each Box
 /// kept gets a `previous_box_kept` event on `new_box` and a line in the returned log; from the
 /// third run in a row to keep the same Box, both ask the owner to look.
@@ -52,7 +52,7 @@ pub(super) fn close_previous(
     new_box: BoxId,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    let runs = match store.recent_workflow_runs(job.workflow, &job.repo, LOOKBACK) {
+    let runs = match store.recent_workflow_runs(job.workflow, LOOKBACK) {
         Ok(runs) => runs,
         Err(e) => {
             return vec![format!(

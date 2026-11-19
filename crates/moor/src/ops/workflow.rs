@@ -1,7 +1,7 @@
 //! The workflow tick: finishes, expires and fires stored workflows, and records each outcome.
 //!
 //! A firing is claimed in the store before its Box exists. The claim is a row unique on
-//! workflow, repo and due time, so only one tick ever wins it, and nothing but the winner
+//! workflow, first repo and due time, so only one tick ever wins it, and nothing but the winner
 //! starts a Box. The start settles the claim afterwards. A crash between the two leaves the
 //! claim, which [`resolve_interrupted`] settles from the Box's name and never by starting again:
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
@@ -39,9 +39,9 @@ pub(crate) struct StartJob {
     pub(crate) owner: UserId,
     /// An identity of the owner, which the start acts as.
     pub(crate) identity: Identity,
-    /// The repo.
+    /// The first repo of the workflow's set, where the agent works.
     pub(crate) repo: ForgeRepo,
-    /// The repos the Box clones beside `repo`.
+    /// The rest of the set, which the Box clones beside `repo`.
     pub(crate) also: Vec<ForgeRepo>,
     /// The override each Box starts with.
     pub(crate) config: Option<String>,
@@ -112,40 +112,33 @@ fn tick_one(
         }
         return Ok(());
     }
-    let verdicts = workflow_due(w, &history.facts(store, w)?, now);
-    for v in verdicts {
-        match v.verdict {
-            WorkflowVerdict::NotDue => {}
-            WorkflowVerdict::SkipOverlap { due_at } => {
-                record(
-                    store,
-                    w,
-                    &v.repo,
-                    due_at,
-                    now,
-                    (RunState::Done(RunEnd::SkippedOverlap), None),
-                )?;
-            }
-            WorkflowVerdict::Start { due_at } => {
-                claim(cx, store, w, &v.repo, (due_at, now), launch)?;
-            }
+    match workflow_due(w, &history.facts(store)?, now) {
+        WorkflowVerdict::NotDue => {}
+        WorkflowVerdict::SkipOverlap { due_at } => {
+            let state = (RunState::Done(RunEnd::SkippedOverlap), None);
+            record(store, w, due_at, now, state)?;
         }
+        WorkflowVerdict::Start { due_at } => claim(cx, store, w, (due_at, now), launch)?,
     }
     Ok(())
 }
 
-/// Records a cron run that never starts a Box; a repeated record changes nothing.
+/// Records a cron run that never starts a Box; a repeated record changes nothing. The row keeps
+/// the workflow's first repo, where the run starts.
 fn record(
     store: &Store,
     w: &Workflow,
-    repo: &ForgeRepo,
     due_at: Ts,
     now: Ts,
     (state, plan): (RunState, Option<Plan>),
 ) -> Result<bool, StoreError> {
     store.record_workflow_run(&NewRun {
         workflow: w.id,
-        repo: repo.clone(),
+        repo: w
+            .repos
+            .first()
+            .ok_or_else(|| StoreError::Invalid(format!("workflow {} has no repo", w.name)))?
+            .clone(),
         due_at,
         state,
         recorded_at: now,
@@ -163,17 +156,17 @@ struct Prepared {
     frozen: Option<Plan>,
 }
 
-/// Makes the firing of `w` for `repo` due at `due_at` ready to claim, or says why it cannot
+/// Makes the firing of `w` due at `due_at` ready to claim, or says why it cannot
 /// be: its Box name is invalid, its owner has no identity to start a Box as, or it has a plan
 /// whose steps its agent could not report.
 fn prepare(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
-    repo: &ForgeRepo,
     (due_at, trigger): (Ts, RunTrigger),
 ) -> Result<Prepared, String> {
-    let name = box_name(w.id, w.name.as_str(), repo, due_at, trigger).map_err(|e| e.to_string())?;
+    let name = box_name(w.id, w.name.as_str(), due_at, trigger).map_err(|e| e.to_string())?;
+    let (repo, also) = w.repos.split_first().ok_or("the workflow has no repo")?;
     let identity = store
         .identities(w.owner)
         .map_err(|e| e.to_string())?
@@ -196,7 +189,7 @@ fn prepare(
             owner: w.owner,
             identity,
             repo: repo.clone(),
-            also: w.also.clone(),
+            also: also.to_vec(),
             config: w.config.clone(),
             due_at,
             name,
@@ -224,17 +217,16 @@ fn claim(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
-    repo: &ForgeRepo,
     (due_at, now): (Ts, Ts),
     launch: &dyn Fn(StartJob),
 ) -> Result<(), StoreError> {
-    match prepare(cx, store, w, repo, (due_at, RunTrigger::Cron)) {
+    match prepare(cx, store, w, (due_at, RunTrigger::Cron)) {
         Err(detail) => {
             let state = RunState::Done(RunEnd::Refused { detail });
-            record(store, w, repo, due_at, now, (state, None)).map(|_| ())
+            record(store, w, due_at, now, (state, None)).map(|_| ())
         }
         Ok(Prepared { job, frozen }) => {
-            if record(store, w, repo, due_at, now, (RunState::Queued, frozen))? {
+            if record(store, w, due_at, now, (RunState::Queued, frozen))? {
                 launch(job);
             }
             Ok(())
@@ -331,7 +323,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
         let workflow = store.workflow_by_id(run.workflow).ok().flatten();
         let found = workflow
             .as_ref()
-            .and_then(|w| box_name(w.id, w.name.as_str(), &run.repo, run.due_at, run.trigger).ok())
+            .and_then(|w| box_name(w.id, w.name.as_str(), run.due_at, run.trigger).ok())
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
         let now = cx.clock().now();
         let state = match (found, workflow) {

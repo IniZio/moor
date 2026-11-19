@@ -72,7 +72,7 @@ fn insert_workflow(
     conn: &dyn Db,
     owner: UserId,
     def: &WorkflowDef,
-    (repos, also, plan): (String, String, Option<String>),
+    (repos, plan): (String, Option<String>),
     now: i64,
 ) -> Result<i64, StoreError> {
     Ok(conn.row(
@@ -84,7 +84,6 @@ fn insert_workflow(
                 Workflows::Cron,
                 Workflows::Timezone,
                 Workflows::Repos,
-                Workflows::Also,
                 Workflows::Prompt,
                 Workflows::EnabledAt,
                 Workflows::TimeoutMinutes,
@@ -101,7 +100,6 @@ fn insert_workflow(
                 def.schedule.expr().into(),
                 def.schedule.zone().into(),
                 repos.into(),
-                also.into(),
                 def.prompt.as_str().into(),
                 def.enabled.then_some(now).into(),
                 i64::from(def.timeout.minutes()).into(),
@@ -123,7 +121,7 @@ fn replace_workflow(
     conn: &dyn Db,
     id: i64,
     def: &WorkflowDef,
-    (repos, also, plan): (String, String, Option<String>),
+    (repos, plan): (String, Option<String>),
     ((enabled_at, reason), now): ((Option<i64>, Option<String>), i64),
 ) -> Result<(), StoreError> {
     let mut update = Query::update();
@@ -132,7 +130,6 @@ fn replace_workflow(
         .value(Workflows::Cron, def.schedule.expr())
         .value(Workflows::Timezone, def.schedule.zone())
         .value(Workflows::Repos, repos)
-        .value(Workflows::Also, also)
         .value(Workflows::Config, def.config.as_deref())
         .value(Workflows::Prompt, def.prompt.as_str())
         .value(Workflows::Plan, plan)
@@ -186,7 +183,6 @@ impl Store {
     ) -> Result<Put, StoreError> {
         let now = self.now().as_millis();
         let repos = serde_json::to_string(&def.repos)?;
-        let also = serde_json::to_string(&def.also)?;
         let plan = def.plan.as_ref().map(Plan::to_json).transpose()?;
         let mut writer = self.writer();
         let tx = writer.immediate()?;
@@ -210,13 +206,10 @@ impl Store {
                     if def.enabled { None } else { was_reason },
                 )
             };
-            replace_workflow(&tx, id, def, (repos, also, plan), (state, now))?;
+            replace_workflow(&tx, id, def, (repos, plan), (state, now))?;
             (id, current.unwrap_or_default() + 1)
         } else {
-            (
-                insert_workflow(&tx, owner, def, (repos, also, plan), now)?,
-                0,
-            )
+            (insert_workflow(&tx, owner, def, (repos, plan), now)?, 0)
         };
         tx.commit()?;
         drop(writer);

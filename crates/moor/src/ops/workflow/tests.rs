@@ -125,7 +125,7 @@ impl Rig {
         self.cx
             .store()
             .unwrap()
-            .recent_workflow_runs(id, &repo(), 50)
+            .recent_workflow_runs(id, 50)
             .unwrap()
     }
 
@@ -160,7 +160,7 @@ fn a_due_workflow_starts_one_box_as_its_owner_and_not_again() {
     let row = store.box_row(r.latest_box(id)).unwrap().unwrap();
     assert_eq!(row.user, Some(REQUESTER_USER));
     assert_eq!(row.prompt.as_deref(), Some("fix what is broken"));
-    assert_eq!(row.name.as_str(), "n/w1-daily-fix-197001010900");
+    assert_eq!(row.name.as_str(), "daily-fix/w1-197001010900");
 
     r.advance_to(FIRST_DUE + 60_000);
     r.pass();
@@ -439,7 +439,7 @@ fn three_failed_runs_in_a_row_disable_the_workflow_with_a_reason() {
         r.cx.store()
             .unwrap()
             .workflow(REQUESTER_USER, &WorkflowName::parse("daily-fix").unwrap());
-    let reason = "o/n: the last 3 runs were refused or timed out".to_owned();
+    let reason = "the last 3 runs were refused or timed out".to_owned();
     assert_eq!(
         w.unwrap().unwrap().state,
         WorkflowState::Disabled {
@@ -503,7 +503,7 @@ fn a_finished_run_with_an_open_box_gets_a_new_box_at_the_next_due_time() {
         "the finished Box stays open beside the new one"
     );
     let name = store.box_row(second).unwrap().unwrap().name;
-    assert_eq!(name.as_str(), "n/w1-daily-fix-197001020900");
+    assert_eq!(name.as_str(), "daily-fix/w1-197001020900");
 }
 
 #[test]

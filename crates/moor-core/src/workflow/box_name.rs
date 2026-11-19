@@ -1,7 +1,7 @@
 //! The name of the Box a workflow firing starts.
 
 use super::{RunTrigger, WorkflowId};
-use crate::name::{BoxName, ForgeRepo, NameError};
+use crate::name::{BoxName, NameError};
 use crate::seam::clock::Ts;
 
 /// The longest part of a Box name.
@@ -27,23 +27,22 @@ fn slug(text: &str, max: usize) -> String {
     }
 }
 
-/// The Box name for workflow `id`, called `workflow`, firing for `repo` at `due_at`.
+/// The Box name for workflow `id`, called `workflow`, firing at `due_at`.
 ///
-/// It is `<repo>/w<id>-<workflow>-<due as UTC yyyymmddhhmm>`. The id and the due time keep it
-/// unique per firing, and the workflow name is cut to fit. A manual firing takes the clock
-/// to the second and an `m` before it, so it never shares a name with a cron firing due in
-/// the same minute.
+/// It is `<workflow>/w<id>-<due as UTC yyyymmddhhmm>`, the workflow name cut to fit. The id and
+/// the due time keep it unique per firing, and no repo is in it, so editing the workflow's repos
+/// never changes the name of a run already claimed. A manual firing takes the clock to the second
+/// and an `m` before it, so it never shares a name with a cron firing due in the same minute.
 ///
 /// # Errors
 /// [`NameError`] when `due_at` is outside the years the clock can print.
 pub fn box_name(
     id: WorkflowId,
     workflow: &str,
-    repo: &ForgeRepo,
     due_at: Ts,
     trigger: RunTrigger,
 ) -> Result<BoxName, NameError> {
-    let invalid = || NameError::BoxName(format!("{repo}@{}", due_at.as_millis()));
+    let invalid = || NameError::BoxName(format!("{workflow}@{}", due_at.as_millis()));
     let (prefix, format) = match trigger {
         RunTrigger::Cron => ("", "%Y%m%d%H%M"),
         RunTrigger::Manual => ("m", "%Y%m%d%H%M%S"),
@@ -52,9 +51,8 @@ pub fn box_name(
         .map_err(|_| invalid())?
         .strftime(format)
         .to_string();
-    let stamp = format!("{prefix}{stamp}");
-    let head = format!("w{id}-");
-    let room = PART_MAX.saturating_sub(head.len() + 1 + stamp.len());
-    let label = format!("{head}{}-{stamp}", slug(workflow, room));
-    BoxName::parse(&format!("{}/{label}", slug(&repo.name, PART_MAX)))
+    BoxName::parse(&format!(
+        "{}/w{id}-{prefix}{stamp}",
+        slug(workflow, PART_MAX)
+    ))
 }

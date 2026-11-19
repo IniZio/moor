@@ -3,8 +3,7 @@
 use super::{
     breaker, daily, facts, finished, refused, run, timed_out, ts, verdicts, DAY, DAY0, HOUR,
 };
-use crate::decide::workflow::{workflow_due, PriorRun, WorkflowRepoFacts, WorkflowVerdict};
-use crate::name::ForgeRepo;
+use crate::decide::workflow::{workflow_due, PriorRun, WorkflowFacts, WorkflowVerdict};
 use crate::seam::clock::Ts;
 use crate::workflow::{box_name, RunState, RunTrigger, WorkflowId, WorkflowRun};
 
@@ -23,33 +22,28 @@ fn a_manual_run_leaves_workflow_due_firing_a_missed_due_time() {
     let w = daily();
     let yesterday = DAY0 - DAY + 9 * HOUR;
     let now = DAY0 + 9 * HOUR + 1_000;
-    let f = [facts("a/b", Some(yesterday), false)];
+    let f = facts(Some(yesterday), false);
     assert_eq!(
         verdicts(&w, &f, now),
-        vec![WorkflowVerdict::Start {
+        WorkflowVerdict::Start {
             due_at: ts(DAY0 + 9 * HOUR)
-        }]
+        }
     );
 }
 
 #[test]
 fn a_cron_run_due_while_a_manual_run_is_open_records_skipped_overlap() {
     let w = daily();
-    let f = [WorkflowRepoFacts {
-        repo: ForgeRepo::parse("a/b").unwrap(),
+    let f = WorkflowFacts {
         last_due: None,
         prior: Some(PriorRun::Started),
-    }];
+    };
     let now = DAY0 + 9 * HOUR + 1_000;
-    let got: Vec<_> = workflow_due(&w, &f, ts(now))
-        .into_iter()
-        .map(|v| v.verdict)
-        .collect();
     assert_eq!(
-        got,
-        vec![WorkflowVerdict::SkipOverlap {
+        workflow_due(&w, &f, ts(now)),
+        WorkflowVerdict::SkipOverlap {
             due_at: ts(DAY0 + 9 * HOUR)
-        }]
+        }
     );
 }
 
@@ -97,14 +91,13 @@ fn a_manual_delivery_resets_the_streak() {
 fn a_manual_run_in_the_same_minute_as_a_cron_run_gets_another_box_name() {
     // 2026-11-18 05:12 UTC, and the second the manual run was fired at.
     let id = WorkflowId::new(3);
-    let repo = ForgeRepo::parse("acme/web").unwrap();
     let due = Ts::from_millis(1_794_978_720_000);
     let at = Ts::from_millis(1_794_978_750_000);
-    let cron = box_name(id, "deps", &repo, due, RunTrigger::Cron).unwrap();
-    let hand = box_name(id, "deps", &repo, at, RunTrigger::Manual).unwrap();
-    assert_eq!(cron.as_str(), "web/w3-deps-202611180512");
-    assert_eq!(hand.as_str(), "web/w3-deps-m20261118051230");
-    let same_minute = box_name(id, "deps", &repo, due, RunTrigger::Manual).unwrap();
+    let cron = box_name(id, "deps", due, RunTrigger::Cron).unwrap();
+    let hand = box_name(id, "deps", at, RunTrigger::Manual).unwrap();
+    assert_eq!(cron.as_str(), "deps/w3-202611180512");
+    assert_eq!(hand.as_str(), "deps/w3-m20261118051230");
+    let same_minute = box_name(id, "deps", due, RunTrigger::Manual).unwrap();
     assert_ne!(cron, same_minute);
 }
 

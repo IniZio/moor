@@ -27,22 +27,26 @@ fn other() -> ForgeRepo {
     ForgeRepo::new("o", "m")
 }
 
-/// A workflow of repos `o/n` and `o/m` with `timeout` minutes, on a one-Box node.
-fn two_repos(r: &Rig, timeout: u32) -> WorkflowId {
+/// Two workflows due at once with `timeout` minutes, one of `o/n` and then one of `o/m`, for a
+/// one-Box node: the first takes the Box and the second queues.
+fn two_workflows(r: &Rig, timeout: u32) -> (WorkflowId, WorkflowId) {
     r.answer_repo();
     r.forge.answer(other(), Ok(repo_at("abc123")));
-    let def = WorkflowDef::new(
-        WorkflowName::parse("daily-fix").unwrap(),
-        WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
-        vec![super::repo(), other()],
-        "fix what is broken",
-        (true, TimeoutMinutes::new(timeout).unwrap()),
-    )
-    .unwrap();
-    r.cx.store()
-        .unwrap()
-        .put_workflow(crate::testing::cx::REQUESTER_USER, &def)
-        .unwrap()
+    let put = |name: &str, repo: ForgeRepo| {
+        let def = WorkflowDef::new(
+            WorkflowName::parse(name).unwrap(),
+            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            vec![repo],
+            "fix what is broken",
+            (true, TimeoutMinutes::new(timeout).unwrap()),
+        )
+        .unwrap();
+        r.cx.store()
+            .unwrap()
+            .put_workflow(crate::testing::cx::REQUESTER_USER, &def)
+            .unwrap()
+    };
+    (put("daily-fix", super::repo()), put("daily-fix-m", other()))
 }
 
 fn one_box_node() -> UserConfig {
@@ -59,15 +63,12 @@ fn one_box_node() -> UserConfig {
     }
 }
 
-fn runs_of(r: &Rig, id: WorkflowId, repo: &ForgeRepo) -> Vec<WorkflowRun> {
-    r.cx.store()
-        .unwrap()
-        .recent_workflow_runs(id, repo, 50)
-        .unwrap()
+fn runs_of(r: &Rig, id: WorkflowId) -> Vec<WorkflowRun> {
+    r.cx.store().unwrap().recent_workflow_runs(id, 50).unwrap()
 }
 
-fn latest_of(r: &Rig, id: WorkflowId, repo: &ForgeRepo) -> WorkflowRun {
-    runs_of(r, id, repo).into_iter().next().unwrap()
+fn latest_of(r: &Rig, id: WorkflowId) -> WorkflowRun {
+    runs_of(r, id).into_iter().next().unwrap()
 }
 
 /// Claims the firing at the first due time and returns its jobs without starting any Box.
@@ -134,10 +135,10 @@ fn a_setup_longer_than_the_timeout_keeps_its_agent_and_the_timeout_counts_from_t
 #[test]
 fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
     let r = rig_with(one_box_node());
-    let id = two_repos(&r, 720);
+    let (first, second) = two_workflows(&r, 720);
     r.advance_to(CLAIMED);
     r.pass();
-    let queued = latest_of(&r, id, &other());
+    let queued = latest_of(&r, second);
     let queued_box = queued
         .state
         .box_id()
@@ -153,13 +154,13 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
     r.advance_to(CLAIMED + 59 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).state,
+        latest_of(&r, second).state,
         RunState::Running { .. }
     ));
 
     r.advance_to(CLAIMED + 61 * MIN);
     r.pass();
-    let detail = refused_detail(&latest_of(&r, id, &other()));
+    let detail = refused_detail(&latest_of(&r, second));
     assert!(
         detail.contains("did not start within 60 minutes"),
         "{detail}"
@@ -177,7 +178,7 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
         .unwrap()
         .is_none());
     assert!(matches!(
-        latest_of(&r, id, &super::repo()).state,
+        latest_of(&r, first).state,
         RunState::Running { .. }
     ));
 }
@@ -185,15 +186,15 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
 #[test]
 fn the_next_firing_runs_after_a_start_limit_breach() {
     let r = rig_with(one_box_node());
-    let id = two_repos(&r, 720);
+    let (_, second) = two_workflows(&r, 720);
     r.advance_to(CLAIMED);
     r.pass();
     r.advance_to(CLAIMED + 61 * MIN);
     r.pass();
-    let breached = latest_of(&r, id, &other());
+    let breached = latest_of(&r, second);
     r.advance_to(super::FIRST_DUE + super::DAY + 1_000);
     r.pass();
-    let next = latest_of(&r, id, &other());
+    let next = latest_of(&r, second);
     assert!(next.due_at > breached.due_at);
     assert!(
         !matches!(next.state, RunState::Done(RunEnd::SkippedOverlap)),
@@ -204,11 +205,11 @@ fn the_next_firing_runs_after_a_start_limit_breach() {
 #[test]
 fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
     let r = rig_with(one_box_node());
-    let id = two_repos(&r, 10);
+    let (first, second) = two_workflows(&r, 10);
     r.advance_to(CLAIMED);
     r.pass();
-    let holder = latest_of(&r, id, &super::repo()).state.box_id().unwrap();
-    let waiting = latest_of(&r, id, &other()).state.box_id().unwrap();
+    let holder = latest_of(&r, first).state.box_id().unwrap();
+    let waiting = latest_of(&r, second).state.box_id().unwrap();
     r.advance_to(CLAIMED + 30 * MIN);
     close_box(&r, holder);
     let name =
@@ -244,13 +245,13 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
     r.advance_to(agent + 9 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).state,
+        latest_of(&r, second).state,
         RunState::Running { .. }
     ));
     r.advance_to(agent + 10 * MIN);
     r.pass();
     assert!(matches!(
-        latest_of(&r, id, &other()).state,
+        latest_of(&r, second).state,
         RunState::Done(RunEnd::Ended {
             outcome: RunOutcome::TimedOut { .. },
             ..

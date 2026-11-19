@@ -40,10 +40,9 @@ fn an_overdue_run_is_refused_only_in_the_state_it_was_seen_in() {
     assert!(!store.refuse_run(two, ("late", true), NOW).unwrap());
     assert!(store.refuse_run(two, ("late", false), NOW).unwrap());
     let want = refused("late");
-    for r in ["a/one", "a/two"] {
-        let latest = store.recent_workflow_runs(id, &repo(r), 1).unwrap();
-        assert_eq!(latest.first().map(|l| &l.state), Some(&want));
-    }
+    let both = store.recent_workflow_runs(id, 2).unwrap();
+    assert_eq!(both.len(), 2);
+    assert!(both.iter().all(|l| l.state == want), "{both:?}");
 }
 
 #[test]

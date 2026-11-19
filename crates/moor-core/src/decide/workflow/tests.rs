@@ -2,7 +2,7 @@
 
 use super::{
     workflow_breaker, workflow_due, workflow_expired, workflow_start_overdue, PriorRun,
-    WorkflowExpiry, WorkflowRepoFacts, WorkflowVerdict,
+    WorkflowExpiry, WorkflowFacts, WorkflowVerdict,
 };
 use crate::name::BoxId;
 use crate::name::ForgeRepo;
@@ -33,7 +33,6 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         name: WorkflowName::parse("fix").unwrap(),
         schedule: WorkflowSchedule::parse(cron, zone).unwrap(),
         repos: repos.iter().map(|r| repo(r)).collect(),
-        also: Vec::new(),
         config: None,
         prompt: "go".to_owned(),
         state,
@@ -50,19 +49,15 @@ fn enabled_since(ms: i64) -> WorkflowState {
     WorkflowState::Enabled { since: ts(ms) }
 }
 
-fn facts(r: &str, last_due: Option<i64>, unfinished: bool) -> WorkflowRepoFacts {
-    WorkflowRepoFacts {
-        repo: repo(r),
+fn facts(last_due: Option<i64>, unfinished: bool) -> WorkflowFacts {
+    WorkflowFacts {
         last_due: last_due.map(ts),
         prior: unfinished.then_some(PriorRun::Started),
     }
 }
 
-fn verdicts(w: &Workflow, f: &[WorkflowRepoFacts], now: i64) -> Vec<WorkflowVerdict> {
+fn verdicts(w: &Workflow, f: &WorkflowFacts, now: i64) -> WorkflowVerdict {
     workflow_due(w, f, ts(now))
-        .into_iter()
-        .map(|v| v.verdict)
-        .collect()
 }
 
 fn start(due_at: i64) -> WorkflowVerdict {
@@ -76,68 +71,56 @@ fn daily() -> Workflow {
 #[test]
 fn first_firing_starts_once_the_time_is_reached() {
     let w = daily();
-    let f = [facts("a/b", None, false)];
+    let f = facts(None, false);
     assert_eq!(
         verdicts(&w, &f, DAY0 + 9 * HOUR - 1),
-        vec![start(DAY0 - 15 * HOUR)]
+        start(DAY0 - 15 * HOUR)
     );
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 9 * HOUR),
-        vec![start(DAY0 + 9 * HOUR)]
-    );
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 15 * HOUR),
-        vec![start(DAY0 + 9 * HOUR)]
-    );
+    assert_eq!(verdicts(&w, &f, DAY0 + 9 * HOUR), start(DAY0 + 9 * HOUR));
+    assert_eq!(verdicts(&w, &f, DAY0 + 15 * HOUR), start(DAY0 + 9 * HOUR));
 }
 
 #[test]
 fn a_fired_time_does_not_fire_again() {
     let w = daily();
-    let f = [facts("a/b", Some(DAY0 + 9 * HOUR), false)];
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 9 * HOUR),
-        vec![WorkflowVerdict::NotDue]
-    );
+    let f = facts(Some(DAY0 + 9 * HOUR), false);
+    assert_eq!(verdicts(&w, &f, DAY0 + 9 * HOUR), WorkflowVerdict::NotDue);
     assert_eq!(
         verdicts(&w, &f, DAY0 + DAY + 9 * HOUR - 1),
-        vec![WorkflowVerdict::NotDue]
+        WorkflowVerdict::NotDue
     );
     assert_eq!(
         verdicts(&w, &f, DAY0 + DAY + 9 * HOUR),
-        vec![start(DAY0 + DAY + 9 * HOUR)]
+        start(DAY0 + DAY + 9 * HOUR)
     );
 }
 
 #[test]
 fn downtime_fires_only_the_latest_missed_time() {
     let w = daily();
-    let f = [facts("a/b", Some(DAY0 - 5 * DAY + 9 * HOUR), false)];
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 12 * HOUR),
-        vec![start(DAY0 + 9 * HOUR)]
-    );
-    let after = [facts("a/b", Some(DAY0 + 9 * HOUR), false)];
+    let f = facts(Some(DAY0 - 5 * DAY + 9 * HOUR), false);
+    assert_eq!(verdicts(&w, &f, DAY0 + 12 * HOUR), start(DAY0 + 9 * HOUR));
+    let after = facts(Some(DAY0 + 9 * HOUR), false);
     assert_eq!(
         verdicts(&w, &after, DAY0 + 12 * HOUR),
-        vec![WorkflowVerdict::NotDue]
+        WorkflowVerdict::NotDue
     );
 }
 
 #[test]
 fn an_open_previous_box_skips_the_firing() {
     let w = daily();
-    let f = [facts("a/b", Some(DAY0 - DAY + 9 * HOUR), true)];
+    let f = facts(Some(DAY0 - DAY + 9 * HOUR), true);
     assert_eq!(
         verdicts(&w, &f, DAY0 + 10 * HOUR),
-        vec![WorkflowVerdict::SkipOverlap {
+        WorkflowVerdict::SkipOverlap {
             due_at: ts(DAY0 + 9 * HOUR)
-        }]
+        }
     );
-    let nothing_due = [facts("a/b", Some(DAY0 + 9 * HOUR), true)];
+    let nothing_due = facts(Some(DAY0 + 9 * HOUR), true);
     assert_eq!(
         verdicts(&w, &nothing_due, DAY0 + 10 * HOUR),
-        vec![WorkflowVerdict::NotDue]
+        WorkflowVerdict::NotDue
     );
 }
 
@@ -149,24 +132,21 @@ fn a_new_workflow_does_not_fire_for_times_before_it_was_created() {
         &["a/b"],
         enabled_since(DAY0 + 10 * HOUR),
     );
-    let f = [facts("a/b", None, false)];
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 12 * HOUR),
-        vec![WorkflowVerdict::NotDue]
-    );
+    let f = facts(None, false);
+    assert_eq!(verdicts(&w, &f, DAY0 + 12 * HOUR), WorkflowVerdict::NotDue);
     assert_eq!(
         verdicts(&w, &f, DAY0 + DAY + 9 * HOUR),
-        vec![start(DAY0 + DAY + 9 * HOUR)]
+        start(DAY0 + DAY + 9 * HOUR)
     );
 }
 
 #[test]
 fn a_time_exactly_at_creation_fires() {
     let w = workflow("0 9 * * *", "UTC", &["a/b"], enabled_since(DAY0 + 9 * HOUR));
-    let f = [facts("a/b", None, false)];
+    let f = facts(None, false);
     assert_eq!(
         verdicts(&w, &f, DAY0 + 9 * HOUR + 30_000),
-        vec![start(DAY0 + 9 * HOUR)]
+        start(DAY0 + 9 * HOUR)
     );
 }
 
@@ -178,14 +158,11 @@ fn a_re_enabled_workflow_does_not_fire_for_times_while_it_was_off() {
         &["a/b"],
         enabled_since(DAY0 + 10 * HOUR),
     );
-    let f = [facts("a/b", Some(DAY0 - 20 * DAY + 9 * HOUR), false)];
-    assert_eq!(
-        verdicts(&w, &f, DAY0 + 12 * HOUR),
-        vec![WorkflowVerdict::NotDue]
-    );
+    let f = facts(Some(DAY0 - 20 * DAY + 9 * HOUR), false);
+    assert_eq!(verdicts(&w, &f, DAY0 + 12 * HOUR), WorkflowVerdict::NotDue);
     assert_eq!(
         verdicts(&w, &f, DAY0 + DAY + 9 * HOUR),
-        vec![start(DAY0 + DAY + 9 * HOUR)]
+        start(DAY0 + DAY + 9 * HOUR)
     );
 }
 
@@ -197,34 +174,9 @@ fn a_disabled_workflow_never_fires() {
         &["a/b"],
         WorkflowState::Disabled { reason: None },
     );
-    assert!(verdicts(&w, &[facts("a/b", None, false)], DAY0 + 12 * HOUR).is_empty());
-}
-
-#[test]
-fn each_repo_is_decided_on_its_own_facts() {
-    let w = workflow(
-        "0 9 * * *",
-        "UTC",
-        &["a/one", "a/two", "a/three"],
-        enabled_since(DAY0 - 30 * DAY),
-    );
-    let f = [
-        facts("a/one", Some(DAY0 + 9 * HOUR), false),
-        facts("a/two", Some(DAY0 - DAY + 9 * HOUR), true),
-    ];
-    let got = workflow_due(&w, &f, ts(DAY0 + 12 * HOUR));
-    let repos: Vec<_> = got.iter().map(|v| v.repo.to_string()).collect();
-    assert_eq!(repos, ["a/one", "a/two", "a/three"]);
-    let verdicts: Vec<_> = got.iter().map(|v| v.verdict).collect();
     assert_eq!(
-        verdicts,
-        [
-            WorkflowVerdict::NotDue,
-            WorkflowVerdict::SkipOverlap {
-                due_at: ts(DAY0 + 9 * HOUR)
-            },
-            start(DAY0 + 9 * HOUR),
-        ]
+        verdicts(&w, &facts(None, false), DAY0 + 12 * HOUR),
+        WorkflowVerdict::NotDue
     );
 }
 
@@ -236,9 +188,9 @@ fn the_cron_is_read_in_the_workflow_zone() {
         &["a/b"],
         enabled_since(DAY0 - 30 * DAY),
     );
-    let f = [facts("a/b", None, false)];
+    let f = facts(None, false);
     // 09:00 in Hong Kong (UTC+8) is 01:00 UTC.
-    assert_eq!(verdicts(&w, &f, DAY0 + 2 * HOUR), vec![start(DAY0 + HOUR)]);
+    assert_eq!(verdicts(&w, &f, DAY0 + 2 * HOUR), start(DAY0 + HOUR));
 }
 
 /// Every Start a controller ticking each ten minutes from `from` to `to` would make, applying
@@ -248,8 +200,8 @@ fn firings(w: &Workflow, from: i64, to: i64) -> Vec<i64> {
     let mut started = Vec::new();
     let mut now = from;
     while now <= to {
-        let f = [facts("a/b", last_due, false)];
-        if let Some(WorkflowVerdict::Start { due_at }) = verdicts(w, &f, now).first().copied() {
+        let f = facts(last_due, false);
+        if let WorkflowVerdict::Start { due_at } = verdicts(w, &f, now) {
             started.push(due_at.as_millis());
             last_due = Some(due_at.as_millis());
         }
@@ -437,8 +389,7 @@ fn three_failures_in_a_row_trip_the_breaker_with_a_reason() {
         refused("a/b", base + 2 * DAY),
     ];
     let got = workflow_breaker(&daily(), &three).unwrap();
-    assert_eq!(got.repo, repo("a/b"));
-    assert!(got.reason.contains("a/b"), "{}", got.reason);
+    assert!(got.reason.contains("the last 3 runs"), "{}", got.reason);
 }
 
 #[test]
@@ -510,21 +461,6 @@ fn skipped_runs_neither_count_nor_reset_the_streak() {
 }
 
 #[test]
-fn the_streak_is_per_repo() {
-    let base = DAY0 - 10 * DAY;
-    let w = workflow("0 9 * * *", "UTC", &["a/b", "a/c"], enabled_since(base));
-    let runs = [
-        refused("a/b", base),
-        refused("a/c", base + DAY),
-        refused("a/b", base + 2 * DAY),
-        refused("a/c", base + 3 * DAY),
-        refused("a/b", base + 4 * DAY),
-    ];
-    assert_eq!(workflow_breaker(&w, &runs).unwrap().repo, repo("a/b"));
-    assert!(workflow_breaker(&w, &runs[..4]).is_none());
-}
-
-#[test]
 fn failures_before_the_workflow_was_last_enabled_do_not_count() {
     let base = DAY0 - 10 * DAY;
     let w = workflow(
@@ -561,15 +497,11 @@ fn a_disabled_workflow_has_nothing_to_trip() {
 }
 
 fn with_prior(prior: Option<PriorRun>) -> WorkflowVerdict {
-    let f = [WorkflowRepoFacts {
-        repo: repo("a/b"),
+    let f = WorkflowFacts {
         last_due: Some(ts(DAY0 - DAY + 9 * HOUR)),
         prior,
-    }];
+    };
     verdicts(&daily(), &f, DAY0 + 10 * HOUR)
-        .into_iter()
-        .next()
-        .unwrap()
 }
 
 #[test]

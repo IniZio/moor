@@ -69,15 +69,14 @@ struct Asked<'a> {
     now: Ts,
 }
 
-/// Answers the run of `user`'s workflow `workflow` for `repo` that waits at an approve step.
+/// Answers the run of `user`'s workflow `workflow` that waits at an approve step.
 pub(crate) fn run(
     cx: &Cx,
     store: &Store,
     user: UserId,
-    (workflow, repo, answer, note): (&str, &str, Answer, Option<&str>),
+    (workflow, answer, note): (&str, Answer, Option<&str>),
 ) -> Result<WorkflowAnswerValue, CommandError> {
     let name = WorkflowName::parse(workflow).map_err(usage)?;
-    let repo = ForgeRepo::parse(repo).map_err(|_| usage("repo must be OWNER/NAME"))?;
     let note = note.map(str::trim).filter(|n| !n.is_empty());
     if note.is_some_and(|n| n.len() > NOTE_MAX) {
         return Err(usage(format!("the note is at most {NOTE_MAX} bytes")));
@@ -97,11 +96,11 @@ pub(crate) fn run(
             return None;
         };
         let at = at.clone();
-        (r.repo == repo).then_some((box_id, at, try_n, r))
+        Some((box_id, at, try_n, r))
     });
     let Some((box_id, at, try_n, run)) = waiting else {
         return Err(refused(format!(
-            "no run of {name} for {repo} is waiting for an answer"
+            "no run of {name} is waiting for an answer"
         )));
     };
     let plan = store.run_plan(run.id, &w.prompt)?;
@@ -136,7 +135,6 @@ pub(crate) fn run(
     let next = asked.apply(answer_move(&plan, &history, answer))?;
     Ok(WorkflowAnswerValue {
         workflow: name.to_string(),
-        repo: repo.to_string(),
         next,
     })
 }

@@ -1,4 +1,4 @@
-//! The workflow tick decider: which repos of a workflow have a firing due.
+//! The workflow tick decider: whether a workflow has a firing due.
 
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
@@ -7,11 +7,9 @@ use crate::workflow::{
     BREAKER_STREAK,
 };
 
-/// What the store and the Boxes say about one repo of a workflow.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowRepoFacts {
-    /// The repo.
-    pub repo: ForgeRepo,
+/// What the store and the Boxes say about a workflow's runs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkflowFacts {
     /// The due time of the latest recorded cron firing, whatever came of it. A run fired by hand
     /// is left out, so it never swallows a due time the schedule missed.
     pub last_due: Option<Ts>,
@@ -20,7 +18,7 @@ pub struct WorkflowRepoFacts {
     pub prior: Option<PriorRun>,
 }
 
-/// A run that may keep the next firing of its repo from starting a Box.
+/// A run that may keep the workflow's next firing from starting a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PriorRun {
     /// Its Box is being started.
@@ -47,7 +45,7 @@ impl PriorRun {
     }
 }
 
-/// What to do for one repo.
+/// What to do this tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkflowVerdict {
     /// Nothing is due.
@@ -64,47 +62,23 @@ pub enum WorkflowVerdict {
     },
 }
 
-/// The verdict for one repo of a workflow.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowRepoVerdict {
-    /// The repo.
-    pub repo: ForgeRepo,
-    /// What to do.
-    pub verdict: WorkflowVerdict,
-}
-
-/// Decides, per repo, whether `workflow` has a firing due at `now`.
+/// Decides whether `workflow` has a firing due at `now`.
 ///
 /// Only the latest due time at or before `now` fires, and only once: a workflow that missed
 /// several times while the controller was down fires the newest and never a backlog. A due time
-/// before the workflow was created or last enabled never fires. Repos in `facts` the workflow
-/// does not list are ignored, and a repo with no facts is treated as never fired and not open.
+/// before the workflow was created or last enabled never fires.
 #[must_use]
-pub fn workflow_due(
-    workflow: &Workflow,
-    facts: &[WorkflowRepoFacts],
-    now: Ts,
-) -> Vec<WorkflowRepoVerdict> {
+pub fn workflow_due(workflow: &Workflow, facts: &WorkflowFacts, now: Ts) -> WorkflowVerdict {
     let WorkflowState::Enabled { since } = workflow.state else {
-        return Vec::new();
+        return WorkflowVerdict::NotDue;
     };
-    let latest = workflow.schedule.latest_at_or_before(now);
-    workflow
-        .repos
-        .iter()
-        .map(|repo| {
-            let fact = facts.iter().find(|f| &f.repo == repo);
-            let last_due = fact.and_then(|f| f.last_due);
-            let prior = fact.and_then(|f| f.prior);
-            let due = latest.filter(|&d| d >= since && last_due.is_none_or(|l| d > l));
-            WorkflowRepoVerdict {
-                repo: repo.clone(),
-                verdict: due.map_or(WorkflowVerdict::NotDue, |due_at| {
-                    overlap_policy(prior, due_at)
-                }),
-            }
-        })
-        .collect()
+    let due = workflow
+        .schedule
+        .latest_at_or_before(now)
+        .filter(|&d| d >= since && facts.last_due.is_none_or(|l| d > l));
+    due.map_or(WorkflowVerdict::NotDue, |due_at| {
+        overlap_policy(facts.prior, due_at)
+    })
 }
 
 /// A started run that has outlived its timeout, and the Box to stop.
@@ -221,16 +195,14 @@ pub fn workflow_expired(
         .collect()
 }
 
-/// Why and where the breaker tripped.
+/// Why the breaker tripped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDisable {
-    /// The repo whose runs keep failing.
-    pub repo: ForgeRepo,
     /// What to tell the owner.
     pub reason: String,
 }
 
-/// Whether the workflow should be disabled: some repo's latest [`BREAKER_STREAK`] concluded runs
+/// Whether the workflow should be disabled: its latest [`BREAKER_STREAK`] concluded runs
 /// were all refused, failed, incomplete or timed out.
 ///
 /// Only runs due since the workflow was last enabled count, so re-enabling restarts the count. A
@@ -244,39 +216,33 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
     let WorkflowState::Enabled { since } = workflow.state else {
         return None;
     };
-    workflow.repos.iter().find_map(|repo| {
-        let mut mine: Vec<&WorkflowRun> = runs
-            .iter()
-            .filter(|r| &r.repo == repo && r.due_at >= since)
-            .collect();
-        mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
-        let mut streak = 0;
-        for run in mine {
-            let counts = run.trigger == RunTrigger::Cron;
-            match &run.state {
-                RunState::Done(RunEnd::Refused { .. }) => streak += usize::from(counts),
-                RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
-                    RunOutcome::Failed { .. }
-                    | RunOutcome::Incomplete { .. }
-                    | RunOutcome::TimedOut { .. } => streak += usize::from(counts),
-                    RunOutcome::Delivered { .. } => break,
-                    RunOutcome::Declined { .. } => {}
-                },
-                RunState::Queued
-                | RunState::Running { .. }
-                | RunState::Waiting { .. }
-                | RunState::Done(RunEnd::SkippedOverlap) => {}
-            }
+    let mut mine: Vec<&WorkflowRun> = runs.iter().filter(|r| r.due_at >= since).collect();
+    mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
+    let mut streak = 0;
+    for run in mine {
+        let counts = run.trigger == RunTrigger::Cron;
+        match &run.state {
+            RunState::Done(RunEnd::Refused { .. }) => streak += usize::from(counts),
+            RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
+                RunOutcome::Failed { .. }
+                | RunOutcome::Incomplete { .. }
+                | RunOutcome::TimedOut { .. } => streak += usize::from(counts),
+                RunOutcome::Delivered { .. } => break,
+                RunOutcome::Declined { .. } => {}
+            },
+            RunState::Queued
+            | RunState::Running { .. }
+            | RunState::Waiting { .. }
+            | RunState::Done(RunEnd::SkippedOverlap) => {}
         }
-        (streak >= BREAKER_STREAK).then(|| WorkflowDisable {
-            repo: repo.clone(),
-            reason: format!("{repo}: the last {BREAKER_STREAK} runs were refused or timed out"),
-        })
+    }
+    (streak >= BREAKER_STREAK).then(|| WorkflowDisable {
+        reason: format!("the last {BREAKER_STREAK} runs were refused or timed out"),
     })
 }
 
 /// What a due firing does given the prior run: skip and record the skip while the prior run
-/// blocks, so two unfinished runs never work the same repo of one workflow at once.
+/// blocks, so two unfinished runs of one workflow never work at once.
 const fn overlap_policy(prior: Option<PriorRun>, due_at: Ts) -> WorkflowVerdict {
     match prior {
         Some(p) if p.blocks() => WorkflowVerdict::SkipOverlap { due_at },

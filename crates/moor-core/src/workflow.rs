@@ -53,7 +53,7 @@ pub enum WorkflowError {
     },
 }
 
-/// How many failed runs in a row, for one repo of one workflow, disable the workflow.
+/// How many failed runs in a row of one workflow disable it.
 pub const BREAKER_STREAK: usize = 3;
 
 /// The database id of a workflow.
@@ -153,11 +153,9 @@ pub struct WorkflowDef {
     pub name: WorkflowName,
     /// When it fires.
     pub schedule: WorkflowSchedule,
-    /// The repos it starts a Box in, each firing; never empty, never repeated.
+    /// The repos each firing's one Box clones, in order: the first is where its agent works, and
+    /// the rest sit beside it. Never empty, and no two share a name, so a folder.
     pub repos: Vec<ForgeRepo>,
-    /// The repos each started Box clones beside its own; none of them shares a name with
-    /// another or with a repo above.
-    pub also: Vec<ForgeRepo>,
     /// A partial repo config laid over the repo's for each Box it starts; `None` for none.
     pub config: Option<String>,
     /// The opaque prompt each started Box gets.
@@ -173,11 +171,12 @@ pub struct WorkflowDef {
 }
 
 impl WorkflowDef {
-    /// Builds a definition, checking the repos and the prompt.
+    /// Builds a definition, checking the repos and the prompt. The Box clones every repo into a
+    /// folder of its name, so no two repos may share a name.
     ///
     /// # Errors
-    /// [`WorkflowError::NoRepos`], [`WorkflowError::DuplicateRepo`] or
-    /// [`WorkflowError::NoPrompt`].
+    /// [`WorkflowError::NoRepos`], [`WorkflowError::DuplicateRepo`],
+    /// [`WorkflowError::SameName`] or [`WorkflowError::NoPrompt`].
     pub fn new(
         name: WorkflowName,
         schedule: WorkflowSchedule,
@@ -188,9 +187,14 @@ impl WorkflowDef {
         if repos.is_empty() {
             return Err(WorkflowError::NoRepos);
         }
-        for (i, repo) in repos.iter().enumerate() {
-            if repos.iter().take(i).any(|seen| seen == repo) {
-                return Err(WorkflowError::DuplicateRepo(repo.to_string()));
+        for (i, r) in repos.iter().enumerate() {
+            let mut earlier = repos.iter().take(i);
+            if let Some(prev) = earlier.find(|s| s.name.eq_ignore_ascii_case(&r.name)) {
+                return Err(if prev == r {
+                    WorkflowError::DuplicateRepo(r.to_string())
+                } else {
+                    WorkflowError::SameName(prev.clone(), r.clone())
+                });
             }
         }
         if prompt.trim().is_empty() {
@@ -200,7 +204,6 @@ impl WorkflowDef {
             name,
             schedule,
             repos,
-            also: Vec::new(),
             config: None,
             prompt: prompt.to_owned(),
             enabled,
@@ -208,26 +211,6 @@ impl WorkflowDef {
             origin: None,
             plan: None,
         })
-    }
-
-    /// Sets the repos each started Box clones beside its own. Each Box clones every repo into
-    /// a folder of its name, so no two of one firing's repos may share a name.
-    ///
-    /// # Errors
-    /// [`WorkflowError::DuplicateRepo`] or [`WorkflowError::SameName`].
-    pub fn with_also(mut self, also: Vec<ForgeRepo>) -> Result<Self, WorkflowError> {
-        for (i, r) in also.iter().enumerate() {
-            let mut earlier = self.repos.iter().chain(also.iter().take(i));
-            if let Some(prev) = earlier.find(|s| s.name.eq_ignore_ascii_case(&r.name)) {
-                return Err(if prev == r {
-                    WorkflowError::DuplicateRepo(r.to_string())
-                } else {
-                    WorkflowError::SameName(prev.clone(), r.clone())
-                });
-            }
-        }
-        self.also = also;
-        Ok(self)
     }
 }
 
@@ -242,10 +225,8 @@ pub struct Workflow {
     pub name: WorkflowName,
     /// When it fires.
     pub schedule: WorkflowSchedule,
-    /// The repos it starts a Box in, each firing.
+    /// The repos each firing's one Box clones, in order; the first is where its agent works.
     pub repos: Vec<ForgeRepo>,
-    /// The repos each started Box clones beside its own.
-    pub also: Vec<ForgeRepo>,
     /// A partial repo config laid over the repo's for each Box it starts.
     pub config: Option<String>,
     /// The opaque prompt each started Box gets.

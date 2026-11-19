@@ -142,7 +142,7 @@ fn putting_a_name_again_replaces_the_definition_and_keeps_its_runs() {
         got.state, first.state,
         "still enabled, so still since the same time"
     );
-    assert_eq!(store.last_workflow_runs(id).unwrap().len(), 1);
+    assert_eq!(store.recent_workflow_runs(id, 50).unwrap().len(), 1);
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn only_the_owner_deletes_a_workflow_and_its_runs_go_with_it() {
     assert!(store.workflow(alice, &name("daily")).unwrap().is_some());
     assert!(store.delete_workflow(alice, &name("daily")).unwrap());
     assert!(store.workflow(alice, &name("daily")).unwrap().is_none());
-    assert!(store.last_workflow_runs(id).unwrap().is_empty());
+    assert!(store.recent_workflow_runs(id, 50).unwrap().is_empty());
     assert!(!store.delete_workflow(alice, &name("daily")).unwrap());
 }
 
@@ -214,13 +214,13 @@ fn a_firing_is_recorded_once_whatever_the_second_attempt_says() {
     let again = run(id, "a/one", 100, refused("full"));
     assert!(!store.record_workflow_run(&again).unwrap());
     assert_eq!(
-        recorded_all(&store.last_workflow_runs(id).unwrap()),
+        recorded_all(&store.recent_workflow_runs(id, 50).unwrap()),
         [started]
     );
 }
 
 #[test]
-fn the_last_run_is_per_repo_and_by_due_time() {
+fn the_last_run_is_the_latest_due() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let alice = user(&store, "local:1");
@@ -233,14 +233,12 @@ fn the_last_run_is_per_repo_and_by_due_time() {
         run(id, "a/one", 200, skipped()),
         newest.clone(),
         run(id, "a/one", 100, refusal.clone()),
-        run(id, "a/two", 100, refusal.clone()),
+        run(id, "a/two", 100, refusal),
     ] {
         assert!(store.record_workflow_run(&r).unwrap());
     }
-    let two = run(id, "a/two", 100, refusal);
-    let mut last = store.last_workflow_runs(id).unwrap();
-    last.sort_by_key(|r| r.repo.to_string());
-    assert_eq!(recorded_all(&last), [newest, two], "a/three never fired");
+    let last = store.last_workflow_run(id).unwrap();
+    assert_eq!(recorded_all(&Vec::from_iter(last)), [newest]);
 }
 
 fn started(id: WorkflowId, r: &str, due: i64, box_id: i64) -> NewRun {
@@ -317,7 +315,7 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     assert!(ends(&store, k2, (2, &expired), at));
     assert!(store.open_workflow_runs(id).unwrap().is_empty());
 
-    let mut last = store.last_workflow_runs(id).unwrap();
+    let mut last = store.recent_workflow_runs(id, 50).unwrap();
     last.sort_by_key(|r| r.repo.to_string());
     let outcomes: Vec<_> = last.into_iter().map(|r| r.state).collect();
     assert_eq!(
@@ -372,11 +370,8 @@ fn recent_runs_are_newest_first_and_limited() {
             .record_workflow_run(&started(id, "a/one", due, 1))
             .unwrap();
     }
-    store
-        .record_workflow_run(&started(id, "a/two", 400, 2))
-        .unwrap();
     let dues: Vec<_> = store
-        .recent_workflow_runs(id, &repo("a/one"), 2)
+        .recent_workflow_runs(id, 2)
         .unwrap()
         .iter()
         .map(|r| r.due_at.as_millis())
@@ -488,7 +483,7 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
         "settled once"
     );
     assert!(store.starting_workflow_runs().unwrap().is_empty());
-    let last = store.last_workflow_runs(id).unwrap();
+    let last = store.recent_workflow_runs(id, 50).unwrap();
     assert_eq!(last.first().map(|r| &r.state), Some(&started));
 }
 

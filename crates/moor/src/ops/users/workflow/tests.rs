@@ -27,7 +27,6 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         cron: cron.to_owned(),
         timezone: tz.to_owned(),
         repos: vec!["o/n".to_owned()],
-        also: Vec::new(),
         config: None,
         prompt: "fix what is broken".to_owned(),
         timeout_minutes: None,
@@ -89,42 +88,46 @@ fn an_added_workflow_is_listed_with_its_next_due_time() {
         (json!("daily"), json!(true), json!(180))
     );
     assert_eq!(w["next_due"], 9 * 3_600_000);
-    assert_eq!(w["also"], json!([]));
-    assert_eq!(w["last_runs"], json!([]));
+    assert_eq!(w.get("also"), None);
+    assert_eq!(w.get("last_run"), None);
 }
 
 #[test]
-fn the_repos_a_workflow_clones_beside_each_box_are_stored_and_listed() {
+fn the_repo_set_is_stored_and_listed_in_order() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let mut req = add_req("daily", "0 9 * * *", "UTC");
-    req.also = vec!["o/lib".to_owned(), "p/deploy".to_owned()];
+    req.repos = vec!["o/n".to_owned(), "o/lib".to_owned(), "p/deploy".to_owned()];
     ok(&f, &who, add(req.clone(), None));
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
-    assert_eq!(listed["workflows"][0]["also"], json!(["o/lib", "p/deploy"]));
+    assert_eq!(
+        listed["workflows"][0]["repos"],
+        json!(["o/n", "o/lib", "p/deploy"])
+    );
+    assert_eq!(listed["workflows"][0].get("also"), None);
 
-    req.also = vec!["o/lib".to_owned()];
+    req.repos = vec!["o/lib".to_owned(), "o/n".to_owned()];
     ok(&f, &who, add(req, None));
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
     assert_eq!(
-        listed["workflows"][0]["also"],
-        json!(["o/lib"]),
-        "adding the name again replaces the list"
+        listed["workflows"][0]["repos"],
+        json!(["o/lib", "o/n"]),
+        "adding the name again replaces the set and its order"
     );
 }
 
 #[test]
-fn an_also_repo_that_would_share_a_folder_is_refused() {
+fn a_repo_of_the_set_that_would_share_a_folder_is_refused() {
     let f = fixture();
     let who = me(&f, "local:2000");
-    let try_add = |also: &[&str]| {
+    let try_add = |repos: &[&str]| {
         let mut req = add_req("daily", "0 9 * * *", "UTC");
-        req.also = also.iter().map(|s| (*s).to_owned()).collect();
+        req.repos = repos.iter().map(|s| (*s).to_owned()).collect();
         refusal(&f, &who, add(req, None))
     };
-    assert!(try_add(&["o/lib", "nope"]).contains("also[1]"));
-    assert!(try_add(&["o/n"]).contains("o/n"));
-    let clash = try_add(&["p/N"]);
+    assert!(try_add(&["o/n", "o/lib", "nope"]).contains("repos[2]"));
+    assert!(try_add(&["o/n", "o/n"]).contains("o/n"));
+    let clash = try_add(&["o/n", "p/N"]);
     assert!(clash.contains("o/n") && clash.contains("p/N"), "{clash}");
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
     assert_eq!(listed["workflows"], json!([]), "nothing was stored");
@@ -378,13 +381,13 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
     store
         .resolve_workflow_start(key, &running(9), Ts::from_millis(150))
         .unwrap();
-    let last_run = || ok(&f, &who, cmd(WorkflowCmd::List))["workflows"][0]["last_runs"][0].clone();
+    let last_run = || ok(&f, &who, cmd(WorkflowCmd::List))["workflows"][0]["last_run"].clone();
     let queued = json!({"at": 100, "entry": {"kind": "queued"}});
     let entered = json!({"at": 150, "entry": {"kind": "entered", "step": "deliver", "try_n": 1}});
     assert_eq!(
         last_run(),
         json!({
-            "repo": "o/n", "due_at": 100, "outcome": "started", "phase": "running",
+            "due_at": 100, "outcome": "started", "phase": "running",
             "trigger": "cron", "step": "deliver", "history": [queued, entered],
         })
     );
@@ -405,7 +408,7 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
         "outcome": {"outcome": "delivered", "result": "opened a pull request"},
     }});
     let done = json!({
-        "repo": "o/n", "due_at": 100, "outcome": "finished", "phase": "done", "trigger": "cron",
+        "due_at": 100, "outcome": "finished", "phase": "done", "trigger": "cron",
         "result": "opened a pull request", "history": [queued, entered, ended],
     });
     assert_eq!(last_run(), done);
@@ -511,13 +514,8 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
         })
         .collect();
     let planned = |due| {
-        let name = moor_core::workflow::box_name(
-            id,
-            "daily",
-            &ForgeRepo::new("o", "n"),
-            Ts::from_millis(due),
-            RunTrigger::Cron,
-        );
+        let name =
+            moor_core::workflow::box_name(id, "daily", Ts::from_millis(due), RunTrigger::Cron);
         json!(name.unwrap().as_str())
     };
     assert_eq!(
