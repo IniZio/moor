@@ -9,7 +9,6 @@ use super::*;
 use crate::controller::conn::Peer;
 use crate::controller::drain::Admitted;
 use crate::controller::hangup::Hangup;
-use crate::controller::watch::live;
 use crate::vault::Vault;
 
 /// Polls `done` until it holds or `within` passes; says whether it held.
@@ -38,8 +37,7 @@ fn peer(dir: &Path, server: &UnixStream) -> Peer {
 }
 
 /// Serves one connection on a thread; the receiver hears when it ends.
-fn serve(dir: &tempfile::TempDir, server: UnixStream) -> Receiver<()> {
-    let env = env(dir);
+fn serve(dir: &tempfile::TempDir, env: Env, server: UnixStream) -> Receiver<()> {
     let peer = peer(&dir.path().join("peer"), &server);
     let (done, ended) = channel();
     thread::spawn(move || {
@@ -79,10 +77,12 @@ fn ends_after(close: impl FnOnce(UnixStream)) {
     let id = add(&store, "alpha");
     append(&store, id, 1);
     let (server, mut client) = UnixStream::pair().expect("pair");
-    let ended = serve(&dir, server);
+    let env = env(&dir);
+    let streams = streams(&env);
+    let ended = serve(&dir, env, server);
     follow_nothing(&mut client);
     assert!(
-        eventually(Duration::from_secs(5), || live() == 1),
+        eventually(Duration::from_secs(5), || streams.live() == 1),
         "the follow never started"
     );
     close(client);
@@ -91,9 +91,9 @@ fn ends_after(close: impl FnOnce(UnixStream)) {
         "the follow still runs 3 s after its client hung up, inside one keepalive"
     );
     assert!(
-        eventually(Duration::from_secs(2), || live() == 0),
+        eventually(Duration::from_secs(2), || streams.live() == 0),
         "the follow's poller still runs: {} live",
-        live()
+        streams.live()
     );
 }
 
@@ -127,6 +127,7 @@ fn a_quiet_follow_sends_caught_up_as_a_keepalive_and_ends_when_it_cannot() {
         ..fast(16)
     };
     let env = env(&dir);
+    let streams = streams(&env);
     let (done, ended) = channel();
     thread::spawn(move || {
         stream(
@@ -147,9 +148,9 @@ fn a_quiet_follow_sends_caught_up_as_a_keepalive_and_ends_when_it_cannot() {
         assert_eq!(frame["cursor"], last, "{got:?}");
     }
     assert!(
-        eventually(Duration::from_secs(2), || live() == 0),
+        eventually(Duration::from_secs(2), || streams.live() == 0),
         "the poller still runs: {} live",
-        live()
+        streams.live()
     );
 }
 

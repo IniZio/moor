@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use moor_core::user::{UserId, Viewer};
 use serde_json::{json, Value};
 
-use super::{run, stream, stream_draining, Ask, Limits, Shared};
+use super::{run, stream, stream_draining, Ask, Limits, Shared, Streams};
 use crate::controller::conn::handle;
 use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
@@ -31,6 +31,11 @@ fn env(dir: &tempfile::TempDir) -> Env {
         ("MOOR_STATE_DIR", dir.path().to_str().expect("utf8 path")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
     ])
+    .sharing(Arc::new(Streams::default()))
+}
+
+fn streams(env: &Env) -> Arc<Streams> {
+    Arc::clone(env.shared::<Arc<Streams>>().expect("streams"))
 }
 
 fn fast(buffer: usize) -> Limits {

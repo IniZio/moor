@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use super::drain::Drain;
+use super::watch::Streams;
 use super::{log, Running, Sink};
 use crate::env::Env;
 use crate::vault::Vault;
@@ -100,10 +101,11 @@ const WATCH_COUNT_EVERY: Duration = Duration::from_secs(60);
 
 /// Logs the number of open watch streams each [`WATCH_COUNT_EVERY`] when it changed since the
 /// last line, so streams that pile up show in the log.
-pub(super) fn spawn_watch_count(drain: &Arc<Drain>, sink: &Sink) {
+pub(super) fn spawn_watch_count(env: &Env, drain: &Arc<Drain>, sink: &Sink) {
     let said = AtomicUsize::new(0);
+    let streams = env.shared::<Arc<Streams>>().cloned().unwrap_or_default();
     passes(WATCH_COUNT_EVERY, drain, sink, move |_| {
-        let live = super::watch::live();
+        let live = streams.live();
         let before = said.swap(live, Ordering::Relaxed);
         if live == before {
             return Vec::new();

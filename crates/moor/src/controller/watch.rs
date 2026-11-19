@@ -89,28 +89,36 @@ impl Shared {
     }
 }
 
-/// Watch streams whose poller runs, across the process.
-static LIVE: AtomicUsize = AtomicUsize::new(0);
+/// Watch streams whose poller runs, in one controller.
+#[derive(Debug, Default)]
+pub(crate) struct Streams(AtomicUsize);
 
-/// How many watch streams are open now.
-pub(crate) fn live() -> usize {
-    LIVE.load(Ordering::Acquire)
+impl Streams {
+    /// How many watch streams are open now.
+    pub(crate) fn live(&self) -> usize {
+        self.0.load(Ordering::Acquire)
+    }
 }
 
-/// Counts one poller in [`LIVE`] until it ends, however it ends.
-struct Live;
+/// Counts one poller in its controller's [`Streams`] until it ends, however it ends.
+struct Live(Option<Arc<Streams>>);
 
 impl Live {
     /// Counts a poller that starts now.
-    fn start() -> Self {
-        LIVE.fetch_add(1, Ordering::AcqRel);
-        Self
+    fn start(env: &Env) -> Self {
+        let streams = env.shared::<Arc<Streams>>().cloned();
+        if let Some(streams) = &streams {
+            streams.0.fetch_add(1, Ordering::AcqRel);
+        }
+        Self(streams)
     }
 }
 
 impl Drop for Live {
     fn drop(&mut self) {
-        LIVE.fetch_sub(1, Ordering::AcqRel);
+        if let Some(streams) = &self.0 {
+            streams.0.fetch_sub(1, Ordering::AcqRel);
+        }
     }
 }
 
@@ -257,7 +265,7 @@ fn send(writer: &mut impl Write, frame: &ServerFrame) -> std::io::Result<()> {
 /// leaves no gap. Without `follow` it stops after a short read. A store failure is
 /// recorded in `shared` for the connection to report.
 fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shared: &Shared) {
-    let _live = Live::start();
+    let _live = Live::start(env);
     // `Moor` is not `Send`, so it is built here rather than handed to the thread.
     let moor = match Moor::from_env(env) {
         Ok(moor) => moor.viewing_as(ask.viewer),

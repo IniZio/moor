@@ -199,7 +199,7 @@ fn a_second_checked_response_waits_while_the_first_is_in_flight() {
     assert_eq!(arrived.load(Ordering::SeqCst), 2);
 }
 
-/// Counts the heap of the whole test process. Each nextest test runs in its own process.
+/// Counts the heap of the whole test process, so a test that reads it runs alone in a child.
 #[global_allocator]
 static HEAP: peak_alloc::PeakAlloc = peak_alloc::PeakAlloc;
 
@@ -220,6 +220,26 @@ fn small_objects_of(size: usize) -> String {
 
 #[test]
 fn a_checked_response_of_small_objects_takes_about_twice_its_size() {
+    let name = module_path!()
+        .split_once("::")
+        .map_or("", |(_, path)| path)
+        .to_owned()
+        + "::small_objects_alone";
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "--test-threads=1", &name])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "{stdout}{stderr}"
+    );
+}
+
+#[test]
+#[ignore = "run alone in a child by a_checked_response_of_small_objects_takes_about_twice_its_size"]
+fn small_objects_alone() {
     let reply = json_reply("200 OK", &small_objects_of(CAP));
     let sent = reply.len();
     let reply = Mutex::new(Some(reply));
