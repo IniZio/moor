@@ -102,20 +102,21 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             Response::ok("x", Some(json!({"retried": true})))
         }
         ("retry", _) => refusal("only a Box whose setup failed can be retried"),
+        ("steer" | "sleep" | "close", wanted) => super::steer::answer(mine, cmd, wanted, inner),
         ("workflow-list", _) => workflows(),
         ("artifacts", _) => Response::ok("x", Some(json!([]))),
         _ => refusal("unexpected"),
     }
 }
 
-fn user(w: &super::secrets::World, sub: &str) -> String {
+pub(super) fn user(w: &super::secrets::World, sub: &str) -> String {
     let claims = json!({"sub": sub, "email": format!("{sub}@example.com"), "email_verified": true});
     *w.issuer.id_claims.lock().unwrap() = claims.clone();
     w.issuer.userinfo.lock().unwrap().1 = claims;
     sign_in(&w.addr)
 }
 
-fn json_of(reply: &super::login::Reply) -> Value {
+pub(super) fn json_of(reply: &super::login::Reply) -> Value {
     serde_json::from_str(&reply.body).unwrap()
 }
 
@@ -218,7 +219,7 @@ fn post(
     post_to(w, "/account/api/boxes", cookie, csrf, body)
 }
 
-fn post_to(
+pub(super) fn post_to(
     w: &super::secrets::World,
     path: &str,
     cookie: &str,
@@ -230,7 +231,7 @@ fn post_to(
     send(&w.addr, "POST", path, &extra, body)
 }
 
-fn csrf_of(w: &super::secrets::World, cookie: &str) -> String {
+pub(super) fn csrf_of(w: &super::secrets::World, cookie: &str) -> String {
     let view = json_of(&get(&w.addr, "/account/api", Some(cookie)));
     view["csrf"].as_str().unwrap().to_owned()
 }

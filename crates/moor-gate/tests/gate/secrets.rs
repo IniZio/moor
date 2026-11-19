@@ -85,7 +85,7 @@ fn answer(
         "node-list" => Response::ok("x", Some(nodes::list(node))),
         "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
         "start-needs" | "start" => needs(vault, who, inner),
-        cmd @ ("show" | "artifacts" | "retry" | "workflow-list")
+        cmd @ ("show" | "artifacts" | "retry" | "workflow-list" | "steer" | "sleep" | "close")
             if who.contains(portal::PREFIX) =>
         {
             portal::answer(who, cmd, inner)

@@ -25,10 +25,12 @@ use crate::{log, tools, Gate};
 mod again;
 mod answer;
 mod changes;
+mod end;
 mod inbox;
 mod pulls;
 mod retry;
 mod start;
+mod steer;
 
 /// The events a Box page reads: the most the controller keeps in one window.
 const EVENTS: u32 = 500;
@@ -60,6 +62,9 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/box/answer"
                 | "/account/api/box/retry"
                 | "/account/api/box/wake"
+                | "/account/api/box/steer"
+                | "/account/api/box/stop"
+                | "/account/api/box/close"
                 | "/account/api/inbox/read"
         )
     )
@@ -90,6 +95,29 @@ pub(super) fn serve(
         }
         ("POST", "/account/api/box/wake") => {
             changes::wake(stream, gate, session, req.csrf, body.as_deref());
+        }
+        ("POST", "/account/api/box/steer") => {
+            steer::steer(stream, gate, session, req.csrf, body.as_deref());
+        }
+        ("POST", "/account/api/box/stop") => {
+            end::end(
+                stream,
+                gate,
+                session,
+                req.csrf,
+                body.as_deref(),
+                end::How::Stop,
+            );
+        }
+        ("POST", "/account/api/box/close") => {
+            end::end(
+                stream,
+                gate,
+                session,
+                req.csrf,
+                body.as_deref(),
+                end::How::Close,
+            );
         }
         ("POST", "/account/api/inbox/read") => {
             inbox::read(stream, gate, session, req.csrf, body.as_deref());
