@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import * as v from 'valibot';
 
@@ -17,6 +18,7 @@ import {
 	runAnswer,
 	SignedOut,
 } from './api';
+import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
@@ -273,8 +275,6 @@ function Line({ e }: { e: Entry }) {
 					<pre>{e.text}</pre>
 				</div>
 			);
-		case 'turn':
-			return <div class="t-receipt">{e.text}</div>;
 		case 'you':
 			return (
 				<div class="t-ev t-you">
@@ -320,7 +320,13 @@ function Timeline({ detail }: { detail: BoxDetail }) {
 	return (
 		<div class="t-events">
 			{blocks(detail.timeline).map((b) =>
-				b.kind === 'fold' ? <Fold entries={b.entries} key={b.entries[0]?.id} /> : <Line e={b.entry} key={b.entry.id} />,
+				b.kind === 'fold' ? (
+					<Fold entries={b.entries} key={b.entries[0]?.id} />
+				) : b.entry.class === 'turn' ? (
+					<TurnLine e={b.entry} entries={detail.timeline} href={`#/box/${encodeURIComponent(detail.box)}/changes`} key={b.entry.id} />
+				) : (
+					<Line e={b.entry} key={b.entry.id} />
+				),
 			)}
 		</div>
 	);
@@ -358,13 +364,8 @@ function EvidenceTab({ detail }: { detail: BoxDetail }) {
 const TABS = ['timeline', 'terminal', 'changes', 'evidence'] as const;
 export type Tab = (typeof TABS)[number];
 
-/** Tabs that arrive in later steps are shown, disabled, so the page already has its shape. */
-const LATER: Partial<Record<Tab, string>> = {
-	changes: 'Changes come in a later step',
-};
-
 export function tabOf(raw: string | undefined): Tab {
-	return TABS.find((t) => t === raw && !LATER[t]) ?? 'timeline';
+	return TABS.find((t) => t === raw) ?? 'timeline';
 }
 
 /** The buttons a card shows: a permission has three fixed ones, a question has all its options. */
@@ -516,10 +517,10 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 	}
 	const s = STATES[value.state];
 	const base = `#/box/${encodeURIComponent(box)}`;
-	const label: Record<Tab, string> = {
+	const label: Record<Tab, ComponentChildren> = {
 		timeline: 'Timeline',
 		terminal: 'Terminal',
-		changes: 'Changes',
+		changes: changesLabel(value.timeline),
 		evidence: `Evidence ${value.artifacts.length}`,
 	};
 	return (
@@ -551,13 +552,11 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 			</div>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<nav class="t-tabs" role="tablist">
-				{TABS.map((t) =>
-					LATER[t] ? (
-						<span class="t-tab t-disabled" role="tab" aria-disabled="true" title={LATER[t]} key={t}>{label[t]}</span>
-					) : (
-						<a class="t-tab" role="tab" aria-selected={tab === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>{label[t]}</a>
-					),
-				)}
+				{TABS.map((t) => (
+					<a class="t-tab" role="tab" aria-selected={tab === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>
+						{label[t]}
+					</a>
+				))}
 			</nav>
 			<div class="t-body">
 				<section>
@@ -575,7 +574,15 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					{value.stale && (
 						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
 					)}
-					{tab === 'evidence' ? <EvidenceTab detail={value} /> : tab === 'terminal' ? <TerminalTab box={box} csrf={csrf} /> : <Timeline detail={value} />}
+					{tab === 'evidence' ? (
+						<EvidenceTab detail={value} />
+					) : tab === 'terminal' ? (
+						<TerminalTab box={box} csrf={csrf} />
+					) : tab === 'changes' ? (
+						<ChangesTab box={box} csrf={csrf} closed={value.state === 'closed'} seen={value.last_event_at ?? value.updated_at} />
+					) : (
+						<Timeline detail={value} />
+					)}
 				</section>
 				<aside class="t-rail">
 					<h3>Now</h3>

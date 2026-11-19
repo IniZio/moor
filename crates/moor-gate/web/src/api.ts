@@ -336,6 +336,11 @@ const BoxRowSchema = v.object({
 	retryable: v.optional(v.boolean(), false),
 });
 
+const TallySchema = v.object({ files: v.number(), added: v.number(), removed: v.number() });
+
+/** What a turn changed in git, read by moor once the turn ended. */
+const ReceiptSchema = v.object({ turn: v.number(), changed: TallySchema, total: TallySchema });
+
 const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
 
 const EntrySchema = v.object({
@@ -346,6 +351,8 @@ const EntrySchema = v.object({
 	text: v.string(),
 	/** For a workflow run's first message: the title of the step it starts at. */
 	step: v.nullish(v.string()),
+	/** For a turn: what it changed in git. */
+	receipt: v.nullish(ReceiptSchema),
 });
 
 const EvidenceSchema = v.object({
@@ -374,6 +381,7 @@ export type BoxRow = v.InferOutput<typeof BoxRowSchema>;
 export type BoxDetail = v.InferOutput<typeof BoxDetailSchema>;
 export type Entry = v.InferOutput<typeof EntrySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
+export type Tally = v.InferOutput<typeof TallySchema>;
 
 export async function boxList(): Promise<BoxRow[]> {
 	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
@@ -441,6 +449,50 @@ export async function boxAnswer(csrf: string, box: string, ask: string, n: numbe
 		body: JSON.stringify({ box, ask, n, text }),
 	});
 	await answer(res, v.object({ answered: v.boolean() }));
+}
+
+const FileChangeSchema = v.object({
+	path: v.string(),
+	from: v.nullish(v.string()),
+	/** Null for a binary file. */
+	added: v.nullable(v.number()),
+	removed: v.nullable(v.number()),
+});
+
+const RepoChangesSchema = v.object({
+	repo: v.string(),
+	total: TallySchema,
+	files: v.array(FileChangeSchema),
+	/** The unified diff against the base; absent unless the Box was read now. */
+	patch: v.nullish(v.string()),
+	cut: v.optional(v.boolean(), false),
+	problem: v.nullish(v.string()),
+});
+
+const ChangesSchema = v.object({
+	live: v.boolean(),
+	why: v.nullish(v.string()),
+	at: v.nullish(v.string()),
+	repos: v.array(RepoChangesSchema),
+});
+
+export type FileChange = v.InferOutput<typeof FileChangeSchema>;
+export type RepoChanges = v.InferOutput<typeof RepoChangesSchema>;
+export type Changes = v.InferOutput<typeof ChangesSchema>;
+
+/** A Box's changes in git against its base: read now when it is awake, else its last receipt. */
+export async function boxChanges(box: string): Promise<Changes> {
+	return answer(await fetch(`/account/api/box/changes?box=${encodeURIComponent(box)}`), ChangesSchema);
+}
+
+/** Wakes an asleep Box. */
+export async function boxWake(csrf: string, box: string): Promise<void> {
+	const res = await fetch('/account/api/box/wake', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ box }),
+	});
+	await answer(res, v.unknown());
 }
 
 export async function boxGet(box: string): Promise<BoxDetail> {
