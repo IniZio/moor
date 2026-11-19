@@ -119,13 +119,14 @@ Settled · 18  ▸
 │ Fix the typo on the login page and open a PR with a screenshot. │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
-│ acme/web ▾   from main ▾   on engine-03 (3 free) ▾   [ ] Plan first   [Start] │
+│ acme/web + acme/api ▾   from main ▾   on engine-03 ▾   [ ] Plan first   [Start] │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 - The footer names the target before you send, as bb does. The repo defaults to the last one used.
 - "Plan first" makes the agent propose a plan and wait for approval before it changes anything. It reuses the workflow plan shape. Off by default.
-- A QA or PM user needs nothing else. Advanced fields (also repos, Box size, timeout) sit behind "More".
+- The repo picker takes one or more repos. The first is where the agent starts, and the rest are cloned beside it. See [Repos of a task](#repos-of-a-task).
+- A QA or PM user needs nothing else. Advanced fields (Box size, timeout) sit behind "More".
 
 ### Task
 
@@ -169,12 +170,34 @@ Steering verbs:
 
 ### Workflows
 
-- A list of workflows with the schedule in words ("Weekdays at 9:00 London"), its repos, the next run and the last result per repo.
+- A list of workflows with the schedule in words ("Weekdays at 9:00 London"), its repos, the next run and the last result.
 - "Make this recurring" on a finished task starts a workflow with its prompt, as Devin and Linear do.
 - The plan is shown as numbered steps, editable in place. JSON stays behind "Edit as JSON".
-- **Run now** per repo, to test before the schedule fires.
+- **Run now**, to test before the schedule fires. When the last run failed, Run now sits beside it.
 - A run opens the same Task page, with the plan rail and the step history.
 - A workflow the breaker paused says why, in one line, at the top.
+
+### Repos of a task
+
+A task or a workflow holds an ordered set of repos, all cloned into one Box.
+
+- The first repo is the starting point. The agent works there, and its branch and PR go there.
+- Each other repo is cloned beside it, as `also` does today. One the agent changed gets its own branch and PR.
+- A workflow run is one Box with all its repos. A workflow no longer starts one Box per repo.
+- To run the same schedule on separate projects, make one workflow per project. "Duplicate" on a workflow makes that one click.
+- The portal shows the set as one picker, first repo first. The words "also" and "beside" leave the portal.
+
+Why. Each pilot workflow names one repo, and one of them clones six more with `also`. Nobody used one Box per repo. People asked for a workflow over several repos and could not find how.
+
+What changes in moor.
+
+- `add_workflow` and `start_box` take `repos`, an ordered list. `also` goes.
+- A run has no repo of its own. Its repo is the first of the set.
+- The breaker, `last_due` and the open-run check apply per workflow, not per repo.
+- `run_workflow` loses its `repo` argument.
+- A Box's name comes from the workflow and the trigger, not the repo.
+- A migration folds each stored workflow's `also` into `repos`, after its one repo. A stored workflow with more than one repo is refused. None exists today.
+- These land after the pilot's proof runs end, so no migration runs under an open run.
 
 ### Inbox
 
@@ -220,7 +243,7 @@ Each step ends in a check someone can rerun. The first step is useful alone.
 5. **Terminal in the browser.** The signed-in WebSocket route and xterm.js. Check. Take over a working Box and type into Claude.
 6. **Receipts, Changes and the PR header.** Check. A turn's receipt matches the git diff in the Box.
 7. **Timeline from the transcript.** Check. Tool calls fold, and errors stay unfolded.
-8. **Workflows reworked.** Words for schedules, plan editor, Make this recurring.
+8. **Workflows reworked.** One repo set per task and workflow, words for schedules, plan editor, Make this recurring. Check. A workflow over two repos runs in one Box and opens a PR in the repo the agent changed.
 9. **Docs.** One getting-started page per role, written against the new portal.
 
 ## Decided on 2026-11-18
@@ -231,3 +254,4 @@ Each step ends in a check someone can rerun. The first step is useful alone.
 4. The herdr front is removed now, before the browser terminal. It was not really used.
 5. "Plan first" is offered on one-off tasks, off by default.
 6. A clickable mockup of Home and the Task page comes before portal code, with the design system chosen alongside it. No Tailwind.
+7. A task and a workflow each hold an ordered set of repos in one Box. The first is the starting point. This replaces one Box per repo and `also`.
