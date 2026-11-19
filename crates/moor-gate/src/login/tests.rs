@@ -9,8 +9,8 @@ use std::time::{Duration, SystemTime};
 use moor_core::user::{Email, Identity};
 
 use super::{
-    check_csrf, csrf_token, kept, Login, Pending, PENDING_PURPOSE, PENDING_TTL, SESSION_IDLE,
-    SESSION_MAX, SESSION_PURPOSE,
+    check_csrf, csrf_token, kept, recheck, seal, Login, Pending, PENDING_PURPOSE, PENDING_TTL,
+    SESSION_IDLE, SESSION_MAX, SESSION_PURPOSE,
 };
 use crate::Person;
 
@@ -105,7 +105,7 @@ fn a_session_lasts_twelve_hours_from_its_last_renewal() {
     let (l, t0) = (login(), SystemTime::now());
     let at = |secs| t0 + Duration::from_secs(secs);
     let cookie = |sealed: String| format!("theme=dark; moor_session={sealed}");
-    let first = cookie(l.open(alice(), t0).unwrap().sealed);
+    let first = cookie(l.open(alice(), None, t0).unwrap().sealed);
     let session = l.session([first.as_str()], at(43_199)).unwrap();
     assert_eq!(session.person, alice());
     assert!(l.session([first.as_str()], t0 + SESSION_IDLE).is_none());
@@ -124,7 +124,7 @@ fn a_session_lasts_twelve_hours_from_its_last_renewal() {
 #[test]
 fn renewals_never_carry_a_session_past_a_day_from_sign_in() {
     let (l, t0) = (login(), SystemTime::now());
-    let first = format!("moor_session={}", l.open(alice(), t0).unwrap().sealed);
+    let first = format!("moor_session={}", l.open(alice(), None, t0).unwrap().sealed);
     let session = l.session([first.as_str()], t0).unwrap();
     assert_eq!(SESSION_MAX, Duration::from_hours(24));
     let late = l.renew(&session, t0 + Duration::from_hours(20)).unwrap();
@@ -157,7 +157,10 @@ fn a_kept_key_is_made_once_and_read_after() {
     assert_eq!(perms & 0o777, 0o600);
     let t0 = SystemTime::now();
     let before = Login::with_kept_key("https://moor.example.com", &path).unwrap();
-    let cookie = format!("moor_session={}", before.open(alice(), t0).unwrap().sealed);
+    let cookie = format!(
+        "moor_session={}",
+        before.open(alice(), None, t0).unwrap().sealed
+    );
     let restarted = Login::with_kept_key("https://moor.example.com", &path).unwrap();
     assert!(restarted.session([cookie.as_str()], t0).is_some());
     std::fs::remove_dir_all(&dir).unwrap();
@@ -169,7 +172,7 @@ fn a_cookie_opens_only_for_its_own_purpose() {
     let sign_in = l.seal.seal(PENDING_PURPOSE, &pending(), t0, SESSION_IDLE);
     let as_session = format!("moor_session={}", sign_in.unwrap());
     assert!(l.session([as_session.as_str()], t0).is_none());
-    let session = l.open(alice(), t0).unwrap().sealed;
+    let session = l.open(alice(), None, t0).unwrap().sealed;
     let open: Option<Pending> = l.seal.open(SESSION_PURPOSE, &session, t0);
     assert!(open.is_none());
 }
@@ -177,7 +180,10 @@ fn a_cookie_opens_only_for_its_own_purpose() {
 #[test]
 fn an_older_key_still_opens_what_it_sealed() {
     let (old, t0) = (login(), SystemTime::now());
-    let cookie = format!("moor_session={}", old.open(alice(), t0).unwrap().sealed);
+    let cookie = format!(
+        "moor_session={}",
+        old.open(alice(), None, t0).unwrap().sealed
+    );
     let rotated = Login::with_keys("https://moor.example.com", &format!("{OTHER},{KEY}")).unwrap();
     assert!(rotated.session([cookie.as_str()], t0).is_some());
     let dropped = Login::with_keys("https://moor.example.com", OTHER).unwrap();
@@ -188,7 +194,7 @@ fn an_older_key_still_opens_what_it_sealed() {
 fn the_csrf_token_belongs_to_its_session() {
     let (l, t0) = (login(), SystemTime::now());
     let open = |person| {
-        let cookie = format!("moor_session={}", l.open(person, t0).unwrap().sealed);
+        let cookie = format!("moor_session={}", l.open(person, None, t0).unwrap().sealed);
         l.session([cookie.as_str()], t0).unwrap()
     };
     let (a, b) = (open(alice()), open(alice()));
@@ -196,4 +202,39 @@ fn the_csrf_token_belongs_to_its_session() {
     assert!(check_csrf(&a, csrf_token(&a)));
     assert!(!check_csrf(&a, csrf_token(&b)));
     assert!(!check_csrf(&a, ""));
+}
+
+#[test]
+fn a_checked_session_opens_only_for_its_check_once_the_check_is_due() {
+    let (l, t0) = (login(), SystemTime::now());
+    let due = t0 + recheck::EVERY;
+    let sealed = l
+        .open(alice(), Some("refresh-0".to_owned()), t0)
+        .unwrap()
+        .sealed;
+    let checked = format!("moor_session={sealed}");
+    let before = due - Duration::from_secs(1);
+    assert!(l.session([checked.as_str()], before).is_some());
+    assert!(l.session([checked.as_str()], due).is_none());
+    let (session, until) = l.opened([checked.as_str()], due).unwrap();
+    assert_eq!(session.person, alice());
+    assert_eq!(until, seal::unix(t0) + SESSION_IDLE.as_secs());
+    let unchecked = format!("moor_session={}", l.open(alice(), None, t0).unwrap().sealed);
+    assert!(
+        l.session([unchecked.as_str()], due).is_some(),
+        "a session with no refresh token has no check"
+    );
+}
+
+#[test]
+fn a_session_sealed_before_checks_existed_still_opens() {
+    let (l, t0) = (login(), SystemTime::now());
+    let older = serde_json::json!({"person": alice(), "csrf": "c", "since": seal::unix(t0)});
+    let sealed = l
+        .seal
+        .seal(SESSION_PURPOSE, &older, t0, SESSION_IDLE)
+        .unwrap();
+    let cookie = format!("moor_session={sealed}");
+    let later = t0 + Duration::from_hours(1);
+    assert_eq!(l.session([cookie.as_str()], later).unwrap().person, alice());
 }

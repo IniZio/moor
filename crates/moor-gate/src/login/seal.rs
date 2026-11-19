@@ -95,6 +95,17 @@ impl Seal {
         cookie: &str,
         now: SystemTime,
     ) -> Option<T> {
+        self.open_until(purpose, cookie, now)
+            .map(|(value, _)| value)
+    }
+
+    /// Like [`Seal::open`], with the Unix second the value stops being valid.
+    pub(super) fn open_until<T: DeserializeOwned>(
+        &self,
+        purpose: &str,
+        cookie: &str,
+        now: SystemTime,
+    ) -> Option<(T, u64)> {
         let raw = URL_SAFE_NO_PAD.decode(cookie).ok()?;
         let (nonce, sealed) = raw.split_at_checked(NONCE_LEN)?;
         let nonce = Nonce::clone_from_slice(nonce);
@@ -109,7 +120,7 @@ impl Seal {
             .ok()
         })?;
         let envelope: Envelope<T> = serde_json::from_slice(&plain).ok()?;
-        (unix(now) < envelope.exp).then_some(envelope.value)
+        (unix(now) < envelope.exp).then_some((envelope.value, envelope.exp))
     }
 }
 

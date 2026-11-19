@@ -8,6 +8,37 @@ const DRAFT = 'moor.draft.';
 
 const listeners = new Set<() => void>();
 
+/** Set once the gate refused a check, so the page stops asking until it reloads. */
+let refused = false;
+
+/** Runs `fn` alone across this site's tabs: they share one cookie, and its refresh token works once. */
+function alone<T>(fn: () => Promise<T>): Promise<T> {
+	return navigator.locks ? navigator.locks.request('moor-session', fn) : fn();
+}
+
+const plainFetch = window.fetch.bind(window);
+
+/**
+ * Every request the page makes: when the gate answers `401` because the session's check with the
+ * issuer is due, the page checks once and sends the request again. A request answered `401`
+ * never ran, so sending it again is safe.
+ */
+window.fetch = async (input, init) => {
+	const res = await plainFetch(input, init);
+	const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+	if (res.status !== 401 || refused || path.startsWith('/auth/')) return res;
+	return alone(async () => {
+		const again = await plainFetch(input, init);
+		if (again.status !== 401 || refused) return again;
+		const checked = await plainFetch('/auth/check', { method: 'POST' });
+		if (!checked.ok) {
+			refused = true;
+			return again;
+		}
+		return plainFetch(input, init);
+	});
+};
+
 /** Tells the page the session ended, once per ending. */
 export function announceSignedOut() {
 	for (const fn of listeners) fn();
@@ -31,8 +62,12 @@ export function useRenewWhileActive(csrf: string) {
 		const renew = () => {
 			if (document.hidden || Date.now() - last < RENEW_EVERY_MS) return;
 			last = Date.now();
-			fetch('/auth/renew', { method: 'POST', headers: { 'X-Moor-Csrf': csrf } }).then(
-				(res) => res.status === 401 && announceSignedOut(),
+			void alone(() => plainFetch('/auth/renew', { method: 'POST', headers: { 'X-Moor-Csrf': csrf } })).then(
+				(res) => {
+					if (res.status !== 401) return;
+					refused = true;
+					announceSignedOut();
+				},
 				() => undefined,
 			);
 		};

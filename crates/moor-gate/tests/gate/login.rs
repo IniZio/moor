@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use moor_gate::{Gate, Login, Verifier};
@@ -172,7 +173,7 @@ fn login_redirects_to_the_issuer_with_pkce_and_a_fresh_state() {
     assert_eq!(q["response_type"], "code");
     assert_eq!(q["client_id"], CLIENT_ID);
     assert_eq!(q["redirect_uri"], format!("http://{addr}/auth/callback"));
-    assert_eq!(q["scope"], "openid email");
+    assert_eq!(q["scope"], "openid email offline_access");
     assert_eq!(q["code_challenge_method"], "S256");
     assert!(q["state"].len() >= 43, "{}", q["state"]);
     let second = get(&addr, "/auth/login?return=/auth/me", None);
@@ -394,6 +395,47 @@ fn renew_needs_the_csrf_token_and_resets_the_cookie() {
         token,
         "a renewal keeps the token open pages hold"
     );
+}
+
+#[test]
+fn a_check_asks_the_issuer_and_a_refused_token_ends_the_session() {
+    let (addr, issuer) = gate();
+    let cookie = sign_in(&addr);
+    let check = |c: &str| {
+        send(
+            &addr,
+            "POST",
+            "/auth/check",
+            &format!("Cookie: {c}\r\n"),
+            "",
+        )
+    };
+    assert_eq!(send(&addr, "POST", "/auth/check", "", "").status, 401);
+    let checked = check(&cookie);
+    assert_eq!(checked.status, 200, "{}", checked.body);
+    assert_eq!(issuer.refreshes.load(Ordering::SeqCst), 1);
+    let fresh = checked.cookie("moor_session").unwrap();
+    assert_eq!(get(&addr, "/auth/me", Some(&fresh)).status, 200);
+    let spent = check(&cookie);
+    assert_eq!(
+        spent.status, 401,
+        "the old cookie holds a refresh token already traded"
+    );
+    assert!(
+        spent.cookie("moor_session").is_none(),
+        "a refusal leaves the cookie, which another tab may have renewed"
+    );
+    *issuer.refresh.lock().unwrap() = "revoked".to_owned();
+    assert_eq!(check(&fresh).status, 401);
+    let token = csrf(&get(&addr, "/auth/me", Some(&fresh)));
+    let renew = send(
+        &addr,
+        "POST",
+        "/auth/renew",
+        &format!("Cookie: {fresh}\r\nX-Moor-Csrf: {token}\r\n"),
+        "",
+    );
+    assert_eq!(renew.status, 401, "a renewal asks the issuer too");
 }
 
 #[test]

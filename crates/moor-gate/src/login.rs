@@ -4,10 +4,12 @@
 //! the key can serve them, and a restart that keeps the key ends no session.
 
 pub(crate) mod account;
+mod cookie;
 mod kept;
 mod nodes;
 pub(crate) mod pair;
 mod portal;
+mod recheck;
 mod repos;
 pub(crate) mod routes;
 mod seal;
@@ -33,6 +35,7 @@ use ureq::Agent;
 
 use serde::{Deserialize, Serialize};
 
+use self::cookie::Issued;
 use self::seal::Seal;
 use crate::{Person, Verifier};
 
@@ -81,31 +84,16 @@ pub(crate) struct Session {
     csrf: String,
     /// Unix seconds of the sign-in, which bounds every renewal by [`SESSION_MAX`].
     since: u64,
-}
-
-/// A sealed session cookie and how long it lasts.
-pub(crate) struct Issued {
-    /// The cookie value.
-    sealed: String,
-    /// Its life from now.
-    ttl: Duration,
-}
-
-impl Issued {
-    /// Its life from now.
-    pub(crate) const fn ttl(&self) -> Duration {
-        self.ttl
-    }
-
-    /// The `Set-Cookie` header line that stores it, kept by the browser across restarts.
-    pub(crate) fn header(&self) -> String {
-        format!(
-            "Set-Cookie: {}={}; Max-Age={}; HttpOnly; Secure; SameSite=Lax; Path=/\r\n",
-            routes::COOKIE,
-            self.sealed,
-            self.ttl.as_secs()
-        )
-    }
+    /// The issuer's refresh token, traded at each check to ask whether the person may still
+    /// sign in. None when the issuer gave none; such a session is never checked.
+    #[serde(default)]
+    refresh: Option<String>,
+    /// Unix seconds from which the session opens only for a check, see [`Login::recheck`].
+    #[serde(default)]
+    due: u64,
+    /// Unix seconds of the issuer's last yes.
+    #[serde(default)]
+    vouched: u64,
 }
 
 /// Where the issuer signs people in and where codes become tokens.
@@ -246,6 +234,7 @@ impl Login {
             .authorize_url(|| state.clone())
             .add_scope(Scope::new("openid".to_owned()))
             .add_scope(Scope::new("email".to_owned()))
+            .add_scope(Scope::new("offline_access".to_owned()))
             .set_pkce_challenge(challenge)
             .url();
         let waiting = Pending {
@@ -290,15 +279,28 @@ impl Login {
             .request(&self.http)
             .map_err(|e| format!("the token request failed: {e}"))?;
         let person = verifier.verify(token.access_token().secret())?;
-        Ok((self.open(person, now)?, pending.back))
+        let refresh = token.refresh_token().map(|r| r.secret().clone());
+        if refresh.is_none() {
+            crate::log("the issuer gave no refresh token, so this session is never checked again");
+        }
+        Ok((self.open(person, refresh, now)?, pending.back))
     }
 
-    /// The cookie of a new session for `person`.
-    fn open(&self, person: Person, now: SystemTime) -> Result<Issued, String> {
+    /// The cookie of a new session for `person`, checked with `refresh` from now on.
+    fn open(
+        &self,
+        person: Person,
+        refresh: Option<String>,
+        now: SystemTime,
+    ) -> Result<Issued, String> {
+        let at = seal::unix(now);
         let session = Session {
             person,
             csrf: CsrfToken::new_random_len(RANDOM_BYTES).into_secret(),
-            since: seal::unix(now),
+            since: at,
+            refresh,
+            due: at.saturating_add(recheck::EVERY.as_secs()),
+            vouched: at,
         };
         self.renew(&session, now)
     }
@@ -309,6 +311,22 @@ impl Login {
         let end = session.since.saturating_add(SESSION_MAX.as_secs());
         let left = Duration::from_secs(end.saturating_sub(seal::unix(now)));
         let ttl = SESSION_IDLE.min(left);
+        self.issue(session, now, ttl)
+    }
+
+    /// `session` sealed again to end when it would have, at Unix second `until`.
+    pub(crate) fn keep(
+        &self,
+        session: &Session,
+        until: u64,
+        now: SystemTime,
+    ) -> Result<Issued, String> {
+        let ttl = Duration::from_secs(until.saturating_sub(seal::unix(now)));
+        self.issue(session, now, ttl)
+    }
+
+    /// `session` sealed to last `ttl` from `now`.
+    fn issue(&self, session: &Session, now: SystemTime, ttl: Duration) -> Result<Issued, String> {
         if ttl.is_zero() {
             return Err("the session reached its longest life".to_owned());
         }
@@ -316,14 +334,26 @@ impl Login {
         Ok(Issued { sealed, ttl })
     }
 
-    /// The live session the `Cookie` header values carry.
+    /// The live session the `Cookie` header values carry, unless its check is due: then only
+    /// `/auth/check` and `/auth/renew` open it, through [`Login::opened`].
     pub(crate) fn session<'a>(
         &self,
         cookies: impl IntoIterator<Item = &'a str>,
         now: SystemTime,
     ) -> Option<Session> {
+        let (session, _) = self.opened(cookies, now)?;
+        (session.refresh.is_none() || seal::unix(now) < session.due).then_some(session)
+    }
+
+    /// The unexpired session the `Cookie` header values carry, checked or not, and the Unix
+    /// second it ends.
+    pub(crate) fn opened<'a>(
+        &self,
+        cookies: impl IntoIterator<Item = &'a str>,
+        now: SystemTime,
+    ) -> Option<(Session, u64)> {
         let sealed = cookie_value(cookies, routes::COOKIE)?;
-        self.seal.open(SESSION_PURPOSE, sealed, now)
+        self.seal.open_until(SESSION_PURPOSE, sealed, now)
     }
 }
 
