@@ -20,6 +20,7 @@ import {
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
+import { TerminalTab } from './Terminal';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
 export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
@@ -359,7 +360,6 @@ export type Tab = (typeof TABS)[number];
 
 /** Tabs that arrive in later steps are shown, disabled, so the page already has its shape. */
 const LATER: Partial<Record<Tab, string>> = {
-	terminal: 'Terminal comes in a later step',
 	changes: 'Changes come in a later step',
 };
 
@@ -575,7 +575,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					{value.stale && (
 						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
 					)}
-					{tab === 'evidence' ? <EvidenceTab detail={value} /> : <Timeline detail={value} />}
+					{tab === 'evidence' ? <EvidenceTab detail={value} /> : tab === 'terminal' ? <TerminalTab box={box} csrf={csrf} /> : <Timeline detail={value} />}
 				</section>
 				<aside class="t-rail">
 					<h3>Now</h3>

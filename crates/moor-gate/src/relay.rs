@@ -13,7 +13,7 @@ use crate::rewrite::Splitter;
 use crate::Person;
 
 /// The WebSocket, shared by the two directions.
-type Ws = Mutex<WebSocket<TcpStream>>;
+pub(crate) type Ws = Mutex<WebSocket<TcpStream>>;
 
 /// Relays until either side ends the connection.
 pub(crate) fn run(ws: WebSocket<TcpStream>, unix: &UnixStream, person: &Person) {
@@ -120,7 +120,7 @@ fn drain(ws: &mut WebSocket<TcpStream>, split: &mut Splitter, person: &Person) -
 }
 
 /// Sends `msg` (or only flushes) on the non-blocking socket, waiting while its buffer is full.
-fn deliver(ws: &Ws, probe: &TcpStream, msg: Option<Message>) -> bool {
+pub(crate) fn deliver(ws: &Ws, probe: &TcpStream, msg: Option<Message>) -> bool {
     let mut sent = msg.map_or_else(|| lock(ws).flush(), |msg| lock(ws).send(msg));
     while is_blocked(sent.as_ref().err()) {
         if !wait(probe, PollFlags::OUT) {
@@ -137,11 +137,11 @@ fn is_blocked(e: Option<&Error>) -> bool {
 }
 
 /// Waits until `probe` is ready for `flags`; false when the wait failed.
-fn wait(probe: &TcpStream, flags: PollFlags) -> bool {
+pub(crate) fn wait(probe: &TcpStream, flags: PollFlags) -> bool {
     poll(&mut [PollFd::new(probe, flags)], None).is_ok()
 }
 
 /// The WebSocket, even when another thread panicked holding it.
-fn lock(ws: &Ws) -> std::sync::MutexGuard<'_, WebSocket<TcpStream>> {
+pub(crate) fn lock(ws: &Ws) -> std::sync::MutexGuard<'_, WebSocket<TcpStream>> {
     ws.lock().unwrap_or_else(PoisonError::into_inner)
 }
