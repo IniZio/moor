@@ -22,11 +22,11 @@ Each row has a button that opens the right Settings page.
    what it prints into the **claude** secret and choose **Link**.
 2. **Link GitHub.** Run `gh auth token`, or make a fine-grained token that can
    push to your repos. Paste it into the **github** secret.
-3. **Choose a machine.** A shared machine your team runs is ready for you
-   already. [Add your machine](add-machine.md) if you want tasks on your own
-   hardware.
+3. **Choose a machine.** When your team runs a shared machine, this row is
+   done already. Otherwise, or to run tasks on your own hardware,
+   [add your machine](add-machine.md).
 4. **Set an agent profile.** Optional. It brings your own plugins, skills and
-   setup into every Box.
+   setup into every Box. See [Bring your own agent setup](developer.md#bring-your-own-agent-setup).
 
 ![Settings, Secrets, with both secrets linked](images/settings-secrets.png)
 

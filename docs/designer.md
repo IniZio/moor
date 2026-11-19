@@ -8,14 +8,14 @@ never need the terminal. Read [Get started](start.md) first.
 The agent leaves evidence when you ask for it. Say which pages, sizes and
 themes you want in the task. For example:
 
-> Fix the spacing on the pricing cards. Save before and after screenshots at
-> 1280 and 375 wide, light and dark, in .moor/artifacts/.
+> Fix the spacing on the pricing cards. Leave before and after screenshots at
+> 1280 and 375 wide, light and dark, as evidence.
 
 ## Review them
 
 Open the task's **Evidence** tab. Screenshots show as pictures, and a click
-opens one full size. A new version of the same file keeps the old one, so you
-can compare a fix with what came before.
+opens one full size. A file saved again under the same name shows its newest
+version, so ask for before and after names when you want to compare.
 
 ![The Evidence tab with a screenshot](images/task-evidence.png)
 

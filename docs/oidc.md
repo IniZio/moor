@@ -51,6 +51,9 @@ moor-gate \
   no one out.
 - A portal session lasts 12 hours after the person was last active, and at
   most 24 hours from sign-in. Then the page asks them to sign in again.
+- Every 5 minutes of use, the gate trades the session's refresh token at the
+  issuer. A person the issuer removed or disabled is signed out then. The
+  client must be allowed the `offline_access` scope, or no check runs.
 
 On Kubernetes, the chart's `authgear.issuer`, `authgear.clientId`,
 `mcp.resourceUrl`, and `gate.login` set the same flags.

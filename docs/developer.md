@@ -74,6 +74,19 @@ A failed task shows a card with the reason.
   what failed.
 - **Start again** opens New task with the same repos, branch and prompt.
 
+## Bring your own agent setup
+
+**Settings**, then **Agent profile**, takes a GitHub repo that every new Box of
+yours applies. Add `#ref` to pin a branch, tag or commit. The repo can hold
+these files.
+
+- `moor-profile.yaml` for the model, plugin marketplaces and plugins.
+- `AGENTS.md`, `skills/` and `claude/settings.json`.
+- `setup.sh`, which runs once in each new Box.
+
+**Check without saving** tries it first and says whether it applies. moor
+reads the repo with your GitHub token, so link GitHub first.
+
 ## Reach the Box from your own computer
 
 A Box that runs a web app can be reached from your browser with

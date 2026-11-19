@@ -6,10 +6,10 @@ never need the terminal. Read [Get started](start.md) first.
 ## Start a check
 
 Choose **+ New task** and say what to check and what to leave behind as
-evidence. For example:
+evidence. The agent knows where evidence goes. For example:
 
-> Run the end-to-end tests on the login flow. Save a screenshot of each failing
-> page and a short report in .moor/artifacts/.
+> Run the end-to-end tests on the login flow. Leave a screenshot of each failing
+> page and a short report as evidence.
 
 Pick the repo, and leave **from** blank to test the default branch. Name a
 branch there to test a pull request's work instead.
@@ -19,9 +19,10 @@ To run the same check every morning, make it a workflow. See
 
 ## Review the evidence
 
-The **Evidence** tab holds what the agent left in `.moor/artifacts/`.
-Screenshots show as pictures. Logs, reports and step reports download. Each file
-keeps its versions, so a rerun adds a version and keeps the old one.
+The **Evidence** tab holds the files the agent published.
+Screenshots show as pictures. Logs, reports and step reports download. A file
+saved again under the same name shows only its newest version. To keep both,
+ask for two names, such as `before-login.png` and `after-login.png`.
 
 ![The Evidence tab with a screenshot and two files](images/task-evidence.png)
 
@@ -39,8 +40,10 @@ quotes the question. Pick an answer, or write your own in the box below it.
 
 ## Report
 
-- Copy the task's address from the browser. Anyone on the team can open it.
-- Download the files you want to attach from Evidence.
+- Download the files you want to attach from Evidence, and paste the agent's
+  summary from the end of the Timeline.
+- When the agent opened a pull request, link it. Its header shows it, and
+  **View PR** opens it on GitHub.
 - Ask the agent for more in the message box, such as "Retest with the dark
   theme." It runs in the same Box and adds to the same evidence.
 
