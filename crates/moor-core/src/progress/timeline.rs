@@ -198,10 +198,19 @@ impl Receipt {
             added,
             removed,
         } = self.changed;
+        let counts = [(added, '+'), (removed, '−')]
+            .iter()
+            .filter(|(n, _)| *n > 0)
+            .fold(String::new(), |mut s, (n, sign)| {
+                s.push(' ');
+                s.push(*sign);
+                s.push_str(&n.to_string());
+                s
+            });
         let what = match files {
             0 => "no changes".to_owned(),
-            1 => format!("1 file +{added} −{removed}"),
-            n => format!("{n} files +{added} −{removed}"),
+            1 => format!("1 file{counts}"),
+            n => format!("{n} files{counts}"),
         };
         format!("turn {} · {what}", self.turn)
     }

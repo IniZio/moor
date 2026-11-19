@@ -47,3 +47,10 @@ fn a_receipt_with_no_turn_line_shows_on_its_own_and_a_turn_without_one_keeps_its
     assert_eq!(turn.text, "Turn ended (idle)");
     assert!(turn.receipt.is_none());
 }
+
+#[test]
+fn a_receipt_leaves_out_a_zero_count() {
+    let events = [ev(1, "turn_changes", changes(3, 1, 5, 0))];
+    let [only] = timeline(&events).try_into().unwrap();
+    assert_eq!(only.text, "turn 3 · 2 files +10");
+}

@@ -45,7 +45,9 @@ export function Counts({ added, removed }: { added: number | null; removed: numb
 	if (added === null || removed === null) return <span class="t-tag">binary</span>;
 	return (
 		<span class="t-counts">
-			<span class="t-add">+{added}</span> <span class="t-del">−{removed}</span>
+			{added > 0 && <span class="t-add">+{added}</span>}
+			{added > 0 && removed > 0 && ' '}
+			{removed > 0 && <span class="t-del">−{removed}</span>}
 		</span>
 	);
 }

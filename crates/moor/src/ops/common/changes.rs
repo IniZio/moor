@@ -86,7 +86,7 @@ fn problem(said: Option<&String>) -> Option<String> {
 /// Records what the turns since the last receipt changed in each repo of `row`, as a
 /// `turn_changes` event. The caller holds the Box's turn. A failure only warns.
 pub(crate) fn note_turn(cx: &Cx, store: &Store, row: &BoxRow) {
-    let Some(turn) = turn_to_note(store, row) else {
+    let Some((turn, ended)) = turn_to_note(store, row) else {
         return;
     };
     let Some((handle, trees)) = place(cx, row) else {
@@ -124,7 +124,8 @@ pub(crate) fn note_turn(cx: &Cx, store: &Store, row: &BoxRow) {
             })
         })
         .collect();
-    if repos.is_empty() {
+    let changed = repos.iter().any(|r| r.turn.files > 0);
+    if repos.is_empty() || !(ended || changed) {
         return;
     }
     let event = ExtraEvent::Access(AccessEvent::TurnChanges { turn, repos });
@@ -137,16 +138,16 @@ pub(crate) fn note_turn(cx: &Cx, store: &Store, row: &BoxRow) {
     }
 }
 
-/// The count of turns ended when one has ended since the last receipt; none otherwise, as for a
-/// pass that only a wake's idle made due.
-fn turn_to_note(store: &Store, row: &BoxRow) -> Option<u64> {
-    let turn = store.count_events_of(row.id, "turn_done").ok()?;
+/// The number of the turn a receipt would record, and whether a `turn_done` came since the last
+/// receipt. Without one, as for a turn typed into the terminal, only a change is worth a receipt.
+fn turn_to_note(store: &Store, row: &BoxRow) -> Option<(u64, bool)> {
+    let done = store.count_events_of(row.id, "turn_done").ok()?;
     let last = store.newest_events_of(row.id, "turn_changes", 1).ok()?;
     let noted = last
         .first()
         .and_then(|e| e.payload.get("turn")?.as_u64())
         .unwrap_or(0);
-    (turn > noted).then_some(turn)
+    Some((done.max(noted + 1), done > noted))
 }
 
 /// Each repo of `row` as its work tree holds it now, with its patch; none when the Box's machine
