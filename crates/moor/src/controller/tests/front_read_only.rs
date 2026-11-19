@@ -3,9 +3,10 @@
 use super::{config, env};
 use crate::controller::start;
 
-/// A fresh dir outside `/tmp`, which a front sees as its own tmp dir and so refuses to read.
+/// A fresh dir outside `/tmp`, which a front sees as its own tmp dir and so refuses to read. It is
+/// under `/var/tmp` so a socket in it fits the 107-byte `sun_path` limit in a deep checkout.
 fn outside_tmp() -> tempfile::TempDir {
-    tempfile::tempdir_in(env!("CARGO_MANIFEST_DIR")).expect("tmp")
+    tempfile::tempdir_in("/var/tmp").expect("tmp")
 }
 
 /// The refusal `start` gives for a front that may read `paths`, with its config in `cfg/` and
