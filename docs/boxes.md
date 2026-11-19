@@ -1,21 +1,30 @@
-# Start and steer Boxes
+# Claude Code and the CLI
 
-You can start, watch, and steer a Box from Claude Code or the web portal. Each
-front shows the same Box, so you can start in one and follow in another.
+The [portal](start.md) is the main place to work. Claude Code is the second
+way in. It starts, checks and steers the same tasks with the same states, so you
+can start in one and follow in the other. The tools call a task a Box.
 
-Before you start, link your `claude` and `github` secrets on the account page
-at `https://HOST`. A start without the secrets is refused, and the refusal names each one that is
-missing.
+Before you start, link your `claude` and `github` secrets in the portal's
+Settings. A start without them is refused, and the refusal names each one that
+is missing.
 
-## From Claude Code
+## Connect Claude Code
 
-Connect once, with the line from the account page:
+Copy the Claude Code line from **Settings**, then **Connect**, and run it:
 
 ```sh
 claude mcp add --transport http moor https://HOST/mcp
 ```
 
-Then ask in plain words. Claude Code picks the tool.
+Start Claude Code and run `/mcp`. Claude Code opens a browser. Sign in and
+approve the `moor:read` and `moor:write` scopes. The `moor` server now lists
+its tools, such as `start_box` and `box_status`.
+
+Every call acts as you, so you see and change only your own Boxes.
+
+## Ask in plain words
+
+Claude Code picks the tool.
 
 | To | Ask for | Tool |
 | --- | --- | --- |
@@ -35,8 +44,13 @@ A `ready` Box can still be stuck. `box_status` sets `stuck` when the agent has
 made no progress for ten minutes, or when the Proxy refused or withheld a
 request. Look at the screen with `inspect_box` before you steer.
 
+When the agent is done, its work is on the branch `moor/ID-NAME` on GitHub,
+and its last message names the pull request it opened. The same Box shows in
+the portal, where Changes and Evidence show the rest.
+
 To have Claude Code tell you when a Box needs you, install the moor plugin.
-[Get Box events](notify.md#in-claude-code) shows how.
+[Get Box events](notify.md#in-claude-code) shows how. [MCP tools](mcp.md) lists
+every tool, and [CLI](cli.md) covers the `moor` command.
 
 ## Close a Box
 
@@ -45,3 +59,26 @@ that are not pushed or files that are not committed. Ask the agent to push
 first, or close with `force` to discard that work.
 
 An asleep Box stays in every list until someone closes it.
+
+## Open a web app in the Box from your browser
+
+A Box that runs a web app, such as a Compose stack, can be reached from your
+own browser. This matters when you must act in the app yourself, such as
+signing in with a second factor that the agent cannot supply.
+
+```sh
+moor-hc forward fix-login 5177
+```
+
+moor-hc listens on `localhost:5177` on your computer and carries each
+connection to port 5177 in the Box. Open `http://localhost:5177` in your
+browser. The app sees `Host: localhost:5177`, so a sign-in whose only
+registered redirect is `http://localhost:5177` works. Ctrl-C ends the forward.
+
+- Pass `--local-port N` to listen on another port of your computer.
+- Opening the forward wakes a sleeping Box. A browser tab that retries never
+  does. A forward ends nothing when the Box sleeps, so open it again to wake
+  the Box.
+- Traffic in the last 10 minutes keeps the Box awake. An open forward with no
+  traffic does not.
+- Only the Box's own user can forward. The Box must run on a node.

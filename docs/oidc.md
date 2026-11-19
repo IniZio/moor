@@ -9,7 +9,7 @@ its issuer and client.
 Create one client for moor at your provider. Note its issuer URL and client
 id. Then:
 
-1. Add the redirect URI `https://HOST/auth/callback`. The account page, the
+1. Add the redirect URI `https://HOST/auth/callback`. The portal, the
    webhook setup page, and machine pairing sign in through it.
 2. Add the redirect URI `http://localhost:53682/callback`. `moor login` signs in
    through it.
@@ -42,7 +42,7 @@ moor-gate \
 ```
 
 - Without `--mcp-resource-url`, `/mcp` is off.
-- Without `--public-url`, browser sign-in is off. The account page, webhook
+- Without `--public-url`, browser sign-in is off. The portal, webhook
   setup, and machine pairing then answer 404.
 - If the gate cannot reach the issuer's discovery URL, pass `--jwks-url`.
 - With more than one gate replica, give every replica the same
@@ -51,9 +51,6 @@ moor-gate \
   no one out.
 - A portal session lasts 12 hours after the person was last active, and at
   most 24 hours from sign-in. Then the page asks them to sign in again.
-- Every 5 minutes of use, the gate trades the session's refresh token at the
-  issuer. A person the issuer removed or disabled is signed out then. The
-  client must be allowed the `offline_access` scope, or no check runs.
 
 On Kubernetes, the chart's `authgear.issuer`, `authgear.clientId`,
 `mcp.resourceUrl`, and `gate.login` set the same flags.
