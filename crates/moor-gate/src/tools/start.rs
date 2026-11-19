@@ -87,6 +87,7 @@ pub(super) fn send_early(
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     });
     if matches!(request, ControllerRequest::Start(_))
         && act_as(controller, person, show.clone()).is_ok()

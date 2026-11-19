@@ -374,6 +374,7 @@ fn show_and_list_alias() {
         reports: true,
         artifacts: false,
         pane: true,
+        transcript: false,
     });
     let a = ["t1", "--events", "3", "--agent", "--reports", "--pane"];
     let show: Vec<&str> = std::iter::once("show").chain(a).collect();
@@ -388,7 +389,8 @@ fn show_and_list_alias() {
             agent: false,
             reports: false,
             artifacts: false,
-            pane: false
+            pane: false,
+            transcript: false
         })
     );
 }
@@ -524,6 +526,7 @@ fn valid_box_name_parses() {
             reports: false,
             artifacts: false,
             pane: false,
+            transcript: false,
         })
     );
 }

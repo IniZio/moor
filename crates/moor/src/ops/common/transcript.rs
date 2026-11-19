@@ -24,6 +24,8 @@ use crate::ops::common::activity::session_ref;
 use crate::store::archive::ArchivePointer;
 use crate::store::{BoxRow, Launch, Store};
 
+pub(crate) mod lines;
+
 /// A transcript saved in the blob store.
 pub(crate) struct Saved {
     /// The archive's blob key.
@@ -295,7 +297,9 @@ fn store_archive(
     let blobs = cx.blobs().map_err(|e| e.error.to_string())?;
     let fresh = !is_duplicate(session.transcript_digest.as_deref(), &digest);
     if fresh {
+        let read = lines::read(staged);
         blobs.put_file(&key, staged).map_err(|e| e.to_string())?;
+        lines::keep(cx, blobs, &key, read);
     }
     let path = blobs.locate(&key);
     Ok((Saved { key, path, digest }, fresh))

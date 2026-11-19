@@ -160,6 +160,7 @@ fn close_reports_progress_and_show_does_not() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     });
     assert_eq!(progress(show), 0);
 }

@@ -48,6 +48,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     });
     match tools::act_as(&gate.controller, &session.person, show) {
         Ok(shown) => json(stream, "200 OK", &json!({"repos": repos_of(&shown)})),

@@ -234,6 +234,7 @@ const fn show_all() -> ControllerRequest {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     })
 }
 
@@ -246,6 +247,7 @@ const fn status_request(target: BoxTarget) -> ControllerRequest {
         reports: true,
         artifacts: true,
         pane: false,
+        transcript: false,
     })
 }
 

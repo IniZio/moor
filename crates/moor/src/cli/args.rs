@@ -320,6 +320,7 @@ impl From<ShowArgs> for ShowReq {
             reports: a.reports,
             artifacts: false,
             pane: a.pane,
+            transcript: false,
         }
     }
 }

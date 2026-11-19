@@ -68,6 +68,7 @@ fn with_args() -> Vec<Request> {
             reports: true,
             artifacts: false,
             pane: false,
+            transcript: false,
         }),
         Request::Close(CloseReq {
             target: n("a").into(),

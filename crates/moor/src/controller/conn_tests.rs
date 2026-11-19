@@ -52,6 +52,7 @@ fn show(box_name: Option<BoxName>) -> Request {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     })
 }
 

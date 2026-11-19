@@ -42,6 +42,12 @@ impl BlobKey {
         Self(relative_path(box_id, session, digest))
     }
 
+    /// The timeline lines read from the archive at `archive`, kept beside it.
+    pub(crate) fn lines_of(archive: &str) -> Self {
+        let stem = archive.strip_suffix(".tgz").unwrap_or(archive);
+        Self(format!("{stem}.lines.json"))
+    }
+
     /// A key the store recorded when the blob was put.
     pub(crate) const fn recorded(key: String) -> Self {
         Self(key)

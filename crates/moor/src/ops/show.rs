@@ -2,6 +2,8 @@
 //! Each Box's agent is read once per command; a named Box reads only its own.
 
 use moor_core::domain::hands::HandsState;
+use moor_core::progress::transcript::Transcript;
+use moor_core::progress::TimelineEntry;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
     ApprovalView, ArtifactView, AttentionView, BoxView, EventView, HeldMachineView,
@@ -15,8 +17,8 @@ use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc3339};
-use crate::ops::common::{activity, autosleep, reconcile};
-use crate::store::Store;
+use crate::ops::common::{activity, autosleep, reconcile, transcript};
+use crate::store::{EventRow, Store};
 
 /// Events a Box's state and line are derived from.
 const PROGRESS_EVENTS: usize = 200;
@@ -191,15 +193,14 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         .map(event_view)
         .collect();
     detail.progress = Some(progress::derive(&detail, &recent, now.as_millis()));
-    let events = match req.events {
-        Some(n) => {
-            let last = usize::try_from(n).unwrap_or(usize::MAX);
-            let rows = store.events(row.id, last)?;
-            Some(rows.iter().map(event_view).collect::<Vec<EventView>>())
-        }
+    let rows = match req.events {
+        Some(n) => Some(store.events(row.id, usize::try_from(n).unwrap_or(usize::MAX))?),
         None => None,
     };
-    let timeline = events.as_deref().map(progress::timeline);
+    let events: Option<Vec<EventView>> = rows.as_ref().map(|r| r.iter().map(event_view).collect());
+    let timeline = rows
+        .as_deref()
+        .map(|rows| timeline_of(cx, store, row.id, rows, req.transcript));
     let artifacts = if req.artifacts {
         Some(artifacts_of(store, row.id)?)
     } else {
@@ -219,6 +220,25 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         artifacts,
         timeline,
     })
+}
+
+/// Box `id`'s timeline over `rows`, with the lines of its saved transcript when `transcript`.
+fn timeline_of(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    rows: &[EventRow],
+    transcript: bool,
+) -> Vec<TimelineEntry> {
+    let said = transcript
+        .then(|| transcript::lines::of(cx, store, id))
+        .flatten();
+    let (lines, saved_ms) = said.as_ref().map_or((&[][..], 0), |(l, at)| (&l[..], *at));
+    let timed: Vec<(i64, EventView)> = rows
+        .iter()
+        .map(|r| (r.ts.as_millis(), event_view(r)))
+        .collect();
+    progress::timeline_with(&timed, Transcript { lines, saved_ms })
 }
 
 /// Every open Box the viewer may act on.

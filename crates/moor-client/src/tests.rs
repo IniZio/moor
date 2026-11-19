@@ -18,14 +18,7 @@ use moor_core::{BoxId, BoxName, SessionId};
 use super::*;
 
 fn show() -> Request {
-    Request::Show(ShowReq {
-        target: None,
-        events: None,
-        agent: false,
-        reports: false,
-        artifacts: false,
-        pane: false,
-    })
+    Request::Show(serde_json::from_str::<ShowReq>("{}").unwrap())
 }
 
 fn ok_envelope() -> String {

@@ -40,6 +40,7 @@ fn only_start_and_retry_outlive_the_drain() {
             reports: false,
             artifacts: false,
             pane: false,
+            transcript: false,
         })
     ));
 }

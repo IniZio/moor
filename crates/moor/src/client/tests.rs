@@ -16,6 +16,7 @@ fn show() -> Request {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     })
 }
 

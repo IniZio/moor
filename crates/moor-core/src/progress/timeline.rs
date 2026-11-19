@@ -5,6 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::changes::{RepoReceipt, Tally};
+use crate::progress::transcript::{Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
 use crate::workflow::split_start_prompt;
@@ -167,6 +168,12 @@ pub struct TimelineEntry {
     /// For a turn, what it changed in git, as moor read it once the turn ended.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt: Option<Receipt>,
+    /// For a line of the agent's transcript, its id there; such a line has no event id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// For a tool call from the transcript, what it was given and gave back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<Tool>,
 }
 
 /// What a turn changed in git, over every repo of the Box.
@@ -261,9 +268,40 @@ fn words(e: &EventView) -> String {
 /// as an error so it is never folded away.
 #[must_use]
 pub fn timeline(events: &[EventView]) -> Vec<TimelineEntry> {
+    build(events.iter().map(|e| (0, e)), Transcript::default())
+}
+
+/// [`timeline`] of `events`, each with its time in milliseconds, with the lines of
+/// `transcript` placed among them by time. Lines older than the first event are left out.
+#[must_use]
+pub fn timeline_with(
+    events: &[(i64, EventView)],
+    transcript: Transcript<'_>,
+) -> Vec<TimelineEntry> {
+    build(events.iter().map(|(ms, e)| (*ms, e)), transcript)
+}
+
+/// The timeline of `events` and the lines of `transcript`.
+fn build<'e>(
+    events: impl Iterator<Item = (i64, &'e EventView)>,
+    transcript: Transcript<'_>,
+) -> Vec<TimelineEntry> {
     let mut out: Vec<TimelineEntry> = Vec::new();
     let mut open_turn: Option<usize> = None;
-    for e in events {
+    let mut events = events.peekable();
+    let first = events.peek().map(|(ms, _)| *ms);
+    let mut lines = transcript
+        .lines
+        .iter()
+        .filter(|l| first.is_none_or(|f| l.ms >= f))
+        .peekable();
+    for (ms, e) in events {
+        if transcript.covers(e, ms) {
+            continue;
+        }
+        while let Some(line) = lines.next_if(|l| l.ms < ms) {
+            out.push(line.entry());
+        }
         if e.kind == "turn_changes" {
             let Some(receipt) = Receipt::of(&e.payload) else {
                 continue;
@@ -286,6 +324,7 @@ pub fn timeline(events: &[EventView]) -> Vec<TimelineEntry> {
         }
         out.extend(entry(e));
     }
+    out.extend(lines.map(crate::progress::transcript::Line::entry));
     out
 }
 
@@ -316,6 +355,8 @@ fn entry(e: &EventView) -> Option<TimelineEntry> {
         artifact,
         step,
         receipt: None,
+        key: None,
+        tool: None,
     })
 }
 

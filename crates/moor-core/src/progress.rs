@@ -14,8 +14,9 @@ mod markdown;
 mod needs;
 mod timeline;
 pub use needs::{approve_needs, ask_id, needs_of, Approve, NeedKind, Needs, Pick, Role};
-pub use timeline::{timeline, Class, TimelineEntry};
+pub use timeline::{timeline, timeline_with, Class, TimelineEntry};
 mod title;
+pub mod transcript;
 pub use title::{title_of, TITLE_MAX};
 
 /// How long a working Box may go without an event before it shows a warning.
