@@ -224,7 +224,7 @@ export function ChangesTab({ box, csrf, closed, seen }: { box: string; csrf: str
 				<div class="t-stalebar t-changes-old">
 					<span>
 						{changes.why ? `${changes.why[0]?.toUpperCase()}${changes.why.slice(1)}. ` : ''}
-						{changes.repos.length ? `These are the files its last turn changed, read ${at}. The diff needs the Box awake.` : 'No turn has ended with changes on record yet.'}
+						{changes.repos.length ? `These are its changes as of its last turn, read ${at}. ${closed ? 'Its diff went with it.' : 'The diff needs the Box awake.'}` : 'No turn has ended with changes on record yet.'}
 					</span>
 					{!closed && (
 						<button type="button" class="btn" disabled={busy} onClick={() => void wake()}>

@@ -223,12 +223,12 @@ a.t-path:hover { text-decoration: underline; }
 .t-file-diff summary::-webkit-details-marker { display: none; }
 .t-file-diff[open] summary { border-bottom: 1px solid var(--moor-color-border); }
 .t-dnote { margin: 0; padding: 0.5rem 0.75rem; }
-.t-diff { overflow-x: auto; font: var(--app-text-xs)/1.5 var(--moor-font-mono); }
+.t-diff { overflow-x: auto; font: var(--app-text-xs)/1.5 var(--moor-font-mono); font-variant-ligatures: none; font-feature-settings: 'calt' 0, 'liga' 0; }
 .t-dl { display: grid; grid-template-columns: 3rem 3rem 1fr; min-width: max-content; }
 .t-ln { padding: 0 0.5rem; text-align: right; color: var(--moor-color-text-muted); user-select: none; border-right: 1px solid var(--moor-color-border); }
 .t-dt { padding: 0 0.75rem; white-space: pre; }
-.t-dl-add { background: color-mix(in srgb, var(--moor-color-success) 16%, transparent); }
-.t-dl-del { background: color-mix(in srgb, var(--moor-color-danger) 16%, transparent); }
+.t-dl-add { background: var(--moor-color-success-soft); }
+.t-dl-del { background: var(--moor-color-danger-soft); }
 .t-dl-add .t-dt::first-letter { color: var(--moor-color-success); }
 .t-dl-del .t-dt::first-letter { color: var(--moor-color-danger); }
 .t-dl-hunk { color: var(--moor-color-info); background: var(--moor-color-bg-sunken); }
