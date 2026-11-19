@@ -4,6 +4,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::changes::{RepoReceipt, Tally};
 use crate::view::progress::step;
 use crate::view::EventView;
 use crate::workflow::split_start_prompt;
@@ -43,7 +44,7 @@ impl Class {
             "agent_doing" => Self::Step,
             "steered" => Self::You,
             "needs_input" => Self::Asked,
-            "turn_done" => Self::Turn,
+            "turn_done" | "turn_changes" => Self::Turn,
             "artifact_published" => Self::Evidence,
             "rejected"
             | "setup_failed"
@@ -163,6 +164,47 @@ pub struct TimelineEntry {
     /// then the workflow's own prompt, without moor's instructions to the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
+    /// For a turn, what it changed in git, as moor read it once the turn ended.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<Receipt>,
+}
+
+/// What a turn changed in git, over every repo of the Box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Receipt {
+    /// Turns ended so far.
+    pub turn: u64,
+    /// What this turn changed.
+    pub changed: Tally,
+    /// Everything against the base.
+    pub total: Tally,
+}
+
+impl Receipt {
+    /// The receipt a `turn_changes` payload holds.
+    fn of(payload: &Value) -> Option<Self> {
+        let repos: Vec<RepoReceipt> = serde_json::from_value(payload.get("repos")?.clone()).ok()?;
+        Some(Self {
+            turn: payload.get("turn")?.as_u64()?,
+            changed: repos.iter().fold(Tally::default(), |t, r| t.plus(r.turn)),
+            total: repos.iter().fold(Tally::default(), |t, r| t.plus(r.total)),
+        })
+    }
+
+    /// The line a turn shows, such as `turn 2 · 3 files +40 −5`.
+    fn words(self) -> String {
+        let Tally {
+            files,
+            added,
+            removed,
+        } = self.changed;
+        let what = match files {
+            0 => "no changes".to_owned(),
+            1 => format!("1 file +{added} −{removed}"),
+            n => format!("{n} files +{added} −{removed}"),
+        };
+        format!("turn {} · {what}", self.turn)
+    }
 }
 
 /// The first of `keys` that `payload` has as text.
@@ -210,34 +252,63 @@ fn words(e: &EventView) -> String {
 /// as an error so it is never folded away.
 #[must_use]
 pub fn timeline(events: &[EventView]) -> Vec<TimelineEntry> {
-    events
-        .iter()
-        .filter_map(|e| {
-            let class = Class::of(&e.kind).unwrap_or(Class::Error);
-            if class == Class::Hidden {
-                return None;
-            }
-            let artifact = (class == Class::Evidence)
-                .then(|| {
-                    Some((
-                        e.payload.get("name")?.as_str()?.to_owned(),
-                        e.payload.get("version")?.as_i64()?,
-                    ))
-                })
-                .flatten();
-            let (text, step) = match plan_start(e) {
-                Some((prompt, step)) => (prompt, Some(step)),
-                None => (words(e), None),
+    let mut out: Vec<TimelineEntry> = Vec::new();
+    let mut open_turn: Option<usize> = None;
+    for e in events {
+        if e.kind == "turn_changes" {
+            let Some(receipt) = Receipt::of(&e.payload) else {
+                continue;
             };
-            Some(TimelineEntry {
-                id: e.id,
-                at: e.ts.clone(),
-                kind: e.kind.clone(),
-                class,
-                text,
-                artifact,
-                step,
-            })
-        })
-        .collect()
+            let turn = open_turn.take().and_then(|at| out.get_mut(at));
+            if let Some(turn) = turn {
+                turn.text = receipt.words();
+                turn.receipt = Some(receipt);
+                continue;
+            }
+            out.extend(entry(e).map(|en| TimelineEntry {
+                text: receipt.words(),
+                receipt: Some(receipt),
+                ..en
+            }));
+            continue;
+        }
+        if e.kind == "turn_done" {
+            open_turn = Some(out.len());
+        }
+        out.extend(entry(e));
+    }
+    out
 }
+
+/// The timeline entry of one event, without a receipt; none for a hidden kind.
+fn entry(e: &EventView) -> Option<TimelineEntry> {
+    let class = Class::of(&e.kind).unwrap_or(Class::Error);
+    if class == Class::Hidden {
+        return None;
+    }
+    let artifact = (class == Class::Evidence)
+        .then(|| {
+            Some((
+                e.payload.get("name")?.as_str()?.to_owned(),
+                e.payload.get("version")?.as_i64()?,
+            ))
+        })
+        .flatten();
+    let (text, step) = match plan_start(e) {
+        Some((prompt, step)) => (prompt, Some(step)),
+        None => (words(e), None),
+    };
+    Some(TimelineEntry {
+        id: e.id,
+        at: e.ts.clone(),
+        kind: e.kind.clone(),
+        class,
+        text,
+        artifact,
+        step,
+        receipt: None,
+    })
+}
+
+#[cfg(test)]
+mod tests;

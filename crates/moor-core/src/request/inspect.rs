@@ -19,6 +19,15 @@ pub struct InspectReq {
     pub said: Option<u32>,
 }
 
+/// Arguments of `changes`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangesReq {
+    /// The Box, in any state: by name, the newest Box of that name.
+    #[serde(rename = "box")]
+    pub target: BoxTarget,
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::Request;

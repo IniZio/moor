@@ -8,6 +8,7 @@ pub(crate) mod autosleep;
 pub(crate) mod box_exec;
 pub(crate) mod boxwork;
 pub(crate) mod cache;
+pub(crate) mod changes;
 pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;

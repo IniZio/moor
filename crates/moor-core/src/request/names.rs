@@ -66,6 +66,7 @@ impl Request {
             Self::OpenHostSession(r) => r.parent.map(Named::Session).into_iter().collect(),
             Self::Sessions(r) => r.parent.map(Named::Session).into_iter().collect(),
             Self::Inspect(r) => target(&r.target),
+            Self::Changes(r) => target(&r.target),
             Self::Show(r) => r.target.iter().map(|t| Named::Box(t.clone())).collect(),
             Self::Run(r) => vec![named(&r.box_name)],
             Self::BoxConfigSet(r) => vec![named(&r.box_name)],
