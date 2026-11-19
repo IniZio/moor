@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { type Node, SignedOut } from './api';
+import { type Node, failure, toError } from './api';
 import { Command } from './Connect';
 import { machineToken } from './settingsApi';
 
@@ -41,7 +41,7 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 			const t = await machineToken(csrf);
 			setStep({ at: 'waiting', token: t.token, until: Date.now() + t.expires_in * 1000, before: onlineMine(nodes) });
 		} catch (err) {
-			setStep({ at: 'failed', why: err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : (err as Error).message });
+			setStep({ at: 'failed', why: failure(toError(err)) });
 		}
 	};
 
@@ -109,7 +109,7 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 					</p>
 				)}
 				{step?.at === 'expired' && <p class="notice warn">The command expired before a machine checked in.</p>}
-				{step?.at === 'failed' && (
+				{step?.at === 'failed' && step.why && (
 					<p class="notice danger" role="alert">
 						{step.why}
 					</p>

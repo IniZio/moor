@@ -86,7 +86,7 @@ units never bound.
    moor doctor --public-url https://HOST
    ```
 
-Teammates can now follow [Use a team moor](use.md).
+Teammates can now follow [Get started](start.md).
 
 ## Add the webhook front
 

@@ -6,12 +6,14 @@
 mod entry;
 mod scrub;
 mod tool;
+mod typed;
 
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub(crate) use entry::Sent;
 pub use entry::Transcript;
 pub use scrub::scrub;
 
@@ -65,6 +67,11 @@ pub enum What {
     },
     /// The agent called a tool.
     Tool(Tool),
+    /// The person typed this into the agent's own terminal.
+    Typed {
+        /// What they typed.
+        text: String,
+    },
 }
 
 /// One tool call.
@@ -179,6 +186,11 @@ impl Reader {
         if v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
             return;
         }
+        if v.get("type").and_then(Value::as_str) == Some("user") {
+            if let Some(text) = typed::prompt(&v) {
+                return self.typed(&v, &text);
+            }
+        }
         let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else {
             return;
         };
@@ -186,6 +198,20 @@ impl Reader {
             Some("assistant") => self.assistant(&v, blocks),
             Some("user") => self.results(&v, blocks),
             _ => {}
+        }
+    }
+
+    /// The line of a user record the person typed: its words, scrubbed and cut.
+    fn typed(&mut self, v: &Value, text: &str) {
+        let id = text_of(v, "uuid");
+        if let (Some((at, ms)), false) = (when(v), id.is_empty()) {
+            let text = kept(text);
+            self.push(Line {
+                id: id.to_owned(),
+                at,
+                ms,
+                what: What::Typed { text },
+            });
         }
     }
 
@@ -277,7 +303,7 @@ fn fit(lines: &mut [Line]) {
     let mut used = 0;
     for line in lines.iter_mut().rev() {
         used += match &line.what {
-            What::Said { text } => text.len(),
+            What::Said { text } | What::Typed { text } => text.len(),
             What::Tool(t) => [&t.input, &t.diff, &t.output]
                 .iter()
                 .filter_map(|b| b.as_ref().map(Body::size))
@@ -287,7 +313,7 @@ fn fit(lines: &mut [Line]) {
             continue;
         }
         match &mut line.what {
-            What::Said { text } => *text = cut(text, SAID_SHORT, false).text,
+            What::Said { text } | What::Typed { text } => *text = cut(text, SAID_SHORT, false).text,
             What::Tool(t) => (t.input, t.diff, t.output) = (None, None, None),
         }
     }
@@ -296,9 +322,12 @@ fn fit(lines: &mut [Line]) {
 /// A message, scrubbed and cut; none when blank.
 fn said(text: &str) -> Option<What> {
     let text = text.trim();
-    (!text.is_empty()).then(|| What::Said {
-        text: cut(&scrub(text), SAID_MAX, false).text,
-    })
+    (!text.is_empty()).then(|| What::Said { text: kept(text) })
+}
+
+/// `text` as a line keeps it: scrubbed, then cut to [`SAID_MAX`].
+fn kept(text: &str) -> String {
+    cut(&scrub(text), SAID_MAX, false).text
 }
 
 /// The record's time, as written and in milliseconds.

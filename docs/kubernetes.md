@@ -43,7 +43,7 @@ Nightly versions look like `0.3.0-nightly.76`.
 ## Turn on what you need
 
 - `gate.ingress.enabled` exposes the gate on `host`.
-- `gate.login` turns on browser sign-in, which the account page, webhook
+- `gate.login` turns on browser sign-in, which the portal, webhook
   setup, and machine pairing need. Register `https://HOST/auth/callback`
   first.
 - `notify.enabled` runs the webhook front, so [webhooks](notify.md#at-a-webhook)

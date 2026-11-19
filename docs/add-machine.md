@@ -13,7 +13,10 @@ A machine serves in one of two ways:
 ## Pair a personal node
 
 The quickest way is from the portal. Open Settings, then Machines, and choose
-**Add a machine**. It shows one line that installs the agent and pairs the
+**Add a machine**.
+
+![Settings, Machines, with one shared machine online](images/settings-machines.png)
+ It shows one line that installs the agent and pairs the
 machine with a one-use token. Run it on the machine. The dialog waits until the
 machine checks in. The token lasts 10 minutes, and a new one replaces it.
 
@@ -28,7 +31,7 @@ To pair by hand instead:
    curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent
    ```
 
-3. Pair the machine. The Machines section of the account page shows this
+3. Pair the machine. The Machines section of the portal shows this
    line ready to copy:
 
    ```sh
@@ -49,7 +52,7 @@ To pair by hand instead:
 On Linux, run `loginctl enable-linger` once, so the service keeps running
 after you log out.
 
-The machine is now a node named after it. It shows on the account page and in
+The machine is now a node named after it. It shows on the portal and in
 `list_nodes`, with `docker` as what it provides. A new Box of yours tries your
 personal nodes first, so you need no setting to use it. If the machine is
 offline, the start is refused and says since when. moor does not fall back to a
@@ -67,7 +70,7 @@ your own Boxes. Nobody else's Box runs on it. `up` says this each time it runs.
 
 The machine has no cap by default. Free memory decides, and a start that does
 not fit waits. To cap it or to change its labels later, use the Machines
-section of the account page, `moor node set NAME --max-boxes N`, or the
+section of the portal, `moor node set NAME --max-boxes N`, or the
 `set_node_settings` tool. `--no-cap` removes a cap. A change applies to the
 next start.
 
@@ -108,7 +111,7 @@ second address for the link. Each keystroke then skips the public ingress. The
 machine then needs its `server` in `state.json` changed, with no new pairing.
 [Keep machine links on your private network](kubernetes.md#keep-machine-links-on-your-private-network)
 has the steps. To change flags on a moved machine, run `up --server` with the
-link address, not the one the account page shows.
+link address, not the one the portal shows.
 
 ## Keep the agent current
 

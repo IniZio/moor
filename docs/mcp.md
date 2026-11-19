@@ -56,7 +56,7 @@ token's audience.
 - `start_box` takes `repos` as a list of `owner/name`, first one first. The
   agent works in the first, and the rest are cloned beside it. A list of one
   adds your `box.also` beside it. It refuses before it creates
-  anything when you lack a secret, and links the account page. It
+  anything when you lack a secret, and links the portal. It
   returns once the Box exists, with the fields `box_status` gives. With
   `wait: true`, it returns once setup and the agent launch finish. A start on
   a name that is open attaches to that Box.
