@@ -254,4 +254,4 @@ Each step ends in a check someone can rerun. The first step is useful alone.
 4. The herdr front is removed now, before the browser terminal. It was not really used.
 5. "Plan first" is offered on one-off tasks, off by default.
 6. A clickable mockup of Home and the Task page comes before portal code, with the design system chosen alongside it. No Tailwind.
-7. A task and a workflow each hold an ordered set of repos in one Box. The first is the starting point. This replaces one Box per repo and `also`.
+7. A task and a workflow each hold an ordered set of repos in one Box. The first is the starting point. This replaces one Box per repo and `also`. Decided on 2026-11-19.
