@@ -12,19 +12,20 @@ use crate::Person;
 
 /// The controller request that starts the Box `args` asks for.
 pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String> {
-    let repo = ForgeRepo::parse(&args.repo)
-        .map_err(|_| format!("{} is not a repo; give it as owner/name", args.repo))?;
-    let also = args
-        .also
-        .map(|list| {
-            list.iter()
-                .map(|r| {
-                    ForgeRepo::parse(r)
-                        .map_err(|_| format!("{r} is not a repo; give it as owner/name"))
-                })
-                .collect::<Result<Vec<_>, _>>()
+    let mut repos = args
+        .repos
+        .iter()
+        .map(|r| {
+            ForgeRepo::parse(r).map_err(|_| format!("{r} is not a repo; give it as owner/name"))
         })
-        .transpose()?;
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter();
+    let repo = repos
+        .next()
+        .ok_or("name at least one repo, as owner/name")?;
+    let others: Vec<ForgeRepo> = repos.collect();
+    // One repo leaves the rest to the caller's `box.also`, as a start naming one always has.
+    let also = (!others.is_empty()).then_some(others);
     let name = match args.name {
         Some(name) => name,
         None => format!("{}/mcp-{:08x}", repo.name.to_lowercase(), random()),
@@ -122,8 +123,8 @@ fn setup_restarted(shown: &Value) -> bool {
 
 /// What a person asks of the portal to start.
 pub(crate) struct NewBox {
-    /// The repo, as `owner/name`.
-    pub(crate) repo: String,
+    /// The repos, each as `owner/name`, first one first.
+    pub(crate) repos: Vec<String>,
     /// What the agent should do first.
     pub(crate) prompt: String,
     /// The revision to branch from.
@@ -141,8 +142,7 @@ pub(crate) fn start_from_portal(
     origin: std::sync::Arc<str>,
 ) -> Result<Value, String> {
     let request = start_request(StartArgs {
-        repo: new.repo,
-        also: None,
+        repos: new.repos,
         name: None,
         prompt: Some(new.prompt),
         base: new.base,
@@ -162,16 +162,18 @@ mod tests {
     }
 
     #[test]
-    fn start_box_passes_the_other_repos_it_lists() {
+    fn start_box_starts_in_the_first_repo_and_clones_the_rest_beside_it() {
         assert!(matches!(
-            start(serde_json::json!({"repo": "o/a", "also": ["o/lib", "p/deploy"]})),
+            start(serde_json::json!({"repos": ["o/a", "o/lib", "p/deploy"]})),
             Ok(ControllerRequest::Start(r))
-                if r.also == Some(vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")])
+                if r.repo == Some(ForgeRepo::new("o", "a"))
+                    && r.also == Some(vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")])
         ));
         assert!(matches!(
-            start(serde_json::json!({"repo": "o/a"})),
+            start(serde_json::json!({"repos": ["o/a"]})),
             Ok(ControllerRequest::Start(r)) if r.also.is_none()
         ));
-        assert!(start(serde_json::json!({"repo": "o/a", "also": ["lib"]})).is_err());
+        assert!(start(serde_json::json!({"repos": ["o/a", "lib"]})).is_err());
+        assert!(start(serde_json::json!({"repos": []})).is_err());
     }
 }

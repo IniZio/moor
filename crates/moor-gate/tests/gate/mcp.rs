@@ -343,7 +343,7 @@ fn a_read_token_cannot_start_a_box() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "prompt": "hi"}),
+        json!({"repos": ["acme/web"], "prompt": "hi"}),
     );
     assert_eq!(result["isError"], true, "{result}");
     assert!(
@@ -380,7 +380,7 @@ fn start_box_sends_a_start_as_the_person() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "name": "web/fix", "prompt": "fix it", "base": "main"}),
+        json!({"repos": ["acme/web"], "name": "web/fix", "prompt": "fix it", "base": "main"}),
     );
     assert_ne!(result["isError"], true, "{result}");
     let sent = m.requests();
@@ -401,7 +401,7 @@ fn start_box_returns_while_the_start_is_still_running() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "name": "web/slow"}),
+        json!({"repos": ["acme/web"], "name": "web/slow"}),
     );
     assert_ne!(result["isError"], true, "{result}");
     assert!(began.elapsed() < std::time::Duration::from_secs(2));
@@ -421,7 +421,7 @@ fn start_box_with_wait_returns_the_start_result() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "name": "web/slow", "wait": true}),
+        json!({"repos": ["acme/web"], "name": "web/slow", "wait": true}),
     );
     assert!(began.elapsed() >= std::time::Duration::from_secs(3));
     assert_eq!(result["structuredContent"]["started"], "web/slow");
@@ -505,7 +505,7 @@ fn start_box_tells_the_client_to_follow_it_with_box_status() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "name": "web/fix"}),
+        json!({"repos": ["acme/web"], "name": "web/fix"}),
     );
     let next = result["structuredContent"]["next"].as_str().unwrap();
     assert!(next.contains("box_status"), "{result}");
@@ -528,7 +528,7 @@ fn start_box_passes_the_node_to_the_start() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repo": "acme/web", "name": "web/fix", "prompt": "fix it", "node": "hv"}),
+        json!({"repos": ["acme/web"], "name": "web/fix", "prompt": "fix it", "node": "hv"}),
     );
     assert_ne!(result["isError"], true, "{result}");
     let sent = m.requests();
