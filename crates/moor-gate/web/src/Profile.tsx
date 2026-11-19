@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as v from 'valibot';
 
-import { SignedOut } from './api';
+import { failure } from './api';
 import { type Installs, type ProfileCheck, profileCheck, profileGet, profileRemove, profileSet, SourceInput } from './settingsApi';
 
 const STEP_WORDS = {
@@ -11,10 +11,6 @@ const STEP_WORDS = {
 	install: 'Installing a plugin',
 	setup: 'Running setup.sh',
 } as const;
-
-function reason(err: Error): string {
-	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
-}
 
 function when(ms: number): string {
 	return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -95,7 +91,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 				setCurrent(c);
 				setText((typed) => typed || (c.source ?? ''));
 			},
-			(e: Error) => setLoadError(reason(e)),
+			(e: Error) => setLoadError(failure(e)),
 		);
 	useEffect(() => void reload(), []);
 
@@ -124,7 +120,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 				onChanged();
 			}
 		} catch (err) {
-			setProblem(reason(err as Error));
+			setProblem(failure(err));
 		}
 		setBusy('');
 	};

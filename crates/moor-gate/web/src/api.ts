@@ -65,6 +65,12 @@ export type Account = v.InferOutput<typeof AccountSchema>;
 /** Thrown when the session ended; the page offers sign-in again. */
 export class SignedOut extends Error {}
 
+/** What a failed call says. Empty when the session ended, because the sign-in dialog already says so. */
+export function failure(e: unknown): string {
+	if (e instanceof SignedOut) return '';
+	return e instanceof Error ? e.message : 'Something went wrong.';
+}
+
 /** Thrown when a save was made against a revision that is no longer the stored one. */
 export class Conflict extends Error {}
 

@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
-import { type Account, link, SignedOut } from './api';
+import { type Account, link, failure } from './api';
 
 const HINTS = {
 	claude: (
@@ -34,7 +34,7 @@ function Row({ account, name, linked, onLinked }: { account: Account; name: stri
 			setValue('');
 			onLinked();
 		} catch (err) {
-			setError(err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((err as Error).message));
+			setError(failure(err));
 		}
 		setBusy(false);
 	};

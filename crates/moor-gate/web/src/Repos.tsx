@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { Conflict, type RepoConfig, repoGet, repoList, repoSet, SignedOut } from './api';
+import { Conflict, type RepoConfig, repoGet, repoList, repoSet, failure } from './api';
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
-
-function reason(err: Error): string {
-	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
-}
 
 function when(iso: string): string {
 	const at = new Date(iso);
@@ -81,7 +77,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setConfig(read);
 			setDraft(read.text ?? '');
 		} catch (err) {
-			setLoadError(err instanceof Error ? reason(err) : 'Something went wrong.');
+			setLoadError(failure(err));
 		}
 	};
 	useEffect(() => {
@@ -110,7 +106,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setDraft(wrote.text ?? draft);
 			setSaved(true);
 		} catch (err) {
-			setProblem({ text: err instanceof Error ? reason(err) : 'Something went wrong.', stale: err instanceof Conflict });
+			setProblem({ text: failure(err), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -138,7 +134,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 				value={draft}
 				onInput={(e) => setDraft(e.currentTarget.value)}
 			/>
-			{problem && <pre class="notice danger" role="alert">{problem.text}</pre>}
+			{problem?.text && <pre class="notice danger" role="alert">{problem.text}</pre>}
 			{saved && <p class="notice ok" role="status">Saved. The config is at revision {config.revision}.</p>}
 			<div class="actions">
 				{editable && <button disabled={busy || !dirty}>Save</button>}

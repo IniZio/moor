@@ -8,7 +8,7 @@ import {
 	type RunStatus,
 	runAnswer,
 	runGet,
-	SignedOut,
+	failure,
 	type Step,
 	type Workflow,
 	workflowGet,
@@ -32,10 +32,6 @@ const ICONS: Record<RunStatus, { glyph: string; word: string }> = {
 	stopped: { glyph: '■', word: 'declined' },
 	skipped: { glyph: '–', word: 'skipped' },
 };
-
-function reason(err: Error): string {
-	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
-}
 
 function when(ms: number | null | undefined): string {
 	return ms == null ? 'none' : new Date(ms).toLocaleString();
@@ -62,7 +58,7 @@ function useLoad<T>(load: () => Promise<T>, key: string) {
 		try {
 			setValue(await load());
 		} catch (err) {
-			setError(err instanceof Error ? reason(err) : 'Something went wrong.');
+			setError(failure(err));
 		}
 	};
 	useEffect(() => {
@@ -93,7 +89,7 @@ function RunNowButton({ csrf, name, onRan, hint }: { csrf: string; name: string;
 			setNote({ ok: true, text: started.box ? `Started in ${started.box}.` : 'Started.' });
 			onRan();
 		} catch (err) {
-			setNote({ ok: false, text: err instanceof Error ? reason(err) : 'Something went wrong.' });
+			setNote({ ok: false, text: failure(err) });
 		}
 		setBusy(false);
 	};
@@ -102,7 +98,7 @@ function RunNowButton({ csrf, name, onRan, hint }: { csrf: string; name: string;
 			<button type="button" disabled={busy} aria-label={`Run ${name} now${hint ?? ''}`} onClick={() => void run()}>
 				Run now
 			</button>
-			{note && (
+			{note?.text && (
 				<span class={note.ok ? 'notice ok' : 'notice danger'} role={note.ok ? 'status' : 'alert'}>
 					{note.text}
 				</span>
@@ -201,7 +197,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 		try {
 			adopt(await workflowGet(name));
 		} catch (err) {
-			setProblem({ text: err instanceof Error ? reason(err) : 'Something went wrong.', stale: false });
+			setProblem({ text: failure(err), stale: false });
 		}
 	};
 	useEffect(() => {
@@ -224,7 +220,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 			setSaved(true);
 		} catch (err) {
 			if (err instanceof ClearsPlan) setConfirm(err.message);
-			else setProblem({ text: err instanceof Error ? reason(err) : 'Something went wrong.', stale: err instanceof Conflict });
+			else setProblem({ text: failure(err), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -296,7 +292,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 					</div>
 				</div>
 			)}
-			{problem && <pre class="notice danger" role="alert">{problem.text}</pre>}
+			{problem?.text && <pre class="notice danger" role="alert">{problem.text}</pre>}
 			{saved && <p class="notice ok" role="status">Saved. The workflow is at revision {flow.revision}.</p>}
 			<div class="actions">
 				<button disabled={busy || !dirty || planProblems.length > 0}>Save</button>
@@ -413,7 +409,7 @@ function Question({ run, csrf, onAnswered }: { run: Run; csrf: string; onAnswere
 		try {
 			onAnswered(await runAnswer(csrf, run.workflow, run.id, yes));
 		} catch (err) {
-			setProblem(err instanceof Error ? reason(err) : 'Something went wrong.');
+			setProblem(failure(err));
 		}
 		setBusy(false);
 	};

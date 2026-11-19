@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-import { type BoxDetail, boxRetry, SignedOut, workflowRunNow } from './api';
+import { type BoxDetail, boxRetry, failure, workflowRunNow } from './api';
 
 /** What the composer opens with when a person starts a failed Box again. */
 export type Draft = { repos: string[]; base: string; prompt: string };
@@ -50,7 +50,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 			await go();
 			onDone();
 		} catch (e) {
-			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setError(failure(e));
 		} finally {
 			setBusy(false);
 		}

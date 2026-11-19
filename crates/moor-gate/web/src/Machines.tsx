@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Account, Conflict, type Node, nodeSet, SignedOut } from './api';
+import { type Account, Conflict, type Node, nodeSet, failure } from './api';
 import { RemoveMachine } from './RemoveMachine';
 
 function state(n: Node): string {
@@ -24,10 +24,6 @@ function load(n: Node): string[] {
 	if (n.box_memory_mib !== undefined) parts.push(`Boxes hold ${gib(n.box_memory_mib)}`);
 	if (n.mem_report_age_secs !== undefined) parts.push(`reported ${n.mem_report_age_secs}s ago`);
 	return parts;
-}
-
-function reason(err: Error): string {
-	return err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : err.message;
 }
 
 function words(text: string): string[] {
@@ -64,7 +60,7 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 			setSaved(true);
 			onChanged();
 		} catch (err) {
-			setProblem({ text: err instanceof Error ? reason(err) : 'Something went wrong.', stale: err instanceof Conflict });
+			setProblem({ text: failure(err), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -93,7 +89,7 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 				/>
 			</label>
 			<p class="muted">Leave Most Boxes empty for no cap. Free memory and pressure then decide. A change applies to the next start.</p>
-			{problem && <p class="notice danger" role="alert">{problem.text}</p>}
+			{problem?.text && <p class="notice danger" role="alert">{problem.text}</p>}
 			{saved && <p class="notice ok" role="status">Saved.</p>}
 			<div class="actions">
 				<button disabled={busy || !dirty || !valid}>Save</button>

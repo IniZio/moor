@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { boxGet, SignedOut } from './api';
+import { boxGet, failure } from './api';
 import { boxClose, planDraft, planOf } from './draft';
 import './plandraft.css';
 
@@ -15,12 +15,6 @@ const EVERY_MS = 3000;
 
 /** How long a quiet Box may go without leaving a plan before the page gives up on it. */
 const GRACE_MS = 60_000;
-
-const SOMETHING = new Error('Something went wrong.');
-
-function why(e: Error): string {
-	return e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message;
-}
 
 /** Generate plan: a short Box reads the repos and drafts a plan for the prompt, which lands in the editor for review. */
 export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: string; repos: string[]; prompt: string; dirty: boolean; onPlan: (text: string) => void }) {
@@ -60,7 +54,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 			}
 			setDraft({ at: 'running', box: now.box, line: detail.line, quietSince });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING), box: now.box });
+			if (live.current) setDraft({ at: 'failed', text: failure(e), box: now.box });
 		}
 	};
 	const start = async () => {
@@ -70,7 +64,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 			const box = await planDraft(csrf, repos, prompt);
 			if (live.current) setDraft({ at: 'running', box, line: 'Setting up…' });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING) });
+			if (live.current) setDraft({ at: 'failed', text: failure(e) });
 		}
 	};
 	const cancel = async (box: string) => {
@@ -78,7 +72,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 		try {
 			await boxClose(csrf, box);
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING), box });
+			if (live.current) setDraft({ at: 'failed', text: failure(e), box });
 		}
 	};
 	const ready = repos.length > 0 && prompt.trim() !== '';
@@ -122,7 +116,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 				</div>
 			)}
 			{draft.at === 'idle' && draft.note && <p class="notice ok pd-note" role="status">{draft.note}</p>}
-			{draft.at === 'failed' && (
+			{draft.at === 'failed' && draft.text && (
 				<p class="notice danger pd-note" role="alert">
 					{draft.text}{' '}
 					{draft.box && <a href={`#/box/${encodeURIComponent(draft.box)}`}>Open the task</a>}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { boxAnswer, type BoxDetail, type Needs, SignedOut } from './api';
+import { boxAnswer, type BoxDetail, type Needs, failure } from './api';
 import { planOf } from './draft';
 import { gist, readPlan, type PlanDoc } from './plan';
 import './plandraft.css';
@@ -8,12 +8,6 @@ import './plandraft.css';
 /** The answers a plan-first agent offers, as the brief names them. */
 const APPROVE = 'Approve plan';
 const REVISE = 'Revise';
-
-const SOMETHING = new Error('Something went wrong.');
-
-function why(e: Error): string {
-	return e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message;
-}
 
 function Steps({ doc }: { doc: PlanDoc }) {
 	return (
@@ -43,7 +37,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 				const read = await planOf(detail);
 				if (live) setText(read);
 			} catch (e) {
-				if (live) setError(why(e instanceof Error ? e : SOMETHING));
+				if (live) setError(failure(e));
 			}
 		})();
 		return () => {
@@ -59,7 +53,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 			await boxAnswer(csrf, detail.box, needs.id, n, typed);
 			onSent();
 		} catch (e) {
-			setError(why(e instanceof Error ? e : SOMETHING));
+			setError(failure(e));
 			onSent();
 		} finally {
 			setBusy(false);

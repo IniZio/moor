@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 
-import { type Node, SignedOut } from './api';
+import { type Node, failure } from './api';
 import { machineRemove } from './settingsApi';
 
 /** Remove, behind a confirm: the machine leaves the account; its agent keeps running until stopped there. */
@@ -16,7 +16,7 @@ export function RemoveMachine({ csrf, node, onRemoved }: { csrf: string; node: N
 			dialog.current?.close();
 			onRemoved();
 		} catch (err) {
-			setProblem(err instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : (err as Error).message);
+			setProblem(failure(err));
 		}
 		setBusy(false);
 	};
