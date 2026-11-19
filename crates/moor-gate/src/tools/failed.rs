@@ -1,5 +1,6 @@
 //! The tools for Boxes whose setup failed: retry one, or close them all.
 
+use moor_client::Client;
 use moor_core::name::BoxName;
 use moor_core::request::{BoxReq, CloseFailedReq, Request as ControllerRequest};
 use rmcp::handler::server::wrapper::Parameters;
@@ -10,8 +11,22 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::reply::Reply;
-use super::Tools;
+use super::{send_early, Tools};
 use crate::mcp::WRITE;
+use crate::Person;
+
+/// Re-runs setup on `name` for `person` the way `retry_box` does: the same request, answered once
+/// setup has restarted, while it continues. `origin` is where a refusal sends the person for
+/// missing secrets.
+pub(crate) fn retry_from_portal(
+    controller: &Client,
+    person: &Person,
+    name: BoxName,
+    origin: std::sync::Arc<str>,
+) -> Result<serde_json::Value, String> {
+    let request = ControllerRequest::Retry(BoxReq { box_name: name });
+    send_early(controller, person, request, Reply::Started(Some(origin)))
+}
 
 /// Arguments of `retry_box`.
 #[derive(Deserialize, JsonSchema)]
@@ -46,7 +61,7 @@ impl Tools {
             .map(|box_name| ControllerRequest::Retry(BoxReq { box_name }))
             .map_err(|e| e.to_string());
         let reply = Reply::Started(self.public_url.clone());
-        self.run_with(&context, WRITE, request, reply, super::send_early)
+        self.run_with(&context, WRITE, request, reply, send_early)
             .await
     }
 

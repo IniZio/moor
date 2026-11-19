@@ -34,6 +34,7 @@ mod webhook;
 mod workflow;
 
 use args::{BoxArgs, CloseArgs, SendArgs, StartArgs};
+pub(crate) use failed::retry_from_portal;
 use reply::Reply;
 use start::{send_early, start_request};
 pub(crate) use start::{start_from_portal, NewBox};

@@ -17,6 +17,7 @@ import {
 	SignedOut,
 } from './api';
 import { Markdown } from './Markdown';
+import { FailedCard, takeAgain } from './Retry';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
 export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
@@ -539,6 +540,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 								<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
 							</div>
 						))}
+					<FailedCard detail={value} csrf={csrf} onDone={reload} />
 					{value.stale && (
 						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
 					)}
@@ -559,9 +561,10 @@ const LAST_REPO = 'moor.lastRepo';
 
 /** The composer that starts a Box: the footer names the target before anything is sent. */
 export function NewBox({ account }: { account: Account }) {
-	const [prompt, setPrompt] = useState('');
-	const [repo, setRepo] = useState(() => localStorage.getItem(LAST_REPO) ?? '');
-	const [base, setBase] = useState('');
+	const [again] = useState(takeAgain);
+	const [prompt, setPrompt] = useState(again?.prompt ?? '');
+	const [repo, setRepo] = useState(() => again?.repo || (localStorage.getItem(LAST_REPO) ?? ''));
+	const [base, setBase] = useState(again?.base ?? '');
 	const [node, setNode] = useState('');
 	const [repos, setRepos] = useState<string[]>([]);
 	const [busy, setBusy] = useState(false);

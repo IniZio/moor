@@ -150,6 +150,16 @@ fn workflows(gate: &Gate, session: &Session) -> Result<Vec<WorkflowView>, Failur
     value_of::<WorkflowListValue>(gate, session, list).map(|v| v.workflows)
 }
 
+/// Every workflow of the session's person, or none when they could not be read.
+pub(super) fn listed(gate: &Gate, session: &Session) -> Option<Vec<WorkflowView>> {
+    workflows(gate, session).ok()
+}
+
+/// Whether the run ended badly: it failed, timed out, was refused or left unfinished.
+pub(super) fn went_wrong(run: &moor_core::view::workflow::LastRunView) -> bool {
+    status(&run.phase, &run.outcome) == "failure"
+}
+
 /// The run's status, the way an Actions list shows it: one word for the icon.
 fn status(phase: &str, outcome: &str) -> &'static str {
     match (phase, outcome) {

@@ -97,7 +97,7 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-needs { --t-tone: var(--moor-color-accent); }
 .t-working { --t-tone: var(--moor-color-info); }
 .t-done, .t-quiet { --t-tone: var(--moor-color-text-muted); }
-.t-failed { --t-tone: var(--moor-color-text); }
+.t-failed { --t-tone: var(--moor-color-danger); }
 
 .t-grp { margin-bottom: var(--moor-space-6); }
 .t-grp h2 {
@@ -121,7 +121,7 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now { color: var(--moor-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now.t-ask { color: var(--moor-color-text); }
-.t-failword { font-weight: 650; color: var(--moor-color-text); }
+.t-failword { font-weight: 650; color: var(--moor-color-danger); }
 .t-age { color: var(--moor-color-text-muted); text-align: right; font-size: 0.8125rem; }
 .t-empty { color: var(--moor-color-text-muted); padding: var(--moor-space-2) var(--moor-space-3); margin: 0; }
 .t-settled summary { list-style: none; cursor: pointer; padding: var(--moor-space-2) var(--moor-space-3); color: var(--moor-color-text-muted); font-weight: 600; border-radius: var(--moor-radius-sm); }
@@ -171,6 +171,9 @@ a.t-tab:hover { color: var(--moor-color-text); }
 /* Deny is destructive: a rust tint with rust text, readable on the card's heather in both themes. */
 .t-btn-deny { background: var(--moor-color-danger-soft); color: var(--moor-color-danger); border-color: var(--moor-color-danger); }
 .t-btn-deny:hover:not(:disabled) { background: color-mix(in srgb, var(--moor-color-danger) 22%, var(--moor-color-danger-soft)); }
+.t-fail { border: 1.5px solid var(--moor-color-danger); background: var(--moor-color-danger-soft); border-radius: var(--moor-radius-md); padding: 0.85rem 1rem; margin-bottom: var(--moor-space-4); }
+.t-fail-h { font-weight: 650; color: var(--moor-color-danger); font-size: 0.8125rem; }
+.t-fail-q { margin: 0.35rem 0 0.6rem; overflow-wrap: anywhere; }
 .t-stalebar { border: 1px solid var(--moor-color-warning); background: var(--moor-color-warning-soft); border-radius: var(--moor-radius-sm); padding: 0.45rem 0.7rem; margin: 0 0 var(--moor-space-3); }
 
 .t-events { display: grid; gap: 0.1rem; }
