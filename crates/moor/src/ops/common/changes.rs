@@ -54,13 +54,14 @@ fn place(cx: &Cx, row: &BoxRow) -> Option<(BoxHandle, Vec<Tree>)> {
     Some((handle.clone(), trees(row, &workdir)))
 }
 
-/// Runs `scripts` in order in the Box; what each printed, none for one that did not run.
+/// Runs `scripts` in order in the Box's work place, which holds every repo's work tree: the agent
+/// place sees only the first. What each printed, none for one that did not run.
 fn run(cx: &Cx, handle: &BoxHandle, scripts: Vec<String>) -> Vec<Option<String>> {
     let count = scripts.len();
     let steps: Vec<BoxStep> = scripts.into_iter().map(BoxStep::Run).collect();
     let mut done = cx
         .driver()
-        .batch(handle, &[], Place::Agent, &steps, Deadline(WITHIN))
+        .batch(handle, &[], Place::Work, &steps, Deadline(WITHIN))
         .into_iter()
         .map(|d| match d {
             Ok(StepDone::Ran {

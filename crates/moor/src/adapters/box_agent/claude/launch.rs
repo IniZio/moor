@@ -183,10 +183,15 @@ elif {fallback}; then :; else false; fi",
 
 /// The settings fragment: the hooks and the approval of the project's MCP servers, whose screen
 /// would otherwise hold the start, plus the bypass-mode acceptance when the agent launches so.
+/// Claude Code's own `Co-Authored-By` attribution is off, as it overrides the brief.
 fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
     let mut fragment = hooks(script);
     if let Some(map) = fragment.as_object_mut() {
         map.insert("enableAllProjectMcpServers".to_owned(), true.into());
+        map.insert(
+            "attribution".to_owned(),
+            json!({ "commit": "", "pr": "", "commitTrailers": false }),
+        );
         if bypasses_permissions(ctx) {
             map.insert("skipDangerousModePermissionPrompt".to_owned(), true.into());
         }

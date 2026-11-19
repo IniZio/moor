@@ -100,3 +100,14 @@ fn external_imports_are_skipped_by_the_warning_shown_without_approving_them() {
         assert_eq!(project.get("hasClaudeMdExternalIncludesApproved"), None);
     });
 }
+
+#[test]
+fn commit_attribution_is_off_in_the_settings() {
+    on_every_interpreter(|path| {
+        let t = TempDir::new().unwrap();
+        let (_, settings) = seeded(&ctx(t.path()), path);
+        assert_eq!(settings["attribution"]["commit"], "");
+        assert_eq!(settings["attribution"]["pr"], "");
+        assert_eq!(settings["attribution"]["commitTrailers"], false);
+    });
+}
