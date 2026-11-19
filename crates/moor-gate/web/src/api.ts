@@ -148,6 +148,8 @@ const WorkflowRowSchema = v.object({
 	name: v.string(),
 	repos: v.array(v.string()),
 	cron: v.string(),
+	/** The schedule in words, when it is one of the shapes the form offers. */
+	words: v.nullish(v.string()),
 	timezone: v.string(),
 	enabled: v.boolean(),
 	disabled_reason: v.nullish(v.string()),
@@ -280,6 +282,45 @@ export async function workflowSet(
 	return answer(res, WorkflowSchema);
 }
 
+/** What the workflow form sets. */
+export type WorkflowFields = { repos: string[]; prompt: string; cron: string; timezone: string; timeout_minutes?: number };
+
+type Body = Record<string, string | number | boolean | string[] | undefined>;
+
+function send(csrf: string, method: string, path: string, body: Body) {
+	return fetch(path, {
+		method,
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify(body),
+	});
+}
+
+/** Makes a workflow. A taken name is refused as a conflict; `copyOf` lends its plan and config. */
+export async function workflowCreate(csrf: string, name: string, fields: WorkflowFields, copyOf?: string): Promise<Workflow> {
+	return answer(await send(csrf, 'POST', '/account/api/workflows', { name, ...fields, copy_of: copyOf }), WorkflowSchema);
+}
+
+/** Replaces a workflow's fields, against the revision the page read; its plan stays. */
+export async function workflowEdit(csrf: string, name: string, fields: WorkflowFields, revision: number): Promise<Workflow> {
+	return answer(await send(csrf, 'PUT', `${workflowPath(name)}/fields`, { ...fields, revision }), WorkflowSchema);
+}
+
+export async function workflowSwitch(csrf: string, name: string, enabled: boolean): Promise<Workflow> {
+	return answer(await send(csrf, 'POST', `${workflowPath(name)}/enabled`, { enabled }), WorkflowSchema);
+}
+
+export async function workflowRemove(csrf: string, name: string): Promise<void> {
+	await answer(await send(csrf, 'DELETE', workflowPath(name), {}), v.object({ removed: v.string() }));
+}
+
+const PreviewSchema = v.object({ words: v.nullish(v.string()), next: v.array(v.number()) });
+
+/** The schedule in words and its next three firings, as the controller reads it. */
+export async function schedulePreview(cron: string, timezone: string) {
+	const query = new URLSearchParams({ cron, timezone });
+	return answer(await fetch(`/account/api/schedule?${query}`), PreviewSchema);
+}
+
 export async function runGet(name: string, id: number): Promise<Run> {
 	return answer(await fetch(`${workflowPath(name)}/runs/${id}`), RunSchema);
 }
@@ -372,6 +413,8 @@ const BoxDetailSchema = v.object({
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
 	workflow: v.nullish(v.object({ name: v.string() })),
+	/** Whether a workflow run made this Box. */
+	from_workflow: v.optional(v.boolean(), false),
 });
 
 export type Needs = v.InferOutput<typeof NeedsSchema>;
