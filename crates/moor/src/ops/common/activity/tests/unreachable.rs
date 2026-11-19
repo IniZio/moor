@@ -1,5 +1,5 @@
 //! A Box whose agent stops answering reads: marked unreachable, restored when it answers again,
-//! and its session ended once it has not answered for the bound.
+//! and never ended for the silence alone.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -114,35 +114,22 @@ fn a_box_silent_for_two_minutes_is_marked_unreachable_once_and_still_works() {
 }
 
 #[test]
-fn a_box_silent_past_the_bound_ends_its_session_and_open_turn() {
+fn a_box_silent_for_an_hour_keeps_its_session_and_open_turn() {
     let rig = rig(silent());
     steer(&rig.cx, rig.id);
-    rig.pass_after(120);
-    rig.pass_after(299);
+    for _ in 0..60 {
+        rig.pass_after(60);
+    }
     assert_eq!(rig.kinds(), ["agent_unreachable"]);
-    rig.pass_after(1);
-    rig.pass_after(5);
-    let events = rig.events();
-    assert_eq!(
-        rig.kinds(),
-        ["agent_unreachable", "turn_done", "session_ended"],
-        "{events:?}"
-    );
-    let payload = |kind: &str| events.iter().find(|(k, _)| k == kind).unwrap().1.clone();
-    let ended = payload("session_ended");
-    assert_eq!(ended.get("cause"), Some(&serde_json::json!("unreachable")));
-    assert_eq!(
-        payload("turn_done").get("outcome"),
-        Some(&serde_json::json!("exited"))
-    );
-    assert_eq!(rig.session(), SessionState::Ended);
+    assert_eq!(rig.session(), SessionState::Working);
     assert!(rig
         .cx
         .store()
         .unwrap()
         .live_launch(rig.id)
         .unwrap()
-        .is_none());
+        .is_some());
+    assert_eq!(rig.cx.store().unwrap().sent(rig.id).unwrap().len(), 1);
 }
 
 #[test]
